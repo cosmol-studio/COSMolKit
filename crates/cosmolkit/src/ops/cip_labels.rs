@@ -34,3 +34,14 @@ pub(crate) fn assign_cip_labels_impl(options: &CipLabelOptions) -> Result<(), Op
     )?;
     parts.apply_cip_policy()
 }
+
+impl crate::Molecule {
+    /// Reports the source computed marker; its string projection uses BoolTag.
+    pub fn cip_computed(&self) -> bool {
+        // RDKit❗✔️: mol.setProp(common_properties::_CIPComputed, true, computed);
+        // RDKit❗✔️: res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
+        // One immutable property lookup plus computed-key lookup; no cache effects.
+        self.properties().is_prop_computed("_CIPComputed")
+            && self.property("_CIPComputed") == Some("1")
+    }
+}

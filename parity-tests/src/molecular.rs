@@ -4,7 +4,7 @@ use crate::registry::{
     molecule_plan::{MorganInvariantKind, MorganOutputKind, Profile},
 };
 use cosmolkit::{
-    AddHsParams, AdditionalOutput, Coordinate2DParams, KekulizeParams, Molecule,
+    AddHsParams, Coordinate2DParams, FingerprintAdditionalOutput, KekulizeParams, Molecule,
     MorganFingerprintParams, MorganInvariants, MorganParams, RemoveHsParams, SanitizeOperations,
     SanitizeParams, SmilesParseParams,
 };
@@ -58,7 +58,7 @@ pub enum Stage {
     Operation,
 }
 
-/// The five optional AdditionalOutput values emitted by the pinned Morgan
+/// The five optional FingerprintAdditionalOutput values emitted by the pinned Morgan
 /// generator. Map entries are represented as key-sorted rows; each nested
 /// source vector remains in its original order and may contain duplicates.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -84,7 +84,7 @@ impl<'de> Visitor<'de> for MorganAdditionalOutputVisitor {
     type Value = MorganAdditionalOutput;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a Morgan AdditionalOutput object with all five fields")
+        formatter.write_str("a Morgan FingerprintAdditionalOutput object with all five fields")
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -968,7 +968,7 @@ fn run_morgan(
         ..MorganFingerprintParams::default()
     };
 
-    let mut additional_output = AdditionalOutput::default();
+    let mut additional_output = FingerprintAdditionalOutput::default();
     additional_output.allocate_atom_counts();
     additional_output.allocate_atom_to_bits();
     additional_output.allocate_bit_info_map();
@@ -1027,7 +1027,9 @@ fn run_morgan(
     }
 }
 
-fn observed_morgan_additional_output(output: &AdditionalOutput) -> MorganAdditionalOutput {
+fn observed_morgan_additional_output(
+    output: &FingerprintAdditionalOutput,
+) -> MorganAdditionalOutput {
     MorganAdditionalOutput {
         atom_counts: output.atom_counts().map(<[u32]>::to_vec),
         atom_to_bits: output.atom_to_bits().map(<[Vec<u64>]>::to_vec),

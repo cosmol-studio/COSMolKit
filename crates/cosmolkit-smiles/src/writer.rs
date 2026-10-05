@@ -2934,8 +2934,8 @@ fn compute_chiral_adjustments(
                 if traversal.is_empty() {
                     continue;
                 }
-                let mut swaps = stereo::count_swaps_to_interconvert(&traversal, incident)
-                    .ok_or_else(|| {
+                let mut swaps = stereo::count_swaps_to_interconvert(&traversal, &incident)
+                    .map_err(|_| {
                         SmilesParseError::Model(
                             "writer traversal and storage bond orderings are not permutations"
                                 .into(),

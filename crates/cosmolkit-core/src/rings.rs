@@ -3484,8 +3484,8 @@ mod selected_row_tests {
         assert!(rings.is_initialized());
         assert_eq!(rings.find_type(), RingFindType::OtherOrUnknown);
         assert_eq!(rings.num_rings(), 0);
-        assert_eq!(rings.atom_members(AtomId::new(4)), &[]);
-        assert_eq!(rings.bond_members(BondId::new(3)), &[]);
+        assert_eq!(rings.atom_members(AtomId::new(4)), &[] as &[usize]);
+        assert_eq!(rings.bond_members(BondId::new(3)), &[] as &[usize]);
         assert!(!rings.is_find_fast_or_better());
     }
 

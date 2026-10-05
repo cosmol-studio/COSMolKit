@@ -534,7 +534,10 @@ mod q01_b1_tests {
         assert_eq!(store.ordered_keys(), ["b", "a"]);
         store.clear_computed();
         assert_eq!(store.ordered_keys(), ["a"]);
-        assert_eq!(store.get("a").unwrap().as_int_vector().unwrap(), []);
+        assert_eq!(
+            store.get("a").unwrap().as_int_vector().unwrap(),
+            [] as [i32; 0]
+        );
         let mut atom = Atom::from_spec(
             AtomId::new(0),
             AtomSpec::new(Element::C)

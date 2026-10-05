@@ -19,6 +19,7 @@ pub(super) enum UffPreparedOptimizationError {
     Preparation(UffParameterError),
     Single(SingleConformerOptimizationError),
     Serial(SerialUffOptimizationError),
+    ConformerStage(super::convenience::SerialConformerOptimizationError),
     #[cfg(not(target_family = "wasm"))]
     Dispatch(DispatchedUffOptimizationError),
 }
@@ -29,6 +30,7 @@ impl fmt::Display for UffPreparedOptimizationError {
             Self::Preparation(source) => fmt::Display::fmt(source, formatter),
             Self::Single(source) => fmt::Display::fmt(source, formatter),
             Self::Serial(source) => fmt::Display::fmt(source, formatter),
+            Self::ConformerStage(source) => fmt::Display::fmt(source, formatter),
             #[cfg(not(target_family = "wasm"))]
             Self::Dispatch(source) => fmt::Display::fmt(source, formatter),
         }
@@ -41,6 +43,7 @@ impl Error for UffPreparedOptimizationError {
             Self::Preparation(source) => Some(source),
             Self::Single(source) => Some(source),
             Self::Serial(source) => Some(source),
+            Self::ConformerStage(source) => Some(source),
             #[cfg(not(target_family = "wasm"))]
             Self::Dispatch(source) => Some(source),
         }
@@ -197,6 +200,36 @@ pub(super) fn optimize_prepared_uff_dispatch(
     observed_hardware: u32,
     threadsafe: bool,
 ) -> Result<PreparedConformerDispatchOutcome, UffPreparedOptimizationError> {
+    optimize_prepared_uff_dispatch_with_observer(
+        topology,
+        coordinates,
+        results,
+        valence,
+        rings,
+        properties,
+        diagnostics,
+        options,
+        requested_threads,
+        || Ok(observed_hardware),
+        threadsafe,
+    )
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn optimize_prepared_uff_dispatch_with_observer(
+    topology: &TopologyBlock,
+    coordinates: &mut CoordinateBlock,
+    results: &mut Vec<OptimizationOutcome>,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    properties: &MoleculeProperties,
+    diagnostics: &mut Vec<UffTypingDiagnostic>,
+    options: SingleConformerOptions,
+    requested_threads: i32,
+    observe_hardware: impl FnOnce() -> Result<u32, cosmolkit_core::ThreadCountError>,
+    threadsafe: bool,
+) -> Result<PreparedConformerDispatchOutcome, UffPreparedOptimizationError> {
     // BEGIN RDKIT CPP FUNCTION UFF::UFFOptimizeMoleculeConfs (UFF.h:69-78)
     // RDKit❗❌: inline void UFFOptimizeMoleculeConfs(ROMol &mol,
     // RDKit❗❌:                                      std::vector<std::pair<int, double>> &res,
@@ -243,7 +276,7 @@ pub(super) fn optimize_prepared_uff_dispatch(
     let prepared = super::api::prepare_parameter_query(topology, valence)
         .map_err(UffPreparedOptimizationError::Preparation)?;
 
-    super::convenience::optimize_dispatched_uff_coordinate_block(
+    super::convenience::optimize_dispatched_uff_coordinate_block_with_observer(
         topology,
         coordinates,
         results,
@@ -254,7 +287,7 @@ pub(super) fn optimize_prepared_uff_dispatch(
         diagnostics,
         options,
         requested_threads,
-        observed_hardware,
+        observe_hardware,
         threadsafe,
     )
     .map_err(UffPreparedOptimizationError::Dispatch)

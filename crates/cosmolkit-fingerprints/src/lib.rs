@@ -13,7 +13,7 @@
 //!
 //! ```rust
 //! use cosmolkit_fingerprints::{
-//!     AdditionalOutput, Fingerprint, MorganAtomInvariants, MorganCall, MorganError,
+//!     FingerprintAdditionalOutput, Fingerprint, MorganAtomInvariants, MorganCall, MorganError,
 //!     MorganParams, MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint,
 //!     SparseCountFingerprint32, morgan_bits, morgan_count, morgan_sparse_bits,
 //!     morgan_sparse_count,
@@ -25,28 +25,28 @@
 //!         &MorganParams,
 //!         &MorganCall<'_>,
 //!         MorganAtomInvariants<'_>,
-//!         Option<&mut AdditionalOutput>,
+//!         Option<&mut FingerprintAdditionalOutput>,
 //!     ) -> Result<SparseCountFingerprint, MorganError> = morgan_sparse_count;
 //!     let _: fn(
 //!         &MorganPreparedInput<'_>,
 //!         &MorganParams,
 //!         &MorganCall<'_>,
 //!         MorganAtomInvariants<'_>,
-//!         Option<&mut AdditionalOutput>,
+//!         Option<&mut FingerprintAdditionalOutput>,
 //!     ) -> Result<SparseBitFingerprint, MorganError> = morgan_sparse_bits;
 //!     let _: fn(
 //!         &MorganPreparedInput<'_>,
 //!         &MorganParams,
 //!         &MorganCall<'_>,
 //!         MorganAtomInvariants<'_>,
-//!         Option<&mut AdditionalOutput>,
+//!         Option<&mut FingerprintAdditionalOutput>,
 //!     ) -> Result<SparseCountFingerprint32, MorganError> = morgan_count;
 //!     let _: fn(
 //!         &MorganPreparedInput<'_>,
 //!         &MorganParams,
 //!         &MorganCall<'_>,
 //!         MorganAtomInvariants<'_>,
-//!         Option<&mut AdditionalOutput>,
+//!         Option<&mut FingerprintAdditionalOutput>,
 //!     ) -> Result<Fingerprint, MorganError> = morgan_bits;
 //! }
 //! ```
@@ -93,7 +93,7 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{MoleculePropertyError, TopologyBlock};
 
-pub use additional_output::AdditionalOutput;
+pub use additional_output::FingerprintAdditionalOutput;
 pub use atom_code::{AtomCodeAssignment, AtomCodeError, AtomCodeInput, AtomCodeOptions, atom_code};
 pub use atom_pair::{
     AtomPairAtomInvariantsGenerator, AtomPairCall, AtomPairError, AtomPairParams,
@@ -364,3 +364,5 @@ pub use topological_torsion::{
     LegacyTopologicalTorsionParams, legacy_topological_torsion_bits,
     legacy_topological_torsion_count, legacy_topological_torsion_sparse_count,
 };
+
+pub use topological_torsion::{TopologicalTorsionGenerator, TopologicalTorsionSettings};

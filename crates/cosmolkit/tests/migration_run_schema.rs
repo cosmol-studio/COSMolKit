@@ -519,10 +519,10 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "types.UffConformerOptimizationResult",
             "types.UffConformerResult",
             "UffOptimizationError.kind",
-            "Molecule.with_uff_optimized_coordinates",
-            "Molecule.with_uff_optimized_coordinates_with_params",
-            "Molecule.with_uff_optimized_conformers",
-            "Molecule.with_uff_optimized_conformers_with_params",
+            "Molecule.with_uff_optimized",
+            "Molecule.with_uff_optimized_with_params",
+            "Molecule.with_uff_optimized_confs",
+            "Molecule.with_uff_optimized_confs_with_params",
         ]);
     }
     if cfg!(feature = "cap-hydrogens") {
@@ -733,7 +733,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     }
 
     if cfg!(feature = "cap-fingerprints") {
-        // Exact Morgan configuration and AdditionalOutput surface precedes
+        // Exact Morgan configuration and FingerprintAdditionalOutput surface precedes
         // the existing sparse-count entries in registry order.
         expected.splice(
             0..0,
@@ -742,7 +742,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "types.MorganInvariants",
                 "types.MorganFingerprintParams",
                 "types.MorganReadError",
-                "types.AdditionalOutput",
+                "types.FingerprintAdditionalOutput",
                 "types.Fingerprint",
                 "types.SparseBitFingerprint",
                 "types.SparseCountFingerprint",
@@ -756,17 +756,18 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "Molecule.morgan_count_fingerprint_with_params",
                 "Molecule.morgan_fingerprint",
                 "Molecule.morgan_fingerprint_with_params",
-                "AdditionalOutput.default",
-                "AdditionalOutput.allocate_atom_counts",
-                "AdditionalOutput.allocate_atom_to_bits",
-                "AdditionalOutput.allocate_bit_info_map",
-                "AdditionalOutput.allocate_bit_paths",
-                "AdditionalOutput.allocate_atoms_per_bit",
-                "AdditionalOutput.atom_counts",
-                "AdditionalOutput.atom_to_bits",
-                "AdditionalOutput.bit_info_map",
-                "AdditionalOutput.bit_paths",
-                "AdditionalOutput.atoms_per_bit",
+                "FingerprintAdditionalOutput.new",
+                "FingerprintAdditionalOutput.default",
+                "FingerprintAdditionalOutput.allocate_atom_counts",
+                "FingerprintAdditionalOutput.allocate_atom_to_bits",
+                "FingerprintAdditionalOutput.allocate_bit_info_map",
+                "FingerprintAdditionalOutput.allocate_bit_paths",
+                "FingerprintAdditionalOutput.allocate_atoms_per_bit",
+                "FingerprintAdditionalOutput.atom_counts",
+                "FingerprintAdditionalOutput.atom_to_bits",
+                "FingerprintAdditionalOutput.bit_info_map",
+                "FingerprintAdditionalOutput.bit_paths",
+                "FingerprintAdditionalOutput.atoms_per_bit",
                 "Fingerprint.n_bits",
                 "Fingerprint.on_bits",
                 "SparseBitFingerprint.n_bits",
@@ -909,6 +910,406 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "types.ElementInfo",
         ],
     );
+    // Complete public blocks are static independent fixtures. Keep every original
+    // identity, ordering assertion and feature-local consumer unchanged.
+    // Source evidence: binding_contract/registry.rs complete UFF/MMFF, TAU,
+    // SEARCH, FP, descriptors and canonical atom/bond/builder declarations.
+    {
+        let mut additions = Vec::new();
+        if cfg!(feature = "cap-forcefields") {
+            additions.extend([
+                "types.UffEvaluationParams",
+                "types.UffEnergyGradient",
+                "Molecule.uff_energy_gradient",
+                "Molecule.uff_energy_gradient_with_params",
+                "UffEnergyGradient.energy",
+                "UffEnergyGradient.gradient",
+                "UffOptimizationResult.molecule",
+                "UffOptimizationResult.status_code",
+                "UffOptimizationResult.needs_more",
+                "UffOptimizationResult.energy",
+                "UffConformerResult.conformer_id",
+                "UffConformerResult.status_code",
+                "UffConformerResult.needs_more",
+                "UffConformerResult.energy",
+                "UffConformerOptimizationResult.molecule",
+                "UffConformerOptimizationResult.conformer_results",
+            ]);
+        }
+        if !additions.is_empty() {
+            let insertion = expected
+                .iter()
+                .position(|id| *id == "types.Element")
+                .expect("original fixture anchor types.Element");
+            expected.splice(insertion..insertion, additions);
+        }
+    }
+    {
+        let mut additions = Vec::new();
+        additions.extend(["types.QueryGraph"]);
+        if cfg!(feature = "cap-forcefields") {
+            additions.extend([
+                "MmffAtomProperties.atom_type",
+                "MmffAtomProperties.formal_charge",
+                "MmffAtomProperties.partial_charge",
+                "types.MmffEvaluationParams",
+                "types.MmffEnergyGradient",
+                "Molecule.mmff_energy_gradient",
+                "Molecule.mmff_energy_gradient_with_params",
+                "MmffEnergyGradient.energy",
+                "MmffEnergyGradient.gradient",
+                "MmffOptimizeMoleculeResult.molecule",
+                "MmffOptimizeMoleculeResult.needs_more",
+                "MmffOptimizeMoleculeResult.status_code",
+                "MmffOptimizeMoleculeConfsResult.molecule",
+                "MmffOptimizeMoleculeConfsResult.conformer_results",
+                "MmffOptimizeMoleculeConfResult.needs_more",
+                "MmffOptimizeMoleculeConfResult.status_code",
+                "MmffOptimizeMoleculeConfResult.energy",
+                "MmffProperties.is_valid",
+                "MmffProperties.variant",
+                "MmffProperties.atoms",
+                "MmffProperties.atom_type",
+                "MmffProperties.formal_charge",
+                "MmffProperties.partial_charge",
+                "types.MmffOptimizationParams",
+                "types.MmffConformerOptimizationParams",
+                "types.MmffOptimizeMoleculeResult",
+                "types.MmffOptimizeMoleculeConfResult",
+                "types.MmffOptimizeMoleculeConfsResult",
+                "types.MmffOptimizationError",
+                "Molecule.with_mmff_optimized",
+                "Molecule.with_mmff_optimized_with_params",
+                "Molecule.with_mmff_optimized_confs",
+                "Molecule.with_mmff_optimized_confs_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-tautomer") {
+            additions.extend([
+                "types.TautomerParams",
+                "types.TautomerScoreParams",
+                "types.TautomerScoreTerm",
+                "types.TautomerScore",
+                "types.TautomerEnumeration",
+                "types.TautomerEnumerationStatus",
+                "types.TautomerRunError",
+                "types.TautomerCatalogError",
+                "types.TautomerMoleculeView",
+                "types.TautomerProgress",
+                "Molecule.enumerate_tautomers",
+                "Molecule.enumerate_tautomers_with_params",
+                "Molecule.canonical_tautomer",
+                "Molecule.canonical_tautomer_with_params",
+                "Molecule.tautomer_score",
+                "Molecule.tautomer_score_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-search") {
+            additions.extend([
+                "types.SmartsParseParams",
+                "types.SmartsParseError",
+                "types.SubstructMatchParams",
+                "types.SubstructMatchError",
+                "types.MatchResult",
+                "types.CompiledQuery",
+                "types.QueryCompileError",
+                "types.MatchError",
+                "types.SmartsWriteParams",
+                "types.SmartsWriteError",
+                "search.parse_smarts",
+                "search.parse_smarts_with_params",
+                "QueryGraph.from_smarts",
+                "QueryGraph.from_smarts_with_params",
+                "search.compile_query",
+                "search.write_smarts",
+                "search.write_cx_smarts",
+                "Molecule.substruct_match",
+                "Molecule.substruct_matches",
+                "Molecule.has_substruct_match",
+                "Molecule.substruct_matches_with_params",
+                "Molecule.substruct_matches_compiled",
+            ]);
+        }
+        let insertion = expected
+            .iter()
+            .position(|id| *id == "types.ElementInfo")
+            .unwrap()
+            + 1
+            + usize::from(cfg!(feature = "cap-valence"));
+        expected.splice(insertion..insertion, additions);
+    }
+    {
+        let mut additions = Vec::new();
+        if cfg!(feature = "cap-fingerprints") {
+            additions.extend([
+                "types.AtomPairParams",
+                "types.AtomPairFingerprintParams",
+                "types.AtomPairAtomInvariantsGenerator",
+                "types.AtomPairReadError",
+                "Molecule.atom_pair_fingerprint",
+                "Molecule.atom_pair_fingerprint_with_params",
+                "Molecule.atom_pair_sparse_fingerprint",
+                "Molecule.atom_pair_sparse_fingerprint_with_params",
+                "Molecule.atom_pair_count_fingerprint",
+                "Molecule.atom_pair_count_fingerprint_with_params",
+                "Molecule.atom_pair_sparse_count_fingerprint",
+                "Molecule.atom_pair_sparse_count_fingerprint_with_params",
+                "AtomPairAtomInvariantsGenerator.info_string",
+                "AtomPairAtomInvariantsGenerator.to_json",
+                "types.TopologicalTorsionParams",
+                "types.TopologicalTorsionFingerprintParams",
+                "types.TopologicalTorsionReadError",
+                "Molecule.topological_torsion_fingerprint",
+                "Molecule.topological_torsion_fingerprint_with_params",
+                "Molecule.topological_torsion_sparse_fingerprint",
+                "Molecule.topological_torsion_sparse_fingerprint_with_params",
+                "Molecule.topological_torsion_count_fingerprint",
+                "Molecule.topological_torsion_count_fingerprint_with_params",
+                "Molecule.topological_torsion_sparse_count_fingerprint",
+                "Molecule.topological_torsion_sparse_count_fingerprint_with_params",
+            ]);
+        }
+        if !additions.is_empty() {
+            let insertion = expected
+                .iter()
+                .position(|id| *id == "types.MorganParams")
+                .expect("original fixture anchor types.MorganParams");
+            expected.splice(insertion..insertion, additions);
+        }
+    }
+    {
+        let mut additions = Vec::new();
+        if cfg!(feature = "cap-valence") {
+            additions.extend(["types.AtomMetadata", "Molecule.atom_metadata"]);
+        }
+        if !additions.is_empty() {
+            let insertion = expected
+                .iter()
+                .position(|id| *id == "types.Molecule")
+                .expect("original fixture anchor types.Molecule");
+            expected.splice(insertion..insertion, additions);
+        }
+    }
+    {
+        let mut additions = Vec::new();
+        if cfg!(feature = "cap-descriptors") {
+            additions.extend(["Molecule.chi_0", "Molecule.chi_1"]);
+        }
+        if !additions.is_empty() {
+            let insertion = expected
+                .iter()
+                .position(|id| *id == "Molecule.hall_kier_alpha")
+                .expect("original fixture anchor Molecule.hall_kier_alpha");
+            expected.splice(insertion..insertion, additions);
+        }
+    }
+    {
+        let mut additions = Vec::new();
+        if cfg!(feature = "cap-descriptors") {
+            additions.extend([
+                "types.RotatableBondsOptions",
+                "Molecule.num_amide_bonds",
+                "Molecule.num_spiro_atoms",
+                "Molecule.num_bridgehead_atoms",
+                "Molecule.num_atom_stereo_centers",
+                "Molecule.num_unspecified_atom_stereo_centers",
+                "Molecule.num_rotatable_bonds",
+                "Molecule.num_rotatable_bonds_with_params",
+                "Molecule.molecular_weight_with_params",
+                "Molecule.exact_molecular_weight_with_params",
+                "Molecule.molecular_formula_with_params",
+            ]);
+        }
+        if !additions.is_empty() {
+            let insertion = expected
+                .iter()
+                .position(|id| *id == "types.DescriptorError")
+                .expect("original fixture anchor types.DescriptorError");
+            expected.splice(insertion..insertion, additions);
+        }
+    }
+    {
+        let mut additions = Vec::new();
+        if cfg!(feature = "cap-forcefields") {
+            additions.extend([
+                "types.MmffProperties",
+                "types.MmffPropertiesParams",
+                "types.MmffAtomProperties",
+                "types.MmffVariant",
+                "types.MmffMolPropertiesError",
+                "Molecule.mmff_has_all_molecule_params",
+                "Molecule.mmff_properties",
+                "Molecule.mmff_properties_with_params",
+            ]);
+        }
+        if !additions.is_empty() {
+            let insertion = expected
+                .iter()
+                .position(|id| *id == "Molecule.uff_has_all_molecule_params")
+                .expect("original fixture anchor Molecule.uff_has_all_molecule_params");
+            expected.splice(insertion..insertion, additions);
+        }
+    }
+    {
+        let mut additions = Vec::new();
+        if cfg!(feature = "cap-descriptors") {
+            additions.extend([
+                "types.CrippenTotals",
+                "types.LabuteAsaContributions",
+                "Molecule.crippen_descriptors",
+                "Molecule.labute_asa",
+                "Molecule.labute_asa_contributions",
+                "Molecule.tpsa",
+                "Molecule.slogp_vsa",
+                "Molecule.smr_vsa",
+                "Molecule.slogp_vsa_1",
+                "Molecule.slogp_vsa_2",
+                "Molecule.slogp_vsa_3",
+                "Molecule.slogp_vsa_4",
+                "Molecule.slogp_vsa_5",
+                "Molecule.slogp_vsa_6",
+                "Molecule.slogp_vsa_7",
+                "Molecule.slogp_vsa_8",
+                "Molecule.slogp_vsa_9",
+                "Molecule.slogp_vsa_10",
+                "Molecule.slogp_vsa_11",
+                "Molecule.slogp_vsa_12",
+                "Molecule.smr_vsa_1",
+                "Molecule.smr_vsa_2",
+                "Molecule.smr_vsa_3",
+                "Molecule.smr_vsa_4",
+                "Molecule.smr_vsa_5",
+                "Molecule.smr_vsa_6",
+                "Molecule.smr_vsa_7",
+                "Molecule.smr_vsa_8",
+                "Molecule.smr_vsa_9",
+                "Molecule.smr_vsa_10",
+                "Molecule.crippen_descriptors_with_params",
+                "Molecule.labute_asa_with_params",
+                "Molecule.labute_asa_contributions_with_params",
+                "Molecule.tpsa_with_params",
+                "Molecule.slogp_vsa_with_params",
+                "Molecule.smr_vsa_with_params",
+                "Molecule.qed",
+                "Molecule.chi_0_v_with_params",
+                "Molecule.chi_1_v_with_params",
+                "Molecule.chi_2_v_with_params",
+                "Molecule.chi_3_v_with_params",
+                "Molecule.chi_4_v_with_params",
+                "Molecule.chi_n_v_with_params",
+                "Molecule.chi_0_n_with_params",
+                "Molecule.chi_1_n_with_params",
+                "Molecule.chi_2_n_with_params",
+                "Molecule.chi_3_n_with_params",
+                "Molecule.chi_4_n_with_params",
+                "Molecule.chi_n_n_with_params",
+            ]);
+        }
+        additions.extend([
+            "types.Atom",
+            "types.Bond",
+            "types.BondOrder",
+            "types.BondDirection",
+            "types.BondStereo",
+            "types.ChiralTag",
+            "types.AtomSpec",
+            "types.BondSpec",
+        ]);
+        additions.extend([
+            "Atom.id",
+            "Atom.element",
+            "Atom.atomic_number",
+            "Atom.formal_charge",
+            "Atom.chiral_tag",
+            "Atom.chiral_tag_code",
+            "Atom.chiral_tag_name",
+            "Atom.isotope",
+            "Atom.atom_map",
+            "Atom.is_aromatic",
+            "Atom.explicit_hydrogens",
+            "Atom.no_implicit",
+            "Atom.radical_electrons",
+            "Bond.id",
+            "Bond.begin",
+            "Bond.end",
+            "Bond.order",
+            "Bond.order_code",
+            "Bond.order_name",
+            "Bond.direction",
+            "Bond.direction_code",
+            "Bond.direction_name",
+            "Bond.stereo",
+            "Bond.stereo_code",
+            "Bond.stereo_name",
+            "Bond.stereo_atoms",
+            "Bond.is_aromatic",
+            "Atom.cip_descriptor",
+            "Atom.cip_neighbor_order",
+            "Atom.cip_rank",
+            "Bond.cip_descriptor",
+            "Bond.cip_neighbor_order",
+        ]);
+        if cfg!(feature = "cap-stereo") {
+            additions.extend(["Molecule.cip_computed"]);
+        }
+        additions.extend([
+            "AtomSpec.new",
+            "BondSpec.new",
+            "AtomSpec.with_formal_charge",
+            "AtomSpec.with_explicit_hydrogens",
+            "AtomSpec.with_atom_map",
+            "AtomSpec.with_isotope",
+            "AtomSpec.with_no_implicit",
+        ]);
+        if cfg!(feature = "cap-sanitize") {
+            additions.extend(["Molecule.sanitize_", "Molecule.sanitize_with_params_"]);
+        }
+        expected.extend(additions);
+    }
+    // Complete source-audited FP v7 public closure follows the existing registry.
+    if cfg!(feature = "cap-fingerprints") {
+        expected.extend([
+            "types.LegacyTopologicalTorsionParams",
+            "types.TopologicalTorsionFingerprintGenerator",
+            "types.TopologicalTorsionSettings",
+            "types.TopologicalTorsionCallParams",
+            "TopologicalTorsionFingerprintGenerator.new",
+            "TopologicalTorsionFingerprintGenerator.from_json",
+            "TopologicalTorsionFingerprintGenerator.settings",
+            "TopologicalTorsionFingerprintGenerator.info_string",
+            "TopologicalTorsionFingerprintGenerator.to_json",
+            "TopologicalTorsionFingerprintGenerator.fingerprints",
+            "TopologicalTorsionFingerprintGenerator.sparse_fingerprints",
+            "TopologicalTorsionFingerprintGenerator.counts",
+            "TopologicalTorsionFingerprintGenerator.sparse_counts",
+            "TopologicalTorsionSettings.torsion_atom_count",
+            "TopologicalTorsionSettings.set_torsion_atom_count",
+            "TopologicalTorsionSettings.only_shortest_paths",
+            "TopologicalTorsionSettings.set_only_shortest_paths",
+            "TopologicalTorsionSettings.include_chirality",
+            "TopologicalTorsionSettings.set_include_chirality",
+            "TopologicalTorsionSettings.count_simulation",
+            "TopologicalTorsionSettings.set_count_simulation",
+            "TopologicalTorsionSettings.fp_size",
+            "TopologicalTorsionSettings.set_fp_size",
+            "TopologicalTorsionSettings.bits_per_feature",
+            "TopologicalTorsionSettings.set_bits_per_feature",
+            "TopologicalTorsionSettings.count_bounds",
+            "TopologicalTorsionSettings.set_count_bounds",
+            "TopologicalTorsionSettings.params",
+            "Molecule.topological_torsion_fingerprint_with_generator",
+            "Molecule.topological_torsion_sparse_fingerprint_with_generator",
+            "Molecule.topological_torsion_count_fingerprint_with_generator",
+            "Molecule.topological_torsion_sparse_count_fingerprint_with_generator",
+            "LegacyTopologicalTorsionParams.new",
+            "Molecule.legacy_topological_torsion_sparse_count_fingerprint",
+            "Molecule.legacy_topological_torsion_sparse_count_fingerprint_with_params",
+            "Molecule.legacy_topological_torsion_count_fingerprint",
+            "Molecule.legacy_topological_torsion_count_fingerprint_with_params",
+            "Molecule.legacy_topological_torsion_fingerprint",
+            "Molecule.legacy_topological_torsion_fingerprint_with_params",
+        ]);
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()
@@ -942,14 +1343,10 @@ fn uff_public_registry_has_exact_value_result_contract() {
         assert_eq!(row.type_role, Some(role));
     }
     for (method, javascript, parameter_count) in [
+        ("with_uff_optimized", "withUffOptimized", 0),
         (
-            "with_uff_optimized_coordinates",
-            "withUffOptimizedCoordinates",
-            0,
-        ),
-        (
-            "with_uff_optimized_coordinates_with_params",
-            "withUffOptimizedCoordinatesWithParams",
+            "with_uff_optimized_with_params",
+            "withUffOptimizedWithParams",
             1,
         ),
     ] {
@@ -974,12 +1371,12 @@ fn uff_public_registry_has_exact_value_result_contract() {
     let _: fn(
         &cosmolkit::Molecule,
     ) -> Result<cosmolkit::UffOptimizationResult, cosmolkit::OperationError> =
-        cosmolkit::Molecule::with_uff_optimized_coordinates;
+        cosmolkit::Molecule::with_uff_optimized;
     let _: fn(
         &cosmolkit::Molecule,
         &cosmolkit::UffOptimizationParams,
     ) -> Result<cosmolkit::UffOptimizationResult, cosmolkit::OperationError> =
-        cosmolkit::Molecule::with_uff_optimized_coordinates_with_params;
+        cosmolkit::Molecule::with_uff_optimized_with_params;
     let _: fn(&cosmolkit::UffOptimizationError) -> cosmolkit::UffOptimizationErrorKind =
         cosmolkit::UffOptimizationError::kind;
     let params = cosmolkit::UffOptimizationParams::default();
@@ -1000,10 +1397,67 @@ fn uff_param_p10_registry_has_exact_read_only_query_contract() {
     assert_eq!(
         forcefields_ids,
         vec![
+            "types.UffEvaluationParams",
+            "types.UffEnergyGradient",
+            "Molecule.uff_energy_gradient",
+            "Molecule.uff_energy_gradient_with_params",
+            "UffEnergyGradient.energy",
+            "UffEnergyGradient.gradient",
+            "UffOptimizationResult.molecule",
+            "UffOptimizationResult.status_code",
+            "UffOptimizationResult.needs_more",
+            "UffOptimizationResult.energy",
+            "UffConformerResult.conformer_id",
+            "UffConformerResult.status_code",
+            "UffConformerResult.needs_more",
+            "UffConformerResult.energy",
+            "UffConformerOptimizationResult.molecule",
+            "UffConformerOptimizationResult.conformer_results",
+            "MmffAtomProperties.atom_type",
+            "MmffAtomProperties.formal_charge",
+            "MmffAtomProperties.partial_charge",
+            "types.MmffEvaluationParams",
+            "types.MmffEnergyGradient",
+            "Molecule.mmff_energy_gradient",
+            "Molecule.mmff_energy_gradient_with_params",
+            "MmffEnergyGradient.energy",
+            "MmffEnergyGradient.gradient",
+            "MmffOptimizeMoleculeResult.molecule",
+            "MmffOptimizeMoleculeResult.needs_more",
+            "MmffOptimizeMoleculeResult.status_code",
+            "MmffOptimizeMoleculeConfsResult.molecule",
+            "MmffOptimizeMoleculeConfsResult.conformer_results",
+            "MmffOptimizeMoleculeConfResult.needs_more",
+            "MmffOptimizeMoleculeConfResult.status_code",
+            "MmffOptimizeMoleculeConfResult.energy",
+            "MmffProperties.is_valid",
+            "MmffProperties.variant",
+            "MmffProperties.atoms",
+            "MmffProperties.atom_type",
+            "MmffProperties.formal_charge",
+            "MmffProperties.partial_charge",
+            "types.MmffOptimizationParams",
+            "types.MmffConformerOptimizationParams",
+            "types.MmffOptimizeMoleculeResult",
+            "types.MmffOptimizeMoleculeConfResult",
+            "types.MmffOptimizeMoleculeConfsResult",
+            "types.MmffOptimizationError",
+            "Molecule.with_mmff_optimized",
+            "Molecule.with_mmff_optimized_with_params",
+            "Molecule.with_mmff_optimized_confs",
+            "Molecule.with_mmff_optimized_confs_with_params",
             "types.UffParameterQueryError",
             "types.UffParameterError",
             "types.UffParameterErrorKind",
             "UffParameterError.kind",
+            "types.MmffProperties",
+            "types.MmffPropertiesParams",
+            "types.MmffAtomProperties",
+            "types.MmffVariant",
+            "types.MmffMolPropertiesError",
+            "Molecule.mmff_has_all_molecule_params",
+            "Molecule.mmff_properties",
+            "Molecule.mmff_properties_with_params",
             "Molecule.uff_has_all_molecule_params",
             "types.UffOptimizationParams",
             "types.UffOptimizationResult",
@@ -1013,12 +1467,12 @@ fn uff_param_p10_registry_has_exact_read_only_query_contract() {
             "types.UffConformerOptimizationResult",
             "types.UffConformerResult",
             "UffOptimizationError.kind",
-            "Molecule.with_uff_optimized_coordinates",
-            "Molecule.with_uff_optimized_coordinates_with_params",
-            "Molecule.with_uff_optimized_conformers",
-            "Molecule.with_uff_optimized_conformers_with_params",
+            "Molecule.with_uff_optimized",
+            "Molecule.with_uff_optimized_with_params",
+            "Molecule.with_uff_optimized_confs",
+            "Molecule.with_uff_optimized_confs_with_params",
         ],
-        "forcefields has exactly the prepared query plus single and serial all-conformer identities"
+        "complete forcefields exposes the exact UFF and MMFF identities"
     );
 
     for (semantic_id, rust_name, python_name, javascript_name, role) in [
@@ -1302,21 +1756,21 @@ fn descriptor_entries_are_exact_canonical_read_only_methods() {
             "molecular_weight",
             "molecularWeight",
             "f64",
-            "crate::OperationError",
+            "crate::DescriptorReadError",
         ),
         (
             "Molecule.exact_molecular_weight",
             "exact_molecular_weight",
             "exactMolecularWeight",
             "f64",
-            "crate::OperationError",
+            "crate::DescriptorReadError",
         ),
         (
             "Molecule.molecular_formula",
             "molecular_formula",
             "molecularFormula",
             "String",
-            "crate::OperationError",
+            "crate::DescriptorReadError",
         ),
         (
             "Molecule.num_heavy_atoms",

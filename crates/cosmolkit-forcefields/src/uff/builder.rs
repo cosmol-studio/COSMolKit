@@ -3152,7 +3152,7 @@ fn construct_force_field_with_params<'a>(
 
     // The source's default ForceField dimension is three. Construct exactly
     // one field before its conformer lookup and keep it uninitialized here.
-    let mut field = ForceField::new(3);
+    let field = ForceField::new(3);
     let CoordinateBlock {
         conformers_2d,
         conformers_3d,
@@ -3186,6 +3186,93 @@ fn construct_force_field_with_params<'a>(
     } else {
         BTreeMap::new()
     };
+    construct_force_field_with_selected_params(
+        field,
+        topology,
+        selected,
+        &UffConformerContext {
+            two_d: conformers_2d,
+            before: conformers_3d_before,
+            selected_id: selected_3d_conformer_id,
+            selected_is_3d: selected_conformer_is_3d,
+            selected_props: &selected_conformer_props,
+            after: conformers_3d_after,
+            source_dimension: source_coordinate_dim,
+        },
+        params,
+        rings,
+        valence,
+        molecule_properties,
+        torsion_bond_smarts,
+        vdw_threshold,
+        ignore_interfragment_interactions,
+    )
+}
+
+pub(super) struct UffConformerContext<'a> {
+    pub(super) two_d: &'a [Conformer2D],
+    pub(super) before: &'a [Conformer3D],
+    pub(super) selected_id: usize,
+    pub(super) selected_is_3d: bool,
+    pub(super) selected_props: &'a BTreeMap<String, String>,
+    pub(super) after: &'a [Conformer3D],
+    pub(super) source_dimension: Option<CoordinateDimension>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn construct_force_field_with_selected_params<'a>(
+    mut field: ForceField<'a>,
+    topology: &TopologyBlock,
+    selected: &'a mut Conformer3D,
+    context: &UffConformerContext<'_>,
+    params: &UffParamsByAtom<'_>,
+    rings: &RingInfo,
+    valence: &ValenceAssignment,
+    molecule_properties: &MoleculeProperties,
+    torsion_bond_smarts: &str,
+    vdw_threshold: f64,
+    ignore_interfragment_interactions: bool,
+) -> Result<ForceField<'a>, ForceFieldConstructionError> {
+    // BEGIN RDKIT CPP FUNCTION UFF::constructForceField(params)
+    // (Builder.cpp:674-702)
+    // RDKit❗✔️: ForceFields::ForceField *constructForceField(ROMol &mol,
+    // RDKit❗✔️:                                              const AtomicParamVect &params,
+    // RDKit❗✔️:                                              double vdwThresh, int confId,
+    // RDKit❗✔️:                                              bool ignoreInterfragInteractions) {
+    // RDKit❗✔️:   PRECONDITION(mol.getNumAtoms() == params.size(), "bad parameters");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (MolOps::needsHs(mol)) {
+    // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:         << "Molecule does not have explicit Hs. Consider calling AddHs()"
+    // RDKit❗✔️:         << std::endl;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::unique_ptr<ForceFields::ForceField> res(new ForceFields::ForceField());
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // add the atomic positions:
+    // RDKit❗✔️:   Conformer &conf = mol.getConformer(confId);
+    // RDKit❗✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
+    // RDKit❗✔️:     res->positions().push_back(&conf.getAtomPos(i));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   Tools::addBonds(mol, params, res.get());
+    // RDKit❗✔️:   Tools::addAngles(mol, params, res.get());
+    // RDKit❗✔️:   Tools::addAngleSpecialCases(mol, confId, params, res.get());
+    // RDKit❗✔️:   boost::shared_array<std::uint8_t> neighborMat =
+    // RDKit❗✔️:       Tools::buildNeighborMatrix(mol);
+    // RDKit❗✔️:   Tools::addNonbonded(mol, confId, params, res.get(), neighborMat,
+    // RDKit❗✔️:                       vdwThresh, ignoreInterfragInteractions);
+    // RDKit❗✔️:   Tools::addTorsions(mol, params, res.get());
+    // RDKit❗✔️:   Tools::addInversions(mol, params, res.get());
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return res.release();
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION UFF::constructForceField(params)
+
+    // Behavior: the same source contribution owners and order serve both
+    // writable optimization and read-only evaluation; all context remains
+    // borrowed. Complexity: O(A) position handles, no unrelated coordinate,
+    // topology or runtime-state cloning.
     append_selected_atom_positions(&mut field, selected, topology.atoms.len())?;
 
     // Keep the exact source contribution and failure order. Each stage is the
@@ -3196,13 +3283,13 @@ fn construct_force_field_with_params<'a>(
     let neighbor_matrix = build_neighbor_matrix(topology)?;
     add_nonbonded(
         topology,
-        conformers_2d,
-        conformers_3d_before,
-        selected_3d_conformer_id,
-        selected_conformer_is_3d,
-        &selected_conformer_props,
-        conformers_3d_after,
-        source_coordinate_dim,
+        context.two_d,
+        context.before,
+        context.selected_id,
+        context.selected_is_3d,
+        context.selected_props,
+        context.after,
+        context.source_dimension,
         molecule_properties,
         params,
         &mut field,
@@ -3220,14 +3307,6 @@ fn construct_force_field_with_params<'a>(
     )?;
     add_inversions(topology, params, &mut field)?;
 
-    // Behavior marker — RDKit❗✔️: one source-ordered field, selected-ID
-    // position binding, parameter/warning precedence, all seven ordered
-    // construction stages, typed first errors, and no source-absent
-    // initialize/minimize call. Exact regressions follow in F24.
-    // Complexity marker — RDKit✔️✔️: only existing stage owners and the
-    // source O(A) position-reference setup are composed; no coordinate,
-    // topology, parameter or second kernel copy is introduced. Requested F19
-    // filtering copies only the selected conformer's O(P) property map.
     Ok(field)
 }
 
@@ -3258,6 +3337,37 @@ pub(super) fn construct_force_field_with_automatic_typing<'a>(
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION UFF::constructForceField(automatic typing)
 
+    with_automatic_atom_types(
+        topology,
+        typing_state,
+        diagnostics,
+        |params, diagnostics| {
+            construct_force_field_with_params(
+                topology,
+                coordinates,
+                selected_3d_conformer_id,
+                params,
+                rings,
+                valence,
+                molecule_properties,
+                diagnostics,
+                torsion_bond_smarts,
+                vdw_threshold,
+                ignore_interfragment_interactions,
+            )
+        },
+    )
+}
+
+fn with_automatic_atom_types<'a>(
+    topology: &TopologyBlock,
+    typing_state: UffAtomStateRef<'_>,
+    diagnostics: &mut Vec<UffTypingDiagnostic>,
+    build: impl FnOnce(
+        &UffParamsByAtom<'_>,
+        &mut Vec<UffTypingDiagnostic>,
+    ) -> Result<ForceField<'a>, ForceFieldConstructionError>,
+) -> Result<ForceField<'a>, AutomaticForceFieldConstructionError> {
     // BEGIN RDKIT CPP HELPER UFF::getAtomTypes (AtomTyper.cpp:507-533)
     // RDKit❗✔️: std::pair<AtomicParamVect, bool> getAtomTypes(const ROMol &mol,
     // RDKit❗✔️:                                               const std::string &) {
@@ -3313,20 +3423,63 @@ pub(super) fn construct_force_field_with_automatic_typing<'a>(
     // terms own their source scalar parameters and retain only the selected
     // coordinate-row borrow. Typing diagnostics therefore precede the
     // delegated parameter preamble, needs-H warning, and construction errors.
-    construct_force_field_with_params(
+    build(&params_by_atom, diagnostics).map_err(AutomaticForceFieldConstructionError::Construction)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn construct_force_field_with_automatic_typing_from_selected<'a>(
+    topology: &TopologyBlock,
+    selected: &'a mut Conformer3D,
+    context: &UffConformerContext<'_>,
+    typing_state: UffAtomStateRef<'_>,
+    rings: &RingInfo,
+    valence: &ValenceAssignment,
+    molecule_properties: &MoleculeProperties,
+    diagnostics: &mut Vec<UffTypingDiagnostic>,
+    vdw_threshold: f64,
+    ignore_interfragment_interactions: bool,
+) -> Result<ForceField<'a>, AutomaticForceFieldConstructionError> {
+    // BEGIN RDKIT CPP FUNCTION UFF::constructForceField(automatic typing)
+    // (Builder.cpp:712-719)
+    // RDKit❗✔️: ForceFields::ForceField *constructForceField(ROMol &mol, double vdwThresh,
+    // RDKit❗✔️:                                              int confId,
+    // RDKit❗✔️:                                              bool ignoreInterfragInteractions) {
+    // RDKit❗✔️:   bool foundAll;
+    // RDKit❗✔️:   AtomicParamVect params;
+    // RDKit❗✔️:   boost::tie(params, foundAll) = getAtomTypes(mol);
+    // RDKit❗✔️:   return constructForceField(mol, params, vdwThresh, confId,
+    // RDKit❗✔️:                              ignoreInterfragInteractions);
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION UFF::constructForceField(automatic typing)
+
+    // Scalar parameters and all chemistry stages reuse their unique owners.
+    // Only the selected conformer's cloned row is mutable; peers are borrowed.
+    with_automatic_atom_types(
         topology,
-        coordinates,
-        selected_3d_conformer_id,
-        &params_by_atom,
-        rings,
-        valence,
-        molecule_properties,
+        typing_state,
         diagnostics,
-        torsion_bond_smarts,
-        vdw_threshold,
-        ignore_interfragment_interactions,
+        |params, diagnostics| {
+            validate_force_field_preamble(
+                topology,
+                params,
+                &valence.implicit_hydrogens,
+                diagnostics,
+            )?;
+            construct_force_field_with_selected_params(
+                ForceField::new(3),
+                topology,
+                selected,
+                context,
+                params,
+                rings,
+                valence,
+                molecule_properties,
+                DEFAULT_TORSION_BOND_SMARTS,
+                vdw_threshold,
+                ignore_interfragment_interactions,
+            )
+        },
     )
-    .map_err(AutomaticForceFieldConstructionError::Construction)
 }
 
 #[allow(clippy::too_many_arguments)]

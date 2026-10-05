@@ -9,9 +9,10 @@ use crate::metadata::{
     common_arguments_string, json_value_as_bool, json_value_as_u32, parse_object,
 };
 use crate::{
-    AdditionalOutput, AtomPairAtomInvariantsGenerator, AtomPairError, AtomPairPreparedInput,
-    Fingerprint, FingerprintError, MorganError, SparseBitFingerprint, SparseCountFingerprint,
-    SparseCountFingerprint32, topological_torsion_code, topological_torsion_hash,
+    AtomPairAtomInvariantsGenerator, AtomPairError, AtomPairPreparedInput, Fingerprint,
+    FingerprintAdditionalOutput, FingerprintError, MorganError, SparseBitFingerprint,
+    SparseCountFingerprint, SparseCountFingerprint32, topological_torsion_code,
+    topological_torsion_hash,
 };
 use cosmolkit_core::{
     GraphPath, PathError, PathRepresentation, PathSearchParams, all_paths_of_length,
@@ -26,6 +27,12 @@ pub enum TopologicalTorsionError {
     AtomInvariants(AtomPairError),
     Path(PathError),
     Preparation(MorganError),
+    Json(FingerprintJsonError),
+    StatePoisoned,
+    ThreadCount(cosmolkit_core::ThreadCountError),
+    ThreadSpawn(std::io::Error),
+    WorkerPanic,
+    WorkerProtocol,
 }
 impl fmt::Display for TopologicalTorsionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -34,6 +41,18 @@ impl fmt::Display for TopologicalTorsionError {
             Self::AtomInvariants(e) => e.fmt(f),
             Self::Path(e) => e.fmt(f),
             Self::Preparation(e) => e.fmt(f),
+            Self::Json(e) => e.fmt(f),
+            Self::ThreadCount(e) => e.fmt(f),
+            Self::ThreadSpawn(e) => {
+                write!(f, "Topological Torsion bulk worker creation failed: {e}")
+            }
+            Self::WorkerPanic => f.write_str("Topological Torsion bulk worker panicked"),
+            Self::WorkerProtocol => f.write_str(
+                "Topological Torsion bulk worker returned an incomplete result sequence",
+            ),
+            Self::StatePoisoned => {
+                f.write_str("Topological Torsion generator state lock was poisoned")
+            }
         }
     }
 }
@@ -44,6 +63,10 @@ impl std::error::Error for TopologicalTorsionError {
             Self::AtomInvariants(e) => Some(e),
             Self::Path(e) => Some(e),
             Self::Preparation(e) => Some(e),
+            Self::Json(e) => Some(e),
+            Self::ThreadCount(e) => Some(e),
+            Self::ThreadSpawn(e) => Some(e),
+            Self::StatePoisoned | Self::WorkerPanic | Self::WorkerProtocol => None,
         }
     }
 }
@@ -496,7 +519,7 @@ impl FingerprintEnvironment<TopologicalTorsionError> for TorsionEnvironment {
         _args: &FingerprintArguments,
         _atoms: &[u32],
         _bonds: &[u32],
-        _output: Option<&mut AdditionalOutput>,
+        _output: Option<&mut FingerprintAdditionalOutput>,
         _hashed: bool,
         _fp_size: u64,
     ) -> Result<u64, TopologicalTorsionError> {
@@ -505,7 +528,7 @@ impl FingerprintEnvironment<TopologicalTorsionError> for TorsionEnvironment {
     }
     fn update_output(
         &self,
-        output: &mut AdditionalOutput,
+        output: &mut FingerprintAdditionalOutput,
         bit: u64,
         _state: &mut (),
     ) -> Result<(), TopologicalTorsionError> {
@@ -555,8 +578,20 @@ fn count_helper(
     common: &FingerprintArguments,
     call: &TopologicalTorsionCall<'_>,
     fp_size: u64,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
     mode: TorsionCodeMode,
+) -> Result<SparseCountFingerprint, TopologicalTorsionError> {
+    configured_count_helper(input, params, common, call, fp_size, output, mode, None)
+}
+fn configured_count_helper(
+    input: &AtomPairPreparedInput<'_>,
+    params: &TopologicalTorsionParams,
+    common: &FingerprintArguments,
+    call: &TopologicalTorsionCall<'_>,
+    fp_size: u64,
+    output: Option<&mut FingerprintAdditionalOutput>,
+    mode: TorsionCodeMode,
+    configured_invariants: Option<Option<AtomPairAtomInvariantsGenerator>>,
 ) -> Result<SparseCountFingerprint, TopologicalTorsionError> {
     let args = FingerprintFuncArguments {
         from_atoms: call.from_atoms,
@@ -574,8 +609,15 @@ fn count_helper(
         &args,
         output,
         || {
-            Ok(call
-                .atom_invariants_generator
+            // Restored source nullptr has no default generator. Only an
+            // actually selected path may try to index it; represent no
+            // generated invariants by an empty vector, never fabricated codes.
+            if configured_invariants == Some(None) {
+                return Ok(Vec::new());
+            }
+            Ok(configured_invariants
+                .flatten()
+                .or(call.atom_invariants_generator)
                 .unwrap_or(AtomPairAtomInvariantsGenerator {
                     include_chirality: params.include_chirality,
                     topological_torsion_correction: true,
@@ -629,7 +671,7 @@ pub fn topological_torsion_sparse_count(
     input: &AtomPairPreparedInput<'_>,
     params: &TopologicalTorsionParams,
     call: &TopologicalTorsionCall<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint, TopologicalTorsionError> {
     let common = params.common()?;
     count_helper(
@@ -646,7 +688,7 @@ pub fn topological_torsion_sparse_bits(
     input: &AtomPairPreparedInput<'_>,
     params: &TopologicalTorsionParams,
     call: &TopologicalTorsionCall<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseBitFingerprint, TopologicalTorsionError> {
     let common = params.common()?;
     project_sparse_fingerprint(
@@ -671,7 +713,7 @@ pub fn topological_torsion_count(
     input: &AtomPairPreparedInput<'_>,
     params: &TopologicalTorsionParams,
     call: &TopologicalTorsionCall<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint32, TopologicalTorsionError> {
     let common = params.common()?;
     project_count_fingerprint(
@@ -695,7 +737,7 @@ pub fn topological_torsion_bits(
     input: &AtomPairPreparedInput<'_>,
     params: &TopologicalTorsionParams,
     call: &TopologicalTorsionCall<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<Fingerprint, TopologicalTorsionError> {
     let common = params.common()?;
     project_fingerprint(
@@ -881,7 +923,24 @@ pub fn legacy_topological_torsion_sparse_count(
     // Default AP invariants already subtract two. The legacy endpoint adds
     // one and internal leaves it unchanged, exactly atomCode-1/-2 without
     // modulo. Custom invariants follow source (inv%511)+2 then -1/-2.
-    count_helper(input, &args, &common, call, 0, None, mode)
+    // Source legacy lmol is the invariant provider as well as the
+    // environment input. Reuse the sole conditional preparation owner;
+    // modern calls retain their original-input provider unchanged. The
+    // no-copy Done-present branch borrows and the missing-Done branch
+    // clones only topology/properties once; the inner helper then borrows.
+    let prepared = crate::prepared::prepare_morgan_environment(
+        input.topology,
+        input.properties,
+        input.valence,
+        input.rings,
+        params.include_chirality,
+    )?;
+    let prepared_input = AtomPairPreparedInput {
+        topology: prepared.topology(),
+        properties: prepared.properties(),
+        ..*input
+    };
+    count_helper(&prepared_input, &args, &common, call, 0, None, mode)
 }
 /// Legacy hashed count adapter to the single modern count accumulation owner.
 pub fn legacy_topological_torsion_count(
@@ -933,8 +992,25 @@ pub fn legacy_topological_torsion_count(
     let common = args.common()?;
     // Accumulate directly into the returned source-width 64-bit map: same
     // hash/modulo/count order, avoiding C++ temporary32-bit map and copy.
+    // Source legacy lmol is the invariant provider as well as the
+    // environment input. Reuse the sole conditional preparation owner;
+    // modern calls retain their original-input provider unchanged. The
+    // no-copy Done-present branch borrows and the missing-Done branch
+    // clones only topology/properties once; the inner helper then borrows.
+    let prepared = crate::prepared::prepare_morgan_environment(
+        input.topology,
+        input.properties,
+        input.valence,
+        input.rings,
+        params.include_chirality,
+    )?;
+    let prepared_input = AtomPairPreparedInput {
+        topology: prepared.topology(),
+        properties: prepared.properties(),
+        ..*input
+    };
     count_helper(
-        input,
+        &prepared_input,
         &args,
         &common,
         call,
@@ -1234,7 +1310,7 @@ mod tests {
     #[test]
     fn atom_environment_updates_every_supported_provenance_allocation() {
         let environment = test_environment(99, vec![0, 2, 4]);
-        let mut output = AdditionalOutput::default();
+        let mut output = FingerprintAdditionalOutput::default();
         output.allocate_atom_to_bits();
         output.allocate_atom_counts();
         output.allocate_bit_paths();
@@ -1260,7 +1336,7 @@ mod tests {
 
     #[test]
     fn provenance_keeps_duplicate_colliding_paths_and_repeated_atoms() {
-        let mut output = AdditionalOutput::default();
+        let mut output = FingerprintAdditionalOutput::default();
         output.allocate_atom_to_bits();
         output.allocate_atom_counts();
         output.allocate_bit_paths();
@@ -1475,3 +1551,13 @@ mod argument_tests {
 #[cfg(test)]
 #[path = "topological_torsion_legacy_tests.rs"]
 mod legacy_tests;
+
+#[path = "topological_torsion_operator.rs"]
+mod operator;
+pub use operator::{TopologicalTorsionGenerator, TopologicalTorsionSettings};
+
+impl From<FingerprintJsonError> for TopologicalTorsionError {
+    fn from(e: FingerprintJsonError) -> Self {
+        Self::Json(e)
+    }
+}

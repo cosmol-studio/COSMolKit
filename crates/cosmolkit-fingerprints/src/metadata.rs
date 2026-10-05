@@ -5,12 +5,23 @@ use std::fmt;
 pub enum FingerprintJsonError {
     Parse(serde_json::Error),
     Invalid(String),
+    UnsupportedComponent {
+        component: &'static str,
+        source_type: String,
+    },
 }
 impl fmt::Display for FingerprintJsonError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Parse(e) => e.fmt(f),
             Self::Invalid(s) => f.write_str(s),
+            Self::UnsupportedComponent {
+                component,
+                source_type,
+            } => write!(
+                f,
+                "unsupported source generator component {component}: {source_type}"
+            ),
         }
     }
 }
@@ -18,7 +29,7 @@ impl std::error::Error for FingerprintJsonError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Parse(e) => Some(e),
-            Self::Invalid(_) => None,
+            Self::Invalid(_) | Self::UnsupportedComponent { .. } => None,
         }
     }
 }

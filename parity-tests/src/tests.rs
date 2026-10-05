@@ -2764,7 +2764,7 @@ fn parity_morgan_schema_requires_every_additional_output_field_and_keeps_options
         omitted.as_object_mut().unwrap().remove(field);
         assert!(
             serde_json::from_value::<MorganAdditionalOutput>(omitted).is_err(),
-            "missing AdditionalOutput field {field} must be rejected"
+            "missing FingerprintAdditionalOutput field {field} must be rejected"
         );
     }
 

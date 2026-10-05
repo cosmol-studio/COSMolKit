@@ -16,6 +16,19 @@ pub fn parse_smarts_with_params(
     cosmolkit_search::parse_smarts(text, params)
 }
 
+/// Registered callable behind the bound QueryGraph factory; uses the sole parser.
+pub fn from_smarts(text: &str) -> Result<QueryGraph, SmartsParseError> {
+    parse_smarts(text)
+}
+
+/// Explicit-parameter factory without adding parser ownership to the model value.
+pub fn from_smarts_with_params(
+    text: &str,
+    params: &SmartsParseParams,
+) -> Result<QueryGraph, SmartsParseError> {
+    parse_smarts_with_params(text, params)
+}
+
 /// Compile an owned detached query for reuse against independent targets.
 pub fn compile_query(query: &QueryGraph) -> Result<crate::CompiledQuery, crate::QueryCompileError> {
     cosmolkit_search::compile_query(query)

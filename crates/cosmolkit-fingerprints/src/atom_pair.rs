@@ -5,9 +5,9 @@ use crate::generator::{
     project_sparse_fingerprint, with_fingerprint_environment_inputs_and_output,
 };
 use crate::{
-    AdditionalOutput, AtomCodeError, AtomCodeInput, AtomCodeOptions, Fingerprint, FingerprintError,
-    MorganError, SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32, atom_code,
-    atom_pair_code, hash::hash_combine,
+    AtomCodeError, AtomCodeInput, AtomCodeOptions, Fingerprint, FingerprintAdditionalOutput,
+    FingerprintError, MorganError, SparseBitFingerprint, SparseCountFingerprint,
+    SparseCountFingerprint32, atom_code, atom_pair_code, hash::hash_combine,
 };
 use cosmolkit_core::{
     DistanceMatrix3dParams, MatrixError, RingInfo, TopologicalDistanceMatrixParams,
@@ -490,7 +490,7 @@ impl AtomPairEnvironment {
 
     pub(crate) fn update_additional_output(
         &self,
-        additional_output: &mut AdditionalOutput,
+        additional_output: &mut FingerprintAdditionalOutput,
         bit_id: u64,
     ) {
         // RDKit source file: AtomPairGenerator.cpp
@@ -547,7 +547,7 @@ impl FingerprintEnvironment<AtomPairError> for AtomPairEnvironment {
         args: &FingerprintArguments,
         atoms: &[u32],
         _bonds: &[u32],
-        _output: Option<&mut AdditionalOutput>,
+        _output: Option<&mut FingerprintAdditionalOutput>,
         hashed: bool,
         _fp_size: u64,
     ) -> Result<u32, AtomPairError> {
@@ -555,7 +555,7 @@ impl FingerprintEnvironment<AtomPairError> for AtomPairEnvironment {
     }
     fn update_output(
         &self,
-        output: &mut AdditionalOutput,
+        output: &mut FingerprintAdditionalOutput,
         bit: u64,
         _state: &mut (),
     ) -> Result<(), AtomPairError> {
@@ -569,7 +569,7 @@ fn count_helper(
     common: &FingerprintArguments,
     call: &AtomPairCall<'_>,
     fp_size: u64,
-    mut output: Option<&mut AdditionalOutput>,
+    mut output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint, AtomPairError> {
     let args = FingerprintFuncArguments {
         from_atoms: call.from_atoms,
@@ -631,7 +631,7 @@ pub fn atom_pair_sparse_count(
     input: &AtomPairPreparedInput<'_>,
     params: &AtomPairParams,
     call: &AtomPairCall<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint, AtomPairError> {
     let common = params.common()?;
     count_helper(input, params, &common, call, 0, output)
@@ -640,7 +640,7 @@ pub fn atom_pair_sparse_bits(
     input: &AtomPairPreparedInput<'_>,
     params: &AtomPairParams,
     call: &AtomPairCall<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseBitFingerprint, AtomPairError> {
     let common = params.common()?;
     project_sparse_fingerprint(
@@ -655,7 +655,7 @@ pub fn atom_pair_count(
     input: &AtomPairPreparedInput<'_>,
     params: &AtomPairParams,
     call: &AtomPairCall<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint32, AtomPairError> {
     let common = params.common()?;
     project_count_fingerprint(
@@ -669,7 +669,7 @@ pub fn atom_pair_bits(
     input: &AtomPairPreparedInput<'_>,
     params: &AtomPairParams,
     call: &AtomPairCall<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<Fingerprint, AtomPairError> {
     let common = params.common()?;
     project_fingerprint(
@@ -782,13 +782,13 @@ mod tests {
     fn additional_output_each_supported_allocation_receives_the_source_shape() {
         let environment = AtomPairEnvironment::new(0, 2, 3);
 
-        let mut bit_info = AdditionalOutput::default();
+        let mut bit_info = FingerprintAdditionalOutput::default();
         bit_info.allocate_bit_info_map();
         bit_info.reinitialize(3);
         environment.update_additional_output(&mut bit_info, 17);
         assert_eq!(bit_info.bit_info_map.unwrap().get(&17).unwrap(), &[(0, 2)]);
 
-        let mut atom_to_bits = AdditionalOutput::default();
+        let mut atom_to_bits = FingerprintAdditionalOutput::default();
         atom_to_bits.allocate_atom_to_bits();
         atom_to_bits.reinitialize(3);
         environment.update_additional_output(&mut atom_to_bits, 17);
@@ -797,13 +797,13 @@ mod tests {
             [vec![17], vec![], vec![17]]
         );
 
-        let mut atom_counts = AdditionalOutput::default();
+        let mut atom_counts = FingerprintAdditionalOutput::default();
         atom_counts.allocate_atom_counts();
         atom_counts.reinitialize(3);
         environment.update_additional_output(&mut atom_counts, 17);
         assert_eq!(atom_counts.atom_counts.unwrap(), [1, 0, 1]);
 
-        let mut atoms_per_bit = AdditionalOutput::default();
+        let mut atoms_per_bit = FingerprintAdditionalOutput::default();
         atoms_per_bit.allocate_atoms_per_bit();
         atoms_per_bit.reinitialize(3);
         environment.update_additional_output(&mut atoms_per_bit, 17);
@@ -815,7 +815,7 @@ mod tests {
 
     #[test]
     fn additional_output_combined_allocations_preserve_pair_and_call_order() {
-        let mut output = AdditionalOutput::default();
+        let mut output = FingerprintAdditionalOutput::default();
         output.allocate_bit_info_map();
         output.allocate_atom_to_bits();
         output.allocate_atom_counts();
@@ -910,7 +910,7 @@ mod tests {
             .unwrap();
         assert_eq!(first_bit, second_bit);
 
-        let mut output = AdditionalOutput::default();
+        let mut output = FingerprintAdditionalOutput::default();
         output.allocate_bit_info_map();
         output.allocate_atom_to_bits();
         output.allocate_atom_counts();

@@ -1,6 +1,6 @@
 //! Query-graph post-processing owned by the search implementation.
 
-use cosmolkit_model::{AtomId, BondId, QueryGraph};
+use cosmolkit_model::{AtomId, BondId, PropertyValue, QueryGraph};
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
 pub(crate) const SMILES_START_PROP: &str = "_SmilesStart";
@@ -8,7 +8,7 @@ pub(crate) const CXSMILES_BOND_IDX_PROP: &str = "_cxsmilesBondIdx";
 pub(crate) const UNSPECIFIED_ORDER_PROP: &str = "_unspecifiedOrder";
 
 pub(crate) fn cleanup_query_graph_parser_state(graph: &mut QueryGraph) {
-    cosmolkit_smiles::cleanup_query_parser_state(graph);
+    cleanup_query_parser_state(graph);
 }
 
 fn neighboring_directed_bond(graph: &QueryGraph, atom: AtomId) -> Option<BondId> {
@@ -121,4 +121,66 @@ pub(crate) fn check_chiral_permutation(tag: cosmolkit_types::ChiralTag, permutat
         _ => None,
     };
     limit.is_none_or(|limit| permutation >= 0 && permutation <= limit)
+}
+
+/// Apply shared source parser chirality finalization to detached query carriers.
+/// Syntax flags and source-order ring bond IDs must already be materialized.
+#[doc(hidden)]
+pub(crate) fn finalize_query_parser_chirality(
+    graph: &mut QueryGraph,
+) -> Result<(), cosmolkit_core::parser_helpers::ParserCarrierError> {
+    let rings = graph
+        .atoms()
+        .iter()
+        .map(|atom| match atom.prop("_RingClosures") {
+            None => Ok(Vec::new()),
+            Some(PropertyValue::IntVector(ids)) => {
+                ids.iter()
+                    .map(|&id| {
+                        usize::try_from(id).map(BondId::new).map_err(|_| {
+                            cosmolkit_core::parser_helpers::ParserCarrierError::Model(
+                "query ring closure remained unresolved during chirality adjustment".into())
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            }
+            Some(_) => Err(cosmolkit_core::parser_helpers::ParserCarrierError::Model(
+                "query ring closure property has the wrong type".into(),
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let starts = graph
+        .atoms()
+        .iter()
+        .map(|atom| atom.prop("_SmilesStart").is_some())
+        .collect::<Vec<_>>();
+    let assignments = cosmolkit_core::parser_helpers::parser_chirality_assignments(
+        graph.atoms(),
+        graph.bonds(),
+        |index| {
+            graph.adjacency()[index]
+                .iter()
+                .map(|&(atom, bond)| (atom, BondId::new(bond)))
+        },
+        &rings,
+        &starts,
+    )?;
+    for (atom, (tag, permutation)) in graph.atoms_mut().iter_mut().zip(assignments) {
+        atom.set_chiral_tag(tag);
+        atom.set_chiral_permutation(permutation);
+    }
+    Ok(())
+}
+
+/// Cleanup source parser state on the canonical detached query value.
+#[doc(hidden)]
+fn cleanup_query_parser_state(graph: &mut QueryGraph) {
+    cosmolkit_core::parser_helpers::cleanup_parser_atoms(graph.atoms_mut());
+    for bond in graph.bonds_mut() {
+        bond.bond_mut().clear_prop("_unspecifiedOrder");
+        bond.bond_mut().clear_prop(CXSMILES_BOND_IDX_PROP);
+    }
+    cosmolkit_core::parser_helpers::cleanup_parser_substance_groups(
+        cosmolkit_model::query_substance_groups(graph),
+    );
 }

@@ -17,7 +17,7 @@ import cosmolkit as ck
 def test_all_forms_fill_the_original_additional_output_and_preserve_input(method):
     molecule = ck.Molecule.from_smiles("CC(C)O")
     before = molecule.to_smiles()
-    output = ck.AdditionalOutput()
+    output = ck.FingerprintAdditionalOutput()
     output.allocate_atom_counts()
     output.allocate_atom_to_bits()
     output.allocate_bit_info_map()

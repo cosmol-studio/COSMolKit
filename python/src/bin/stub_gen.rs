@@ -39,11 +39,24 @@ _binding_profile: builtins.str
         "FingerprintError",
         "DescriptorReadError",
         "DescriptorError",
+        "MmffMolPropertiesError",
+        "MmffOptimizationError",
+        "UffOptimizationError",
+        "UffParameterQueryError",
     ] {
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
     text = text.replace("class FingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class FingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable variants.\n    index: builtins.int\n    size: builtins.int\n    left: builtins.int\n    right: builtins.int\n    factor: builtins.int\n    n_bits: builtins.int\n    value: builtins.float\n    site: builtins.str\n    what: builtins.str\n    reason: builtins.str\n");
+    // Forcefield exceptions are published through create_exception!, so they
+    // have no pyclass stub metadata. Project only attributes set by the thin
+    // native converters; parameter causes expose kind without domain.
+    text = text.replace(
+        "class UffOptimizationError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n",
+        "class UffOptimizationError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    requested: typing.Optional[builtins.int]\n",
+    );
+    text.push_str("\nclass UffParameterError(builtins.ValueError):\n    kind: builtins.str\n");
+    text = text.replace("__all__ = [\n", "__all__ = [\n    \"UffParameterError\",\n");
     // Constants share the exact public facade iterator used by native publication.
     let constants = ::cosmolkit::Element::iter_with_dummy()
         .map(|element| {

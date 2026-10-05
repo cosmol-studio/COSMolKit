@@ -101,6 +101,7 @@ pub(crate) fn substruct_pyerr(py: Python<'_>, source: ck::SubstructMatchError) -
     let kind = match &source {
         ck::SubstructMatchError::Unsupported { .. } => "Unsupported",
         ck::SubstructMatchError::PeriodicTable(_) => "PeriodicTable",
+        ck::SubstructMatchError::PropertyString(_) => "PropertyString",
     };
     let error = crate::canonical_values::annotate(
         py,
@@ -151,6 +152,24 @@ pub(crate) struct QueryGraph {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl QueryGraph {
+    #[staticmethod]
+    fn from_smarts(py: Python<'_>, text: &str) -> PyResult<Self> {
+        ck::search::from_smarts(text)
+            .map(|inner| Self { inner })
+            .map_err(|error| parse_pyerr(py, error))
+    }
+
+    #[staticmethod]
+    fn from_smarts_with_params(
+        py: Python<'_>,
+        text: &str,
+        params: &SmartsParseParams,
+    ) -> PyResult<Self> {
+        ck::search::from_smarts_with_params(text, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|error| parse_pyerr(py, error))
+    }
+
     fn num_atoms(&self) -> usize {
         self.inner.num_atoms()
     }
@@ -473,7 +492,7 @@ impl SubstructMatchParams {
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn parse_smarts(py: Python<'_>, text: &str) -> PyResult<QueryGraph> {
-    ck::search::parse_smarts(text)
+    ck::parse_smarts(text)
         .map(|inner| QueryGraph { inner })
         .map_err(|e| parse_pyerr(py, e))
 }
@@ -484,14 +503,14 @@ fn parse_smarts_with_params(
     text: &str,
     params: &SmartsParseParams,
 ) -> PyResult<QueryGraph> {
-    ck::search::parse_smarts_with_params(text, &params.inner)
+    ck::parse_smarts_with_params(text, &params.inner)
         .map(|inner| QueryGraph { inner })
         .map_err(|e| parse_pyerr(py, e))
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
 fn compile_query(py: Python<'_>, query: &QueryGraph) -> PyResult<CompiledQuery> {
-    ck::search::compile_query(&query.inner)
+    ck::compile_query(&query.inner)
         .map(|inner| CompiledQuery { inner })
         .map_err(|e| {
             crate::canonical_values::annotate(
@@ -510,7 +529,7 @@ fn write_smarts(
     query: &QueryGraph,
     params: &SmartsWriteParams,
 ) -> PyResult<String> {
-    ck::search::write_smarts(&query.inner, &params.inner).map_err(|e| write_pyerr(py, e))
+    ck::write_smarts(&query.inner, &params.inner).map_err(|e| write_pyerr(py, e))
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
@@ -519,7 +538,7 @@ fn write_cx_smarts(
     query: &QueryGraph,
     params: &SmartsWriteParams,
 ) -> PyResult<String> {
-    ck::search::write_cx_smarts(&query.inner, &params.inner).map_err(|e| write_pyerr(py, e))
+    ck::write_cx_smarts(&query.inner, &params.inner).map_err(|e| write_pyerr(py, e))
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -546,17 +565,10 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.py().get_type::<QueryCompileError>(),
     )?;
     module.add("MatchError", module.py().get_type::<MatchError>())?;
-    let search = PyModule::new(module.py(), "cosmolkit.search")?;
-    search.add_function(wrap_pyfunction!(parse_smarts, &search)?)?;
-    search.add_function(wrap_pyfunction!(parse_smarts_with_params, &search)?)?;
-    search.add_function(wrap_pyfunction!(compile_query, &search)?)?;
-    search.add_function(wrap_pyfunction!(write_smarts, &search)?)?;
-    search.add_function(wrap_pyfunction!(write_cx_smarts, &search)?)?;
-    module.add("search", &search)?;
-    module
-        .py()
-        .import("sys")?
-        .getattr("modules")?
-        .set_item("cosmolkit.search", &search)?;
+    module.add_function(wrap_pyfunction!(parse_smarts, module)?)?;
+    module.add_function(wrap_pyfunction!(parse_smarts_with_params, module)?)?;
+    module.add_function(wrap_pyfunction!(compile_query, module)?)?;
+    module.add_function(wrap_pyfunction!(write_smarts, module)?)?;
+    module.add_function(wrap_pyfunction!(write_cx_smarts, module)?)?;
     Ok(())
 }

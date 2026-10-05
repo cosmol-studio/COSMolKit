@@ -196,9 +196,9 @@ molecule_ops! {
     }
 
     #[cfg(feature = "cap-forcefields")]
-    op with_uff_optimized_coordinates(params: &crate::UffOptimizationParams) {
-        method: with_uff_optimized_coordinates_with_params,
-        impl_fn: crate::ops::uff_optimization::with_uff_optimized_coordinates_impl,
+    op with_uff_optimized(params: &crate::UffOptimizationParams) {
+        method: with_uff_optimized_with_params,
+        impl_fn: crate::ops::uff_optimization::with_uff_optimized_impl,
         result_type: crate::UffOptimizationResult,
         domain: coordinate,
         kind: weak,
@@ -214,13 +214,13 @@ molecule_ops! {
         parity_profile: "uff_single_optimization_rdkit",
         io_roundtrip: false,
         invariant_profile: "uff_coordinate_only_prepared_value",
-        default_method: with_uff_optimized_coordinates,
+        default_method: with_uff_optimized,
         default_args: [&crate::UffOptimizationParams::default()],
     }
     #[cfg(feature = "cap-forcefields")]
-    op with_uff_optimized_conformers(params: &crate::UffConformerOptimizationParams) {
-        method: with_uff_optimized_conformers_with_params,
-        impl_fn: crate::ops::uff_optimization::with_uff_optimized_conformers_impl,
+    op with_uff_optimized_confs(params: &crate::UffConformerOptimizationParams) {
+        method: with_uff_optimized_confs_with_params,
+        impl_fn: crate::ops::uff_optimization::with_uff_optimized_confs_impl,
         result_type: crate::UffConformerOptimizationResult,
         domain: coordinate,
         kind: weak,
@@ -236,7 +236,7 @@ molecule_ops! {
         parity_profile: "uff_conformer_optimization_rdkit",
         io_roundtrip: false,
         invariant_profile: "uff_conformers_coordinate_only_prepared_value",
-        default_method: with_uff_optimized_conformers,
+        default_method: with_uff_optimized_confs,
         default_args: [&crate::UffConformerOptimizationParams::default()],
     }
     #[cfg(cosmolkit_runtime_privacy_probe)]
@@ -268,6 +268,9 @@ molecule_ops! {
     #[cfg(feature = "cap-sanitize")]
     op sanitize(params: &cosmolkit_core::SanitizeParams) {
         method: sanitize_with_params,
+        inplace: true,
+        inplace_method: sanitize_with_params_,
+        default_inplace_method: sanitize_,
         impl_fn: crate::ops::sanitize::sanitize_impl,
         domain: topology,
         kind: weak,

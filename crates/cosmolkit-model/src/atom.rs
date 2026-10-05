@@ -1082,6 +1082,25 @@ impl Atom {
         self.properties.props.get(key)
     }
 
+    /// Return the exact unsigned legacy CIP rank stored by its sole owner.
+    pub fn cip_rank(&self) -> Result<Option<u32>, crate::PropertyValueError> {
+        self.prop("_CIPRank")
+            .map(|value| value.as_uint())
+            .transpose()
+    }
+    pub const fn chiral_tag_code(&self) -> i64 {
+        self.chiral_tag().rdkit_code()
+    }
+    pub const fn chiral_tag_name(&self) -> &'static str {
+        self.chiral_tag().rdkit_name()
+    }
+
+    /// Return the persisted modern CIP neighbor ranking without suppressing
+    /// malformed stored values or changing any rank/order.
+    pub fn cip_neighbor_order(&self) -> Result<Option<Vec<u32>>, crate::CipDescriptorError> {
+        crate::cip::neighbor_order_from_property(self.prop("_CIPNeighborOrder"))
+    }
+
     /// Returns whether a property is registered as computed state.
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
@@ -1097,10 +1116,13 @@ impl Atom {
     pub fn cip_descriptor(
         &self,
     ) -> Result<Option<crate::CipDescriptor>, crate::CipDescriptorError> {
-        crate::cip::descriptor_from_property(
-            self.prop("_CIPCode")
-                .and_then(|value| value.as_string().ok()),
-        )
+        // Reading a present property using the wrong kind must propagate its
+        // typed conversion error; it is not an absent descriptor.
+        let value = self
+            .prop("_CIPCode")
+            .map(|value| value.as_string())
+            .transpose()?;
+        crate::cip::descriptor_from_property(value)
     }
 
     #[must_use]

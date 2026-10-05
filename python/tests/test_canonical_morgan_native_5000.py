@@ -69,7 +69,7 @@ def test_current_morgan_matches_original_native_all_branches_and_outputs(index):
             target = expected["branches"][name][output_name]
             output = None
             if branch.get("additionalOutput"):
-                output = ck.AdditionalOutput(); output.allocate_atom_counts(); output.allocate_atom_to_bits(); output.allocate_bit_info_map(); output.allocate_atoms_per_bit()
+                output = ck.FingerprintAdditionalOutput(); output.allocate_atom_counts(); output.allocate_atom_to_bits(); output.allocate_bit_info_map(); output.allocate_atoms_per_bit()
             observed["calls"] += 1
             try:
                 fingerprint = getattr(molecule, method)(params, output)

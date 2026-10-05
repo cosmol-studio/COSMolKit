@@ -2861,10 +2861,7 @@ impl MmffMolProperties {
             // RDKit✔️✔️:                             std::back_inserter(intersect));
             // RDKit✔️✔️:       if (intersect.size()) {
             // RDKit✔️✔️:         ringSize = 4;
-            if neighbors_1
-                .iter()
-                .any(|neighbor| neighbors_3.contains(neighbor))
-            {
+            if !neighbors_1.is_disjoint(&neighbors_3) {
                 return Some(4);
             }
             // RDKit✔️✔️:       }
@@ -2933,10 +2930,7 @@ impl MmffMolProperties {
             // RDKit✔️✔️:                             std::back_inserter(intersect));
             // RDKit✔️✔️:       if (intersect.size()) {
             // RDKit✔️✔️:         ringSize = 5;
-            if neighbors_1
-                .iter()
-                .any(|neighbor| neighbors_4.contains(neighbor))
-            {
+            if !neighbors_1.is_disjoint(&neighbors_4) {
                 return Some(5);
             }
             // RDKit✔️✔️:       }
@@ -2949,31 +2943,54 @@ impl MmffMolProperties {
         None
     }
 
-    fn atom_neighbor_indices_except(&self, atom_index: usize, excluded: usize) -> Vec<usize> {
+    fn atom_neighbor_indices_except(
+        &self,
+        atom_index: usize,
+        excluded: usize,
+    ) -> std::collections::BTreeSet<usize> {
+        // RDKit✔️✔️:       boost::tie(nbrIdx, endNbrs) =
+        // RDKit✔️✔️:           mol.getAtomNeighbors(mol.getAtomWithIdx(idx1));
+        // RDKit✔️✔️:       for (; nbrIdx != endNbrs; ++nbrIdx) {
+        // RDKit✔️✔️:         newIdx = mol[*nbrIdx]->getIdx();
+        // RDKit✔️✔️:         if (newIdx != idx2) {
+        // RDKit✔️✔️:           s1.insert(newIdx);
+        // RDKit✔️✔️:         }
+        // RDKit✔️✔️:       }
+        // AtomTyper.cpp: local adjacency iteration and ordered unique set,
+        // O(d log d) insertion, O(d) set storage; no whole-graph scan.
         self.topology
-            .bonds
-            .as_slice()
+            .adjacency
+            .neighbors_of(atom_index)
             .iter()
-            .filter_map(|bond| {
-                if bond.begin().index() == atom_index {
-                    Some(bond.end().index())
-                } else if bond.end().index() == atom_index {
-                    Some(bond.begin().index())
-                } else {
-                    None
-                }
-            })
+            .map(|neighbor| neighbor.atom_index)
             .filter(|neighbor| *neighbor != excluded)
             .collect()
     }
 
     fn bond_between_atom_indices(&self, idx1: usize, idx2: usize) -> Option<&Bond> {
-        let atom_1 = AtomId::new(idx1);
-        let atom_2 = AtomId::new(idx2);
-        self.topology.bonds.as_slice().iter().find(|bond| {
-            (bond.begin() == atom_1 && bond.end() == atom_2)
-                || (bond.begin() == atom_2 && bond.end() == atom_1)
-        })
+        // RDKit✔️✔️: const Bond *ROMol::getBondBetweenAtoms(unsigned int idx1,
+        // RDKit✔️✔️:                                        unsigned int idx2) const {
+        // RDKit✔️✔️:   URANGE_CHECK(idx1, getNumAtoms());
+        // RDKit✔️✔️:   URANGE_CHECK(idx2, getNumAtoms());
+        // RDKit✔️✔️:   const Bond *res = nullptr;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   auto [edge, found] = boost::edge(boost::vertex(idx1, d_graph),
+        // RDKit✔️✔️:                                    boost::vertex(idx2, d_graph), d_graph);
+        // RDKit✔️✔️:   if (found) {
+        // RDKit✔️✔️:     res = d_graph[edge];
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️:
+        // Validated detached topology supplies indexed bond rows and local
+        // adjacency. O(degree(idx1)) edge search, no allocation or B scan;
+        // comparable to the upstream adjacency-list boost::edge lookup.
+        self.topology
+            .adjacency
+            .neighbors_of(idx1)
+            .iter()
+            .find(|neighbor| neighbor.atom_index == idx2)
+            .and_then(|neighbor| self.topology.bonds.get(neighbor.bond.index()))
     }
 }
 

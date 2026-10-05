@@ -9,7 +9,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 #[pyclass(module = "cosmolkit", frozen, eq, hash)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct Element {
-    inner: ck::Element,
+    pub(crate) inner: ck::Element,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]

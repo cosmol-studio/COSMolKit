@@ -22,6 +22,9 @@ fn compact(text: &str) -> String {
 
 fn expected_feature_names() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-tautomer") {
+        expected.push("cap-tautomer");
+    }
     if cfg!(feature = "cap-forcefields") {
         expected.push("cap-forcefields");
     }
@@ -60,9 +63,17 @@ fn expected_feature_names() -> Vec<&'static str> {
 
 fn expected_operation_methods() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-tautomer") {
+        expected.extend([
+            "enumerate_tautomers_with_params",
+            "canonical_tautomer_with_params",
+        ]);
+    }
     if cfg!(feature = "cap-forcefields") {
-        expected.push("with_uff_optimized_coordinates_with_params");
-        expected.push("with_uff_optimized_conformers_with_params");
+        expected.push("with_mmff_optimized_with_params");
+        expected.push("with_mmff_optimized_confs_with_params");
+        expected.push("with_uff_optimized_with_params");
+        expected.push("with_uff_optimized_confs_with_params");
     }
     if cfg!(feature = "cap-sanitize") {
         expected.push("sanitize_with_params");

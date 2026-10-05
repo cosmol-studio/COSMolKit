@@ -24,7 +24,7 @@ def test_current_canonical_morgan_four_forms_and_populated_output(smiles):
     molecule = ck.Molecule.from_smiles(smiles)
     atom_count = molecule.num_atoms()
     params = ck.MorganFingerprintParams()
-    output = ck.AdditionalOutput()
+    output = ck.FingerprintAdditionalOutput()
     output.allocate_atom_counts()
     output.allocate_atom_to_bits()
     output.allocate_bit_info_map()

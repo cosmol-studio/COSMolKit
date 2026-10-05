@@ -331,7 +331,7 @@ pub fn run(input: &Input) -> Result<Record, String> {
                 }
                 stage = crate::molecular::Stage::Operation;
                 let result = mol
-                    .with_uff_optimized_coordinates_with_params(&UffOptimizationParams {
+                    .with_uff_optimized_with_params(&UffOptimizationParams {
                         max_iterations,
                         vdw_threshold: f64::from(vdw_threshold),
                         ignore_interfragment_interactions,
@@ -421,7 +421,8 @@ pub fn run(input: &Input) -> Result<Record, String> {
                 .map_err(|e| e.to_string())?;
                 stage = crate::molecular::Stage::Operation;
                 let result = mol
-                    .with_uff_optimized_conformers_with_params(&UffConformerOptimizationParams {
+                    .with_uff_optimized_confs_with_params(&UffConformerOptimizationParams {
+                        num_threads: 1,
                         max_iterations,
                         vdw_threshold: f64::from(vdw_threshold),
                         ignore_interfragment_interactions,

@@ -4584,6 +4584,41 @@ mod tests {
     };
     use std::sync::atomic::Ordering;
 
+    // These original tests require process-cold OnceLocks. Other owner tests
+    // legitimately warm the same tables; a fresh exact-test child preserves
+    // every original zero-to-one, asset, identity and warm-borrow assertion.
+    fn run_cold_cache_test_in_fresh_process(test_name: &str) -> bool {
+        const CHILD_TEST: &str = "COSMOLKIT_MMFF_COLD_CACHE_EXACT_CHILD";
+        let full_name = format!("mmff::params::tests::{test_name}");
+        if std::env::var(CHILD_TEST).as_deref() == Ok(full_name.as_str()) {
+            return false;
+        }
+        let output = std::process::Command::new(
+            std::env::current_exe().expect("current owner test binary must exist"),
+        )
+        .args(["--exact", &full_name, "--nocapture"])
+        .env(CHILD_TEST, &full_name)
+        .output()
+        .expect("original cold-cache test child must start");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        println!(
+            "fresh cold-cache child {full_name}: {:?}\n{stdout}\n{stderr}",
+            output.status.code()
+        );
+        assert!(
+            output.status.success(),
+            "cold-cache child failed for {full_name}"
+        );
+        assert!(
+            stdout.lines().any(|line| line
+                .starts_with("test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; ")),
+            "cold-cache child must actually run exactly one original test: {full_name}"
+        );
+        assert!(stdout.contains(&format!("test {full_name} ... ok")));
+        true
+    }
+
     fn fnv1a64(bytes: &[u8]) -> u64 {
         let mut hash = 0xcbf29ce484222325_u64;
         for &byte in bytes {
@@ -5894,6 +5929,11 @@ mod tests {
 
     #[test]
     fn mmff_pc_pbci_default_asset_sentinels_and_shared_borrows() {
+        if run_cold_cache_test_in_fresh_process(
+            "mmff_pc_pbci_default_asset_sentinels_and_shared_borrows",
+        ) {
+            return;
+        }
         const SENTINEL_TYPES: [u32; 4] = [1, 83, 87, 99];
         const EXPECTED_BITS: [(u64, u64); 4] = [
             (0x0000_0000_0000_0000, 0x0000_0000_0000_0000),
@@ -5962,6 +6002,11 @@ mod tests {
 
     #[test]
     fn mmff_pc_chg_default_asset_sentinels_and_shared_borrows() {
+        if run_cold_cache_test_in_fresh_process(
+            "mmff_pc_chg_default_asset_sentinels_and_shared_borrows",
+        ) {
+            return;
+        }
         const FIRST_BCI_BITS: u64 = 0x0000_0000_0000_0000;
         const LAST_BCI_BITS: u64 = 0xbfd9_9999_9999_999a;
 
@@ -9443,6 +9488,11 @@ mod tests {
 
     #[test]
     fn mmff_angle_defaults_asset_sentinels_and_128_warm_borrows() {
+        if run_cold_cache_test_in_fresh_process(
+            "mmff_angle_defaults_asset_sentinels_and_128_warm_borrows",
+        ) {
+            return;
+        }
         const ASSET: &str = include_str!("default_angle.tsv");
         assert_eq!(ASSET.len(), 66833);
         assert!(ASSET.ends_with('\n'));
@@ -11418,6 +11468,11 @@ mod tests {
 
     #[test]
     fn mmff_oop_defaults_assets_sentinels_and_128_warm_borrows() {
+        if run_cold_cache_test_in_fresh_process(
+            "mmff_oop_defaults_assets_sentinels_and_128_warm_borrows",
+        ) {
+            return;
+        }
         const REGULAR_ASSET: &str = include_str!("default_oop.tsv");
         const MMFF_S_ASSET: &str = include_str!("default_oop_s.tsv");
         assert_eq!(REGULAR_ASSET.len(), 3045);
@@ -11769,6 +11824,11 @@ mod tests {
 
     #[test]
     fn mmff_tor_defaults_assets_sentinels_and_128_warm_borrows() {
+        if run_cold_cache_test_in_fresh_process(
+            "mmff_tor_defaults_assets_sentinels_and_128_warm_borrows",
+        ) {
+            return;
+        }
         const REGULAR_ASSET: &str = include_str!("default_tor.tsv");
         const MMFF_S_ASSET: &str = include_str!("default_tor_s.tsv");
         assert_eq!(REGULAR_ASSET.len(), 39_795);
@@ -12817,6 +12877,11 @@ mod tests {
 
     #[test]
     fn mmff_vdw_defaults_assets_sentinels_and_128_warm_borrows() {
+        if run_cold_cache_test_in_fresh_process(
+            "mmff_vdw_defaults_assets_sentinels_and_128_warm_borrows",
+        ) {
+            return;
+        }
         const DEFAULT_ASSET: &str = include_str!("default_vdw.tsv");
         const DEFAULT_HEADER_BITS: [u64; 5] = [
             0x3fd0_0000_0000_0000,

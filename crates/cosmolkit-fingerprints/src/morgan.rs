@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashSet};
 use std::hash::{Hash, Hasher};
 
-use crate::additional_output::AdditionalOutput;
+use crate::additional_output::FingerprintAdditionalOutput;
 use crate::generator::{
     FingerprintArguments, FingerprintFuncArguments, accumulate_morgan_sparse_counts_into,
     get_count_fingerprint, get_count_fingerprint_with_atom_invariants, get_fingerprint,
@@ -375,7 +375,7 @@ impl<'a, OutputType: MorganOutput> MorganAtomEnvironment<'a, OutputType> {
         _arguments: Option<&FingerprintArguments>,
         _atom_invariants: Option<&[u32]>,
         _bond_invariants: Option<&[u32]>,
-        _additional_output: Option<&mut AdditionalOutput>,
+        _additional_output: Option<&mut FingerprintAdditionalOutput>,
         _hash_results: bool,
         _fp_size: u64,
     ) -> OutputType {
@@ -399,7 +399,7 @@ impl<'a, OutputType: MorganOutput> MorganAtomEnvironment<'a, OutputType> {
 
     pub(super) fn update_additional_output(
         &self,
-        additional_output: &mut AdditionalOutput,
+        additional_output: &mut FingerprintAdditionalOutput,
         bit_id: u64,
         distance_matrix_cache: &mut MorganDistanceMatrixCache<'a>,
     ) -> Result<(), MatrixError> {
@@ -1534,7 +1534,7 @@ pub fn morgan_sparse_count(
     params: &MorganParams,
     call: &MorganCall<'_>,
     invariants: MorganAtomInvariants<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<crate::SparseCountFingerprint, MorganError> {
     let (generator, arguments) = create_morgan_call(params, call)?;
     get_sparse_count_fingerprint_with_atom_invariants(
@@ -1564,7 +1564,7 @@ pub fn morgan_sparse_bits(
     params: &MorganParams,
     call: &MorganCall<'_>,
     invariants: MorganAtomInvariants<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<crate::SparseBitFingerprint, MorganError> {
     let (generator, arguments) = create_morgan_call(params, call)?;
     get_sparse_fingerprint_with_atom_invariants(
@@ -1594,7 +1594,7 @@ pub fn morgan_count(
     params: &MorganParams,
     call: &MorganCall<'_>,
     invariants: MorganAtomInvariants<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint32, MorganError> {
     let (generator, arguments) = create_morgan_call(params, call)?;
     get_count_fingerprint_with_atom_invariants(
@@ -1624,7 +1624,7 @@ pub fn morgan_bits(
     params: &MorganParams,
     call: &MorganCall<'_>,
     invariants: MorganAtomInvariants<'_>,
-    output: Option<&mut AdditionalOutput>,
+    output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<Fingerprint, MorganError> {
     let (generator, arguments) = create_morgan_call(params, call)?;
     get_fingerprint_with_atom_invariants(
@@ -1722,7 +1722,7 @@ pub(crate) fn get_legacy_morgan_fingerprint(
         FingerprintFuncArguments::new(from_atoms, None, custom_atom_invariants, None, -1);
 
     let mut staged_output = atoms_setting_bits.as_ref().map(|_| {
-        let mut output = AdditionalOutput::default();
+        let mut output = FingerprintAdditionalOutput::default();
         output.allocate_bit_info_map();
         output
     });
@@ -1770,7 +1770,7 @@ pub(crate) fn get_legacy_morgan_fingerprint(
     if let Some(atoms_setting_bits) = atoms_setting_bits {
         atoms_setting_bits.clear();
         let bit_info_map = staged_output
-            .expect("a present source BitInfoMap allocates local AdditionalOutput")
+            .expect("a present source BitInfoMap allocates local FingerprintAdditionalOutput")
             .bit_info_map
             .expect("the legacy wrapper allocates its local bitInfoMap");
         for (bit_id, provenance) in bit_info_map {
@@ -1860,7 +1860,7 @@ pub(crate) fn get_legacy_morgan_hashed_fingerprint(
         FingerprintFuncArguments::new(from_atoms, None, custom_atom_invariants, None, -1);
 
     let mut staged_output = atoms_setting_bits.as_ref().map(|_| {
-        let mut output = AdditionalOutput::default();
+        let mut output = FingerprintAdditionalOutput::default();
         output.allocate_bit_info_map();
         output
     });
@@ -1877,7 +1877,7 @@ pub(crate) fn get_legacy_morgan_hashed_fingerprint(
     if let Some(atoms_setting_bits) = atoms_setting_bits {
         atoms_setting_bits.clear();
         let bit_info_map = staged_output
-            .expect("a present source BitInfoMap allocates local AdditionalOutput")
+            .expect("a present source BitInfoMap allocates local FingerprintAdditionalOutput")
             .bit_info_map
             .expect("the legacy wrapper allocates its local bitInfoMap");
         for (bit_id, provenance) in bit_info_map {
@@ -1970,7 +1970,7 @@ pub(crate) fn get_legacy_morgan_fingerprint_as_bit_vector(
         FingerprintFuncArguments::new(from_atoms, None, custom_atom_invariants, None, -1);
 
     let mut staged_output = atoms_setting_bits.as_ref().map(|_| {
-        let mut output = AdditionalOutput::default();
+        let mut output = FingerprintAdditionalOutput::default();
         output.allocate_bit_info_map();
         output
     });
@@ -1987,7 +1987,7 @@ pub(crate) fn get_legacy_morgan_fingerprint_as_bit_vector(
     if let Some(atoms_setting_bits) = atoms_setting_bits {
         atoms_setting_bits.clear();
         let bit_info_map = staged_output
-            .expect("a present source BitInfoMap allocates local AdditionalOutput")
+            .expect("a present source BitInfoMap allocates local FingerprintAdditionalOutput")
             .bit_info_map
             .expect("the legacy wrapper allocates its local bitInfoMap");
         for (bit_id, provenance) in bit_info_map {
@@ -2012,7 +2012,7 @@ mod tests {
         get_morgan_generator, morgan_bits, morgan_count, morgan_sparse_bits, morgan_sparse_count,
         radius_zero_environments, selected_atom_mask, update_neighbor_layer,
     };
-    use crate::additional_output::AdditionalOutput;
+    use crate::additional_output::FingerprintAdditionalOutput;
     use crate::generator::{
         FingerprintArguments, FingerprintFuncArguments, with_morgan_environment_inputs,
     };
@@ -2245,7 +2245,7 @@ mod tests {
             ..MorganParams::default()
         };
         let call = MorganCall::default();
-        let mut output = AdditionalOutput {
+        let mut output = FingerprintAdditionalOutput {
             atom_counts: Some(Vec::new()),
             atom_to_bits: Some(Vec::new()),
             bit_info_map: Some(BTreeMap::new()),
@@ -2364,7 +2364,7 @@ mod tests {
                 let patterns = (0..pattern_count)
                     .map(|_| carbon.clone())
                     .collect::<Vec<_>>();
-                let mut output = AdditionalOutput {
+                let mut output = FingerprintAdditionalOutput {
                     atom_counts: Some(Vec::new()),
                     atom_to_bits: Some(Vec::new()),
                     bit_info_map: Some(BTreeMap::new()),
@@ -2394,7 +2394,7 @@ mod tests {
                     ));
                     assert_eq!(
                         output,
-                        AdditionalOutput {
+                        FingerprintAdditionalOutput {
                             atom_counts: Some(vec![0; atom_count]),
                             atom_to_bits: Some(vec![Vec::new(); atom_count]),
                             bit_info_map: Some(BTreeMap::new()),
@@ -3216,7 +3216,7 @@ mod tests {
                         let arguments_input = (optional_mask & 1 != 0).then_some(&arguments);
                         let atom_input = (optional_mask & 2 != 0).then_some(&atom_invariants[..]);
                         let bond_input = (optional_mask & 4 != 0).then_some(&bond_invariants[..]);
-                        let mut additional_output_u32 = AdditionalOutput::default();
+                        let mut additional_output_u32 = FingerprintAdditionalOutput::default();
                         let actual_u32 = environment_u32.get_bit_id(
                             arguments_input,
                             atom_input,
@@ -3230,9 +3230,12 @@ mod tests {
                             fp_size,
                         );
                         assert_eq!(actual_u32, expected_u32);
-                        assert_eq!(additional_output_u32, AdditionalOutput::default());
+                        assert_eq!(
+                            additional_output_u32,
+                            FingerprintAdditionalOutput::default()
+                        );
 
-                        let mut additional_output_u64 = AdditionalOutput::default();
+                        let mut additional_output_u64 = FingerprintAdditionalOutput::default();
                         let actual_u64 = environment_u64.get_bit_id(
                             arguments_input,
                             atom_input,
@@ -3246,7 +3249,10 @@ mod tests {
                             fp_size,
                         );
                         assert_eq!(actual_u64, expected_u64);
-                        assert_eq!(additional_output_u64, AdditionalOutput::default());
+                        assert_eq!(
+                            additional_output_u64,
+                            FingerprintAdditionalOutput::default()
+                        );
 
                         tuple_count += 1;
                         output_width_count += 2;
@@ -3276,7 +3282,7 @@ mod tests {
         let mut distance_matrix_cache = MorganDistanceMatrixCache::default();
 
         for mask in 0u8..32 {
-            let mut output = AdditionalOutput {
+            let mut output = FingerprintAdditionalOutput {
                 atom_counts: (mask & 0b00001 != 0).then(|| vec![0, 0, 0]),
                 atom_to_bits: (mask & 0b00010 != 0).then(|| vec![vec![], vec![], vec![]]),
                 bit_info_map: (mask & 0b00100 != 0).then(BTreeMap::new),
@@ -3290,7 +3296,7 @@ mod tests {
                     .expect("the valid fixed topology has a distance matrix");
             }
 
-            let expected = AdditionalOutput {
+            let expected = FingerprintAdditionalOutput {
                 atom_counts: (mask & 0b00001 != 0).then(|| vec![1, 2, 0]),
                 atom_to_bits: (mask & 0b00010 != 0).then(|| vec![vec![77], vec![77, 77], vec![]]),
                 bit_info_map: (mask & 0b00100 != 0)
@@ -3311,9 +3317,9 @@ mod tests {
                 .expect("the fixed carbon atom is valid");
         let topology = record.topology;
         let environment = MorganAtomEnvironment::<u32>::new(0, 0, 0, &topology);
-        let mut output = AdditionalOutput {
+        let mut output = FingerprintAdditionalOutput {
             atom_counts: Some(vec![u32::MAX]),
-            ..AdditionalOutput::default()
+            ..FingerprintAdditionalOutput::default()
         };
         let mut distance_matrix_cache = MorganDistanceMatrixCache::default();
 
@@ -3350,9 +3356,9 @@ mod tests {
                     layer as u32,
                     &topology,
                 );
-                let mut output = AdditionalOutput {
+                let mut output = FingerprintAdditionalOutput {
                     atoms_per_bit: Some(BTreeMap::new()),
-                    ..AdditionalOutput::default()
+                    ..FingerprintAdditionalOutput::default()
                 };
                 environment
                     .update_additional_output(&mut output, 91, &mut distance_matrix_cache)

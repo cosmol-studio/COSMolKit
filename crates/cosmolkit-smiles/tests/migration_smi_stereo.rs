@@ -8,23 +8,28 @@ use cosmolkit_types::{BondOrder, ChiralTag};
 
 #[test]
 fn swap_counting_and_tetrahedral_helpers_cover_source_boundaries() {
+    assert_eq!(stereo::count_swaps_to_interconvert::<u8>(&[], &[]), Ok(0));
+    assert_eq!(stereo::count_swaps_to_interconvert(&[1], &[1]), Ok(0));
     assert_eq!(
-        stereo::count_swaps_to_interconvert::<u8>(&[], vec![]),
-        Some(0)
-    );
-    assert_eq!(stereo::count_swaps_to_interconvert(&[1], vec![1]), Some(0));
-    assert_eq!(
-        stereo::count_swaps_to_interconvert(&[1, 2, 3, 4], vec![4, 3, 2, 1]),
-        Some(2)
+        stereo::count_swaps_to_interconvert(&[1, 2, 3, 4], &[4, 3, 2, 1]),
+        Ok(2)
     );
     assert_eq!(
-        stereo::count_swaps_to_interconvert(&[1, 1, 2], vec![1, 2, 1]),
-        Some(1)
+        stereo::count_swaps_to_interconvert(&[1, 1, 2], &[1, 2, 1]),
+        Ok(1)
     );
-    assert_eq!(stereo::count_swaps_to_interconvert(&[1], vec![]), None);
     assert_eq!(
-        stereo::count_swaps_to_interconvert(&[1, 2], vec![1, 3]),
-        None
+        stereo::count_swaps_to_interconvert(&[1], &[]),
+        Err(cosmolkit_core::StereoOrderError::PermutationLength {
+            reference: 1,
+            probe: 0,
+        })
+    );
+    assert_eq!(
+        stereo::count_swaps_to_interconvert(&[1, 2], &[1, 3]),
+        Err(cosmolkit_core::StereoOrderError::MissingProbeValue {
+            reference_position: 1,
+        })
     );
 
     assert_eq!(

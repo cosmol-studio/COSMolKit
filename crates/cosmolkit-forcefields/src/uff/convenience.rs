@@ -88,22 +88,17 @@ fn resolve_uff_thread_count(
     if !threadsafe {
         return Ok(NonZeroU32::new(1).expect("one is nonzero"));
     }
-    if requested >= 1 {
-        return Ok(NonZeroU32::new(requested as u32).expect("positive target"));
-    }
-
-    // RDThreads.h negates a signed int before its unsigned cast. Negation of
-    // INT_MIN is undefined in C++; report that unrepresentable source boundary
-    // rather than silently wrapping it in Rust.
-    let magnitude = requested
-        .checked_neg()
-        .ok_or(UffThreadCountError::UndefinedSignedNegation)? as u32;
-    if observed_hardware > magnitude {
-        let count = observed_hardware - magnitude;
-        Ok(NonZeroU32::new(count).expect("hardware count exceeds target magnitude"))
-    } else {
-        Ok(NonZeroU32::new(1).expect("one is nonzero"))
-    }
+    // Shared source arithmetic has one core owner; preserve this domain's
+    // existing error type and all explicit-observation regression conditions.
+    cosmolkit_core::rdkit_threads_with_observed_hardware(requested, observed_hardware).map_err(
+        |cause| match cause {
+            cosmolkit_core::ThreadCountError::UndefinedSignedNegation => {
+                UffThreadCountError::UndefinedSignedNegation
+            }
+            // This pure arithmetic entry cannot perform observation or parsing.
+            _ => unreachable!("explicit observed count has no observation failure"),
+        },
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -480,6 +475,7 @@ pub(super) enum SerialUffOptimizationError {
 pub(super) enum DispatchedUffOptimizationError {
     Construction(AutomaticForceFieldConstructionError),
     ThreadCount(UffThreadCountError),
+    ThreadObservation(cosmolkit_core::ThreadCountError),
 }
 
 impl std::fmt::Display for UffThreadCountError {
@@ -494,6 +490,7 @@ impl std::error::Error for UffThreadCountError {}
 impl std::fmt::Display for DispatchedUffOptimizationError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::ThreadObservation(source) => std::fmt::Display::fmt(source, formatter),
             Self::Construction(source) => {
                 write!(formatter, "UFF force-field construction failed: {source}")
             }
@@ -513,6 +510,7 @@ impl std::error::Error for DispatchedUffOptimizationError {
         match self {
             Self::Construction(source) => Some(source),
             Self::ThreadCount(source) => Some(source),
+            Self::ThreadObservation(source) => Some(source),
         }
     }
 }
@@ -1818,6 +1816,38 @@ pub(super) fn optimize_dispatched_uff_coordinate_block<'rows>(
     observed_hardware: u32,
     threadsafe: bool,
 ) -> Result<PreparedConformerDispatchOutcome, DispatchedUffOptimizationError> {
+    optimize_dispatched_uff_coordinate_block_with_observer(
+        topology,
+        coordinates,
+        results,
+        typing_state,
+        rings,
+        valence,
+        molecule_properties,
+        diagnostics,
+        options,
+        requested_threads,
+        || Ok(observed_hardware),
+        threadsafe,
+    )
+}
+
+#[cfg(not(target_family = "wasm"))]
+#[allow(clippy::too_many_arguments)]
+pub(super) fn optimize_dispatched_uff_coordinate_block_with_observer<'rows>(
+    topology: &TopologyBlock,
+    coordinates: &'rows mut CoordinateBlock,
+    results: &'rows mut Vec<OptimizationOutcome>,
+    typing_state: UffAtomStateRef<'_>,
+    rings: &RingInfo,
+    valence: &ValenceAssignment,
+    molecule_properties: &MoleculeProperties,
+    diagnostics: &mut Vec<UffTypingDiagnostic>,
+    options: SingleConformerOptions,
+    requested_threads: i32,
+    observe_hardware: impl FnOnce() -> Result<u32, cosmolkit_core::ThreadCountError>,
+    threadsafe: bool,
+) -> Result<PreparedConformerDispatchOutcome, DispatchedUffOptimizationError> {
     // BEGIN RDKIT CPP FUNCTION UFF::UFFOptimizeMoleculeConfs (UFF.h:69-80)
     // RDKit✔️❌: inline void UFFOptimizeMoleculeConfs(ROMol &mol,
     // RDKit✔️❌:                                     std::vector<std::pair<int, double>> &res,
@@ -1857,6 +1887,12 @@ pub(super) fn optimize_dispatched_uff_coordinate_block<'rows>(
     // Keep the adapter lazy until the route is known: serial consumes it
     // directly; only the existing worker partition owner needs a row slice.
     resize_conformer_results(results, coordinates.conformers_3d.len());
+    // RDKit❗✔️:   res.resize(mol.getNumConformers());
+    // RDKit❗✔️:   numThreads = getNumThreadsToUse(numThreads);
+    // The source host observation belongs at resolution, after construction
+    // and resize. Explicit observed-count callers retain their original path.
+    let observed_hardware =
+        observe_hardware().map_err(DispatchedUffOptimizationError::ThreadObservation)?;
     let route = resolve_conformer_dispatch(requested_threads, observed_hardware, threadsafe)
         .map_err(DispatchedUffOptimizationError::ThreadCount)?;
     let conformers = coordinates.conformers_3d.iter_mut().map(|conformer| {
@@ -1934,6 +1970,133 @@ fn construct_released_uff_field<'released>(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(target_family = "wasm"))]
+    #[test]
+    fn uff_source_hardware_observation_retains_construction_resize_and_error_chain() {
+        let topology = worker_w06_topology(
+            vec![
+                worker_w06_atom(0, 11, Hybridization::Unspecified, 1),
+                worker_w06_atom(1, 17, Hybridization::Unspecified, -1),
+            ],
+            &[],
+        );
+        let total_valences = [0, 0];
+        let conjugated = [false, false];
+        let rings = fast_find_rings(&topology).unwrap();
+        let valence = ValenceAssignment {
+            explicit_valence: vec![0, 0],
+            implicit_hydrogens: vec![0, 0],
+        };
+        let sentinel = super::OptimizationOutcome {
+            status: -7,
+            energy: 29.0,
+        };
+        for missing in [true, false] {
+            for cause_case in 0..3 {
+                let mut coordinates = worker_w06_coordinates(&[[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
+                let before = coordinates.clone();
+                let mut results = vec![sentinel; 3];
+                let calls = Cell::new(0);
+                let options =
+                    super::SingleConformerOptions::for_conformer(if missing { 99 } else { 31 });
+                let error = super::optimize_dispatched_uff_coordinate_block_with_observer(
+                    &topology,
+                    &mut coordinates,
+                    &mut results,
+                    super::UffAtomStateRef::SuppliedRows {
+                        total_valences: &total_valences,
+                        conjugated_presence: &conjugated,
+                    },
+                    &rings,
+                    &valence,
+                    &MoleculeProperties::default(),
+                    &mut Vec::new(),
+                    options,
+                    0,
+                    || {
+                        calls.set(calls.get() + 1);
+                        Err(match cause_case {
+                            0 => cosmolkit_core::ThreadCountError::ObservationIo(
+                                std::io::Error::new(
+                                    std::io::ErrorKind::PermissionDenied,
+                                    "fixed observer IO cause",
+                                ),
+                            ),
+                            1 => cosmolkit_core::ThreadCountError::InvalidCpuList {
+                                segment: 7,
+                                reason: "fixed observer malformed range",
+                            },
+                            _ => {
+                                cosmolkit_core::ThreadCountError::AutomaticObservationUnavailable {
+                                    platform: "fixed unmodeled platform",
+                                }
+                            }
+                        })
+                    },
+                    true,
+                )
+                .err()
+                .expect("construction or hardware observation must fail");
+                assert_eq!(coordinates, before);
+                if missing {
+                    assert_eq!(calls.get(), 0, "source constructs before observing");
+                    assert_eq!(results, [sentinel; 3], "source resize not reached");
+                    assert!(matches!(
+                        error,
+                        super::DispatchedUffOptimizationError::Construction(_)
+                    ));
+                } else {
+                    assert_eq!(calls.get(), 1);
+                    assert_eq!(
+                        results,
+                        [sentinel],
+                        "source resize precedes observer failure"
+                    );
+                    let stored = match &error {
+                        super::DispatchedUffOptimizationError::ThreadObservation(cause) => cause,
+                        other => panic!("expected concrete observation error, got {other:?}"),
+                    };
+                    let reported = error
+                        .source()
+                        .unwrap()
+                        .downcast_ref::<cosmolkit_core::ThreadCountError>()
+                        .unwrap();
+                    assert!(std::ptr::eq(stored, reported));
+                    match (cause_case, stored) {
+                        (0, cosmolkit_core::ThreadCountError::ObservationIo(io)) => {
+                            assert_eq!(io.kind(), std::io::ErrorKind::PermissionDenied);
+                            assert_eq!(io.to_string(), "fixed observer IO cause");
+                            assert!(std::ptr::eq(
+                                io,
+                                stored
+                                    .source()
+                                    .unwrap()
+                                    .downcast_ref::<std::io::Error>()
+                                    .unwrap()
+                            ));
+                        }
+                        (
+                            1,
+                            cosmolkit_core::ThreadCountError::InvalidCpuList { segment, reason },
+                        ) => {
+                            assert_eq!(*segment, 7);
+                            assert_eq!(*reason, "fixed observer malformed range");
+                        }
+                        (
+                            2,
+                            cosmolkit_core::ThreadCountError::AutomaticObservationUnavailable {
+                                platform,
+                            },
+                        ) => {
+                            assert_eq!(*platform, "fixed unmodeled platform");
+                        }
+                        _ => panic!("observation cause changed"),
+                    }
+                }
+            }
+        }
+    }
+
     use std::cell::Cell;
     use std::error::Error as _;
 

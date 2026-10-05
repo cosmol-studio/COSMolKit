@@ -20,8 +20,13 @@ mod kekulize;
 mod legacy_stereo;
 mod matrices;
 mod nontetrahedral_stereo;
+#[doc(hidden)]
+pub mod parser_helpers;
+#[doc(hidden)]
+pub mod parser_stereo_order;
 mod paths;
 mod periodic_table;
+mod platform_threads;
 mod polymer_sgroup;
 mod potential_stereo;
 mod property_string;
@@ -35,6 +40,11 @@ mod structure_tags;
 mod transforms;
 mod valence;
 mod wedge;
+
+pub use platform_threads::{
+    ThreadCountError, cpu_online_count, observe_hardware_threads, rdkit_thread_count,
+    rdkit_threads_with_observed_hardware,
+};
 
 pub use random::{RdkitRandomGenerator, with_rdkit_random_generator};
 pub use stereo_order::{invert_atom_chirality, invert_bond_chirality};
@@ -264,12 +274,12 @@ pub use transforms::{
 };
 
 pub use valence::{
-    ValenceAssignment, ValenceError, ValenceModel, ValenceParams, ValencePhase,
+    AtomMetadata, ValenceAssignment, ValenceError, ValenceModel, ValenceParams, ValencePhase,
     assign_explicit_valence_for_atom_from_parts,
     assign_implicit_valence_for_atom_from_parts_with_explicit_valence, assign_valence,
     assign_valence_for_topology, assign_valence_state_for_atom_from_parts,
     assign_valence_with_options_for_topology, assign_valence_with_options_from_parts,
-    atom_has_valence_violation_for_topology, atom_has_valence_violation_from_parts,
+    atom_has_valence_violation_for_topology, atom_has_valence_violation_from_parts, atom_metadata,
     bond_type_as_double, bond_valence_contrib, calculate_explicit_valence_for_topology,
     calculate_explicit_valence_from_parts, calculate_implicit_valence_for_topology,
     calculate_implicit_valence_from_parts, can_be_hypervalent, explicit_valence_for_atom,

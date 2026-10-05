@@ -16,7 +16,7 @@ use crate::FingerprintError;
 /// container. It intentionally does not implement `Clone`, matching the
 /// source aggregate's unique ownership.
 #[derive(Debug, PartialEq, Eq)]
-pub struct AdditionalOutput {
+pub struct FingerprintAdditionalOutput {
     pub(crate) atom_counts: Option<Vec<u32>>,
     pub(crate) atom_to_bits: Option<Vec<Vec<u64>>>,
     pub(crate) bit_info_map: Option<BTreeMap<u64, Vec<(u32, u32)>>>,
@@ -24,8 +24,15 @@ pub struct AdditionalOutput {
     pub(crate) atoms_per_bit: Option<BTreeMap<u64, Vec<Vec<i32>>>>,
 }
 
-impl Default for AdditionalOutput {
+impl Default for FingerprintAdditionalOutput {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FingerprintAdditionalOutput {
+    /// Construct source-defined output with all five collection pointers absent.
+    pub fn new() -> Self {
         // RDKit✔️✔️: atomToBitsType *atomToBits = nullptr;
         // RDKit✔️✔️: bitInfoMapType *bitInfoMap = nullptr;
         // RDKit✔️✔️: bitPathsType *bitPaths = nullptr;
@@ -41,9 +48,6 @@ impl Default for AdditionalOutput {
             atoms_per_bit: None,
         }
     }
-}
-
-impl AdditionalOutput {
     /// Source `allocateAtomCounts`: replace this output with an allocated,
     /// empty count vector.
     pub fn allocate_atom_counts(&mut self) {
@@ -236,7 +240,7 @@ impl AdditionalOutput {
 
     /// Prepare the temporary metadata container used by the source's
     /// count-simulation caller path and reinitialize this original output.
-    /// The caller invokes this only when its AdditionalOutput is present and
+    /// The caller invokes this only when its FingerprintAdditionalOutput is present and
     /// count simulation is enabled; the returned temporary is reinitialized
     /// later by the generic fingerprint helper.
     pub(crate) fn setup_count_simulation_output(&mut self, num_atoms: usize) -> Self {
@@ -473,7 +477,20 @@ mod tests {
 
     use crate::FingerprintError;
 
-    use super::AdditionalOutput;
+    use super::FingerprintAdditionalOutput;
+
+    #[test]
+    fn fingerprint_additional_output_canonical_constructors_preserve_absent_state() {
+        let new: fn() -> FingerprintAdditionalOutput = FingerprintAdditionalOutput::new;
+        let default: fn() -> FingerprintAdditionalOutput = FingerprintAdditionalOutput::default;
+        let output = new();
+        assert_eq!(output, default());
+        assert_eq!(output.atom_counts(), None);
+        assert_eq!(output.atom_to_bits(), None);
+        assert_eq!(output.bit_info_map(), None);
+        assert_eq!(output.bit_paths(), None);
+        assert_eq!(output.atoms_per_bit(), None);
+    }
 
     #[test]
     fn fingerprint_public_additional_output_allocation_masks_and_borrowed_getters() {
@@ -486,7 +503,7 @@ mod tests {
                 mask & 0b01000 != 0,
                 mask & 0b10000 != 0,
             ];
-            let mut output = AdditionalOutput::default();
+            let mut output = FingerprintAdditionalOutput::default();
             if expected[0] {
                 output.allocate_atom_counts();
             }
@@ -532,7 +549,7 @@ mod tests {
         }
         assert_eq!(masks_checked, 32, "all five-bit allocation masks");
 
-        let mut replaced = AdditionalOutput {
+        let mut replaced = FingerprintAdditionalOutput {
             atom_counts: Some(vec![9]),
             atom_to_bits: Some(vec![vec![8, 8]]),
             bit_info_map: Some(BTreeMap::from([(7, vec![(1, 2)])])),
@@ -558,7 +575,7 @@ mod tests {
             BTreeMap::from([(11, vec![vec![3, 2, 3], vec![8]]), (2, vec![vec![7, 7]])]);
         let expected_atoms_per_bit =
             BTreeMap::from([(12, vec![vec![0, 2], vec![0, 2]]), (1, vec![vec![4, 5]])]);
-        let output = AdditionalOutput {
+        let output = FingerprintAdditionalOutput {
             atom_counts: Some(expected_atom_counts.clone()),
             atom_to_bits: Some(expected_atom_to_bits.clone()),
             bit_info_map: Some(expected_bit_info.clone()),
@@ -642,7 +659,7 @@ mod tests {
         ];
 
         for (mask, expected) in EXPECTED_PRESENCE.iter().enumerate() {
-            let mut output = AdditionalOutput::default();
+            let mut output = FingerprintAdditionalOutput::default();
             if mask & 0b00001 != 0 {
                 output.allocate_atom_counts();
             }
@@ -686,7 +703,7 @@ mod tests {
             );
         }
 
-        let mut populated = AdditionalOutput {
+        let mut populated = FingerprintAdditionalOutput {
             atom_counts: Some(vec![7]),
             atom_to_bits: Some(vec![vec![11]]),
             bit_info_map: Some(BTreeMap::from([(13, vec![(2, 1)])])),
@@ -700,7 +717,7 @@ mod tests {
         populated.allocate_atoms_per_bit();
         assert_eq!(
             populated,
-            AdditionalOutput {
+            FingerprintAdditionalOutput {
                 atom_counts: Some(Vec::new()),
                 atom_to_bits: Some(Vec::new()),
                 bit_info_map: Some(BTreeMap::new()),
@@ -748,7 +765,7 @@ mod tests {
         ];
 
         for (mask, expected) in EXPECTED_PRESENCE.iter().enumerate() {
-            let mut fresh = AdditionalOutput::default();
+            let mut fresh = FingerprintAdditionalOutput::default();
             if mask & 0b00001 != 0 {
                 fresh.allocate_atom_counts();
             }
@@ -792,7 +809,7 @@ mod tests {
                 "fresh atomsPerBit, allocation mask {mask:#07b}"
             );
 
-            let mut populated = AdditionalOutput::default();
+            let mut populated = FingerprintAdditionalOutput::default();
             if expected[0] {
                 populated.allocate_atom_counts();
                 populated.atom_counts = Some(vec![7, 8, 9, 10]);
@@ -886,7 +903,7 @@ mod tests {
         let mut reinitializations = 0;
         for count_simulation in COUNT_SIMULATION {
             for (mask, expected) in EXPECTED_PRESENCE.iter().enumerate() {
-                let mut original = AdditionalOutput::default();
+                let mut original = FingerprintAdditionalOutput::default();
                 if expected[0] {
                     original.allocate_atom_counts();
                     original.atom_counts = Some(vec![7, 8, 9, 10]);
@@ -1074,7 +1091,7 @@ mod tests {
                         vec![vec![1, 4]]
                     };
 
-                    let old_output = AdditionalOutput {
+                    let old_output = FingerprintAdditionalOutput {
                         atom_counts: expected_presence[0].then(|| vec![1, 2, 3, 4]),
                         atom_to_bits: expected_presence[1].then_some(source_atom_bits),
                         bit_info_map: expected_presence[2].then(|| {
@@ -1089,7 +1106,7 @@ mod tests {
                         atoms_per_bit: expected_presence[4]
                             .then(|| BTreeMap::from([(BIT_IDS[0], source_atoms_per_bit)])),
                     };
-                    let mut new_output = AdditionalOutput {
+                    let mut new_output = FingerprintAdditionalOutput {
                         atom_counts: expected_presence[0].then(|| vec![71, 72, 73, 74]),
                         atom_to_bits: expected_presence[1].then(|| {
                             if collision {
@@ -1198,50 +1215,50 @@ mod tests {
     fn fingerprint_morgan_g06_source_preconditions_keep_order_and_type() {
         let cases = [
             (
-                AdditionalOutput {
+                FingerprintAdditionalOutput {
                     bit_info_map: Some(BTreeMap::new()),
-                    ..AdditionalOutput::default()
+                    ..FingerprintAdditionalOutput::default()
                 },
                 "bitInfoMap not allocated",
             ),
             (
-                AdditionalOutput {
+                FingerprintAdditionalOutput {
                     atom_to_bits: Some(Vec::new()),
-                    ..AdditionalOutput::default()
+                    ..FingerprintAdditionalOutput::default()
                 },
                 "atomToBits not allocated",
             ),
             (
-                AdditionalOutput {
+                FingerprintAdditionalOutput {
                     bit_paths: Some(BTreeMap::new()),
-                    ..AdditionalOutput::default()
+                    ..FingerprintAdditionalOutput::default()
                 },
                 "bitPaths not allocated",
             ),
         ];
 
         for (old_output, expected_message) in cases {
-            let mut new_output = AdditionalOutput::default();
+            let mut new_output = FingerprintAdditionalOutput::default();
             assert_eq!(
                 old_output.duplicate_bit_to(&mut new_output, 8, 23),
                 Err(FingerprintError::PreconditionViolation {
                     what: expected_message,
                 })
             );
-            assert_eq!(new_output, AdditionalOutput::default());
+            assert_eq!(new_output, FingerprintAdditionalOutput::default());
         }
     }
 
     #[test]
     fn fingerprint_morgan_g06_missing_source_keys_leave_destination_unchanged() {
-        let old_output = AdditionalOutput {
+        let old_output = FingerprintAdditionalOutput {
             atom_counts: Some(vec![1, 2]),
             atom_to_bits: Some(vec![vec![7], vec![4]]),
             bit_info_map: Some(BTreeMap::from([(91, vec![(9, 1)])])),
             bit_paths: Some(BTreeMap::from([(91, vec![vec![9]])])),
             atoms_per_bit: Some(BTreeMap::from([(91, vec![vec![9]])])),
         };
-        let mut new_output = AdditionalOutput {
+        let mut new_output = FingerprintAdditionalOutput {
             atom_counts: Some(vec![71, 72]),
             atom_to_bits: Some(vec![vec![23], vec![55]]),
             bit_info_map: Some(BTreeMap::from([(23, vec![(90, 9)]), (91, vec![(91, 1)])])),
@@ -1253,7 +1270,7 @@ mod tests {
 
         assert_eq!(
             new_output,
-            AdditionalOutput {
+            FingerprintAdditionalOutput {
                 atom_counts: Some(vec![71, 72]),
                 atom_to_bits: Some(vec![vec![23], vec![55]]),
                 bit_info_map: Some(BTreeMap::from([(23, vec![(90, 9)]), (91, vec![(91, 1)]),])),
@@ -1269,13 +1286,13 @@ mod tests {
 
     #[test]
     fn fingerprint_morgan_g06_empty_atom_to_bits_destination_resizes() {
-        let old_output = AdditionalOutput {
+        let old_output = FingerprintAdditionalOutput {
             atom_to_bits: Some(vec![vec![8], vec![5], vec![8, 8]]),
-            ..AdditionalOutput::default()
+            ..FingerprintAdditionalOutput::default()
         };
-        let mut new_output = AdditionalOutput {
+        let mut new_output = FingerprintAdditionalOutput {
             atom_to_bits: Some(Vec::new()),
-            ..AdditionalOutput::default()
+            ..FingerprintAdditionalOutput::default()
         };
 
         old_output.duplicate_bit_to(&mut new_output, 8, 23).unwrap();

@@ -24,3 +24,5 @@ pub use mmff::optimization::{
 };
 
 pub use mmff::optimization::{MmffEnergyGradient, MmffEvaluationParams, evaluate_mmff};
+
+pub use uff::{UffEnergyGradient, UffEvaluationError, UffEvaluationParams, evaluate_uff};

@@ -2694,9 +2694,21 @@ mod remove_hs_ring_pass_tests {
                             assert!(rings.bond_rings().is_empty(), "{label}: bond rows");
                             assert_eq!(rings.atom_row_count(), 2, "{label}");
                             assert_eq!(rings.bond_row_count(), 1, "{label}");
-                            assert_eq!(rings.atom_members(AtomId::new(0)), &[], "{label}: m0");
-                            assert_eq!(rings.atom_members(AtomId::new(1)), &[], "{label}: m1");
-                            assert_eq!(rings.bond_members(BondId::new(0)), &[], "{label}: bm0");
+                            assert_eq!(
+                                rings.atom_members(AtomId::new(0)),
+                                &[] as &[usize],
+                                "{label}: m0"
+                            );
+                            assert_eq!(
+                                rings.atom_members(AtomId::new(1)),
+                                &[] as &[usize],
+                                "{label}: m1"
+                            );
+                            assert_eq!(
+                                rings.bond_members(BondId::new(0)),
+                                &[] as &[usize],
+                                "{label}: bm0"
+                            );
                         }
                         ("G1", false) => {
                             assert!(result.final_rings.is_none(), "{label}");
@@ -3411,12 +3423,12 @@ mod remove_hs_ring_isotope_tests {
                         if !tracking {
                             assert_eq!(
                                 rings.atom_members(AtomId::new(1)),
-                                &[],
+                                &[] as &[usize],
                                 "{label}: D-row atom members empty"
                             );
                             assert_eq!(
                                 rings.bond_members(BondId::new(0)),
-                                &[],
+                                &[] as &[usize],
                                 "{label}: H-bond members empty"
                             );
                         }

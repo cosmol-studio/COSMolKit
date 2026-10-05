@@ -54,6 +54,8 @@ pub enum SubstructMatchError {
     },
     #[error(transparent)]
     PeriodicTable(#[from] PeriodicTableError),
+    #[error(transparent)]
+    PropertyString(#[from] cosmolkit_core::PropertyStringError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -873,33 +875,21 @@ impl<'a> Vf2GraphRef<'a> {
 // Atom and bond matching functors
 // ---------------------------------------------------------------------------
 
-fn vector_related_property_equal(
+fn property_equal_as_strings(
     left: Option<&PropertyValue>,
     right: Option<&PropertyValue>,
-) -> bool {
+) -> Result<bool, cosmolkit_core::PropertyStringError> {
     // RDKit✔️✔️: bool hasprop1 = r1->getPropIfPresent<std::string>(prop, prop1);
     // RDKit✔️✔️: bool hasprop2 = r2->getPropIfPresent<std::string>(prop, prop2);
-    // Bracket projection cannot equal scalar Int/Double/Bool text. Only vector
-    // comparisons change here; preexisting scalar conversion debt is retained.
-    // Ordered vector equality is linear without allocation; mixed String uses
-    // the single core formatter, linear in the number of emitted characters.
+    // Every modeled scalar/vector value uses the one core RDValue formatter,
+    // including both typed operands. Missing/present cases remain distinct.
+    // One conversion per present value and output-byte-linear comparison
+    // match the source string allocation and comparison costs.
     match (left, right) {
-        (Some(PropertyValue::UInt(a)), Some(PropertyValue::UInt(b))) => a == b,
-        (Some(a @ PropertyValue::UInt(_)), Some(b))
-        | (Some(a), Some(b @ PropertyValue::UInt(_))) => {
-            match (
-                cosmolkit_core::property_value_to_string(a),
-                cosmolkit_core::property_value_to_string(b),
-            ) {
-                (Ok(a), Ok(b)) => a == b,
-                _ => false,
-            }
-        }
-        (Some(PropertyValue::IntVector(a)), Some(PropertyValue::String(b)))
-        | (Some(PropertyValue::String(b)), Some(PropertyValue::IntVector(a))) => {
-            cosmolkit_core::int_vector_to_string(a) == *b
-        }
-        _ => left == right,
+        (Some(a), Some(b)) => Ok(cosmolkit_core::property_value_to_string(a)?
+            == cosmolkit_core::property_value_to_string(b)?),
+        (None, None) => Ok(true),
+        _ => Ok(false),
     }
 }
 
@@ -907,7 +897,7 @@ fn property_compat(
     properties1: &BTreeMap<String, PropertyValue>,
     properties2: &BTreeMap<String, PropertyValue>,
     properties: &[String],
-) -> bool {
+) -> Result<bool, cosmolkit_core::PropertyStringError> {
     // RDKit✔️🔝: bool propertyCompat(const RDProps *r1, const RDProps *r2,
     // RDKit✔️🔝:                     const std::vector<std::string> &properties) {
     // RDKit✔️🔝:   PRECONDITION(r1, "bad RDProps");
@@ -930,21 +920,16 @@ fn property_compat(
     // RDKit✔️🔝:   return true;
     // RDKit✔️🔝: }
     //
-    // Typed references make both source pointer preconditions
-    // unrepresentable. COSMolKit's canonical atom/bond property maps store
-    // only strings, exactly the type requested by the source function, so a
-    // pair of Option<&String> values preserves the source's present/missing
-    // cases without temporary string copies. Local complexity review: both
-    // implementations scan the requested property list once and short-circuit
-    // at the first mismatch without cloning or allocating. RDKit's Dict scans
-    // its vector of entries for each lookup (O(P*N)); BTreeMap lookup is
-    // O(log N), making this O(P*log N) while preserving lookup semantics.
+    // Both typed maps request source string conversions. Conversion failures
+    // propagate as structured causes instead of becoming nonmatches.
+    // Both implementations scan requested properties and allocate their
+    // converted strings; BTreeMap lookup is O(log N) versus Dict's O(N).
     for property in properties {
-        if !vector_related_property_equal(properties1.get(property), properties2.get(property)) {
-            return false;
+        if !property_equal_as_strings(properties1.get(property), properties2.get(property))? {
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
 // RDKit source (SubstructMatch.cpp):
@@ -1084,7 +1069,7 @@ fn atom_label_matches(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️✔️: bool operator()(unsigned int i, unsigned int j) const {
     // RDKit✔️✔️:   bool res = false;
     // RDKit✔️✔️:     if (d_params.useChirality) {
@@ -1379,7 +1364,7 @@ fn bond_label_matches(
     mol_index: usize,
     params: &SubstructMatchParams,
     query_ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️✔️: bool operator()(MolGraph::edge_descriptor i,
     // RDKit✔️✔️:                 MolGraph::edge_descriptor j) const {
     // RDKit✔️✔️:   if (d_params.useChirality) {
@@ -1409,7 +1394,7 @@ fn bond_label_matches(
         && !params.specified_stereo_query_matches_unspecified
         && !rdkit_bond_stereo_is_above_any(mol_bond.stereo())
     {
-        return false;
+        return Ok(false);
     }
     bond_compat(query_bond, query, mol_bond, mol, params, query_ctx)
 }
@@ -4100,13 +4085,13 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
     //   detail::AtomLabelFunctor atomLabeler(query, mol, params);
     //   detail::BondLabelFunctor bondLabeler(query, mol, params);
     //   MolMatchFinalCheckFunctor matchChecker(query, mol, params);
-    let atom_match_error = std::cell::Cell::new(None);
+    let label_match_error = std::cell::RefCell::new(None);
     let atom_fn = |qi: usize, mj: usize| -> bool {
         match atom_label_matches(query, mol, qi, mj, params, recursive_cache, query_ctx) {
             Ok(matched) => matched,
             Err(error) => {
-                if atom_match_error.get().is_none() {
-                    atom_match_error.set(Some(error));
+                if label_match_error.borrow().is_none() {
+                    label_match_error.replace(Some(error));
                 }
                 false
             }
@@ -4114,7 +4099,15 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
     };
 
     let bond_fn = |qei: usize, mei: usize| -> bool {
-        bond_label_matches(query, mol, qei, mei, params, query_ctx)
+        match bond_label_matches(query, mol, qei, mei, params, query_ctx) {
+            Ok(matched) => matched,
+            Err(error) => {
+                if label_match_error.borrow().is_none() {
+                    label_match_error.replace(Some(error));
+                }
+                false
+            }
+        }
     };
 
     // RDKit source:
@@ -4153,8 +4146,8 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
         params.max_matches,
         query_order,
     );
-    if let Some(error) = atom_match_error.get() {
-        return Err(error.into());
+    if let Some(error) = label_match_error.into_inner() {
+        return Err(error);
     }
     if let Some(err) = final_check_error {
         return Err(err);
@@ -4304,7 +4297,7 @@ fn atom_compat(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/SubstructUtils.cpp :: atomCompat
     // RDKit✔️✔️: bool atomCompat(const Atom *a1, const Atom *a2,
     // RDKit✔️✔️:                 const SubstructMatchParameters &ps) {
@@ -4398,7 +4391,7 @@ fn atom_compat(
             query_atom.props(),
             mol_atom.props(),
             &params.atom_properties,
-        )
+        )?
     {
         return Ok(false);
     }
@@ -4416,7 +4409,7 @@ fn chiral_atom_compat(
     _query_mol: &QueryGraph,
     mol_atom: &Atom,
     mol: &SearchTarget<'_>,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/SubstructUtils.cpp :: chiralAtomCompat
     // RDKit✔️✔️: bool chiralAtomCompat(const Atom *&a1, const Atom *&a2) {
     // RDKit✔️✔️:   /// DEPRECATED
@@ -4452,7 +4445,7 @@ fn chiral_atom_compat(
         if query_cip.is_some() || mol_cip.is_some() {
             matches = query_cip.is_some()
                 && mol_cip.is_some()
-                && vector_related_property_equal(query_cip, mol_cip);
+                && property_equal_as_strings(query_cip, mol_cip)?;
         }
     }
     eprintln!(
@@ -4463,7 +4456,7 @@ fn chiral_atom_compat(
         mol_atom.id().index()
     );
     eprintln!("\t\t    {}", u8::from(matches));
-    matches
+    Ok(matches)
 }
 
 fn bond_compat(
@@ -4473,7 +4466,7 @@ fn bond_compat(
     mol: &SearchTarget<'_>,
     params: &SubstructMatchParams,
     query_ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/SubstructUtils.cpp :: bondCompat
     // RDKit✔️✔️: bool bondCompat(const Bond *b1, const Bond *b2,
     // RDKit✔️✔️:                 const SubstructMatchParameters &ps) {
@@ -4551,7 +4544,7 @@ fn bond_compat(
     if params.extra_bond_check_overrides_default_check
         && let Some(extra_bond_check) = &params.extra_bond_check
     {
-        return extra_bond_check(query_bond.bond(), mol_bond);
+        return Ok(extra_bond_check(query_bond.bond(), mol_bond));
     }
 
     let is_conjugated_single_or_double = |bond: &Bond| {
@@ -4595,7 +4588,7 @@ fn bond_compat(
         evaluate_bond_query(query_bond.predicate(), mol_bond, mol, query_ctx)
     };
     if !matches {
-        return false;
+        return Ok(false);
     }
 
     if query_bond.bond().order() == BondOrder::Dative && mol_bond.order() == BondOrder::Dative {
@@ -4604,7 +4597,7 @@ fn bond_compat(
         let mol_begin = &mol.atoms()[mol_bond.begin().index()];
         let mol_end = &mol.atoms()[mol_bond.end().index()];
         if !atom_matches(query_begin, mol_begin, mol) || !atom_matches(query_end, mol_end, mol) {
-            return false;
+            return Ok(false);
         }
     }
     if !params.bond_properties.is_empty()
@@ -4612,16 +4605,16 @@ fn bond_compat(
             query_bond.bond().props(),
             mol_bond.props(),
             &params.bond_properties,
-        )
+        )?
     {
-        return false;
+        return Ok(false);
     }
     if let Some(extra_bond_check) = &params.extra_bond_check
         && !extra_bond_check(query_bond.bond(), mol_bond)
     {
-        return false;
+        return Ok(false);
     }
-    matches
+    Ok(matches)
 }
 
 fn remove_duplicates(matches: &mut Vec<SubstructMatchResult>, atom_count: usize) {
@@ -5152,6 +5145,7 @@ mod q86_bond_dispatch_tests {
             params,
             &context,
         )
+        .unwrap()
     }
 
     #[test]
@@ -5850,12 +5844,9 @@ mod q33_plain_atom_tests {
             None,
             None,
         );
-        assert!(chiral_atom_compat(
-            &query_atom,
-            &query,
-            &single_topology.atoms[0],
-            &target
-        ));
+        assert!(
+            chiral_atom_compat(&query_atom, &query, &single_topology.atoms[0], &target).unwrap()
+        );
         let overrides = [Some(7)];
         let target_with_override = SearchTarget::new(
             &single_topology,
@@ -5865,12 +5856,15 @@ mod q33_plain_atom_tests {
             None,
         )
         .with_atomic_number_overrides(&overrides);
-        assert!(!chiral_atom_compat(
-            &query_atom,
-            &query,
-            &single_topology.atoms[0],
-            &target_with_override
-        ));
+        assert!(
+            !chiral_atom_compat(
+                &query_atom,
+                &query,
+                &single_topology.atoms[0],
+                &target_with_override
+            )
+            .unwrap()
+        );
 
         let query_atoms = vec![
             carrier_query(atom(0, Element::C, 0, None, 0, false, 0)),
@@ -5905,14 +5899,17 @@ mod q33_plain_atom_tests {
             None,
         );
         let target_context = build_query_match_context(&target);
-        assert!(bond_compat(
-            query_graph.bond(0).expect("query dative bond"),
-            &query_graph,
-            &target_topology.bonds[0],
-            &target,
-            &SubstructMatchParams::default(),
-            &target_context,
-        ));
+        assert!(
+            bond_compat(
+                query_graph.bond(0).expect("query dative bond"),
+                &query_graph,
+                &target_topology.bonds[0],
+                &target,
+                &SubstructMatchParams::default(),
+                &target_context,
+            )
+            .unwrap()
+        );
 
         let endpoint_overrides = [Some(7), None];
         let target_with_override = SearchTarget::new(
@@ -5924,14 +5921,17 @@ mod q33_plain_atom_tests {
         )
         .with_atomic_number_overrides(&endpoint_overrides);
         let target_context = build_query_match_context(&target_with_override);
-        assert!(!bond_compat(
-            query_graph.bond(0).expect("query dative bond"),
-            &query_graph,
-            &target_topology.bonds[0],
-            &target_with_override,
-            &SubstructMatchParams::default(),
-            &target_context,
-        ));
+        assert!(
+            !bond_compat(
+                query_graph.bond(0).expect("query dative bond"),
+                &query_graph,
+                &target_topology.bonds[0],
+                &target_with_override,
+                &SubstructMatchParams::default(),
+                &target_context,
+            )
+            .unwrap()
+        );
     }
 }
 
@@ -8115,27 +8115,36 @@ mod uint_compat_proposed_tests {
         ] {
             let a = PropertyValue::UInt(value);
             let b = PropertyValue::String(text.into());
-            assert!(vector_related_property_equal(Some(&a), Some(&b)));
-            assert!(vector_related_property_equal(Some(&b), Some(&a)));
-            assert!(vector_related_property_equal(Some(&a), Some(&a)));
-            assert!(!vector_related_property_equal(Some(&a), None));
-            assert!(!vector_related_property_equal(
-                Some(&a),
-                Some(&PropertyValue::String(format!("0{text}")))
-            ));
+            assert!(property_equal_as_strings(Some(&a), Some(&b)).unwrap());
+            assert!(property_equal_as_strings(Some(&b), Some(&a)).unwrap());
+            assert!(property_equal_as_strings(Some(&a), Some(&a)).unwrap());
+            assert!(!property_equal_as_strings(Some(&a), None).unwrap());
+            assert!(
+                !property_equal_as_strings(
+                    Some(&a),
+                    Some(&PropertyValue::String(format!("0{text}")))
+                )
+                .unwrap()
+            );
         }
-        assert!(vector_related_property_equal(
-            Some(&PropertyValue::UInt(1)),
-            Some(&PropertyValue::Bool(true))
-        ));
-        assert!(vector_related_property_equal(
-            Some(&PropertyValue::UInt(1)),
-            Some(&PropertyValue::Int(1))
-        ));
-        assert!(!vector_related_property_equal(
-            Some(&PropertyValue::UInt(1)),
-            Some(&PropertyValue::Int(-1))
-        ));
+        assert!(
+            property_equal_as_strings(
+                Some(&PropertyValue::UInt(1)),
+                Some(&PropertyValue::Bool(true))
+            )
+            .unwrap()
+        );
+        assert!(
+            property_equal_as_strings(Some(&PropertyValue::UInt(1)), Some(&PropertyValue::Int(1)))
+                .unwrap()
+        );
+        assert!(
+            !property_equal_as_strings(
+                Some(&PropertyValue::UInt(1)),
+                Some(&PropertyValue::Int(-1))
+            )
+            .unwrap()
+        );
     }
 }
 
@@ -8147,83 +8156,65 @@ mod uint_complete_source_condition_cells {
     fn uint_cell_match_0_matcher() {
         let a = PropertyValue::UInt(0_u32);
         let text = PropertyValue::String("0".into());
-        assert!(vector_related_property_equal(Some(&a), Some(&a)));
-        assert!(vector_related_property_equal(Some(&a), Some(&text)));
-        assert!(vector_related_property_equal(Some(&text), Some(&a)));
-        assert!(!vector_related_property_equal(Some(&a), None));
-        assert!(!vector_related_property_equal(
-            Some(&a),
-            Some(&PropertyValue::UInt(1))
-        ));
+        assert!(property_equal_as_strings(Some(&a), Some(&a)).unwrap());
+        assert!(property_equal_as_strings(Some(&a), Some(&text)).unwrap());
+        assert!(property_equal_as_strings(Some(&text), Some(&a)).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), None).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), Some(&PropertyValue::UInt(1))).unwrap());
     }
     // FROZEN UINT CONDITION: MATCH_1
     #[test]
     fn uint_cell_match_1_matcher() {
         let a = PropertyValue::UInt(1_u32);
         let text = PropertyValue::String("1".into());
-        assert!(vector_related_property_equal(Some(&a), Some(&a)));
-        assert!(vector_related_property_equal(Some(&a), Some(&text)));
-        assert!(vector_related_property_equal(Some(&text), Some(&a)));
-        assert!(!vector_related_property_equal(Some(&a), None));
-        assert!(!vector_related_property_equal(
-            Some(&a),
-            Some(&PropertyValue::UInt(0))
-        ));
+        assert!(property_equal_as_strings(Some(&a), Some(&a)).unwrap());
+        assert!(property_equal_as_strings(Some(&a), Some(&text)).unwrap());
+        assert!(property_equal_as_strings(Some(&text), Some(&a)).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), None).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), Some(&PropertyValue::UInt(0))).unwrap());
     }
     // FROZEN UINT CONDITION: MATCH_2147483646
     #[test]
     fn uint_cell_match_2147483646_matcher() {
         let a = PropertyValue::UInt(2147483646_u32);
         let text = PropertyValue::String("2147483646".into());
-        assert!(vector_related_property_equal(Some(&a), Some(&a)));
-        assert!(vector_related_property_equal(Some(&a), Some(&text)));
-        assert!(vector_related_property_equal(Some(&text), Some(&a)));
-        assert!(!vector_related_property_equal(Some(&a), None));
-        assert!(!vector_related_property_equal(
-            Some(&a),
-            Some(&PropertyValue::UInt(0))
-        ));
+        assert!(property_equal_as_strings(Some(&a), Some(&a)).unwrap());
+        assert!(property_equal_as_strings(Some(&a), Some(&text)).unwrap());
+        assert!(property_equal_as_strings(Some(&text), Some(&a)).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), None).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), Some(&PropertyValue::UInt(0))).unwrap());
     }
     // FROZEN UINT CONDITION: MATCH_2147483647
     #[test]
     fn uint_cell_match_2147483647_matcher() {
         let a = PropertyValue::UInt(2147483647_u32);
         let text = PropertyValue::String("2147483647".into());
-        assert!(vector_related_property_equal(Some(&a), Some(&a)));
-        assert!(vector_related_property_equal(Some(&a), Some(&text)));
-        assert!(vector_related_property_equal(Some(&text), Some(&a)));
-        assert!(!vector_related_property_equal(Some(&a), None));
-        assert!(!vector_related_property_equal(
-            Some(&a),
-            Some(&PropertyValue::UInt(0))
-        ));
+        assert!(property_equal_as_strings(Some(&a), Some(&a)).unwrap());
+        assert!(property_equal_as_strings(Some(&a), Some(&text)).unwrap());
+        assert!(property_equal_as_strings(Some(&text), Some(&a)).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), None).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), Some(&PropertyValue::UInt(0))).unwrap());
     }
     // FROZEN UINT CONDITION: MATCH_2147483648
     #[test]
     fn uint_cell_match_2147483648_matcher() {
         let a = PropertyValue::UInt(2147483648_u32);
         let text = PropertyValue::String("2147483648".into());
-        assert!(vector_related_property_equal(Some(&a), Some(&a)));
-        assert!(vector_related_property_equal(Some(&a), Some(&text)));
-        assert!(vector_related_property_equal(Some(&text), Some(&a)));
-        assert!(!vector_related_property_equal(Some(&a), None));
-        assert!(!vector_related_property_equal(
-            Some(&a),
-            Some(&PropertyValue::UInt(0))
-        ));
+        assert!(property_equal_as_strings(Some(&a), Some(&a)).unwrap());
+        assert!(property_equal_as_strings(Some(&a), Some(&text)).unwrap());
+        assert!(property_equal_as_strings(Some(&text), Some(&a)).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), None).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), Some(&PropertyValue::UInt(0))).unwrap());
     }
     // FROZEN UINT CONDITION: MATCH_4294967295
     #[test]
     fn uint_cell_match_4294967295_matcher() {
         let a = PropertyValue::UInt(4294967295_u32);
         let text = PropertyValue::String("4294967295".into());
-        assert!(vector_related_property_equal(Some(&a), Some(&a)));
-        assert!(vector_related_property_equal(Some(&a), Some(&text)));
-        assert!(vector_related_property_equal(Some(&text), Some(&a)));
-        assert!(!vector_related_property_equal(Some(&a), None));
-        assert!(!vector_related_property_equal(
-            Some(&a),
-            Some(&PropertyValue::UInt(0))
-        ));
+        assert!(property_equal_as_strings(Some(&a), Some(&a)).unwrap());
+        assert!(property_equal_as_strings(Some(&a), Some(&text)).unwrap());
+        assert!(property_equal_as_strings(Some(&text), Some(&a)).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), None).unwrap());
+        assert!(!property_equal_as_strings(Some(&a), Some(&PropertyValue::UInt(0))).unwrap());
     }
 }

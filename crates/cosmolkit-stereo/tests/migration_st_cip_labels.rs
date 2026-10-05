@@ -133,7 +133,7 @@ fn no_configuration_still_sets_computed_completion_and_preserves_user_props() {
 
     assert!(assignment.topology().atoms.is_empty());
     assert_eq!(assignment.properties().prop("user"), Some("kept"));
-    assert_eq!(assignment.properties().prop("_CIPComputed"), Some("true"));
+    assert_eq!(assignment.properties().prop("_CIPComputed"), Some("1"));
     assert!(assignment.properties().is_prop_computed("_CIPComputed"));
 }
 
@@ -373,7 +373,7 @@ fn source_skipped_configurations_preserve_topology_properties_and_complete() {
             let result = assign_cip_labels(input.clone(), properties.clone(), &options).unwrap();
             assert_eq!(result.topology(), &before, "{tag:?}");
             assert_eq!(result.properties().prop("sentry"), Some("retained"));
-            assert_eq!(result.properties().prop("_CIPComputed"), Some("true"));
+            assert_eq!(result.properties().prop("_CIPComputed"), Some("1"));
             assert!(result.properties().is_prop_computed("_CIPComputed"));
         }
     }

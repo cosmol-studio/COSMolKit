@@ -27,10 +27,67 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
     assert_eq!(
         forcefields_ids,
         [
+            "types.UffEvaluationParams",
+            "types.UffEnergyGradient",
+            "Molecule.uff_energy_gradient",
+            "Molecule.uff_energy_gradient_with_params",
+            "UffEnergyGradient.energy",
+            "UffEnergyGradient.gradient",
+            "UffOptimizationResult.molecule",
+            "UffOptimizationResult.status_code",
+            "UffOptimizationResult.needs_more",
+            "UffOptimizationResult.energy",
+            "UffConformerResult.conformer_id",
+            "UffConformerResult.status_code",
+            "UffConformerResult.needs_more",
+            "UffConformerResult.energy",
+            "UffConformerOptimizationResult.molecule",
+            "UffConformerOptimizationResult.conformer_results",
+            "MmffAtomProperties.atom_type",
+            "MmffAtomProperties.formal_charge",
+            "MmffAtomProperties.partial_charge",
+            "types.MmffEvaluationParams",
+            "types.MmffEnergyGradient",
+            "Molecule.mmff_energy_gradient",
+            "Molecule.mmff_energy_gradient_with_params",
+            "MmffEnergyGradient.energy",
+            "MmffEnergyGradient.gradient",
+            "MmffOptimizeMoleculeResult.molecule",
+            "MmffOptimizeMoleculeResult.needs_more",
+            "MmffOptimizeMoleculeResult.status_code",
+            "MmffOptimizeMoleculeConfsResult.molecule",
+            "MmffOptimizeMoleculeConfsResult.conformer_results",
+            "MmffOptimizeMoleculeConfResult.needs_more",
+            "MmffOptimizeMoleculeConfResult.status_code",
+            "MmffOptimizeMoleculeConfResult.energy",
+            "MmffProperties.is_valid",
+            "MmffProperties.variant",
+            "MmffProperties.atoms",
+            "MmffProperties.atom_type",
+            "MmffProperties.formal_charge",
+            "MmffProperties.partial_charge",
+            "types.MmffOptimizationParams",
+            "types.MmffConformerOptimizationParams",
+            "types.MmffOptimizeMoleculeResult",
+            "types.MmffOptimizeMoleculeConfResult",
+            "types.MmffOptimizeMoleculeConfsResult",
+            "types.MmffOptimizationError",
+            "Molecule.with_mmff_optimized",
+            "Molecule.with_mmff_optimized_with_params",
+            "Molecule.with_mmff_optimized_confs",
+            "Molecule.with_mmff_optimized_confs_with_params",
             "types.UffParameterQueryError",
             "types.UffParameterError",
             "types.UffParameterErrorKind",
             "UffParameterError.kind",
+            "types.MmffProperties",
+            "types.MmffPropertiesParams",
+            "types.MmffAtomProperties",
+            "types.MmffVariant",
+            "types.MmffMolPropertiesError",
+            "Molecule.mmff_has_all_molecule_params",
+            "Molecule.mmff_properties",
+            "Molecule.mmff_properties_with_params",
             "Molecule.uff_has_all_molecule_params",
             "types.UffOptimizationParams",
             "types.UffOptimizationResult",
@@ -40,10 +97,10 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
             "types.UffConformerOptimizationResult",
             "types.UffConformerResult",
             "UffOptimizationError.kind",
-            "Molecule.with_uff_optimized_coordinates",
-            "Molecule.with_uff_optimized_coordinates_with_params",
-            "Molecule.with_uff_optimized_conformers",
-            "Molecule.with_uff_optimized_conformers_with_params",
+            "Molecule.with_uff_optimized",
+            "Molecule.with_uff_optimized_with_params",
+            "Molecule.with_uff_optimized_confs",
+            "Molecule.with_uff_optimized_confs_with_params",
         ]
     );
 
@@ -78,17 +135,17 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
 
     for (semantic_id, rust_name, python_name, javascript_name, parameter_count) in [
         (
-            "Molecule.with_uff_optimized_conformers",
-            "with_uff_optimized_conformers",
-            "with_uff_optimized_conformers",
-            "withUffOptimizedConformers",
+            "Molecule.with_uff_optimized_confs",
+            "with_uff_optimized_confs",
+            "with_uff_optimized_confs",
+            "withUffOptimizedConfs",
             0,
         ),
         (
-            "Molecule.with_uff_optimized_conformers_with_params",
-            "with_uff_optimized_conformers_with_params",
-            "with_uff_optimized_conformers_with_params",
-            "withUffOptimizedConformersWithParams",
+            "Molecule.with_uff_optimized_confs_with_params",
+            "with_uff_optimized_confs_with_params",
+            "with_uff_optimized_confs_with_params",
+            "withUffOptimizedConfsWithParams",
             1,
         ),
     ] {
@@ -131,22 +188,28 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
     let _: fn(
         &cosmolkit::Molecule,
     ) -> Result<cosmolkit::UffConformerOptimizationResult, cosmolkit::OperationError> =
-        cosmolkit::Molecule::with_uff_optimized_conformers;
+        cosmolkit::Molecule::with_uff_optimized_confs;
     let _: fn(
         &cosmolkit::Molecule,
         &cosmolkit::UffConformerOptimizationParams,
     ) -> Result<cosmolkit::UffConformerOptimizationResult, cosmolkit::OperationError> =
-        cosmolkit::Molecule::with_uff_optimized_conformers_with_params;
+        cosmolkit::Molecule::with_uff_optimized_confs_with_params;
 
     let kind_name = |kind| match kind {
         cosmolkit::UffOptimizationErrorKind::MissingConformer { .. } => "MissingConformer",
         cosmolkit::UffOptimizationErrorKind::Rings => "Rings",
         cosmolkit::UffOptimizationErrorKind::Optimization => "Optimization",
         cosmolkit::UffOptimizationErrorKind::ConformerOptimization => "ConformerOptimization",
+        cosmolkit::UffOptimizationErrorKind::Evaluation => "Evaluation",
     };
     assert_eq!(
         kind_name(cosmolkit::UffOptimizationErrorKind::ConformerOptimization),
         "ConformerOptimization"
+    );
+
+    assert_eq!(
+        kind_name(cosmolkit::UffOptimizationErrorKind::Evaluation),
+        "Evaluation"
     );
 
     let params = cosmolkit::UffConformerOptimizationParams::default();

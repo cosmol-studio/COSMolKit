@@ -468,11 +468,12 @@ fn uff_remaining_all_product_() {
                             );
 
                             let params = UffConformerOptimizationParams {
+                                num_threads: 1,
                                 max_iterations: iterations,
                                 vdw_threshold: threshold,
                                 ignore_interfragment_interactions,
                             };
-                            let result = source.with_uff_optimized_conformers_with_params(&params);
+                            let result = source.with_uff_optimized_confs_with_params(&params);
                             optimization_calls += 1;
 
                             assert_eq!(coordinate_bits(&source), source_coordinates);
@@ -729,7 +730,8 @@ fn uff_remaining_all_reference_() {
         );
 
         let result = source
-            .with_uff_optimized_conformers_with_params(&UffConformerOptimizationParams {
+            .with_uff_optimized_confs_with_params(&UffConformerOptimizationParams {
+                num_threads: 1,
                 max_iterations: iterations,
                 vdw_threshold: 10.0,
                 ignore_interfragment_interactions: true,
@@ -843,7 +845,8 @@ fn uff_remaining_all_errors_() {
         assert_eq!(source_coordinates, peer_coordinates);
 
         let error = source
-            .with_uff_optimized_conformers_with_params(&UffConformerOptimizationParams {
+            .with_uff_optimized_confs_with_params(&UffConformerOptimizationParams {
+                num_threads: 1,
                 max_iterations: 0,
                 vdw_threshold: 10.0,
                 ignore_interfragment_interactions: true,

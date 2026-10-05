@@ -213,3 +213,22 @@ fn mmff_mol_properties_atom_types_terminal_s_double_bonded_to_carbon_as_source_t
 
     assert_eq!(props.atom_type(sulfur_idx).unwrap(), 16);
 }
+
+#[test]
+fn mmff_mol_properties_constructor_preserves_existing_sanitized_prop_on_empty_molecule() {
+    let mut properties = cosmolkit::MoleculeProperties::default();
+    properties.set_prop("_MMFFSanitized", "already").unwrap();
+    let molecule =
+        Molecule::from_parts(Default::default(), Default::default(), properties).unwrap();
+    let original = molecule.clone();
+    let props = molecule.mmff_properties().unwrap();
+    assert!(props.is_valid());
+    assert_eq!(props.variant(), cosmolkit::MmffVariant::Mmff94);
+    assert!(props.atoms().is_empty());
+    assert_eq!(
+        molecule.properties().prop("_MMFFSanitized"),
+        Some("already")
+    );
+    assert!(!molecule.properties().is_prop_computed("_MMFFSanitized"));
+    assert_eq!(molecule, original);
+}

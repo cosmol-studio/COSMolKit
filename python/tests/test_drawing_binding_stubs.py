@@ -31,7 +31,7 @@ def declared_fields(cls: ast.ClassDef) -> dict[str, str]:
 
 def test_selected_stub_classes_and_methods():
     classes = declarations()
-    assert set(classes) == {"Molecule", "Coordinate2DParams", "DrawingError", "DrawingWriteError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "AdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
+    assert set(classes) == {"Molecule", "Coordinate2DParams", "DrawingError", "DrawingWriteError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "FingerprintAdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
     methods = {n.name: n for n in classes["Molecule"].body if isinstance(n, ast.FunctionDef)}
     expected = {"from_smiles": "Molecule", "num_atoms": "builtins.int", "num_bonds": "builtins.int",
                 "to_smiles": "builtins.str", "coordinates_2d": "typing.Optional[builtins.list[builtins.list[builtins.float]]]",

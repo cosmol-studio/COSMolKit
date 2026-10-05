@@ -57,7 +57,7 @@ pub(crate) fn optimization_pyerr(py: Python<'_>, source: &ck::MmffOptimizationEr
     );
     error
 }
-fn source_conformer_id(id: i32) -> Option<usize> {
+pub(crate) fn source_conformer_id(id: i32) -> Option<usize> {
     // RDKit✔️✔️:   if (id < 0) {
     // RDKit✔️✔️:     return *(d_confs.front());
     // RDKit✔️✔️:   }
@@ -321,29 +321,6 @@ impl MmffProperties {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
-pub(crate) struct MoleculeBuilder {
-    pub(crate) inner: ck::MoleculeBuilder,
-}
-#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
-#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
-#[pymethods]
-impl MoleculeBuilder {
-    fn add_3d_conformer(&mut self, py: Python<'_>, coordinates: Vec<[f64; 3]>) -> PyResult<usize> {
-        self.inner
-            .add_3d_conformer(coordinates)
-            .map_err(|e| operation_pyerr(py, e))
-    }
-    fn build(&self, py: Python<'_>) -> PyResult<Molecule> {
-        self.inner
-            .clone()
-            .build()
-            .map(|inner| Molecule { inner })
-            .map_err(|e| operation_pyerr(py, e))
-    }
-}
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", skip_from_py_object)]
-#[derive(Clone)]
 pub(crate) struct Conformer3D {
     pub(crate) inner: ck::Conformer3D,
 }
@@ -384,11 +361,10 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<MmffOptimizeMoleculeConfResult>()?;
     module.add_class::<MmffOptimizeMoleculeConfsResult>()?;
     module.add_class::<MmffProperties>()?;
-    module.add_class::<MoleculeBuilder>()?;
     module.add_class::<Conformer3D>()?;
     Ok(())
 }
-#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) enum MmffVariant {

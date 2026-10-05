@@ -19,7 +19,7 @@ print("sparse bit:", sparse_bit.on_bits())
 print("folded count:", count.nonzero_elements())
 print("explicit bit:", bit.on_bits())
 
-additional = ck.AdditionalOutput()
+additional = ck.FingerprintAdditionalOutput()
 additional.allocate_atom_to_bits()
 additional.allocate_atom_counts()
 additional.allocate_bit_paths()

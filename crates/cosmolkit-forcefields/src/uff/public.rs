@@ -34,9 +34,10 @@ impl Error for UffSingleError {
     }
 }
 
-/// Options for serial optimization of every stored 3D conformer.
+/// Options for source-ordered optimization of every stored 3D conformer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UffConformerOptions {
+    pub num_threads: i32,
     pub max_iterations: i32,
     pub vdw_threshold: f64,
     pub ignore_interfragment_interactions: bool,
@@ -105,7 +106,7 @@ pub fn optimize_uff_single_prepared(
     })
 }
 
-/// Optimize all stored 3D conformers serially using trusted borrowed chemistry state.
+/// Optimize all stored 3D conformers using trusted borrowed chemistry state.
 #[allow(clippy::too_many_arguments)]
 pub fn optimize_uff_conformers_prepared(
     topology: &TopologyBlock,
@@ -119,7 +120,7 @@ pub fn optimize_uff_conformers_prepared(
     // RDKit❗❌:       mol, vdwThresh, -1, ignoreInterfragInteractions));
     // RDKit❗❌:   ForceFieldsHelper::OptimizeMoleculeConfs(mol, *ff, res, numThreads, maxIters);
     // RDKit❗❌: }
-    // Behavior: use the existing serial source owner once, which preserves
+    // Behavior: use the existing ST/MT source owner once, which preserves
     // construct-then-resize ordering and visits stored 3D conformers in order.
     // The returned scalar rows are paired with those same stored IDs.
     // Complexity: this facade adds only the required O(C) public result rows;
@@ -130,6 +131,71 @@ pub fn optimize_uff_conformers_prepared(
         .map_or(0, |conformer| conformer.id());
     let mut diagnostics = Vec::new();
     let mut results = Vec::new();
+    let field_options = super::convenience::SingleConformerOptions {
+        conformer_id: construction_conformer_id,
+        max_iterations: options.max_iterations,
+        vdw_threshold: options.vdw_threshold,
+        ignore_interfragment_interactions: options.ignore_interfragment_interactions,
+    };
+    #[cfg(not(target_family = "wasm"))]
+    {
+        use super::convenience::PreparedConformerDispatchOutcome;
+        if options.num_threads == 1 {
+            super::optimization::optimize_prepared_uff_serial(
+                topology,
+                coordinates,
+                &mut results,
+                valence,
+                rings,
+                properties,
+                &mut diagnostics,
+                field_options,
+            )
+            .map_err(UffConformerError)?;
+        } else {
+            // The existing owner invokes hardware observation only after
+            // constructing the field and resizing source-ordered result rows.
+            // Positive requests and INT_MIN bypass observation; the latter
+            // retains the original dispatch safety error at thread resolution.
+            let outcome = super::optimization::optimize_prepared_uff_dispatch_with_observer(
+                topology,
+                coordinates,
+                &mut results,
+                valence,
+                rings,
+                properties,
+                &mut diagnostics,
+                field_options,
+                options.num_threads,
+                || {
+                    if options.num_threads > 0 || options.num_threads == i32::MIN {
+                        Ok(0)
+                    } else {
+                        cosmolkit_core::observe_hardware_threads()
+                    }
+                },
+                true,
+            )
+            .map_err(UffConformerError)?;
+            let stage_error = |cause| {
+                UffConformerError(
+                    super::optimization::UffPreparedOptimizationError::ConformerStage(cause),
+                )
+            };
+            match outcome {
+                PreparedConformerDispatchOutcome::Serial(result) => result.map_err(stage_error)?,
+                PreparedConformerDispatchOutcome::Workers(result) => {
+                    for joined in result.map_err(stage_error)? {
+                        match joined {
+                            Ok(result) => result.map_err(stage_error)?,
+                            Err(payload) => std::panic::resume_unwind(payload),
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(target_family = "wasm")]
     super::optimization::optimize_prepared_uff_serial(
         topology,
         coordinates,
@@ -138,12 +204,7 @@ pub fn optimize_uff_conformers_prepared(
         rings,
         properties,
         &mut diagnostics,
-        super::convenience::SingleConformerOptions {
-            conformer_id: construction_conformer_id,
-            max_iterations: options.max_iterations,
-            vdw_threshold: options.vdw_threshold,
-            ignore_interfragment_interactions: options.ignore_interfragment_interactions,
-        },
+        field_options,
     )
     .map_err(UffConformerError)?;
 
@@ -268,6 +329,7 @@ mod tests {
 
     fn options(max_iterations: i32) -> UffConformerOptions {
         UffConformerOptions {
+            num_threads: 1,
             max_iterations,
             vdw_threshold: 10.0,
             ignore_interfragment_interactions: true,

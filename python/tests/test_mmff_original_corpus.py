@@ -24,13 +24,13 @@ def original_rows(relative, expected_sha, expected_count):
 
 def assert_vector(actual, expected, tolerance):
     assert len(actual) == len(expected)
-    for index, (observed, oracle) in enumerate(zip(actual, expected, strict=True)):
+    for index, (observed, oracle) in enumerate(zip(actual, expected)):
         assert abs(observed - oracle) <= tolerance, (index, observed, oracle, tolerance)
 
 
 def assert_coordinates(actual, expected):
     assert len(actual) == len(expected)
-    for observed, oracle in zip(actual, expected, strict=True):
+    for observed, oracle in zip(actual, expected):
         assert_vector(observed, oracle, 1.0e-6)
 
 
@@ -124,17 +124,28 @@ def test_mmff_original_numerical_energy_gradient_single_multi():
             expected = embedded["mmff_multi_optimized"]
             if expected["ok"]:
                 assert expected["error"] is None
-                # Source initial rows use original SMILES ordering. Drop the
-                # CX coordinate suffix before rebuilding exactly those rows.
-                builder = ck.Molecule.from_smiles(record["smiles"]).to_builder()
-                for rows in expected["initial_coords"]:
+                # Retain the complete original CX graph (including dative
+                # fields) and the original atom order. Substitute only its
+                # rounded coordinate text with the exact first oracle row,
+                # then append the remaining original conformers.
+                prefix, separator, tail = embedded["cxsmiles"].partition(" |(")
+                assert separator
+                _, closing, suffix = tail.partition(")")
+                assert closing
+                first_rows = expected["initial_coords"][0]
+                coordinates_text = ";".join(",".join(repr(value) for value in point) for point in first_rows)
+                initial_cx = prefix + " |(" + coordinates_text + ")" + suffix
+                initial = ck.Molecule.from_smiles(initial_cx)
+                assert initial.conformers_3d()[0].coordinates() == first_rows
+                builder = initial.to_builder()
+                for rows in expected["initial_coords"][1:]:
                     builder.add_3d_conformer(rows)
                 multi_molecule = builder.build()
                 actual = multi_molecule.with_mmff_optimized_confs_with_params(ck.MmffConformerOptimizationParams(max_iterations=200,non_bonded_threshold=100.0))
                 results = actual.conformer_results()
                 conformers = actual.molecule().conformers_3d()
                 assert len(results) == len(conformers) == len(expected["conformer_results"])
-                for result, conformer, oracle in zip(results, conformers, expected["conformer_results"], strict=True):
+                for result, conformer, oracle in zip(results, conformers, expected["conformer_results"]):
                     assert result.status_code() == oracle["needs_more"]
                     assert abs(result.energy()-oracle["energy"]) <= 1.0e-6
                     assert_coordinates(conformer.coordinates(),oracle["coords"])

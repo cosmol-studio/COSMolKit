@@ -250,7 +250,7 @@ impl QueryGraphBuilder {
             Vec::new(),
         )
         .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
-        cosmolkit_smiles::finalize_query_parser_chirality(&mut graph)
+        crate::query_graph_behavior::finalize_query_parser_chirality(&mut graph)
             .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
         Ok(graph)
     }

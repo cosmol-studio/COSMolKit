@@ -958,7 +958,7 @@ fn cip_assign_requires_exact_operation_authority_and_assignment_evidence() {
 #[test]
 fn tautomer_transition_guard_is_exact_and_single_output_cannot_apply_it() {
     let valid = spec(
-        "enumerate_tautomers_with_options",
+        "enumerate_tautomers_with_params",
         MoleculeOpOutput::Multiple,
         all_effect_access(),
         all_effect_access().write(),
@@ -977,12 +977,12 @@ fn tautomer_transition_guard_is_exact_and_single_output_cannot_apply_it() {
     for (method, output, access) in [
         ("wrong", MoleculeOpOutput::Multiple, all_effect_access()),
         (
-            "enumerate_tautomers_with_options",
+            "enumerate_tautomers_with_params",
             MoleculeOpOutput::Single,
             all_effect_access(),
         ),
         (
-            "enumerate_tautomers_with_options",
+            "enumerate_tautomers_with_params",
             MoleculeOpOutput::Multiple,
             BlockAccess::new(BlockSet::NONE, BlockSet::TOPOLOGY),
         ),

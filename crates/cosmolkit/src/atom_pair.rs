@@ -1,6 +1,6 @@
 //! Canonical AtomPair call transport; chemistry remains in the fingerprint owner.
 use crate::{
-    AdditionalOutput, Fingerprint, Molecule, MorganReadError, SparseBitFingerprint,
+    Fingerprint, FingerprintAdditionalOutput, Molecule, MorganReadError, SparseBitFingerprint,
     SparseCountFingerprint, SparseCountFingerprint32,
 };
 use cosmolkit_fingerprints::{
@@ -63,7 +63,7 @@ impl Molecule {
     pub fn atom_pair_fingerprint_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        output: Option<&mut AdditionalOutput>,
+        output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<Fingerprint, AtomPairReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(AtomPairReadError::Preparation)?;
@@ -93,7 +93,7 @@ impl Molecule {
     pub fn atom_pair_sparse_fingerprint_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        output: Option<&mut AdditionalOutput>,
+        output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseBitFingerprint, AtomPairReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(AtomPairReadError::Preparation)?;
@@ -125,7 +125,7 @@ impl Molecule {
     pub fn atom_pair_count_fingerprint_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        output: Option<&mut AdditionalOutput>,
+        output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint32, AtomPairReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(AtomPairReadError::Preparation)?;
@@ -160,7 +160,7 @@ impl Molecule {
     pub fn atom_pair_sparse_count_fingerprint_with_params(
         &self,
         params: &AtomPairFingerprintParams,
-        output: Option<&mut AdditionalOutput>,
+        output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint, AtomPairReadError> {
         let prepared = crate::morgan::prepare_morgan_read_input(self)
             .map_err(AtomPairReadError::Preparation)?;

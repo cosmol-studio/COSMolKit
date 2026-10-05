@@ -1457,3 +1457,53 @@ pub fn num_pi_electrons_for_topology(
     }
     Ok(valence - physical_bonds)
 }
+
+/// Owned context-dependent atom read results. Canonical Atom vocabulary stays
+/// in the model; these rows hold only degree and calculated valence metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AtomMetadata {
+    pub degree: usize,
+    pub explicit_valence: i32,
+    pub implicit_hydrogens: i32,
+    pub total_hydrogens: i32,
+    pub total_valence: i32,
+}
+/// Read all atom metadata with one existing valence-owner calculation.
+/// This does not install a cache or grant callers any runtime authority.
+pub fn atom_metadata(topology: &TopologyBlock) -> Result<Vec<AtomMetadata>, ValenceError> {
+    let assignment = assign_valence(topology, &ValenceParams::default())?;
+    let mut rows = Vec::with_capacity(topology.atoms.len());
+    for (index, atom) in topology.atoms.iter().enumerate() {
+        // RDKit❗✔️: unsigned int Atom::getDegree() const {
+        // RDKit❗✔️:   return dp_mol ? getOwningMol().getAtomDegree(this) : 0;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
+        // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+        // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
+        // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
+        // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
+        // RDKit❗✔️:       return (nbr->getAtomicNum() == 1);
+        // RDKit❗✔️:     });
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return res;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: unsigned int Atom::getTotalValence() const {
+        // RDKit❗✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+        // RDKit❗✔️: }
+        // The original Python read record fixes includeNeighbors=false. Degree
+        // is the validated adjacency row length; both paths cost O(1)/atom.
+        // Explicit/implicit valence uses the sole foundational calculation once,
+        // propagating invalid topology/valence instead of suppressing its error.
+        // One O(V) owned result allocation matches the original record traversal.
+        let explicit_valence = assignment.explicit_valence[index];
+        let implicit_hydrogens = assignment.implicit_hydrogens[index];
+        rows.push(AtomMetadata {
+            degree: topology.adjacency.neighbors_of(index).len(),
+            explicit_valence,
+            implicit_hydrogens,
+            total_hydrogens: i32::from(atom.explicit_hydrogens()) + implicit_hydrogens,
+            total_valence: explicit_valence + implicit_hydrogens,
+        });
+    }
+    Ok(rows)
+}

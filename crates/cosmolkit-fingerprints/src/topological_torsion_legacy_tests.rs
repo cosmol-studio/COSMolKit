@@ -269,3 +269,214 @@ fn legacy_selections_custom_invariants_and_chirality_use_the_shared_core() {
             .unwrap();
     assert_ne!(clockwise_chiral, anticlockwise_chiral);
 }
+
+fn raw_sanitized(smiles: &str) -> TestMolecule {
+    let record =
+        cosmolkit_smiles::parse_smiles(smiles, &cosmolkit_smiles::SmilesParseParams::default())
+            .unwrap();
+    let assignment = cosmolkit_core::sanitize_topology(
+        &record.topology,
+        &cosmolkit_core::SanitizeParams::default(),
+    )
+    .unwrap();
+    TestMolecule {
+        topology: assignment.topology,
+        properties: record.properties,
+        coordinates: record.coordinates,
+        valence: assignment.final_valence.unwrap(),
+        rings: assignment.final_rings.unwrap(),
+    }
+}
+#[test]
+fn legacy_conditional_stereo_raw_matches_independent_pinned_native_three_forms() {
+    {
+        let raw = raw_sanitized("F[C@H](Cl)CC");
+        let input = raw.input();
+        let original_topology = raw.topology.clone();
+        let original_properties = raw.properties.clone();
+        assert!(raw.properties.prop("_StereochemDone").is_none());
+        assert!(
+            raw.topology
+                .atoms
+                .iter()
+                .all(|a| a.prop("_CIPCode").is_none())
+        );
+        let params = LegacyTopologicalTorsionParams {
+            include_chirality: true,
+            ..Default::default()
+        };
+        let call = TopologicalTorsionCall::default();
+        let sparse = legacy_topological_torsion_sparse_count(&input, &params, &call).unwrap();
+        let count = legacy_topological_torsion_count(&input, &params, &call).unwrap();
+        let bits = legacy_topological_torsion_bits(&input, &params, &call).unwrap();
+        assert_eq!(
+            sparse
+                .nonzero_elements()
+                .iter()
+                .map(|(&k, &v)| (k, v))
+                .collect::<Vec<_>>(),
+            vec![(1101797589024, 1), (2201309216800, 1)]
+        );
+        assert_eq!(
+            count
+                .nonzero_elements()
+                .iter()
+                .map(|(&k, &v)| (k, v))
+                .collect::<Vec<_>>(),
+            vec![(1076, 1), (1204, 1)]
+        );
+        assert_eq!(bits.on_bits(), vec![208, 720]);
+        assert_eq!(raw.topology, original_topology);
+        assert_eq!(raw.properties, original_properties);
+    }
+    {
+        let raw = raw_sanitized("F[C@@H](Cl)CC");
+        let input = raw.input();
+        let original_topology = raw.topology.clone();
+        let original_properties = raw.properties.clone();
+        assert!(raw.properties.prop("_StereochemDone").is_none());
+        assert!(
+            raw.topology
+                .atoms
+                .iter()
+                .all(|a| a.prop("_CIPCode").is_none())
+        );
+        let params = LegacyTopologicalTorsionParams {
+            include_chirality: true,
+            ..Default::default()
+        };
+        let call = TopologicalTorsionCall::default();
+        let sparse = legacy_topological_torsion_sparse_count(&input, &params, &call).unwrap();
+        let count = legacy_topological_torsion_count(&input, &params, &call).unwrap();
+        let bits = legacy_topological_torsion_bits(&input, &params, &call).unwrap();
+        assert_eq!(
+            sparse
+                .nonzero_elements()
+                .iter()
+                .map(|(&k, &v)| (k, v))
+                .collect::<Vec<_>>(),
+            vec![(1103945072672, 1), (2203456700448, 1)]
+        );
+        assert_eq!(
+            count
+                .nonzero_elements()
+                .iter()
+                .map(|(&k, &v)| (k, v))
+                .collect::<Vec<_>>(),
+            vec![(1269, 1), (1397, 1)]
+        );
+        assert_eq!(bits.on_bits(), vec![980, 1492]);
+        assert_eq!(raw.topology, original_topology);
+        assert_eq!(raw.properties, original_properties);
+    }
+    {
+        let raw = raw_sanitized("N[C@H](C)CC");
+        let input = raw.input();
+        let original_topology = raw.topology.clone();
+        let original_properties = raw.properties.clone();
+        assert!(raw.properties.prop("_StereochemDone").is_none());
+        assert!(
+            raw.topology
+                .atoms
+                .iter()
+                .all(|a| a.prop("_CIPCode").is_none())
+        );
+        let params = LegacyTopologicalTorsionParams {
+            include_chirality: true,
+            ..Default::default()
+        };
+        let call = TopologicalTorsionCall::default();
+        let sparse = legacy_topological_torsion_sparse_count(&input, &params, &call).unwrap();
+        let count = legacy_topological_torsion_count(&input, &params, &call).unwrap();
+        let bits = legacy_topological_torsion_bits(&input, &params, &call).unwrap();
+        assert_eq!(
+            sparse
+                .nonzero_elements()
+                .iter()
+                .map(|(&k, &v)| (k, v))
+                .collect::<Vec<_>>(),
+            vec![(277163868192, 1), (552041775136, 1)]
+        );
+        assert_eq!(
+            count
+                .nonzero_elements()
+                .iter()
+                .map(|(&k, &v)| (k, v))
+                .collect::<Vec<_>>(),
+            vec![(1140, 1), (1940, 1)]
+        );
+        assert_eq!(bits.on_bits(), vec![464, 1616]);
+        assert_eq!(raw.topology, original_topology);
+        assert_eq!(raw.properties, original_properties);
+    }
+}
+#[test]
+fn legacy_stereo_done_presence_custom_invariants_and_modern_original_provider_control() {
+    let mut raw = raw_sanitized("F[C@H](Cl)CC");
+    let custom = [17, 18, 19, 20, 21];
+    for done in [None, Some("0"), Some("1")] {
+        if let Some(v) = done {
+            raw.properties.set_prop("_StereochemDone", v).unwrap();
+        }
+        let input = raw.input();
+        let prepared = crate::prepared::prepare_morgan_environment(
+            input.topology,
+            input.properties,
+            input.valence,
+            input.rings,
+            true,
+        )
+        .unwrap();
+        let prepared_input = AtomPairPreparedInput {
+            topology: prepared.topology(),
+            properties: prepared.properties(),
+            ..input
+        };
+        let params = LegacyTopologicalTorsionParams {
+            include_chirality: true,
+            ..Default::default()
+        };
+        for inv in [None, Some(custom.as_slice())] {
+            let call = TopologicalTorsionCall {
+                custom_atom_invariants: inv,
+                ..Default::default()
+            };
+            assert_eq!(
+                legacy_topological_torsion_sparse_count(&input, &params, &call).unwrap(),
+                legacy_topological_torsion_sparse_count(&prepared_input, &params, &call).unwrap()
+            );
+            assert_eq!(
+                legacy_topological_torsion_count(&input, &params, &call).unwrap(),
+                legacy_topological_torsion_count(&prepared_input, &params, &call).unwrap()
+            );
+            assert_eq!(
+                legacy_topological_torsion_bits(&input, &params, &call).unwrap(),
+                legacy_topological_torsion_bits(&prepared_input, &params, &call).unwrap()
+            );
+        }
+        let modern_params = TopologicalTorsionParams {
+            include_chirality: true,
+            ..Default::default()
+        };
+        let call = TopologicalTorsionCall::default();
+        let modern = topological_torsion_sparse_count(&input, &modern_params, &call, None).unwrap();
+        // Modern source computes invariants from the original molecule even
+        // when environments are conditionally prepared. Keep this control.
+        assert_eq!(
+            modern
+                .nonzero_elements()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![1099650105376, 2199161733152]
+        );
+        if done.is_some() {
+            assert_eq!(
+                legacy_topological_torsion_sparse_count(&input, &params, &call)
+                    .unwrap()
+                    .nonzero_elements(),
+                modern.nonzero_elements()
+            );
+        }
+    }
+}

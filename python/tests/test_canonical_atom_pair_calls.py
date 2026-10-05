@@ -8,7 +8,7 @@ METHODS = ["atom_pair_fingerprint", "atom_pair_sparse_fingerprint", "atom_pair_c
 def test_all_forms_fill_original_output_and_preserve_input(method):
     molecule = ck.Molecule.from_smiles("CC(C)O")
     before = molecule.to_smiles()
-    output = ck.AdditionalOutput()
+    output = ck.FingerprintAdditionalOutput()
     output.allocate_atom_counts(); output.allocate_atom_to_bits()
     output.allocate_bit_info_map(); output.allocate_atoms_per_bit()
     params = ck.AtomPairFingerprintParams(generator=ck.AtomPairParams(fp_size=256))
@@ -60,3 +60,35 @@ def test_custom_invariants_modulo_and_filters_reach_owner():
     assert torsion.topological_torsion_correction and not torsion.include_chirality
     custom = ck.AtomPairFingerprintParams(atom_invariants_generator=torsion)
     assert molecule.atom_pair_sparse_count_fingerprint_with_params(custom,None).nonzero_elements() != molecule.atom_pair_sparse_count_fingerprint().nonzero_elements()
+
+
+@pytest.mark.parametrize("chiral", [False, True])
+@pytest.mark.parametrize("correction", [False, True])
+def test_invariant_generator_source_metadata_repr_and_frozen_protocol(chiral, correction):
+    # Pinned AtomPairGenerator.cpp45-55 includes correction in info_string
+    # and both independent fields as quoted bools in Boost JSON.
+    import ast
+    import json
+    from pathlib import Path
+    generator = ck.AtomPairAtomInvariantsGenerator(
+        include_chirality=chiral, topological_torsion_correction=correction)
+    expected = f"AtomPairInvariantGenerator topologicalTorsionCorrection={int(correction)}"
+    assert generator.info_string() == expected
+    assert json.loads(generator.to_json()) == {
+        "type": "AtomPairAtomInvGenerator",
+        "includeChirality": str(chiral).lower(),
+        "topologicalTorsionCorrection": str(correction).lower(),
+    }
+    # Original modern Python PyAtomPairAtomInvariantsGenerator repr is a
+    # thin formatting projection of the exact source information string.
+    assert repr(generator) == f"AtomPairAtomInvariantsGenerator({expected})"
+    for name in ("include_chirality", "topological_torsion_correction"):
+        with pytest.raises(AttributeError): setattr(generator, name, not getattr(generator, name))
+    for name in ("info_string", "to_json", "__repr__"):
+        with pytest.raises(TypeError): getattr(generator, name)(0)
+    stub = ast.parse((Path(__file__).resolve().parents[1] / "cosmolkit.pyi").read_text())
+    node = next(n for n in stub.body if isinstance(n, ast.ClassDef) and n.name == "AtomPairAtomInvariantsGenerator")
+    methods = {n.name: n for n in node.body if isinstance(n, ast.FunctionDef)}
+    assert set(methods) == {"__new__", "include_chirality", "topological_torsion_correction", "info_string", "to_json", "__repr__"}
+    for name in ("info_string", "to_json", "__repr__"):
+        assert ast.unparse(methods[name].returns) == "builtins.str"

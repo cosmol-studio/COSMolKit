@@ -85,6 +85,7 @@ def test_mmff_source_negative_selectors_choose_first(selector):
     assert coordinates(selected.molecule()) == coordinates(default.molecule()) == before
     evaluated = molecule.mmff_energy_gradient_with_params(ck.MmffEvaluationParams(conformer_id=selector))
     original = molecule.mmff_energy_gradient()
+    assert evaluated is not None and original is not None
     assert evaluated.energy() == original.energy()
     assert evaluated.gradient() == original.gradient()
 
@@ -164,9 +165,9 @@ def test_mmff_thread_dispatch_order_matches_serial():
 def test_mmff_parameter_values_are_immutable_and_short_methods_are_default_only():
     params = ck.MmffOptimizationParams()
     with pytest.raises(AttributeError):
-        params.max_iterations = 0
+        setattr(params, "max_iterations", 0)
     molecule = make_molecule()
     with pytest.raises(TypeError):
-        molecule.with_mmff_optimized(max_iters=0)
+        getattr(molecule, "with_mmff_optimized")(max_iters=0)
     with pytest.raises(TypeError):
-        molecule.with_mmff_optimized_confs(num_threads=2)
+        getattr(molecule, "with_mmff_optimized_confs")(num_threads=2)

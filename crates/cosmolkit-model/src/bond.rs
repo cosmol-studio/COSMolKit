@@ -416,6 +416,31 @@ impl Bond {
         self.properties.get(key)
     }
 
+    pub const fn order_code(&self) -> i64 {
+        self.order().rdkit_code()
+    }
+    pub const fn order_name(&self) -> &'static str {
+        self.order().rdkit_name()
+    }
+    pub const fn direction_code(&self) -> i64 {
+        self.direction().rdkit_code()
+    }
+    pub const fn direction_name(&self) -> &'static str {
+        self.direction().rdkit_name()
+    }
+    pub const fn stereo_code(&self) -> i64 {
+        self.stereo().rdkit_code()
+    }
+    pub const fn stereo_name(&self) -> &'static str {
+        self.stereo().rdkit_name()
+    }
+
+    /// Return the persisted modern CIP neighbor ranking without suppressing
+    /// malformed stored values or changing any rank/order.
+    pub fn cip_neighbor_order(&self) -> Result<Option<Vec<u32>>, crate::CipDescriptorError> {
+        crate::cip::neighbor_order_from_property(self.prop("_CIPNeighborOrder"))
+    }
+
     /// Returns whether a property is registered as computed state.
     #[must_use]
     pub fn is_prop_computed(&self, key: &str) -> bool {
@@ -431,10 +456,13 @@ impl Bond {
     pub fn cip_descriptor(
         &self,
     ) -> Result<Option<crate::CipDescriptor>, crate::CipDescriptorError> {
-        crate::cip::descriptor_from_property(
-            self.prop("_CIPCode")
-                .and_then(|value| value.as_string().ok()),
-        )
+        // Reading a present property using the wrong kind must propagate its
+        // typed conversion error; it is not an absent descriptor.
+        let value = self
+            .prop("_CIPCode")
+            .map(|value| value.as_string())
+            .transpose()?;
+        crate::cip::descriptor_from_property(value)
     }
 
     #[doc(hidden)]

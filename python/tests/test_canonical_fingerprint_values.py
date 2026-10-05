@@ -9,6 +9,30 @@ import cosmolkit
 import pytest
 
 STUB = Path(__file__).resolve().parents[1] / "cosmolkit.pyi"
+
+
+def test_fingerprint_additional_output_domain_explicit_public_name():
+    output = cosmolkit.FingerprintAdditionalOutput()
+    assert type(output).__name__ == "FingerprintAdditionalOutput"
+    assert not hasattr(cosmolkit, "AdditionalOutput")
+    assert repr(output).startswith("FingerprintAdditionalOutput(")
+    assert [
+        output.atom_counts(),
+        output.atom_to_bits(),
+        output.bit_info_map(),
+        output.bit_paths(),
+        output.atoms_per_bit(),
+    ] == [None] * 5
+    assert isinstance(cosmolkit.FingerprintAdditionalOutput.default(), type(output))
+    names = {
+        node.name
+        for node in ast.parse(STUB.read_text()).body
+        if isinstance(node, ast.ClassDef)
+    }
+    assert "FingerprintAdditionalOutput" in names
+    assert "AdditionalOutput" not in names
+
+
 DEFAULTS: dict[str, object] = {
     "radius": 3,
     "include_chirality": False,
@@ -153,18 +177,18 @@ OUTPUT_METHODS = ("default", *("allocate_" + field for field in OUTPUT_FIELDS), 
 MASK_IDS = [f"mask{mask:02d}" for mask in range(32)]
 
 
-def output_method(output: cosmolkit.AdditionalOutput, name: str) -> Callable[..., object]:
+def output_method(output: cosmolkit.FingerprintAdditionalOutput, name: str) -> Callable[..., object]:
     method = cast(object, getattr(output, name))
     assert callable(method)
     return method
 
 
-def output_state(output: cosmolkit.AdditionalOutput) -> list[object]:
+def output_state(output: cosmolkit.FingerprintAdditionalOutput) -> list[object]:
     return [output_method(output, field)() for field in OUTPUT_FIELDS]
 
 
-def allocated_output(mask: int) -> cosmolkit.AdditionalOutput:
-    output = cosmolkit.AdditionalOutput.default()
+def allocated_output(mask: int) -> cosmolkit.FingerprintAdditionalOutput:
+    output = cosmolkit.FingerprintAdditionalOutput.default()
     for index, field in enumerate(OUTPUT_FIELDS):
         if mask & (1 << index):
             assert output_method(output, "allocate_" + field)() is None
@@ -177,8 +201,8 @@ def expected_state(mask: int) -> list[object]:
 
 class TestAdditionalOutput:
     def test_default(self):
-        output = cosmolkit.AdditionalOutput.default()
-        assert isinstance(output, cosmolkit.AdditionalOutput)
+        output = cosmolkit.FingerprintAdditionalOutput.default()
+        assert isinstance(output, cosmolkit.FingerprintAdditionalOutput)
         assert output_state(output) == [None, None, None, None, None]
 
     @pytest.mark.parametrize("mask", range(32), ids=MASK_IDS)
@@ -223,8 +247,8 @@ class TestAdditionalOutput:
         # numeric/nested transport is explicitly not tested in this packet.
 
     def test_independent_defaults(self):
-        first = cosmolkit.AdditionalOutput.default()
-        second = cosmolkit.AdditionalOutput.default()
+        first = cosmolkit.FingerprintAdditionalOutput.default()
+        second = cosmolkit.FingerprintAdditionalOutput.default()
         assert first is not second
         first.allocate_atom_counts()
         first.allocate_atoms_per_bit()
@@ -232,21 +256,21 @@ class TestAdditionalOutput:
         assert output_state(second) == [None, None, None, None, None]
 
     def test_surface_signatures(self):
-        surface = {name for name in vars(cosmolkit.AdditionalOutput) if not name.startswith("_")}
+        surface = {name for name in vars(cosmolkit.FingerprintAdditionalOutput) if not name.startswith("_")}
         assert surface == set(OUTPUT_METHODS)
         for name in OUTPUT_METHODS:
-            descriptor = cast(object, getattr(cosmolkit.AdditionalOutput, name))
+            descriptor = cast(object, getattr(cosmolkit.FingerprintAdditionalOutput, name))
             assert callable(descriptor)
             signature = inspect.signature(descriptor)
             assert list(signature.parameters) == ([] if name == "default" else ["self"])
             assert all(cast(object, param.default) is inspect.Parameter.empty for param in signature.parameters.values())
             assert all(param.kind is inspect.Parameter.POSITIONAL_ONLY for param in signature.parameters.values())
-        assert isinstance(vars(cosmolkit.AdditionalOutput)["default"], staticmethod)
+        assert isinstance(vars(cosmolkit.FingerprintAdditionalOutput)["default"], staticmethod)
 
     @pytest.mark.parametrize("name,kind", [(name, kind) for name in OUTPUT_METHODS for kind in ("positional", "keyword")],
                              ids=[f"{name}-{kind}" for name in OUTPUT_METHODS for kind in ("positional", "keyword")])
     def test_argument_errors(self, name: str, kind: str):
-        output = cosmolkit.AdditionalOutput.default()
+        output = cosmolkit.FingerprintAdditionalOutput.default()
         method = output_method(output, name)
         with pytest.raises(TypeError):
             if kind == "positional":
@@ -256,22 +280,34 @@ class TestAdditionalOutput:
         assert output_state(output) == [None, None, None, None, None]
 
     def test_constructor_and_no_aliases(self):
-        constructor = cast(Callable[..., object], cosmolkit.AdditionalOutput)
-        with pytest.raises(TypeError):
-            _ = constructor()
-        assert not hasattr(cosmolkit.AdditionalOutput, "new")
+        constructor = cast(Callable[..., object], cosmolkit.FingerprintAdditionalOutput)
+        # Source default field initializers and canonical FingerprintAdditionalOutput.new
+        # project to a Python constructor; retain negative argument coverage.
+        output = cast(cosmolkit.FingerprintAdditionalOutput, constructor())
+        assert output_state(output) == [None, None, None, None, None]
+        other = cast(cosmolkit.FingerprintAdditionalOutput, constructor())
+        output.allocate_atom_counts()
+        assert output_state(other) == [None, None, None, None, None]
+        for args, kwargs in [((0,), {}), ((), {"value": 0})]:
+            with pytest.raises(TypeError):
+                _ = constructor(*args, **kwargs)
+        assert not hasattr(cosmolkit.FingerprintAdditionalOutput, "new")
         for field in OUTPUT_FIELDS:
-            assert not hasattr(cosmolkit.AdditionalOutput, "get_" + field)
-        output = cosmolkit.AdditionalOutput.default()
+            assert not hasattr(cosmolkit.FingerprintAdditionalOutput, "get_" + field)
+        output = cosmolkit.FingerprintAdditionalOutput.default()
         with pytest.raises(AttributeError):
             setattr(output, "extra", [])
         with pytest.raises(AttributeError):
             setattr(output, "atom_counts", [])
         assert output_state(output) == [None, None, None, None, None]
+        assert repr(output) == "FingerprintAdditionalOutput(atom_to_bits=false, bit_info_map=false, bit_paths=false, atom_counts=false, atoms_per_bit=false)"
+        for method in ("__repr__",):
+            with pytest.raises(TypeError):
+                _ = getattr(output, method)(0)
 
     def test_stub(self):
-        methods = stub_methods("AdditionalOutput")
-        assert set(methods) == set(OUTPUT_METHODS)
+        methods = stub_methods("FingerprintAdditionalOutput")
+        assert set(methods) == {"__new__", "__repr__", *OUTPUT_METHODS}
         expected_returns = {
             "atom_counts": "typing.Optional[builtins.list[builtins.int]]",
             "atom_to_bits": "typing.Optional[builtins.list[builtins.list[builtins.int]]]",
@@ -280,9 +316,9 @@ class TestAdditionalOutput:
             "atoms_per_bit": "typing.Optional[builtins.dict[builtins.int, builtins.list[builtins.list[builtins.int]]]]",
         }
         for name, method in methods.items():
-            assert [arg.arg for arg in method.args.args] == ([] if name == "default" else ["self"])
+            assert [arg.arg for arg in method.args.args] == (["cls"] if name == "__new__" else ([] if name == "default" else ["self"]))
             assert not method.args.defaults and not method.args.kwonlyargs
             assert not method.args.kw_defaults and method.args.vararg is None and method.args.kwarg is None
-            expected = "AdditionalOutput" if name == "default" else ("None" if name.startswith("allocate_") else expected_returns[name])
+            expected = "FingerprintAdditionalOutput" if name in ("default", "__new__") else ("builtins.str" if name == "__repr__" else ("None" if name.startswith("allocate_") else expected_returns[name]))
             assert expression(method.returns) == expected
             assert [ast.unparse(node) for node in method.decorator_list] == (["staticmethod"] if name == "default" else [])

@@ -340,7 +340,7 @@ fn modern_fixture(smiles: &str, expected: u32, label: &str) {
         r.topology().atoms[1].prop("_CIPCode"),
         Some(&PropertyValue::String(label.into()))
     );
-    assert_eq!(r.properties().prop("_CIPComputed"), Some("true"));
+    assert_eq!(r.properties().prop("_CIPComputed"), Some("1"));
     assert!(r.properties().is_prop_computed("_CIPComputed"));
     assert_eq!(r.topology().bonds, original.bonds);
     assert_eq!(r.topology().atoms.len(), original.atoms.len());
@@ -3042,7 +3042,7 @@ const PREDICATE: &[(
         None,
         None,
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCw,
@@ -3051,7 +3051,7 @@ const PREDICATE: &[(
         None,
         Some("R"),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCw,
@@ -3060,7 +3060,7 @@ const PREDICATE: &[(
         None,
         Some("S"),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCw,
@@ -3069,7 +3069,7 @@ const PREDICATE: &[(
         None,
         Some("r"),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCw,
@@ -3078,7 +3078,7 @@ const PREDICATE: &[(
         None,
         Some(""),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCw,
@@ -3087,7 +3087,7 @@ const PREDICATE: &[(
         None,
         Some("E"),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCw,
@@ -3906,7 +3906,7 @@ const PREDICATE: &[(
         None,
         None,
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCcw,
@@ -3915,7 +3915,7 @@ const PREDICATE: &[(
         None,
         Some("R"),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCcw,
@@ -3924,7 +3924,7 @@ const PREDICATE: &[(
         None,
         Some("S"),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCcw,
@@ -3933,7 +3933,7 @@ const PREDICATE: &[(
         None,
         Some("r"),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCcw,
@@ -3942,7 +3942,7 @@ const PREDICATE: &[(
         None,
         Some(""),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCcw,
@@ -3951,7 +3951,7 @@ const PREDICATE: &[(
         None,
         Some("E"),
         None,
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TetrahedralCcw,
@@ -4770,7 +4770,7 @@ const PREDICATE: &[(
         None,
         None,
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Other,
@@ -4779,7 +4779,7 @@ const PREDICATE: &[(
         None,
         Some("R"),
         Some(544_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Other,
@@ -4788,7 +4788,7 @@ const PREDICATE: &[(
         None,
         Some("S"),
         Some(1056_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Other,
@@ -4797,7 +4797,7 @@ const PREDICATE: &[(
         None,
         Some("r"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Other,
@@ -4806,7 +4806,7 @@ const PREDICATE: &[(
         None,
         Some(""),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Other,
@@ -4815,7 +4815,7 @@ const PREDICATE: &[(
         None,
         Some("E"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Other,
@@ -5626,7 +5626,7 @@ const PREDICATE: &[(
         None,
         None,
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Tetrahedral,
@@ -5635,7 +5635,7 @@ const PREDICATE: &[(
         None,
         Some("R"),
         Some(544_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Tetrahedral,
@@ -5644,7 +5644,7 @@ const PREDICATE: &[(
         None,
         Some("S"),
         Some(1056_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Tetrahedral,
@@ -5653,7 +5653,7 @@ const PREDICATE: &[(
         None,
         Some("r"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Tetrahedral,
@@ -5662,7 +5662,7 @@ const PREDICATE: &[(
         None,
         Some(""),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Tetrahedral,
@@ -5671,7 +5671,7 @@ const PREDICATE: &[(
         None,
         Some("E"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Tetrahedral,
@@ -6490,7 +6490,7 @@ const PREDICATE: &[(
         None,
         None,
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Allene,
@@ -6499,7 +6499,7 @@ const PREDICATE: &[(
         None,
         Some("R"),
         Some(544_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Allene,
@@ -6508,7 +6508,7 @@ const PREDICATE: &[(
         None,
         Some("S"),
         Some(1056_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Allene,
@@ -6517,7 +6517,7 @@ const PREDICATE: &[(
         None,
         Some("r"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Allene,
@@ -6526,7 +6526,7 @@ const PREDICATE: &[(
         None,
         Some(""),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Allene,
@@ -6535,7 +6535,7 @@ const PREDICATE: &[(
         None,
         Some("E"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Allene,
@@ -7354,7 +7354,7 @@ const PREDICATE: &[(
         None,
         None,
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::SquarePlanar,
@@ -7363,7 +7363,7 @@ const PREDICATE: &[(
         None,
         Some("R"),
         Some(544_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::SquarePlanar,
@@ -7372,7 +7372,7 @@ const PREDICATE: &[(
         None,
         Some("S"),
         Some(1056_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::SquarePlanar,
@@ -7381,7 +7381,7 @@ const PREDICATE: &[(
         None,
         Some("r"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::SquarePlanar,
@@ -7390,7 +7390,7 @@ const PREDICATE: &[(
         None,
         Some(""),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::SquarePlanar,
@@ -7399,7 +7399,7 @@ const PREDICATE: &[(
         None,
         Some("E"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::SquarePlanar,
@@ -8218,7 +8218,7 @@ const PREDICATE: &[(
         None,
         None,
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TrigonalBipyramidal,
@@ -8227,7 +8227,7 @@ const PREDICATE: &[(
         None,
         Some("R"),
         Some(544_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TrigonalBipyramidal,
@@ -8236,7 +8236,7 @@ const PREDICATE: &[(
         None,
         Some("S"),
         Some(1056_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TrigonalBipyramidal,
@@ -8245,7 +8245,7 @@ const PREDICATE: &[(
         None,
         Some("r"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TrigonalBipyramidal,
@@ -8254,7 +8254,7 @@ const PREDICATE: &[(
         None,
         Some(""),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TrigonalBipyramidal,
@@ -8263,7 +8263,7 @@ const PREDICATE: &[(
         None,
         Some("E"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::TrigonalBipyramidal,
@@ -9082,7 +9082,7 @@ const PREDICATE: &[(
         None,
         None,
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Octahedral,
@@ -9091,7 +9091,7 @@ const PREDICATE: &[(
         None,
         Some("R"),
         Some(544_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Octahedral,
@@ -9100,7 +9100,7 @@ const PREDICATE: &[(
         None,
         Some("S"),
         Some(1056_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Octahedral,
@@ -9109,7 +9109,7 @@ const PREDICATE: &[(
         None,
         Some("r"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Octahedral,
@@ -9118,7 +9118,7 @@ const PREDICATE: &[(
         None,
         Some(""),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Octahedral,
@@ -9127,7 +9127,7 @@ const PREDICATE: &[(
         None,
         Some("E"),
         Some(32_u32),
-        Some("true"),
+        Some("1"),
     ),
     (
         ChiralTag::Octahedral,

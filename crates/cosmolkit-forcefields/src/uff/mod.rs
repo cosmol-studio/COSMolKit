@@ -18,3 +18,7 @@ pub use public::{
     UffConformerError, UffConformerOptions, UffConformerOutcome, UffSingleError, UffSingleOptions,
     UffSingleOutcome, optimize_uff_conformers_prepared, optimize_uff_single_prepared,
 };
+
+mod evaluation;
+
+pub use evaluation::{UffEnergyGradient, UffEvaluationError, UffEvaluationParams, evaluate_uff};

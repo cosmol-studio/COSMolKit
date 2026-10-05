@@ -6,9 +6,9 @@ use cosmolkit_core::{
     RingFindingError, RingInfo, RingSearchParams, ValenceAssignment, symmetrized_sssr,
 };
 use cosmolkit_fingerprints::{
-    AdditionalOutput, Fingerprint, MorganAtomInvariants, MorganCall, MorganError, MorganParams,
-    MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32,
-    morgan_bits, morgan_count, morgan_sparse_bits, morgan_sparse_count,
+    Fingerprint, FingerprintAdditionalOutput, MorganAtomInvariants, MorganCall, MorganError,
+    MorganParams, MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint,
+    SparseCountFingerprint32, morgan_bits, morgan_count, morgan_sparse_bits, morgan_sparse_count,
 };
 
 use crate::{DerivedState, Molecule, QueryGraph};
@@ -169,7 +169,7 @@ impl Molecule {
     pub fn morgan_sparse_count_fingerprint_with_params(
         &self,
         params: &MorganFingerprintParams,
-        additional_output: Option<&mut AdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint, MorganReadError> {
         let prepared = prepare_morgan_read_input(self)?;
         let input = prepared.owner_input();
@@ -207,7 +207,7 @@ impl Molecule {
     pub fn morgan_sparse_fingerprint_with_params(
         &self,
         params: &MorganFingerprintParams,
-        additional_output: Option<&mut AdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseBitFingerprint, MorganReadError> {
         let prepared = prepare_morgan_read_input(self)?;
         let input = prepared.owner_input();
@@ -245,7 +245,7 @@ impl Molecule {
     pub fn morgan_count_fingerprint_with_params(
         &self,
         params: &MorganFingerprintParams,
-        additional_output: Option<&mut AdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint32, MorganReadError> {
         let prepared = prepare_morgan_read_input(self)?;
         let input = prepared.owner_input();
@@ -283,7 +283,7 @@ impl Molecule {
     pub fn morgan_fingerprint_with_params(
         &self,
         params: &MorganFingerprintParams,
-        additional_output: Option<&mut AdditionalOutput>,
+        additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<Fingerprint, MorganReadError> {
         let prepared = prepare_morgan_read_input(self)?;
         let input = prepared.owner_input();
@@ -324,8 +324,8 @@ mod tests {
     use crate::molecule::DerivedCacheBlock;
     use crate::ops::OperationError;
     use crate::{
-        AdditionalOutput, BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner,
-        BindingReceiver, BindingTypeRole, DerivedState, Fingerprint, FunctionStatus, Molecule,
+        BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner, BindingReceiver, BindingTypeRole,
+        DerivedState, Fingerprint, FingerprintAdditionalOutput, FunctionStatus, Molecule,
         MorganFingerprintParams, MorganInvariants, MorganParams, MorganReadError, QueryGraph,
         SparseBitFingerprint, StateModel,
     };
@@ -729,10 +729,10 @@ mod tests {
                 BindingTypeRole::Error,
             ),
             (
-                "types.AdditionalOutput",
-                "crate::AdditionalOutput",
-                "AdditionalOutput",
-                "AdditionalOutput",
+                "types.FingerprintAdditionalOutput",
+                "crate::FingerprintAdditionalOutput",
+                "FingerprintAdditionalOutput",
+                "FingerprintAdditionalOutput",
                 BindingTypeRole::Value,
             ),
         ] {
@@ -748,12 +748,12 @@ mod tests {
             assert!(entry.callable.is_none(), "{semantic_id}");
         }
 
-        let default_entry = public_binding_entry("AdditionalOutput.default");
+        let default_entry = public_binding_entry("FingerprintAdditionalOutput.default");
         assert_eq!(default_entry.item, BindingItem::Callable);
         assert_eq!(default_entry.owner, BindingOwner::Type);
         assert_eq!(
             default_entry.rust_path.replace(' ', ""),
-            "crate::AdditionalOutput::default"
+            "crate::FingerprintAdditionalOutput::default"
         );
         assert_eq!(default_entry.python_name, "default");
         assert_eq!(default_entry.javascript_name, "default");
@@ -765,16 +765,28 @@ mod tests {
         assert!(default.parameters.is_empty());
         assert_eq!(
             default.output_type.replace(' ', ""),
-            "crate::AdditionalOutput"
+            "crate::FingerprintAdditionalOutput"
         );
+        let constructor_entry = public_binding_entry("FingerprintAdditionalOutput.new");
+        assert_eq!(
+            constructor_entry.rust_path.replace(' ', ""),
+            "crate::FingerprintAdditionalOutput::new"
+        );
+        let constructor = constructor_entry.callable.unwrap();
+        assert_eq!(
+            constructor.output_type.replace(' ', ""),
+            "crate::FingerprintAdditionalOutput"
+        );
+        assert_eq!(constructor.error_type, None);
+        assert!(constructor.parameters.is_empty());
         assert_eq!(default.error_type, None);
         assert_eq!(default.state_model, StateModel::ValueReturning);
         assert_eq!(default.operation_semantic_id, None);
 
         let allocator_and_getter_contracts = [
             (
-                "AdditionalOutput.allocate_atom_counts",
-                "crate::AdditionalOutput::allocate_atom_counts",
+                "FingerprintAdditionalOutput.allocate_atom_counts",
+                "crate::FingerprintAdditionalOutput::allocate_atom_counts",
                 "allocate_atom_counts",
                 "allocateAtomCounts",
                 BindingReceiver::Mutable,
@@ -782,8 +794,8 @@ mod tests {
                 StateModel::InPlace,
             ),
             (
-                "AdditionalOutput.allocate_atom_to_bits",
-                "crate::AdditionalOutput::allocate_atom_to_bits",
+                "FingerprintAdditionalOutput.allocate_atom_to_bits",
+                "crate::FingerprintAdditionalOutput::allocate_atom_to_bits",
                 "allocate_atom_to_bits",
                 "allocateAtomToBits",
                 BindingReceiver::Mutable,
@@ -791,8 +803,8 @@ mod tests {
                 StateModel::InPlace,
             ),
             (
-                "AdditionalOutput.allocate_bit_info_map",
-                "crate::AdditionalOutput::allocate_bit_info_map",
+                "FingerprintAdditionalOutput.allocate_bit_info_map",
+                "crate::FingerprintAdditionalOutput::allocate_bit_info_map",
                 "allocate_bit_info_map",
                 "allocateBitInfoMap",
                 BindingReceiver::Mutable,
@@ -800,8 +812,8 @@ mod tests {
                 StateModel::InPlace,
             ),
             (
-                "AdditionalOutput.allocate_bit_paths",
-                "crate::AdditionalOutput::allocate_bit_paths",
+                "FingerprintAdditionalOutput.allocate_bit_paths",
+                "crate::FingerprintAdditionalOutput::allocate_bit_paths",
                 "allocate_bit_paths",
                 "allocateBitPaths",
                 BindingReceiver::Mutable,
@@ -809,8 +821,8 @@ mod tests {
                 StateModel::InPlace,
             ),
             (
-                "AdditionalOutput.allocate_atoms_per_bit",
-                "crate::AdditionalOutput::allocate_atoms_per_bit",
+                "FingerprintAdditionalOutput.allocate_atoms_per_bit",
+                "crate::FingerprintAdditionalOutput::allocate_atoms_per_bit",
                 "allocate_atoms_per_bit",
                 "allocateAtomsPerBit",
                 BindingReceiver::Mutable,
@@ -818,8 +830,8 @@ mod tests {
                 StateModel::InPlace,
             ),
             (
-                "AdditionalOutput.atom_counts",
-                "crate::AdditionalOutput::atom_counts",
+                "FingerprintAdditionalOutput.atom_counts",
+                "crate::FingerprintAdditionalOutput::atom_counts",
                 "atom_counts",
                 "atomCounts",
                 BindingReceiver::Shared,
@@ -827,8 +839,8 @@ mod tests {
                 StateModel::ReadOnly,
             ),
             (
-                "AdditionalOutput.atom_to_bits",
-                "crate::AdditionalOutput::atom_to_bits",
+                "FingerprintAdditionalOutput.atom_to_bits",
+                "crate::FingerprintAdditionalOutput::atom_to_bits",
                 "atom_to_bits",
                 "atomToBits",
                 BindingReceiver::Shared,
@@ -836,8 +848,8 @@ mod tests {
                 StateModel::ReadOnly,
             ),
             (
-                "AdditionalOutput.bit_info_map",
-                "crate::AdditionalOutput::bit_info_map",
+                "FingerprintAdditionalOutput.bit_info_map",
+                "crate::FingerprintAdditionalOutput::bit_info_map",
                 "bit_info_map",
                 "bitInfoMap",
                 BindingReceiver::Shared,
@@ -845,8 +857,8 @@ mod tests {
                 StateModel::ReadOnly,
             ),
             (
-                "AdditionalOutput.bit_paths",
-                "crate::AdditionalOutput::bit_paths",
+                "FingerprintAdditionalOutput.bit_paths",
+                "crate::FingerprintAdditionalOutput::bit_paths",
                 "bit_paths",
                 "bitPaths",
                 BindingReceiver::Shared,
@@ -854,8 +866,8 @@ mod tests {
                 StateModel::ReadOnly,
             ),
             (
-                "AdditionalOutput.atoms_per_bit",
-                "crate::AdditionalOutput::atoms_per_bit",
+                "FingerprintAdditionalOutput.atoms_per_bit",
+                "crate::FingerprintAdditionalOutput::atoms_per_bit",
                 "atoms_per_bit",
                 "atomsPerBit",
                 BindingReceiver::Shared,
@@ -890,24 +902,32 @@ mod tests {
             assert_eq!(callable.operation_semantic_id, None, "{semantic_id}");
         }
 
-        let _: fn() -> AdditionalOutput = AdditionalOutput::default;
-        let _: fn(&mut AdditionalOutput) = AdditionalOutput::allocate_atom_counts;
-        let _: fn(&mut AdditionalOutput) = AdditionalOutput::allocate_atom_to_bits;
-        let _: fn(&mut AdditionalOutput) = AdditionalOutput::allocate_bit_info_map;
-        let _: fn(&mut AdditionalOutput) = AdditionalOutput::allocate_bit_paths;
-        let _: fn(&mut AdditionalOutput) = AdditionalOutput::allocate_atoms_per_bit;
-        let _: for<'a> fn(&'a AdditionalOutput) -> Option<&'a [u32]> =
-            AdditionalOutput::atom_counts;
-        let _: for<'a> fn(&'a AdditionalOutput) -> Option<&'a [Vec<u64>]> =
-            AdditionalOutput::atom_to_bits;
-        let _: for<'a> fn(&'a AdditionalOutput) -> Option<&'a BTreeMap<u64, Vec<(u32, u32)>>> =
-            AdditionalOutput::bit_info_map;
-        let _: for<'a> fn(&'a AdditionalOutput) -> Option<&'a BTreeMap<u64, Vec<Vec<i32>>>> =
-            AdditionalOutput::bit_paths;
-        let _: for<'a> fn(&'a AdditionalOutput) -> Option<&'a BTreeMap<u64, Vec<Vec<i32>>>> =
-            AdditionalOutput::atoms_per_bit;
+        let _: fn() -> FingerprintAdditionalOutput = FingerprintAdditionalOutput::default;
+        let _: fn(&mut FingerprintAdditionalOutput) =
+            FingerprintAdditionalOutput::allocate_atom_counts;
+        let _: fn(&mut FingerprintAdditionalOutput) =
+            FingerprintAdditionalOutput::allocate_atom_to_bits;
+        let _: fn(&mut FingerprintAdditionalOutput) =
+            FingerprintAdditionalOutput::allocate_bit_info_map;
+        let _: fn(&mut FingerprintAdditionalOutput) =
+            FingerprintAdditionalOutput::allocate_bit_paths;
+        let _: fn(&mut FingerprintAdditionalOutput) =
+            FingerprintAdditionalOutput::allocate_atoms_per_bit;
+        let _: for<'a> fn(&'a FingerprintAdditionalOutput) -> Option<&'a [u32]> =
+            FingerprintAdditionalOutput::atom_counts;
+        let _: for<'a> fn(&'a FingerprintAdditionalOutput) -> Option<&'a [Vec<u64>]> =
+            FingerprintAdditionalOutput::atom_to_bits;
+        let _: for<'a> fn(
+            &'a FingerprintAdditionalOutput,
+        ) -> Option<&'a BTreeMap<u64, Vec<(u32, u32)>>> = FingerprintAdditionalOutput::bit_info_map;
+        let _: for<'a> fn(
+            &'a FingerprintAdditionalOutput,
+        ) -> Option<&'a BTreeMap<u64, Vec<Vec<i32>>>> = FingerprintAdditionalOutput::bit_paths;
+        let _: for<'a> fn(
+            &'a FingerprintAdditionalOutput,
+        ) -> Option<&'a BTreeMap<u64, Vec<Vec<i32>>>> = FingerprintAdditionalOutput::atoms_per_bit;
 
-        let default = AdditionalOutput::default();
+        let default = FingerprintAdditionalOutput::default();
         assert!(default.atom_counts().is_none());
         assert!(default.atom_to_bits().is_none());
         assert!(default.bit_info_map().is_none());
@@ -926,7 +946,7 @@ mod tests {
                 mask & 0b01000 != 0,
                 mask & 0b10000 != 0,
             ];
-            let mut output = AdditionalOutput::default();
+            let mut output = FingerprintAdditionalOutput::default();
             assert!(
                 output.atom_counts().is_none(),
                 "default counts, mask {mask:#07b}"
@@ -1045,8 +1065,8 @@ mod tests {
     }
 
     #[cfg(all(feature = "cap-smiles", feature = "cap-valence"))]
-    fn morgan_public_sparse_count_output_mask(mask: u8) -> AdditionalOutput {
-        let mut output = AdditionalOutput::default();
+    fn morgan_public_sparse_count_output_mask(mask: u8) -> FingerprintAdditionalOutput {
+        let mut output = FingerprintAdditionalOutput::default();
         if mask & 0b00001 != 0 {
             output.allocate_atom_counts();
         }
@@ -1067,8 +1087,8 @@ mod tests {
 
     #[cfg(all(feature = "cap-smiles", feature = "cap-valence"))]
     fn assert_morgan_public_sparse_count_output_mask(
-        actual: &AdditionalOutput,
-        complete: &AdditionalOutput,
+        actual: &FingerprintAdditionalOutput,
+        complete: &FingerprintAdditionalOutput,
         mask: u8,
         smiles: &str,
     ) {
@@ -1145,7 +1165,7 @@ mod tests {
 
             let without_output = molecule
                 .morgan_sparse_count_fingerprint_with_params(&params, None)
-                .expect("a null AdditionalOutput remains valid");
+                .expect("a null FingerprintAdditionalOutput remains valid");
             assert_eq!(without_output.nonzero_elements(), &expected, "{smiles}");
 
             let mut masks_checked = 0;
@@ -1299,7 +1319,7 @@ mod tests {
 
         let without_output = molecule
             .morgan_count_fingerprint_with_params(&params, None)
-            .expect("a null AdditionalOutput remains valid for hashed counts");
+            .expect("a null FingerprintAdditionalOutput remains valid for hashed counts");
         assert_eq!(without_output.length(), 2048);
         assert_eq!(without_output.nonzero_elements(), &expected);
 
@@ -1408,7 +1428,7 @@ mod tests {
 
             let without_output = molecule
                 .morgan_sparse_fingerprint_with_params(&params, None)
-                .expect("a null AdditionalOutput remains valid for sparse bits");
+                .expect("a null FingerprintAdditionalOutput remains valid for sparse bits");
             assert_eq!(without_output.n_bits(), u32::MAX, "{smiles}");
             assert_eq!(
                 without_output.on_bits().as_slice(),
@@ -1566,7 +1586,7 @@ mod tests {
 
         let without_output = molecule
             .morgan_fingerprint_with_params(&params, None)
-            .expect("a null AdditionalOutput remains valid for dense bits");
+            .expect("a null FingerprintAdditionalOutput remains valid for dense bits");
         assert_eq!(without_output.n_bits(), 128);
         assert_eq!(without_output.on_bits().as_slice(), &expected_bits);
 

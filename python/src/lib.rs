@@ -3,9 +3,12 @@
 //! Default and explicit drawing selections share one live Molecule class.
 //! Historical adapters remain as source evidence, outside module compilation.
 
+mod canonical_atom_bond;
+mod canonical_builder;
 mod canonical_descriptor_binding;
 mod canonical_element_metadata;
 mod canonical_fingerprint_values;
+mod canonical_potential_stereo;
 mod canonical_search;
 mod canonical_values;
 mod drawing_binding;
@@ -14,3 +17,5 @@ mod drawing_binding;
 pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
 
 mod mmff_binding;
+
+mod uff_binding;

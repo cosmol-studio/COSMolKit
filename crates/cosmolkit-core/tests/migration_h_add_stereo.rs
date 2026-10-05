@@ -86,7 +86,10 @@ fn tracked_isotopes_follow_explicit_then_implicit_addition_order_and_zero_is_abs
     .unwrap();
 
     assert_eq!(output.topology.atoms.len(), 5);
-    assert_eq!(output.topology.atoms[0].tracked_isotopic_hydrogens(), &[]);
+    assert_eq!(
+        output.topology.atoms[0].tracked_isotopic_hydrogens(),
+        &[] as &[u16]
+    );
     assert!(!output.topology.atoms[1].implicit_hydrogen());
     assert!(
         output.topology.atoms[2..]
@@ -168,7 +171,10 @@ fn selected_atom_additions_are_incremental_and_excluded_tracking_is_retained() {
         },
     )
     .unwrap();
-    assert_eq!(first.topology.atoms[0].tracked_isotopic_hydrogens(), &[]);
+    assert_eq!(
+        first.topology.atoms[0].tracked_isotopic_hydrogens(),
+        &[] as &[u16]
+    );
     assert_eq!(first.topology.atoms[1].tracked_isotopic_hydrogens(), &[3]);
     assert_eq!(first.topology.atoms[2].isotope(), Some(2));
 
@@ -185,7 +191,10 @@ fn selected_atom_additions_are_incremental_and_excluded_tracking_is_retained() {
     .unwrap();
     assert_eq!(second.topology.atoms[2].isotope(), Some(2));
     assert_eq!(second.topology.atoms[3].isotope(), Some(3));
-    assert_eq!(second.topology.atoms[1].tracked_isotopic_hydrogens(), &[]);
+    assert_eq!(
+        second.topology.atoms[1].tracked_isotopic_hydrogens(),
+        &[] as &[u16]
+    );
 }
 
 #[test]

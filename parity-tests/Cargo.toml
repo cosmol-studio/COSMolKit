@@ -12,9 +12,11 @@ sha2 = "0.11"
 
 tempfile = "3"
 
-# Only the special source-regression integration target calls detached owners.
+# Only special source-regression integration targets call detached owners.
 # Public corpus parity continues to depend on cosmolkit alone.
 [dev-dependencies]
 cosmolkit-core = { path = "../crates/cosmolkit-core" }
 cosmolkit-model = { path = "../crates/cosmolkit-model" }
 cosmolkit-types = { path = "../crates/cosmolkit-types" }
+cosmolkit-tautomer = { path = "../crates/cosmolkit-tautomer" }
+cosmolkit-smiles = { path = "../crates/cosmolkit-smiles" }

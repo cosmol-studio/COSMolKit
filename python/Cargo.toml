@@ -1,6 +1,6 @@
 [package]
 name = "cosmolkit-py"
-version = "0.5.0-rc.9"
+version = "0.5.0-rc.10"
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 doc = false
 
 [dependencies]
-cosmolkit = { version = "0.5.0-rc.9", path = "../crates/cosmolkit" }
+cosmolkit = { version = "0.5.0-rc.10", path = "../crates/cosmolkit" }
 pyo3-stub-gen = { version = "0.23.0", default-features = false, optional = true }
 pyo3-stub-gen-derive = "0.23.0"
 pyo3 = { version = "0.29.0", default-features = false, features = ["num-bigint"] }
@@ -21,6 +21,9 @@ numpy = "0.29.0"
 glam = "0.33.5"
 serde_json = "1"
 num-bigint = "0.5.1"
+
+[build-dependencies]
+pyo3-build-config = "0.29.0"
 
 [features]
 default = ["release-abi3-py39"]
@@ -31,6 +34,8 @@ release-cpython = ["extension-module"]
 dev-abi3-py310 = ["extension-module", "pyo3/abi3-py310"]
 stubgen = ["dep:pyo3-stub-gen"]
 dev-stub = ["pyo3/macros", "pyo3/abi3-py310", "stubgen", "pyo3-stub-gen/infer_signature"]
+# Opt-in host-interpreter tests; use with --no-default-features, never for wheels.
+python-embed-tests = ["pyo3/macros"]
 
 [[bin]]
 name = "stub_gen"

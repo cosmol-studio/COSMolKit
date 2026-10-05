@@ -23,17 +23,17 @@ DEPENDENCIES = [
     ("crates/cosmolkit-depict/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search"),
     ("crates/cosmolkit-descriptors/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search"),
     ("crates/cosmolkit-descriptors/Cargo.toml", "dev-dependencies", "cosmolkit-smiles"),
-    ("crates/cosmolkit-fingerprints/Cargo.toml", "dependencies", "cosmolkit-model"),
-    ("crates/cosmolkit-forcefields/Cargo.toml", "dependencies", "cosmolkit-conformer cosmolkit-model"),
+    ("crates/cosmolkit-fingerprints/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-stereo"),
+    ("crates/cosmolkit-fingerprints/Cargo.toml", "dev-dependencies", "cosmolkit-smiles"),
+    ("crates/cosmolkit-forcefields/Cargo.toml", "dependencies", "cosmolkit-conformer cosmolkit-core cosmolkit-model cosmolkit-search"),
     ("crates/cosmolkit-io/Cargo.toml", "dependencies", "cosmolkit-bio cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-types"),
     ("crates/cosmolkit-model/Cargo.toml", "dependencies", "cosmolkit-types"),
     ("crates/cosmolkit-search/Cargo.toml", "dependencies", "cosmolkit-cx cosmolkit-core cosmolkit-model cosmolkit-types"),
     ("crates/cosmolkit-smiles/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-cx cosmolkit-model cosmolkit-types"),
     ("crates/cosmolkit-stereo/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types"),
-    ("crates/cosmolkit-tautomer/Cargo.toml", "dependencies", "cosmolkit-model"),
+    ("crates/cosmolkit-tautomer/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-smiles cosmolkit-types"),
     ("python/Cargo.toml", "dependencies", "cosmolkit"),
     ("wasm/Cargo.toml", "dependencies", "cosmolkit"),
-    ("dev/tools/chembl_parity/tautomer_oracle/Cargo.toml", "dependencies", "cosmolkit"),
 ]
 README = "crates/cosmolkit/README.md"
 # Binding crate package version is separate from its cosmolkit dependency.

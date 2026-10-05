@@ -49,16 +49,17 @@ pub use metadata::{
 #[cfg(feature = "cap-stereo")]
 pub use potential_stereo::PotentialStereoResult;
 #[cfg(feature = "cap-forcefields")]
-pub(crate) use runtime::registry::WithUffOptimizedConformersAccess;
+pub(crate) use runtime::registry::WithUffOptimizedAccess;
 #[cfg(feature = "cap-forcefields")]
-pub(crate) use runtime::registry::WithUffOptimizedCoordinatesAccess;
+pub(crate) use runtime::registry::WithUffOptimizedConfsAccess;
 pub use runtime::registry::{
     MOLECULE_OPS, OPERATION_INVARIANT_MATRIX, PARITY_MATRIX, SUPPORT_MATRIX,
 };
 #[cfg(feature = "cap-forcefields")]
 pub use uff_optimization::{
     UffConformerOptimizationParams, UffConformerOptimizationResult, UffConformerResult,
-    UffOptimizationError, UffOptimizationErrorKind, UffOptimizationParams, UffOptimizationResult,
+    UffEnergyGradient, UffEvaluationParams, UffOptimizationError, UffOptimizationErrorKind,
+    UffOptimizationParams, UffOptimizationResult,
 };
 
 pub use crate::FunctionStatus;

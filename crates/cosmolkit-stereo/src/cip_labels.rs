@@ -621,6 +621,31 @@ fn assign_cip_labels_for_masks(
     bond_mask: &[bool],
     max_recursive_iterations: u32,
 ) -> Result<CipLabelAssignment, CipLabelerError> {
+    // BEGIN RDKIT CPP FUNCTION assignCIPLabels selected overload (CIPLabeler.cpp)
+    // RDKit✔️✔️: void assignCIPLabels(ROMol &mol, const boost::dynamic_bitset<> &atoms,
+    // RDKit✔️✔️:                      const boost::dynamic_bitset<> &bonds,
+    // RDKit✔️✔️:                      unsigned int maxRecursiveIterations) {
+    // RDKit✔️✔️:   ControlCHandler::reset();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // reset the mark, for the case that this fails
+    // RDKit✔️✔️:   mol.clearProp(common_properties::_CIPComputed);
+    // RDKit✔️✔️:   CIPMol cipmol{mol};
+    // RDKit✔️✔️:   auto configs = findConfigs(cipmol, atoms, bonds);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   try {
+    // RDKit✔️✔️:     label(configs, maxRecursiveIterations);
+    // RDKit❌❌:   } catch (const ControlCCaught &) {
+    // RDKit❌❌:   }
+    // RDKit❌❌:   if (ControlCHandler::getGotSignal()) {
+    // RDKit❌❌:     BOOST_LOG(rdWarningLog)
+    // RDKit❌❌:         << "Interrupted, cancelling CIP label calculation" << std::endl;
+    // RDKit❌❌:     return;
+    // RDKit❌❌:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   const bool computed = true;
+    // RDKit✔️✔️:   mol.setProp(common_properties::_CIPComputed, true, computed);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION assignCIPLabels selected overload
     properties.clear_prop("_CIPComputed");
     cip_clear_selected_labels(&mut topology, atom_mask, bond_mask);
 
@@ -634,7 +659,16 @@ fn assign_cip_labels_for_masks(
 
     cip_apply_primary_labels(&mut topology, labels)?;
     topology.validate()?;
-    properties.set_computed_prop("_CIPComputed", "true")?;
+    // RDKit❗✔️: const bool computed = true;
+    // RDKit❗✔️: mol.setProp(common_properties::_CIPComputed, true, computed);
+    // RDKit❗✔️: case RDTypeTag::BoolTag:
+    // RDKit❗✔️:   res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
+    // RDKit❗✔️:   break;
+    // Source BoolTag string conversion is 1/0, as implemented by the sole
+    // core property formatter. MoleculeProperties currently stores strings;
+    // preserve that source projection, rather than Rust bool Display spelling.
+    // One constant string allocation is equivalent to source scalar formatting.
+    properties.set_computed_prop("_CIPComputed", "1")?;
     Ok(CipLabelAssignment {
         topology,
         properties,

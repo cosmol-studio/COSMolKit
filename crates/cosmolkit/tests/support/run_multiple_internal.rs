@@ -114,7 +114,7 @@ fn molecule() -> Molecule {
     Molecule::from_parts(topology(), coordinates(), properties("source")).unwrap()
 }
 
-fn tuple(source: &Molecule) -> DetachedCandidate {
+fn tuple(source: &Molecule) -> (TopologyBlock, CoordinateBlock, MoleculeProperties) {
     (
         source.topology().clone(),
         source.coordinate_block_runtime().clone(),
@@ -501,7 +501,7 @@ fn cip_clear_and_tautomer_transition_are_applied_per_candidate() {
     tautomer_fields.cip = CipStatePolicy::TautomerSourceTransition;
     let mut tautomer = MultiOutputOpParts::<MultipleAccess>::new(
         &source,
-        spec("enumerate_tautomers_with_options", tautomer_fields),
+        spec("enumerate_tautomers_with_params", tautomer_fields),
     )
     .unwrap();
     tautomer.emit_all_runtime(vec![tuple(&source)]).unwrap();

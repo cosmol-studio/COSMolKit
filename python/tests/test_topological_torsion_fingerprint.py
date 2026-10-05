@@ -140,7 +140,7 @@ def test_custom_atom_invariants_and_selection_route_through_the_shared_core():
 
 def test_additional_output_allocations_are_populated():
     generator = cosmolkit.get_topological_torsion_generator(count_simulation=False)
-    output = cosmolkit.AdditionalOutput()
+    output = cosmolkit.FingerprintAdditionalOutput()
     output.allocate_atom_to_bits()
     output.allocate_bit_info_map()
     output.allocate_bit_paths()

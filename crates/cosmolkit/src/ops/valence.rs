@@ -26,3 +26,10 @@ impl Molecule {
         cosmolkit_core::has_valence_violation(self.topology(), atom_id)
     }
 }
+
+impl Molecule {
+    /// Read degree, valence and hydrogen metadata without installing cache state.
+    pub fn atom_metadata(&self) -> Result<Vec<crate::AtomMetadata>, ValenceError> {
+        cosmolkit_core::atom_metadata(self.topology())
+    }
+}

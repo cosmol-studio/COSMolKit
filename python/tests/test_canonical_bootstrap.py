@@ -7,6 +7,7 @@ not a live oracle. This is not a chemistry corpus or whole 0.3.0 acceptance.
 import ast
 import inspect
 import struct
+import tomllib
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
@@ -26,7 +27,8 @@ def state(mol: ck.Molecule) -> tuple[str, int, int, list[list[float]] | None]:
 
 def test_real_default_module_and_one_class():
     assert ck._binding_profile == "canonical-bootstrap"
-    assert ck.version() == ck.__version__ == "0.5.0-rc.9"
+    manifest = tomllib.loads((Path(__file__).resolve().parents[1] / "Cargo.toml").read_text())
+    assert ck.version() == ck.__version__ == manifest["package"]["version"]
     assert ck.Molecule.__module__ == "cosmolkit"
     assert state(ck.Molecule.new()) == ("", 0, 0, None)
     assert type(ck.Molecule.from_smiles("CCO")) is ck.Molecule

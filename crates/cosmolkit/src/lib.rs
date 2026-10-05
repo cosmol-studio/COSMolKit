@@ -18,7 +18,7 @@ pub mod binding_contract;
 mod forcefields;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{
-    AdditionalOutput, AtomPairAtomInvariantsGenerator, AtomPairParams, Fingerprint,
+    AtomPairAtomInvariantsGenerator, AtomPairParams, Fingerprint, FingerprintAdditionalOutput,
     FingerprintError, MorganParams, SparseBitFingerprint, SparseCountFingerprint,
     SparseCountFingerprint32, TopologicalTorsionParams,
 };
@@ -28,9 +28,9 @@ pub use forcefields::{
     UffParameterError, UffParameterErrorKind, UffParameterQueryError,
 };
 #[cfg(feature = "cap-forcefields")]
-pub(crate) use ops::WithUffOptimizedConformersAccess;
+pub(crate) use ops::WithUffOptimizedAccess;
 #[cfg(feature = "cap-forcefields")]
-pub(crate) use ops::WithUffOptimizedCoordinatesAccess;
+pub(crate) use ops::WithUffOptimizedConfsAccess;
 #[cfg(feature = "cap-forcefields")]
 pub use ops::{
     UffConformerOptimizationParams, UffConformerOptimizationResult, UffConformerResult,
@@ -65,6 +65,10 @@ pub mod ops;
 mod sdf;
 #[cfg(feature = "cap-search")]
 pub mod search;
+#[cfg(feature = "cap-search")]
+pub use search::{
+    compile_query, parse_smarts, parse_smarts_with_params, write_cx_smarts, write_smarts,
+};
 #[cfg(feature = "cap-smiles")]
 mod smiles;
 mod strict;
@@ -108,6 +112,8 @@ pub use cosmolkit_core::RingSearchParams;
 pub use cosmolkit_core::{AddHsParams, HydrogenError, RemoveHsParams};
 #[cfg(feature = "cap-aromaticity")]
 pub use cosmolkit_core::{AromaticityError, AromaticityModel, AromaticityParams};
+#[cfg(feature = "cap-valence")]
+pub use cosmolkit_core::{AtomMetadata, ValenceError, ValenceModel, ValenceParams};
 #[cfg(feature = "cap-transforms")]
 pub use cosmolkit_core::{AtomPositionParams, TransformError};
 #[cfg(feature = "cap-sanitize")]
@@ -125,8 +131,6 @@ pub use cosmolkit_core::{
     PotentialStereoParams, PotentialStereoSpecified, PotentialStereoType, RingStereoRelation,
     StereoError, StructureTagParams,
 };
-#[cfg(feature = "cap-valence")]
-pub use cosmolkit_core::{ValenceError, ValenceModel, ValenceParams};
 #[cfg(feature = "cap-bio")]
 pub use cosmolkit_io::{
     BioMmcifReadError, BioMmcifReadStage, BioMmcifWriteError, BioMmcifWriteParams, BioPdbReadError,
@@ -154,6 +158,10 @@ pub use morgan::{MorganFingerprintParams, MorganInvariants, MorganReadError};
 mod atom_pair;
 #[cfg(feature = "cap-fingerprints")]
 pub use atom_pair::{AtomPairFingerprintParams, AtomPairReadError};
+#[cfg(feature = "cap-fingerprints")]
+mod legacy_topological_torsion;
+#[cfg(feature = "cap-fingerprints")]
+pub use legacy_topological_torsion::LegacyTopologicalTorsionParams;
 #[cfg(feature = "cap-fingerprints")]
 mod topological_torsion;
 pub(crate) use ops::DerivedState;
@@ -209,7 +217,10 @@ pub use smiles::{
     FragmentCxSmilesWriteParams, FragmentSmilesWriteParams, SmilesError, SmilesWriteError,
 };
 #[cfg(feature = "cap-fingerprints")]
-pub use topological_torsion::{TopologicalTorsionFingerprintParams, TopologicalTorsionReadError};
+pub use topological_torsion::{
+    TopologicalTorsionCallParams, TopologicalTorsionFingerprintGenerator,
+    TopologicalTorsionFingerprintParams, TopologicalTorsionReadError, TopologicalTorsionSettings,
+};
 
 /// Returns RDKit periodic-table metadata for an element, including the dummy (`*`).
 ///
@@ -284,3 +295,6 @@ pub use tautomer::{
     TautomerRunError, TautomerScore, TautomerScoreParams, TautomerScoreTerm, TautomerScorer,
     default_tautomer_score_terms,
 };
+
+#[cfg(feature = "cap-forcefields")]
+pub use ops::{UffEnergyGradient, UffEvaluationParams};

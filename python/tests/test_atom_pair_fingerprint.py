@@ -67,7 +67,7 @@ def test_atom_pair_provenance_matches_exact_count_simulation_projection():
     assert result.fingerprint().on_bits() == [624, 1144, 1336, 1337, 1404, 1596]
 
     output = result.additional_output()
-    assert isinstance(output, cosmolkit.AdditionalOutput)
+    assert isinstance(output, cosmolkit.FingerprintAdditionalOutput)
     assert output.atom_counts() == [3, 3, 3, 3]
     assert output.atom_to_bits() == [
         [624, 1144, 1404],

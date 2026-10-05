@@ -36,9 +36,10 @@ pub struct UffOptimizationResult<M = Molecule> {
     pub energy: f64,
 }
 
-/// Options for serial optimization of every stored 3D conformer.
+/// Options for source-ordered optimization of every stored 3D conformer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct UffConformerOptimizationParams {
+    pub num_threads: i32,
     pub max_iterations: i32,
     pub vdw_threshold: f64,
     pub ignore_interfragment_interactions: bool,
@@ -51,10 +52,9 @@ impl Default for UffConformerOptimizationParams {
         // RDKit✔️✔️:                                      int numThreads = 1, int maxIters = 1000,
         // RDKit✔️✔️:                                      double vdwThresh = 10.0,
         // RDKit✔️✔️:                                      bool ignoreInterfragInteractions = true) {
-        // The serial facade fixes the source default numThreads=1 and exposes
-        // only the remaining source options. Constructing defaults is constant
-        // time and allocates no chemistry state.
+        // Constructing the original options is constant time with no chemistry state.
         Self {
+            num_threads: 1,
             max_iterations: 1000,
             vdw_threshold: 10.0,
             ignore_interfragment_interactions: true,
@@ -85,6 +85,7 @@ pub enum UffOptimizationErrorKind {
     Rings,
     Optimization,
     ConformerOptimization,
+    Evaluation,
 }
 
 #[derive(Debug)]
@@ -93,6 +94,7 @@ enum Failure {
     Rings(cosmolkit_core::RingFindingError),
     Optimization(cosmolkit_forcefields::UffSingleError),
     ConformerOptimization(cosmolkit_forcefields::UffConformerError),
+    Evaluation(cosmolkit_forcefields::UffEvaluationError),
 }
 
 /// Clones retain the same concrete failure and borrowed source chain.
@@ -108,6 +110,7 @@ impl UffOptimizationError {
             Failure::Rings(_) => UffOptimizationErrorKind::Rings,
             Failure::Optimization(_) => UffOptimizationErrorKind::Optimization,
             Failure::ConformerOptimization(_) => UffOptimizationErrorKind::ConformerOptimization,
+            Failure::Evaluation(_) => UffOptimizationErrorKind::Evaluation,
         }
     }
     fn operation(cause: Failure) -> OperationError {
@@ -128,6 +131,7 @@ impl fmt::Display for UffOptimizationError {
             Failure::Rings(cause) => fmt::Display::fmt(cause, f),
             Failure::Optimization(cause) => fmt::Display::fmt(cause, f),
             Failure::ConformerOptimization(cause) => fmt::Display::fmt(cause, f),
+            Failure::Evaluation(cause) => fmt::Display::fmt(cause, f),
         }
     }
 }
@@ -138,15 +142,16 @@ impl Error for UffOptimizationError {
             Failure::Rings(cause) => Some(cause),
             Failure::Optimization(cause) => Some(cause),
             Failure::ConformerOptimization(cause) => Some(cause),
+            Failure::Evaluation(cause) => Some(cause),
         }
     }
 }
 
-#[mol_op_body(with_uff_optimized_coordinates, parts)]
-pub(crate) fn with_uff_optimized_coordinates_impl(
+#[mol_op_body(with_uff_optimized, parts)]
+pub(crate) fn with_uff_optimized_impl(
     params: &UffOptimizationParams,
 ) -> Result<
-    UffOptimizationResult<crate::PendingMolecule<super::WithUffOptimizedCoordinatesAccess>>,
+    UffOptimizationResult<crate::PendingMolecule<super::WithUffOptimizedAccess>>,
     OperationError,
 > {
     let mut coordinates = parts.checkout_coordinates()?;
@@ -233,11 +238,11 @@ pub(crate) fn with_uff_optimized_coordinates_impl(
     })
 }
 
-#[mol_op_body(with_uff_optimized_conformers, parts)]
-pub(crate) fn with_uff_optimized_conformers_impl(
+#[mol_op_body(with_uff_optimized_confs, parts)]
+pub(crate) fn with_uff_optimized_confs_impl(
     params: &UffConformerOptimizationParams,
 ) -> Result<
-    UffConformerOptimizationResult<crate::PendingMolecule<super::WithUffOptimizedConformersAccess>>,
+    UffConformerOptimizationResult<crate::PendingMolecule<super::WithUffOptimizedConfsAccess>>,
     OperationError,
 > {
     // BEGIN RDKIT CPP FUNCTION UFF::UFFOptimizeMoleculeConfs (UFF.h:69-78)
@@ -306,6 +311,7 @@ pub(crate) fn with_uff_optimized_conformers_impl(
             rings,
             parts.properties()?,
             cosmolkit_forcefields::UffConformerOptions {
+                num_threads: params.num_threads,
                 max_iterations: params.max_iterations,
                 vdw_threshold: params.vdw_threshold,
                 ignore_interfragment_interactions: params.ignore_interfragment_interactions,
@@ -397,9 +403,7 @@ mod tests {
                                 ignore_interfragment_interactions: ignore,
                                 conformer_id: selector,
                             };
-                            let result = source
-                                .with_uff_optimized_coordinates_with_params(&params)
-                                .unwrap();
+                            let result = source.with_uff_optimized_with_params(&params).unwrap();
                             calls += 1;
                             assert!(matches!(result.status, 0 | 1));
                             assert!(result.energy.is_finite());
@@ -448,9 +452,9 @@ mod tests {
         assert_eq!(calls, 72);
         let source = fixture();
         assert_eq!(
-            source.with_uff_optimized_coordinates().unwrap(),
+            source.with_uff_optimized().unwrap(),
             source
-                .with_uff_optimized_coordinates_with_params(&UffOptimizationParams::default())
+                .with_uff_optimized_with_params(&UffOptimizationParams::default())
                 .unwrap()
         );
     }
@@ -460,7 +464,7 @@ mod tests {
         let source = fixture();
         let before = source.clone();
         let error = source
-            .with_uff_optimized_coordinates_with_params(&UffOptimizationParams {
+            .with_uff_optimized_with_params(&UffOptimizationParams {
                 conformer_id: Some(0),
                 ..Default::default()
             })
@@ -485,7 +489,7 @@ mod tests {
         .unwrap()
         .with_assigned_valence()
         .unwrap();
-        let error = two_d_only.with_uff_optimized_coordinates().unwrap_err();
+        let error = two_d_only.with_uff_optimized().unwrap_err();
         let OperationError::UffOptimization(cause) = error else {
             panic!("missing 3D must be typed")
         };
@@ -500,7 +504,7 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            invalid_cache.with_uff_optimized_coordinates(),
+            invalid_cache.with_uff_optimized(),
             Err(OperationError::InvalidDerivedCache {
                 state: "valence",
                 ..
@@ -534,7 +538,7 @@ mod tests {
             .with_assigned_valence()
             .unwrap();
             let before = source.clone();
-            let error = source.with_uff_optimized_coordinates().unwrap_err();
+            let error = source.with_uff_optimized().unwrap_err();
             let OperationError::UffOptimization(cause) = &error else {
                 panic!("owner error flattened: {error}")
             };
@@ -572,5 +576,97 @@ mod tests {
                 &before.derived_cache_arc_runtime()
             ));
         }
+    }
+}
+
+impl UffOptimizationResult {
+    pub fn molecule(&self) -> &Molecule {
+        &self.molecule
+    }
+    pub fn status_code(&self) -> i32 {
+        self.status
+    }
+    pub fn needs_more(&self) -> bool {
+        self.status > 0
+    }
+    pub fn energy(&self) -> f64 {
+        self.energy
+    }
+}
+impl UffConformerResult {
+    pub fn conformer_id(&self) -> usize {
+        self.conformer_id
+    }
+    pub fn status_code(&self) -> i32 {
+        self.status
+    }
+    pub fn needs_more(&self) -> bool {
+        self.status > 0
+    }
+    pub fn energy(&self) -> f64 {
+        self.energy
+    }
+}
+impl UffConformerOptimizationResult {
+    pub fn molecule(&self) -> &Molecule {
+        &self.molecule
+    }
+    pub fn conformer_results(&self) -> &[UffConformerResult] {
+        &self.conformers
+    }
+}
+
+pub use cosmolkit_forcefields::{UffEnergyGradient, UffEvaluationParams};
+impl Molecule {
+    /// Read-only energy and gradient from the original UFF field constructor.
+    pub fn uff_energy_gradient(&self) -> Result<UffEnergyGradient, OperationError> {
+        self.uff_energy_gradient_with_params(&UffEvaluationParams::default())
+    }
+    pub fn uff_energy_gradient_with_params(
+        &self,
+        params: &UffEvaluationParams,
+    ) -> Result<UffEnergyGradient, OperationError> {
+        // Select only the independently stored 3D dimension, then borrow
+        // prepared chemistry state through the existing public facade.
+        let coordinates = self.coordinate_block_runtime();
+        let row = match params.conformer_id {
+            None => coordinates.conformers_3d.first(),
+            Some(id) => coordinates.conformers_3d.iter().find(|row| row.id() == id),
+        };
+        row.ok_or_else(|| {
+            UffOptimizationError::operation(Failure::MissingConformer(params.conformer_id))
+        })?;
+        let topology = self.topology();
+        let cache = self.derived_cache_runtime();
+        cache.validate_for_atom_count(topology.atoms.len())?;
+        let valence = cache
+            .valence_assignment()
+            .ok_or(OperationError::InvalidDerivedCache {
+                state: "valence",
+                field: "assignment",
+                actual: 0,
+                expected: 1,
+            })?;
+        let computed_rings;
+        let rings = match cache.valid_ring_info() {
+            Some(rings) => rings,
+            None => {
+                computed_rings = cosmolkit_core::symmetrized_sssr(
+                    topology,
+                    &cosmolkit_core::RingSearchParams::default(),
+                )
+                .map_err(|e| UffOptimizationError::operation(Failure::Rings(e)))?;
+                &computed_rings
+            }
+        };
+        cosmolkit_forcefields::evaluate_uff(
+            topology,
+            coordinates,
+            valence,
+            rings,
+            self.properties(),
+            params,
+        )
+        .map_err(|e| UffOptimizationError::operation(Failure::Evaluation(e)))
     }
 }

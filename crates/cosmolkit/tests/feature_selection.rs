@@ -706,10 +706,10 @@ fn public_methods_compile_only_with_their_own_capability_default_and_strict() {
         (
             &["cap-forcefields"],
             &[
-                "with_uff_optimized_coordinates",
-                "with_uff_optimized_coordinates_with_params",
-                "with_uff_optimized_conformers",
-                "with_uff_optimized_conformers_with_params",
+                "with_uff_optimized",
+                "with_uff_optimized_with_params",
+                "with_uff_optimized_confs",
+                "with_uff_optimized_confs_with_params",
             ],
             &["from_smiles"],
         ),

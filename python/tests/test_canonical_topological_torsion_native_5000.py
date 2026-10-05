@@ -54,7 +54,7 @@ def test_current_torsion_single_forms_match_original_native_all9profiles(index):
         for form,method in METHODS:
             output=None
             if branch.get("additionalOutput"):
-                output=ck.AdditionalOutput()
+                output=ck.FingerprintAdditionalOutput()
                 output.allocate_atom_to_bits();output.allocate_atom_counts();output.allocate_bit_info_map();output.allocate_bit_paths();output.allocate_atoms_per_bit()
             observed["calls"]+=1
             try:

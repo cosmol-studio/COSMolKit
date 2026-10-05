@@ -301,7 +301,8 @@ fn data_polymer_and_hierarchy_records_install_typed_sgroups() {
             .topology
             .substance_groups
             .iter()
-            .all(|group| group.props().get("_cxsmilesindex").is_none())
+            .enumerate()
+            .all(|(index, group)| group.props().get("_cxsmilesindex") == Some(&index.to_string()))
     );
 
     let missing_child = parse("CC |SgD:9:SKIP:x::::,SgD:0:PARENT:p::::,SgH:1:0|");
@@ -492,6 +493,7 @@ fn unknown_records_are_ignored_and_parser_only_indices_are_removed() {
             .topology
             .substance_groups
             .iter()
-            .all(|group| group.props().get("_cxsmilesindex").is_none())
+            .enumerate()
+            .all(|(index, group)| group.props().get("_cxsmilesindex") == Some(&index.to_string()))
     );
 }

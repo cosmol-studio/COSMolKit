@@ -103,6 +103,10 @@ impl FromStr for CipDescriptor {
 /// by the supported modern assignment dispatcher.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CipDescriptorError {
+    #[error("invalid stored CIP neighbor order `{value}`: {detail}")]
+    InvalidNeighborOrder { value: String, detail: String },
+    #[error(transparent)]
+    Property(#[from] crate::PropertyValueError),
     #[error("invalid stored modern CIP descriptor `{value}`")]
     InvalidStoredDescriptor { value: String },
 }
@@ -112,4 +116,37 @@ pub(crate) fn descriptor_from_property(
     value: Option<&str>,
 ) -> Result<Option<CipDescriptor>, CipDescriptorError> {
     value.map(str::parse).transpose()
+}
+
+/// Decode the existing modern owner's stored neighbor-order representation.
+/// Its JSON string serialization predates extraction; keep that exact format,
+/// and also read canonical typed integer vectors without string conversion.
+pub(crate) fn neighbor_order_from_property(
+    value: Option<&crate::PropertyValue>,
+) -> Result<Option<Vec<u32>>, CipDescriptorError> {
+    value
+        .map(|value| {
+            if let crate::PropertyValue::String(text) = value {
+                serde_json::from_str(text).map_err(|error| {
+                    CipDescriptorError::InvalidNeighborOrder {
+                        value: text.clone(),
+                        detail: error.to_string(),
+                    }
+                })
+            } else {
+                value
+                    .as_int_vector()?
+                    .iter()
+                    .map(|&index| {
+                        u32::try_from(index).map_err(|error| {
+                            CipDescriptorError::InvalidNeighborOrder {
+                                value: index.to_string(),
+                                detail: error.to_string(),
+                            }
+                        })
+                    })
+                    .collect()
+            }
+        })
+        .transpose()
 }

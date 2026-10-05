@@ -187,12 +187,13 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "python-embed-tests"))]
 mod tests {
     use super::*;
 
     #[test]
     fn d02_missing_state_conversion_has_no_fabricated_child() {
+        Python::initialize();
         Python::attach(|py| {
             for source in [
                 ck::DescriptorReadError::MissingPreparedValence,
@@ -220,6 +221,7 @@ mod tests {
 
     #[test]
     fn d02_algorithm_conversion_preserves_typed_child_context() {
+        Python::initialize();
         Python::attach(|py| {
             let error = descriptor_pyerr(
                 py,
@@ -275,6 +277,7 @@ mod tests {
 
     #[test]
     fn d02_source_unsupported_kind_is_not_inferred_from_other_errors() {
+        Python::initialize();
         Python::attach(|py| {
             let error = domain_pyerr(
                 py,

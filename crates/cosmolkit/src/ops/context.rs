@@ -2379,3 +2379,7 @@ mod commit_tests;
 #[cfg(all(test, feature = "op-contracts-strict"))]
 #[path = "../../tests/support/run_failure_internal.rs"]
 mod failure_tests;
+
+#[cfg(all(test, feature = "cap-forcefields", feature = "op-contracts-strict"))]
+#[path = "../../tests/support/mmff_proof_internal.rs"]
+mod mmff_proof_tests;
