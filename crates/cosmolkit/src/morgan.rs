@@ -2,25 +2,21 @@
 
 use std::fmt;
 
-use cosmolkit_core::{
-    RingFindingError, RingInfo, RingSearchParams, ValenceAssignment, symmetrized_sssr,
-};
+use cosmolkit_core::{RingInfo, RingSearchParams, ValenceAssignment, symmetrized_sssr};
 use cosmolkit_fingerprints::{
     Fingerprint, FingerprintAdditionalOutput, MorganAtomInvariants, MorganCall, MorganError,
     MorganParams, MorganPreparedInput, SparseBitFingerprint, SparseCountFingerprint,
     SparseCountFingerprint32, morgan_bits, morgan_count, morgan_sparse_bits, morgan_sparse_count,
 };
 
-use crate::{DerivedState, Molecule, QueryGraph};
+use crate::{DerivedState, FingerprintPreparationError, Molecule, QueryGraph};
 
 /// Typed failure from the public Morgan fingerprint preparation and generation
 /// boundary.
 #[derive(Debug)]
 pub enum MorganReadError {
-    /// No valid runtime valence assignment was available to the read-only call.
-    MissingPreparedValence,
-    /// Detached ring preparation failed with its original core error.
-    RingPreparation(RingFindingError),
+    /// Shared molecule-state preparation failed before Morgan generation.
+    Preparation(FingerprintPreparationError),
     /// Canonical Morgan generation failed with its original owner error.
     Generator(MorganError),
 }
@@ -28,11 +24,7 @@ pub enum MorganReadError {
 impl fmt::Display for MorganReadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingPreparedValence => formatter
-                .write_str("Morgan fingerprinting requires a valid prepared valence assignment"),
-            Self::RingPreparation(error) => {
-                write!(formatter, "Morgan ring preparation failed: {error}")
-            }
+            Self::Preparation(error) => write!(formatter, "Morgan preparation failed: {error}"),
             Self::Generator(error) => write!(formatter, "Morgan generation failed: {error}"),
         }
     }
@@ -41,8 +33,7 @@ impl fmt::Display for MorganReadError {
 impl std::error::Error for MorganReadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::MissingPreparedValence => None,
-            Self::RingPreparation(error) => Some(error),
+            Self::Preparation(error) => Some(error),
             Self::Generator(error) => Some(error),
         }
     }
@@ -77,11 +68,11 @@ impl MorganReadPreparation<'_> {
 
 pub(super) fn prepare_morgan_read_input(
     molecule: &Molecule,
-) -> Result<MorganReadPreparation<'_>, MorganReadError> {
+) -> Result<MorganReadPreparation<'_>, FingerprintPreparationError> {
     let cache = molecule.derived_cache_runtime();
     let valence = cache
         .valence_assignment()
-        .ok_or(MorganReadError::MissingPreparedValence)?;
+        .ok_or(FingerprintPreparationError::MissingPreparedValence)?;
 
     let cached_rings = cache
         .valid_states()
@@ -93,7 +84,7 @@ pub(super) fn prepare_morgan_read_input(
         Some(rings) => MorganReadRings::Cached(rings),
         None => MorganReadRings::Temporary(
             symmetrized_sssr(molecule.topology(), &RingSearchParams::default())
-                .map_err(MorganReadError::RingPreparation)?,
+                .map_err(FingerprintPreparationError::RingPreparation)?,
         ),
     };
 
@@ -171,7 +162,7 @@ impl Molecule {
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint, MorganReadError> {
-        let prepared = prepare_morgan_read_input(self)?;
+        let prepared = prepare_morgan_read_input(self).map_err(MorganReadError::Preparation)?;
         let input = prepared.owner_input();
         let call = MorganCall {
             from_atoms: params.from_atoms.as_deref(),
@@ -209,7 +200,7 @@ impl Molecule {
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseBitFingerprint, MorganReadError> {
-        let prepared = prepare_morgan_read_input(self)?;
+        let prepared = prepare_morgan_read_input(self).map_err(MorganReadError::Preparation)?;
         let input = prepared.owner_input();
         let call = MorganCall {
             from_atoms: params.from_atoms.as_deref(),
@@ -247,7 +238,7 @@ impl Molecule {
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<SparseCountFingerprint32, MorganReadError> {
-        let prepared = prepare_morgan_read_input(self)?;
+        let prepared = prepare_morgan_read_input(self).map_err(MorganReadError::Preparation)?;
         let input = prepared.owner_input();
         let call = MorganCall {
             from_atoms: params.from_atoms.as_deref(),
@@ -285,7 +276,7 @@ impl Molecule {
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
     ) -> Result<Fingerprint, MorganReadError> {
-        let prepared = prepare_morgan_read_input(self)?;
+        let prepared = prepare_morgan_read_input(self).map_err(MorganReadError::Preparation)?;
         let input = prepared.owner_input();
         let call = MorganCall {
             from_atoms: params.from_atoms.as_deref(),
@@ -325,9 +316,9 @@ mod tests {
     use crate::ops::OperationError;
     use crate::{
         BINDING_CONTRACT, BindingItem, BindingKind, BindingOwner, BindingReceiver, BindingTypeRole,
-        DerivedState, Fingerprint, FingerprintAdditionalOutput, FunctionStatus, Molecule,
-        MorganFingerprintParams, MorganInvariants, MorganParams, MorganReadError, QueryGraph,
-        SparseBitFingerprint, StateModel,
+        DerivedState, Fingerprint, FingerprintAdditionalOutput, FingerprintPreparationError,
+        FunctionStatus, Molecule, MorganFingerprintParams, MorganInvariants, MorganParams,
+        MorganReadError, QueryGraph, SparseBitFingerprint, StateModel,
     };
 
     use super::{MorganReadRings, prepare_morgan_read_input};
@@ -488,7 +479,7 @@ mod tests {
 
         assert!(matches!(
             prepare_morgan_read_input(&molecule),
-            Err(MorganReadError::MissingPreparedValence)
+            Err(FingerprintPreparationError::MissingPreparedValence)
         ));
         assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
         assert!(Arc::ptr_eq(
@@ -660,13 +651,30 @@ mod tests {
         let ring_source = RingFindingError::Value {
             message: "fixed ring preparation failure",
         };
-        let ring_error = MorganReadError::RingPreparation(ring_source.clone());
-        let ring_cause = std::error::Error::source(&ring_error)
-            .expect("ring preparation retains its concrete cause");
-        assert_eq!(
-            ring_cause.downcast_ref::<RingFindingError>(),
-            Some(&ring_source)
-        );
+        let ring_errors: [Box<dyn std::error::Error>; 3] = [
+            Box::new(MorganReadError::Preparation(
+                FingerprintPreparationError::RingPreparation(ring_source.clone()),
+            )),
+            Box::new(crate::AtomPairReadError::Preparation(
+                FingerprintPreparationError::RingPreparation(ring_source.clone()),
+            )),
+            Box::new(crate::TopologicalTorsionReadError::Preparation(
+                FingerprintPreparationError::RingPreparation(ring_source.clone()),
+            )),
+        ];
+        for error in &ring_errors {
+            let preparation = error
+                .source()
+                .unwrap()
+                .downcast_ref::<FingerprintPreparationError>()
+                .expect("each family retains the shared preparation error");
+            let ring_cause = std::error::Error::source(preparation)
+                .expect("ring preparation retains its concrete cause");
+            assert_eq!(
+                ring_cause.downcast_ref::<RingFindingError>(),
+                Some(&ring_source)
+            );
+        }
 
         let generator_error = MorganReadError::Generator(MorganError::Fingerprint(
             FingerprintError::InvalidArguments {
@@ -693,13 +701,57 @@ mod tests {
             })
         ));
 
-        let missing_valence = MorganReadError::MissingPreparedValence;
-        assert!(std::error::Error::source(&missing_valence).is_none());
+        let molecule = Molecule::new();
+        let errors: [Box<dyn std::error::Error>; 12] = [
+            Box::new(molecule.morgan_fingerprint().unwrap_err()),
+            Box::new(molecule.morgan_sparse_fingerprint().unwrap_err()),
+            Box::new(molecule.morgan_count_fingerprint().unwrap_err()),
+            Box::new(molecule.morgan_sparse_count_fingerprint().unwrap_err()),
+            Box::new(molecule.atom_pair_fingerprint().unwrap_err()),
+            Box::new(molecule.atom_pair_sparse_fingerprint().unwrap_err()),
+            Box::new(molecule.atom_pair_count_fingerprint().unwrap_err()),
+            Box::new(molecule.atom_pair_sparse_count_fingerprint().unwrap_err()),
+            Box::new(molecule.topological_torsion_fingerprint().unwrap_err()),
+            Box::new(
+                molecule
+                    .topological_torsion_sparse_fingerprint()
+                    .unwrap_err(),
+            ),
+            Box::new(
+                molecule
+                    .topological_torsion_count_fingerprint()
+                    .unwrap_err(),
+            ),
+            Box::new(
+                molecule
+                    .topological_torsion_sparse_count_fingerprint()
+                    .unwrap_err(),
+            ),
+        ];
+        for error in &errors {
+            let preparation = error
+                .source()
+                .unwrap()
+                .downcast_ref::<FingerprintPreparationError>()
+                .expect("public read errors retain a shared preparation cause");
+            assert!(matches!(
+                preparation,
+                FingerprintPreparationError::MissingPreparedValence
+            ));
+            assert!(std::error::Error::source(preparation).is_none());
+        }
     }
 
     #[test]
     fn morgan_public_metadata_contract_additional_output_bindings() {
         for (semantic_id, rust_path, python_name, javascript_name, role) in [
+            (
+                "types.FingerprintPreparationError",
+                "crate::FingerprintPreparationError",
+                "FingerprintPreparationError",
+                "FingerprintPreparationError",
+                BindingTypeRole::Error,
+            ),
             (
                 "types.MorganParams",
                 "crate::MorganParams",

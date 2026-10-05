@@ -128,3 +128,21 @@ impl Molecule {
         )
     }
 }
+
+impl Molecule {
+    pub fn topological_torsion_ids(&self) -> Result<Vec<u64>, TopologicalTorsionReadError> {
+        self.topological_torsion_ids_with_params(4)
+    }
+    pub fn topological_torsion_ids_with_params(
+        &self,
+        torsion_atom_count: u32,
+    ) -> Result<Vec<u64>, TopologicalTorsionReadError> {
+        with_legacy_input(
+            self,
+            &LegacyTopologicalTorsionParams::default(),
+            |input, _, _| {
+                cosmolkit_fingerprints::topological_torsion_ids(input, torsion_atom_count)
+            },
+        )
+    }
+}

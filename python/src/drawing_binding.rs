@@ -114,6 +114,7 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
         E::PotentialStereo(..) => "PotentialStereo",
         E::Stereo(..) => "Stereo",
         E::CipLabeler(..) => "CipLabeler",
+        E::AtomCode(..) => "AtomCode",
         E::Transform(..) => "Transform",
         E::Coordinate2D(..) => "Coordinate2D",
         E::Kekulize(..) => "Kekulize",
@@ -342,6 +343,25 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    #[pyo3(signature=(atom_id, branch_subtract=0, include_chirality=false, use_legacy_stereo_perception=true))]
+    fn with_atom_pair_atom_code(
+        &self,
+        py: Python<'_>,
+        atom_id: usize,
+        branch_subtract: u32,
+        include_chirality: bool,
+        use_legacy_stereo_perception: bool,
+    ) -> PyResult<crate::canonical_fingerprint_values::AtomPairAtomCodeResult> {
+        self.inner
+            .with_atom_pair_atom_code(
+                ck::AtomId::new(atom_id),
+                branch_subtract,
+                include_chirality,
+                use_legacy_stereo_perception,
+            )
+            .map(|inner| crate::canonical_fingerprint_values::AtomPairAtomCodeResult { inner })
+            .map_err(|error| operation_pyerr(py, error))
+    }
     #[pyo3(signature=(generator,*,params=None,output=None))]
     fn topological_torsion_fingerprint_with_generator(
         &self,
@@ -1362,6 +1382,20 @@ impl Molecule {
             )
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn topological_torsion_ids(&self, py: Python<'_>) -> PyResult<Vec<u64>> {
+        self.inner
+            .topological_torsion_ids()
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
+    fn topological_torsion_ids_with_params(
+        &self,
+        py: Python<'_>,
+        torsion_atom_count: u32,
+    ) -> PyResult<Vec<u64>> {
+        self.inner
+            .topological_torsion_ids_with_params(torsion_atom_count)
+            .map_err(|error| topological_torsion_pyerr(py, error))
     }
     fn topological_torsion_fingerprint(&self, py: Python<'_>) -> PyResult<Fingerprint> {
         self.inner

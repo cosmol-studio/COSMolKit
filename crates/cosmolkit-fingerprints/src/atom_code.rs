@@ -10,6 +10,10 @@ use cosmolkit_model::{
 use cosmolkit_stereo::{CipLabelOptions, CipLabelerError, assign_cip_labels};
 use std::{borrow::Cow, fmt};
 
+/// Exact source table, including its implicit final zero.
+pub(crate) const ATOM_NUMBER_TYPES: [u32; 16] =
+    [5, 6, 7, 8, 9, 14, 15, 16, 17, 33, 34, 35, 51, 52, 53, 0];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AtomCodeOptions {
     pub branch_subtract: u32,
@@ -48,6 +52,17 @@ impl AtomCodeInput<'static> {
     }
 }
 impl<'a> AtomCodeInput<'a> {
+    /// Scoped COW input from a declared runtime capability, with local validation.
+    pub fn from_cow(
+        topology: Cow<'a, TopologyBlock>,
+        properties: Cow<'a, MoleculeProperties>,
+    ) -> Result<Self, TopologyValidationError> {
+        topology.validate()?;
+        Ok(Self {
+            topology,
+            properties,
+        })
+    }
     /// Borrow already detached state; modern CIP creates a private copy only on its source guard.
     pub fn from_ref(
         topology: &'a TopologyBlock,
@@ -75,6 +90,15 @@ pub struct AtomCodeAssignment<'a> {
     input: AtomCodeInput<'a>,
 }
 impl<'a> AtomCodeAssignment<'a> {
+    /// Return the changed owner blocks only when source assignment created them.
+    /// A borrowed result explicitly records no state effect, preserving COW.
+    pub fn into_optional_owned_parts(self) -> (u32, Option<(TopologyBlock, MoleculeProperties)>) {
+        let pair = match (self.input.topology, self.input.properties) {
+            (Cow::Borrowed(_), Cow::Borrowed(_)) => None,
+            (topology, properties) => Some((topology.into_owned(), properties.into_owned())),
+        };
+        (self.code, pair)
+    }
     pub fn code(&self) -> u32 {
         self.code
     }
@@ -92,7 +116,7 @@ impl<'a> AtomCodeAssignment<'a> {
         (self.code, topology, properties)
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AtomCodeError {
     Precondition { what: &'static str },
     Postcondition { what: &'static str, code: u32 },
@@ -313,7 +337,7 @@ pub fn atom_code<'a>(
     code |= n_pi << 3;
     // The C++ array has15 initializers and an implicit final zero. Preserve
     // the exact unsigned comparison order; no periodictable heuristic.
-    const ATOM_NUMBER_TYPES: [u32; 16] = [5, 6, 7, 8, 9, 14, 15, 16, 17, 33, 34, 35, 51, 52, 53, 0];
+
     let atomic_number = u32::from(atom.atomic_number());
     let mut type_index = 0usize;
     while type_index < 16 {

@@ -1,7 +1,7 @@
 //! Canonical Topological Torsion call transport; chemistry remains in the fingerprint owner.
 use crate::{
-    Fingerprint, FingerprintAdditionalOutput, Molecule, MorganReadError, SparseBitFingerprint,
-    SparseCountFingerprint, SparseCountFingerprint32,
+    Fingerprint, FingerprintAdditionalOutput, FingerprintPreparationError, Molecule,
+    SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32,
 };
 use cosmolkit_fingerprints::{
     AtomPairAtomInvariantsGenerator, AtomPairPreparedInput, TopologicalTorsionCall,
@@ -37,7 +37,7 @@ impl Default for TopologicalTorsionFingerprintParams {
 }
 #[derive(Debug)]
 pub enum TopologicalTorsionReadError {
-    Preparation(MorganReadError),
+    Preparation(FingerprintPreparationError),
     Generator(TopologicalTorsionError),
 }
 impl fmt::Display for TopologicalTorsionReadError {

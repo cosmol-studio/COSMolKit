@@ -573,6 +573,12 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<TopologicalTorsionSettings>()?;
     module.add_class::<TopologicalTorsionCallParams>()?;
     module.add_class::<TopologicalTorsionParams>()?;
+    module.add_class::<AtomCodeExplanation>()?;
+    module.add_class::<AtomPairAtomCodeResult>()?;
+    module.add(
+        "AtomCodeExplanationError",
+        module.py().get_type::<AtomCodeExplanationError>(),
+    )?;
     module.add_class::<LegacyTopologicalTorsionParams>()?;
     module.add_class::<TopologicalTorsionFingerprintParams>()?;
     module.add_class::<AtomPairParams>()?;
@@ -970,5 +976,80 @@ impl LegacyTopologicalTorsionParams {
     #[getter]
     fn custom_atom_invariants(&self) -> Option<Vec<u32>> {
         self.inner.custom_atom_invariants.clone()
+    }
+}
+
+pyo3::create_exception!(
+    cosmolkit,
+    AtomCodeExplanationError,
+    pyo3::exceptions::PyKeyError
+);
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct AtomPairAtomCodeResult {
+    pub(crate) inner: ck::AtomPairAtomCodeResult,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AtomPairAtomCodeResult {
+    #[getter]
+    fn code(&self) -> u32 {
+        self.inner.code
+    }
+    #[getter]
+    fn molecule(&self) -> crate::drawing_binding::Molecule {
+        crate::drawing_binding::Molecule {
+            inner: self.inner.molecule.clone(),
+        }
+    }
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct AtomCodeExplanation {
+    pub(crate) inner: ck::AtomCodeExplanation,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AtomCodeExplanation {
+    #[staticmethod]
+    #[pyo3(signature = (code, branch_subtract=0, include_chirality=false))]
+    fn from_code(
+        code: u64,
+        branch_subtract: i64,
+        include_chirality: bool,
+        py: Python<'_>,
+    ) -> PyResult<Self> {
+        ck::AtomCodeExplanation::from_code(code, branch_subtract, include_chirality)
+            .map(|inner| Self { inner })
+            .map_err(|error| {
+                let ck::AtomCodeExplanationError::UnknownChirality { code } = error;
+                let exception = AtomCodeExplanationError::new_err(code);
+                let object = exception.value(py);
+                for (name, value) in [("domain", "Fingerprint"), ("kind", "UnknownChirality")] {
+                    if let Err(attribute_error) = object.setattr(name, value) {
+                        return attribute_error;
+                    }
+                }
+                if let Err(attribute_error) = object.setattr("code", code) {
+                    return attribute_error;
+                }
+                exception
+            })
+    }
+    #[getter]
+    fn symbol(&self) -> &'static str {
+        self.inner.symbol()
+    }
+    #[getter]
+    fn branch_count(&self) -> u32 {
+        self.inner.branch_count()
+    }
+    #[getter]
+    fn pi_electrons(&self) -> u32 {
+        self.inner.pi_electrons()
+    }
+    #[getter]
+    fn chirality(&self) -> Option<&'static str> {
+        self.inner.chirality()
     }
 }

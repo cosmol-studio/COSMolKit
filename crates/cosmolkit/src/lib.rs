@@ -155,6 +155,10 @@ pub use molecule_builder::MoleculeBuilder;
 #[cfg(feature = "cap-fingerprints")]
 pub use morgan::{MorganFingerprintParams, MorganInvariants, MorganReadError};
 #[cfg(feature = "cap-fingerprints")]
+mod fingerprint_preparation;
+#[cfg(feature = "cap-fingerprints")]
+pub use fingerprint_preparation::FingerprintPreparationError;
+#[cfg(feature = "cap-fingerprints")]
 mod atom_pair;
 #[cfg(feature = "cap-fingerprints")]
 pub use atom_pair::{AtomPairFingerprintParams, AtomPairReadError};
@@ -302,3 +306,9 @@ pub use bio::BioMoleculeError;
 pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams};
 #[cfg(feature = "cap-forcefields")]
 pub use ops::{UffEnergyGradient, UffEvaluationParams};
+#[cfg(feature = "cap-fingerprints")]
+pub use cosmolkit_fingerprints::{AtomCodeExplanation, AtomCodeExplanationError};
+#[cfg(feature = "cap-fingerprints")]
+pub use ops::AtomPairAtomCodeResult;
+#[cfg(feature = "cap-fingerprints")]
+pub(crate) use ops::WithAtomPairAtomCodeAccess;

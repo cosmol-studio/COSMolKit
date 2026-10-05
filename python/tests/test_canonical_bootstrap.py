@@ -92,15 +92,27 @@ def test_hydrogen_option_forwarding(remove_hydrogens: bool, expected_atoms: int)
     assert mol.num_atoms() == expected_atoms
 
 
-def test_unsanitized_read_reports_missing_preparation():
+@pytest.mark.parametrize("family,error_type,label", [
+    ("morgan", ck.MorganReadError, "Morgan"),
+    ("atom_pair", ck.AtomPairReadError, "AtomPair"),
+    ("topological_torsion", ck.TopologicalTorsionReadError, "Topological Torsion"),
+])
+@pytest.mark.parametrize("suffix", [
+    "fingerprint", "sparse_fingerprint", "count_fingerprint", "sparse_count_fingerprint",
+])
+def test_unsanitized_read_reports_missing_preparation(family: str, error_type: type[Exception], label: str, suffix: str):
     mol = ck.Molecule.from_smiles_with_params("CCO",
         ck.SmilesParseParams(sanitize=False, remove_hydrogens=False))
     before = state(mol)
-    with pytest.raises(ck.MorganReadError) as caught:
-        _ = mol.morgan_fingerprint()
-    assert (caught.value.domain, caught.value.kind) == ("fingerprints", "MissingPreparedValence")
-    assert str(caught.value) == "Morgan fingerprinting requires a valid prepared valence assignment"
-    assert caught.value.__cause__ is None
+    with pytest.raises(error_type) as caught:
+        _ = call(getattr(mol, f"{family}_{suffix}"))()
+    assert (caught.value.domain, caught.value.kind) == ("fingerprints", "Preparation")
+    preparation = caught.value.__cause__
+    assert isinstance(preparation, ck.FingerprintPreparationError)
+    assert (preparation.domain, preparation.kind) == ("fingerprints", "MissingPreparedValence")
+    assert str(preparation) == "Fingerprint preparation requires a valid prepared valence assignment"
+    assert str(caught.value) == f"{label} preparation failed: {preparation}"
+    assert preparation.__cause__ is None
     assert state(mol) == before
 
 
@@ -235,8 +247,8 @@ def test_generated_stubs_match_installed_canonical_surface():
     tree = ast.parse(stub.read_text())
     classes = {n.name: n for n in tree.body if isinstance(n, ast.ClassDef)}
     assert {"Molecule", "SmilesParseParams", "SmilesWriteParams", "Fingerprint", "SparseBitFingerprint",
-            "SparseCountFingerprint", "SparseCountFingerprint32", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError"} <= classes.keys()
-    for name in ("SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError"):
+            "SparseCountFingerprint", "SparseCountFingerprint32", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintPreparationError", "FingerprintError"} <= classes.keys()
+    for name in ("SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintPreparationError", "FingerprintError"):
         assert [ast.unparse(n) for n in classes[name].bases] == ["builtins.ValueError"]
     for name, defaults in [("SmilesParseParams", PARSE_DEFAULTS), ("SmilesWriteParams", WRITE_DEFAULTS)]:
         factory = cast(object, getattr(ck, name))

@@ -33,6 +33,7 @@ pub enum TopologicalTorsionError {
     ThreadSpawn(std::io::Error),
     WorkerPanic,
     WorkerProtocol,
+    OutputAllocation(std::collections::TryReserveError),
 }
 impl fmt::Display for TopologicalTorsionError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -50,6 +51,9 @@ impl fmt::Display for TopologicalTorsionError {
             Self::WorkerProtocol => f.write_str(
                 "Topological Torsion bulk worker returned an incomplete result sequence",
             ),
+            Self::OutputAllocation(e) => {
+                write!(f, "Topological Torsion IDs output allocation failed: {e}")
+            }
             Self::StatePoisoned => {
                 f.write_str("Topological Torsion generator state lock was poisoned")
             }
@@ -66,6 +70,7 @@ impl std::error::Error for TopologicalTorsionError {
             Self::Json(e) => Some(e),
             Self::ThreadCount(e) => Some(e),
             Self::ThreadSpawn(e) => Some(e),
+            Self::OutputAllocation(e) => Some(e),
             Self::StatePoisoned | Self::WorkerPanic | Self::WorkerProtocol => None,
         }
     }
@@ -1560,4 +1565,39 @@ impl From<FingerprintJsonError> for TopologicalTorsionError {
     fn from(e: FingerprintJsonError) -> Self {
         Self::Json(e)
     }
+}
+
+/// Pinned Python source IDs helper over the sole legacy unfolded owner.
+pub fn topological_torsion_ids(
+    input: &AtomPairPreparedInput<'_>,
+    torsion_atom_count: u32,
+) -> Result<Vec<u64>, TopologicalTorsionError> {
+    // RDKit❗✔️: def GetTopologicalTorsionFingerprintAsIds(mol, targetSize=4):
+    // RDKit❗✔️:   nonZeroElements = GetTopologicalTorsionFingerprint(mol, targetSize).GetNonzeroElements()
+    // RDKit❗✔️:   frequencies = sorted(nonZeroElements.items())
+    // RDKit❗✔️:   res = []
+    // RDKit❗✔️:   for k, v in frequencies:
+    // RDKit❗✔️:     res.extend([k] * v)
+    // RDKit❗✔️:   return res
+    // BTreeMap already has source ascending order; visit once without sorting
+    // or constructing the source's temporary [k]*v list. O(k+returned IDs).
+    // Negative signed source counts multiply to an empty Python list. Checked
+    // reservation propagates allocation failure instead of truncating IDs.
+    let counts = legacy_topological_torsion_sparse_count(
+        input,
+        &LegacyTopologicalTorsionParams {
+            torsion_atom_count,
+            ..Default::default()
+        },
+        &TopologicalTorsionCall::default(),
+    )?;
+    let mut result = Vec::new();
+    for (&bit, &count) in counts.nonzero_elements() {
+        let repetitions = count.max(0) as usize;
+        result
+            .try_reserve(repetitions)
+            .map_err(TopologicalTorsionError::OutputAllocation)?;
+        result.extend(std::iter::repeat_n(bit, repetitions));
+    }
+    Ok(result)
 }

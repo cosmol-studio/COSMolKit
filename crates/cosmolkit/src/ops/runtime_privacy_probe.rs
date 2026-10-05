@@ -19,6 +19,42 @@ use crate::{OpParts, OperationError};
 
 use super::runtime::registry::{PreserveCacheNoneProbeAccess, PreserveCacheReadProbeAccess};
 
+#[cfg(cosmolkit_runtime_privacy_case = "atom_code_cow_allowed")]
+fn atom_code_cow_allowed(
+    parts: &mut OpParts<'_, crate::WithAtomPairAtomCodeAccess>,
+) -> Result<(), OperationError> {
+    let _ = parts.stage_topology_properties(|topology, properties, cache| {
+        let _ = (
+            topology.atoms.len(),
+            properties.prop("user"),
+            cache.valid_states(),
+        );
+        Ok(((), None))
+    })?;
+    Ok(())
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "atom_code_cow_missing_writes")]
+fn atom_code_cow_missing_writes(parts: &mut OpParts<'_, PreserveCacheReadProbeAccess>) {
+    let _ = parts.stage_topology_properties(|_topology, _properties, _cache| Ok(((), None)));
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "atom_code_cow_runtime_private")]
+fn atom_code_cow_runtime_private(parts: &mut OpParts<'_, crate::WithAtomPairAtomCodeAccess>) {
+    let _ =
+        parts.stage_topology_properties_runtime(|_topology, _properties, _cache| Ok(((), None)));
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "atom_code_cow_borrow_escape")]
+fn atom_code_cow_borrow_escape(parts: &mut OpParts<'_, crate::WithAtomPairAtomCodeAccess>) {
+    let _ = parts.stage_topology_properties(|topology, _properties, _cache| {
+        let std::borrow::Cow::Borrowed(topology) = topology else {
+            unreachable!()
+        };
+        Ok((topology, None))
+    });
+}
+
 pub(crate) fn preserve_cache_read_probe_impl(
     parts: &mut OpParts<'_, PreserveCacheReadProbeAccess>,
 ) -> Result<(), OperationError> {

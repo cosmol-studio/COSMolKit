@@ -4,6 +4,13 @@ use cosmolkit_macros::molecule_ops;
 
 use super::FeatureSpec;
 
+#[cfg(feature = "cap-fingerprints")]
+pub(crate) const FINGERPRINTS_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cap-fingerprints",
+    category: "fingerprints",
+    docs: "Fingerprint values and source-defined atom-code CIP transformation.",
+};
+
 #[cfg(feature = "cap-forcefields")]
 pub(crate) const FORCEFIELDS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-forcefields",
@@ -195,6 +202,31 @@ molecule_ops! {
         default_args: [&crate::MmffConformerOptimizationParams::default()],
     }
 
+    #[cfg(feature = "cap-fingerprints")]
+    op with_atom_pair_atom_code(atom_id: crate::AtomId, branch_subtract: u32, include_chirality: bool, use_legacy_stereo_perception: bool) {
+        method: with_atom_pair_atom_code,
+        impl_fn: crate::ops::atom_pair_atom_code::with_atom_pair_atom_code_impl,
+        result_type: crate::AtomPairAtomCodeResult,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [], write: [topology, properties, derived_cache] },
+        may_mutate: [topology, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: {
+            recompute: [],
+            preserve: [rings, ring_families, valence, aromaticity, coordinates],
+            invalidate: [stereo, drawing, fingerprint],
+            operation_defined: [],
+        },
+        cip_state: recompute,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::FINGERPRINTS_FEATURE,
+        parity: required_now,
+        parity_profile: "atom_pair_atom_code_guarded_cip_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "weak_cip_label_assignment",
+    }
     #[cfg(feature = "cap-forcefields")]
     op with_uff_optimized(params: &crate::UffOptimizationParams) {
         method: with_uff_optimized_with_params,

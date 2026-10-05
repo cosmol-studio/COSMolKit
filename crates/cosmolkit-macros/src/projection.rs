@@ -283,6 +283,37 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
     let write = molecule_block_mask(&operation.fields.access.write);
     let mut methods = Vec::new();
 
+    if operation.fields.output == MoleculeOutput::Single
+        && operation
+            .fields
+            .access
+            .write
+            .contains(&MoleculeBlock::Topology)
+        && operation
+            .fields
+            .access
+            .write
+            .contains(&MoleculeBlock::Properties)
+        && operation
+            .fields
+            .access
+            .write
+            .contains(&MoleculeBlock::DerivedCache)
+    {
+        methods.push(quote! {
+            pub(crate) fn stage_topology_properties<R>(
+                &mut self,
+                evaluate: impl for<'value> FnOnce(
+                    std::borrow::Cow<'value, cosmolkit_model::TopologyBlock>,
+                    std::borrow::Cow<'value, cosmolkit_model::MoleculeProperties>,
+                    &'value crate::molecule::DerivedCacheBlock,
+                ) -> Result<(R, Option<(cosmolkit_model::TopologyBlock, cosmolkit_model::MoleculeProperties)>), crate::OperationError>,
+            ) -> Result<(R, bool), crate::OperationError> {
+                self.stage_topology_properties_runtime(evaluate)
+            }
+        });
+    }
+
     for block in &operation.fields.access.read {
         methods.push(match block {
             MoleculeBlock::Topology => quote! {

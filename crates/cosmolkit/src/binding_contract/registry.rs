@@ -4,6 +4,13 @@ use cosmolkit_macros::binding_contract;
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+        #[cfg(feature = "cap-fingerprints")]
+        {
+            semantic_id: "types.FingerprintPreparationError", item: type, owner: type_,
+            rust: crate::FingerprintPreparationError,
+            python: "FingerprintPreparationError", javascript: "FingerprintPreparationError",
+            feature: "cap-fingerprints", status: experimental, role: error,
+        },
 #[cfg(feature="cap-forcefields")]
 {semantic_id:"types.UffEvaluationParams",item:type,owner:type_,rust:crate::UffEvaluationParams,python:"UffEvaluationParams",javascript:"UffEvaluationParams",feature:"cap-forcefields",status:experimental,role:parameter,},
 #[cfg(feature="cap-forcefields")]
@@ -37,6 +44,27 @@ binding_contract! {
         {semantic_id:"UffConformerOptimizationResult.molecule",item:callable,owner:type_,rust:crate::UffConformerOptimizationResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffConformerOptimizationResult)->&'a crate::Molecule,},
         #[cfg(feature="cap-forcefields")]
         {semantic_id:"UffConformerOptimizationResult.conformer_results",item:callable,owner:type_,rust:crate::UffConformerOptimizationResult::conformer_results,python:"conformer_results",javascript:"conformerResults",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::UffConformerResult],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::UffConformerOptimizationResult)->&'a [crate::UffConformerResult],},
+        #[cfg(feature = "cap-fingerprints")]
+        {
+            semantic_id: "types.AtomPairAtomCodeResult", item: type, owner: type_,
+            rust: crate::AtomPairAtomCodeResult, python: "AtomPairAtomCodeResult", javascript: "AtomPairAtomCodeResult",
+            feature: "cap-fingerprints", role: result,
+        },
+        #[cfg(feature = "cap-fingerprints")]
+        {
+            semantic_id: "Molecule.with_atom_pair_atom_code", item: callable, owner: molecule,
+            rust: crate::Molecule::with_atom_pair_atom_code, python: "with_atom_pair_atom_code", javascript: "withAtomPairAtomCode",
+            feature: "cap-fingerprints", kind: instance,
+            parameters: [
+                { name: atom_id, type: crate::AtomId, default: required },
+                { name: branch_subtract, type: u32, default: "0" },
+                { name: include_chirality, type: bool, default: "false" },
+                { name: use_legacy_stereo_perception, type: bool, default: "true" },
+            ],
+            output: crate::AtomPairAtomCodeResult, error: crate::OperationError,
+            state: value_returning, operation: "with_atom_pair_atom_code",
+            signature: fn(&crate::Molecule, crate::AtomId, u32, bool, bool) -> Result<crate::AtomPairAtomCodeResult, crate::OperationError>,
+        },
         {
             semantic_id: "types.Element", item: type, owner: type_,
             rust: crate::Element, python: "Element", javascript: "Element",
@@ -1100,6 +1128,10 @@ binding_contract! {
         { semantic_id: "AtomPairAtomInvariantsGenerator.info_string", item: callable, owner: type_, rust: crate::AtomPairAtomInvariantsGenerator::info_string, python: "info_string", javascript: "infoString", feature: "cap-fingerprints", status: experimental, kind: instance, parameters: [], output: String, error: none, state: read_only, operation: none, signature: fn(&crate::AtomPairAtomInvariantsGenerator) -> String, },
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "AtomPairAtomInvariantsGenerator.to_json", item: callable, owner: type_, rust: crate::AtomPairAtomInvariantsGenerator::to_json, python: "to_json", javascript: "toJson", feature: "cap-fingerprints", status: experimental, kind: instance, parameters: [], output: String, error: none, state: read_only, operation: none, signature: fn(&crate::AtomPairAtomInvariantsGenerator) -> String, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "types.AtomCodeExplanation", item: type, owner: type_, rust: crate::AtomCodeExplanation, python: "AtomCodeExplanation", javascript: "AtomCodeExplanation", feature: "cap-fingerprints", status: experimental, role: result, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "errors.AtomCodeExplanationError", item: type, owner: type_, rust: crate::AtomCodeExplanationError, python: "AtomCodeExplanationError", javascript: "AtomCodeExplanationError", feature: "cap-fingerprints", status: experimental, role: error, },
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "types.TopologicalTorsionParams", item: type, owner: type_, rust: crate::TopologicalTorsionParams, python: "TopologicalTorsionParams", javascript: "TopologicalTorsionParams", feature: "cap-fingerprints", status: experimental, role: parameter, },
         #[cfg(feature = "cap-fingerprints")]
@@ -8911,5 +8943,19 @@ binding_contract! {
         { semantic_id: "Molecule.legacy_topological_torsion_fingerprint", item: callable, owner: molecule, rust: crate::Molecule::legacy_topological_torsion_fingerprint, python: "legacy_topological_torsion_fingerprint", javascript: "legacyTopologicalTorsionFingerprint", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: crate::Fingerprint, error: crate::TopologicalTorsionReadError, state: read_only, operation: none, signature: fn(&crate::Molecule)->Result<crate::Fingerprint,crate::TopologicalTorsionReadError>, },
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "Molecule.legacy_topological_torsion_fingerprint_with_params", item: callable, owner: molecule, rust: crate::Molecule::legacy_topological_torsion_fingerprint_with_params, python: "legacy_topological_torsion_fingerprint_with_params", javascript: "legacyTopologicalTorsionFingerprintWithParams", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [{ name: params, type: &crate::LegacyTopologicalTorsionParams, default: required }], output: crate::Fingerprint, error: crate::TopologicalTorsionReadError, state: read_only, operation: none, signature: for<'a,'b> fn(&'a crate::Molecule,&'b crate::LegacyTopologicalTorsionParams)->Result<crate::Fingerprint,crate::TopologicalTorsionReadError>, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "Molecule.topological_torsion_ids", item: callable, owner: molecule, rust: crate::Molecule::topological_torsion_ids, python: "topological_torsion_ids", javascript: "topologicalTorsionIds", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: Vec<u64>, error: crate::TopologicalTorsionReadError, state: read_only, operation: none, signature: fn(&crate::Molecule)->Result<Vec<u64>,crate::TopologicalTorsionReadError>, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "Molecule.topological_torsion_ids_with_params", item: callable, owner: molecule, rust: crate::Molecule::topological_torsion_ids_with_params, python: "topological_torsion_ids_with_params", javascript: "topologicalTorsionIdsWithParams", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [{ name: torsion_atom_count, type: u32, default: required }], output: Vec<u64>, error: crate::TopologicalTorsionReadError, state: read_only, operation: none, signature: fn(&crate::Molecule,u32)->Result<Vec<u64>,crate::TopologicalTorsionReadError>, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomCodeExplanation.from_code", item: callable, owner: type_, rust: crate::AtomCodeExplanation::from_code, python: "from_code", javascript: "fromCode", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [{ name: code, type: u64, default: required }, { name: branch_subtract, type: i64, default: integer(0) }, { name: include_chirality, type: bool, default: boolean(false) }], output: crate::AtomCodeExplanation, error: crate::AtomCodeExplanationError, state: value_returning, operation: none, signature: fn(u64,i64,bool)->Result<crate::AtomCodeExplanation,crate::AtomCodeExplanationError>, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomCodeExplanation.symbol", item: callable, owner: type_, rust: crate::AtomCodeExplanation::symbol, python: "symbol", javascript: "symbol", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: &'static str, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->&'static str, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomCodeExplanation.branch_count", item: callable, owner: type_, rust: crate::AtomCodeExplanation::branch_count, python: "branch_count", javascript: "branchCount", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomCodeExplanation.pi_electrons", item: callable, owner: type_, rust: crate::AtomCodeExplanation::pi_electrons, python: "pi_electrons", javascript: "piElectrons", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomCodeExplanation.chirality", item: callable, owner: type_, rust: crate::AtomCodeExplanation::chirality, python: "chirality", javascript: "chirality", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: Option<&'static str>, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->Option<&'static str>, },
     ];
 }

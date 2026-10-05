@@ -10,11 +10,25 @@ use std::collections::BTreeMap;
 pyo3::create_exception!(cosmolkit, SmilesError, PyValueError);
 pyo3::create_exception!(cosmolkit, SmilesWriteError, PyValueError);
 pyo3::create_exception!(cosmolkit, MorganReadError, PyValueError);
+pyo3::create_exception!(cosmolkit, FingerprintPreparationError, PyValueError);
 pyo3::create_exception!(cosmolkit, AtomPairReadError, PyValueError);
 pyo3::create_exception!(cosmolkit, TopologicalTorsionReadError, PyValueError);
 pyo3::create_exception!(cosmolkit, FingerprintError, PyValueError);
 
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
+    if let Some(preparation) = source.downcast_ref::<ck::FingerprintPreparationError>() {
+        let kind = match preparation {
+            ck::FingerprintPreparationError::MissingPreparedValence => "MissingPreparedValence",
+            ck::FingerprintPreparationError::RingPreparation(_) => "RingPreparation",
+        };
+        return annotate(
+            py,
+            FingerprintPreparationError::new_err(preparation.to_string()),
+            "fingerprints",
+            kind,
+            preparation,
+        );
+    }
     let error = PyValueError::new_err(source.to_string());
     error.set_cause(py, source.source().map(|cause| source_pyerr(py, cause)));
     error
@@ -71,8 +85,7 @@ pub(crate) fn smiles_write_pyerr(py: Python<'_>, source: ck::SmilesWriteError) -
 
 pub(crate) fn morgan_pyerr(py: Python<'_>, source: ck::MorganReadError) -> PyErr {
     let kind = match &source {
-        ck::MorganReadError::MissingPreparedValence => "MissingPreparedValence",
-        ck::MorganReadError::RingPreparation(_) => "RingPreparation",
+        ck::MorganReadError::Preparation(_) => "Preparation",
         ck::MorganReadError::Generator(_) => "Generator",
     };
     annotate(
@@ -557,6 +570,10 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.py().get_type::<TopologicalTorsionReadError>(),
     )?;
     module.add("MorganReadError", module.py().get_type::<MorganReadError>())?;
+    module.add(
+        "FingerprintPreparationError",
+        module.py().get_type::<FingerprintPreparationError>(),
+    )?;
     module.add(
         "FingerprintError",
         module.py().get_type::<FingerprintError>(),

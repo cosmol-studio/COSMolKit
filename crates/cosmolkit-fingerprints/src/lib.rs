@@ -366,3 +366,8 @@ pub use topological_torsion::{
 };
 
 pub use topological_torsion::{TopologicalTorsionGenerator, TopologicalTorsionSettings};
+
+pub use topological_torsion::topological_torsion_ids;
+
+mod atom_code_explanation;
+pub use atom_code_explanation::{AtomCodeExplanation, AtomCodeExplanationError};

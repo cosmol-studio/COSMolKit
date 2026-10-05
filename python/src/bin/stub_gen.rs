@@ -36,6 +36,9 @@ _binding_profile: builtins.str
         "SmilesError",
         "SmilesWriteError",
         "MorganReadError",
+        "AtomPairReadError",
+        "TopologicalTorsionReadError",
+        "FingerprintPreparationError",
         "FingerprintError",
         "DescriptorReadError",
         "DescriptorError",
@@ -85,7 +88,12 @@ _binding_profile: builtins.str
     text.replace_range(start..end, &class);
     text = text.replacen("import typing\n", "import typing\nimport types\n", 1);
     text = text.replace("class DescriptorError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class DescriptorError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only for applicable Rust variants.\n    function: builtins.str\n    field: builtins.str\n    actual: builtins.int\n    expected: builtins.int\n    minimum: builtins.int\n    expected_rows: builtins.int\n    actual_rows: typing.Optional[builtins.int]\n    include_sulfur_phosphorus: builtins.bool\n    contribs_len: builtins.int\n    bin_prop_len: builtins.int\n    bins_len: builtins.int\n    cell: builtins.str\n    row: builtins.int\n    detail: builtins.str\n");
-    let text = expose_bio_types(text);
+    let mut text = expose_bio_types(text);
+    text.push_str("\nclass AtomCodeExplanationError(builtins.KeyError):\n    domain: builtins.str\n    kind: builtins.str\n    code: builtins.int\n");
+    text = text.replace(
+        "__all__ = [\n",
+        "__all__ = [\n    \"AtomCodeExplanationError\",\n",
+    );
     std::fs::write(path, text)?;
     Ok(())
 }

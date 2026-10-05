@@ -2,6 +2,12 @@
 
 #[cfg(feature = "cap-aromaticity")]
 mod aromaticity;
+#[cfg(feature = "cap-fingerprints")]
+mod atom_pair_atom_code;
+#[cfg(feature = "cap-fingerprints")]
+pub use atom_pair_atom_code::AtomPairAtomCodeResult;
+#[cfg(feature = "cap-fingerprints")]
+pub(crate) use runtime::registry::WithAtomPairAtomCodeAccess;
 #[cfg(feature = "cap-stereo")]
 mod cip_labels;
 #[cfg(test)]

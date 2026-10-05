@@ -1,7 +1,7 @@
 //! Canonical AtomPair call transport; chemistry remains in the fingerprint owner.
 use crate::{
-    Fingerprint, FingerprintAdditionalOutput, Molecule, MorganReadError, SparseBitFingerprint,
-    SparseCountFingerprint, SparseCountFingerprint32,
+    Fingerprint, FingerprintAdditionalOutput, FingerprintPreparationError, Molecule,
+    SparseBitFingerprint, SparseCountFingerprint, SparseCountFingerprint32,
 };
 use cosmolkit_fingerprints::{
     AtomPairAtomInvariantsGenerator, AtomPairCall, AtomPairError, AtomPairParams,
@@ -37,7 +37,7 @@ impl Default for AtomPairFingerprintParams {
 }
 #[derive(Debug)]
 pub enum AtomPairReadError {
-    Preparation(MorganReadError),
+    Preparation(FingerprintPreparationError),
     Generator(AtomPairError),
 }
 impl fmt::Display for AtomPairReadError {

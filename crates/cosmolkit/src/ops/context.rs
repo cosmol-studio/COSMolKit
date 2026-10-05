@@ -1,6 +1,6 @@
 //! Lazy detached-block access for generated operation capabilities.
 
-use std::{marker::PhantomData, sync::Arc};
+use std::{borrow::Cow, marker::PhantomData, sync::Arc};
 
 use cosmolkit_model::{
     CoordinateBlock, CoordinateDimension, MoleculeProperties, SdfPropertyListTarget, TopologyBlock,
@@ -342,6 +342,57 @@ impl<'a, Access> OpParts<'a, Access> {
                 })
             }
         }
+    }
+
+    /// Scoped detached COW working values for conditional two-block assignments.
+    /// Errors leave every slot complete; no-effect results retain source sharing.
+    pub(super) fn stage_topology_properties_runtime<R>(
+        &mut self,
+        evaluate: impl for<'value> FnOnce(
+            Cow<'value, TopologyBlock>,
+            Cow<'value, MoleculeProperties>,
+            &'value DerivedCacheBlock,
+        ) -> Result<
+            (R, Option<(TopologyBlock, MoleculeProperties)>),
+            OperationError,
+        >,
+    ) -> Result<(R, bool), OperationError> {
+        self.ensure_unsealed_runtime()?;
+        self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
+        self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
+        self.ensure_write_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
+        if !matches!(self.topology, WorkingBlock::Shared)
+            || !matches!(self.properties, WorkingBlock::Shared)
+        {
+            return Err(OperationError::IncompleteCommit {
+                operation: self.spec.method,
+                block: "conditional assignment requires unstaged topology and properties",
+            });
+        }
+        let cache = match &self.derived_cache {
+            WorkingBlock::Shared => self.source.derived_cache_runtime(),
+            WorkingBlock::Installed(cache) => cache,
+            WorkingBlock::CheckedOut => {
+                return Err(OperationError::BlockCheckedOut {
+                    operation: self.spec.method,
+                    block: "derived_cache",
+                });
+            }
+        };
+        let (result, pair) = evaluate(
+            Cow::Borrowed(self.source.topology()),
+            Cow::Borrowed(self.source.properties()),
+            cache,
+        )?;
+        let changed = pair.is_some();
+        if let Some((topology, properties)) = pair {
+            topology
+                .validate()
+                .map_err(OperationError::InvalidTopology)?;
+            self.topology = WorkingBlock::Installed(topology);
+            self.properties = WorkingBlock::Installed(properties);
+        }
+        Ok((result, changed))
     }
 
     pub(super) fn checkout_coordinates_runtime(
@@ -907,12 +958,15 @@ impl<'a, Access> OpParts<'a, Access> {
                 });
             }
             CipStatePolicy::Assign
-                if spec.method != "with_cip_labels_with_options" || !writes_cip_blocks =>
+                if !matches!(
+                    spec.method,
+                    "with_cip_labels_with_options" | "with_atom_pair_atom_code"
+                ) || !writes_cip_blocks =>
             {
                 return Err(OperationError::CipStateContract {
                     operation: spec.method,
                     policy: spec.cip_state,
-                    issue: "assign is reserved for with_cip_labels_with_options with topology and properties write authority",
+                    issue: "assign requires an exact CIP operation with topology and properties write authority",
                 });
             }
             CipStatePolicy::TautomerSourceTransition
@@ -2371,6 +2425,10 @@ mod mapping_tests;
 #[cfg(test)]
 #[path = "../../tests/support/run_effects_internal.rs"]
 mod effects_tests;
+
+#[cfg(all(test, feature = "cap-fingerprints"))]
+#[path = "../../tests/support/run_atom_code_cow_internal.rs"]
+mod atom_code_cow_tests;
 
 #[cfg(all(test, feature = "op-contracts-strict"))]
 #[path = "../../tests/support/run_commit_internal.rs"]

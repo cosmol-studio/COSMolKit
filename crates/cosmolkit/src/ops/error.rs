@@ -92,6 +92,8 @@ pub enum OperationError {
         issue: &'static str,
     },
     InvalidTopology(TopologyValidationError),
+    #[cfg(feature = "cap-fingerprints")]
+    AtomCode(cosmolkit_fingerprints::AtomCodeError),
     InvalidTopologyEdit(TopologyEditError),
     InvalidCoordinates(CoordinateValidationError),
     InvalidProperty(MoleculePropertyError),
@@ -295,6 +297,8 @@ impl fmt::Display for OperationError {
             Self::Stereo(error) => write!(formatter, "structure-tag assignment failed: {error}"),
             #[cfg(feature = "cap-stereo")]
             Self::CipLabeler(error) => write!(formatter, "CIP label assignment failed: {error}"),
+            #[cfg(feature = "cap-fingerprints")]
+            Self::AtomCode(error) => write!(formatter, "{error}"),
             #[cfg(feature = "cap-transforms")]
             Self::Transform(error) => write!(formatter, "coordinate transform failed: {error}"),
             #[cfg(feature = "cap-depict")]
@@ -357,6 +361,8 @@ impl std::error::Error for OperationError {
             Self::Stereo(error) => Some(error),
             #[cfg(feature = "cap-stereo")]
             Self::CipLabeler(error) => Some(error),
+            #[cfg(feature = "cap-fingerprints")]
+            Self::AtomCode(error) => Some(error),
             #[cfg(feature = "cap-transforms")]
             Self::Transform(error) => Some(error),
             #[cfg(feature = "cap-depict")]
