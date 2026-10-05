@@ -16,6 +16,7 @@ from flatten_html_routes import ROUTES, flatten_html_routes
 from generate_sitemap import BASE_URL, EXCLUDED_ROUTES, SITEMAP_NAMESPACE, write_sitemap
 from strip_client_runtime import strip_client_runtime
 from prepare_deployment import SOCIAL_IMAGE_SOURCE, download_social_image, write_route_assets
+from version_catalog import load_catalog
 
 
 SEARCH_SCRIPTS = (SEARCH_BUNDLE_PREFIX + "-fixture.js", SEARCH_BUNDLE_PREFIX + "_bg-fixture.wasm")
@@ -56,6 +57,9 @@ class DeploymentTests(unittest.TestCase):
         html += '<nav class="cosmolkit-project-links">'
         html += ''.join(f'<a href="{link}">Project</a>' for link in sorted(PROJECT_LINKS))
         html += '</nav>'
+        html += '<details id="docs-version-switch"><summary id="docs-version-current">latest</summary><nav id="docs-version-options">'
+        html += ''.join(f'<a data-docs-version="{entry["version"]}" href="{entry["url"]}">{entry["version"]}</a>' for entry in load_catalog()["versions"])
+        html += '</nav></details><script id="docs-version-loader" type="module"></script>'
         if route == "python/search":
             html += '<form id="docs-search-form" action="/python/search" method="get"><input name="q" type="search"></form><p id="docs-search-status"></p><div id="search-results"></div>'
             html += SEARCH_LOADER
@@ -100,6 +104,28 @@ class DeploymentTests(unittest.TestCase):
         for route in ROUTES:
             self.assertFalse((self.public / route / "index.html").exists())
             self.assertTrue((self.public / f"{route}.html").is_file())
+
+    def test_version_switch_survives_runtime_stripping(self):
+        self.prepare()
+        for route in ("index.html", "python/api.html", "python/search.html"):
+            self.assertIn('id="docs-version-loader"', (self.public / route).read_text())
+        self.assertEqual(check_output(self.public), 18)
+        path = self.public / "index.html"
+        path.write_text(path.read_text().replace('id="docs-version-loader"', 'id="removed-loader"'))
+        with self.assertRaisesRegex(ValueError, "version loader"):
+            check_output(self.public)
+
+    def test_internal_navigation_and_styles_cannot_use_latest_origin(self):
+        self.prepare()
+        path = self.public / "python/api.html"
+        original = path.read_text()
+        for bad, message in (
+            (original.replace('href="/">Project', 'href="https://kit.cosmol.org/python/api">Project'), "relative URLs"),
+            (original.replace('href="/style.css"', 'href="https://kit.cosmol.org/style.css"'), "relative URLs"),
+        ):
+            path.write_text(bad)
+            with self.assertRaisesRegex(ValueError, message):
+                check_output(self.public)
 
     def test_flatten_preserves_unrelated_directories(self):
         module = self.page("python/_modules/index.html", "python/_modules/")

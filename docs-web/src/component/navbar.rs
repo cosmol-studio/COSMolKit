@@ -1,7 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::{
-    component::{MDI_OPEN_IN_NEW, MdiIcon},
+    component::{MDI_OPEN_IN_NEW, MdiIcon, VersionSwitch},
     route::Route,
 };
 
@@ -38,6 +38,7 @@ pub fn Navbar() -> Element {
                         }
                     }
                 }
+                VersionSwitch {}
                 div {
                     class: "docs-top-links",
                     if !is_javascript {
@@ -79,7 +80,7 @@ pub fn Navbar() -> Element {
                         ("cosmolkit-inchi", "https://crates.io/crates/cosmolkit-inchi"),
                         ("cosmolkit-ringdecomposer", "https://crates.io/crates/cosmolkit-ringdecomposer"),
                         ("Rust API", "https://docs.rs/cosmolkit/latest/cosmolkit/"),
-                        ("Documentation", "https://kit.cosmol.org/"),
+                        ("Documentation", "/"),
                         ("Web tools", "https://tools.cosmol.org/"),
                     ] {
                         a { class: "text-[#7ab5ff] no-underline hover:text-white", href, target: "_blank", rel: "noreferrer", "{label}" }

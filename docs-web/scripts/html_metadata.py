@@ -17,6 +17,7 @@ class PageMetadata(HTMLParser):
         self.stylesheets = []
         self.scripts = []
         self.links = []
+        self.version_links = []
         self.forms = []
         self.inputs = []
         self.ids = set()
@@ -71,6 +72,8 @@ class PageMetadata(HTMLParser):
             self.scripts.append(values)
         if tag == "a" and values.get("href"):
             self.links.append(values["href"])
+            if "data-docs-version" in values:
+                self.version_links.append((values["data-docs-version"], values["href"]))
         if tag == "form":
             self.forms.append(values)
         if tag == "input":

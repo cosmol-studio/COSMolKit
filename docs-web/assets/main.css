@@ -46,6 +46,12 @@ a {
 .docs-language-option { padding: 6px 11px; border: 1px solid transparent; border-radius: 4px; color: #8d9eb5; font-size: 12px; line-height: 1.4; }
 .docs-language-option:hover { color: #e8edf5; background: #101e30; }
 .docs-language-option.is-active { border-color: #34527a; background: #172d49; color: #b6d6ff; font-weight: 600; }
+.docs-version-switch { position: relative; flex-shrink: 0; font-size: 12px; color: #b6d6ff; }
+.docs-version-switch summary { cursor: pointer; padding: 8px 10px; border: 1px solid #2a3c54; border-radius: 6px; }
+.docs-version-switch summary:focus-visible { outline: 2px solid #8ebcff; outline-offset: 3px; }
+.docs-version-switch nav { position: absolute; right: 0; top: calc(100% + 8px); min-width: 130px; padding: 6px; border: 1px solid #34527a; border-radius: 6px; background: #08111f; box-shadow: 0 8px 24px #0008; }
+.docs-version-switch nav a { display: block; padding: 8px 10px; border-radius: 4px; color: #a2b0c3; white-space: nowrap; }
+.docs-version-switch nav a:hover, .docs-version-switch nav a[aria-current] { background: #172d49; color: #e8edf5; }
 .docs-top-links { display: flex; align-items: center; gap: 28px; font-size: 13px; }
 .docs-top-links a { display: inline-flex; align-items: center; gap: 6px; color: #a2b0c3; }
 .docs-top-links a:hover { color: #fff; }
@@ -132,7 +138,9 @@ a {
     .docs-language-option { padding: 6px 9px; font-size: 11px; }
 }
 @media (max-width: 400px) {
-    .docs-masthead-inner { padding: 0 12px; gap: 12px; }
+    .docs-masthead-inner { padding: 0 12px; gap: 8px; }
+    .docs-brand-badge { display: none; }
+    .docs-language-option { padding: 6px; }
     .docs-brand { font-size: 15px; gap: 8px; }
     .docs-brand-badge { font-size: 9px; padding-left: 8px; }
     .docs-top-links { gap: 12px; font-size: 11px; }

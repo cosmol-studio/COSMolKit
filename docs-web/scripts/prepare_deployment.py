@@ -11,6 +11,7 @@ from flatten_html_routes import flatten_html_routes
 from strip_client_runtime import strip_client_runtime
 from generate_sitemap import write_sitemap
 from route_contract import PAGES, SOCIAL_IMAGE_SOURCE, redirect_rules
+from version_catalog import write_version_assets
 
 
 def validate_social_image(image):
@@ -33,6 +34,7 @@ def download_social_image(public):
 
 
 def write_route_assets(public):
+    write_version_assets(public)
     rules = redirect_rules(PAGES)
     (public / "_redirects").write_text(
         "# Generated from routes.toml; do not edit.\n" + "".join(

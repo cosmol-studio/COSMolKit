@@ -32,7 +32,7 @@ web-sys = { version = "=0.3.105", optional = true, features = [
 
 [features]
 default = ["web"]
-web = ["dep:dioxus", "dioxus/web", "dep:web-sys", "dep:wasm-bindgen", "dep:js-sys"]
+web = ["dep:dioxus", "dioxus/web", "dep:web-sys", "dep:wasm-bindgen", "dep:js-sys", "dep:serde_json"]
 ssg = []
-server = ["dep:dioxus", "dioxus/server", "dioxus/fullstack"]
+server = ["dep:dioxus", "dioxus/server", "dioxus/fullstack", "dep:serde_json"]
 search-engine = ["dep:serde", "dep:serde_json", "dep:wasm-bindgen", "dep:js-sys", "dep:web-sys"]

@@ -1,3 +1,8 @@
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
+
+# Only the shared version catalog crosses origins. Archive pages/assets do not.
+/versions.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: no-store

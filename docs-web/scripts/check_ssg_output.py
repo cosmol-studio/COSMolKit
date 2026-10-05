@@ -11,6 +11,7 @@ from route_contract import ROUTES, PAGES, SEARCH_PATH, SOCIAL_IMAGE_URL, redirec
 from generate_sitemap import BASE_URL, EXCLUDED_ROUTES, SITEMAP_NAMESPACE, canonical_for
 from html_metadata import read_metadata
 from prepare_deployment import validate_social_image
+from version_catalog import check_version_assets, load_catalog
 
 INDEXNOW_KEY = "283f8e40-25ad-4213-b83b-e5c6d3b3c5e0"
 PROJECT_LINKS = {
@@ -21,7 +22,7 @@ PROJECT_LINKS = {
     "https://crates.io/crates/cosmolkit-ringdecomposer",
     "https://docs.rs/cosmolkit/latest/cosmolkit/",
     "https://pypi.org/project/cosmolkit/",
-    BASE_URL,
+    "/",
     "https://tools.cosmol.org/",
 }
 WEBSITE_JSON_LD = {
@@ -157,6 +158,7 @@ def check_crawler_assets(public: Path) -> None:
 
 
 def check_output(public: Path) -> int:
+    check_version_assets(public)
     validate_social_image(local_resource(public, SOCIAL_IMAGE_URL).read_bytes())
     check_crawler_assets(public)
     expected_urls = set()
@@ -170,6 +172,17 @@ def check_output(public: Path) -> int:
             raise ValueError(f"unflattened route would cause a trailing slash: {route}")
         html = page.read_text(encoding="utf-8")
         metadata = read_metadata(page)
+        expected_versions = [(entry["version"], entry["url"]) for entry in load_catalog()["versions"]]
+        if metadata.version_links != expected_versions or not {
+            "docs-version-switch", "docs-version-options", "docs-version-current",
+        } <= metadata.ids:
+            raise ValueError(f"{relative}: missing docs version switch or incorrect fallback links")
+        loaders = [script for script in metadata.scripts if script.get("id") == "docs-version-loader"]
+        if len(loaders) != 1 or loaders[0].get("type") != "module" or loaders[0].get("src"):
+            raise ValueError(f"{relative}: expected one inline docs version loader")
+        for stylesheet in metadata.stylesheets:
+            if urlsplit(stylesheet).netloc:
+                raise ValueError(f"{relative}: archive stylesheets must use relative URLs")
         main_count = metadata.main_count
         stylesheet_count = len(metadata.stylesheets)
         if main_count != 1 or metadata.main_role_count != 1 or stylesheet_count != 3:
@@ -177,9 +190,11 @@ def check_output(public: Path) -> int:
                 f"invalid SSG shell for {relative}: "
                 f"main={main_count}, main roles={metadata.main_role_count}, stylesheets={stylesheet_count}"
             )
+        # Archive hostnames may legitimately contain "cosmolkit-docs-web";
+        # detect executable runtime dependencies, not plain version links.
         if any(marker in html for marker in (
-            "cosmolkit-docs-web", "hydrate_queue", "initial_dioxus_hydration_data",
-        )):
+            "hydrate_queue", "initial_dioxus_hydration_data",
+        )) or any("cosmolkit-docs-web" in script.get("src", "") for script in metadata.scripts):
             raise ValueError(f"client runtime was not stripped from {relative}")
         expected = BASE_URL + route
         if canonical_for(page) != expected:
@@ -188,6 +203,8 @@ def check_output(public: Path) -> int:
             target = urlsplit(urljoin(expected, href))
             if target.scheme not in ("http", "https") or target.netloc != urlsplit(BASE_URL).netloc:
                 continue
+            if urlsplit(href).netloc and href not in {url for _, url in metadata.version_links}:
+                raise ValueError(f"{relative}: internal navigation must use relative URLs: {href}")
             if target.path in expected_rules:
                 raise ValueError(f"{relative}: internal link uses a legacy route: {href}")
             target_path = (public / unquote(target.path).lstrip("/")).resolve()

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "versions": [
+    {"version": "latest", "url": "https://kit.cosmol.org/"},
+    {"version": "0.3.0", "url": "https://c6862989.cosmolkit-docs-web.pages.dev/"}
+  ]
+}
