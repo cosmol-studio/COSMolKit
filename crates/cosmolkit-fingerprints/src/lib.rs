@@ -75,6 +75,7 @@ mod generator;
 pub mod hash;
 mod invariants;
 mod morgan;
+mod packed_codes;
 mod prepared;
 mod rng;
 pub mod similarity;
@@ -95,6 +96,7 @@ pub use morgan::{
     MorganAtomInvariants, MorganCall, MorganParams, morgan_bits, morgan_count, morgan_sparse_bits,
     morgan_sparse_count,
 };
+pub use packed_codes::{atom_pair_code, topological_torsion_code, topological_torsion_hash};
 pub use prepared::MorganPreparedInput;
 pub use sparse_bits::SparseBitFingerprint;
 pub use sparse_counts::{SparseCountFingerprint, SparseCountFingerprint32};
