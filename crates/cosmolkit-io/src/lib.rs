@@ -101,3 +101,12 @@ mod bio_pdb_write;
 pub use bio_pdb_write::{
     BioPdbWriteError, BioPdbWriteParams, bio_structure_to_pdb_text, write_bio_structure_pdb_file,
 };
+
+#[cfg(feature = "molecule")]
+mod molecule_binary;
+#[cfg(feature = "molecule")]
+#[doc(hidden)]
+pub use molecule_binary::{
+    BinaryDerivedState, BinaryDerivedView, BinaryInput, BinaryRecord, PickleError,
+    decode_molecule_binary, encode_molecule_binary,
+};

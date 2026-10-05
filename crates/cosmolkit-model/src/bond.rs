@@ -276,6 +276,27 @@ pub struct Bond {
     temporary_flags: u64,
 }
 
+/// Borrows bond properties in canonical source insertion order for detached IO.
+#[doc(hidden)]
+pub fn ordered_bond_properties(
+    bond: &Bond,
+) -> impl ExactSizeIterator<Item = (&str, &PropertyValue)> + '_ {
+    // BEGIN RDKIT CPP FUNCTION Dict::keys / RDProps::getPropList
+    // RDKit❗✔️: for (const auto &item : _data) {
+    // RDKit❗✔️:   res.push_back(item.key);
+    // RDKit❗✔️: }
+    // RDKit❗✔️: const STR_VECT &tmp = d_props.keys();
+    // RDKit❗✔️: auto pos = tmp.begin();
+    // RDKit❗✔️: while (pos != tmp.end()) {
+    // RDKit❗✔️:   res.push_back(*pos);
+    // RDKit❗✔️:   ++pos;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION Dict::keys / RDProps::getPropList
+    // Like the existing atom boundary, borrow the full typed ordered store;
+    // tree value lookups have no worse complexity than source dictionary scans.
+    bond.properties.ordered()
+}
+
 impl Bond {
     pub fn from_spec(id: BondId, spec: BondSpec) -> Self {
         // BEGIN RDKIT CPP MEMBER Bond::d_flags default

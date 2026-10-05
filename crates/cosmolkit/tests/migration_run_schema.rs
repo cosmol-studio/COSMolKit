@@ -1310,6 +1310,202 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.legacy_topological_torsion_fingerprint_with_params",
         ]);
     }
+    // Complete canonical feature blocks: literal identities preserve the original
+    // ordering/uniqueness checks and independent feature-local expectations.
+    if cfg!(feature = "cap-fingerprints") {
+        expected.insert(0, "types.FingerprintPreparationError");
+    }
+    if cfg!(feature = "cap-fingerprints") {
+        let position = expected
+            .iter()
+            .position(|id| *id == "types.Element")
+            .expect("the existing types.Element fixture is present");
+        expected.splice(
+            position..position,
+            [
+                "types.AtomPairAtomCodeResult",
+                "Molecule.with_atom_pair_atom_code",
+            ],
+        );
+    }
+    if cfg!(feature = "cap-tautomer") {
+        let position = expected
+            .iter()
+            .position(|id| *id == "types.TautomerParams")
+            .expect("the existing types.TautomerParams fixture is present");
+        expected.splice(
+            position..position,
+            [
+                "default_tautomer_score_terms",
+                "TautomerParams.max_tautomers",
+                "TautomerParams.set_max_tautomers",
+                "TautomerParams.with_max_tautomers",
+                "TautomerParams.max_transforms",
+                "TautomerParams.set_max_transforms",
+                "TautomerParams.with_max_transforms",
+                "TautomerParams.remove_sp3_stereo",
+                "TautomerParams.set_remove_sp3_stereo",
+                "TautomerParams.with_remove_sp3_stereo",
+                "TautomerParams.remove_bond_stereo",
+                "TautomerParams.set_remove_bond_stereo",
+                "TautomerParams.with_remove_bond_stereo",
+                "TautomerParams.remove_isotopic_hydrogens",
+                "TautomerParams.set_remove_isotopic_hydrogens",
+                "TautomerParams.with_remove_isotopic_hydrogens",
+                "TautomerParams.reassign_stereo",
+                "TautomerParams.set_reassign_stereo",
+                "TautomerParams.with_reassign_stereo",
+                "TautomerParams.v1",
+                "TautomerParams.from_transform_data",
+                "TautomerParams.from_transform_file",
+                "TautomerParams.transform_count",
+                "TautomerParams.callback",
+                "TautomerParams.set_callback",
+                "TautomerParams.scorer",
+                "TautomerParams.set_scorer",
+                "TautomerEnumeration.len",
+                "TautomerEnumeration.is_empty",
+                "TautomerEnumeration.status",
+                "TautomerEnumeration.modified_atoms",
+                "TautomerEnumeration.modified_bonds",
+                "TautomerEnumeration.canonical_smiles",
+                "TautomerEnumeration.get",
+                "TautomerEnumeration.iter",
+                "TautomerEnumeration.entries",
+                "tautomer.canonical_tautomer_from_molecules",
+                "tautomer.canonical_tautomer_from_molecules_with_params",
+                "TautomerMoleculeView.to_owned",
+                "TautomerMoleculeView.num_atoms",
+                "TautomerMoleculeView.num_bonds",
+                "TautomerMoleculeView.atom_metadata",
+                "TautomerMoleculeView.atom_degree",
+                "TautomerMoleculeView.atoms",
+                "TautomerMoleculeView.bonds",
+                "TautomerMoleculeView.properties",
+                "TautomerMoleculeView.atom",
+                "TautomerMoleculeView.bond",
+                "TautomerMoleculeView.to_smiles",
+                "TautomerMoleculeView.tautomer_score",
+                "TautomerProgress.to_owned",
+                "TautomerProgress.len",
+                "TautomerProgress.is_empty",
+                "TautomerProgress.status",
+                "TautomerProgress.num_transforms",
+                "TautomerProgress.modified_atoms",
+                "TautomerProgress.modified_bonds",
+                "TautomerProgress.entries",
+                "TautomerScoreTerm.new",
+                "TautomerScoreTerm.name",
+                "TautomerScoreTerm.smarts",
+                "TautomerScoreTerm.score",
+                "TautomerScore.ring",
+                "TautomerScore.substructure",
+                "TautomerScore.hetero_hydrogen",
+                "TautomerScore.total",
+                "TautomerEnumeration.canonical_tautomer",
+                "TautomerEnumeration.canonical_tautomer_with_params",
+            ],
+        );
+    }
+    if cfg!(all(feature = "cap-io", feature = "cap-bio")) {
+        let position = expected
+            .iter()
+            .position(|id| *id == "types.BioPdbReadError")
+            .expect("the existing types.BioPdbReadError fixture is present");
+        expected.splice(
+            position..position,
+            [
+                "types.BioMoleculeParams",
+                "types.BioMoleculeError",
+                "types.BioMoleculeConversionError",
+                "BioStructure.to_molecule_with_params",
+                "BioStructure.to_molecule",
+                "Protein.to_molecule_with_params",
+                "Protein.to_molecule",
+            ],
+        );
+    }
+    if cfg!(feature = "cap-bio") {
+        let position = expected
+            .iter()
+            .position(|id| *id == "types.BioMmcifWriteParams")
+            .expect("the existing types.BioMmcifWriteParams fixture is present");
+        expected.splice(
+            position..position,
+            ["BioCrystalInfo.space_group_number", "BioTransform.approx"],
+        );
+    }
+    if cfg!(feature = "cap-fingerprints") {
+        let position = expected
+            .iter()
+            .position(|id| *id == "types.TopologicalTorsionParams")
+            .expect("the existing types.TopologicalTorsionParams fixture is present");
+        expected.splice(
+            position..position,
+            [
+                "types.AtomCodeExplanation",
+                "errors.AtomCodeExplanationError",
+            ],
+        );
+    }
+    let position = expected
+        .iter()
+        .position(|id| *id == "types.PropertyValue")
+        .expect("the existing types.PropertyValue fixture is present");
+    expected.splice(
+        position..position,
+        [
+            "types.MoleculeProperties",
+            "types.SdfPropertyList",
+            "types.SdfPropertyListTarget",
+            "MoleculeProperties.name",
+            "MoleculeProperties.sdf_data_fields",
+            "MoleculeProperties.sdf_property_lists",
+            "MoleculeProperties.props",
+            "MoleculeProperties.prop",
+            "MoleculeProperties.is_prop_computed",
+            "MoleculeProperties.computed_prop_names",
+            "SdfPropertyList.target",
+            "SdfPropertyList.name",
+            "SdfPropertyList.values",
+        ],
+    );
+    let position = expected
+        .iter()
+        .position(|id| *id == "types.BondOrder")
+        .expect("the existing types.BondOrder fixture is present");
+    expected.splice(position..position, ["types.Hybridization"]);
+    let position = expected
+        .iter()
+        .position(|id| *id == "types.BondOrder")
+        .expect("the existing types.BondOrder fixture is present");
+    expected.splice(position..position, ["Atom.hybridization"]);
+    if cfg!(feature = "cap-fingerprints") {
+        expected.extend([
+            "Molecule.topological_torsion_ids",
+            "Molecule.topological_torsion_ids_with_params",
+            "AtomCodeExplanation.from_code",
+            "AtomCodeExplanation.symbol",
+            "AtomCodeExplanation.branch_count",
+            "AtomCodeExplanation.pi_electrons",
+            "AtomCodeExplanation.chirality",
+        ]);
+    }
+    if cfg!(feature = "cap-serialization") {
+        expected.extend([
+            "types.PickleError",
+            "Molecule.to_binary",
+            "Molecule.from_binary",
+        ]);
+    }
+    if cfg!(feature = "cap-hashing") {
+        expected.extend([
+            "types.CipRankError",
+            "types.MoleculeHashError",
+            "Molecule.molecular_hash",
+            "Molecule.molecular_hash_with_ranks",
+        ]);
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()

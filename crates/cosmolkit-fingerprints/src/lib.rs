@@ -76,6 +76,7 @@ pub mod folding;
 mod generator;
 pub mod hash;
 mod invariants;
+mod molecule_hash;
 mod morgan;
 mod packed_codes;
 mod prepared;
@@ -371,3 +372,4 @@ pub use topological_torsion::topological_torsion_ids;
 
 mod atom_code_explanation;
 pub use atom_code_explanation::{AtomCodeExplanation, AtomCodeExplanationError};
+pub use molecule_hash::{MoleculeHashError, molecule_hash, molecule_hash_with_ranks};

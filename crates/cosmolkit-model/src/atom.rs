@@ -910,6 +910,17 @@ pub fn ordered_atom_properties(
     atom.properties.props.ordered()
 }
 
+/// Restores detached canonical template attachment state. The order value's
+/// constructor validates local uniqueness; topology validation checks target
+/// ranges before runtime installation. This boundary grants no live mutation.
+#[doc(hidden)]
+pub fn replace_atom_template_attachment_order(
+    atom: &mut Atom,
+    order: Option<TemplateAttachmentOrder>,
+) {
+    atom.properties.template_attachment_order = order;
+}
+
 impl Atom {
     pub fn from_spec(id: AtomId, spec: AtomSpec) -> Self {
         let (element, properties) = spec.into_query_parts();

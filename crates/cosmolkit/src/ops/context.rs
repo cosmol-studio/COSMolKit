@@ -2441,3 +2441,151 @@ mod failure_tests;
 #[cfg(all(test, feature = "cap-forcefields", feature = "op-contracts-strict"))]
 #[path = "../../tests/support/mmff_proof_internal.rs"]
 mod mmff_proof_tests;
+
+/// Public native serialization remains inside the existing private runtime
+/// semantic boundary. IO receives only detached borrowed canonical blocks;
+/// construction restores validated detached values once, without operations
+/// acquiring constructor or unrestricted block authority.
+#[cfg(feature = "cap-serialization")]
+impl Molecule {
+    /// Serializes the complete canonical molecule as a COS-native1.2 archive.
+    pub fn to_binary(&self) -> Result<Vec<u8>, crate::PickleError> {
+        let topology = self.topology_arc_runtime();
+        let cache = self.derived_cache_runtime();
+        let states = cache.valid_states();
+        cosmolkit_io::encode_molecule_binary(&cosmolkit_io::BinaryInput {
+            topology: &topology,
+            coordinates: self.coordinate_block_runtime(),
+            properties: self.properties(),
+            derived: cosmolkit_io::BinaryDerivedView {
+                rings: cache.ring_info(),
+                ring_families: cache.ring_family_info(),
+                valence: cache.valence_assignment(),
+                aromaticity_valid: states.contains(DerivedState::AROMATICITY),
+                stereo_valid: states.contains(DerivedState::STEREO),
+                valid_bits: states.bits(),
+            },
+        })
+    }
+
+    /// Restores native1.2, historical sectioned1.0/1.1, or raw versions1..3.
+    /// No sanitation, perception, or reconstruction of historically absent
+    /// typed/PDB/coordinate state runs at this constructor boundary.
+    pub fn from_binary(data: &[u8]) -> Result<Self, crate::PickleError> {
+        let record = cosmolkit_io::decode_molecule_binary(data)?;
+        let d = record.derived;
+        let bits = d.valid_bits.unwrap_or(
+            (if d.rings.is_some() {
+                DerivedState::RINGS.bits()
+            } else {
+                0
+            }) | (if d.ring_families.is_some() {
+                DerivedState::RING_FAMILIES.bits()
+            } else {
+                0
+            }) | (if d.valence.is_some() {
+                DerivedState::VALENCE.bits()
+            } else {
+                0
+            }) | (if d.aromaticity_valid {
+                DerivedState::AROMATICITY.bits()
+            } else {
+                0
+            }) | (if d.stereo_valid {
+                DerivedState::STEREO.bits()
+            } else {
+                0
+            }),
+        );
+        let mut cache = DerivedCacheBlock::default();
+        if let Some(value) = d.valence {
+            cache.install_valence_assignment(value);
+        }
+        if let Some(value) = d.rings {
+            cache.install_ring_info(value);
+        }
+        if let Some(value) = d.ring_families {
+            cache.install_ring_family_info(value);
+        }
+        for state in [
+            DerivedState::RINGS,
+            DerivedState::RING_FAMILIES,
+            DerivedState::VALENCE,
+            DerivedState::AROMATICITY,
+            DerivedState::STEREO,
+            DerivedState::COORDINATES,
+            DerivedState::DRAWING,
+            DerivedState::FINGERPRINT,
+        ] {
+            if bits & state.bits() != 0 {
+                cache.mark_valid(state);
+            }
+        }
+        cache
+            .validate_for_topology(&record.topology)
+            .map_err(|error| crate::PickleError::InvalidMolecule(error.to_string()))?;
+        Self::from_runtime_parts(
+            Arc::new(record.topology),
+            Arc::new(record.coordinates),
+            Arc::new(record.properties),
+            Arc::new(cache),
+        )
+        .map_err(|error| crate::PickleError::InvalidMolecule(error.to_string()))
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "cap-serialization",
+    feature = "cap-hashing",
+    feature = "cap-smiles",
+    feature = "cap-fingerprints",
+    feature = "cap-depict"
+))]
+mod original_binary_live_tests {
+    use crate::Molecule;
+    #[test]
+    fn test_chembl_binary_roundtrip_preserves_derived_behavior_exactly() {
+        // Retained from the ChEMBL 37 binary-roundtrip phase: the old archive
+        // discarded valence state, so the restored graph could neither produce
+        // its pre-archive molecular hash nor reproduce its Morgan fingerprint.
+        let mol = Molecule::from_smiles(
+            "CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO",
+        )
+        .expect("parse retained ChEMBL binary-roundtrip molecule")
+        .with_2d_coordinates()
+        .expect("generate the audited pre-archive 2D state");
+        let hash_before = mol.molecular_hash().expect("hash before archive");
+        let morgan_before = mol
+            .morgan_fingerprint_with_params(&crate::MorganFingerprintParams::default(), None)
+            .expect("Morgan fingerprint before archive");
+
+        let data = mol.to_binary().expect("encode molecule archive");
+        let restored = Molecule::from_binary(&data).expect("decode molecule archive");
+
+        assert_eq!(
+            mol.derived_cache_runtime(),
+            restored.derived_cache_runtime()
+        );
+        assert_eq!(mol.coordinates_2d(), restored.coordinates_2d());
+        assert_eq!(
+            mol.coordinate_block_runtime().conformers_2d.len(),
+            restored.coordinate_block_runtime().conformers_2d.len()
+        );
+        assert_eq!(mol.conformers_3d().len(), restored.conformers_3d().len());
+        assert_eq!(
+            hash_before,
+            restored.molecular_hash().expect("hash after archive")
+        );
+        assert_eq!(
+            morgan_before,
+            restored
+                .morgan_fingerprint_with_params(&crate::MorganFingerprintParams::default(), None)
+                .expect("Morgan fingerprint after archive")
+        );
+        assert_eq!(
+            data,
+            restored.to_binary().expect("re-encode restored molecule")
+        );
+    }
+}

@@ -22,8 +22,9 @@ pub use adjacency::{AdjacencyError, AdjacencyList, NeighborRef};
 pub use atom::{
     Atom, AtomId, AtomPdbResidueInfo, AtomPropertyError, AtomSpec, TemplateAttachment,
     TemplateAttachmentOrder, TemplateAttachmentOrderError, ordered_atom_properties,
+    replace_atom_template_attachment_order,
 };
-pub use bond::{Bond, BondId, BondSpec, BondValueError};
+pub use bond::{Bond, BondId, BondSpec, BondValueError, ordered_bond_properties};
 pub use cip::{CipDescriptor, CipDescriptorError};
 pub use coordinates::{
     Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, CoordinateValidationError,

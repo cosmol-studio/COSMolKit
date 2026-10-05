@@ -15,7 +15,7 @@ documentation = "https://docs.rs/cosmolkit"
 default = ["molecule"]
 # Internal format branches, not facade public capabilities. BIO-only facade
 # builds disable these defaults and activate only `bio`.
-molecule = ["dep:cosmolkit-core", "dep:cosmolkit-search"]
+molecule = ["dep:cosmolkit-core", "dep:cosmolkit-search", "dep:serde", "dep:postcard"]
 bio = ["dep:cosmolkit-bio"]
 # Forwarding feature (BIO-ROWS-PROBE): enables only the existing optional
 # BIO dependency's test-probes feature; no new dependency edge, no
@@ -29,6 +29,8 @@ cosmolkit-model = { version = "0.5.0-rc.10", path = "../cosmolkit-model" }
 cosmolkit-search = { version = "0.5.0-rc.10", path = "../cosmolkit-search", optional = true }
 cosmolkit-types = { version = "0.5.0-rc.10", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
+serde = { version = "1", features = ["derive"], optional = true }
+postcard = { version = "1.1.3", features = ["alloc"], optional = true }
 
 [[test]]
 name = "migration_io_bio_rows"

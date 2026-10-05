@@ -68,6 +68,9 @@ _binding_profile: builtins.str
     let text = text.replace("__all__ = [\n", "__all__ = [\n    \"DrawingWriteError\",\n");
     let mut text = text;
     for name in [
+        "PickleError",
+        "MoleculeHashError",
+        "CipRankError",
         "SmilesError",
         "SmilesWriteError",
         "MorganReadError",
@@ -90,6 +93,9 @@ _binding_profile: builtins.str
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
+    text = text.replace("class PickleError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class PickleError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    version: builtins.int\n    major: builtins.int\n    minor: builtins.int\n    section: builtins.int\n    expected: builtins.int\n    actual: builtins.int\n    value: builtins.int\n    type_name: builtins.str\n    count: builtins.int\n    message: builtins.str\n");
+    text = text.replace("class MoleculeHashError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class MoleculeHashError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    actual: builtins.int\n    atom_count: builtins.int\n");
+    text = text.replace("class CipRankError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class CipRankError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    field: builtins.str\n    actual: builtins.int\n    atom_count: builtins.int\n    atom: builtins.int\n    value: builtins.int\n    map_number: builtins.int\n    degree: builtins.int\n    maximum_supported: builtins.int\n    bond: builtins.int\n    order: builtins.int\n");
     text = text.replace("class FingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class FingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable variants.\n    index: builtins.int\n    size: builtins.int\n    left: builtins.int\n    right: builtins.int\n    factor: builtins.int\n    n_bits: builtins.int\n    value: builtins.float\n    site: builtins.str\n    what: builtins.str\n    reason: builtins.str\n");
     // Forcefield exceptions are published through create_exception!, so they
     // have no pyclass stub metadata. Project only attributes set by the thin

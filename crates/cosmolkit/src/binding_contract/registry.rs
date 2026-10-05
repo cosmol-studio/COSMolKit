@@ -9243,5 +9243,38 @@ binding_contract! {
         { semantic_id: "AtomCodeExplanation.pi_electrons", item: callable, owner: type_, rust: crate::AtomCodeExplanation::pi_electrons, python: "pi_electrons", javascript: "piElectrons", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "AtomCodeExplanation.chirality", item: callable, owner: type_, rust: crate::AtomCodeExplanation::chirality, python: "chirality", javascript: "chirality", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: Option<&'static str>, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->Option<&'static str>, },
+        #[cfg(feature = "cap-serialization")]
+        { semantic_id:"types.PickleError", item:type, owner:type_,
+          rust:crate::PickleError, python:"PickleError", javascript:"PickleError",
+          feature:"cap-serialization", status:experimental, role:error, },
+        #[cfg(feature = "cap-serialization")]
+        { semantic_id:"Molecule.to_binary", item:callable, owner:molecule,
+          rust:crate::Molecule::to_binary, python:"to_binary", javascript:"toBinary",
+          feature:"cap-serialization", status:experimental, kind:instance,
+          parameters:[], output:Vec<u8>, error:crate::PickleError,
+          state:read_only, operation:none,
+          signature:fn(&crate::Molecule)->Result<Vec<u8>,crate::PickleError>, },
+        #[cfg(feature = "cap-serialization")]
+        { semantic_id:"Molecule.from_binary", item:callable, owner:molecule,
+          rust:crate::Molecule::from_binary, python:"from_binary", javascript:"fromBinary",
+          feature:"cap-serialization", status:experimental, kind:static_,
+          parameters:[{name:data,type:&[u8],default:required}], output:crate::Molecule, error:crate::PickleError,
+          state:value_returning, operation:none,
+          signature:fn(&[u8])->Result<crate::Molecule,crate::PickleError>, },
+        #[cfg(feature = "cap-hashing")]
+        { semantic_id:"types.CipRankError", item:type, owner:type_, rust:crate::CipRankError, python:"CipRankError", javascript:"CipRankError", feature:"cap-hashing", status:experimental, role:error, },
+        #[cfg(feature = "cap-hashing")]
+        { semantic_id:"types.MoleculeHashError", item:type, owner:type_, rust:crate::MoleculeHashError,
+          python:"MoleculeHashError", javascript:"MoleculeHashError", feature:"cap-hashing", status:experimental, role:error, },
+        #[cfg(feature = "cap-hashing")]
+        { semantic_id:"Molecule.molecular_hash", item:callable, owner:molecule, rust:crate::Molecule::molecular_hash,
+          python:"molecular_hash", javascript:"molecularHash", feature:"cap-hashing", status:experimental, kind:instance,
+          parameters:[], output:u64, error:crate::MoleculeHashError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule)->Result<u64,crate::MoleculeHashError>, },
+        #[cfg(feature = "cap-hashing")]
+        { semantic_id:"Molecule.molecular_hash_with_ranks", item:callable, owner:molecule, rust:crate::Molecule::molecular_hash_with_ranks,
+          python:"molecular_hash_with_ranks", javascript:"molecularHashWithRanks", feature:"cap-hashing", status:experimental, kind:instance,
+          parameters:[{name:ranks,type:&[u32],default:required}], output:u64, error:crate::MoleculeHashError, state:read_only, operation:none,
+          signature:fn(&crate::Molecule,&[u32])->Result<u64,crate::MoleculeHashError>, },
     ];
 }

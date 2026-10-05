@@ -100,23 +100,28 @@ impl RingInfo {
         self.bond_members.len()
     }
 
-    pub(crate) const fn persisted_find_type(&self) -> RingFindType {
+    #[doc(hidden)]
+    pub const fn persisted_find_type(&self) -> RingFindType {
         self.find_type
     }
 
-    pub(crate) const fn persisted_relevant_cycle_count(&self) -> Option<usize> {
+    #[doc(hidden)]
+    pub const fn persisted_relevant_cycle_count(&self) -> Option<usize> {
         self.relevant_cycle_count
     }
 
-    pub(crate) fn persisted_fused_rings(&self) -> &[Vec<bool>] {
+    #[doc(hidden)]
+    pub fn persisted_fused_rings(&self) -> &[Vec<bool>] {
         &self.fused_rings
     }
 
-    pub(crate) fn persisted_num_fused_bonds(&self) -> &[usize] {
+    #[doc(hidden)]
+    pub fn persisted_num_fused_bonds(&self) -> &[usize] {
         &self.num_fused_bonds
     }
 
-    pub(crate) fn from_persisted_components(
+    #[doc(hidden)]
+    pub fn from_persisted_components(
         initialized: bool,
         find_type: RingFindType,
         atom_count: usize,

@@ -539,6 +539,53 @@ impl Molecule {
             .map_err(|error| topological_torsion_pyerr(py, error))
     }
 
+    fn molecular_hash(&self, py: Python<'_>) -> PyResult<u64> {
+        self.inner
+            .molecular_hash()
+            .map_err(|error| crate::canonical_molecular_hash::error_pyerr(py, &error))
+    }
+
+    fn molecular_hash_with_ranks(&self, py: Python<'_>, ranks: Vec<u32>) -> PyResult<u64> {
+        self.inner
+            .molecular_hash_with_ranks(&ranks)
+            .map_err(|error| crate::canonical_molecular_hash::error_pyerr(py, &error))
+    }
+
+    fn to_binary(&self, py: Python<'_>) -> PyResult<Py<pyo3::types::PyBytes>> {
+        let data = self
+            .inner
+            .to_binary()
+            .map_err(|error| crate::canonical_binary::error_pyerr(py, &error))?;
+        Ok(pyo3::types::PyBytes::new(py, &data).unbind())
+    }
+
+    #[staticmethod]
+    fn from_binary(
+        py: Python<'_>,
+        #[gen_stub(override_type(type_repr = "builtins.bytes", imports = ("builtins")))]
+        data: &[u8],
+    ) -> PyResult<Self> {
+        ck::Molecule::from_binary(data)
+            .map(|inner| Self { inner })
+            .map_err(|error| crate::canonical_binary::error_pyerr(py, &error))
+    }
+
+    fn __reduce__(&self, py: Python<'_>) -> PyResult<(Py<PyAny>, (Py<pyo3::types::PyBytes>,))> {
+        let rebuild = py
+            .import("cosmolkit")?
+            .getattr("_molecule_from_binary")?
+            .unbind();
+        Ok((rebuild, (self.to_binary(py)?,)))
+    }
+
+    fn __reduce_ex__(
+        &self,
+        py: Python<'_>,
+        _protocol: i32,
+    ) -> PyResult<(Py<PyAny>, (Py<pyo3::types::PyBytes>,))> {
+        self.__reduce__(py)
+    }
+
     /// Descriptor query through the canonical public Rust method.
     fn num_amide_bonds(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
@@ -2138,6 +2185,8 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_search::register(module)?;
     crate::canonical_atom_bond::register(module)?;
     crate::canonical_potential_stereo::register(module)?;
+    crate::canonical_binary::register(module)?;
+    crate::canonical_molecular_hash::register(module)?;
     crate::canonical_builder::register(module)?;
     crate::tautomer_binding::register(module)?;
     crate::canonical_property_values::register(module)?;

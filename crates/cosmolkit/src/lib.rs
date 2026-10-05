@@ -307,6 +307,8 @@ pub use tautomer::{
 pub use bio::BioMoleculeError;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{AtomCodeExplanation, AtomCodeExplanationError};
+#[cfg(feature = "cap-serialization")]
+pub use cosmolkit_io::PickleError;
 #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
 pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams};
 #[cfg(feature = "cap-fingerprints")]
@@ -315,3 +317,10 @@ pub use ops::AtomPairAtomCodeResult;
 pub(crate) use ops::WithAtomPairAtomCodeAccess;
 #[cfg(feature = "cap-forcefields")]
 pub use ops::{UffEnergyGradient, UffEvaluationParams};
+
+#[cfg(feature = "cap-hashing")]
+mod molecular_hash;
+#[cfg(feature = "cap-hashing")]
+pub use cosmolkit_core::CipRankError;
+#[cfg(feature = "cap-hashing")]
+pub use cosmolkit_fingerprints::MoleculeHashError;
