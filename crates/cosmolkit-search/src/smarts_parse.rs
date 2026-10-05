@@ -7615,7 +7615,7 @@ fn unspecified_smarts_bond_query() -> QueryNode<BondQueryPredicate> {
 }
 
 fn normalize_dative_bond(bond: ParsedSmartsBond) -> (ParsedSmartsBond, bool) {
-    // BEGIN RDKIT CPP FUNCTION QueryBond constructor and Bond::setBondType
+    // BEGIN RDKIT CPP FUNCTION QueryBond constructor and QueryBond::setBondType
     // RDKit✔️✔️: QueryBond::QueryBond(BondType bT) : Bond(bT) {
     // RDKit✔️✔️:   if (bT != Bond::UNSPECIFIED) {
     // RDKit✔️✔️:     dp_query = makeBondOrderEqualsQuery(bT);
@@ -7623,20 +7623,33 @@ fn normalize_dative_bond(bond: ParsedSmartsBond) -> (ParsedSmartsBond, bool) {
     // RDKit✔️✔️:     dp_query = makeBondNullQuery();
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: };
-    // RDKit✔️✔️: void setBondType(BondType bT) { d_bondType = bT; }
-    // END RDKIT CPP FUNCTION QueryBond constructor and Bond::setBondType
-    // RDKit✔️✔️: if( $2->getBondType() == Bond::DATIVER ){
-    // RDKit✔️✔️:   $2->setBeginAtomIdx(atomIdx1);
-    // RDKit✔️✔️:   $2->setEndAtomIdx(atomIdx2);
-    // RDKit✔️✔️:   $2->setBondType(Bond::DATIVE);
-    // RDKit✔️✔️: }else if ( $2->getBondType() == Bond::DATIVEL ){
-    // RDKit✔️✔️:   $2->setBeginAtomIdx(atomIdx2);
-    // RDKit✔️✔️:   $2->setEndAtomIdx(atomIdx1);
-    // RDKit✔️✔️:   $2->setBondType(Bond::DATIVE);
+    // RDKit✔️✔️: void QueryBond::setBondType(BondType bT) {
+    // RDKit✔️✔️:   // NOTE: calling this blows out any existing query
+    // RDKit✔️✔️:   d_bondType = bT;
+    // RDKit✔️✔️:   delete dp_query;
+    // RDKit✔️✔️:   dp_query = nullptr;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   dp_query = makeBondOrderEqualsQuery(bT);
     // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION QueryBond constructor and QueryBond::setBondType
+    // RDKit✔️✔️:   if( $2->getBondType() == Bond::DATIVER ){
+    // RDKit✔️✔️:     $2->setBeginAtomIdx(atomIdx1);
+    // RDKit✔️✔️:     $2->setEndAtomIdx(atomIdx2);
+    // RDKit✔️✔️:     $2->setBondType(Bond::DATIVE);
+    // RDKit✔️✔️:   }else if ( $2->getBondType() == Bond::DATIVEL ){
+    // RDKit✔️✔️:     $2->setBeginAtomIdx(atomIdx2);
+    // RDKit✔️✔️:     $2->setEndAtomIdx(atomIdx1);
+    // RDKit✔️✔️:     $2->setBondType(Bond::DATIVE);
+    // RDKit✔️✔️: }
+    // The ordinary and branch reductions hold QueryBond*, so normalization
+    // replaces even a composite or negated query. CloseMolRings holds Bond*;
+    // its nonvirtual setter changes only the carrier and is handled separately.
+    // Complexity: constant-size dispatch and one equality leaf, like upstream;
+    // dropping the previous tree visits its nodes, like delete dp_query.
     match bond.carrier_order {
         BondOrder::DativeRight => (
             ParsedSmartsBond {
+                query: make_bond_order_equals_query(BondOrder::Dative),
                 carrier_order: BondOrder::Dative,
                 ..bond
             },
@@ -7644,6 +7657,7 @@ fn normalize_dative_bond(bond: ParsedSmartsBond) -> (ParsedSmartsBond, bool) {
         ),
         BondOrder::DativeLeft => (
             ParsedSmartsBond {
+                query: make_bond_order_equals_query(BondOrder::Dative),
                 carrier_order: BondOrder::Dative,
                 ..bond
             },
@@ -10148,5 +10162,56 @@ mod original_smarts_boundary_regressions {
             );
         }
         assert!(parse_smarts("[@TH9]", &SmartsParseParams::default()).is_err());
+    }
+}
+
+#[cfg(test)]
+mod smarts_source_state_tests {
+    use super::*;
+
+    #[test]
+    fn querybond_normalization_replaces_composite_or_negated_predicate() {
+        let previous = QueryNode::not(QueryNode::and(vec![
+            make_bond_order_equals_query(BondOrder::Single),
+            make_bond_is_in_ring_query(),
+        ]));
+        for order in [BondOrder::DativeRight, BondOrder::DativeLeft] {
+            let (normalized, reverse) = normalize_dative_bond(ParsedSmartsBond {
+                query: previous.clone(),
+                carrier_order: order,
+                unspecified_order: false,
+            });
+            assert_eq!(normalized.carrier_order, BondOrder::Dative);
+            assert_eq!(
+                normalized.query,
+                make_bond_order_equals_query(BondOrder::Dative)
+            );
+            assert_eq!(reverse, order == BondOrder::DativeLeft);
+        }
+        let original = ParsedSmartsBond {
+            query: previous.clone(),
+            carrier_order: BondOrder::Single,
+            unspecified_order: false,
+        };
+        let (unchanged, reverse) = normalize_dative_bond(original);
+        assert_eq!(unchanged.query, previous);
+        assert_eq!(unchanged.carrier_order, BondOrder::Single);
+        assert!(!reverse);
+    }
+
+    #[test]
+    fn ring_closure_base_setter_preserves_directional_query() {
+        // Source grammar input constructed to exercise CloseMolRings' Bond*
+        // dispatch; it is not a stored external counterexample or fixture.
+        for (text, order, endpoints) in [
+            ("C->1CCC1", BondOrder::DativeRight, (0, 3)),
+            ("C1CCC<-1", BondOrder::DativeLeft, (0, 3)),
+        ] {
+            let query = parse_smarts_graph(text).unwrap().finish().unwrap();
+            let bond = query.bond(3).unwrap();
+            assert_eq!(bond.bond().order(), BondOrder::Dative);
+            assert_eq!(bond.endpoints(), endpoints);
+            assert_eq!(bond.predicate(), &make_bond_order_equals_query(order));
+        }
     }
 }

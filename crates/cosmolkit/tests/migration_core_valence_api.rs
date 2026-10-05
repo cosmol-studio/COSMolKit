@@ -144,8 +144,15 @@ fn binding_contract_exposes_the_frozen_nine_entries() {
     assert_eq!(shared_errors[0].item, BindingItem::Type);
     assert_eq!(shared_errors[0].owner, BindingOwner::Type);
     assert_eq!(shared_errors[0].status, FunctionStatus::Experimental);
-    let _: fn(&Molecule) -> Result<Vec<cosmolkit::AtomMetadata>, ValenceError> =
+    let _: fn(&Molecule, bool) -> Result<Vec<cosmolkit::AtomMetadata>, ValenceError> =
         Molecule::atom_metadata;
+    let parameters = rows[1].callable.unwrap().parameters;
+    assert_eq!(parameters.len(), 1);
+    assert_eq!(parameters[0].name, "recalculate");
+    assert_eq!(
+        parameters[0].default,
+        cosmolkit::BindingDefault::Value("boolean(true)")
+    );
     for row in &rows[2..4] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
@@ -287,4 +294,117 @@ fn single_output_contract_makes_multi_candidate_ordering_not_applicable() {
     let spec = operation_spec("with_assigned_valence_with_params").unwrap();
     assert_eq!(spec.output, MoleculeOpOutput::Single);
     assert_eq!(spec.result_type, "Molecule");
+}
+
+#[test]
+fn atom_metadata_recalculation_does_not_populate_cache_and_cached_read_requires_it() {
+    let source = molecule();
+    let peer = source.clone();
+    let computed = source.atom_metadata(true).unwrap();
+    assert_eq!(
+        computed
+            .iter()
+            .map(|row| row.explicit_valence)
+            .collect::<Vec<_>>(),
+        [1, 2, 1]
+    );
+    assert_eq!(
+        computed
+            .iter()
+            .map(|row| row.total_valence)
+            .collect::<Vec<_>>(),
+        [4, 4, 2]
+    );
+    assert_eq!(
+        source.atom_metadata(false),
+        Err(ValenceError::ExplicitValenceCacheNotInitialized {
+            atom: AtomId::new(0)
+        })
+    );
+    assert_eq!(source, peer);
+    assert!(std::ptr::eq(source.topology(), peer.topology()));
+    coordinate_views::assert_shared_coordinates(&source, &peer);
+    assert!(std::ptr::eq(source.properties(), peer.properties()));
+
+    let prepared = source.with_assigned_valence().unwrap();
+    let prepared_peer = prepared.clone();
+    assert_eq!(prepared.atom_metadata(false).unwrap(), computed);
+    assert_eq!(prepared.atom_metadata(true).unwrap(), computed);
+    assert_eq!(prepared, prepared_peer);
+    assert!(std::ptr::eq(prepared.topology(), prepared_peer.topology()));
+    coordinate_views::assert_shared_coordinates(&prepared, &prepared_peer);
+    assert!(std::ptr::eq(
+        prepared.properties(),
+        prepared_peer.properties()
+    ));
+    assert_eq!(Molecule::new().atom_metadata(false).unwrap(), []);
+    assert_eq!(Molecule::new().atom_metadata(true).unwrap(), []);
+}
+
+#[test]
+fn atom_metadata_cached_read_does_not_recalculate_strict_valence() {
+    let source = invalid_pentavalent_carbon();
+    let prepared = source
+        .with_assigned_valence_with_params(&ValenceParams {
+            strict: false,
+            ..ValenceParams::default()
+        })
+        .unwrap();
+    let peer = prepared.clone();
+    assert_eq!(
+        prepared.atom_metadata(false).unwrap()[0].explicit_valence,
+        5
+    );
+    assert!(
+        matches!(prepared.atom_metadata(true), Err(ValenceError::InvalidValence { atom, .. }) if atom == AtomId::new(0))
+    );
+    assert_eq!(
+        prepared.atom_metadata(false).unwrap()[0].explicit_valence,
+        5
+    );
+    assert_eq!(prepared, peer);
+    assert!(std::ptr::eq(prepared.topology(), peer.topology()));
+    coordinate_views::assert_shared_coordinates(&prepared, &peer);
+    assert!(std::ptr::eq(prepared.properties(), peer.properties()));
+}
+
+#[cfg(all(feature = "cap-hydrogens", feature = "cap-smiles"))]
+#[test]
+fn atom_metadata_sanitize_false_removehs_never_reads_invalidated_valence() {
+    let source = Molecule::from_smiles("CCO")
+        .unwrap()
+        .with_hydrogens()
+        .unwrap();
+    let removed = source
+        .without_hydrogens_with_params(&cosmolkit::RemoveHsParams {
+            sanitize: false,
+            ..cosmolkit::RemoveHsParams::default()
+        })
+        .unwrap();
+    let peer = removed.clone();
+    assert_eq!(
+        removed.atom_metadata(false),
+        Err(ValenceError::ExplicitValenceCacheNotInitialized {
+            atom: AtomId::new(0)
+        })
+    );
+    assert_eq!(
+        removed
+            .atom_metadata(true)
+            .unwrap()
+            .iter()
+            .map(|row| row.explicit_valence)
+            .collect::<Vec<_>>(),
+        [1, 2, 1]
+    );
+    assert_eq!(
+        removed.atom_metadata(false),
+        Err(ValenceError::ExplicitValenceCacheNotInitialized {
+            atom: AtomId::new(0)
+        })
+    );
+    assert_eq!(removed, peer);
+    assert!(std::ptr::eq(removed.topology(), peer.topology()));
+    coordinate_views::assert_shared_coordinates(&removed, &peer);
+    assert!(std::ptr::eq(removed.properties(), peer.properties()));
 }

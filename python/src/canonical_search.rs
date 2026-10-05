@@ -85,6 +85,7 @@ pub(crate) fn write_pyerr(py: Python<'_>, source: ck::SmartsWriteError) -> PyErr
     let kind = match &source {
         E::InvalidPropertyKind { .. } => "InvalidPropertyKind",
         E::Property(_) => "Property",
+        E::Valence(_) => "Valence",
         E::InvalidGraph(_) => "InvalidGraph",
         E::QueryGraphTraversalUnsupported { .. } => "QueryGraphTraversalUnsupported",
         E::OrAboveAndBelowAnd => "OrAboveAndBelowAnd",

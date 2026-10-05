@@ -489,8 +489,8 @@ fn q15_ring_closures_follow_bookmark_order_priority_and_source_errors() {
 fn q16_dative_endpoint_orientation_and_source_row_order() {
     // The pinned direct and branch bond_expr atomd actions normalize DATIVER
     // and DATIVEL endpoints, then append the bond at that source reduction.
-    let right = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::DativeRight));
-    let left = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::DativeLeft));
+    let right = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Dative));
+    let left = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Dative));
     let single = QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single));
     let implicit_single_or_aromatic = QueryNode::predicate(BondQueryPredicate::OrderIn(vec![
         BondOrder::Single,
@@ -983,8 +983,8 @@ fn q11_bond_boolean_precedence_preserves_left_carrier_and_direction() {
 fn q12_bond_primitive_predicates_keep_source_carrier_defaults() {
     // smarts.yy constructs the single/triple/aromatic/ring primitives;
     // smarts.ll supplies the remaining BOND_TOKEN query and carrier actions.
-    // Dative parsing changes the carrier type and endpoints after construction,
-    // while the QueryBond predicate retains its source directional target.
+    // Dative parsing calls QueryBond::setBondType (QueryBond.cpp), replacing
+    // the complete predicate with DATIVE after orienting the endpoints.
     let cases = [
         (
             "C-C",
@@ -1037,14 +1037,14 @@ fn q12_bond_primitive_predicates_keep_source_carrier_defaults() {
         ),
         (
             "C->N",
-            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::DativeRight)),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Dative)),
             BondOrder::Dative,
             BondDirection::None,
             (0, 1),
         ),
         (
             "C<-N",
-            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::DativeLeft)),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Dative)),
             BondOrder::Dative,
             BondDirection::None,
             (1, 0),

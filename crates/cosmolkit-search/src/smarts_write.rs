@@ -67,6 +67,8 @@ pub enum SmartsWriteError {
     },
     #[error("SMARTS property string conversion failed: {0}")]
     Property(#[from] cosmolkit_core::PropertyStringError),
+    #[error("SMARTS writer periodic-table lookup failed: {0}")]
+    Valence(#[from] cosmolkit_core::ValenceError),
     #[error("query graph is invalid: {0}")]
     InvalidGraph(String),
     #[error("SMARTS writer query-graph traversal is not available for this graph: {detail}")]
@@ -227,6 +229,7 @@ fn query_graph_to_smarts_fragment_result(
             return Err(SmartsWriteError::FragmentBondOutOfRange { bond: *bond });
         }
     }
+    validate_writer_carrier_valence_lists(query)?;
     let mut visited = vec![false; query.num_atoms()];
     let mut seen_bonds = BTreeSet::new();
     let mut tree_children = vec![Vec::<(BondId, AtomId)>::new(); query.num_atoms()];
@@ -327,6 +330,34 @@ fn query_graph_to_smarts_fragment_result(
         }
     }
     Ok(result)
+}
+
+fn validate_writer_carrier_valence_lists(query: &QueryGraph) -> Result<(), SmartsWriteError> {
+    // RDKit❗✔️:   for (auto &atom : mol.atoms()) {
+    // RDKit❗✔️:     atom->updatePropertyCache(false);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: void Atom::updatePropertyCache(bool strict) {
+    // RDKit❗✔️:   calcExplicitValence(strict);
+    // RDKit❗✔️:   calcImplicitValence(strict);
+    // RDKit❗✔️: }
+    // RDKit✔️✔️:   const auto &ovalens =
+    // RDKit✔️✔️:       PeriodicTable::getTable()->getValenceList(atom.getAtomicNum());
+    // RDKit✔️✔️:   const INT_VECT &getValenceList(UINT atomicNumber) const {
+    // RDKit✔️✔️:     PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:     return byanum[atomicNumber].ValenceList();
+    // RDKit✔️✔️:   }
+    // Source boundary: FragmentSmartsConstruct updates all carriers, including
+    // atoms outside a fragment selection. calculateExplicitValence requests
+    // this list unconditionally, before the atom/query writer runs. Reuse the
+    // foundational table owner; a numeric query leaf is not a carrier identity.
+    // This helper reproduces that lookup/precondition only; it does not assign
+    // valence caches or claim to reproduce the complete property-cache update.
+    // Complexity: one indexed lookup per carrier, O(V), no allocation. Repeating
+    // the same immutable lookups for later components cannot change the result.
+    for atom in query.atoms() {
+        cosmolkit_core::required_valence_list(atom.atomic_number())?;
+    }
+    Ok(())
 }
 
 fn renumber_ring_edges(
@@ -3260,5 +3291,67 @@ mod uint_complete_source_condition_cells {
             Ok("".into())
         );
         assert_eq!(q, before);
+    }
+}
+
+#[cfg(test)]
+mod smarts_source_state_tests {
+    use super::*;
+    use cosmolkit_model::QueryAtomIdentity;
+
+    fn graph(identity: u8, predicate: AtomQueryPredicate) -> QueryGraph {
+        QueryGraph::from_parts(
+            vec![QueryAtom::from_identity_parts(
+                AtomId::new(0),
+                QueryAtomIdentity::from_atomic_number(identity),
+                QueryNode::predicate(predicate),
+            )],
+            vec![],
+            Default::default(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn periodic_table_precondition_uses_carrier_and_precedes_graph_emission() {
+        // Independently constructed carrier/query states distinguish the
+        // property's table key from numeric values in the predicate tree.
+        let invalid = graph(u8::MAX, AtomQueryPredicate::Any);
+        let expected =
+            SmartsWriteError::Valence(cosmolkit_core::ValenceError::PeriodicTableLookup {
+                atomic_number: u8::MAX,
+                field: "valences",
+            });
+        assert_eq!(
+            validate_writer_carrier_valence_lists(&invalid),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            query_atom_to_smarts(invalid.atom(0).unwrap(), &Default::default()).unwrap(),
+            "*"
+        );
+        let before = invalid.clone();
+        assert_eq!(
+            query_graph_to_smarts(&invalid, &Default::default()),
+            Err(expected.clone())
+        );
+        assert_eq!(
+            query_graph_to_cx_smarts(&invalid, &Default::default()),
+            Err(expected.clone())
+        );
+        assert_eq!(invalid, before);
+        let valid = graph(0, AtomQueryPredicate::AtomicNumber(u8::MAX));
+        assert!(validate_writer_carrier_valence_lists(&valid).is_ok());
+        assert!(query_graph_to_smarts(&valid, &Default::default()).is_ok());
+
+        let inner = RecursiveStructureQuery::from_query_graph(invalid, 0);
+        let recursive = graph(0, AtomQueryPredicate::RecursiveSmarts(inner));
+        assert_eq!(
+            query_graph_to_smarts(&recursive, &Default::default()),
+            Err(expected)
+        );
     }
 }

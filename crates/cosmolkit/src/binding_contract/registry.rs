@@ -2270,9 +2270,10 @@ binding_contract! {
         {
             semantic_id:"Molecule.atom_metadata",item:callable,owner:molecule,
             rust:crate::Molecule::atom_metadata,python:"atom_metadata",javascript:"atomMetadata",
-            feature:"cap-valence",status:experimental,kind:instance,parameters:[],
+            feature:"cap-valence",status:experimental,kind:instance,
+            parameters:[{name:recalculate,type:bool,default:boolean(true)}],
             output:Vec<crate::AtomMetadata>,error:crate::ValenceError,state:read_only,operation:none,
-            signature:fn(&crate::Molecule)->Result<Vec<crate::AtomMetadata>,crate::ValenceError>,
+            signature:fn(&crate::Molecule,bool)->Result<Vec<crate::AtomMetadata>,crate::ValenceError>,
         },
         // RUN-state owns exactly this public value entry. Its Arc-backed
         // MoleculeState and derived-cache authority stay private; construction

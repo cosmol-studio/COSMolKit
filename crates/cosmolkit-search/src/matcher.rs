@@ -1365,6 +1365,7 @@ fn bond_label_matches(
     query_index: usize,
     mol_index: usize,
     params: &SubstructMatchParams,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
 ) -> Result<bool, SubstructMatchError> {
     // RDKit✔️✔️: bool operator()(MolGraph::edge_descriptor i,
@@ -1398,7 +1399,15 @@ fn bond_label_matches(
     {
         return Ok(false);
     }
-    bond_compat(query_bond, query, mol_bond, mol, params, query_ctx)
+    bond_compat(
+        query_bond,
+        query,
+        mol_bond,
+        mol,
+        params,
+        recursive_cache,
+        query_ctx,
+    )
 }
 
 /// RDKit❗✔️: Evaluation of a bond query node for the currently modeled SMARTS
@@ -4101,7 +4110,7 @@ fn substruct_match_impl_with_recursive_cache_and_context<P: MatchResultProjectio
     };
 
     let bond_fn = |qei: usize, mei: usize| -> bool {
-        match bond_label_matches(query, mol, qei, mei, params, query_ctx) {
+        match bond_label_matches(query, mol, qei, mei, params, recursive_cache, query_ctx) {
             Ok(matched) => matched,
             Err(error) => {
                 if label_match_error.borrow().is_none() {
@@ -4483,6 +4492,7 @@ fn bond_compat(
     mol_bond: &Bond,
     mol: &SearchTarget<'_>,
     params: &SubstructMatchParams,
+    recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
 ) -> Result<bool, SubstructMatchError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Substruct/SubstructUtils.cpp :: bondCompat
@@ -4614,7 +4624,32 @@ fn bond_compat(
         let query_end = &query_mol.atoms()[query_bond.end().index()];
         let mol_begin = &mol.atoms()[mol_bond.begin().index()];
         let mol_end = &mol.atoms()[mol_bond.end().index()];
-        if !atom_matches(query_begin, mol_begin, mol) || !atom_matches(query_end, mol_end, mol) {
+        // RDKit✔️✔️: bool QueryAtom::Match(Atom const *what) const {
+        // RDKit✔️✔️:   PRECONDITION(what, "bad query atom");
+        // RDKit✔️✔️:   PRECONDITION(dp_query, "no query set");
+        // RDKit✔️✔️:   return dp_query->Match(what);
+        // RDKit✔️✔️: }
+        // bondCompat calls virtual Atom::Match, not atomCompat: explicit
+        // endpoints evaluate their predicates and prepared recursive sets;
+        // carrier-derived endpoints use Atom::Match. Atom-property filters,
+        // query-query comparison and extra-atom callbacks do not run here.
+        // Cost: the same two short-circuiting predicate evaluations, using
+        // borrowed context/cache without allocation or a graph scan.
+        let endpoint_matches = |query_atom: &QueryAtom, target_atom: &Atom| {
+            if query_atom.predicate_is_carrier_derived() {
+                Ok(atom_matches(query_atom, target_atom, mol))
+            } else {
+                evaluate_atom_query(
+                    query_atom.predicate(),
+                    target_atom,
+                    mol,
+                    params,
+                    recursive_cache,
+                    query_ctx,
+                )
+            }
+        };
+        if !endpoint_matches(query_begin, mol_begin)? || !endpoint_matches(query_end, mol_end)? {
             return Ok(false);
         }
     }
@@ -5161,6 +5196,7 @@ mod q86_bond_dispatch_tests {
             &topology.bonds[0],
             &target,
             params,
+            None,
             &context,
         )
         .unwrap()
@@ -5924,6 +5960,7 @@ mod q33_plain_atom_tests {
                 &target_topology.bonds[0],
                 &target,
                 &SubstructMatchParams::default(),
+                None,
                 &target_context,
             )
             .unwrap()
@@ -5946,6 +5983,7 @@ mod q33_plain_atom_tests {
                 &target_topology.bonds[0],
                 &target_with_override,
                 &SubstructMatchParams::default(),
+                None,
                 &target_context,
             )
             .unwrap()
@@ -8115,6 +8153,84 @@ mod search_shared_perf_s08_tests {
 
         assert_eq!(actual_calls, 3);
         assert_eq!(VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get), 1);
+    }
+}
+
+#[cfg(test)]
+mod dative_endpoint_dispatch_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, AtomSpec, BondId, BondSpec, CoordinateBlock, TopologyBlock};
+    use cosmolkit_types::Element;
+
+    #[test]
+    fn endpoint_virtual_dispatch_uses_explicit_query_instead_of_carrier_identity() {
+        let atoms = vec![
+            Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
+            Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::O)),
+        ];
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Dative),
+        );
+        let topology = TopologyBlock::try_from_parts(atoms, vec![bond], vec![], vec![]).unwrap();
+        let coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(&topology, &coordinates, &[], None, None);
+        let context = build_query_match_context(&target);
+        for (predicate, reverse, expected) in [
+            (QueryNode::predicate(AtomQueryPredicate::Any), false, true),
+            (QueryNode::predicate(AtomQueryPredicate::Any), true, true),
+            (
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                false,
+                true,
+            ),
+            (
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                true,
+                false,
+            ),
+        ] {
+            let atoms = vec![
+                QueryAtom::from_identity_parts(
+                    AtomId::new(0),
+                    cosmolkit_model::QueryAtomIdentity::AtomicNumber(0),
+                    predicate,
+                ),
+                QueryAtom::from_identity_parts(
+                    AtomId::new(1),
+                    cosmolkit_model::QueryAtomIdentity::AtomicNumber(0),
+                    QueryNode::predicate(AtomQueryPredicate::Any),
+                ),
+            ];
+            let (begin, end) = if reverse { (1, 0) } else { (0, 1) };
+            let bond = QueryBond::new(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(begin), AtomId::new(end), BondOrder::Dative),
+            );
+            let query = QueryGraph::from_parts(
+                atoms,
+                vec![bond],
+                Default::default(),
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap();
+            assert_eq!(
+                bond_compat(
+                    query.bond(0).unwrap(),
+                    &query,
+                    &topology.bonds[0],
+                    &target,
+                    &Default::default(),
+                    None,
+                    &context
+                )
+                .unwrap(),
+                expected,
+                "reverse={reverse}"
+            );
+        }
     }
 }
 

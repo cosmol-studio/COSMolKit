@@ -1091,7 +1091,7 @@ impl Molecule {
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
     fn atoms(&self) -> Vec<crate::canonical_atom_bond::Atom> {
-        let metadata = self.inner.atom_metadata();
+        let metadata = self.inner.atom_metadata(true);
         self.inner
             .atoms()
             .iter()
@@ -1116,12 +1116,17 @@ impl Molecule {
             .collect()
     }
 
+    #[pyo3(signature = (recalculate=true))]
+    /// Return current atom metadata without modifying molecule state.
+    /// With recalculate=False, require the existing valid valence cache;
+    /// missing or invalidated cache entries raise ValenceError.
     fn atom_metadata(
         &self,
         py: Python<'_>,
+        recalculate: bool,
     ) -> PyResult<Vec<crate::canonical_atom_bond::AtomMetadata>> {
         self.inner
-            .atom_metadata()
+            .atom_metadata(recalculate)
             .map(|rows| {
                 rows.into_iter()
                     .map(|inner| crate::canonical_atom_bond::AtomMetadata { inner })
