@@ -343,6 +343,17 @@ pub(crate) struct Fingerprint {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Fingerprint {
+    #[staticmethod]
+    fn from_on_bits(py: Python<'_>, n_bits: u32, on_bits: Vec<u32>) -> PyResult<Self> {
+        ck::Fingerprint::from_on_bits(n_bits, on_bits)
+            .map(|inner| Self { inner })
+            .map_err(|error| fingerprint_pyerr(py, error))
+    }
+    fn tanimoto(&self, py: Python<'_>, other: &Self) -> PyResult<f64> {
+        self.inner
+            .tanimoto(&other.inner)
+            .map_err(|error| fingerprint_pyerr(py, error))
+    }
     fn n_bits(&self) -> u32 {
         self.inner.n_bits()
     }
@@ -387,6 +398,15 @@ pub(crate) struct SparseCountFingerprint {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SparseCountFingerprint {
+    fn __len__(&self) -> PyResult<usize> {
+        // Original d892 binding uses usize::try_from; the PyO3 len slot then
+        // enforces Python Py_ssize_t bounds on the returned usize itself.
+        usize::try_from(self.inner.length()).map_err(|_| {
+            pyo3::exceptions::PyOverflowError::new_err(
+                "fingerprint size exceeds Python platform size",
+            )
+        })
+    }
     #[staticmethod]
     fn new(length: u64) -> Self {
         Self {

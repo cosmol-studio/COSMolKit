@@ -130,11 +130,33 @@ impl Fingerprint {
         n_bits: u32,
         on_bits: I,
     ) -> Result<Self, FingerprintError> {
+        // COSMolKit❗✔️: if let Some(bit) = on_bits.iter().copied().find(|&bit| bit >= n_bits) {
+        // COSMolKit❗✔️:     return Err(PyValueError::new_err(format!(
+        // COSMolKit❗✔️:         "fingerprint bit {bit} is outside n_bits={n_bits}"
+        // COSMolKit❗✔️:     )));
+        // COSMolKit❗✔️: }
+        // Original d892 Python constructor validates before allocating the bit
+        // vector. The canonical owner retains structured errors and u32 widths.
+        // Vec IntoIterator collection reuses its owned allocation; other input
+        // iterators require O(k) storage. Validation and population are O(k+w),
+        // as in the original Vec-backed Python boundary, without a whole copy.
+        let on_bits: Vec<u32> = on_bits.into_iter().collect();
+        if let Some(&bit) = on_bits.iter().find(|&&bit| bit >= n_bits) {
+            return Err(FingerprintError::SparseIndexOutOfRange {
+                index: u64::from(bit),
+                size: u64::from(n_bits),
+            });
+        }
         let mut fp = Self::new(n_bits);
         for bit in on_bits {
             fp.set_bit(bit)?;
         }
         Ok(fp)
+    }
+
+    /// Exact source Tanimoto similarity through the sole shared implementation.
+    pub fn tanimoto(&self, other: &Self) -> Result<f64, FingerprintError> {
+        crate::similarity::tanimoto(self, other)
     }
 
     /// Number of bits (the length of the vector).

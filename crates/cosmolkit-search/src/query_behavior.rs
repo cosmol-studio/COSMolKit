@@ -1337,7 +1337,8 @@ pub(crate) fn complex_atom_query_helper(
     }
 }
 
-pub(crate) fn is_complex_atom_query(atom: &crate::QueryAtom) -> bool {
+#[doc(hidden)]
+pub fn is_complex_atom_query(atom: &crate::QueryAtom) -> bool {
     // RDKit✔️✔️: bool isComplexQuery(const Atom *a) {
     // RDKit✔️✔️:   PRECONDITION(a, "bad atom");
     // RDKit✔️✔️:   if (!a->hasQuery()) {
@@ -1372,8 +1373,23 @@ pub(crate) fn is_complex_atom_query(atom: &crate::QueryAtom) -> bool {
     // complexity review: simple roots are O(1); AND trees are O(n) time and
     // O(h) recursion, matching RDKit's traversal and short-circuit behavior.
     // No path allocates, clones, performs keyed lookup, or scans molecule data.
-    let _ = atom;
-    false
+    if atom.predicate_is_carrier_derived() {
+        return false;
+    }
+    let query = atom.predicate();
+    match query {
+        QueryNode::Not(_) | QueryNode::Or(_) | QueryNode::Xor(_) => true,
+        QueryNode::Predicate(
+            AtomQueryPredicate::Any
+            | AtomQueryPredicate::AtomicNumber(_)
+            | AtomQueryPredicate::AtomType { .. },
+        ) => false,
+        QueryNode::And(_) => {
+            let mut has_atomic_number = false;
+            complex_atom_query_helper(query, &mut has_atomic_number) || !has_atomic_number
+        }
+        QueryNode::Predicate(_) => true,
+    }
 }
 
 #[doc(hidden)]
@@ -1494,6 +1510,112 @@ pub fn is_atom_aromatic(atom: &Atom, molecule: &impl SearchTargetAccess) -> bool
             QueryNode::Predicate(_) | QueryNode::Or(_) | QueryNode::Xor(_) => false,
         }
     */
+}
+
+/// Internal source query aromaticity over the sole detached query graph.
+#[doc(hidden)]
+pub fn is_query_atom_aromatic(atom: &crate::QueryAtom, graph: &crate::QueryGraph) -> bool {
+    // BEGIN RDKIT CPP FUNCTION isAromaticAtom
+    // RDKit✔️✔️: bool isAromaticAtom(const Atom &atom) {
+    // RDKit✔️✔️:   if (atom.getIsAromatic()) {
+    // RDKit✔️✔️:     return true;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (atom.hasOwningMol()) {
+    // RDKit✔️✔️:     for (const auto &bond : atom.getOwningMol().atomBonds(&atom)) {
+    // RDKit✔️✔️:       if (bond->getIsAromatic() ||
+    // RDKit✔️✔️:           bond->getBondType() == Bond::BondType::AROMATIC) {
+    // RDKit✔️✔️:         return true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION isAromaticAtom
+    // BEGIN RDKIT CPP FUNCTION isAtomAromatic
+    // RDKit✔️✔️: bool isAtomAromatic(const Atom *a) {
+    // RDKit✔️✔️:   PRECONDITION(a, "bad atom");
+    // RDKit✔️✔️:   bool res = false;
+    // RDKit✔️✔️:   if (!a->hasQuery()) {
+    // RDKit✔️✔️:     res = isAromaticAtom(*a);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     std::string descr = a->getQuery()->getDescription();
+    // RDKit✔️✔️:     if (descr == "AtomAtomicNum") {
+    // RDKit✔️✔️:       res = a->getIsAromatic();
+    // RDKit✔️✔️:     } else if (descr == "AtomIsAromatic") {
+    // RDKit✔️✔️:       res = true;
+    // RDKit✔️✔️:       if (a->getQuery()->getNegation()) {
+    // RDKit✔️✔️:         res = !res;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (descr == "AtomIsAliphatic") {
+    // RDKit✔️✔️:       res = false;
+    // RDKit✔️✔️:       if (a->getQuery()->getNegation()) {
+    // RDKit✔️✔️:         res = !res;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (descr == "AtomType") {
+    // RDKit✔️✔️:       res = getAtomTypeIsAromatic(
+    // RDKit✔️✔️:           static_cast<ATOM_EQUALS_QUERY *>(a->getQuery())->getVal());
+    // RDKit✔️✔️:       if (a->getQuery()->getNegation()) {
+    // RDKit✔️✔️:         res = !res;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (descr == "AtomAnd") {
+    // RDKit✔️✔️:       auto childIt = a->getQuery()->beginChildren();
+    // RDKit✔️✔️:       if ((*childIt)->getDescription() == "AtomAtomicNum") {
+    // RDKit✔️✔️:         if (a->getQuery()->getNegation()) {
+    // RDKit✔️✔️:           res = false;
+    // RDKit✔️✔️:         } else if ((*(childIt + 1))->getDescription() == "AtomIsAliphatic") {
+    // RDKit✔️✔️:           res = false;
+    // RDKit✔️✔️:         } else if ((*(childIt + 1))->getDescription() == "AtomIsAromatic") {
+    // RDKit✔️✔️:           res = true;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION isAtomAromatic
+    // Query dispatch reads only the root and first two AND children (O(1)),
+    // preserving the source's ignored second-child negation. Ordinary
+    // carriers scan indexed incident bonds in O(degree). No allocation,
+    // graph/query clone, inferred element, or chemistry recomputation occurs.
+    if atom.predicate_is_carrier_derived() {
+        return atom.is_aromatic()
+            || graph.adjacency()[atom.index()].iter().any(|&(_, index)| {
+                let bond = graph.bonds()[index].bond();
+                bond.is_aromatic() || bond.order() == BondOrder::Aromatic
+            });
+    }
+    fn atom_and_aromaticity(children: &[QueryNode<AtomQueryPredicate>]) -> bool {
+        if !matches!(
+            children.first(),
+            Some(QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(_)))
+        ) {
+            return false;
+        }
+        match children.get(1) {
+            Some(QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic))) => *aromatic,
+            Some(QueryNode::Not(child)) => match child.as_ref() {
+                QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic)) => *aromatic,
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+    match atom.predicate() {
+        QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(_)) => atom.is_aromatic(),
+        QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic))
+        | QueryNode::Predicate(AtomQueryPredicate::AtomType { aromatic, .. }) => *aromatic,
+        QueryNode::And(children) => atom_and_aromaticity(children),
+        QueryNode::Not(child) => match child.as_ref() {
+            QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(_)) => atom.is_aromatic(),
+            QueryNode::Predicate(AtomQueryPredicate::IsAromatic(aromatic))
+            | QueryNode::Predicate(AtomQueryPredicate::AtomType { aromatic, .. }) => !*aromatic,
+            QueryNode::And(_) => false,
+            QueryNode::Predicate(_) | QueryNode::Or(_) | QueryNode::Xor(_) | QueryNode::Not(_) => {
+                false
+            }
+        },
+        QueryNode::Predicate(_) | QueryNode::Or(_) | QueryNode::Xor(_) => false,
+    }
 }
 
 fn atom_list_query_helper(query: &QueryNode<AtomQueryPredicate>, ignore_negation: bool) -> bool {
@@ -3529,7 +3651,8 @@ pub fn make_single_or_aromatic_bond_query() -> QueryNode<BondQueryPredicate> {
     ]))
 }
 
-pub(crate) fn is_complex_bond_query(bond: &crate::QueryBond) -> bool {
+#[doc(hidden)]
+fn is_complex_bond_query_root(query: Option<&QueryNode<BondQueryPredicate>>) -> bool {
     // RDKit✔️✔️: bool isComplexQuery(const Bond *b) {
     // RDKit✔️✔️:   PRECONDITION(b, "bad bond");
     // RDKit✔️✔️:   if (!b->hasQuery()) {
@@ -3576,7 +3699,9 @@ pub(crate) fn is_complex_bond_query(bond: &crate::QueryBond) -> bool {
     // implementations inspect the root and at most two OR children in O(1)
     // time. Neither traverses a molecule or subtree, allocates, clones, looks
     // up keyed state, or creates a temporary collection.
-    let query = bond.predicate();
+    let Some(query) = query else {
+        return false;
+    };
 
     match query {
         QueryNode::Not(_) | QueryNode::And(_) | QueryNode::Xor(_) => true,
@@ -7791,5 +7916,54 @@ mod descriptor_hbd_context_tests {
         );
         assert_eq!(topology, topology_before, "whole topology preserved");
         assert_eq!(valence, valence_before, "whole valence preserved");
+    }
+}
+
+/// Source complexity over canonical QueryGraph identity; no query AST copy.
+#[doc(hidden)]
+pub fn is_complex_bond_query(bond: &crate::QueryBond) -> bool {
+    // RDKit✔️✔️:   if (!b->hasQuery()) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    is_complex_bond_query_root((!bond.predicate_is_carrier_derived()).then(|| bond.predicate()))
+}
+
+/// Source complexity over an explicitly query-bearing detached bond.
+#[doc(hidden)]
+pub fn is_complex_concrete_bond_query(bond: &cosmolkit_model::Bond) -> bool {
+    // RDKit✔️✔️:   if (!b->hasQuery()) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    is_complex_bond_query_root(bond.query())
+}
+
+#[cfg(test)]
+mod concrete_query_identity_tests {
+    use super::*;
+    use cosmolkit_model::{AtomId, Bond, BondId, BondSpec, QueryBond};
+    #[test]
+    fn source_query_complexity_distinguishes_same_order_carrier_and_explicit_identity() {
+        let spec = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Unspecified);
+        let ordinary = Bond::from_spec(BondId::new(0), spec.clone());
+        assert!(!is_complex_concrete_bond_query(&ordinary));
+        let explicit = Bond::from_spec(
+            BondId::new(0),
+            spec.clone()
+                .with_query(QueryNode::predicate(BondQueryPredicate::Any)),
+        );
+        assert!(is_complex_concrete_bond_query(&explicit));
+        let moved = QueryBond::from_carrier_parts(
+            explicit,
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Unspecified)),
+        );
+        assert!(is_complex_bond_query(&moved));
+        assert!(moved.bond().query().is_none());
+        let simple = Bond::from_spec(
+            BondId::new(0),
+            spec.with_query(QueryNode::predicate(BondQueryPredicate::Order(
+                BondOrder::Single,
+            ))),
+        );
+        assert!(!is_complex_concrete_bond_query(&simple));
     }
 }

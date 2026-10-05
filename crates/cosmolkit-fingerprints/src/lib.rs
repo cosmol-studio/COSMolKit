@@ -76,6 +76,7 @@ pub mod folding;
 mod generator;
 pub mod hash;
 mod invariants;
+mod layered;
 mod molecule_hash;
 mod morgan;
 mod packed_codes;
@@ -102,6 +103,13 @@ pub use atom_pair::{
     atom_pair_sparse_count,
 };
 pub use cosmolkit_search::QueryGraph;
+pub use layered::{
+    LAYERED_FINGERPRINT_MAX_LAYERS, LAYERED_FINGERPRINT_SUBSTRUCTURE_LAYERS,
+    LAYERED_FINGERPRINT_VERSION, LayeredFingerprintError, LayeredFingerprintLayers,
+    LayeredFingerprintParams, LayeredFingerprintResult, layered_fingerprint,
+    layered_fingerprint_with_output, layered_query_fingerprint,
+    layered_query_fingerprint_with_output,
+};
 pub use morgan::{
     MorganAtomInvariants, MorganCall, MorganParams, morgan_bits, morgan_count, morgan_sparse_bits,
     morgan_sparse_count,

@@ -29,5 +29,6 @@ mod canonical_property_values;
 mod uff_binding;
 
 mod alignment_binding;
+mod canonical_layered;
 mod canonical_maccs;
 mod canonical_path_score;

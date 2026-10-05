@@ -374,6 +374,44 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_maccs::maccs_pyerr(py, e))
     }
+    fn layered_fingerprint(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .layered_fingerprint()
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
+    }
+    fn layered_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_layered::LayeredFingerprintParams,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .layered_fingerprint_with_params(&params.inner)
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
+    }
+    fn layered_fingerprint_with_output(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_layered::LayeredFingerprintResult> {
+        self.inner
+            .layered_fingerprint_with_output()
+            .map(|inner| crate::canonical_layered::LayeredFingerprintResult { inner })
+            .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
+    }
+    fn layered_fingerprint_with_output_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_layered::LayeredFingerprintParams,
+    ) -> PyResult<crate::canonical_layered::LayeredFingerprintResult> {
+        self.inner
+            .layered_fingerprint_with_output_with_params(&params.inner)
+            .map(|inner| crate::canonical_layered::LayeredFingerprintResult { inner })
+            .map_err(|e| crate::canonical_layered::layered_pyerr(py, e))
+    }
     #[pyo3(signature=(path,size,atom_codes=None))]
     fn topological_torsion_path_score(
         &self,
@@ -2563,6 +2601,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_values::register(module)?;
     crate::canonical_path_score::register(module)?;
     crate::canonical_maccs::register(module)?;
+    crate::canonical_layered::register(module)?;
     crate::canonical_element_metadata::register(module)?;
     crate::mmff_binding::register(module)?;
     crate::uff_binding::register(module)?;

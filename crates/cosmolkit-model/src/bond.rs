@@ -5,9 +5,9 @@ use std::{
     fmt,
 };
 
-use crate::AtomId;
 use crate::PropertyValue;
 use crate::property_value::PropertyStore;
+use crate::{AtomId, BondQueryPredicate, QueryNode};
 
 pub use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
@@ -79,6 +79,7 @@ pub struct BondSpec {
     stereo_atoms: Option<[AtomId; 2]>,
     unknown_stereo: bool,
     properties: PropertyStore,
+    query: Option<Box<QueryNode<BondQueryPredicate>>>,
 }
 
 impl BondSpec {
@@ -95,6 +96,7 @@ impl BondSpec {
             stereo_atoms: None,
             unknown_stereo: false,
             properties: PropertyStore::new(),
+            query: None,
         }
     }
 
@@ -236,6 +238,25 @@ impl BondSpec {
         self.properties.computed_names()
     }
 
+    /// Explicit source query identity; absent for ordinary unspecified bonds.
+    #[must_use]
+    pub fn query(&self) -> Option<&QueryNode<BondQueryPredicate>> {
+        // RDKit✔️✔️:   bool hasQuery() const override { return dp_query != nullptr; }
+        // RDKit✔️✔️:   QUERYBOND_QUERY *getQuery() const override { return dp_query; }
+        self.query.as_deref()
+    }
+
+    #[must_use]
+    pub fn with_query(mut self, query: QueryNode<BondQueryPredicate>) -> Self {
+        // RDKit✔️✔️:   void setQuery(QUERYBOND_QUERY *what) override {
+        // RDKit✔️✔️:     // free up any existing query (Issue255):
+        // RDKit✔️✔️:     delete dp_query;
+        // RDKit✔️✔️:     dp_query = what;
+        // RDKit✔️✔️:   }
+        self.query = Some(Box::new(query));
+        self
+    }
+
     pub fn validate(&self) -> Result<(), BondValueError> {
         validate_stereo_references(self.stereo, self.stereo_atoms)
     }
@@ -268,6 +289,7 @@ pub struct Bond {
     stereo_atoms: Option<[AtomId; 2]>,
     unknown_stereo: bool,
     properties: PropertyStore,
+    query: Option<Box<QueryNode<BondQueryPredicate>>>,
     // BEGIN RDKIT CPP FUNCTION Bond::Bond(const Bond &) temporary flags
     // RDKit❗✔️: d_flags = other.d_flags;
     // END RDKIT CPP FUNCTION Bond::Bond(const Bond &) temporary flags
@@ -314,8 +336,22 @@ impl Bond {
             stereo_atoms: spec.stereo_atoms,
             unknown_stereo: spec.unknown_stereo,
             properties: spec.properties,
+            query: spec.query,
             temporary_flags: 0,
         }
+    }
+
+    /// Explicit source query identity; absent for ordinary unspecified bonds.
+    #[must_use]
+    pub fn query(&self) -> Option<&QueryNode<BondQueryPredicate>> {
+        // RDKit✔️✔️:   bool hasQuery() const override { return dp_query != nullptr; }
+        // RDKit✔️✔️:   QUERYBOND_QUERY *getQuery() const override { return dp_query; }
+        self.query.as_deref()
+    }
+
+    /// Move the sole source query into the existing QueryGraph carrier owner.
+    pub(crate) fn take_query(&mut self) -> Option<QueryNode<BondQueryPredicate>> {
+        self.query.take().map(|query| *query)
     }
 
     pub fn validate(&self) -> Result<(), BondValueError> {
@@ -728,5 +764,49 @@ mod flags_tests {
             changed_clone, source,
             "equality remains representation-based"
         );
+    }
+    #[test]
+    fn explicit_query_identity_survives_spec_clone_construction_and_remap() {
+        let ordinary = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Unspecified);
+        assert!(ordinary.query().is_none());
+        let explicit = ordinary
+            .clone()
+            .with_query(QueryNode::predicate(BondQueryPredicate::Any));
+        assert_ne!(explicit, ordinary);
+        let cloned = explicit
+            .clone()
+            .remapped_endpoints(AtomId::new(2), AtomId::new(3), None);
+        let bond = Bond::from_spec(BondId::new(0), cloned);
+        assert_eq!(bond.query(), explicit.query());
+        let mapped = bond
+            .clone()
+            .remapped(BondId::new(7), AtomId::new(4), AtomId::new(5), None);
+        assert_eq!(mapped.query(), explicit.query());
+        assert!(Bond::from_spec(BondId::new(0), ordinary).query().is_none());
+    }
+
+    #[test]
+    fn query_graph_wrapper_moves_one_explicit_identity_from_detached_bond() {
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Unspecified)
+                .with_query(QueryNode::predicate(BondQueryPredicate::Any)),
+        );
+        let wrapped = crate::QueryBond::from_carrier_parts(
+            bond,
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Unspecified)),
+        );
+        assert_eq!(
+            wrapped.predicate(),
+            &QueryNode::predicate(BondQueryPredicate::Any)
+        );
+        assert!(!wrapped.predicate_is_carrier_derived());
+        assert!(
+            wrapped.bond().query().is_none(),
+            "the carrier does not duplicate the wrapper's source query"
+        );
+        let copy = wrapped.clone();
+        assert_eq!(copy, wrapped);
+        assert!(copy.bond().query().is_none());
     }
 }

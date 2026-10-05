@@ -9561,5 +9561,53 @@ binding_contract! {
         {semantic_id:"Molecule.maccs_fingerprint_raw",item:callable,owner:molecule,rust:crate::Molecule::maccs_fingerprint_raw,python:"maccs_fingerprint_raw",javascript:"maccsFingerprintRaw",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:crate::Fingerprint,error:crate::MaccsFingerprintError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule)->Result<crate::Fingerprint,crate::MaccsFingerprintError>,},
         #[cfg(feature = "cap-fingerprints")]
         {semantic_id:"Molecule.maccs_fingerprint_with_params",item:callable,owner:molecule,rust:crate::Molecule::maccs_fingerprint_with_params,python:"maccs_fingerprint_with_params",javascript:"maccsFingerprintWithParams",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::MaccsFingerprintParams,default:required}],output:crate::Fingerprint,error:crate::MaccsFingerprintError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Molecule,&'b crate::MaccsFingerprintParams)->Result<crate::Fingerprint,crate::MaccsFingerprintError>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"types.LayeredFingerprintParams",item:type,owner:type_,rust:crate::LayeredFingerprintParams,python:"LayeredFingerprintParams",javascript:"LayeredFingerprintParams",feature:"cap-fingerprints",status:experimental,role:parameter,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"types.LayeredFingerprintLayers",item:type,owner:type_,rust:crate::LayeredFingerprintLayers,python:"LayeredFingerprintLayers",javascript:"LayeredFingerprintLayers",feature:"cap-fingerprints",status:experimental,role:value,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"types.LayeredFingerprintResult",item:type,owner:type_,rust:crate::LayeredFingerprintResult,python:"LayeredFingerprintResult",javascript:"LayeredFingerprintResult",feature:"cap-fingerprints",status:experimental,role:result,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"types.LayeredFingerprintError",item:type,owner:type_,rust:crate::LayeredFingerprintError,python:"LayeredFingerprintError",javascript:"LayeredFingerprintError",feature:"cap-fingerprints",status:experimental,role:error,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"Molecule.layered_fingerprint",item:callable,owner:molecule,rust:crate::Molecule::layered_fingerprint,python:"layered_fingerprint",javascript:"layeredFingerprint",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:crate::Fingerprint,error:crate::LayeredFingerprintError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule)->Result<crate::Fingerprint,crate::LayeredFingerprintError>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"Molecule.layered_fingerprint_with_params",item:callable,owner:molecule,rust:crate::Molecule::layered_fingerprint_with_params,python:"layered_fingerprint_with_params",javascript:"layeredFingerprintWithParams",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::LayeredFingerprintParams,default:required}],output:crate::Fingerprint,error:crate::LayeredFingerprintError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Molecule,&'b crate::LayeredFingerprintParams)->Result<crate::Fingerprint,crate::LayeredFingerprintError>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"Molecule.layered_fingerprint_with_output",item:callable,owner:molecule,rust:crate::Molecule::layered_fingerprint_with_output,python:"layered_fingerprint_with_output",javascript:"layeredFingerprintWithOutput",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:crate::LayeredFingerprintResult,error:crate::LayeredFingerprintError,state:read_only,operation:none,signature:for<'a> fn(&'a crate::Molecule)->Result<crate::LayeredFingerprintResult,crate::LayeredFingerprintError>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"Molecule.layered_fingerprint_with_output_with_params",item:callable,owner:molecule,rust:crate::Molecule::layered_fingerprint_with_output_with_params,python:"layered_fingerprint_with_output_with_params",javascript:"layeredFingerprintWithOutputWithParams",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[{name:params,type:&crate::LayeredFingerprintParams,default:required}],output:crate::LayeredFingerprintResult,error:crate::LayeredFingerprintError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::Molecule,&'b crate::LayeredFingerprintParams)->Result<crate::LayeredFingerprintResult,crate::LayeredFingerprintError>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"layered_query_fingerprint_with_params",item:callable,owner:module,rust:crate::layered_query_fingerprint_with_params,python:"layered_query_fingerprint_with_params",javascript:"layeredQueryFingerprintWithParams",feature:"cap-fingerprints",status:experimental,kind:module,parameters:[{name:query,type:&crate::QueryGraph,default:required},{name:params,type:&crate::LayeredFingerprintParams,default:required}],output:crate::Fingerprint,error:crate::LayeredFingerprintError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::QueryGraph,&'b crate::LayeredFingerprintParams)->Result<crate::Fingerprint,crate::LayeredFingerprintError>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"layered_query_fingerprint_with_output_with_params",item:callable,owner:module,rust:crate::layered_query_fingerprint_with_output_with_params,python:"layered_query_fingerprint_with_output_with_params",javascript:"layeredQueryFingerprintWithOutputWithParams",feature:"cap-fingerprints",status:experimental,kind:module,parameters:[{name:query,type:&crate::QueryGraph,default:required},{name:params,type:&crate::LayeredFingerprintParams,default:required}],output:crate::LayeredFingerprintResult,error:crate::LayeredFingerprintError,state:read_only,operation:none,signature:for<'a,'b> fn(&'a crate::QueryGraph,&'b crate::LayeredFingerprintParams)->Result<crate::LayeredFingerprintResult,crate::LayeredFingerprintError>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"LayeredFingerprintResult.fingerprint",item:callable,owner:type_,rust:crate::LayeredFingerprintResult::fingerprint,python:"fingerprint",javascript:"fingerprint",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:&'a crate::Fingerprint,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::LayeredFingerprintResult)->&'a crate::Fingerprint,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"LayeredFingerprintResult.atom_counts",item:callable,owner:type_,rust:crate::LayeredFingerprintResult::atom_counts,python:"atom_counts",javascript:"atomCounts",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:shared,parameters:[],output:Option<&'a [u32]>,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::LayeredFingerprintResult)->Option<&'a [u32]>,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"LayeredFingerprintLayers.bits",item:callable,owner:type_,rust:crate::LayeredFingerprintLayers::bits,python:"bits",javascript:"bits",feature:"cap-fingerprints",status:experimental,kind:instance,receiver:owned,parameters:[],output:u32,error:none,state:value_returning,operation:none,signature:fn(crate::LayeredFingerprintLayers)->u32,},
+        #[cfg(feature="cap-fingerprints")]
+        {semantic_id:"LayeredFingerprintLayers.from_bits_retain",item:callable,owner:type_,rust:crate::LayeredFingerprintLayers::from_bits_retain,python:"from_bits_retain",javascript:"fromBitsRetain",feature:"cap-fingerprints",status:experimental,kind:static_,parameters:[{name:bits,type:u32,default:required}],output:crate::LayeredFingerprintLayers,error:none,state:value_returning,operation:none,signature:fn(u32)->crate::LayeredFingerprintLayers,},
+        #[cfg(feature = "cap-fingerprints")]
+        {
+            semantic_id: "Fingerprint.from_on_bits", item: callable, owner: type_,
+            rust: crate::Fingerprint::from_on_bits, python: "from_on_bits", javascript: "fromOnBits",
+            feature: "cap-fingerprints", status: experimental, kind: static_,
+            parameters: [{ name: n_bits, type: u32, default: required }, { name: on_bits, type: Vec<u32>, default: required }],
+            output: crate::Fingerprint, error: crate::FingerprintError,
+            state: value_returning, operation: none,
+            signature: fn(u32, Vec<u32>) -> Result<crate::Fingerprint, crate::FingerprintError>,
+        },
+        #[cfg(feature = "cap-fingerprints")]
+        {
+            semantic_id: "Fingerprint.tanimoto", item: callable, owner: type_,
+            rust: crate::Fingerprint::tanimoto, python: "tanimoto", javascript: "tanimoto",
+            feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared,
+            parameters: [{ name: other, type: &crate::Fingerprint, default: required }],
+            output: f64, error: crate::FingerprintError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Fingerprint, &crate::Fingerprint) -> Result<f64, crate::FingerprintError>,
+        },
     ];
 }

@@ -204,7 +204,8 @@ pub use paths::{
     PathError, PathRepresentation, PathSearchParams, SubgraphSearchParams, SubtopologyParams,
     SubtopologyResult, UniqueSubgraphParams, all_paths_in_range, all_paths_of_length,
     all_subgraphs_in_range, all_subgraphs_of_length, atom_environment, bond_ids_from_atom_path,
-    connected_components, shortest_path, subtopology_from_path, unique_subgraphs_of_length,
+    connected_components, query_bond_paths_in_range, query_subgraphs_in_range, shortest_path,
+    subtopology_from_path, unique_subgraphs_of_length,
 };
 
 pub use periodic_table::{

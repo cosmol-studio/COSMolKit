@@ -31,7 +31,8 @@ pub use query_behavior::{
     bond_matches_query_with_context, bond_predicate_matches, bond_predicate_matches_with_context,
     build_prepared_query_match_context, build_query_match_context, build_ring_query_match_context,
     build_topology_query_match_context, build_valence_query_match_context, complete_mol_queries,
-    convert_complex_name_to_query, is_atom_aromatic, make_single_or_aromatic_bond_query,
+    convert_complex_name_to_query, is_atom_aromatic, is_complex_atom_query, is_complex_bond_query,
+    is_complex_concrete_bond_query, is_query_atom_aromatic, make_single_or_aromatic_bond_query,
     query_bond_min_ring_size, query_is_bond_in_ring,
 };
 pub use smarts_parse::{SmartsParseParams, compile_query_fixture, parse_smarts};

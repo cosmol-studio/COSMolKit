@@ -158,6 +158,58 @@ pub enum PathError {
     Matrix(crate::MatrixError),
 }
 
+/// Borrowed connectivity only. Query atomic number 0 remains 0. All loops
+/// below are shared; access performs O(1) indexed reads and allocates nothing.
+#[derive(Clone, Copy)]
+enum PathGraphAccess<'a> {
+    Concrete(&'a TopologyBlock),
+    Query(&'a QueryGraph),
+}
+impl PathGraphAccess<'_> {
+    fn atom_count(self) -> usize {
+        match self {
+            Self::Concrete(t) => t.atoms.len(),
+            Self::Query(q) => q.num_atoms(),
+        }
+    }
+    fn bond_count(self) -> usize {
+        match self {
+            Self::Concrete(t) => t.bonds.len(),
+            Self::Query(q) => q.num_bonds(),
+        }
+    }
+    fn atomic_number(self, atom: usize) -> u8 {
+        match self {
+            Self::Concrete(t) => t.atoms[atom].atomic_number(),
+            Self::Query(q) => q.atoms()[atom].atomic_number(),
+        }
+    }
+    fn bond(&self, index: usize) -> &cosmolkit_model::Bond {
+        match self {
+            Self::Concrete(t) => &t.bonds[index],
+            Self::Query(q) => q.bonds()[index].bond(),
+        }
+    }
+    fn neighbor_count(self, atom: usize) -> usize {
+        match self {
+            Self::Concrete(t) => t.adjacency.neighbors_of(atom).len(),
+            Self::Query(q) => q.adjacency()[atom].len(),
+        }
+    }
+    fn neighbor(self, atom: usize, position: usize) -> (usize, BondId) {
+        match self {
+            Self::Concrete(t) => {
+                let n = t.adjacency.neighbors_of(atom)[position];
+                (n.atom_index, n.bond)
+            }
+            Self::Query(q) => {
+                let (other, bond) = q.adjacency()[atom][position];
+                (other, BondId::new(bond))
+            }
+        }
+    }
+}
+
 pub(crate) trait NeighborSource {
     fn atom_count(&self) -> usize;
     fn visit_neighbors(&self, atom: usize, visitor: &mut dyn FnMut(usize));
@@ -327,19 +379,60 @@ pub fn all_paths_in_range(
     upper_length: usize,
     params: &PathSearchParams,
 ) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
-    // BEGIN RDKIT CPP FUNCTION findAllPathsOfLengthsMtoN
-    // RDKit✔️✔️: PRECONDITION(lowerLen <= upperLen, "");
-    // RDKit✔️✔️: double *distMat = onlyShortestPaths ? MolOps::getDistanceMat(mol) : nullptr;
     topology.validate().map_err(PathError::InvalidTopology)?;
     validate_range(lower_length, upper_length)?;
-
     let distances = params
         .only_shortest_paths
         .then(|| crate::matrices::unweighted_distance_steps(topology))
         .transpose()
         .map_err(PathError::Matrix)?;
+    all_paths_from_graph(
+        PathGraphAccess::Concrete(topology),
+        lower_length,
+        upper_length,
+        params,
+        distances.as_deref(),
+    )
+}
+
+/// Internal detached query entry for source bond paths with real query atomic numbers.
+#[doc(hidden)]
+pub fn query_bond_paths_in_range(
+    query: &QueryGraph,
+    lower_length: usize,
+    upper_length: usize,
+    params: &SubgraphSearchParams,
+) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
+    query.validate().map_err(PathError::QueryGraph)?;
+    let path_params = PathSearchParams {
+        representation: PathRepresentation::Bonds,
+        use_hydrogens: params.use_hydrogens,
+        rooted_at_atom: params.rooted_at_atom,
+        only_shortest_paths: false,
+    };
+    all_paths_from_graph(
+        PathGraphAccess::Query(query),
+        lower_length,
+        upper_length,
+        &path_params,
+        None,
+    )
+}
+
+fn all_paths_from_graph(
+    graph: PathGraphAccess<'_>,
+    lower_length: usize,
+    upper_length: usize,
+    params: &PathSearchParams,
+    distances: Option<&[usize]>,
+) -> Result<BTreeMap<usize, Vec<GraphPath>>, PathError> {
+    // BEGIN RDKIT CPP FUNCTION findAllPathsOfLengthsMtoN
+    // RDKit✔️✔️: PRECONDITION(lowerLen <= upperLen, "");
+    // RDKit✔️✔️: double *distMat = onlyShortestPaths ? MolOps::getDistanceMat(mol) : nullptr;
+    validate_range(lower_length, upper_length)?;
+
     let adjacency =
-        atom_adjacency_matrix(topology, params.only_shortest_paths || params.use_hydrogens);
+        atom_adjacency_matrix(graph, params.only_shortest_paths || params.use_hydrogens);
     // RDKit✔️✔️:   if (useBonds) {
     // RDKit✔️✔️:     ++lowerLen;
     // RDKit✔️✔️:     ++upperLen;
@@ -363,11 +456,11 @@ pub fn all_paths_in_range(
     // RDKit✔️✔️:       adjMat, dim, lowerLen, upperLen, rootedAtAtom, distMat);
     let atom_paths = path_finder_helper(
         &adjacency,
-        topology.atoms.len(),
+        graph.atom_count(),
         atom_lower,
         atom_upper,
         params.rooted_at_atom,
-        distances.as_deref(),
+        distances,
     );
 
     let mut result = BTreeMap::new();
@@ -395,10 +488,10 @@ pub fn all_paths_in_range(
             }
             let mut seen_bond_sets: Vec<Vec<bool>> = Vec::new();
             for atom_path in atom_paths.get(&length).into_iter().flatten() {
-                let mut bond_set = vec![false; topology.bonds.len()];
+                let mut bond_set = vec![false; graph.bond_count()];
                 let mut bond_path = Vec::with_capacity(length - 1);
                 for pair in atom_path.windows(2) {
-                    let bond = bond_between(topology, pair[0], pair[1])
+                    let bond = graph_bond_between(graph, pair[0], pair[1])
                         .expect("validated adjacency path must have a bond");
                     bond_set[bond.index()] = true;
                     bond_path.push(bond);
@@ -439,7 +532,7 @@ pub fn all_subgraphs_of_length(
     if target_length == 0 {
         return Ok(Vec::new());
     }
-    let neighbors = bond_neighbor_map(topology, params.use_hydrogens);
+    let neighbors = bond_neighbor_map(PathGraphAccess::Concrete(topology), params.use_hydrogens);
     Ok(all_subgraphs_of_length_from_neighbors(
         topology,
         &neighbors,
@@ -454,24 +547,55 @@ pub fn all_subgraphs_in_range(
     upper_length: usize,
     params: &SubgraphSearchParams,
 ) -> Result<BTreeMap<usize, Vec<Vec<BondId>>>, PathError> {
+    topology.validate().map_err(PathError::InvalidTopology)?;
+    all_subgraphs_from_graph(
+        PathGraphAccess::Concrete(topology),
+        lower_length,
+        upper_length,
+        params,
+    )
+}
+
+/// Internal query subgraph entry; no concrete atom conversion or query copy.
+#[doc(hidden)]
+pub fn query_subgraphs_in_range(
+    query: &QueryGraph,
+    lower_length: usize,
+    upper_length: usize,
+    params: &SubgraphSearchParams,
+) -> Result<BTreeMap<usize, Vec<Vec<BondId>>>, PathError> {
+    query.validate().map_err(PathError::QueryGraph)?;
+    all_subgraphs_from_graph(
+        PathGraphAccess::Query(query),
+        lower_length,
+        upper_length,
+        params,
+    )
+}
+
+fn all_subgraphs_from_graph(
+    graph: PathGraphAccess<'_>,
+    lower_length: usize,
+    upper_length: usize,
+    params: &SubgraphSearchParams,
+) -> Result<BTreeMap<usize, Vec<Vec<BondId>>>, PathError> {
     // BEGIN RDKIT CPP FUNCTION findAllSubgraphsOfLengthsMtoN
     // RDKit✔️✔️: PRECONDITION(lowerLen <= upperLen, "");
     // RDKit✔️✔️: boost::dynamic_bitset<> forbidden(mol.getNumBonds());
     // RDKit✔️✔️: INT_INT_VECT_MAP nbrs;
     // RDKit✔️✔️: Subgraphs::getNbrsList(mol, useHs, nbrs);
-    topology.validate().map_err(PathError::InvalidTopology)?;
     validate_range(lower_length, upper_length)?;
-    let neighbors = bond_neighbor_map(topology, params.use_hydrogens);
+    let neighbors = bond_neighbor_map(graph, params.use_hydrogens);
     let mut result = (lower_length..=upper_length)
         .map(|length| (length, Vec::new()))
         .collect::<BTreeMap<_, _>>();
     if upper_length == 0 {
         return Ok(result);
     }
-    let mut forbidden = vec![false; topology.bonds.len()];
+    let mut forbidden = vec![false; graph.bond_count()];
     // RDKit✔️✔️:   for (auto nbi = nbrs.begin(); nbi != nbrs.end(); nbi++) {
     for (&start, adjacent) in &neighbors {
-        if !root_allows_bond(topology, params.rooted_at_atom, start) || forbidden[start] {
+        if !graph_root_allows_bond(graph, params.rooted_at_atom, start) || forbidden[start] {
             continue;
         }
         forbidden[start] = true;
@@ -841,7 +965,7 @@ fn validate_range(lower: usize, upper: usize) -> Result<(), PathError> {
     }
 }
 
-fn atom_adjacency_matrix(topology: &TopologyBlock, include_hydrogens: bool) -> Vec<bool> {
+fn atom_adjacency_matrix(graph: PathGraphAccess<'_>, include_hydrogens: bool) -> Vec<bool> {
     // RDKit✔️✔️: for (bondIt = mol.beginBonds(); bondIt != mol.endBonds(); bondIt++) {
     // RDKit✔️✔️:   Atom *beg = (*bondIt)->getBeginAtom();
     // RDKit✔️✔️:   Atom *end = (*bondIt)->getEndAtom();
@@ -849,15 +973,13 @@ fn atom_adjacency_matrix(topology: &TopologyBlock, include_hydrogens: bool) -> V
     // RDKit✔️✔️:     adjMat[beg->getIdx() * dim + end->getIdx()] = 1;
     // RDKit✔️✔️:     adjMat[end->getIdx() * dim + beg->getIdx()] = 1;
     // RDKit✔️✔️:   }
-    let dimension = topology.atoms.len();
+    let dimension = graph.atom_count();
     let mut adjacency = vec![false; dimension.saturating_mul(dimension)];
-    for bond in &topology.bonds {
+    for index in 0..graph.bond_count() {
+        let bond = graph.bond(index);
         let begin = bond.begin().index();
         let end = bond.end().index();
-        if include_hydrogens
-            || (topology.atoms[begin].atomic_number() != 1
-                && topology.atoms[end].atomic_number() != 1)
-        {
+        if include_hydrogens || (graph.atomic_number(begin) != 1 && graph.atomic_number(end) != 1) {
             adjacency[begin * dimension + end] = true;
             adjacency[end * dimension + begin] = true;
         }
@@ -946,7 +1068,10 @@ fn extend_paths(
     result
 }
 
-fn bond_neighbor_map(topology: &TopologyBlock, use_hydrogens: bool) -> BTreeMap<usize, Vec<usize>> {
+fn bond_neighbor_map(
+    graph: PathGraphAccess<'_>,
+    use_hydrogens: bool,
+) -> BTreeMap<usize, Vec<usize>> {
     // BEGIN RDKIT CPP FUNCTION getNbrsList
     // RDKit✔️✔️: for (int i = 0; i < nAtoms; i++) {
     // RDKit✔️✔️:   const Atom *atom = mol.getAtomWithIdx(i);
@@ -954,24 +1079,26 @@ fn bond_neighbor_map(topology: &TopologyBlock, use_hydrogens: bool) -> BTreeMap<
     // RDKit✔️✔️:     while (bIt1 != end) {
     // RDKit✔️✔️:       const Bond *bond1 = mol[*bIt1];
     let mut result = BTreeMap::<usize, Vec<usize>>::new();
-    for atom_index in 0..topology.atoms.len() {
-        if !use_hydrogens && topology.atoms[atom_index].atomic_number() == 1 {
+    for atom_index in 0..graph.atom_count() {
+        if !use_hydrogens && graph.atomic_number(atom_index) == 1 {
             continue;
         }
-        let atom_bonds = topology.adjacency.neighbors_of(atom_index);
-        for bond1 in atom_bonds {
-            if !use_hydrogens && topology.atoms[bond1.atom_index].atomic_number() == 1 {
+        let atom_bonds = graph.neighbor_count(atom_index);
+        for first in 0..atom_bonds {
+            let (first_atom, first_bond) = graph.neighbor(atom_index, first);
+            if !use_hydrogens && graph.atomic_number(first_atom) == 1 {
                 continue;
             }
-            result.entry(bond1.bond.index()).or_default();
-            for bond2 in atom_bonds {
-                if bond1.bond != bond2.bond
-                    && (use_hydrogens || topology.atoms[bond2.atom_index].atomic_number() != 1)
+            result.entry(first_bond.index()).or_default();
+            for second in 0..atom_bonds {
+                let (second_atom, second_bond) = graph.neighbor(atom_index, second);
+                if first_bond != second_bond
+                    && (use_hydrogens || graph.atomic_number(second_atom) != 1)
                 {
                     result
-                        .get_mut(&bond1.bond.index())
+                        .get_mut(&first_bond.index())
                         .expect("entry was inserted")
-                        .push(bond2.bond.index());
+                        .push(second_bond.index());
                 }
             }
         }
@@ -1113,20 +1240,23 @@ fn recurse_walk_range(
 }
 
 fn root_allows_bond(topology: &TopologyBlock, root: Option<AtomId>, bond: usize) -> bool {
+    graph_root_allows_bond(PathGraphAccess::Concrete(topology), root, bond)
+}
+fn graph_root_allows_bond(graph: PathGraphAccess<'_>, root: Option<AtomId>, bond: usize) -> bool {
     let Some(root) = root else {
         return true;
     };
-    let bond = &topology.bonds[bond];
+    let bond = graph.bond(bond);
     bond.begin() == root || bond.end() == root
 }
-
 fn bond_between(topology: &TopologyBlock, begin: usize, end: usize) -> Option<BondId> {
-    topology
-        .adjacency
-        .neighbors_of(begin)
-        .iter()
-        .find(|neighbor| neighbor.atom_index == end)
-        .map(|neighbor| neighbor.bond)
+    graph_bond_between(PathGraphAccess::Concrete(topology), begin, end)
+}
+fn graph_bond_between(graph: PathGraphAccess<'_>, begin: usize, end: usize) -> Option<BondId> {
+    (0..graph.neighbor_count(begin)).find_map(|position| {
+        let (other, bond) = graph.neighbor(begin, position);
+        (other == end).then_some(bond)
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

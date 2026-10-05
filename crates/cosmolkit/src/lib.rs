@@ -337,6 +337,8 @@ pub use cosmolkit_core::CipRankError;
 pub use cosmolkit_fingerprints::MoleculeHashError;
 
 #[cfg(feature = "cap-fingerprints")]
+mod layered_fingerprint;
+#[cfg(feature = "cap-fingerprints")]
 mod topological_torsion_path;
 #[cfg(feature = "cap-alignment")]
 pub use cosmolkit_alignment::{
@@ -345,7 +347,17 @@ pub use cosmolkit_alignment::{
     ConformerAlignmentReport, ConformerRmsd, CoordinateRmsdParameters,
 };
 #[cfg(feature = "cap-fingerprints")]
+pub use cosmolkit_fingerprints::{
+    LAYERED_FINGERPRINT_MAX_LAYERS, LAYERED_FINGERPRINT_SUBSTRUCTURE_LAYERS,
+    LAYERED_FINGERPRINT_VERSION, LayeredFingerprintError, LayeredFingerprintLayers,
+    LayeredFingerprintParams, LayeredFingerprintResult,
+};
+#[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{TopologicalTorsionPathScoreError, explain_path_score};
+#[cfg(feature = "cap-fingerprints")]
+pub use layered_fingerprint::{
+    layered_query_fingerprint_with_output_with_params, layered_query_fingerprint_with_params,
+};
 
 #[cfg(feature = "cap-alignment")]
 pub(crate) use ops::{WithAlignedConformersAccess, WithAlignmentToAccess};

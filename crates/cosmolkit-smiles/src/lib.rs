@@ -681,6 +681,7 @@ fn resolved_bond_spec(
     begin: AtomId,
     end: AtomId,
     direction: BondDirection,
+    query: Option<cosmolkit_model::QueryNode<cosmolkit_model::BondQueryPredicate>>,
 ) -> BondSpec {
     // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy explicit dative bond orientation
     // RDKit✔️✔️:   if( $2->getBondType() == Bond::DATIVER ){
@@ -707,7 +708,11 @@ fn resolved_bond_spec(
         BondOrder::DativeRight => BondSpec::new(begin, end, BondOrder::Dative),
         order => BondSpec::new(begin, end, order).with_aromatic(order == BondOrder::Aromatic),
     };
-    spec.with_direction(direction)
+    let spec = spec.with_direction(direction);
+    match query {
+        Some(query) => spec.with_query(query),
+        None => spec,
+    }
 }
 
 fn bond_order(symbol: char) -> Result<BondOrder, SmilesParseError> {
@@ -717,7 +722,6 @@ fn bond_order(symbol: char) -> Result<BondOrder, SmilesParseError> {
         '#' => Ok(BondOrder::Triple),
         '$' => Ok(BondOrder::Quadruple),
         ':' => Ok(BondOrder::Aromatic),
-        '~' => Ok(BondOrder::Unspecified),
         _ => Err(SmilesParseError::Unsupported {
             token: symbol,
             offset: 0,
@@ -725,15 +729,16 @@ fn bond_order(symbol: char) -> Result<BondOrder, SmilesParseError> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct RingPartial {
     atom: AtomId,
     order: Option<BondOrder>,
+    query: Option<cosmolkit_model::QueryNode<cosmolkit_model::BondQueryPredicate>>,
     direction: BondDirection,
     offset: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct PendingRingClosure {
     ring: u32,
     opening: RingPartial,
@@ -770,7 +775,7 @@ fn opposite_bond_direction(direction: BondDirection) -> BondDirection {
     }
 }
 
-fn merged_ring_direction(target: RingPartial, source: RingPartial) -> BondDirection {
+fn merged_ring_direction(target: &RingPartial, source: &RingPartial) -> BondDirection {
     // BEGIN RDKIT CPP FUNCTION swapBondDirIfNeeded
     // RDKit✔️✔️: void swapBondDirIfNeeded(Bond *bond1, const Bond *bond2) {
     // RDKit✔️✔️:   if (bond1->getBondDir() == Bond::NONE && bond2->getBondDir() != Bond::NONE) {
@@ -989,9 +994,9 @@ fn close_ring_closures(
         }
 
         let (selected, other) = if closure.opening.order.is_some() {
-            (closure.opening, closure.closing)
+            (&mut closure.opening, &mut closure.closing)
         } else {
-            (closure.closing, closure.opening)
+            (&mut closure.closing, &mut closure.opening)
         };
         let order = selected.order.unwrap_or_else(|| {
             get_unspecified_bond_type(
@@ -1016,15 +1021,20 @@ fn close_ring_closures(
             BondOrder::DativeRight => (selected.atom, other.atom, BondOrder::Dative),
             order => (selected.atom, other.atom, order),
         };
-        let direction = merged_ring_direction(selected, other);
+        let direction = merged_ring_direction(&selected, &other);
         let bond = BondId::new(bonds.len());
-        push_smiles_bond(
-            bonds,
-            BondSpec::new(begin, end, order)
-                .with_aromatic(order == BondOrder::Aromatic)
-                .with_direction(direction),
-            closure.cx_bond_index,
-        );
+        let spec = BondSpec::new(begin, end, order)
+            .with_aromatic(order == BondOrder::Aromatic)
+            .with_direction(direction);
+        // The source retains the selected partial Bond object itself, including
+        // its query. Transfer that identity rather than infer it from order.
+        let spec = match selected.query.take() {
+            Some(query) => spec.with_query(query),
+            None => spec,
+        };
+        // Drop the unused source partial query as closeMolRings deletes it.
+        let _ = other.query.take();
+        push_smiles_bond(bonds, spec, closure.cx_bond_index);
         // RDKit✔️✔️:             *closurePos = bondIdx - 1;
         // Each grammar occurrence left a ring-number placeholder at the atom.
         // Replace the first still-unresolved occurrence exactly where it was
@@ -1129,6 +1139,7 @@ pub fn parse_smiles(
     let mut branches = Vec::<AtomId>::new();
     let mut current = None::<AtomId>;
     let mut pending = None;
+    let mut pending_query = None;
     let mut pending_direction = BondDirection::None;
     let mut next_cx_bond_index = 0_u32;
     let mut index = 0;
@@ -1141,17 +1152,30 @@ pub fn parse_smiles(
         // END RDKIT CPP LEXER RULES smiles.ll dative bonds
         if graph_text[index..].starts_with("->") {
             pending = Some(BondOrder::DativeRight);
+            pending_query = None;
             index += 2;
             continue;
         }
         if graph_text[index..].starts_with("<-") {
             pending = Some(BondOrder::DativeLeft);
+            pending_query = None;
             index += 2;
             continue;
         }
         match bytes[index] as char {
-            '-' | '=' | '#' | ':' | '~' | '$' => {
+            '-' | '=' | '#' | ':' | '$' => {
                 pending = Some(bond_order(bytes[index] as char)?);
+                pending_query = None;
+                index += 1;
+            }
+            '~' => {
+                // RDKit✔️✔️: \~	{ yylval->bond = new QueryBond();
+                // RDKit✔️✔️: 	  yylval->bond->setQuery(makeBondNullQuery());
+                // RDKit✔️✔️: 	  return BOND_TOKEN;  }
+                pending = Some(BondOrder::Unspecified);
+                pending_query = Some(cosmolkit_model::QueryNode::predicate(
+                    cosmolkit_model::BondQueryPredicate::Any,
+                ));
                 index += 1;
             }
             '/' => {
@@ -1192,6 +1216,7 @@ pub fn parse_smiles(
                 let partial = RingPartial {
                     atom,
                     order: pending,
+                    query: pending_query.take(),
                     direction: pending_direction,
                     offset: ring_offset,
                 };
@@ -1224,8 +1249,14 @@ pub fn parse_smiles(
                 degrees.push(0);
                 ring_closures_by_atom.push(Vec::new());
                 if let Some(previous) = current {
-                    let spec =
-                        resolved_bond_spec(pending, &atoms, previous, atom, pending_direction);
+                    let spec = resolved_bond_spec(
+                        pending,
+                        &atoms,
+                        previous,
+                        atom,
+                        pending_direction,
+                        pending_query.take(),
+                    );
                     push_smiles_bond(
                         &mut bonds,
                         spec,
@@ -1236,6 +1267,7 @@ pub fn parse_smiles(
                 }
                 current = Some(atom);
                 pending = None;
+                pending_query = None;
                 pending_direction = BondDirection::None;
                 index = end + 1;
             }
@@ -1249,8 +1281,14 @@ pub fn parse_smiles(
                 degrees.push(0);
                 ring_closures_by_atom.push(Vec::new());
                 if let Some(previous) = current {
-                    let spec =
-                        resolved_bond_spec(pending, &atoms, previous, atom, pending_direction);
+                    let spec = resolved_bond_spec(
+                        pending,
+                        &atoms,
+                        previous,
+                        atom,
+                        pending_direction,
+                        pending_query.take(),
+                    );
                     push_smiles_bond(
                         &mut bonds,
                         spec,
@@ -1261,6 +1299,7 @@ pub fn parse_smiles(
                 }
                 current = Some(atom);
                 pending = None;
+                pending_query = None;
                 pending_direction = BondDirection::None;
             }
             token => {
@@ -1414,6 +1453,50 @@ mod tests {
         }
     }
 
+    #[test]
+    fn tilde_query_identity_survives_chain_branch_ring_selection_and_serialization() {
+        use cosmolkit_model::{BondQueryPredicate, QueryNode};
+        for (smiles, query_count) in [
+            ("C~N", 1),
+            ("C(~N)O", 1),
+            ("C~1CC1", 1),
+            ("C1CC~1", 1),
+            ("C~1CC=1", 1),
+            ("C=1CC~1", 0),
+        ] {
+            let record = parse_smiles(smiles, &Default::default()).unwrap();
+            record.topology.validate().unwrap();
+            assert_eq!(
+                record
+                    .topology
+                    .bonds
+                    .iter()
+                    .filter(|bond| bond.query().is_some())
+                    .count(),
+                query_count,
+                "{smiles}"
+            );
+            for bond in &record.topology.bonds {
+                if let Some(query) = bond.query() {
+                    assert_eq!(query, &QueryNode::predicate(BondQueryPredicate::Any));
+                }
+            }
+            let copied = record.clone();
+            assert_eq!(copied.topology, record.topology);
+            let text = write_smiles(&copied).unwrap();
+            let roundtrip = parse_smiles(&text, &Default::default()).unwrap();
+            assert_eq!(
+                roundtrip
+                    .topology
+                    .bonds
+                    .iter()
+                    .filter(|bond| bond.query().is_some())
+                    .count(),
+                query_count,
+                "{smiles} -> {text}"
+            );
+        }
+    }
     #[test]
     fn parses_and_writes_detached_ethanol() {
         let record = parse_smiles("CCO", &Default::default()).expect("parse");

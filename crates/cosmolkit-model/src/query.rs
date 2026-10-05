@@ -1143,8 +1143,14 @@ pub fn remap_query_rows_with_appended(
             }
             source
         };
+        let mut bond = carrier.clone();
+        // Carrier attributes and source query rows may both carry the incoming
+        // identity; retain only the established query-row root in this value.
+        // A query-bearing carrier clone temporarily copies its tree before it
+        // is dropped here, an additional O(query-tree) cost versus old carriers.
+        let _ = bond.take_query();
         bonds.push(QueryBond {
-            bond: carrier.clone(),
+            bond,
             predicate: source.predicate.clone(),
             predicate_origin: source.predicate_origin,
         });
@@ -1164,16 +1170,34 @@ pub fn remap_query_rows_with_appended(
 impl QueryBond {
     #[must_use]
     pub fn new(id: BondId, spec: crate::BondSpec) -> Self {
-        let predicate = if spec.order() == BondOrder::Unspecified {
-            QueryNode::predicate(BondQueryPredicate::Any)
-        } else {
-            QueryNode::predicate(BondQueryPredicate::Order(spec.order()))
-        };
-        Self::from_parts(Bond::from_spec(id, spec), predicate)
+        // RDKit✔️✔️: QueryBond::QueryBond(BondType bT) : Bond(bT) {
+        // RDKit✔️✔️:   if (bT != Bond::UNSPECIFIED) {
+        // RDKit✔️✔️:     dp_query = makeBondOrderEqualsQuery(bT);
+        // RDKit✔️✔️:   } else {
+        // RDKit✔️✔️:     dp_query = makeBondNullQuery();
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: };
+        let mut bond = Bond::from_spec(id, spec);
+        let predicate = bond.take_query().unwrap_or_else(|| {
+            if bond.order() == BondOrder::Unspecified {
+                QueryNode::predicate(BondQueryPredicate::Any)
+            } else {
+                QueryNode::predicate(BondQueryPredicate::Order(bond.order()))
+            }
+        });
+        Self::from_parts(bond, predicate)
     }
 
     #[must_use]
-    pub fn from_parts(bond: Bond, predicate: QueryNode<BondQueryPredicate>) -> Self {
+    pub fn from_parts(mut bond: Bond, predicate: QueryNode<BondQueryPredicate>) -> Self {
+        // RDKit✔️✔️:   void setQuery(QUERYBOND_QUERY *what) override {
+        // RDKit✔️✔️:     // free up any existing query (Issue255):
+        // RDKit✔️✔️:     delete dp_query;
+        // RDKit✔️✔️:     dp_query = what;
+        // RDKit✔️✔️:   }
+        // QueryGraph keeps its existing typed root as the sole source identity;
+        // the detached carrier contains attributes, never a second query tree.
+        let _ = bond.take_query();
         Self {
             bond,
             predicate,
@@ -1181,15 +1205,23 @@ impl QueryBond {
         }
     }
 
-    /// Construct the uniform query carrier used internally when Molfile input
-    /// contains a mixture of ordinary and query bonds.
+    /// Construct a uniform carrier, preserving an incoming explicit query.
     #[doc(hidden)]
     #[must_use]
-    pub fn from_carrier_parts(bond: Bond, predicate: QueryNode<BondQueryPredicate>) -> Self {
-        Self {
-            bond,
-            predicate,
-            predicate_origin: QueryPredicateOrigin::CarrierDerived,
+    pub fn from_carrier_parts(mut bond: Bond, predicate: QueryNode<BondQueryPredicate>) -> Self {
+        // RDKit✔️✔️:   bool hasQuery() const override { return dp_query != nullptr; }
+        // RDKit✔️✔️:   QUERYBOND_QUERY *getQuery() const override { return dp_query; }
+        match bond.take_query() {
+            Some(query) => Self {
+                bond,
+                predicate: query,
+                predicate_origin: QueryPredicateOrigin::Explicit,
+            },
+            None => Self {
+                bond,
+                predicate,
+                predicate_origin: QueryPredicateOrigin::CarrierDerived,
+            },
         }
     }
 
