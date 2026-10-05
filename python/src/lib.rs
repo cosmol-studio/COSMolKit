@@ -36,3 +36,5 @@ mod canonical_path_score;
 
 mod canonical_pattern;
 mod conformer_binding;
+
+mod canonical_topological;

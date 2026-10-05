@@ -85,6 +85,7 @@ mod rng;
 pub mod similarity;
 mod sparse_bits;
 mod sparse_counts;
+mod topological;
 mod topological_torsion;
 mod values;
 
@@ -440,4 +441,11 @@ mod pattern;
 pub use pattern::{
     PATTERN_FINGERPRINT_VERSION, PatternFingerprintError, PatternFingerprintParams,
     pattern_fingerprint, pattern_query_fingerprint,
+};
+
+pub use topological::{
+    TopologicalFingerprintError, TopologicalFingerprintOutput, TopologicalFingerprintOutputRequest,
+    TopologicalFingerprintParams, TopologicalFingerprintResult, topological_fingerprint,
+    topological_fingerprint_with_output, topological_query_fingerprint,
+    topological_query_fingerprint_with_output,
 };

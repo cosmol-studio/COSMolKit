@@ -234,7 +234,7 @@ impl LayeredFingerprintResult {
 }
 
 #[derive(Clone, Copy)]
-enum LayeredGraphInput<'a> {
+pub(super) enum LayeredGraphInput<'a> {
     Concrete(&'a TopologyBlock),
     Query(&'a QueryGraph),
 }
@@ -362,7 +362,7 @@ fn enumerate_fingerprint_paths_for_root(
         .collect()
 }
 
-fn enumerate_fingerprint_paths(
+pub(super) fn enumerate_fingerprint_paths(
     graph: LayeredGraphInput<'_>,
     min_path: u32,
     max_path: u32,

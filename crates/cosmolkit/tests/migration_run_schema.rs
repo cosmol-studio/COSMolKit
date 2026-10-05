@@ -1818,6 +1818,20 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.pattern_fingerprint_with_params",
             "pattern_query_fingerprint",
             "pattern_query_fingerprint_with_params",
+            "types.TopologicalFingerprintParams",
+            "types.TopologicalFingerprintOutputRequest",
+            "types.TopologicalFingerprintOutput",
+            "types.TopologicalFingerprintResult",
+            "types.TopologicalFingerprintError",
+            "Molecule.topological_fingerprint",
+            "Molecule.topological_fingerprint_with_params",
+            "Molecule.topological_fingerprint_with_output",
+            "Molecule.topological_fingerprint_with_output_with_params",
+            "topological_query_fingerprint_with_params",
+            "topological_query_fingerprint_with_output_with_params",
+            "TopologicalFingerprintResult.fingerprint",
+            "TopologicalFingerprintResult.atom_bits",
+            "TopologicalFingerprintResult.bit_info",
         ]);
     }
     assert_eq!(

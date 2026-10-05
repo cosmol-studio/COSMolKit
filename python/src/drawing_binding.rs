@@ -370,6 +370,45 @@ impl Molecule {
             .map(|inner| crate::canonical_values::Fingerprint { inner })
             .map_err(|e| crate::canonical_pattern::pattern_pyerr(py, e))
     }
+    fn topological_fingerprint(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .topological_fingerprint()
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_topological::topological_pyerr(py, e))
+    }
+    fn topological_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_topological::TopologicalFingerprintParams,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .topological_fingerprint_with_params(&params.inner)
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_topological::topological_pyerr(py, e))
+    }
+    fn topological_fingerprint_with_output(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_topological::TopologicalFingerprintResult> {
+        self.inner
+            .topological_fingerprint_with_output()
+            .map(|inner| crate::canonical_topological::TopologicalFingerprintResult { inner })
+            .map_err(|e| crate::canonical_topological::topological_pyerr(py, e))
+    }
+    fn topological_fingerprint_with_output_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_topological::TopologicalFingerprintParams,
+        request: &crate::canonical_topological::TopologicalFingerprintOutputRequest,
+    ) -> PyResult<crate::canonical_topological::TopologicalFingerprintResult> {
+        self.inner
+            .topological_fingerprint_with_output_with_params(&params.inner, request.inner)
+            .map(|inner| crate::canonical_topological::TopologicalFingerprintResult { inner })
+            .map_err(|e| crate::canonical_topological::topological_pyerr(py, e))
+    }
     fn maccs_fingerprint(&self, py: Python<'_>) -> PyResult<crate::canonical_values::Fingerprint> {
         self.inner
             .maccs_fingerprint()
@@ -3079,6 +3118,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_maccs::register(module)?;
     crate::canonical_layered::register(module)?;
     crate::canonical_pattern::register(module)?;
+    crate::canonical_topological::register(module)?;
     crate::canonical_element_metadata::register(module)?;
     crate::mmff_binding::register(module)?;
     crate::uff_binding::register(module)?;

@@ -403,3 +403,16 @@ pub use cosmolkit_fingerprints::{
 };
 #[cfg(feature = "cap-fingerprints")]
 pub use pattern_fingerprint::{pattern_query_fingerprint, pattern_query_fingerprint_with_params};
+
+#[cfg(feature = "cap-fingerprints")]
+mod topological_fingerprint;
+#[cfg(feature = "cap-fingerprints")]
+pub use cosmolkit_fingerprints::{
+    TopologicalFingerprintError, TopologicalFingerprintOutput, TopologicalFingerprintOutputRequest,
+    TopologicalFingerprintParams, TopologicalFingerprintResult,
+};
+#[cfg(feature = "cap-fingerprints")]
+pub use topological_fingerprint::{
+    topological_query_fingerprint_with_output_with_params,
+    topological_query_fingerprint_with_params,
+};

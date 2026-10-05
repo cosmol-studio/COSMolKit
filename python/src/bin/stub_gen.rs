@@ -82,6 +82,7 @@ _binding_profile: builtins.str
         "PatternFingerprintError",
         "FingerprintPreparationError",
         "FingerprintError",
+        "TopologicalFingerprintError",
         "FingerprintJsonError",
         "DescriptorReadError",
         "DescriptorError",
@@ -108,6 +109,7 @@ _binding_profile: builtins.str
         "class PatternFingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n",
         "class PatternFingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    reason: builtins.str\n    left: builtins.int\n    right: builtins.int\n",
     );
+    text = text.replace("class TopologicalFingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class TopologicalFingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Present only on applicable variants.\n    reason: builtins.str\n    field: builtins.str\n");
     // Alignment publishes one create_exception! type. Context attributes match
     // alignment_binding::alignment_pyerr and exist only on applicable variants.
     text = text.replace(
