@@ -1,4 +1,5 @@
 //! Small Rust-owned parity pilot; no performance or binding claims.
+mod bio_reference;
 pub mod descriptor_reference;
 mod draw_reference;
 pub mod execute;
@@ -26,6 +27,15 @@ use std::{
 type Result<T> = std::result::Result<T, String>;
 const ORACLE: &str = include_str!("../../tools/oracles/rdkit/fingerprint_values_pilot.py");
 const REFERENCE_PIN: &str = include_str!("../../testdata/reference/rdkit.json");
+const GEMMI_PIN: &str = include_str!("../../testdata/reference/gemmi.json");
+
+fn reference_pin(task: &Task) -> &'static str {
+    if bio_reference::handles(task) {
+        GEMMI_PIN
+    } else {
+        REFERENCE_PIN
+    }
+}
 
 pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -66,6 +76,7 @@ pub fn corpus(sources: &[CorpusSource], tasks: &[&Task]) -> Result<Corpus> {
         }
     }
     let mut corpus = Corpus::default();
+    let mut loaded_bio = std::collections::BTreeSet::new();
     for task in tasks {
         let source = sources.iter().find(|s| s.corpus_type == task.corpus_type);
         match task.corpus_type {
@@ -82,6 +93,41 @@ pub fn corpus(sources: &[CorpusSource], tasks: &[&Task]) -> Result<Corpus> {
                 };
             }
             CorpusType::Smiles | CorpusType::FingerprintPairs => {}
+            CorpusType::Pdb | CorpusType::Cif => {
+                if loaded_bio.insert(task.corpus_type.name()) {
+                    let rows: Vec<registry::BioPdbCase> = if let Some(source) = source {
+                        serde_json::from_slice(&read(&source.path)?)
+                            .map_err(|e| format!("{}: {e}", source.path.display()))?
+                    } else {
+                        // Like smiles_small, defaults are existing fixed inputs,
+                        // never a claimed 5000-case biological corpus. The task's
+                        // declared family selects the format, not the suffix.
+                        let (format, path) = if task.corpus_type == CorpusType::Pdb {
+                            (
+                                registry::BioPdbCorpusFormat::Pdb,
+                                "testdata/bio/fixtures/gemmi_full_feature_sample.pdb",
+                            )
+                        } else {
+                            (
+                                registry::BioPdbCorpusFormat::Cif,
+                                "testdata/bio/fixtures/gemmi_full_feature_sample.cif",
+                            )
+                        };
+                        vec![registry::BioPdbCase {
+                            id: path.into(),
+                            text: String::from_utf8(read(&root().join(path))?)
+                                .map_err(|e| e.to_string())?,
+                            format,
+                        }]
+                    };
+                    if rows.iter().any(|row| !row.matches_corpus(task.corpus_type)) {
+                        return Err(
+                            "BIO corpus row format does not match its explicit input family".into(),
+                        );
+                    }
+                    corpus.bio_cases.extend(rows);
+                }
+            }
             kind => return Err(format!("unimplemented corpus loader: {}", kind.name())),
         }
     }
@@ -111,7 +157,10 @@ struct Manifest {
     task: String,
     corpus_type: CorpusType,
     generator: String,
-    rdkit_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rdkit_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    gemmi_version: Option<String>,
     reference_pin_sha256: String,
     reference_platform: String,
     registry_sha256: String,
@@ -124,7 +173,17 @@ struct Manifest {
 }
 
 fn adapter_digest(task: &Task) -> String {
-    if tautomer_reference::handles(task) {
+    if bio_reference::handles(task) {
+        digest(
+            concat!(
+                include_str!("bio_reference.rs"),
+                include_str!("../../tools/oracles/gemmi/bio_pdb_values.py"),
+                include_str!("../../tools/testdata/gemmi/pdb_coordinate_oracle.cpp"),
+                include_str!("../../tools/testdata/gemmi/to_pdb_probe.cpp")
+            )
+            .as_bytes(),
+        )
+    } else if tautomer_reference::handles(task) {
         digest(include_str!("tautomer_reference.rs").as_bytes())
     } else if descriptor_reference::handles(task) {
         digest(include_str!("descriptor_reference.rs").as_bytes())
@@ -143,15 +202,18 @@ fn identity(task: &Task, input: &[u8], reference: &[u8], rows: usize) -> Manifes
         task: task.key(),
         corpus_type: task.corpus_type,
         generator: task.generator.into(),
-        rdkit_version: RDKIT_VERSION.into(),
-        reference_pin_sha256: digest(REFERENCE_PIN.as_bytes()),
+        rdkit_version: (!bio_reference::handles(task)).then(|| RDKIT_VERSION.into()),
+        gemmi_version: bio_reference::handles(task)
+            .then(|| registry::BIO_PDB_REFERENCE.version.into()),
+        reference_pin_sha256: digest(reference_pin(task).as_bytes()),
         reference_platform: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         registry_sha256: registry_digest(),
         oracle_sha256: adapter_digest(task),
         input_sha256: digest(input),
         reference_sha256: digest(reference),
         rows,
-        imported_reference: tautomer_reference::provenance(task)
+        imported_reference: bio_reference::provenance(task)
+            .or_else(|| tautomer_reference::provenance(task))
             .or_else(|| descriptor_reference::provenance(task))
             .or_else(|| draw_reference::provenance(task))
             .or_else(|| native_draw_reference::provenance(task)),
@@ -230,6 +292,9 @@ fn check_records(task: &Task, inputs: &[Input], records: &[Record]) -> Result<()
 fn oracle(task: &Task, cases: &Corpus, python: &Path, threads: usize) -> Result<Vec<Record>> {
     if threads == 0 {
         return Err("threads must be positive".into());
+    }
+    if bio_reference::handles(task) {
+        return bio_reference::generate(task, cases, python);
     }
     if tautomer_reference::handles(task) {
         return tautomer_reference::generate(task, cases);
@@ -437,7 +502,7 @@ fn generation(data: &Path, task: &Task, input: &[u8]) -> PathBuf {
         digest(input),
         adapter_digest(task),
         registry_digest(),
-        digest(REFERENCE_PIN.as_bytes())
+        digest(reference_pin(task).as_bytes())
     );
     data.join(format!("{}-{}", task.key(), digest(identity.as_bytes())))
 }

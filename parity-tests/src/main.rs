@@ -16,7 +16,7 @@ fn entry() -> Result<(), String> {
     let command = args.next().unwrap_or_else(|| "help".into());
     if command == "help" || command == "--help" {
         println!(
-            "prepare | preflight | list\n  --task FUNCTION_CORPUS (default all corpus tasks)\n  --special-regression KEY (fixed source matrix; separate from corpus tasks)\n  --smiles FILE (default smiles_small.smi)\n  --fingerprint-pairs FILE (default deterministic 5000 pairs)\n  --data DIR (default target/parity-tests)\n  --python PATH (prepare only; default .venv/bin/python)\n  --threads N (prepare only; default 4)\nAfter corpus prepare: cargo test -p cosmolkit-parity-tests --release --test reference_parity\nAfter special-regression prepare: cargo test -p cosmolkit-parity-tests --release --test special_regression_structure_tags\nTests never generate reference values."
+            "prepare | preflight | list\n  --task FUNCTION_CORPUS (default all corpus tasks)\n  --special-regression KEY (fixed source matrix; separate from corpus tasks)\n  --smiles FILE (default smiles_small.smi)\n  --fingerprint-pairs FILE (default deterministic 5000 pairs)\n  --pdb FILE (explicit typed BIO JSON corpus)\n  --mmcif FILE (explicit typed BIO JSON corpus)\n  --data DIR (default target/parity-tests)\n  --python PATH (prepare only; default .venv/bin/python)\n  --threads N (prepare only; default 4)\nAfter corpus prepare: cargo test -p cosmolkit-parity-tests --release --test reference_parity\nAfter special-regression prepare: cargo test -p cosmolkit-parity-tests --release --test special_regression_structure_tags\nTests never generate reference values."
         );
         return Ok(());
     }
@@ -48,6 +48,14 @@ fn entry() -> Result<(), String> {
             }),
             "--fingerprint-pairs" => sources.push(CorpusSource {
                 corpus_type: CorpusType::FingerprintPairs,
+                path: value.into(),
+            }),
+            "--pdb" => sources.push(CorpusSource {
+                corpus_type: CorpusType::Pdb,
+                path: value.into(),
+            }),
+            "--mmcif" => sources.push(CorpusSource {
+                corpus_type: CorpusType::Cif,
                 path: value.into(),
             }),
             "--data" => data = value.into(),

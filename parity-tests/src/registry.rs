@@ -682,6 +682,15 @@ pub struct BioPdbCase {
     pub format: BioPdbCorpusFormat,
 }
 
+impl BioPdbCase {
+    pub(crate) fn matches_corpus(&self, corpus: CorpusType) -> bool {
+        matches!(
+            (self.format, corpus),
+            (BioPdbCorpusFormat::Pdb, CorpusType::Pdb) | (BioPdbCorpusFormat::Cif, CorpusType::Cif)
+        )
+    }
+}
+
 /// Corpus format for BIO PDB output tasks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -996,7 +1005,14 @@ impl Task {
                 cases.molecules.len() * crate::uff::profiles(self.operation).len()
             }
             Operation::Molecular(id) => cases.molecules.len() * id.profiles().len(),
-            Operation::BioPdbOutput => cases.bio_cases.len() * BioPdbOutputProfile::ALL.len(),
+            Operation::BioPdbOutput => {
+                cases
+                    .bio_cases
+                    .iter()
+                    .filter(|case| case.matches_corpus(self.corpus_type))
+                    .count()
+                    * BioPdbOutputProfile::ALL.len()
+            }
             _ => cases.fingerprints.len() * fingerprint::WIDTHS.len(),
         }
     }
@@ -1031,6 +1047,12 @@ pub fn validate(corpus: &Corpus, tasks: &[&Task]) -> Result<(), String> {
         }
     }
     let mut molecule_ids = BTreeSet::new();
+    let mut bio_ids = BTreeSet::new();
+    for case in &corpus.bio_cases {
+        if case.id.is_empty() || !bio_ids.insert((case.format as u8, &case.id)) {
+            return Err("empty/duplicate BIO case ID within input family".into());
+        }
+    }
     for case in &corpus.molecules {
         if case.id.is_empty() || !molecule_ids.insert(&case.id) {
             return Err("empty/duplicate molecular case ID".into());
@@ -1064,6 +1086,7 @@ pub fn expand(cases: &Corpus, task: &Task) -> Vec<Input> {
         return cases
             .bio_cases
             .iter()
+            .filter(|case| case.matches_corpus(task.corpus_type))
             .flat_map(|case| {
                 BioPdbOutputProfile::ALL
                     .into_iter()

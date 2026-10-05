@@ -335,6 +335,19 @@ pub(crate) mod numbering {
 pub(crate) mod fields {
     use super::*;
 
+    pub(super) fn gemmi_element_name(element: Element, isotope: Option<u16>) -> &'static str {
+        // Gemmi✔️✔️:   const char* uname() const { return element_uppercase_name(elem); }
+        // BIO folds source El::D into H plus isotope 2. All other checked
+        // atomic numbers index the existing source-ordered BIO vocabulary.
+        // This is one O(1) static-table lookup, matching the source getter.
+        let ordinal = if element == Element::H && isotope == Some(2) {
+            119
+        } else {
+            usize::from(element.atomic_number())
+        };
+        cosmolkit_bio::GEMMI_ELEMENT_NAMES[ordinal]
+    }
+
     // BEGIN GEMMI CPP HELPERS (model.hpp:153-162, to_pdb.cpp:41-52, util.hpp:61, elem.hpp:27/387)
     // Gemmi✔️✔️:   std::string padded_name() const {
     // Gemmi✔️✔️:     std::string s;
@@ -356,8 +369,8 @@ pub(crate) mod fields {
     // source reads name[0] == '\0' (std::string const-access at size() is
     // defined to return the null character since C++11), alpha_up('\0') ==
     // '\0' != any symbol byte, and the empty name yields NO space; the Rust
-    // mirror uses first_byte() Option with the same outcome. uname() maps to
-    // the accepted Element::symbol() owner (canonical uppercase symbol).
+    // mirror uses first_byte() Option with the same outcome. uname() uses
+    // BIO's source-ordered Gemmi vocabulary, including X and D.
     // is_hydrogen maps to El::H | El::D == element H | D (elem.hpp:27).
     //
     // Cost review: O(1) byte comparisons plus one output-sized String; the
@@ -368,11 +381,8 @@ pub(crate) mod fields {
         // Gemmi El::H == Element::H + isotope None; Gemmi El::D ==
         // Element::H + isotope Some(2). The uname view re-derives "D"
         // from that pair; is_hydrogen covers both (elem.hpp:27).
-        let uname = if element == Element::H && isotope == Some(2) {
-            "D"
-        } else {
-            element.symbol()
-        };
+        // Gemmi✔️✔️:     const char* el = element.uname();
+        let uname = gemmi_element_name(element, isotope);
         let symbol = uname.as_bytes();
         let first_name_byte = name.as_bytes().first().copied();
         let alpha_up = |byte: u8| byte & !0x20;
@@ -436,7 +446,7 @@ pub(crate) mod fields {
 /// Private R1 record emitter (BIO-PDB-WRITE Step 26): complete ATOM/HETATM
 /// line plus conditional ANISOU for ONE atom, through the N0/N1/N2 owners.
 pub(crate) mod records {
-    use super::fields::{padded_name, use_hetatm};
+    use super::fields::{gemmi_element_name, padded_name, use_hetatm};
     use super::numbering::{
         NumberingError, encode_serial_in_hybrid36_checked, increment_serial, write_seq_id_checked,
     };
@@ -533,6 +543,9 @@ pub(crate) mod records {
         serial_next: i32,
         preserve_serial: bool,
     ) -> Result<(AtomRecord, i32), NumberingError> {
+        // Gemmi✔️❌:             "%-6s%5s %-4.4s%c%3.3s"
+        // The source right-aligns the first three residue-name bytes. The
+        // existing fixed-width String assembly keeps its allocation cost.
         let as_het = use_hetatm(
             residue_name_logical,
             residue.het_flag(),
@@ -586,7 +599,7 @@ pub(crate) mod records {
         let y_text = format!("{:>8}", format_pdb_fixed(y, 3));
         let z_text = format!("{:>8}", format_pdb_fixed(z, 3));
         let prefix = format!(
-            "{record}{serial_text:>5} {name4:<4}{altloc}{res3:<3}{chain2:>2}{seq_text:>5}   "
+            "{record}{serial_text:>5} {name4:<4}{altloc}{res3:>3}{chain2:>2}{seq_text:>5}   "
         );
         let mut buffer = [b' '; 82];
         let prefix_bytes = prefix.as_bytes();
@@ -642,13 +655,8 @@ pub(crate) mod records {
             })
             .unwrap_or_default();
         let segment4: String = segment.chars().take(4).collect();
-        let uname = if atom.element() == cosmolkit_types::Element::H
-            && atom.isotope_mass_number() == Some(2)
-        {
-            "D"
-        } else {
-            atom.element().symbol()
-        };
+        // Gemmi✔️❌:             a.element.uname(),
+        let uname = gemmi_element_name(atom.element(), atom.isotope_mass_number());
         let charge = atom.formal_charge();
         let (charge_digit, charge_sign) = if charge != 0 {
             (
@@ -1071,6 +1079,12 @@ mod bio_pdb_write_n2_tests {
     use cosmolkit_bio::EntityKind;
     use cosmolkit_types::Element;
 
+    #[test]
+    fn bio_pdb_write_n2_unknown_element_uses_source_x_name() {
+        let unknown = Element::from_atomic_number(0).unwrap();
+        assert_eq!(padded_name("X", unknown, None), " X");
+    }
+
     /// The frozen 12 padded-name + 24 classification calls (Step 22).
     /// Expected values are the NATIVE oracle rows (hash-bound n2.in/
     /// n2.out §13.1) joined by ORDINAL — never computed here.
@@ -1148,6 +1162,58 @@ mod bio_pdb_write_r1_tests {
         ResidueInfoKind, ResidueKind, ResidueName, ResidueSourceIds,
     };
     use cosmolkit_types::Element;
+
+    #[test]
+    fn bio_pdb_write_r1_short_residue_names_follow_source_right_alignment() {
+        for (name, expected) in [("A", "  A"), ("DC", " DC")] {
+            let atom = atom(
+                "C1",
+                Element::C,
+                [0.0; 3],
+                Some(1),
+                None,
+                1.0,
+                20.0,
+                [0.01; 6],
+                0,
+            );
+            let residue = residue(name, EntityKind::Polymer, Some(b'A'), Some(1), None, None);
+            let (record, _) =
+                atom_record(&atom, &residue, "A", name, "C1", [0.0; 3], 0, false).unwrap();
+            assert_eq!(&record.atom_line[17..20], expected);
+            assert_eq!(&record.anisou_line.unwrap()[17..20], expected);
+        }
+    }
+
+    #[test]
+    fn bio_pdb_write_r1_element_tail_uses_gemmi_uppercase_names() {
+        for (symbol, expected) in [("Zn", "ZN"), ("Cl", "CL"), ("Mg", "MG"), ("Fe", "FE")] {
+            let element = Element::from_symbol(symbol).unwrap();
+            let atom = atom(
+                symbol,
+                element,
+                [0.0; 3],
+                Some(1),
+                None,
+                1.0,
+                20.0,
+                [0.01; 6],
+                0,
+            );
+            let residue = residue(
+                "LIG",
+                EntityKind::NonPolymer,
+                Some(b'H'),
+                Some(1),
+                None,
+                None,
+            );
+            let (record, _) =
+                atom_record(&atom, &residue, "A", "LIG", symbol, [0.0; 3], 0, false).unwrap();
+            assert_eq!(&record.atom_line[76..78], expected);
+            assert_eq!(&record.anisou_line.unwrap()[76..78], expected);
+        }
+    }
 
     fn unescape(s: &str) -> String {
         let mut r = String::new();

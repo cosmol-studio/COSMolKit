@@ -14,26 +14,26 @@ pub fn run(input: &Input) -> Result<Record, String> {
             let structure = match case.format {
                 crate::registry::BioPdbCorpusFormat::Cif => {
                     cosmolkit::BioStructure::from_mmcif(&case.text)
-                        .map_err(|e| format!("parse"))
-                        .ok()
+                        .map_err(|error| error.to_string())
                 }
                 crate::registry::BioPdbCorpusFormat::Pdb => {
-                    cosmolkit::BioStructure::from_pdb(&case.text)
-                        .map_err(|e| format!("parse"))
-                        .ok()
+                    cosmolkit::BioStructure::from_pdb(&case.text).map_err(|error| error.to_string())
                 }
             };
-            let Some(structure) = structure else {
-                return Ok(Record {
-                    input: original.clone(),
-                    output: Value::BioPdbOutput(crate::registry::BioPdbOutputValue {
-                        text: String::new(),
-                        error: Some(crate::registry::BioPdbOutputError::Parse {
-                            format: case.format,
-                            message: "parse failed".into(),
+            let structure = match structure {
+                Ok(structure) => structure,
+                Err(error) => {
+                    return Ok(Record {
+                        input: original.clone(),
+                        output: Value::BioPdbOutput(crate::registry::BioPdbOutputValue {
+                            text: String::new(),
+                            error: Some(crate::registry::BioPdbOutputError::Parse {
+                                format: case.format,
+                                message: error.to_string(),
+                            }),
                         }),
-                    }),
-                });
+                    });
+                }
             };
             let params = cosmolkit::BioPdbWriteParams {
                 ter_records: profile.ter_records,

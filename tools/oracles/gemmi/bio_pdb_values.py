@@ -1,87 +1,79 @@
 #!/usr/bin/env python3
-"""Native Gemmi reference adapter for BIO PDB coordinate output parity.
+"""Preparation-only transport to the pinned native Gemmi coordinate oracle.
 
-Calls the pinned native Gemmi oracle binary (already built) to produce
-reference outputs for the bio_pdb_output_pdb and bio_pdb_output_cif tasks.
-Deterministic: processes cases sequentially in input order.
+Inputs are the Rust registry's ordered recipes. The native C++ oracle owns
+parsing, writing and the declared seven-record projection. This adapter only
+frames input paths and decodes its byte-escaped transport.
 """
-
 from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 REFERENCE_LIBRARY = "gemmi"
 REFERENCE_VERSION = "0.7.5"
 REFERENCE_COMMIT = "5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e"
+PROFILE_FIELDS = ("ter_records", "numbered_ter", "ter_ignores_type",
+                  "preserve_serial", "end_record")
 
-_ORACLE = Path(__file__).parent.parent.parent / "target" / "gemmi-mmcif-writer-golden" / "pdb_coordinate_oracle_v2"
+
+def decode_output(transport: bytes) -> str:
+    """Decode escape_bytes from pdb_coordinate_oracle.cpp without trimming PDB."""
+    if not transport.endswith(b"\n") or transport.count(b"\n") != 1:
+        raise ValueError("native oracle must return exactly one transport row")
+    size, escaped = transport[:-1].split(b"\t", 1)
+    result = bytearray()
+    index = 0
+    while index < len(escaped):
+        value = escaped[index]
+        index += 1
+        if value != ord("\\"):
+            result.append(value)
+            continue
+        escape = escaped[index]
+        index += 1
+        if escape == ord("x"):
+            result.append(int(escaped[index:index + 2], 16))
+            index += 2
+        elif escape in (ord("n"), ord("t"), ord("\\")):
+            result.append({ord("n"): 10, ord("t"): 9, ord("\\"): 92}[escape])
+        else:
+            raise ValueError("unknown native transport escape")
+    if len(result) != int(size):
+        raise ValueError("native output byte count mismatch")
+    return result.decode("utf-8")
 
 
-def _run_oracle(mode: str, input_text: str) -> str:
-    """Call the native oracle for one case, return the raw output."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".in", delete=False) as fin:
-        fin.write(input_text + "\n")
-        fin.flush()
-        with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as fout:
-            result = subprocess.run(
-                [str(_ORACLE), mode, fin.name, fout.name],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
+def generate(inputs: list[dict], oracle: Path) -> list[dict]:
+    records = []
+    with tempfile.TemporaryDirectory(prefix="gemmi-bio-reference-") as directory:
+        directory = Path(directory)
+        source = directory / "structure"
+        request = directory / "request.in"
+        output = directory / "reference.out"
+        for original in inputs:
+            row = original["BioPdbOutput"]
+            case, profile = row["case"], row["profile"]
+            mode = case["format"]
+            if mode not in ("pdb", "cif"):
+                raise ValueError(f"unknown explicit BIO input format: {mode}")
+            source.write_text(case["text"], encoding="utf-8")
+            flags = " ".join(str(int(profile[field])) for field in PROFILE_FIELDS)
+            request.write_text(f"{source} {flags}\n", encoding="utf-8")
+            result = subprocess.run([str(oracle), mode, str(request), str(output)],
+                                    capture_output=True, timeout=30)
             if result.returncode != 0:
-                raise RuntimeError(f"oracle {mode} failed: {result.stderr}")
-            return Path(fout.name).read_text().strip()
-
-
-def generate_bio_pdb_output_pdb(corpus, parameters, threads=8):
-    """Generate reference outputs for bio_pdb_output_pdb."""
-    del threads
-    records = []
-    for case in corpus:
-        for profile in _all_profiles():
-            profile_str = " ".join(str(int(b)) for b in profile)
-            output = _run_oracle("pdb", case["text"] + " " + profile_str)
-            records.append({
-                "case_id": case["id"],
-                "parameters": {"profile": profile_str},
-                "output": {"text": output},
-            })
+                # Preparation fails visibly; no default text or invented error row.
+                raise RuntimeError(f"native Gemmi {case['id']} failed: "
+                                   f"{result.stderr.decode('utf-8', errors='replace')}")
+            text = decode_output(output.read_bytes())
+            records.append({"input": original,
+                            "output": {"BioPdbOutput": {"text": text, "error": None}}})
     return records
-
-
-def generate_bio_pdb_output_cif(corpus, parameters, threads=8):
-    """Generate reference outputs for bio_pdb_output_cif."""
-    del threads
-    records = []
-    for case in corpus:
-        for profile in _all_profiles():
-            profile_str = " ".join(str(int(b)) for b in profile)
-            output = _run_oracle("cif", case["text"] + " " + profile_str)
-            records.append({
-                "case_id": case["id"],
-                "parameters": {"profile": profile_str},
-                "output": {"text": output},
-            })
-    return records
-
-
-def _all_profiles():
-    """All 32 five-bool profiles (ter, numbered, ignores, preserve, end)."""
-    return [
-        (ter, num, ign, pres, end)
-        for ter in (False, True)
-        for num in (False, True)
-        for ign in (False, True)
-        for pres in (False, True)
-        for end in (False, True)
-    ]
 
 
 if __name__ == "__main__":
-    import sys
-    corpus = json.loads(sys.stdin.read()) if len(sys.argv) > 1 else []
-    print(json.dumps(generate_bio_pdb_output_pdb(corpus, {}), indent=2))
+    json.dump(generate(json.load(sys.stdin), Path(sys.argv[1]).resolve()), sys.stdout)

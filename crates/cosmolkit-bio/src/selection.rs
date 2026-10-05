@@ -505,14 +505,20 @@ impl std::error::Error for BioRowModelError {}
 /// in the cursor regressions. Never present in production builds.
 #[cfg(test)]
 pub(crate) mod gate_counters {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    pub(crate) static MODEL: AtomicUsize = AtomicUsize::new(0);
-    pub(crate) static CHAIN: AtomicUsize = AtomicUsize::new(0);
-    pub(crate) static RESIDUE: AtomicUsize = AtomicUsize::new(0);
+    use std::cell::Cell;
+
+    // Each synchronous cursor test measures its own calls. Shared counters
+    // include gates run by unrelated tests on Rust's parallel test threads.
+    std::thread_local! {
+        pub(crate) static MODEL: Cell<usize> = const { Cell::new(0) };
+        pub(crate) static CHAIN: Cell<usize> = const { Cell::new(0) };
+        pub(crate) static RESIDUE: Cell<usize> = const { Cell::new(0) };
+    }
+
     pub(crate) fn reset() {
-        MODEL.store(0, Ordering::SeqCst);
-        CHAIN.store(0, Ordering::SeqCst);
-        RESIDUE.store(0, Ordering::SeqCst);
+        MODEL.with(|count| count.set(0));
+        CHAIN.with(|count| count.set(0));
+        RESIDUE.with(|count| count.set(0));
     }
 }
 
@@ -546,7 +552,7 @@ pub(crate) fn bio_model_row_matches(
     // slice, which the model predicate never reads.
     // Complexity: O(1); one wrapped struct over the existing predicate.
     #[cfg(test)]
-    gate_counters::MODEL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    gate_counters::MODEL.with(|count| count.set(count.get() + 1));
     let num = row
         .source_model_number()
         .ok_or(BioRowModelError::MissingModelNumber)?;
@@ -614,7 +620,7 @@ pub(crate) fn bio_chain_row_matches(
     // Complexity: O(len(name)) membership probe over borrowed data;
     // auth, PDB-view, and label paths all borrow directly.
     #[cfg(test)]
-    gate_counters::CHAIN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    gate_counters::CHAIN.with(|count| count.set(count.get() + 1));
     let source = row.source();
     let name: &str = if let Some(auth) = source.auth_chain_id_ref() {
         if input_format == crate::hierarchy::BioCoordinateFormat::Pdb {
@@ -690,7 +696,7 @@ pub(crate) fn bio_residue_row_matches(
     // slice (never read by the residue conjuncts).
     // Complexity: as the ported predicate; the views are borrowed, O(1).
     #[cfg(test)]
-    gate_counters::RESIDUE.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    gate_counters::RESIDUE.with(|count| count.set(count.get() + 1));
     let (seqid_num, icode) = bio_residue_seqid(row);
     let row_name = row.name();
     // Borrowed logical view held for the synchronous predicate call —
@@ -5490,6 +5496,26 @@ mod tests {
         assert_eq!(empty_iter.count(), 0);
     }
     #[test]
+    fn bio_rows_cursor_gate_measurements_are_thread_local() {
+        use super::{Selection, gate_counters};
+
+        let row = crate::BioModelRow::new(crate::BioRowSpan::new(0, 0).unwrap(), Some(1));
+        gate_counters::reset();
+        assert!(super::bio_model_row_matches(&Selection::default(), &row).unwrap());
+        std::thread::spawn(|| {
+            let row = crate::BioModelRow::new(crate::BioRowSpan::new(0, 0).unwrap(), Some(1));
+            gate_counters::reset();
+            for _ in 0..2 {
+                assert!(super::bio_model_row_matches(&Selection::default(), &row).unwrap());
+            }
+            assert_eq!(gate_counters::MODEL.with(std::cell::Cell::get), 2);
+        })
+        .join()
+        .unwrap();
+        assert_eq!(gate_counters::MODEL.with(std::cell::Cell::get), 1);
+    }
+
+    #[test]
     fn bio_rows_cursor_parent_gates_once_per_visited_row() {
         use super::{BioSelectedAtomIds, Selection, gate_counters};
         use crate::hierarchy::{
@@ -5580,20 +5606,11 @@ mod tests {
         .collect();
         assert_eq!(ids.len(), 8); // chains A of both models, 2 residues x 2 atoms each
         // Model gate: exactly once per model row (2).
-        assert_eq!(
-            gate_counters::MODEL.load(std::sync::atomic::Ordering::SeqCst),
-            2
-        );
+        assert_eq!(gate_counters::MODEL.with(std::cell::Cell::get), 2);
         // Chain gate: once per visited chain row of accepted models (4).
-        assert_eq!(
-            gate_counters::CHAIN.load(std::sync::atomic::Ordering::SeqCst),
-            4
-        );
+        assert_eq!(gate_counters::CHAIN.with(std::cell::Cell::get), 4);
         // Residue gate: once per visited residue row of accepted chains (4).
-        assert_eq!(
-            gate_counters::RESIDUE.load(std::sync::atomic::Ordering::SeqCst),
-            4
-        );
+        assert_eq!(gate_counters::RESIDUE.with(std::cell::Cell::get), 4);
 
         // Full wildcard: every parent accepted; with early drop at 3 atoms
         // the counts reflect the partial visitation only.
@@ -5606,19 +5623,10 @@ mod tests {
         .map(|r| r.unwrap().value())
         .collect();
         assert_eq!(ids, vec![0u32, 1, 2]);
-        assert_eq!(
-            gate_counters::MODEL.load(std::sync::atomic::Ordering::SeqCst),
-            1
-        );
-        assert_eq!(
-            gate_counters::CHAIN.load(std::sync::atomic::Ordering::SeqCst),
-            1
-        );
+        assert_eq!(gate_counters::MODEL.with(std::cell::Cell::get), 1);
+        assert_eq!(gate_counters::CHAIN.with(std::cell::Cell::get), 1);
         // Residue 0 exhausted, residue 1 entered: two residue gates.
-        assert_eq!(
-            gate_counters::RESIDUE.load(std::sync::atomic::Ordering::SeqCst),
-            2
-        );
+        assert_eq!(gate_counters::RESIDUE.with(std::cell::Cell::get), 2);
 
         // Sticky error: after a missing-model-number error, further next()
         // calls neither yield nor re-run gates on later rows.
@@ -5640,17 +5648,11 @@ mod tests {
                 super::BioRowModelError::MissingModelNumber
             )))
         );
-        assert_eq!(
-            gate_counters::MODEL.load(std::sync::atomic::Ordering::SeqCst),
-            2
-        );
+        assert_eq!(gate_counters::MODEL.with(std::cell::Cell::get), 2);
         // Sticky: no further yield and no further gate on any row.
         assert!(err_iter.next().is_none());
         assert!(err_iter.next().is_none());
-        assert_eq!(
-            gate_counters::MODEL.load(std::sync::atomic::Ordering::SeqCst),
-            2
-        );
+        assert_eq!(gate_counters::MODEL.with(std::cell::Cell::get), 2);
 
         // Empty siblings: an accepted chain with an empty residue span
         // advances without any residue gate.
@@ -5670,13 +5672,7 @@ mod tests {
         .map(|r| r.unwrap().value())
         .collect();
         assert!(ids.is_empty());
-        assert_eq!(
-            gate_counters::CHAIN.load(std::sync::atomic::Ordering::SeqCst),
-            1
-        );
-        assert_eq!(
-            gate_counters::RESIDUE.load(std::sync::atomic::Ordering::SeqCst),
-            0
-        );
+        assert_eq!(gate_counters::CHAIN.with(std::cell::Cell::get), 1);
+        assert_eq!(gate_counters::RESIDUE.with(std::cell::Cell::get), 0);
     }
 }

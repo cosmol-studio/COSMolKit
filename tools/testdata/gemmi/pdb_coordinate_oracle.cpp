@@ -365,8 +365,10 @@ int main(int argc, char** argv) {
         out << projected.size() << '\t' << escape_bytes(projected) << '\n';
       } else if (mode == "pdb" || mode == "cif") {
         // line: INPUTPATH TER NUMBERED IGNORES PRESERVE END
-        std::string path, ter_s, numbered_s, ignores_s, preserve_s, end_s;
-        fields >> path >> ter_s >> numbered_s >> ignores_s >> preserve_s >> end_s;
+        // The common record reader already consumed INPUTPATH as kind.
+        std::string path = kind;
+        std::string ter_s, numbered_s, ignores_s, preserve_s, end_s;
+        fields >> ter_s >> numbered_s >> ignores_s >> preserve_s >> end_s;
         gemmi::Structure st = gemmi::read_structure_file(
             path.c_str(), mode == "pdb" ? gemmi::CoorFormat::Pdb
                                         : gemmi::CoorFormat::Mmcif);

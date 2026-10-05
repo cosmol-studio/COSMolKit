@@ -3,6 +3,136 @@ use registry::Pair;
 use std::cell::Cell;
 
 #[test]
+fn bio_registered_inputs_keep_families_and_original_profiles_separate() {
+    let mut cases = bio_corpus();
+    let mut cif = cases.bio_cases[0].clone();
+    cif.format = registry::BioPdbCorpusFormat::Cif;
+    cases.bio_cases.push(cif);
+    let tasks = registry::select(Some("bio_pdb_output")).unwrap();
+    registry::validate(&cases, &tasks).unwrap();
+    for task in tasks {
+        let inputs = registry::expand(&cases, task);
+        let count = if task.corpus_type == CorpusType::Pdb {
+            64
+        } else {
+            32
+        };
+        assert_eq!(task.count(&cases), count);
+        assert_eq!(inputs.len(), count);
+        for chunk in inputs.chunks_exact(32) {
+            for (input, expected) in chunk.iter().zip(registry::BioPdbOutputProfile::ALL) {
+                let Input::BioPdbOutput { case, profile } = input else {
+                    panic!("BIO input required");
+                };
+                assert!(case.matches_corpus(task.corpus_type));
+                assert_eq!(*profile, expected);
+            }
+        }
+    }
+}
+
+#[test]
+fn bio_corpus_loader_preserves_defaults_explicit_family_and_case_ids() {
+    let tasks = registry::select(Some("bio_pdb_output_pdb")).unwrap();
+    let defaults = corpus(&[], &tasks).unwrap();
+    assert_eq!(defaults.bio_cases.len(), 1);
+    assert_eq!(
+        defaults.bio_cases[0].id,
+        "testdata/bio/fixtures/gemmi_full_feature_sample.pdb"
+    );
+    assert_eq!(
+        defaults.bio_cases[0].format,
+        registry::BioPdbCorpusFormat::Pdb
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("input.unrelated-suffix");
+    let mut rows = bio_corpus().bio_cases;
+    fs::write(&path, encode(&rows).unwrap()).unwrap();
+    let sources = [CorpusSource {
+        corpus_type: CorpusType::Pdb,
+        path: path.clone(),
+    }];
+    let loaded = corpus(&sources, &tasks).unwrap();
+    assert_eq!(loaded.bio_cases, rows);
+    registry::validate(&loaded, &tasks).unwrap();
+    rows[0].format = registry::BioPdbCorpusFormat::Cif;
+    fs::write(&path, encode(&rows).unwrap()).unwrap();
+    assert!(corpus(&sources, &tasks).unwrap_err().contains("row format"));
+    let mut duplicate = loaded.clone();
+    duplicate.bio_cases.push(duplicate.bio_cases[0].clone());
+    assert!(
+        registry::validate(&duplicate, &tasks)
+            .unwrap_err()
+            .contains("duplicate BIO")
+    );
+}
+
+#[test]
+fn bio_manifest_names_its_gemmi_reference_and_rejects_rdkit_identity() {
+    let cases = bio_corpus();
+    let tasks = registry::select(Some("bio_pdb_output_pdb")).unwrap();
+    let data = tempfile::tempdir().unwrap();
+    let inputs = registry::expand(&cases, tasks[0]);
+    let records = inputs
+        .iter()
+        .map(|input| Record {
+            input: input.clone(),
+            output: registry::Value::BioPdbOutput(registry::BioPdbOutputValue {
+                text: "fixed framework payload".into(),
+                error: None,
+            }),
+        })
+        .collect::<Vec<_>>();
+    publish(data.path(), tasks[0], &inputs, &records).unwrap();
+    let directory = generation(data.path(), tasks[0], &encode(&inputs).unwrap());
+    let path = directory.join("manifest.json");
+    let mut manifest: Manifest = serde_json::from_slice(&read(&path).unwrap()).unwrap();
+    assert_eq!(manifest.rdkit_version, None);
+    assert_eq!(
+        manifest.gemmi_version.as_deref(),
+        Some(registry::BIO_PDB_REFERENCE.version)
+    );
+    assert_eq!(manifest.reference_pin_sha256, digest(GEMMI_PIN.as_bytes()));
+    preflight(&tasks, &cases, data.path()).unwrap();
+    manifest.rdkit_version = Some(RDKIT_VERSION.into());
+    fs::write(&path, encode(&manifest).unwrap()).unwrap();
+    assert!(
+        preflight(&tasks, &cases, data.path())
+            .err()
+            .expect("stale Gemmi identity must fail preflight")
+            .contains("stale or corrupted")
+    );
+}
+
+#[test]
+fn bio_executor_preserves_public_parse_error_cause() {
+    let text = "this is not a CIF data block";
+    let input = Input::BioPdbOutput {
+        case: registry::BioPdbCase {
+            id: "invalid-cif".into(),
+            text: text.into(),
+            format: registry::BioPdbCorpusFormat::Cif,
+        },
+        profile: registry::BioPdbOutputProfile::ALL[0],
+    };
+    let expected = cosmolkit::BioStructure::from_mmcif(text)
+        .unwrap_err()
+        .to_string();
+    let record = execute::run(&input).unwrap();
+    let registry::Value::BioPdbOutput(value) = record.output else {
+        panic!("BIO output required");
+    };
+    assert!(value.text.is_empty());
+    assert_eq!(
+        value.error,
+        Some(registry::BioPdbOutputError::Parse {
+            format: registry::BioPdbCorpusFormat::Cif,
+            message: expected
+        })
+    );
+}
+
+#[test]
 fn svg_schema_rejects_wrong_kind_missing_payload_and_parameter_expansion() {
     use molecular::Outcome;
     use registry::molecule_plan::{Profile, TaskId};
@@ -902,7 +1032,7 @@ fn stale_manifest_is_repaired_and_unselected_tasks_are_not_generated() {
     let directory = fixture(temp.path(), tasks[0], &cases);
     let mut manifest: Manifest =
         serde_json::from_slice(&read(&directory.join("manifest.json")).unwrap()).unwrap();
-    manifest.rdkit_version = "stale".into();
+    manifest.rdkit_version = Some("stale".into());
     fs::write(directory.join("manifest.json"), encode(&manifest).unwrap()).unwrap();
     let (_, preparation) = prepare_with(&tasks, &cases, temp.path(), |_, inputs| {
         assert_eq!(
