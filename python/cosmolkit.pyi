@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import builtins
 import typing
+import types
 __all__ = [
     "FingerprintError",
     "MorganReadError",
@@ -15,6 +16,8 @@ __all__ = [
     "_binding_profile",
     "AdditionalOutput",
     "Coordinate2DParams",
+    "Element",
+    "ElementInfo",
     "Fingerprint",
     "Molecule",
     "MorganParams",
@@ -23,6 +26,7 @@ __all__ = [
     "SparseBitFingerprint",
     "SparseCountFingerprint",
     "SparseCountFingerprint32",
+    "element_info",
     "version",
 ]
 
@@ -68,6 +72,151 @@ class Coordinate2DParams:
     @property
     def use_ring_templates(self) -> builtins.bool: ...
     def __new__(cls, coordinate_map: typing.Optional[typing.Mapping[builtins.int, typing.Sequence[builtins.float]]] = None, *, canonical_orientation: builtins.bool = False, clear_existing_2d: builtins.bool = True, flips_per_sample: builtins.int = 0, samples: builtins.int = 0, sample_seed: builtins.int = 0, permute_degree_four: builtins.bool = False, force_rdkit: builtins.bool = False, use_ring_templates: builtins.bool = False) -> Coordinate2DParams: ...
+
+@typing.final
+class Element:
+    DUMMY: typing.ClassVar[Element]
+    H: typing.ClassVar[Element]
+    HE: typing.ClassVar[Element]
+    LI: typing.ClassVar[Element]
+    BE: typing.ClassVar[Element]
+    B: typing.ClassVar[Element]
+    C: typing.ClassVar[Element]
+    N: typing.ClassVar[Element]
+    O: typing.ClassVar[Element]
+    F: typing.ClassVar[Element]
+    NE: typing.ClassVar[Element]
+    NA: typing.ClassVar[Element]
+    MG: typing.ClassVar[Element]
+    AL: typing.ClassVar[Element]
+    SI: typing.ClassVar[Element]
+    P: typing.ClassVar[Element]
+    S: typing.ClassVar[Element]
+    CL: typing.ClassVar[Element]
+    AR: typing.ClassVar[Element]
+    K: typing.ClassVar[Element]
+    CA: typing.ClassVar[Element]
+    SC: typing.ClassVar[Element]
+    TI: typing.ClassVar[Element]
+    V: typing.ClassVar[Element]
+    CR: typing.ClassVar[Element]
+    MN: typing.ClassVar[Element]
+    FE: typing.ClassVar[Element]
+    CO: typing.ClassVar[Element]
+    NI: typing.ClassVar[Element]
+    CU: typing.ClassVar[Element]
+    ZN: typing.ClassVar[Element]
+    GA: typing.ClassVar[Element]
+    GE: typing.ClassVar[Element]
+    AS: typing.ClassVar[Element]
+    SE: typing.ClassVar[Element]
+    BR: typing.ClassVar[Element]
+    KR: typing.ClassVar[Element]
+    RB: typing.ClassVar[Element]
+    SR: typing.ClassVar[Element]
+    Y: typing.ClassVar[Element]
+    ZR: typing.ClassVar[Element]
+    NB: typing.ClassVar[Element]
+    MO: typing.ClassVar[Element]
+    TC: typing.ClassVar[Element]
+    RU: typing.ClassVar[Element]
+    RH: typing.ClassVar[Element]
+    PD: typing.ClassVar[Element]
+    AG: typing.ClassVar[Element]
+    CD: typing.ClassVar[Element]
+    IN: typing.ClassVar[Element]
+    SN: typing.ClassVar[Element]
+    SB: typing.ClassVar[Element]
+    TE: typing.ClassVar[Element]
+    I: typing.ClassVar[Element]
+    XE: typing.ClassVar[Element]
+    CS: typing.ClassVar[Element]
+    BA: typing.ClassVar[Element]
+    LA: typing.ClassVar[Element]
+    CE: typing.ClassVar[Element]
+    PR: typing.ClassVar[Element]
+    ND: typing.ClassVar[Element]
+    PM: typing.ClassVar[Element]
+    SM: typing.ClassVar[Element]
+    EU: typing.ClassVar[Element]
+    GD: typing.ClassVar[Element]
+    TB: typing.ClassVar[Element]
+    DY: typing.ClassVar[Element]
+    HO: typing.ClassVar[Element]
+    ER: typing.ClassVar[Element]
+    TM: typing.ClassVar[Element]
+    YB: typing.ClassVar[Element]
+    LU: typing.ClassVar[Element]
+    HF: typing.ClassVar[Element]
+    TA: typing.ClassVar[Element]
+    W: typing.ClassVar[Element]
+    RE: typing.ClassVar[Element]
+    OS: typing.ClassVar[Element]
+    IR: typing.ClassVar[Element]
+    PT: typing.ClassVar[Element]
+    AU: typing.ClassVar[Element]
+    HG: typing.ClassVar[Element]
+    TL: typing.ClassVar[Element]
+    PB: typing.ClassVar[Element]
+    BI: typing.ClassVar[Element]
+    PO: typing.ClassVar[Element]
+    AT: typing.ClassVar[Element]
+    RN: typing.ClassVar[Element]
+    FR: typing.ClassVar[Element]
+    RA: typing.ClassVar[Element]
+    AC: typing.ClassVar[Element]
+    TH: typing.ClassVar[Element]
+    PA: typing.ClassVar[Element]
+    U: typing.ClassVar[Element]
+    NP: typing.ClassVar[Element]
+    PU: typing.ClassVar[Element]
+    AM: typing.ClassVar[Element]
+    CM: typing.ClassVar[Element]
+    BK: typing.ClassVar[Element]
+    CF: typing.ClassVar[Element]
+    ES: typing.ClassVar[Element]
+    FM: typing.ClassVar[Element]
+    MD: typing.ClassVar[Element]
+    NO: typing.ClassVar[Element]
+    LR: typing.ClassVar[Element]
+    RF: typing.ClassVar[Element]
+    DB: typing.ClassVar[Element]
+    SG: typing.ClassVar[Element]
+    BH: typing.ClassVar[Element]
+    HS: typing.ClassVar[Element]
+    MT: typing.ClassVar[Element]
+    DS: typing.ClassVar[Element]
+    RG: typing.ClassVar[Element]
+    CN: typing.ClassVar[Element]
+    NH: typing.ClassVar[Element]
+    FL: typing.ClassVar[Element]
+    MC: typing.ClassVar[Element]
+    LV: typing.ClassVar[Element]
+    TS: typing.ClassVar[Element]
+    OG: typing.ClassVar[Element]
+    def __eq__(self, value: builtins.object, /) -> builtins.bool | types.NotImplementedType: ...
+    def __ne__(self, value: builtins.object, /) -> builtins.bool | types.NotImplementedType: ...
+    def __hash__(self) -> builtins.int: ...
+    @staticmethod
+    def from_atomic_number(atomic_number: builtins.int) -> typing.Optional[Element]: ...
+    @staticmethod
+    def from_symbol(symbol: builtins.str) -> typing.Optional[Element]: ...
+    def atomic_number(self) -> builtins.int: ...
+    def symbol(self) -> builtins.str: ...
+    def __str__(self) -> builtins.str: ...
+    def __repr__(self) -> builtins.str: ...
+
+@typing.final
+class ElementInfo:
+    def element(self) -> Element: ...
+    def symbol(self) -> builtins.str: ...
+    def atomic_number(self) -> builtins.int: ...
+    def period(self) -> builtins.int: ...
+    def outer_electrons(self) -> builtins.int: ...
+    def valences(self) -> builtins.list[builtins.int]: ...
+    def rb0(self) -> builtins.float: ...
+    def atomic_weight(self) -> builtins.float: ...
+    def __repr__(self) -> builtins.str: ...
 
 @typing.final
 class Fingerprint:
@@ -219,6 +368,8 @@ class SparseCountFingerprint32:
     def with_multiplied_scalar(self, value: builtins.int) -> SparseCountFingerprint32: ...
     def with_divided_scalar(self, value: builtins.int) -> SparseCountFingerprint32: ...
     def __repr__(self) -> builtins.str: ...
+
+def element_info(element: Element) -> ElementInfo: ...
 
 def version() -> builtins.str: ...
 

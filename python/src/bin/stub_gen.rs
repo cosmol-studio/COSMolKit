@@ -37,6 +37,33 @@ _binding_profile: builtins.str
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
     text = text.replace("class FingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class FingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable variants.\n    index: builtins.int\n    size: builtins.int\n    left: builtins.int\n    right: builtins.int\n    factor: builtins.int\n    n_bits: builtins.int\n    value: builtins.float\n    site: builtins.str\n    what: builtins.str\n    reason: builtins.str\n");
+    // Constants share the exact public facade iterator used by native publication.
+    let constants = ::cosmolkit::Element::iter_with_dummy()
+        .map(|element| {
+            let name = if element == ::cosmolkit::Element::DUMMY {
+                "DUMMY".to_owned()
+            } else {
+                element.symbol().to_ascii_uppercase()
+            };
+            format!("    {name}: typing.ClassVar[Element]\n")
+        })
+        .collect::<String>();
+    let start = text
+        .find("class Element:\n")
+        .expect("generated Element class");
+    let end = text[start..]
+        .find("\n@typing.final\nclass ElementInfo:")
+        .map(|offset| start + offset)
+        .expect("generated ElementInfo class");
+    let class = &text[start..end];
+    // PyO3's eq slots use `value` and return NotImplemented for foreign values.
+    // stub-gen 0.23 only emits __eq__(other)->bool for the eq class option.
+    let eq = "    def __eq__(self, other: builtins.object, /) -> builtins.bool: ...";
+    assert_eq!(class.matches(eq).count(), 1);
+    let class = class.replacen("class Element:\n", &format!("class Element:\n{constants}"), 1)
+        .replace(eq, "    def __eq__(self, value: builtins.object, /) -> builtins.bool | types.NotImplementedType: ...\n    def __ne__(self, value: builtins.object, /) -> builtins.bool | types.NotImplementedType: ...");
+    text.replace_range(start..end, &class);
+    text = text.replacen("import typing\n", "import typing\nimport types\n", 1);
     std::fs::write(path, text)?;
     Ok(())
 }

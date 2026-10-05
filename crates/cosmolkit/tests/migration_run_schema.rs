@@ -860,7 +860,17 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     if cfg!(feature = "cap-valence") {
         expected.insert(0, "module.element_info");
     }
-    expected.splice(0..0, ["types.Element", "types.ElementInfo"]);
+    expected.splice(
+        0..0,
+        [
+            "types.Element",
+            "Element.from_atomic_number",
+            "Element.from_symbol",
+            "Element.atomic_number",
+            "Element.symbol",
+            "types.ElementInfo",
+        ],
+    );
     assert_eq!(
         BINDING_CONTRACT
             .iter()

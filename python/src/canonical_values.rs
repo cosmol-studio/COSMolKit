@@ -503,6 +503,7 @@ fn version() -> &'static str {
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_fingerprint_values::register(module)?;
+    crate::canonical_element_metadata::register(module)?;
     module.add_function(wrap_pyfunction!(version, module)?)?;
     module.add_class::<SmilesParseParams>()?;
     module.add_class::<SmilesWriteParams>()?;

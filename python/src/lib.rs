@@ -3,6 +3,7 @@
 //! Default and explicit drawing selections share one live Molecule class.
 //! Historical adapters remain as source evidence, outside module compilation.
 
+mod canonical_element_metadata;
 mod canonical_fingerprint_values;
 mod canonical_values;
 mod drawing_binding;
