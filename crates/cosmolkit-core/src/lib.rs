@@ -272,9 +272,10 @@ pub use valence::{
     calculate_explicit_valence_from_parts, calculate_implicit_valence_for_topology,
     calculate_implicit_valence_from_parts, can_be_hypervalent, explicit_valence_for_atom,
     get_effective_atomic_num, has_valence_violation, implicit_valence_for_atom,
-    periodic_table_more_electronegative, periodic_table_outer_electrons, periodic_table_row,
-    rdkit_atomic_number_from_symbol, rdkit_default_valence, rdkit_element_symbol, rdkit_rb0,
-    rdkit_valence_list, required_valence_list,
+    num_pi_electrons_for_topology, periodic_table_more_electronegative,
+    periodic_table_outer_electrons, periodic_table_row, rdkit_atomic_number_from_symbol,
+    rdkit_default_valence, rdkit_element_symbol, rdkit_rb0, rdkit_valence_list,
+    required_valence_list,
 };
 
 pub use wedge::{

@@ -46,6 +46,16 @@ pub struct ValenceAssignment {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ValenceError {
+    /// Source explicit getter PRECONDITION used by numPi; preserve literal text.
+    #[error("getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()")]
+    PiElectronExplicitValenceCacheNotInitialized { atom: AtomId },
+    /// Source CHECK_INVARIANT in numPiElectrons; retain its literal message.
+    #[error("explicit valence exceeds atom degree")]
+    PiElectronInvariant {
+        atom: AtomId,
+        explicit_valence: u32,
+        physical_bonds: u32,
+    },
     #[error("{message}")]
     InvalidValence {
         atom: AtomId,
@@ -1362,4 +1372,88 @@ mod tests {
         assert!(!atom_has_valence_violation_for_topology(&topology, AtomId::new(0)).unwrap());
         assert!(atom_has_valence_violation_for_topology(&topology, AtomId::new(1)).unwrap());
     }
+}
+
+/// Source numPiElectrons over a detached topology and exact selected i8 cache.
+/// Aromatic/Sp3 short circuits do not access or initialize the valence cache.
+/// Canonical owned-topology boundary; unowned C++ Atom state is not modeled.
+/// Fixed source cases pass; broader source-native parity and p1 audit remain pending.
+/// Existing checked incident traversal uses two O(degree) passes, no allocations
+/// or whole-topology cloning; source cache access stays lazy.
+pub fn num_pi_electrons_for_topology(
+    topology: &TopologyBlock,
+    atom_id: AtomId,
+    explicit_valence: Option<i8>,
+) -> Result<u32, ValenceError> {
+    // RDKit❗✔️: unsigned int numPiElectrons(const Atom &atom) {
+    // RDKit❗✔️:   unsigned int res = 0;
+    // RDKit❗✔️:   if (atom.getIsAromatic()) {
+    // RDKit❗✔️:     res = 1;
+    // RDKit❗✔️:   } else if (atom.getHybridization() != Atom::SP3) {
+    // RDKit❗✔️:     auto val =
+    // RDKit❗✔️:         static_cast<unsigned int>(atom.getValence(Atom::ValenceType::EXPLICIT));
+    // RDKit❗✔️:     unsigned int physical_bonds = atom.getNumExplicitHs();
+    // RDKit❗✔️:     const auto &mol = atom.getOwningMol();
+    // RDKit❗✔️:     for (const auto bond : mol.atomBonds(&atom)) {
+    // RDKit❗✔️:       if (bond->getValenceContrib(&atom) != 0.0) {
+    // RDKit❗✔️:         ++physical_bonds;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     CHECK_INVARIANT(val >= physical_bonds,
+    // RDKit❗✔️:                     "explicit valence exceeds atom degree");
+    // RDKit❗✔️:     res = val - physical_bonds;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: }  // namespace RDKit
+    // RDKit❗✔️: unsigned int Atom::getValence(ValenceType which) const {
+    // RDKit❗✔️:   if (!dp_mol) {
+    // RDKit❗✔️:     return 0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   PRECONDITION(
+    // RDKit❗✔️:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
+    // RDKit❗✔️:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
+    // RDKit❗✔️:   PRECONDITION(
+    // RDKit❗✔️:       (which == ValenceType::EXPLICIT || df_noImplicit ||
+    // RDKit❗✔️:        d_implicitValence > -1),
+    // RDKit❗✔️:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
+    // RDKit❗✔️:   if (which == ValenceType::EXPLICIT) {
+    // RDKit❗✔️:     return d_explicitValence;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     return df_noImplicit ? 0 : d_implicitValence;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    let atom = atom_from_parts(&topology.atoms, atom_id)?;
+    if atom.is_aromatic() {
+        return Ok(1);
+    }
+    if atom.hybridization() == cosmolkit_types::Hybridization::Sp3 {
+        return Ok(0);
+    }
+    // Source cache is signed8. None and every negative cached value fail the
+    // explicit getter precondition. Caller i32 assignments are not narrowed.
+    let value = explicit_valence
+        .filter(|value| *value >= 0)
+        .ok_or(ValenceError::PiElectronExplicitValenceCacheNotInitialized { atom: atom_id })?;
+    let valence = value as u32;
+    let mut physical_bonds = u32::from(atom.explicit_hydrogens());
+    for bond in incident_bonds_from_parts(
+        topology.atoms.len(),
+        &topology.bonds,
+        &topology.adjacency,
+        atom_id,
+    )? {
+        if bond_valence_contrib(bond, atom_id)? != 0.0 {
+            physical_bonds = physical_bonds.wrapping_add(1);
+        }
+    }
+    if valence < physical_bonds {
+        return Err(ValenceError::PiElectronInvariant {
+            atom: atom_id,
+            explicit_valence: valence,
+            physical_bonds,
+        });
+    }
+    Ok(valence - physical_bonds)
 }
