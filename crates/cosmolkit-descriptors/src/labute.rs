@@ -341,3 +341,37 @@ pub fn labute_asa(
             function: "labute_asa",
         })
 }
+
+/// Complete Labute query result. Every field comes from the one contribution
+/// owner and its source scalar cache, with no independently recomputed total.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LabuteAsaContributions {
+    pub asa: f64,
+    pub atom_contributions: Vec<f64>,
+    pub hydrogen_contribution: f64,
+}
+
+/// Typed transport of the full contribution query's source result.
+pub fn labute_asa_contributions(
+    input: &DescriptorInput<'_>,
+    include_hydrogens: bool,
+    force: bool,
+    state: &mut DescriptorComputedState,
+) -> DescriptorResult<LabuteAsaContributions> {
+    let rows = labute_contributions(input, include_hydrogens, force, state)?;
+    // RDKit source (MolSurf.cpp, cached getLabuteAtomContribs branch):
+    // RDKit✔️✔️: mol.getProp(common_properties::_labuteASA, res);
+    // The existing owner publishes this scalar on the cold branch, too.
+    // One O(1) read; move the already allocated rows instead of copying them.
+    let asa = state
+        .labute_slot()
+        .asa
+        .ok_or(DescriptorError::MissingLabuteAsa {
+            function: "labute_asa_contributions",
+        })?;
+    Ok(LabuteAsaContributions {
+        asa,
+        atom_contributions: rows.atoms,
+        hydrogen_contribution: rows.hydrogens,
+    })
+}

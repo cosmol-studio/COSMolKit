@@ -136,7 +136,19 @@ pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationErro
         DerivedState::COORDINATES,
         PreservationProof::SanitizeTopologyState,
     )?;
-    parts.apply_cip_policy()
+    parts.apply_cip_policy()?;
+    // RDKit✔️✔️: mol.setProp(common_properties::numArom, narom, true);
+    // The runtime's computed-property clearing must precede publication of
+    // this already calculated source scalar. Use the declared property cap.
+    if let Some(count) = assignment.aromatic_ring_count {
+        let mut properties = parts.checkout_properties()?;
+        let write = properties
+            .set_computed_prop("numArom", count.to_string())
+            .map_err(OperationError::InvalidProperty);
+        parts.install_properties(properties)?;
+        write?;
+    }
+    Ok(())
 }
 
 impl Molecule {

@@ -146,6 +146,27 @@ fn svg_registration_preserves_complete_cargo_task_key_census() {
             "morgan_sparse_fingerprint_smiles",
             "morgan_count_fingerprint_smiles",
             "morgan_sparse_count_fingerprint_smiles",
+            "chi_0_smiles",
+            "chi_1_smiles",
+            "hall_kier_alpha_smiles",
+            "hall_kier_alpha_with_contributions_smiles",
+            "kappa_1_smiles",
+            "kappa_2_smiles",
+            "kappa_3_smiles",
+            "phi_smiles",
+            "mqns_smiles",
+            "chi_0_v_smiles",
+            "chi_1_v_smiles",
+            "chi_2_v_smiles",
+            "chi_3_v_smiles",
+            "chi_4_v_smiles",
+            "chi_0_n_smiles",
+            "chi_1_n_smiles",
+            "chi_2_n_smiles",
+            "chi_3_n_smiles",
+            "chi_4_n_smiles",
+            "chi_n_v_smiles",
+            "chi_n_n_smiles",
         ]
     );
     let task = registry::select(Some("svg_smiles")).unwrap()[0];
@@ -2021,6 +2042,35 @@ fn uff_new_registration_order_profiles_and_canonical_list_rows() {
             "generate_morgan_sparse_count_fingerprint",
             CorpusType::Smiles,
         ),
+        ("chi_0_smiles", "generate_chi_0", CorpusType::Smiles),
+        ("chi_1_smiles", "generate_chi_1", CorpusType::Smiles),
+        (
+            "hall_kier_alpha_smiles",
+            "generate_hall_kier_alpha",
+            CorpusType::Smiles,
+        ),
+        (
+            "hall_kier_alpha_with_contributions_smiles",
+            "generate_hall_kier_alpha_with_contributions",
+            CorpusType::Smiles,
+        ),
+        ("kappa_1_smiles", "generate_kappa_1", CorpusType::Smiles),
+        ("kappa_2_smiles", "generate_kappa_2", CorpusType::Smiles),
+        ("kappa_3_smiles", "generate_kappa_3", CorpusType::Smiles),
+        ("phi_smiles", "generate_phi", CorpusType::Smiles),
+        ("mqns_smiles", "generate_mqns", CorpusType::Smiles),
+        ("chi_0_v_smiles", "generate_chi_0_v", CorpusType::Smiles),
+        ("chi_1_v_smiles", "generate_chi_1_v", CorpusType::Smiles),
+        ("chi_2_v_smiles", "generate_chi_2_v", CorpusType::Smiles),
+        ("chi_3_v_smiles", "generate_chi_3_v", CorpusType::Smiles),
+        ("chi_4_v_smiles", "generate_chi_4_v", CorpusType::Smiles),
+        ("chi_0_n_smiles", "generate_chi_0_n", CorpusType::Smiles),
+        ("chi_1_n_smiles", "generate_chi_1_n", CorpusType::Smiles),
+        ("chi_2_n_smiles", "generate_chi_2_n", CorpusType::Smiles),
+        ("chi_3_n_smiles", "generate_chi_3_n", CorpusType::Smiles),
+        ("chi_4_n_smiles", "generate_chi_4_n", CorpusType::Smiles),
+        ("chi_n_v_smiles", "generate_chi_n_v", CorpusType::Smiles),
+        ("chi_n_n_smiles", "generate_chi_n_n", CorpusType::Smiles),
     ];
     assert_eq!(tasks.len(), expected.len());
     assert_eq!(
@@ -2108,6 +2158,27 @@ fn uff_new_registration_order_profiles_and_canonical_list_rows() {
             "morgan_sparse_fingerprint_smiles: 16 cases; generate_morgan_sparse_fingerprint",
             "morgan_count_fingerprint_smiles: 16 cases; generate_morgan_count_fingerprint",
             "morgan_sparse_count_fingerprint_smiles: 16 cases; generate_morgan_sparse_count_fingerprint",
+            "chi_0_smiles: 1 cases; generate_chi_0",
+            "chi_1_smiles: 1 cases; generate_chi_1",
+            "hall_kier_alpha_smiles: 1 cases; generate_hall_kier_alpha",
+            "hall_kier_alpha_with_contributions_smiles: 1 cases; generate_hall_kier_alpha_with_contributions",
+            "kappa_1_smiles: 1 cases; generate_kappa_1",
+            "kappa_2_smiles: 1 cases; generate_kappa_2",
+            "kappa_3_smiles: 1 cases; generate_kappa_3",
+            "phi_smiles: 1 cases; generate_phi",
+            "mqns_smiles: 2 cases; generate_mqns",
+            "chi_0_v_smiles: 1 cases; generate_chi_0_v",
+            "chi_1_v_smiles: 1 cases; generate_chi_1_v",
+            "chi_2_v_smiles: 1 cases; generate_chi_2_v",
+            "chi_3_v_smiles: 1 cases; generate_chi_3_v",
+            "chi_4_v_smiles: 1 cases; generate_chi_4_v",
+            "chi_0_n_smiles: 1 cases; generate_chi_0_n",
+            "chi_1_n_smiles: 1 cases; generate_chi_1_n",
+            "chi_2_n_smiles: 1 cases; generate_chi_2_n",
+            "chi_3_n_smiles: 1 cases; generate_chi_3_n",
+            "chi_4_n_smiles: 1 cases; generate_chi_4_n",
+            "chi_n_v_smiles: 7 cases; generate_chi_n_v",
+            "chi_n_n_smiles: 7 cases; generate_chi_n_n",
         ]
         .map(str::to_string)
     );
@@ -2272,7 +2343,7 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
 
     let selected_all = registry::select(None).unwrap();
     assert_eq!(selected_all.len(), registry::TASKS.len());
-    assert_eq!(selected_all.len(), 41);
+    assert_eq!(selected_all.len(), 62);
     assert!(
         selected_all
             .iter()
@@ -2326,6 +2397,27 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
             "morgan_sparse_fingerprint",
             "morgan_count_fingerprint",
             "morgan_sparse_count_fingerprint",
+            "chi_0",
+            "chi_1",
+            "hall_kier_alpha",
+            "hall_kier_alpha_with_contributions",
+            "kappa_1",
+            "kappa_2",
+            "kappa_3",
+            "phi",
+            "mqns",
+            "chi_0_v",
+            "chi_1_v",
+            "chi_2_v",
+            "chi_3_v",
+            "chi_4_v",
+            "chi_0_n",
+            "chi_1_n",
+            "chi_2_n",
+            "chi_3_n",
+            "chi_4_n",
+            "chi_n_v",
+            "chi_n_n",
         ]
     );
     assert_eq!(
@@ -2375,10 +2467,31 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
             "morgan_sparse_fingerprint_smiles",
             "morgan_count_fingerprint_smiles",
             "morgan_sparse_count_fingerprint_smiles",
+            "chi_0_smiles",
+            "chi_1_smiles",
+            "hall_kier_alpha_smiles",
+            "hall_kier_alpha_with_contributions_smiles",
+            "kappa_1_smiles",
+            "kappa_2_smiles",
+            "kappa_3_smiles",
+            "phi_smiles",
+            "mqns_smiles",
+            "chi_0_v_smiles",
+            "chi_1_v_smiles",
+            "chi_2_v_smiles",
+            "chi_3_v_smiles",
+            "chi_4_v_smiles",
+            "chi_0_n_smiles",
+            "chi_1_n_smiles",
+            "chi_2_n_smiles",
+            "chi_3_n_smiles",
+            "chi_4_n_smiles",
+            "chi_n_v_smiles",
+            "chi_n_n_smiles",
         ]
     );
 
-    assert_eq!(registry::molecule_plan::TASKS.len(), 37);
+    assert_eq!(registry::molecule_plan::TASKS.len(), 58);
     assert_eq!(
         registry::molecule_plan::TASKS
             .iter()
@@ -2386,7 +2499,8 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
             .collect::<Vec<_>>(),
         [
             4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4,
-            8, 1, 1, 2, 16, 16, 16, 16
+            8, 1, 1, 2, 16, 16, 16, 16, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 7,
+            7
         ]
     );
 }

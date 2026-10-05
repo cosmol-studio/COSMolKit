@@ -67,15 +67,15 @@ fn full_exposes_descriptor_methods_on_live_molecules() {
     assert_eq!(molecule.molecular_formula().unwrap(), "CH4");
     assert_eq!(
         molecule
-            .molecular_formula_with_options(false, false)
+            .molecular_formula_with_params(false, false)
             .unwrap(),
         "CH4"
     );
     assert!((molecule.molecular_weight().unwrap() - 16.043).abs() < 0.001);
-    assert!((molecule.molecular_weight_with_options(true).unwrap() - 12.011).abs() < 0.001);
+    assert!((molecule.molecular_weight_with_params(true).unwrap() - 12.011).abs() < 0.001);
     assert!((molecule.exact_molecular_weight().unwrap() - 16.0313).abs() < 0.0001);
     assert_eq!(
-        molecule.exact_molecular_weight_with_options(true).unwrap(),
+        molecule.exact_molecular_weight_with_params(true).unwrap(),
         12.0
     );
 }

@@ -10,7 +10,7 @@
 //! [`DescriptorReadError::MissingInitializedRings`] on absence/reset; the
 //! ten classifiers return the source-defined EMPTY-ROW `0` on absence — a
 //! documented empty input, not a swallowed error. These are Experimental
-//! commitments; Python/JS projections are declared, not implemented.
+//! commitments; Python delegates to these canonical methods; JS remains declared.
 //!
 //! # Topology-only SMARTS counts
 //!
@@ -34,8 +34,8 @@
 //! descriptor input, and delegates exactly once to the domain owner. It
 //! is NOT the direct Lipinski N/O sum (`lipinski_hba`): thiophene S
 //! counts here, acid OH does not, and carbonyl O matches through the
-//! H0-v2 branch. Experimental; Python/JS projections are declared, not
-//! implemented.
+//! H0-v2 branch. Experimental; Python delegates to the canonical Rust query;
+//! JS remains declared.
 //!
 //! `num_hbd` is the general donor count (RDKit `CalcNumHBD`, pinned
 //! `2.0.1` pattern). It is a NARROW valence-only prepared read: the fixed
@@ -45,10 +45,10 @@
 //! reset rings still SUCCEEDS, unlike `num_hba`. It is NOT the direct
 //! Lipinski donor-hydrogen sum (`lipinski_hbd`): sulfur donors match
 //! here, `[NH4+]` counts one atom here but four hydrogens there, and
-//! isolated S has two H and counts 0. Experimental; Python/JS projections
-//! are declared, not implemented.
+//! isolated S has two H and counts 0. Experimental; Python delegates to the
+//! canonical Rust query; JS remains declared.
 
-use crate::{Molecule, OperationError};
+use crate::Molecule;
 
 /// Read-boundary error for public descriptor count queries.
 ///
@@ -63,6 +63,8 @@ pub enum DescriptorReadError {
     /// No valid prepared valence assignment is installed in the runtime
     /// cache; these queries never create or install one themselves.
     MissingPreparedValence,
+    /// A previous panic poisoned the private query cache lock.
+    CachePoisoned,
     /// No valid initialized ordinary ring state is installed in the
     /// runtime cache; the ring-count query never creates, installs or
     /// upgrades one. It has no child error.
@@ -75,6 +77,7 @@ pub enum DescriptorReadError {
 impl std::fmt::Display for DescriptorReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::CachePoisoned => write!(f, "descriptor query cache poisoned"),
             Self::MissingPreparedValence => write!(
                 f,
                 "descriptor query requires a prepared valence assignment; the molecule has no valid cached assignment"
@@ -90,7 +93,9 @@ impl std::fmt::Display for DescriptorReadError {
 impl std::error::Error for DescriptorReadError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Self::MissingPreparedValence | Self::MissingInitializedRings => None,
+            Self::MissingPreparedValence | Self::MissingInitializedRings | Self::CachePoisoned => {
+                None
+            }
             Self::Algorithm { source } => Some(source),
         }
     }
@@ -112,17 +117,791 @@ fn required_descriptor_valence<'a>(
         .ok_or(DescriptorReadError::MissingPreparedValence)
 }
 
-fn descriptor_error(
-    operation: &'static str,
-    error: cosmolkit_descriptors::DescriptorError,
-) -> OperationError {
-    OperationError::Algorithm {
-        operation,
-        detail: error.to_string(),
-    }
+/// Borrow the real topology/coordinates/properties/valence/rings carrier for MQN.
+/// MQN genuinely reads prepared valence and initialized ordinary ring rows.
+/// No payload is synthesized, prepared, installed, upgraded or cloned.
+fn required_descriptor_input(
+    molecule: &Molecule,
+) -> Result<cosmolkit_descriptors::DescriptorInput<'_>, DescriptorReadError> {
+    let assignment = required_descriptor_valence(molecule)?;
+    let rings = molecule
+        .derived_cache_runtime()
+        .valid_ring_info()
+        .ok_or(DescriptorReadError::MissingInitializedRings)?;
+    Ok(cosmolkit_descriptors::DescriptorInput::new(
+        molecule.topology(),
+        molecule.coordinate_block_runtime(),
+        molecule.properties(),
+        assignment,
+        rings,
+    ))
+}
+
+/// Borrow only the existing valid valence assignment and topology for Chi.
+/// The source never reads ring, coordinate or property state; no ring gate,
+/// initialization or fallback belongs to this boundary. Source query memo
+/// writes are confined to the separate private descriptor query cache.
+fn required_chi_input(
+    molecule: &Molecule,
+) -> Result<cosmolkit_descriptors::ChiInput<'_>, DescriptorReadError> {
+    let assignment = required_descriptor_valence(molecule)?;
+    Ok(cosmolkit_descriptors::ChiInput::new(
+        molecule.topology(),
+        assignment,
+    ))
 }
 
 impl Molecule {
+    /// Degree-based Chi0 over explicit graph rows, including explicit hydrogen.
+    /// Reads topology only; never prepares valence, rings or caches.
+    #[cfg(feature = "cap-descriptors")]
+    pub fn chi_0(&self) -> Result<f64, DescriptorReadError> {
+        cosmolkit_descriptors::chi_0(self.topology())
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Degree-based Chi1 over explicit graph rows, including explicit hydrogen.
+    /// Reads topology only; never prepares valence, rings or caches.
+    #[cfg(feature = "cap-descriptors")]
+    pub fn chi_1(&self) -> Result<f64, DescriptorReadError> {
+        cosmolkit_descriptors::chi_1(self.topology())
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Read-only `hall_kier_alpha` delegation to the unique detached descriptor owner.
+    /// Reads stored topology/hybridization only; no valence/ring preparation,
+    /// cache writes, whole-state clones or numerical postprocessing.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn hall_kier_alpha(&self) -> Result<f64, DescriptorReadError> {
+        // RDKit✔️✔️: double calcHallKierAlpha(const ROMol &mol, std::vector<double> *atomContribs) {
+        // RDKit✔️✔️:   PRECONDITION(!atomContribs || atomContribs->size() >= mol.getNumAtoms(),
+        // RDKit✔️✔️:                "bad atomContribs vector");
+        // RDKit✔️✔️:   const PeriodicTable *tbl = PeriodicTable::getTable();
+        // RDKit✔️✔️:   double alphaSum = 0.0;
+        // RDKit✔️✔️:   double rC = tbl->getRb0(6);
+        // RDKit✔️✔️:   ROMol::VERTEX_ITER atBegin, atEnd;
+        // RDKit✔️✔️:   boost::tie(atBegin, atEnd) = mol.getVertices();
+        // RDKit✔️✔️:   while (atBegin != atEnd) {
+        // RDKit✔️✔️:     const Atom *at = mol[*atBegin];
+        // RDKit✔️✔️:     ++atBegin;
+        // RDKit✔️✔️:     unsigned int n = at->getAtomicNum();
+        // RDKit✔️✔️:     if (!n) {
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     bool found;
+        // RDKit✔️✔️:     double alpha = detail::getAlpha(*(at), found);
+        // RDKit✔️✔️:     if (!found) {
+        // RDKit✔️✔️:       double rA = tbl->getRb0(n);
+        // RDKit✔️✔️:       alpha = rA / rC - 1.0;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     alphaSum += alpha;
+        // RDKit✔️✔️:     if (atomContribs) {
+        // RDKit✔️✔️:       (*atomContribs)[at->getIdx()] = alpha;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return alphaSum;
+        // RDKit✔️✔️: };
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: double getAlpha(const Atom &atom, bool &found) {
+        // RDKit✔️✔️:   double res = 0.0;
+        // RDKit✔️✔️:   found = false;
+        // RDKit✔️✔️:   switch (atom.getAtomicNum()) {
+        // RDKit✔️✔️:     case 1:
+        // RDKit✔️✔️:       res = 0.0;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 6:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP:
+        // RDKit✔️✔️:           res = -0.22;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = -0.13;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = 0.00;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 7:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP:
+        // RDKit✔️✔️:           res = -0.29;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = -0.20;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = -0.04;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 8:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = -0.20;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = -0.04;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 9:
+        // RDKit✔️✔️:       res = -0.07;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 15:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = 0.30;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = 0.43;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 16:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = 0.22;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = 0.35;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 17:
+        // RDKit✔️✔️:       res = 0.29;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 35:
+        // RDKit✔️✔️:       res = 0.48;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 53:
+        // RDKit✔️✔️:       res = 0.73;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     default:
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: }  // namespace detail
+        cosmolkit_descriptors::hall_kier_alpha(self.topology().atoms.as_slice(), None)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Read-only `hall_kier_alpha` delegation to the unique detached descriptor owner.
+    /// Returns the scalar and an owned atom-indexed zero-initialized sink.
+    /// Wildcard cells remain zero. Uses stored hybridization; no preparation.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn hall_kier_alpha_with_contributions(
+        &self,
+    ) -> Result<(f64, Vec<f64>), DescriptorReadError> {
+        // RDKit✔️✔️: double calcHallKierAlpha(const ROMol &mol, std::vector<double> *atomContribs) {
+        // RDKit✔️✔️:   PRECONDITION(!atomContribs || atomContribs->size() >= mol.getNumAtoms(),
+        // RDKit✔️✔️:                "bad atomContribs vector");
+        // RDKit✔️✔️:   const PeriodicTable *tbl = PeriodicTable::getTable();
+        // RDKit✔️✔️:   double alphaSum = 0.0;
+        // RDKit✔️✔️:   double rC = tbl->getRb0(6);
+        // RDKit✔️✔️:   ROMol::VERTEX_ITER atBegin, atEnd;
+        // RDKit✔️✔️:   boost::tie(atBegin, atEnd) = mol.getVertices();
+        // RDKit✔️✔️:   while (atBegin != atEnd) {
+        // RDKit✔️✔️:     const Atom *at = mol[*atBegin];
+        // RDKit✔️✔️:     ++atBegin;
+        // RDKit✔️✔️:     unsigned int n = at->getAtomicNum();
+        // RDKit✔️✔️:     if (!n) {
+        // RDKit✔️✔️:       continue;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     bool found;
+        // RDKit✔️✔️:     double alpha = detail::getAlpha(*(at), found);
+        // RDKit✔️✔️:     if (!found) {
+        // RDKit✔️✔️:       double rA = tbl->getRb0(n);
+        // RDKit✔️✔️:       alpha = rA / rC - 1.0;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     alphaSum += alpha;
+        // RDKit✔️✔️:     if (atomContribs) {
+        // RDKit✔️✔️:       (*atomContribs)[at->getIdx()] = alpha;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return alphaSum;
+        // RDKit✔️✔️: };
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: double getAlpha(const Atom &atom, bool &found) {
+        // RDKit✔️✔️:   double res = 0.0;
+        // RDKit✔️✔️:   found = false;
+        // RDKit✔️✔️:   switch (atom.getAtomicNum()) {
+        // RDKit✔️✔️:     case 1:
+        // RDKit✔️✔️:       res = 0.0;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 6:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP:
+        // RDKit✔️✔️:           res = -0.22;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = -0.13;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = 0.00;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 7:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP:
+        // RDKit✔️✔️:           res = -0.29;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = -0.20;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = -0.04;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 8:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = -0.20;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = -0.04;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 9:
+        // RDKit✔️✔️:       res = -0.07;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 15:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = 0.30;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = 0.43;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 16:
+        // RDKit✔️✔️:       switch (atom.getHybridization()) {
+        // RDKit✔️✔️:         case Atom::SP2:
+        // RDKit✔️✔️:           res = 0.22;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:         default:
+        // RDKit✔️✔️:           res = 0.35;
+        // RDKit✔️✔️:           found = true;
+        // RDKit✔️✔️:           break;
+        // RDKit✔️✔️:       };
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 17:
+        // RDKit✔️✔️:       res = 0.29;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 35:
+        // RDKit✔️✔️:       res = 0.48;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     case 53:
+        // RDKit✔️✔️:       res = 0.73;
+        // RDKit✔️✔️:       found = true;
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:     default:
+        // RDKit✔️✔️:       break;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: }  // namespace detail
+        let mut contributions = vec![0.0; self.num_atoms()];
+        let alpha = cosmolkit_descriptors::hall_kier_alpha(
+            self.topology().atoms.as_slice(),
+            Some(&mut contributions),
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })?;
+        Ok((alpha, contributions))
+    }
+
+    /// Read-only `kappa_1` delegation to the unique detached descriptor owner.
+    /// Reads stored topology/hybridization only; no valence/ring preparation,
+    /// cache writes, whole-state clones or numerical postprocessing.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn kappa_1(&self) -> Result<f64, DescriptorReadError> {
+        // RDKit✔️❌: double calcKappa1(const ROMol &mol) {
+        // RDKit✔️❌:   double P1 = mol.getNumBonds();
+        // RDKit✔️❌:   double A = mol.getNumHeavyAtoms();
+        // RDKit✔️❌:   double alpha = calcHallKierAlpha(mol);
+        // RDKit✔️❌:   double kappa = kappa1Helper(P1, A, alpha);
+        // RDKit✔️❌:   return kappa;
+        // RDKit✔️❌: }
+        cosmolkit_descriptors::kappa_1(self.topology())
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Read-only `kappa_2` delegation to the unique detached descriptor owner.
+    /// Reads stored topology/hybridization only; no valence/ring preparation,
+    /// cache writes, whole-state clones or numerical postprocessing.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn kappa_2(&self) -> Result<f64, DescriptorReadError> {
+        // RDKit✔️❌: double calcKappa2(const ROMol &mol) {
+        // RDKit✔️❌:   PATH_LIST ps = findAllPathsOfLengthN(mol, 2);
+        // RDKit✔️❌:   double P2 = ps.size();
+        // RDKit✔️❌:   double A = mol.getNumHeavyAtoms();
+        // RDKit✔️❌:   double alpha = calcHallKierAlpha(mol);
+        // RDKit✔️❌:   double kappa = kappa2Helper(P2, A, alpha);
+        // RDKit✔️❌:   return kappa;
+        // RDKit✔️❌: }
+        cosmolkit_descriptors::kappa_2(self.topology())
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Read-only `kappa_3` delegation to the unique detached descriptor owner.
+    /// Reads stored topology/hybridization only; no valence/ring preparation,
+    /// cache writes, whole-state clones or numerical postprocessing.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn kappa_3(&self) -> Result<f64, DescriptorReadError> {
+        // RDKit✔️❌: double calcKappa3(const ROMol &mol) {
+        // RDKit✔️❌:   double P3 = findAllPathsOfLengthN(mol, 3).size();
+        // RDKit✔️❌:   int A = mol.getNumHeavyAtoms();
+        // RDKit✔️❌:   double alpha = calcHallKierAlpha(mol);
+        // RDKit✔️❌:   double kappa = kappa3Helper(P3, A, alpha);
+        // RDKit✔️❌:   return kappa;
+        // RDKit✔️❌: }
+        cosmolkit_descriptors::kappa_3(self.topology())
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Read-only `phi` delegation to the unique detached descriptor owner.
+    /// Reads stored topology/hybridization only; no valence/ring preparation,
+    /// cache writes, whole-state clones or numerical postprocessing.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn phi(&self) -> Result<f64, DescriptorReadError> {
+        // RDKit✔️❌: double calcPhi(const ROMol &mol) {
+        // RDKit✔️❌:   if (!mol.getNumHeavyAtoms()) {
+        // RDKit✔️❌:     return 0.0;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   auto alpha = calcHallKierAlpha(mol);
+        // RDKit✔️❌:   auto P1 = mol.getNumBonds();
+        // RDKit✔️❌:   auto A = mol.getNumHeavyAtoms();
+        // RDKit✔️❌:   auto kappa1 = kappa1Helper(P1, A, alpha);
+        // RDKit✔️❌:   auto P2 = findAllPathsOfLengthN(mol, 2).size();
+        // RDKit✔️❌:   auto kappa2 = kappa2Helper(P2, A, alpha);
+        // RDKit✔️❌:   auto Phi = kappa1 * kappa2 / A;
+        // RDKit✔️❌:   return Phi;
+        // RDKit✔️❌: }
+        // RDKit✔️✔️: double kappa1Helper(double P1, double A, double alpha) {
+        // RDKit✔️✔️:   double denom = P1 + alpha;
+        // RDKit✔️✔️:   double kappa = 0.0;
+        // RDKit✔️✔️:   if (denom) {
+        // RDKit✔️✔️:     kappa = (A + alpha) * (A + alpha - 1) * (A + alpha - 1) / (denom * denom);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return kappa;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: double kappa2Helper(double P2, double A, double alpha) {
+        // RDKit✔️✔️:   double denom = (P2 + alpha) * (P2 + alpha);
+        // RDKit✔️✔️:   double kappa = 0.0;
+        // RDKit✔️✔️:   if (denom) {
+        // RDKit✔️✔️:     kappa = (A + alpha - 1) * (A + alpha - 2) * (A + alpha - 2) / denom;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return kappa;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: double kappa3Helper(double P3, int A, double alpha) {
+        // RDKit✔️✔️:   double denom = (P3 + alpha) * (P3 + alpha);
+        // RDKit✔️✔️:   double kappa = 0.0;
+        // RDKit✔️✔️:   if (denom) {
+        // RDKit✔️✔️:     if (A % 2) {
+        // RDKit✔️✔️:       kappa = (A + alpha - 1) * (A + alpha - 3) * (A + alpha - 3) / denom;
+        // RDKit✔️✔️:     } else {
+        // RDKit✔️✔️:       kappa = (A + alpha - 2) * (A + alpha - 3) * (A + alpha - 3) / denom;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return kappa;
+        // RDKit✔️✔️: }
+        // RDKit✔️❌: unsigned int ROMol::getNumHeavyAtoms() const {
+        // RDKit✔️❌:   unsigned int res = 0;
+        // RDKit✔️❌:   for (const auto atom : atoms()) {
+        // RDKit✔️❌:     if (atom->getAtomicNum() > 1) {
+        // RDKit✔️❌:       ++res;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   return res;
+        // RDKit✔️❌: };
+        // RDKit✔️❌:
+        // RDKit✔️✔️: unsigned int ROMol::getNumBonds(bool onlyHeavy) const {
+        // RDKit✔️✔️:   // By default return the bonds that connect only the heavy atoms
+        // RDKit✔️✔️:   // hydrogen connecting bonds are ignores
+        // RDKit✔️✔️:   auto res = numBonds;
+        // RDKit✔️✔️:   if (!onlyHeavy) {
+        // RDKit✔️✔️:     // If we need hydrogen connecting bonds add them up
+        // RDKit✔️✔️:     for (const auto atom : atoms()) {
+        // RDKit✔️✔️:       res += atom->getTotalNumHs();
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️: RDKIT_SUBGRAPHS_EXPORT PATH_LIST findAllPathsOfLengthN(
+        // RDKit✔️✔️:     const ROMol &mol, unsigned int targetLen, bool useBonds = true,
+        // RDKit✔️✔️:     bool useHs = false, int rootedAtAtom = -1, bool onlyShortestPaths = false);
+        cosmolkit_descriptors::phi(self.topology())
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Read-only `mqns` delegation to the unique detached descriptor owner.
+    /// Returns all 42 source-ordered u32 components. The pinned source ignores
+    /// force; true and false both recompute without cache writes. Requires
+    /// existing valid valence and initialized rings, valence checked first.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn mqns(&self, force: bool) -> Result<Vec<u32>, DescriptorReadError> {
+        // RDKit✔️❌: std::vector<unsigned int> calcMQNs(const ROMol &mol, bool) {
+        // RDKit✔️❌:   // FIX: use force value to enable caching
+        // RDKit✔️❌:   std::vector<unsigned int> res(42, 0);
+        // RDKit✔️❌:
+        // RDKit✔️❌:   // ---------------------------------------------------
+        // RDKit✔️❌:   // atom-centered things
+        // RDKit✔️❌:   // Note: We're not doing exactly the same thing
+        // RDKit✔️❌:   //       as the original paper on polarity counts
+        // RDKit✔️❌:   //       since we're using different donor and acceptor
+        // RDKit✔️❌:   //       definitions.
+        // RDKit✔️❌:   ROMol::VERTEX_ITER atBegin, atEnd;
+        // RDKit✔️❌:   boost::tie(atBegin, atEnd) = mol.getVertices();
+        // RDKit✔️❌:   while (atBegin != atEnd) {
+        // RDKit✔️❌:     const Atom *at = mol[*atBegin];
+        // RDKit✔️❌:     ++atBegin;
+        // RDKit✔️❌:     unsigned int nHs = at->getTotalNumHs();
+        // RDKit✔️❌:     unsigned int nRings = mol.getRingInfo()->numAtomRings(at->getIdx());
+        // RDKit✔️❌:     switch (at->getAtomicNum()) {
+        // RDKit✔️❌:       case 0:
+        // RDKit✔️❌:       case 1:
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 6:
+        // RDKit✔️❌:         res[0]++;
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 9:
+        // RDKit✔️❌:         res[1]++;
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 17:
+        // RDKit✔️❌:         res[2]++;
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 35:
+        // RDKit✔️❌:         res[3]++;
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 53:
+        // RDKit✔️❌:         res[4]++;
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 16:
+        // RDKit✔️❌:         res[5]++;
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 15:
+        // RDKit✔️❌:         res[6]++;
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 7:
+        // RDKit✔️❌:         if (!nRings) {
+        // RDKit✔️❌:           res[7]++;
+        // RDKit✔️❌:         } else {
+        // RDKit✔️❌:           res[8]++;
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         if (at->getDegree() != 4) {
+        // RDKit✔️❌:           res[19]++;  // number of acceptor sites
+        // RDKit✔️❌:           res[20]++;  // number of acceptor atoms
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         if (nHs) {
+        // RDKit✔️❌:           res[21] += nHs;  // number of donor sites
+        // RDKit✔️❌:           res[22]++;       // number of donor atoms
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case 8:
+        // RDKit✔️❌:         if (!nRings) {
+        // RDKit✔️❌:           res[9]++;
+        // RDKit✔️❌:         } else {
+        // RDKit✔️❌:           res[10]++;
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         res[20]++;  // number of acceptor atoms
+        // RDKit✔️❌:         if (at->getFormalCharge() != -1) {
+        // RDKit✔️❌:           res[19] += 2;  // number of acceptor sites
+        // RDKit✔️❌:         } else {
+        // RDKit✔️❌:           res[19] += 3;  // number of acceptor sites
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         if (nHs) {
+        // RDKit✔️❌:           res[21] += nHs;  // number of donor sites
+        // RDKit✔️❌:           res[22]++;       // number of donor atoms
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       default:
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:
+        // RDKit✔️❌:     if (at->getFormalCharge() > 0) {
+        // RDKit✔️❌:       res[24]++;  // positive charges
+        // RDKit✔️❌:     } else if (at->getFormalCharge() < 0) {
+        // RDKit✔️❌:       res[23]++;  // negative charges
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:
+        // RDKit✔️❌:     if (at->getAtomicNum() != 1) {
+        // RDKit✔️❌:       switch (at->getDegree()) {
+        // RDKit✔️❌:         case 1:
+        // RDKit✔️❌:           res[25]++;
+        // RDKit✔️❌:           break;
+        // RDKit✔️❌:         case 2:
+        // RDKit✔️❌:           if (!nRings) {
+        // RDKit✔️❌:             res[26]++;
+        // RDKit✔️❌:           } else {
+        // RDKit✔️❌:             res[29]++;
+        // RDKit✔️❌:           }
+        // RDKit✔️❌:           break;
+        // RDKit✔️❌:         case 3:
+        // RDKit✔️❌:           if (!nRings) {
+        // RDKit✔️❌:             res[27]++;
+        // RDKit✔️❌:           } else {
+        // RDKit✔️❌:             res[30]++;
+        // RDKit✔️❌:           }
+        // RDKit✔️❌:           break;
+        // RDKit✔️❌:         case 4:
+        // RDKit✔️❌:           if (!nRings) {
+        // RDKit✔️❌:             res[28]++;
+        // RDKit✔️❌:           } else {
+        // RDKit✔️❌:             res[31]++;
+        // RDKit✔️❌:           }
+        // RDKit✔️❌:           break;
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:       if (nRings >= 2) {
+        // RDKit✔️❌:         res[40]++;
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   res[11] = mol.getNumHeavyAtoms();
+        // RDKit✔️❌:
+        // RDKit✔️❌:   // ---------------------------------------------------
+        // RDKit✔️❌:   // bond counts:
+        // RDKit✔️❌:   unsigned int nAromatic = 0;
+        // RDKit✔️❌:   ROMol::EDGE_ITER firstB, lastB;
+        // RDKit✔️❌:   boost::tie(firstB, lastB) = mol.getEdges();
+        // RDKit✔️❌:   while (firstB != lastB) {
+        // RDKit✔️❌:     const Bond *bond = mol[*firstB];
+        // RDKit✔️❌:     if (bond->getIsAromatic()) {
+        // RDKit✔️❌:       ++nAromatic;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     unsigned int nRings = mol.getRingInfo()->numBondRings(bond->getIdx());
+        // RDKit✔️❌:     switch (bond->getBondType()) {
+        // RDKit✔️❌:       case Bond::SINGLE:
+        // RDKit✔️❌:         if (!nRings) {
+        // RDKit✔️❌:           res[12]++;
+        // RDKit✔️❌:         } else {
+        // RDKit✔️❌:           res[15]++;
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case Bond::DOUBLE:
+        // RDKit✔️❌:         if (!nRings) {
+        // RDKit✔️❌:           res[13]++;
+        // RDKit✔️❌:         } else {
+        // RDKit✔️❌:           res[16]++;
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       case Bond::TRIPLE:
+        // RDKit✔️❌:         if (!nRings) {
+        // RDKit✔️❌:           res[14]++;
+        // RDKit✔️❌:         } else {
+        // RDKit✔️❌:           res[17]++;
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:       default:
+        // RDKit✔️❌:         break;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     if (nRings >= 2) {
+        // RDKit✔️❌:       res[41]++;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     ++firstB;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   // rather than do the work to kekulize the molecule, we cheat
+        // RDKit✔️❌:   // by just dividing the number of aromatic bonds evenly among the
+        // RDKit✔️❌:   // cyclic single bond and cyclic double bond bins and give any
+        // RDKit✔️❌:   // remainder to the single bonds
+        // RDKit✔️❌:   res[15] += nAromatic / 2;
+        // RDKit✔️❌:   res[16] += nAromatic / 2;
+        // RDKit✔️❌:   if (nAromatic % 2) {
+        // RDKit✔️❌:     res[15]++;
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   res[18] = calcNumRotatableBonds(mol);
+        // RDKit✔️❌:
+        // RDKit✔️❌:   // ---------------------------------------------------
+        // RDKit✔️❌:   //  ring size counts
+        // RDKit✔️❌:   for (const auto &iv : mol.getRingInfo()->atomRings()) {
+        // RDKit✔️❌:     if (iv.size() < 10) {
+        // RDKit✔️❌:       res[iv.size() + 29]++;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       res[39]++;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   return res;
+        // RDKit✔️❌: }
+        let input = required_descriptor_input(self)?;
+        cosmolkit_descriptors::mqns(&input, force)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Read-only `chi_0_v` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_0_v(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_0_v_with_params(false)
+    }
+
+    /// Read-only `chi_1_v` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_1_v(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_1_v_with_params(false)
+    }
+
+    /// Read-only `chi_2_v` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_2_v(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_2_v_with_params(false)
+    }
+
+    /// Read-only `chi_3_v` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_3_v(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_3_v_with_params(false)
+    }
+
+    /// Read-only `chi_4_v` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_4_v(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_4_v_with_params(false)
+    }
+
+    /// Read-only `chi_n_v` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_n_v(&self, order: u32) -> Result<f64, DescriptorReadError> {
+        self.chi_n_v_with_params(order, false)
+    }
+
+    /// Read-only `chi_0_n` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_0_n(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_0_n_with_params(false)
+    }
+
+    /// Read-only `chi_1_n` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_1_n(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_1_n_with_params(false)
+    }
+
+    /// Read-only `chi_2_n` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_2_n(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_2_n_with_params(false)
+    }
+
+    /// Read-only `chi_3_n` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_3_n(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_3_n_with_params(false)
+    }
+
+    /// Read-only `chi_4_n` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_4_n(&self) -> Result<f64, DescriptorReadError> {
+        self.chi_4_n_with_params(false)
+    }
+
+    /// Read-only `chi_n_n` delegation to the unique detached descriptor owner.
+    /// Uses the private source weight cache with force=false. Explicit force
+    /// is available through `_with_params`; existing arithmetic has one owner.
+    /// Borrows topology and existing valid valence only; absent/reset rings
+    /// succeed. The four authoritative runtime blocks remain unchanged.
+    #[cfg(feature = "cap-descriptors")]
+    #[must_use]
+    pub fn chi_n_n(&self, order: u32) -> Result<f64, DescriptorReadError> {
+        self.chi_n_n_with_params(order, false)
+    }
+
     /// Returns the number of heavy atoms (RDKit `CalcNumHeavyAtoms`).
     ///
     /// Topology-only read-only query: the source closure touches no
@@ -480,63 +1259,123 @@ impl Molecule {
         }
     }
 
+    /// Prepared read through the unique descriptor owner; no live-state writes.
+    pub fn num_amide_bonds(&self) -> Result<u32, DescriptorReadError> {
+        cosmolkit_descriptors::num_amide_bonds_prepared(&required_descriptor_input(self)?)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Prepared read through the unique descriptor owner; no live-state writes.
+    pub fn num_atom_stereo_centers(&self) -> Result<u32, DescriptorReadError> {
+        cosmolkit_descriptors::num_atom_stereo_centers_prepared(&required_descriptor_input(self)?)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Prepared read through the unique descriptor owner; no live-state writes.
+    pub fn num_unspecified_atom_stereo_centers(&self) -> Result<u32, DescriptorReadError> {
+        cosmolkit_descriptors::num_unspecified_atom_stereo_centers_prepared(
+            &required_descriptor_input(self)?,
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Reuses supplied SSSR-or-better rows; computes detached rows otherwise.
+    /// No valence requirement and no installation into the source molecule.
+    pub fn num_spiro_atoms(&self) -> Result<u32, DescriptorReadError> {
+        cosmolkit_descriptors::num_spiro_atoms_with_ring_info(
+            self.topology(),
+            self.derived_cache_runtime().valid_ring_info(),
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Reuses supplied SSSR-or-better rows; computes detached rows otherwise.
+    /// No valence requirement and no installation into the source molecule.
+    pub fn num_bridgehead_atoms(&self) -> Result<u32, DescriptorReadError> {
+        cosmolkit_descriptors::num_bridgehead_atoms_with_ring_info(
+            self.topology(),
+            self.derived_cache_runtime().valid_ring_info(),
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Rotatable-bond count using the pinned strict default definition.
+    pub fn num_rotatable_bonds(&self) -> Result<u32, DescriptorReadError> {
+        self.num_rotatable_bonds_with_params(&crate::RotatableBondsOptions::default())
+    }
+
+    /// Explicit source definition; reuses prepared valence and ring rows.
+    pub fn num_rotatable_bonds_with_params(
+        &self,
+        params: &crate::RotatableBondsOptions,
+    ) -> Result<u32, DescriptorReadError> {
+        cosmolkit_descriptors::num_rotatable_bonds_prepared(
+            &required_descriptor_input(self)?,
+            *params,
+        )
+        .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
     /// Returns the RDKit-compatible average molecular weight.
     #[must_use]
-    pub fn molecular_weight(&self) -> Result<f64, OperationError> {
-        self.molecular_weight_with_options(false)
+    pub fn molecular_weight(&self) -> Result<f64, DescriptorReadError> {
+        self.molecular_weight_with_params(false)
     }
 
     /// Returns average molecular weight with an explicit heavy-atom mode.
     #[must_use]
-    pub fn molecular_weight_with_options(&self, only_heavy: bool) -> Result<f64, OperationError> {
+    pub fn molecular_weight_with_params(
+        &self,
+        only_heavy: bool,
+    ) -> Result<f64, DescriptorReadError> {
         cosmolkit_descriptors::molecular_weight_with_valence(
             self.topology(),
             only_heavy,
             self.derived_cache_runtime().valence_assignment(),
         )
-        .map_err(|error| descriptor_error("molecular_weight", error))
+        .map_err(|source| DescriptorReadError::Algorithm { source })
     }
 
     /// Returns the RDKit-compatible exact molecular weight.
     #[must_use]
-    pub fn exact_molecular_weight(&self) -> Result<f64, OperationError> {
-        self.exact_molecular_weight_with_options(false)
+    pub fn exact_molecular_weight(&self) -> Result<f64, DescriptorReadError> {
+        self.exact_molecular_weight_with_params(false)
     }
 
     /// Returns exact molecular weight with an explicit heavy-atom mode.
     #[must_use]
-    pub fn exact_molecular_weight_with_options(
+    pub fn exact_molecular_weight_with_params(
         &self,
         only_heavy: bool,
-    ) -> Result<f64, OperationError> {
+    ) -> Result<f64, DescriptorReadError> {
         cosmolkit_descriptors::exact_molecular_weight_with_valence(
             self.topology(),
             only_heavy,
             self.derived_cache_runtime().valence_assignment(),
         )
-        .map_err(|error| descriptor_error("exact_molecular_weight", error))
+        .map_err(|source| DescriptorReadError::Algorithm { source })
     }
 
     /// Returns the Hill-ordered molecular formula.
     #[must_use]
-    pub fn molecular_formula(&self) -> Result<String, OperationError> {
-        self.molecular_formula_with_options(false, false)
+    pub fn molecular_formula(&self) -> Result<String, DescriptorReadError> {
+        self.molecular_formula_with_params(false, false)
     }
 
     /// Returns a molecular formula with isotope formatting controls.
     #[must_use]
-    pub fn molecular_formula_with_options(
+    pub fn molecular_formula_with_params(
         &self,
         separate_isotopes: bool,
         abbreviate_h_isotopes: bool,
-    ) -> Result<String, OperationError> {
+    ) -> Result<String, DescriptorReadError> {
         cosmolkit_descriptors::molecular_formula_with_valence(
             self.topology(),
             separate_isotopes,
             abbreviate_h_isotopes,
             self.derived_cache_runtime().valence_assignment(),
         )
-        .map_err(|error| descriptor_error("molecular_formula", error))
+        .map_err(|source| DescriptorReadError::Algorithm { source })
     }
 }
 
@@ -560,6 +1399,33 @@ mod descriptor_public_error_tests {
             .add_bond(BondSpec::new(c1, o2, BondOrder::Single))
             .unwrap();
         builder.build().unwrap()
+    }
+
+    #[test]
+    fn degree_chi_reads_raw_topology_and_preserves_isolated_zero() {
+        let molecule = raw_cco();
+        assert!(
+            molecule
+                .derived_cache_runtime()
+                .valence_assignment()
+                .is_none()
+        );
+        assert_eq!(
+            molecule.chi_0().unwrap().to_bits(),
+            (2.0 + (0.5_f64).sqrt()).to_bits()
+        );
+        assert_eq!(
+            molecule.chi_1().unwrap().to_bits(),
+            (2.0 * (0.5_f64).sqrt()).to_bits()
+        );
+        let empty = crate::MoleculeBuilder::new().build().unwrap();
+        assert_eq!(empty.chi_0().unwrap().to_bits(), 0.0_f64.to_bits());
+        assert_eq!(empty.chi_1().unwrap().to_bits(), 0.0_f64.to_bits());
+        let mut isolated = crate::MoleculeBuilder::new();
+        isolated.add_atom(AtomSpec::new(Element::C));
+        let isolated = isolated.build().unwrap();
+        assert_eq!(isolated.chi_0().unwrap().to_bits(), 0.0_f64.to_bits());
+        assert_eq!(isolated.chi_1().unwrap().to_bits(), 0.0_f64.to_bits());
     }
 
     #[test]
@@ -1841,5 +2707,793 @@ mod descriptor_public_storage_tests {
             assert_eq!(malformed, malformed_before, "whole valence preserved");
             assert_eq!(topology, topology_before, "whole topology preserved");
         }
+    }
+}
+
+#[cfg(all(test, feature = "cap-smiles"))]
+mod d02_query_storage_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn all_queries() -> [fn(&Molecule) -> Result<(), DescriptorReadError>; 19] {
+        [
+            |molecule| molecule.hall_kier_alpha().map(|_| ()),
+            |molecule| molecule.hall_kier_alpha_with_contributions().map(|_| ()),
+            |molecule| molecule.kappa_1().map(|_| ()),
+            |molecule| molecule.kappa_2().map(|_| ()),
+            |molecule| molecule.kappa_3().map(|_| ()),
+            |molecule| molecule.phi().map(|_| ()),
+            |molecule| molecule.mqns(false).map(|_| ()),
+            |molecule| molecule.chi_0_v().map(|_| ()),
+            |molecule| molecule.chi_1_v().map(|_| ()),
+            |molecule| molecule.chi_2_v().map(|_| ()),
+            |molecule| molecule.chi_3_v().map(|_| ()),
+            |molecule| molecule.chi_4_v().map(|_| ()),
+            |molecule| molecule.chi_n_v(2).map(|_| ()),
+            |molecule| molecule.chi_0_n().map(|_| ()),
+            |molecule| molecule.chi_1_n().map(|_| ()),
+            |molecule| molecule.chi_2_n().map(|_| ()),
+            |molecule| molecule.chi_3_n().map(|_| ()),
+            |molecule| molecule.chi_4_n().map(|_| ()),
+            |molecule| molecule.chi_n_n(2).map(|_| ()),
+        ]
+    }
+
+    fn prepared_queries() -> [fn(&Molecule) -> Result<(), DescriptorReadError>; 13] {
+        [
+            |molecule| molecule.mqns(false).map(|_| ()),
+            |molecule| molecule.chi_0_v().map(|_| ()),
+            |molecule| molecule.chi_1_v().map(|_| ()),
+            |molecule| molecule.chi_2_v().map(|_| ()),
+            |molecule| molecule.chi_3_v().map(|_| ()),
+            |molecule| molecule.chi_4_v().map(|_| ()),
+            |molecule| molecule.chi_n_v(2).map(|_| ()),
+            |molecule| molecule.chi_0_n().map(|_| ()),
+            |molecule| molecule.chi_1_n().map(|_| ()),
+            |molecule| molecule.chi_2_n().map(|_| ()),
+            |molecule| molecule.chi_3_n().map(|_| ()),
+            |molecule| molecule.chi_4_n().map(|_| ()),
+            |molecule| molecule.chi_n_n(2).map(|_| ()),
+        ]
+    }
+
+    fn storage_check(receiver: &Molecule, observer: &Molecule, expected: Option<&str>) -> usize {
+        let topology = receiver.topology_arc_runtime();
+        let coordinates = receiver.coordinates_arc_runtime();
+        let properties = receiver.properties_arc_runtime();
+        let cache = receiver.derived_cache_arc_runtime();
+        // Test-only snapshots outside measured query calls; production never clones.
+        let baseline = receiver.clone();
+        let baseline_cache = receiver.derived_cache_runtime().clone();
+        let baseline_states = receiver.derived_cache_runtime().valid_states();
+        let baseline_valence = receiver
+            .derived_cache_runtime()
+            .valence_assignment()
+            .map(|value| value as *const _);
+        let baseline_rings = receiver
+            .derived_cache_runtime()
+            .valid_ring_info()
+            .map(|value| value as *const _);
+        let check = || {
+            assert!(Arc::ptr_eq(&topology, &receiver.topology_arc_runtime()));
+            assert!(Arc::ptr_eq(
+                &coordinates,
+                &receiver.coordinates_arc_runtime()
+            ));
+            assert!(Arc::ptr_eq(&properties, &receiver.properties_arc_runtime()));
+            assert!(Arc::ptr_eq(&cache, &receiver.derived_cache_arc_runtime()));
+            assert!(Arc::ptr_eq(&topology, &observer.topology_arc_runtime()));
+            assert!(Arc::ptr_eq(
+                &coordinates,
+                &observer.coordinates_arc_runtime()
+            ));
+            assert!(Arc::ptr_eq(&properties, &observer.properties_arc_runtime()));
+            assert!(Arc::ptr_eq(&cache, &observer.derived_cache_arc_runtime()));
+            assert_eq!(receiver, &baseline);
+            assert_eq!(observer, &baseline);
+            for molecule in [receiver, observer] {
+                assert_eq!(molecule.derived_cache_runtime(), &baseline_cache);
+                assert_eq!(
+                    molecule.derived_cache_runtime().valid_states(),
+                    baseline_states
+                );
+                assert_eq!(
+                    molecule
+                        .derived_cache_runtime()
+                        .valence_assignment()
+                        .map(|value| value as *const _),
+                    baseline_valence
+                );
+                assert_eq!(
+                    molecule
+                        .derived_cache_runtime()
+                        .valid_ring_info()
+                        .map(|value| value as *const _),
+                    baseline_rings
+                );
+            }
+        };
+        check();
+        let all = all_queries();
+        let prepared = prepared_queries();
+        let queries: &[fn(&Molecule) -> Result<(), DescriptorReadError>] = if expected.is_none() {
+            &all
+        } else if expected == Some("rings") {
+            // MQN alone genuinely requires ring state. Chi reads only
+            // topology/valence and belongs to the success proofs below.
+            &prepared[..1]
+        } else {
+            &prepared
+        };
+        // Query functions are strictly &self. Check before/after EVERY call.
+        let mut calls = 0;
+        for query in queries {
+            check();
+            let result = query(receiver);
+            match expected {
+                None => assert!(result.is_ok(), "{result:?}"),
+                Some("valence") => {
+                    let error = result.as_ref().unwrap_err();
+                    assert!(matches!(error, DescriptorReadError::MissingPreparedValence));
+                    assert!(std::error::Error::source(error).is_none());
+                }
+                Some("rings") => {
+                    let error = result.as_ref().unwrap_err();
+                    assert!(matches!(
+                        error,
+                        DescriptorReadError::MissingInitializedRings
+                    ));
+                    assert!(std::error::Error::source(error).is_none());
+                }
+                Some(other) => panic!("bad expectation {other}"),
+            }
+            check();
+            calls += 1;
+        }
+        calls
+    }
+
+    #[test]
+    fn d02_all19_success_preserves_four_blocks_and_peers() {
+        let original = Molecule::from_smiles("CCCC").unwrap();
+        let peer = original.clone();
+        let mut calls = 0;
+        for _ in 0..2 {
+            calls += storage_check(&original, &peer, None);
+            calls += storage_check(&peer, &original, None);
+        }
+        assert_eq!(calls, 76);
+    }
+
+    #[test]
+    fn d02_all13_prepared_failures_preserve_four_blocks_and_precedence() {
+        // All13 prepared queries preserve the original typed valence errors.
+        // Two actual raw inputs retain the frozen104-call numeric census;
+        // valid valence plus absent rings no longer fails for Chi.
+        let raw = |smiles: &str| {
+            Molecule::from_smiles_with_params(
+                smiles,
+                &crate::SmilesParseParams {
+                    sanitize: false,
+                    remove_hydrogens: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        let first = raw("CCCC");
+        let second = raw("CCO");
+        let mut calls = 0;
+        for original in [&first, &second] {
+            assert!(
+                original
+                    .derived_cache_runtime()
+                    .valence_assignment()
+                    .is_none()
+            );
+            let peer = original.clone();
+            for _ in 0..2 {
+                calls += storage_check(original, &peer, Some("valence"));
+                calls += storage_check(&peer, original, Some("valence"));
+            }
+        }
+        assert_eq!(calls, 104);
+    }
+
+    fn chi_storage_values(receiver: &Molecule, observer: &Molecule) -> usize {
+        let topology = receiver.topology_arc_runtime();
+        let coordinates = receiver.coordinates_arc_runtime();
+        let properties = receiver.properties_arc_runtime();
+        let cache = receiver.derived_cache_arc_runtime();
+        // Test-only snapshots outside measured query calls; production never clones.
+        let baseline = receiver.clone();
+        let baseline_cache = receiver.derived_cache_runtime().clone();
+        let baseline_states = receiver.derived_cache_runtime().valid_states();
+        let baseline_valence = receiver
+            .derived_cache_runtime()
+            .valence_assignment()
+            .map(|value| value as *const _);
+        let baseline_rings = receiver
+            .derived_cache_runtime()
+            .valid_ring_info()
+            .map(|value| value as *const _);
+        let check = || {
+            assert!(Arc::ptr_eq(&topology, &receiver.topology_arc_runtime()));
+            assert!(Arc::ptr_eq(
+                &coordinates,
+                &receiver.coordinates_arc_runtime()
+            ));
+            assert!(Arc::ptr_eq(&properties, &receiver.properties_arc_runtime()));
+            assert!(Arc::ptr_eq(&cache, &receiver.derived_cache_arc_runtime()));
+            assert!(Arc::ptr_eq(&topology, &observer.topology_arc_runtime()));
+            assert!(Arc::ptr_eq(
+                &coordinates,
+                &observer.coordinates_arc_runtime()
+            ));
+            assert!(Arc::ptr_eq(&properties, &observer.properties_arc_runtime()));
+            assert!(Arc::ptr_eq(&cache, &observer.derived_cache_arc_runtime()));
+            assert_eq!(receiver, &baseline);
+            assert_eq!(observer, &baseline);
+            for molecule in [receiver, observer] {
+                assert_eq!(molecule.derived_cache_runtime(), &baseline_cache);
+                assert_eq!(
+                    molecule.derived_cache_runtime().valid_states(),
+                    baseline_states
+                );
+                assert_eq!(
+                    molecule
+                        .derived_cache_runtime()
+                        .valence_assignment()
+                        .map(|value| value as *const _),
+                    baseline_valence
+                );
+                assert_eq!(
+                    molecule
+                        .derived_cache_runtime()
+                        .valid_ring_info()
+                        .map(|value| value as *const _),
+                    baseline_rings
+                );
+            }
+        };
+        let queries: [(fn(&Molecule) -> Result<f64, DescriptorReadError>, f64); 12] = [
+            (Molecule::chi_0_v, 3.414213562373095),
+            (Molecule::chi_1_v, 1.914213562373095),
+            (Molecule::chi_2_v, 0.9999999999999998),
+            (Molecule::chi_3_v, 0.4999999999999999),
+            (Molecule::chi_4_v, 0.0),
+            (|molecule| molecule.chi_n_v(2), 0.9999999999999998),
+            (Molecule::chi_0_n, 3.414213562373095),
+            (Molecule::chi_1_n, 1.914213562373095),
+            (Molecule::chi_2_n, 0.9999999999999998),
+            (Molecule::chi_3_n, 0.4999999999999999),
+            (Molecule::chi_4_n, 0.0),
+            (|molecule| molecule.chi_n_n(2), 0.9999999999999998),
+        ];
+        // Fixed values are unchanged source arithmetic from owner/tests/chi.rs
+        // chi_chain_four_fixed_and_generic; never queried from production.
+        let mut calls = 0;
+        for (query, expected) in queries {
+            check();
+            let actual = query(receiver).unwrap();
+            assert!(actual.is_finite() && (actual - expected).abs() <= 1e-12);
+            if expected == 0.0 {
+                assert_eq!(actual.to_bits(), expected.to_bits());
+            }
+            check();
+            calls += 1;
+        }
+        calls
+    }
+
+    #[test]
+    fn d02_all12_chi_succeed_with_absent_reset_rings_mqn_requires_rings() {
+        let base = Molecule::from_smiles("CCCC").unwrap();
+        assert!(base.derived_cache_runtime().valid_ring_info().is_some());
+        let absent = Molecule::from_smiles_parts_with_derived_state(
+            base.topology().clone(),
+            base.coordinate_block_runtime().clone(),
+            base.properties().clone(),
+            Some(
+                base.derived_cache_runtime()
+                    .valence_assignment()
+                    .unwrap()
+                    .clone(),
+            ),
+            None,
+        )
+        .unwrap();
+        // Actual existing runtime reset: clear the installed RINGS payload
+        // and validity bit while retaining the valid valence assignment.
+        // RingInfo::reset itself is core-private; no fake/public reset seam.
+        // Test-only state setup happens before every counted query.
+        let mut cleared_cache = base.derived_cache_runtime().clone();
+        assert!(cleared_cache.ring_info().is_some());
+        cleared_cache.clear(crate::DerivedState::RINGS);
+        assert!(cleared_cache.ring_info().is_none());
+        assert!(cleared_cache.valid_ring_info().is_none());
+        assert!(cleared_cache.valence_assignment().is_some());
+        let reset = Molecule::from_runtime_parts(
+            base.topology_arc_runtime(),
+            base.coordinates_arc_runtime(),
+            base.properties_arc_runtime(),
+            Arc::new(cleared_cache),
+        )
+        .unwrap();
+        let mut chi_calls = 0;
+        let mut mqn_calls = 0;
+        for original in [&absent, &reset] {
+            assert!(
+                original
+                    .derived_cache_runtime()
+                    .valence_assignment()
+                    .is_some()
+            );
+            assert!(original.derived_cache_runtime().valid_ring_info().is_none());
+            let peer = original.clone();
+            for _ in 0..2 {
+                chi_calls += chi_storage_values(original, &peer);
+                chi_calls += chi_storage_values(&peer, original);
+                mqn_calls += storage_check(original, &peer, Some("rings"));
+                mqn_calls += storage_check(&peer, original, Some("rings"));
+            }
+        }
+        assert_eq!(chi_calls, 96);
+        assert_eq!(mqn_calls, 8);
+    }
+}
+
+impl Molecule {
+    /// Source default query; computed values follow the domain owner's cache guards.
+    pub fn crippen_descriptors(&self) -> Result<crate::CrippenTotals, DescriptorReadError> {
+        self.crippen_descriptors_with_params(true, false)
+    }
+    /// Explicit source option and force semantics; no live runtime authority
+    /// crosses the detached algorithm boundary.
+    pub fn crippen_descriptors_with_params(
+        &self,
+        include_hydrogens: bool,
+        force: bool,
+    ) -> Result<crate::CrippenTotals, DescriptorReadError> {
+        let input = required_descriptor_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::crippen_totals(&input, include_hydrogens, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source default query; computed values follow the domain owner's cache guards.
+    pub fn labute_asa(&self) -> Result<f64, DescriptorReadError> {
+        self.labute_asa_with_params(true, false)
+    }
+    /// Explicit source option and force semantics; no live runtime authority
+    /// crosses the detached algorithm boundary.
+    pub fn labute_asa_with_params(
+        &self,
+        include_hydrogens: bool,
+        force: bool,
+    ) -> Result<f64, DescriptorReadError> {
+        let input = required_descriptor_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::labute_asa(&input, include_hydrogens, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source default query; computed values follow the domain owner's cache guards.
+    pub fn labute_asa_contributions(
+        &self,
+    ) -> Result<crate::LabuteAsaContributions, DescriptorReadError> {
+        self.labute_asa_contributions_with_params(true, false)
+    }
+    /// Explicit source option and force semantics; no live runtime authority
+    /// crosses the detached algorithm boundary.
+    pub fn labute_asa_contributions_with_params(
+        &self,
+        include_hydrogens: bool,
+        force: bool,
+    ) -> Result<crate::LabuteAsaContributions, DescriptorReadError> {
+        let input = required_descriptor_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::labute_asa_contributions(&input, include_hydrogens, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source default query; computed values follow the domain owner's cache guards.
+    pub fn tpsa(&self) -> Result<f64, DescriptorReadError> {
+        self.tpsa_with_params(false, false)
+    }
+    /// Explicit source option and force semantics; no live runtime authority
+    /// crosses the detached algorithm boundary.
+    pub fn tpsa_with_params(
+        &self,
+        include_sulfur_phosphorus: bool,
+        force: bool,
+    ) -> Result<f64, DescriptorReadError> {
+        let input = required_descriptor_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::tpsa(&input, include_sulfur_phosphorus, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Default source bin boundaries; retains the shared Labute/Crippen memo.
+    pub fn slogp_vsa(&self) -> Result<Vec<f64>, DescriptorReadError> {
+        self.slogp_vsa_with_params(None, false)
+    }
+    /// Caller-provided boundaries preserve order and repeated edges. Force is
+    /// passed to both existing contribution owners, as in the source.
+    pub fn slogp_vsa_with_params(
+        &self,
+        bins: Option<&[f64]>,
+        force: bool,
+    ) -> Result<Vec<f64>, DescriptorReadError> {
+        let input = required_descriptor_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::slogp_vsa(&input, bins, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Projection of source default-bin output 1; no separate binning algorithm.
+    pub fn slogp_vsa_1(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[0])
+    }
+
+    /// Projection of source default-bin output 2; no separate binning algorithm.
+    pub fn slogp_vsa_2(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[1])
+    }
+
+    /// Projection of source default-bin output 3; no separate binning algorithm.
+    pub fn slogp_vsa_3(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[2])
+    }
+
+    /// Projection of source default-bin output 4; no separate binning algorithm.
+    pub fn slogp_vsa_4(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[3])
+    }
+
+    /// Projection of source default-bin output 5; no separate binning algorithm.
+    pub fn slogp_vsa_5(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[4])
+    }
+
+    /// Projection of source default-bin output 6; no separate binning algorithm.
+    pub fn slogp_vsa_6(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[5])
+    }
+
+    /// Projection of source default-bin output 7; no separate binning algorithm.
+    pub fn slogp_vsa_7(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[6])
+    }
+
+    /// Projection of source default-bin output 8; no separate binning algorithm.
+    pub fn slogp_vsa_8(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[7])
+    }
+
+    /// Projection of source default-bin output 9; no separate binning algorithm.
+    pub fn slogp_vsa_9(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[8])
+    }
+
+    /// Projection of source default-bin output 10; no separate binning algorithm.
+    pub fn slogp_vsa_10(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[9])
+    }
+
+    /// Projection of source default-bin output 11; no separate binning algorithm.
+    pub fn slogp_vsa_11(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[10])
+    }
+
+    /// Projection of source default-bin output 12; no separate binning algorithm.
+    pub fn slogp_vsa_12(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.slogp_vsa()?[11])
+    }
+
+    /// Default source bin boundaries; retains the shared Labute/Crippen memo.
+    pub fn smr_vsa(&self) -> Result<Vec<f64>, DescriptorReadError> {
+        self.smr_vsa_with_params(None, false)
+    }
+    /// Caller-provided boundaries preserve order and repeated edges. Force is
+    /// passed to both existing contribution owners, as in the source.
+    pub fn smr_vsa_with_params(
+        &self,
+        bins: Option<&[f64]>,
+        force: bool,
+    ) -> Result<Vec<f64>, DescriptorReadError> {
+        let input = required_descriptor_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::smr_vsa(&input, bins, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Projection of source default-bin output 1; no separate binning algorithm.
+    pub fn smr_vsa_1(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[0])
+    }
+
+    /// Projection of source default-bin output 2; no separate binning algorithm.
+    pub fn smr_vsa_2(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[1])
+    }
+
+    /// Projection of source default-bin output 3; no separate binning algorithm.
+    pub fn smr_vsa_3(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[2])
+    }
+
+    /// Projection of source default-bin output 4; no separate binning algorithm.
+    pub fn smr_vsa_4(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[3])
+    }
+
+    /// Projection of source default-bin output 5; no separate binning algorithm.
+    pub fn smr_vsa_5(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[4])
+    }
+
+    /// Projection of source default-bin output 6; no separate binning algorithm.
+    pub fn smr_vsa_6(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[5])
+    }
+
+    /// Projection of source default-bin output 7; no separate binning algorithm.
+    pub fn smr_vsa_7(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[6])
+    }
+
+    /// Projection of source default-bin output 8; no separate binning algorithm.
+    pub fn smr_vsa_8(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[7])
+    }
+
+    /// Projection of source default-bin output 9; no separate binning algorithm.
+    pub fn smr_vsa_9(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[8])
+    }
+
+    /// Projection of source default-bin output 10; no separate binning algorithm.
+    pub fn smr_vsa_10(&self) -> Result<f64, DescriptorReadError> {
+        Ok(self.smr_vsa()?[9])
+    }
+}
+
+impl Molecule {
+    /// Source-default QED, through the existing detached owner implementation.
+    pub fn qed(&self) -> Result<f64, DescriptorReadError> {
+        cosmolkit_descriptors::qed(&required_descriptor_input(self)?)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+}
+
+impl Molecule {
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_0_v_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_0_v_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_1_v_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_1_v_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_2_v_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_2_v_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_3_v_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_3_v_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_4_v_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_4_v_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_n_v_with_params(&self, order: u32, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_n_v_with_state(&input, order, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_0_n_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_0_n_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_1_n_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_1_n_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_2_n_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_2_n_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_3_n_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_3_n_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_4_n_with_params(&self, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_4_n_with_state(&input, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+
+    /// Source force option; reads/replaces the cached weight vector before
+    /// delegating to the one existing arithmetic implementation.
+    pub fn chi_n_n_with_params(&self, order: u32, force: bool) -> Result<f64, DescriptorReadError> {
+        let input = required_chi_input(self)?;
+        let mut memo = self.descriptor_queries_runtime()?;
+        cosmolkit_descriptors::chi_n_n_with_state(&input, order, force, &mut memo)
+            .map_err(|source| DescriptorReadError::Algorithm { source })
+    }
+}
+
+#[cfg(all(
+    test,
+    feature = "cap-smiles",
+    feature = "cap-sanitize",
+    feature = "cap-depict"
+))]
+mod descriptor_query_lifecycle_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    #[test]
+    fn descriptor_query_cache_copy_preserve_and_clear_follow_source() {
+        // Actual source-built pinned RDKit CCO control: non-quick ROMol copy
+        // keeps cached scalars, independent force on copy leaves source intact.
+        let original = Molecule::from_smiles("CCO").unwrap();
+        let topology = original.topology_arc_runtime();
+        let coordinates = original.coordinates_arc_runtime();
+        let properties = original.properties_arc_runtime();
+        let derived = original.derived_cache_arc_runtime();
+        let no_h = original
+            .crippen_descriptors_with_params(false, false)
+            .unwrap();
+        assert_eq!(no_h.logp.to_bits(), (-0.3487_f64).to_bits());
+        assert_eq!(
+            no_h.molar_refractivity.to_bits(),
+            6.0798000000000005_f64.to_bits()
+        );
+        let peer = original.clone();
+        assert_eq!(
+            peer.crippen_descriptors_with_params(true, false).unwrap(),
+            no_h
+        );
+        let with_h = peer.crippen_descriptors_with_params(true, true).unwrap();
+        assert_eq!(
+            with_h.logp.to_bits(),
+            (-0.0014000000000000123_f64).to_bits()
+        );
+        assert_eq!(
+            with_h.molar_refractivity.to_bits(),
+            12.759800000000002_f64.to_bits()
+        );
+        assert_eq!(
+            peer.crippen_descriptors_with_params(false, false).unwrap(),
+            with_h
+        );
+        assert_eq!(
+            original
+                .crippen_descriptors_with_params(true, false)
+                .unwrap(),
+            no_h
+        );
+        for mol in [&original, &peer] {
+            assert!(Arc::ptr_eq(&topology, &mol.topology_arc_runtime()));
+            assert!(Arc::ptr_eq(&coordinates, &mol.coordinates_arc_runtime()));
+            assert!(Arc::ptr_eq(&properties, &mol.properties_arc_runtime()));
+            assert!(Arc::ptr_eq(&derived, &mol.derived_cache_arc_runtime()));
+        }
+        let depicted = original.with_2d_coordinates().unwrap();
+        assert_eq!(
+            depicted
+                .crippen_descriptors_with_params(true, false)
+                .unwrap(),
+            no_h
+        );
+        let cleared = original.sanitize().unwrap();
+        assert_eq!(
+            cleared
+                .crippen_descriptors_with_params(true, false)
+                .unwrap(),
+            with_h
+        );
+        assert_eq!(
+            original
+                .crippen_descriptors_with_params(true, false)
+                .unwrap(),
+            no_h
+        );
+        assert!(Arc::ptr_eq(&topology, &original.topology_arc_runtime()));
+        assert!(Arc::ptr_eq(&derived, &original.derived_cache_arc_runtime()));
+    }
+    #[test]
+    fn descriptor_query_poison_remains_structured_and_operations_are_atomic() {
+        let original = Molecule::from_smiles("CCO").unwrap();
+        original.crippen_descriptors().unwrap();
+        let topology = original.topology_arc_runtime();
+        let coordinates = original.coordinates_arc_runtime();
+        let properties = original.properties_arc_runtime();
+        let derived = original.derived_cache_arc_runtime();
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = original.descriptor_queries_runtime().unwrap();
+            panic!("deliberate private descriptor lock poison regression");
+        }));
+        assert!(poisoned.is_err());
+        assert!(matches!(
+            original.crippen_descriptors(),
+            Err(DescriptorReadError::CachePoisoned)
+        ));
+        // The public fallible operation must return a structural error before
+        // touching live blocks; it must not panic in its source snapshot.
+        assert!(matches!(
+            original.sanitize(),
+            Err(crate::OperationError::OperationContract {
+                field: "descriptor_query_cache",
+                ..
+            })
+        ));
+        let copied = original.clone();
+        assert!(matches!(
+            copied.crippen_descriptors(),
+            Err(DescriptorReadError::CachePoisoned)
+        ));
+        assert!(Arc::ptr_eq(&topology, &original.topology_arc_runtime()));
+        assert!(Arc::ptr_eq(
+            &coordinates,
+            &original.coordinates_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(&properties, &original.properties_arc_runtime()));
+        assert!(Arc::ptr_eq(&derived, &original.derived_cache_arc_runtime()));
     }
 }

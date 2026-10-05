@@ -28,6 +28,8 @@ pub struct DescriptorComputedState {
     tpsa_include_sand_p: TpsaCacheSlot,
     labute: LabuteCacheSlot,
     crippen: CrippenCacheSlot,
+    pub(crate) chi_v_weights: Option<Vec<f64>>,
+    pub(crate) chi_n_weights: Option<Vec<f64>>,
 }
 
 impl DescriptorComputedState {
@@ -40,6 +42,8 @@ impl DescriptorComputedState {
         self.tpsa_include_sand_p = TpsaCacheSlot::default();
         self.labute = LabuteCacheSlot::default();
         self.crippen = CrippenCacheSlot::default();
+        self.chi_v_weights = None;
+        self.chi_n_weights = None;
     }
 
     fn slot(&self, include_sulfur_phosphorus: bool) -> &TpsaCacheSlot {

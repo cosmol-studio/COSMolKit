@@ -13,7 +13,7 @@ use crate::{DescriptorComputedState, DescriptorError, DescriptorInput, Descripto
 /// `res[idx] += cVal` (left-to-right +=, observable in the final bits
 /// when several atoms hit one bin). `std::upper_bound` (the index of
 /// the FIRST element GREATER than bVal) maps to Rust's
-/// `partition_point(|&b| b <= bVal)` — the standard equivalent on a
+/// `partition_point(|&b| !(bVal < b))` — preserves the source comparison on a
 /// partitioned range: equality lands AFTER the matching edge, a value
 /// below all bins lands in bin 0, above all in the final slot. The
 /// bins vector's monotonicity is the CALLER's precondition exactly as
@@ -56,7 +56,8 @@ pub fn assign_contribs_to_bins(
     // Typed mapping: the PRECONDITION aborts map to the typed
     // MismatchedBinArrays error; the caller-supplied res maps to the
     // owned bins.len()+1 return value (the second precondition holds by
-    // construction); upper_bound maps to partition_point(|&b| b <= bVal).
+    // construction); upper_bound advances while !(bVal < element), including
+    // IEEE unordered comparisons. Negation must not be replaced by <=.
     if contribs.len() != bin_prop.len() {
         return Err(DescriptorError::MismatchedBinArrays {
             contribs_len: contribs.len(),
@@ -68,7 +69,7 @@ pub fn assign_contribs_to_bins(
     for i in 0..contribs.len() {
         let c_val = contribs[i];
         let b_val = bin_prop[i];
-        let idx = bins.partition_point(|&b| b <= b_val);
+        let idx = bins.partition_point(|&b| !(b_val < b));
         res[idx] += c_val;
     }
     Ok(res)
@@ -264,4 +265,22 @@ pub fn smr_vsa(
     let vsa_contribs = crate::labute::labute_contributions(input, true, force, state)?;
     let mr_contribs = crate::crippen::crippen_contributions(input, force, state, None, None)?;
     assign_contribs_to_bins(&vsa_contribs.atoms, &mr_contribs.molar_refractivity, &lbins)
+}
+
+#[cfg(test)]
+mod source_upper_bound_tests {
+    use super::assign_contribs_to_bins;
+
+    #[test]
+    fn source_upper_bound_preserves_unordered_float_comparisons() {
+        // Pinned MolSurf.cpp:373 uses std::upper_bound(value < element).
+        // p1's exact-function C++ release probe returns [0,1] in all three
+        // cases; finite equality alone did not catch the unordered branch.
+        for (value, boundary) in [(1.0, 1.0), (1.0, f64::NAN), (f64::NAN, 1.0)] {
+            assert_eq!(
+                assign_contribs_to_bins(&[1.0], &[value], &[boundary]).unwrap(),
+                vec![0.0, 1.0]
+            );
+        }
+    }
 }

@@ -553,9 +553,36 @@ impl MoleculeState {
 /// The model blocks are deliberately private. Algorithms can only receive
 /// detached blocks through an operation context, and only this runtime can
 /// install a validated result back into a live molecule.
-#[derive(Clone)]
 pub struct Molecule {
     state: Arc<MoleculeState>,
+    // Private computed descriptor properties; never live topology, coordinate,
+    // property or derived-validity mutation authority for algorithm owners.
+    #[cfg(feature = "cap-descriptors")]
+    descriptor_queries: std::sync::Mutex<cosmolkit_descriptors::DescriptorComputedState>,
+    #[cfg(feature = "cap-descriptors")]
+    descriptor_queries_poisoned: bool,
+}
+
+impl Clone for Molecule {
+    fn clone(&self) -> Self {
+        // RDKit source (ROMol.cpp, initFromOther non-quick copy):
+        // RDKit✔️✔️: d_props = other.d_props;
+        // Copy only detached computed rows; the four runtime blocks share.
+        // Infallible Clone retains poisoned rows AND the poison condition.
+        // It never presents damaged state as a successful query or defaults it.
+        #[cfg(feature = "cap-descriptors")]
+        let (memo, poisoned) = match self.descriptor_queries.lock() {
+            Ok(rows) => (rows.clone(), self.descriptor_queries_poisoned),
+            Err(rows) => (rows.into_inner().clone(), true),
+        };
+        Self {
+            state: Arc::clone(&self.state),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries: std::sync::Mutex::new(memo),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries_poisoned: poisoned,
+        }
+    }
 }
 
 impl fmt::Debug for Molecule {
@@ -582,6 +609,80 @@ impl PartialEq for Molecule {
 }
 
 impl Molecule {
+    /// Query-specific detached memo borrow. This grants no authority over the
+    /// four operation-managed runtime blocks. Algorithms see only typed state.
+    #[cfg(feature = "cap-descriptors")]
+    pub(crate) fn descriptor_queries_runtime(
+        &self,
+    ) -> Result<
+        std::sync::MutexGuard<'_, cosmolkit_descriptors::DescriptorComputedState>,
+        crate::DescriptorReadError,
+    > {
+        if self.descriptor_queries_poisoned {
+            return Err(crate::DescriptorReadError::CachePoisoned);
+        }
+        self.descriptor_queries
+            .lock()
+            .map_err(|_| crate::DescriptorReadError::CachePoisoned)
+    }
+
+    /// Private operation snapshot: copy computed rows only when the existing
+    /// source policy preserves them. Clear policies allocate no cached vectors.
+    /// A poisoned query state is a structural operation error before mutation.
+    pub(crate) fn operation_snapshot_runtime(
+        &self,
+        preserve_queries: bool,
+        operation: &'static str,
+    ) -> Result<Self, OperationError> {
+        #[cfg(feature = "cap-descriptors")]
+        let memo = {
+            let rows = self.descriptor_queries_runtime().map_err(|_| {
+                OperationError::OperationContract {
+                    operation,
+                    field: "descriptor_query_cache",
+                    issue: "descriptor query cache is poisoned",
+                    expected: 0,
+                    actual: 1,
+                }
+            })?;
+            // RDKit✔️✔️: d_props = other.d_props;
+            // The declared clearComputedProps policy discards these properties;
+            // do not copy vectors just to clear them in the same transaction.
+            if preserve_queries {
+                rows.clone()
+            } else {
+                Default::default()
+            }
+        };
+        #[cfg(not(feature = "cap-descriptors"))]
+        let _ = (preserve_queries, operation);
+        Ok(Self {
+            state: Arc::clone(&self.state),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries: std::sync::Mutex::new(memo),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries_poisoned: false,
+        })
+    }
+
+    /// Move the already copied transaction memo into its validated result.
+    /// The operation snapshot is private, unpoisoned and never queried by bodies.
+    #[cfg(feature = "cap-descriptors")]
+    pub(crate) fn take_descriptor_queries_runtime(
+        &mut self,
+    ) -> std::sync::Mutex<cosmolkit_descriptors::DescriptorComputedState> {
+        std::mem::take(&mut self.descriptor_queries)
+    }
+
+    #[cfg(feature = "cap-descriptors")]
+    pub(crate) fn install_descriptor_queries_runtime(
+        &mut self,
+        memo: std::sync::Mutex<cosmolkit_descriptors::DescriptorComputedState>,
+    ) {
+        self.descriptor_queries = memo;
+        self.descriptor_queries_poisoned = false;
+    }
+
     /// Creates an empty, structurally valid molecule.
     #[must_use]
     pub fn new() -> Self {
@@ -609,6 +710,10 @@ impl Molecule {
     ) -> Result<Self, OperationError> {
         Ok(Self {
             state: Arc::new(MoleculeState::try_new(topology, coordinates, properties)?),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries: std::sync::Mutex::default(),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries_poisoned: false,
         })
     }
 
@@ -625,6 +730,10 @@ impl Molecule {
                 properties,
                 derived_cache,
             )?),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries: std::sync::Mutex::default(),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries_poisoned: false,
         })
     }
 
@@ -665,6 +774,10 @@ impl Molecule {
         state.derived_cache = Arc::new(cache);
         Ok(Self {
             state: Arc::new(state),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries: std::sync::Mutex::default(),
+            #[cfg(feature = "cap-descriptors")]
+            descriptor_queries_poisoned: false,
         })
     }
 
@@ -1328,15 +1441,15 @@ mod valence_cache_tests {
                         let coordinates = molecule.coordinates_arc_runtime();
                         let properties = molecule.properties_arc_runtime();
                         for only_heavy in [false, true] {
-                            molecule.molecular_weight_with_options(only_heavy).unwrap();
+                            molecule.molecular_weight_with_params(only_heavy).unwrap();
                             molecule
-                                .exact_molecular_weight_with_options(only_heavy)
+                                .exact_molecular_weight_with_params(only_heavy)
                                 .unwrap();
                         }
                         for separate in [false, true] {
                             for abbreviate in [false, true] {
                                 molecule
-                                    .molecular_formula_with_options(separate, abbreviate)
+                                    .molecular_formula_with_params(separate, abbreviate)
                                     .unwrap();
                             }
                         }

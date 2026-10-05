@@ -106,7 +106,8 @@ impl EffectTrace {
 
 /// One private transaction whose access type is emitted by `molecule_ops!`.
 ///
-/// Construction clones only the Arc-backed `Molecule`. Individual semantic
+/// Construction shares Arc-backed blocks and copies preserved query rows once.
+/// Individual semantic
 /// blocks detach lazily when their generated capability checks them out.
 pub(crate) struct OpParts<'a, Access> {
     spec: &'static MoleculeOpSpec,
@@ -129,14 +130,30 @@ impl<'a, Access> OpParts<'a, Access> {
         source: &'a Molecule,
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
-        Self::from_source(source.clone(), None, spec)
+        Self::from_source(
+            source.operation_snapshot_runtime(
+                matches!(
+                    spec.cip_state,
+                    CipStatePolicy::Preserve | CipStatePolicy::Assign
+                ),
+                spec.method,
+            )?,
+            None,
+            spec,
+        )
     }
 
     pub(super) fn new_in_place(
         target: &'a mut Molecule,
         spec: &'static MoleculeOpSpec,
     ) -> Result<Self, OperationError> {
-        let source = target.clone();
+        let source = target.operation_snapshot_runtime(
+            matches!(
+                spec.cip_state,
+                CipStatePolicy::Preserve | CipStatePolicy::Assign
+            ),
+            spec.method,
+        )?;
         Self::from_source(source, Some(target), spec)
     }
 
@@ -1898,8 +1915,23 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     pub(super) fn finish(self) -> Result<Molecule, OperationError> {
-        let (topology, coordinates, properties, derived_cache) = self.finish_parts()?;
-        Molecule::from_runtime_parts(topology, coordinates, properties, derived_cache)
+        #[allow(unused_mut)]
+        let mut owned = self;
+        #[cfg(feature = "cap-descriptors")]
+        let memo = matches!(
+            owned.spec.cip_state,
+            CipStatePolicy::Preserve | CipStatePolicy::Assign
+        )
+        .then(|| owned.source.take_descriptor_queries_runtime());
+        let (topology, coordinates, properties, derived_cache) = owned.finish_parts()?;
+        #[allow(unused_mut)]
+        let mut result =
+            Molecule::from_runtime_parts(topology, coordinates, properties, derived_cache)?;
+        #[cfg(feature = "cap-descriptors")]
+        if let Some(memo) = memo {
+            result.install_descriptor_queries_runtime(memo);
+        }
+        Ok(result)
     }
 
     fn finish_parts(
@@ -2065,7 +2097,7 @@ pub(super) fn validate_multiple_candidate(
 
     let mut candidate = OpParts::<()> {
         spec,
-        source: source.clone(),
+        source: source.operation_snapshot_runtime(false, spec.method)?,
         topology: WorkingBlock::Installed(topology),
         coordinates: WorkingBlock::Installed(coordinates),
         properties: WorkingBlock::Installed(properties),

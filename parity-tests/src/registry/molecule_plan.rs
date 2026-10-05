@@ -586,6 +586,27 @@ impl FutureTask {
 impl TaskId {
     pub const fn name(self) -> &'static str {
         match self {
+            Self::Chi0 => "chi_0",
+            Self::Chi1 => "chi_1",
+            Self::HallKierAlpha => "hall_kier_alpha",
+            Self::HallKierAlphaWithContributions => "hall_kier_alpha_with_contributions",
+            Self::Kappa1 => "kappa_1",
+            Self::Kappa2 => "kappa_2",
+            Self::Kappa3 => "kappa_3",
+            Self::Phi => "phi",
+            Self::Mqns => "mqns",
+            Self::Chi0V => "chi_0_v",
+            Self::Chi1V => "chi_1_v",
+            Self::Chi2V => "chi_2_v",
+            Self::Chi3V => "chi_3_v",
+            Self::Chi4V => "chi_4_v",
+            Self::Chi0N => "chi_0_n",
+            Self::Chi1N => "chi_1_n",
+            Self::Chi2N => "chi_2_n",
+            Self::Chi3N => "chi_3_n",
+            Self::Chi4N => "chi_4_n",
+            Self::ChiNV => "chi_n_v",
+            Self::ChiNN => "chi_n_n",
             Self::SmilesRead => "smiles_read",
             Self::Sanitize => "sanitize",
             Self::Kekulize => "kekulize",
@@ -627,6 +648,27 @@ impl TaskId {
     }
     pub const fn category(self) -> Category {
         match self {
+            Self::Chi0
+            | Self::Chi1
+            | Self::HallKierAlpha
+            | Self::HallKierAlphaWithContributions
+            | Self::Kappa1
+            | Self::Kappa2
+            | Self::Kappa3
+            | Self::Phi
+            | Self::Mqns
+            | Self::Chi0V
+            | Self::Chi1V
+            | Self::Chi2V
+            | Self::Chi3V
+            | Self::Chi4V
+            | Self::Chi0N
+            | Self::Chi1N
+            | Self::Chi2N
+            | Self::Chi3N
+            | Self::Chi4N
+            | Self::ChiNV
+            | Self::ChiNN => Category::Descriptors,
             Self::SmilesRead => Category::Notation,
             Self::Sanitize
             | Self::Kekulize
@@ -743,6 +785,27 @@ pub enum TaskId {
     MorganSparseFingerprint,
     MorganCountFingerprint,
     MorganSparseCountFingerprint,
+    Chi0,
+    Chi1,
+    HallKierAlpha,
+    HallKierAlphaWithContributions,
+    Kappa1,
+    Kappa2,
+    Kappa3,
+    Phi,
+    Mqns,
+    Chi0V,
+    Chi1V,
+    Chi2V,
+    Chi3V,
+    Chi4V,
+    Chi0N,
+    Chi1N,
+    Chi2N,
+    Chi3N,
+    Chi4N,
+    ChiNV,
+    ChiNN,
 }
 
 /// `None` and an explicitly empty selection must never be conflated.
@@ -817,6 +880,33 @@ pub enum Profile {
         clean: bool,
         flag_possible: bool,
         allow_nontetrahedral: bool,
+    },
+    Chi0,
+    Chi1,
+    HallKierAlpha,
+    HallKierAlphaWithContributions,
+    Kappa1,
+    Kappa2,
+    Kappa3,
+    Phi,
+    Mqns {
+        force: bool,
+    },
+    Chi0V,
+    Chi1V,
+    Chi2V,
+    Chi3V,
+    Chi4V,
+    Chi0N,
+    Chi1N,
+    Chi2N,
+    Chi3N,
+    Chi4N,
+    ChiNV {
+        order: u32,
+    },
+    ChiNN {
+        order: u32,
     },
     Coordinates2dDefault,
     /// The only drawing profile: 300x300, default source preparation.
@@ -904,6 +994,8 @@ pub enum Comparison {
     MatrixBits,
     TopologyAndOutcome,
     Float64Bits,
+    Float64ContributionsBits,
+    UnsignedVector,
     ExactText,
     SvgText,
     CipLabelsAndOutcome,
@@ -1158,6 +1250,132 @@ pub const TASKS: &[Task] = &[
         comparison: MorganFingerprintAndAdditionalOutput,
         prerequisite: PublicValenceReadoutAndMolecularPipeline,
     },
+    Task {
+        id: Chi0,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi1,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: HallKierAlpha,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: HallKierAlphaWithContributions,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64ContributionsBits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Kappa1,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Kappa2,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Kappa3,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Phi,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Mqns,
+        input: SanitizedHydrogensRemoved,
+        comparison: UnsignedVector,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi0V,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi1V,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi2V,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi3V,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi4V,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi0N,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi1N,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi2N,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi3N,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Chi4N,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: ChiNV,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: ChiNN,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
 ];
 
 impl TaskId {
@@ -1166,6 +1384,27 @@ impl TaskId {
     pub fn profiles(self) -> Vec<Profile> {
         let booleans = [false, true];
         match self {
+            Chi0 => vec![Profile::Chi0],
+            Chi1 => vec![Profile::Chi1],
+            HallKierAlpha => vec![Profile::HallKierAlpha],
+            HallKierAlphaWithContributions => vec![Profile::HallKierAlphaWithContributions],
+            Kappa1 => vec![Profile::Kappa1],
+            Kappa2 => vec![Profile::Kappa2],
+            Kappa3 => vec![Profile::Kappa3],
+            Phi => vec![Profile::Phi],
+            Mqns => booleans.map(|force| Profile::Mqns { force }).into(),
+            Chi0V => vec![Profile::Chi0V],
+            Chi1V => vec![Profile::Chi1V],
+            Chi2V => vec![Profile::Chi2V],
+            Chi3V => vec![Profile::Chi3V],
+            Chi4V => vec![Profile::Chi4V],
+            Chi0N => vec![Profile::Chi0N],
+            Chi1N => vec![Profile::Chi1N],
+            Chi2N => vec![Profile::Chi2N],
+            Chi3N => vec![Profile::Chi3N],
+            Chi4N => vec![Profile::Chi4N],
+            ChiNV => (0..=6).map(|order| Profile::ChiNV { order }).collect(),
+            ChiNN => (0..=6).map(|order| Profile::ChiNN { order }).collect(),
             DistanceMatrix => booleans
                 .into_iter()
                 .flat_map(|use_bond_order| {
@@ -1365,7 +1604,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-                4, 8, 1, 1, 2, 16, 16, 16, 16
+                4, 8, 1, 1, 2, 16, 16, 16, 16, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 7, 7
             ]
         );
         assert_eq!(
@@ -1387,7 +1627,7 @@ mod tests {
     #[test]
     fn parity_morgan_registry_molecular_plan_tracks_executable_registration() {
         let executable = super::super::select(None).unwrap();
-        assert_eq!(executable.len(), 41);
+        assert_eq!(executable.len(), 62);
         assert_eq!(
             executable[0].operation,
             super::super::Operation::BioPdbOutput

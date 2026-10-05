@@ -1,8 +1,10 @@
 //! Small Rust-owned parity pilot; no performance or binding claims.
+pub mod descriptor_reference;
 pub mod execute;
 pub mod molecular;
 pub mod reference_parity;
 pub mod registry;
+pub mod special_regression;
 pub mod testing;
 pub mod uff;
 
@@ -110,6 +112,16 @@ struct Manifest {
     input_sha256: String,
     reference_sha256: String,
     rows: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    imported_reference: Option<serde_json::Value>,
+}
+
+fn adapter_digest(task: &Task) -> String {
+    if descriptor_reference::handles(task) {
+        digest(include_str!("descriptor_reference.rs").as_bytes())
+    } else {
+        digest(ORACLE.as_bytes())
+    }
 }
 
 fn identity(task: &Task, input: &[u8], reference: &[u8], rows: usize) -> Manifest {
@@ -122,10 +134,11 @@ fn identity(task: &Task, input: &[u8], reference: &[u8], rows: usize) -> Manifes
         reference_pin_sha256: digest(REFERENCE_PIN.as_bytes()),
         reference_platform: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         registry_sha256: registry_digest(),
-        oracle_sha256: digest(ORACLE.as_bytes()),
+        oracle_sha256: adapter_digest(task),
         input_sha256: digest(input),
         reference_sha256: digest(reference),
         rows,
+        imported_reference: descriptor_reference::provenance(task),
     }
 }
 
@@ -197,6 +210,9 @@ fn check_records(task: &Task, inputs: &[Input], records: &[Record]) -> Result<()
 fn oracle(task: &Task, cases: &Corpus, python: &Path, threads: usize) -> Result<Vec<Record>> {
     if threads == 0 {
         return Err("threads must be positive".into());
+    }
+    if descriptor_reference::handles(task) {
+        return descriptor_reference::generate(task, cases);
     }
     let script = root().join("tools/oracles/rdkit/fingerprint_values_pilot.py");
     // Run the exact checksummed source, from a real file so process workers
@@ -386,7 +402,7 @@ fn generation(data: &Path, task: &Task, input: &[u8]) -> PathBuf {
         "schema3{}{}{}{}{}",
         task.key(),
         digest(input),
-        digest(ORACLE.as_bytes()),
+        adapter_digest(task),
         registry_digest(),
         digest(REFERENCE_PIN.as_bytes())
     );
@@ -540,10 +556,22 @@ pub fn write_report(path: &Path, report: &[Comparison]) -> Result<()> {
 pub struct Suite {
     pub tasks: Vec<String>,
     pub sources: Vec<CorpusSource>,
+    #[serde(default)]
+    pub special_regressions: Vec<String>,
 }
 
 /// Save the prepared selection, not a validity certificate: tests revalidate it.
 pub fn save_suite(data: &Path, tasks: &[&Task], sources: &[CorpusSource]) -> Result<()> {
+    save_suite_with_special(data, tasks, sources, Vec::new())
+}
+
+/// Persist both categories for the default complete preparation selection.
+pub fn save_suite_with_special(
+    data: &Path,
+    tasks: &[&Task],
+    sources: &[CorpusSource],
+    special_regressions: Vec<String>,
+) -> Result<()> {
     let sources = sources
         .iter()
         .map(|source| {
@@ -556,6 +584,7 @@ pub fn save_suite(data: &Path, tasks: &[&Task], sources: &[CorpusSource]) -> Res
     let suite = Suite {
         tasks: tasks.iter().map(|task| task.key()).collect(),
         sources,
+        special_regressions,
     };
     let mut file = tempfile::NamedTempFile::new_in(data).map_err(|e| e.to_string())?;
     file.write_all(&encode(&suite)?)
@@ -568,6 +597,7 @@ pub fn save_suite(data: &Path, tasks: &[&Task], sources: &[CorpusSource]) -> Res
 pub fn load_suite(data: &Path) -> Result<(Vec<&'static Task>, Ready)> {
     let suite: Suite =
         serde_json::from_slice(&read(&data.join("suite.json"))?).map_err(|e| e.to_string())?;
+    special_regression::preflight_selection(&suite.special_regressions, data)?;
     let mut keys = std::collections::BTreeSet::new();
     let tasks = suite
         .tasks

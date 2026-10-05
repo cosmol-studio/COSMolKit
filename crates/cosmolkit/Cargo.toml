@@ -228,3 +228,7 @@ required-features = ["op-contracts-strict"]
 [[test]]
 name = "migration_uff_parameter_query"
 required-features = ["cap-forcefields", "cap-smiles", "cap-valence", "cap-hydrogens"]
+
+[[test]]
+name = "migration_d02_descriptor_projection"
+required-features = ["cap-descriptors", "cap-smiles"]

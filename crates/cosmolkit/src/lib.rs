@@ -42,7 +42,9 @@ pub use cosmolkit_depict::{
     Coordinate2DTemplateError, DepictError as Coordinate2DError, DrawingError,
 };
 #[cfg(feature = "cap-descriptors")]
-pub use cosmolkit_descriptors::DescriptorError;
+pub use cosmolkit_descriptors::{
+    CrippenTotals, DescriptorError, LabuteAsaContributions, RotatableBondsOptions,
+};
 #[cfg(feature = "cap-descriptors")]
 pub use descriptors::DescriptorReadError;
 #[cfg(feature = "cap-matrices")]

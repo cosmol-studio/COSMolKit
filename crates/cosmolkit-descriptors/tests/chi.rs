@@ -5,7 +5,7 @@ use cosmolkit_core::{RingFindType, RingInfo, ValenceAssignment, ValenceError};
 use cosmolkit_descriptors::{
     CHI_0_N_VERSION, CHI_0_V_VERSION, CHI_1_N_VERSION, CHI_1_V_VERSION, CHI_2_N_VERSION,
     CHI_2_V_VERSION, CHI_3_N_VERSION, CHI_3_V_VERSION, CHI_4_N_VERSION, CHI_4_V_VERSION,
-    CHI_N_N_VERSION, CHI_N_V_VERSION, DescriptorError, DescriptorInput, DescriptorResult, chi_0_n,
+    CHI_N_N_VERSION, CHI_N_V_VERSION, ChiInput, DescriptorError, DescriptorResult, chi_0_n,
     chi_0_v, chi_1_n, chi_1_v, chi_2_n, chi_2_v, chi_3_n, chi_3_v, chi_4_n, chi_4_v, chi_n_n,
     chi_n_v,
 };
@@ -22,14 +22,8 @@ struct Fixture {
     rings: RingInfo,
 }
 impl Fixture {
-    fn input(&self) -> DescriptorInput<'_> {
-        DescriptorInput::new(
-            &self.topology,
-            &self.coordinates,
-            &self.properties,
-            &self.valence,
-            &self.rings,
-        )
+    fn input(&self) -> ChiInput<'_> {
+        ChiInput::new(&self.topology, &self.valence)
     }
 }
 // Explicit prepared-read states, not chemical preparation or degree-derived H.
@@ -77,7 +71,7 @@ fn graph(z: &[u8], hs: &[u8], edges: &[(usize, usize)]) -> Fixture {
         rings: RingInfo::new(RingFindType::OtherOrUnknown, z.len(), edges.len()),
     }
 }
-type Entry = fn(&DescriptorInput<'_>) -> DescriptorResult<f64>;
+type Entry = fn(&ChiInput<'_>) -> DescriptorResult<f64>;
 const V: [Entry; 5] = [chi_0_v, chi_1_v, chi_2_v, chi_3_v, chi_4_v];
 const N: [Entry; 5] = [chi_0_n, chi_1_n, chi_2_n, chi_3_n, chi_4_n];
 fn close(a: f64, e: f64) {
@@ -763,3 +757,35 @@ const UPSTREAM: &[(&str, usize, bool, f64)] = &[
     ("CC(O)(C)CC", 4, false, 0.0),
     ("c1ccccc1O", 4, false, 0.428),
 ];
+
+#[test]
+fn chi_narrow_input_borrows_only_topology_and_valence() {
+    let fixture = graph(&[6; 4], &[3, 2, 2, 3], &[(0, 1), (1, 2), (2, 3)]);
+    let before = fixture.clone();
+    let input = ChiInput::new(&fixture.topology, &fixture.valence);
+    assert!(std::ptr::eq(input.topology(), &fixture.topology));
+    assert!(std::ptr::eq(input.valence(), &fixture.valence));
+    // No coordinates/properties/ring carrier can enter this interface.
+    for (entry, expected) in V
+        .into_iter()
+        .zip([
+            3.414213562373095,
+            1.914213562373095,
+            0.9999999999999998,
+            0.4999999999999999,
+            0.0,
+        ])
+        .chain(N.into_iter().zip([
+            3.414213562373095,
+            1.914213562373095,
+            0.9999999999999998,
+            0.4999999999999999,
+            0.0,
+        ]))
+    {
+        close(entry(&input).unwrap(), expected);
+    }
+    close(chi_n_v(&input, 2).unwrap(), 0.9999999999999998);
+    close(chi_n_n(&input, 2).unwrap(), 0.9999999999999998);
+    assert_eq!(fixture, before);
+}

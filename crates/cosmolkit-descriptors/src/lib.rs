@@ -11,6 +11,8 @@ mod crippen;
 mod labute;
 pub mod lipinski;
 mod mqn;
+mod qed;
+pub use qed::qed;
 pub(crate) mod patterns;
 pub mod rings;
 pub mod rotatable;
@@ -21,18 +23,24 @@ mod vsa;
 pub use chi::{
     CHI_0_N_VERSION, CHI_0_V_VERSION, CHI_1_N_VERSION, CHI_1_V_VERSION, CHI_2_N_VERSION,
     CHI_2_V_VERSION, CHI_3_N_VERSION, CHI_3_V_VERSION, CHI_4_N_VERSION, CHI_4_V_VERSION,
-    CHI_N_N_VERSION, CHI_N_V_VERSION, chi_0_n, chi_0_v, chi_1_n, chi_1_v, chi_2_n, chi_2_v,
-    chi_3_n, chi_3_v, chi_4_n, chi_4_v, chi_n_n, chi_n_v,
+    CHI_N_N_VERSION, CHI_N_V_VERSION, chi_0_n, chi_0_n_with_state, chi_0_v, chi_0_v_with_state,
+    chi_1_n, chi_1_n_with_state, chi_1_v, chi_1_v_with_state, chi_2_n, chi_2_n_with_state, chi_2_v,
+    chi_2_v_with_state, chi_3_n, chi_3_n_with_state, chi_3_v, chi_3_v_with_state, chi_4_n,
+    chi_4_n_with_state, chi_4_v, chi_4_v_with_state, chi_n_n, chi_n_n_with_state, chi_n_v,
+    chi_n_v_with_state,
 };
 pub use connectivity::{
-    HALL_KIER_ALPHA_VERSION, KAPPA_1_VERSION, KAPPA_2_VERSION, KAPPA_3_VERSION, PHI_VERSION,
-    hall_kier_alpha, kappa_1, kappa_2, kappa_3, phi,
+    HALL_KIER_ALPHA_VERSION, KAPPA_1_VERSION, KAPPA_2_VERSION, KAPPA_3_VERSION, PHI_VERSION, chi_0,
+    chi_1, hall_kier_alpha, kappa_1, kappa_2, kappa_3, phi,
 };
 pub use crippen::{CrippenContributions, crippen_contributions};
 pub use crippen::{CrippenParamRow, default_crippen_params};
 pub use crippen::{CrippenTotals, crippen_totals};
 pub use crippen::{crippen_clogp, crippen_mr};
-pub use labute::{LabuteContributions, labute_asa, labute_contributions};
+pub use labute::{
+    LabuteAsaContributions, LabuteContributions, labute_asa, labute_asa_contributions,
+    labute_contributions,
+};
 pub use mqn::{MQN_VERSION, mqns};
 pub use tpsa::{DescriptorComputedState, tpsa_contributions};
 pub use vsa::{assign_contribs_to_bins, slogp_vsa, smr_vsa};
@@ -52,8 +60,9 @@ pub use rings::{
     num_aliphatic_carbocycles_prepared, num_aliphatic_heterocycles_prepared,
     num_aliphatic_rings_prepared, num_aromatic_carbocycles_prepared,
     num_aromatic_heterocycles_prepared, num_aromatic_rings_prepared, num_bridgehead_atoms_prepared,
-    num_heterocycles_prepared, num_rings_prepared, num_saturated_carbocycles_prepared,
-    num_saturated_heterocycles_prepared, num_saturated_rings_prepared, num_spiro_atoms_prepared,
+    num_bridgehead_atoms_with_ring_info, num_heterocycles_prepared, num_rings_prepared,
+    num_saturated_carbocycles_prepared, num_saturated_heterocycles_prepared,
+    num_saturated_rings_prepared, num_spiro_atoms_prepared, num_spiro_atoms_with_ring_info,
 };
 pub use rotatable::{
     NON_RING_AMIDES_PATTERN, NON_STRICT_ROTATABLE_PATTERN, NUM_ROTATABLE_BONDS_VERSION,
@@ -76,6 +85,36 @@ use cosmolkit_model::{AtomId, CoordinateBlock, Element, MoleculeProperties, Topo
 use cosmolkit_search::{QueryMatchContextError, SmartsParseError, SubstructMatchError};
 
 const RDKIT_ELECTRON_MASS: f64 = 0.00054857991;
+
+/// Detached read input for the source Chi recomputation algorithms.
+///
+/// The pinned `hkDeltas`/`nVals`/Chi source reads topology and prepared valence
+/// only. Coordinates, properties and ring state are not carrier inputs.
+/// This value borrows existing rows without validation, preparation, cache
+/// authority or identity inference. Each entrypoint retains its original
+/// topology/valence structural validation and typed errors.
+#[derive(Debug, Clone, Copy)]
+pub struct ChiInput<'a> {
+    topology: &'a TopologyBlock,
+    valence: &'a ValenceAssignment,
+}
+
+impl<'a> ChiInput<'a> {
+    /// Borrows the exact topology and prepared valence rows read by Chi.
+    pub const fn new(topology: &'a TopologyBlock, valence: &'a ValenceAssignment) -> Self {
+        Self { topology, valence }
+    }
+
+    /// Borrowed detached topology rows.
+    pub const fn topology(&self) -> &'a TopologyBlock {
+        self.topology
+    }
+
+    /// Borrowed prepared valence rows; never recomputed here.
+    pub const fn valence(&self) -> &'a ValenceAssignment {
+        self.valence
+    }
+}
 
 /// Borrowed detached FINAL molecule state evaluated by descriptor functions.
 ///
@@ -3159,6 +3198,15 @@ pub enum DescriptorSearchCause {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DescriptorError {
+    #[error("descriptor `{function}`: topology edit failed: {source}")]
+    TopologyEdit {
+        function: &'static str,
+        #[source]
+        source: cosmolkit_model::TopologyEditError,
+    },
+    #[error("descriptor `qed`: default RemoveHs did not supply final {field}")]
+    MissingFinalHydrogenState { field: &'static str },
+
     /// A sole path-owner result violates the source TEST_ASSERT invariant.
     #[error(
         "descriptor `{function}`: connectivity path has {actual_rows:?} atom rows; expected {expected_rows}"

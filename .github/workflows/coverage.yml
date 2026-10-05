@@ -120,11 +120,11 @@ jobs:
               with:
                   path: |
                       ${{ env.PARITY_DATA }}/*/input.json
-                      ${{ env.PARITY_DATA }}/*/reference.json
+                      ${{ env.PARITY_DATA }}/*/reference.*
                       ${{ env.PARITY_DATA }}/*/manifest.json
-                  key: parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/rdkit/fingerprint_values_pilot.py', 'testdata/smiles/corpus/smiles_5000.smi') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  key: parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/**', 'tools/testdata/**', 'testdata/**/fixtures/**', 'testdata/**/corpus/**', 'testdata/reference/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
                   restore-keys: |
-                      parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/rdkit/fingerprint_values_pilot.py', 'testdata/smiles/corpus/smiles_5000.smi') }}-
+                      parity-${{ env.PARITY_CACHE_SCHEMA }}-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('uv.lock', 'pyproject.toml', 'parity-tests/Cargo.toml', 'parity-tests/src/**', 'tools/oracles/**', 'tools/testdata/**', 'testdata/**/fixtures/**', 'testdata/**/corpus/**', 'testdata/reference/**') }}-
 
             - name: Prepare and validate all reference values
               id: prepare
@@ -158,7 +158,7 @@ jobs:
                   fi
                   exit "$status"
 
-            - name: Run independent Cargo corpus tests with coverage
+            - name: Run all parity integration targets with coverage
               id: parity
               if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
               continue-on-error: true
@@ -168,9 +168,10 @@ jobs:
                   coverage_env="$(cargo llvm-cov show-env --sh)"
                   eval "$coverage_env"
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
-                  # No filter or thread override: Cargo parallelizes function/corpus tests.
-                  cargo test -p cosmolkit-parity-tests -p cosmolkit-core \
-                      --release --test reference_parity --no-fail-fast \
+                  # Discover all integration targets (corpus + special regressions).
+                  # No handwritten per-test target list or workflow-specific recipe.
+                  cargo test -p cosmolkit-parity-tests \
+                      --release --test '*' --no-fail-fast \
                       --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
                       2>&1 | tee "$RUNNER_TEMP/parity-5000.log"
 
@@ -180,7 +181,7 @@ jobs:
               with:
                   path: |
                       ${{ env.PARITY_DATA }}/*/input.json
-                      ${{ env.PARITY_DATA }}/*/reference.json
+                      ${{ env.PARITY_DATA }}/*/reference.*
                       ${{ env.PARITY_DATA }}/*/manifest.json
                   key: ${{ steps.reference_cache.outputs.cache-primary-key }}
 
@@ -192,6 +193,7 @@ jobs:
                   path: |
                       ${{ runner.temp }}/parity-prepare.log
                       ${{ runner.temp }}/parity-5000.log
+                      ${{ env.PARITY_DATA }}/special-run-*/*.json
                       ${{ env.PARITY_DATA }}/rust-report.json
                       ${{ env.PARITY_DATA }}/run-*/*.json
                   if-no-files-found: error

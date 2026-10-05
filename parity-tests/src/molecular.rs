@@ -238,6 +238,11 @@ pub enum Outcome {
     MorganHashedCounts(MorganHashedCountsOutput),
     MorganSparseCounts(MorganSparseCountsOutput),
     Float64Bits(u64),
+    Float64ContributionsBits {
+        value: u64,
+        atom_contributions: Vec<u64>,
+    },
+    UnsignedVector(Vec<u32>),
     Unsigned(u32),
     Text(String),
     Topology(Topology),
@@ -372,6 +377,41 @@ pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String
         (MolecularWeight { .. } | ExactMolecularWeight { .. }, Outcome::Float64Bits(bits)) => {
             f64::from_bits(*bits).is_finite()
         }
+        (
+            Chi0
+            | Chi1
+            | HallKierAlpha
+            | Kappa1
+            | Kappa2
+            | Kappa3
+            | Phi
+            | Chi0V
+            | Chi1V
+            | Chi2V
+            | Chi3V
+            | Chi4V
+            | Chi0N
+            | Chi1N
+            | Chi2N
+            | Chi3N
+            | Chi4N
+            | ChiNV { .. }
+            | ChiNN { .. },
+            Outcome::Float64Bits(bits),
+        ) => f64::from_bits(*bits).is_finite(),
+        (
+            HallKierAlphaWithContributions,
+            Outcome::Float64ContributionsBits {
+                value,
+                atom_contributions,
+            },
+        ) => {
+            f64::from_bits(*value).is_finite()
+                && atom_contributions
+                    .iter()
+                    .all(|b| f64::from_bits(*b).is_finite())
+        }
+        (Mqns { .. }, Outcome::UnsignedVector(values)) => values.len() == 42,
         (MolecularFormula { .. }, Outcome::Text(_)) => true,
         (SvgDefault, Outcome::Text(svg)) => svg.contains("<svg") && svg.contains("</svg>"),
         (NumHeavyAtoms { .. }, Outcome::Unsigned(_)) => true,
@@ -522,6 +562,141 @@ pub fn run(input: &Input) -> Result<Record, String> {
         stage = Stage::Operation;
         use Profile::*;
         let transformed = match profile {
+            Chi0 => {
+                return mol
+                    .chi_0()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi1 => {
+                return mol
+                    .chi_1()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            HallKierAlpha => {
+                return mol
+                    .hall_kier_alpha()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            HallKierAlphaWithContributions => {
+                return mol
+                    .hall_kier_alpha_with_contributions()
+                    .map(
+                        |(value, atom_contributions)| Outcome::Float64ContributionsBits {
+                            value: value.to_bits(),
+                            atom_contributions: atom_contributions
+                                .into_iter()
+                                .map(f64::to_bits)
+                                .collect(),
+                        },
+                    )
+                    .map_err(|e| e.to_string());
+            }
+            Kappa1 => {
+                return mol
+                    .kappa_1()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Kappa2 => {
+                return mol
+                    .kappa_2()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Kappa3 => {
+                return mol
+                    .kappa_3()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Phi => {
+                return mol
+                    .phi()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Mqns { force } => {
+                return mol
+                    .mqns(*force)
+                    .map(Outcome::UnsignedVector)
+                    .map_err(|e| e.to_string());
+            }
+            Chi0V => {
+                return mol
+                    .chi_0_v()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi1V => {
+                return mol
+                    .chi_1_v()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi2V => {
+                return mol
+                    .chi_2_v()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi3V => {
+                return mol
+                    .chi_3_v()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi4V => {
+                return mol
+                    .chi_4_v()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi0N => {
+                return mol
+                    .chi_0_n()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi1N => {
+                return mol
+                    .chi_1_n()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi2N => {
+                return mol
+                    .chi_2_n()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi3N => {
+                return mol
+                    .chi_3_n()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi4N => {
+                return mol
+                    .chi_4_n()
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            ChiNV { order } => {
+                return mol
+                    .chi_n_v(*order)
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            ChiNN { order } => {
+                return mol
+                    .chi_n_n(*order)
+                    .map(|value| Outcome::Float64Bits(value.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+
             SvgDefault => {
                 return mol
                     .to_svg(300, 300)
@@ -545,13 +720,13 @@ pub fn run(input: &Input) -> Result<Record, String> {
             }
             MolecularWeight { only_heavy } => {
                 return mol
-                    .molecular_weight_with_options(*only_heavy)
+                    .molecular_weight_with_params(*only_heavy)
                     .map(|n| Outcome::Float64Bits(n.to_bits()))
                     .map_err(|e| e.to_string());
             }
             ExactMolecularWeight { only_heavy } => {
                 return mol
-                    .exact_molecular_weight_with_options(*only_heavy)
+                    .exact_molecular_weight_with_params(*only_heavy)
                     .map(|n| Outcome::Float64Bits(n.to_bits()))
                     .map_err(|e| e.to_string());
             }
@@ -560,7 +735,7 @@ pub fn run(input: &Input) -> Result<Record, String> {
                 abbreviate_h_isotopes,
             } => {
                 return mol
-                    .molecular_formula_with_options(*separate_isotopes, *abbreviate_h_isotopes)
+                    .molecular_formula_with_params(*separate_isotopes, *abbreviate_h_isotopes)
                     .map(Outcome::Text)
                     .map_err(|e| e.to_string());
             }

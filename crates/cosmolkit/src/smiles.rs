@@ -342,6 +342,14 @@ impl Molecule {
                 &topology,
                 &cosmolkit_core::SanitizeParams::default(),
             )?;
+            // RDKit✔️✔️: mol.setProp(common_properties::numArom, narom, true);
+            // Transport the existing aromaticity owner's computed property.
+            properties.clear_computed_props();
+            if let Some(count) = result.aromatic_ring_count {
+                properties
+                    .set_computed_prop("numArom", count.to_string())
+                    .map_err(OperationError::InvalidProperty)?;
+            }
             topology = result.topology;
             final_valence = result.final_valence;
             final_rings = result.final_rings;

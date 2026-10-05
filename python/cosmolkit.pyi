@@ -3,9 +3,12 @@ from __future__ import annotations
 # ruff: noqa: E501, F401, F403, F405
 
 import builtins
+import enum
 import typing
 import types
 __all__ = [
+    "DescriptorError",
+    "DescriptorReadError",
     "FingerprintError",
     "MorganReadError",
     "SmilesWriteError",
@@ -16,11 +19,14 @@ __all__ = [
     "_binding_profile",
     "AdditionalOutput",
     "Coordinate2DParams",
+    "CrippenTotals",
     "Element",
     "ElementInfo",
     "Fingerprint",
+    "LabuteAsaContributions",
     "Molecule",
     "MorganParams",
+    "RotatableBondsOptions",
     "SmilesParseParams",
     "SmilesWriteParams",
     "SparseBitFingerprint",
@@ -72,6 +78,13 @@ class Coordinate2DParams:
     @property
     def use_ring_templates(self) -> builtins.bool: ...
     def __new__(cls, coordinate_map: typing.Optional[typing.Mapping[builtins.int, typing.Sequence[builtins.float]]] = None, *, canonical_orientation: builtins.bool = False, clear_existing_2d: builtins.bool = True, flips_per_sample: builtins.int = 0, samples: builtins.int = 0, sample_seed: builtins.int = 0, permute_degree_four: builtins.bool = False, force_rdkit: builtins.bool = False, use_ring_templates: builtins.bool = False) -> Coordinate2DParams: ...
+
+@typing.final
+class CrippenTotals:
+    @property
+    def logp(self) -> builtins.float: ...
+    @property
+    def molar_refractivity(self) -> builtins.float: ...
 
 @typing.final
 class Element:
@@ -226,10 +239,254 @@ class Fingerprint:
     def __repr__(self) -> builtins.str: ...
 
 @typing.final
+class LabuteAsaContributions:
+    @property
+    def asa(self) -> builtins.float: ...
+    @property
+    def atom_contributions(self) -> builtins.list[builtins.float]: ...
+    @property
+    def hydrogen_contribution(self) -> builtins.float: ...
+
+@typing.final
 class Molecule:
     r"""
     Python ownership wraps the ONE live runtime value, not detached chemistry.
     """
+    def num_amide_bonds(self) -> builtins.int:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def num_spiro_atoms(self) -> builtins.int:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def num_bridgehead_atoms(self) -> builtins.int:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def num_atom_stereo_centers(self) -> builtins.int:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def num_unspecified_atom_stereo_centers(self) -> builtins.int:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def num_rotatable_bonds(self) -> builtins.int:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def num_rotatable_bonds_with_params(self, params: RotatableBondsOptions) -> builtins.int:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def molecular_weight_with_params(self, only_heavy: builtins.bool) -> builtins.float:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def exact_molecular_weight_with_params(self, only_heavy: builtins.bool) -> builtins.float:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def molecular_formula_with_params(self, separate_isotopes: builtins.bool, abbreviate_h_isotopes: builtins.bool) -> builtins.str:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def molecular_weight(self) -> builtins.float:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def exact_molecular_weight(self) -> builtins.float:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def molecular_formula(self) -> builtins.str:
+        r"""
+        Descriptor query through the canonical public Rust method.
+        """
+    def num_heavy_atoms(self) -> builtins.int:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def total_atom_count(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def lipinski_hba(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def lipinski_hbd(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def fraction_csp3(self) -> builtins.float:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_heteroatoms(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_hba(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_hbd(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_rings(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_heterocycles(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_aromatic_rings(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_saturated_rings(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_aliphatic_rings(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_aromatic_heterocycles(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_aromatic_carbocycles(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_aliphatic_heterocycles(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_aliphatic_carbocycles(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_saturated_heterocycles(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def num_saturated_carbocycles(self) -> builtins.int:
+        r"""
+        Read-only descriptor through the canonical public Rust method.
+        """
+    def chi_0(self) -> builtins.float:
+        r"""
+        Degree-based Chi0 through the canonical public Rust method.
+        """
+    def chi_1(self) -> builtins.float:
+        r"""
+        Degree-based Chi1 through the canonical public Rust method.
+        """
+    def hall_kier_alpha(self) -> builtins.float: ...
+    def hall_kier_alpha_with_contributions(self) -> tuple[builtins.float, builtins.list[builtins.float]]:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        """
+    def kappa_1(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        """
+    def kappa_2(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        """
+    def kappa_3(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        """
+    def phi(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        """
+    def mqns(self, force: builtins.bool = False) -> builtins.list[builtins.int]:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        All 42 components; the source ignores force and performs no cache write.
+        """
+    def chi_0_v(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_1_v(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_2_v(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_3_v(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_4_v(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_n_v(self, order: builtins.int) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_0_n(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_1_n(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_2_n(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_3_n(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_4_n(self) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
+    def chi_n_n(self, order: builtins.int) -> builtins.float:
+        r"""
+        Experimental read-only query using the canonical public facade.
+        Recomputes only; no vector-property caching or force parameter.
+        Requires existing prepared valence only; missing/reset rings succeed.
+        """
     @staticmethod
     def new() -> Molecule: ...
     @staticmethod
@@ -257,6 +514,53 @@ class Molecule:
         """
     def write_svg(self, path: builtins.str, width: builtins.int, height: builtins.int) -> None: ...
     def write_png(self, path: builtins.str, width: builtins.int, height: builtins.int) -> None: ...
+    def crippen_descriptors(self) -> CrippenTotals: ...
+    def labute_asa(self) -> builtins.float: ...
+    def labute_asa_contributions(self) -> LabuteAsaContributions: ...
+    def tpsa(self) -> builtins.float: ...
+    def slogp_vsa(self) -> builtins.list[builtins.float]: ...
+    def smr_vsa(self) -> builtins.list[builtins.float]: ...
+    def slogp_vsa_1(self) -> builtins.float: ...
+    def slogp_vsa_2(self) -> builtins.float: ...
+    def slogp_vsa_3(self) -> builtins.float: ...
+    def slogp_vsa_4(self) -> builtins.float: ...
+    def slogp_vsa_5(self) -> builtins.float: ...
+    def slogp_vsa_6(self) -> builtins.float: ...
+    def slogp_vsa_7(self) -> builtins.float: ...
+    def slogp_vsa_8(self) -> builtins.float: ...
+    def slogp_vsa_9(self) -> builtins.float: ...
+    def slogp_vsa_10(self) -> builtins.float: ...
+    def slogp_vsa_11(self) -> builtins.float: ...
+    def slogp_vsa_12(self) -> builtins.float: ...
+    def smr_vsa_1(self) -> builtins.float: ...
+    def smr_vsa_2(self) -> builtins.float: ...
+    def smr_vsa_3(self) -> builtins.float: ...
+    def smr_vsa_4(self) -> builtins.float: ...
+    def smr_vsa_5(self) -> builtins.float: ...
+    def smr_vsa_6(self) -> builtins.float: ...
+    def smr_vsa_7(self) -> builtins.float: ...
+    def smr_vsa_8(self) -> builtins.float: ...
+    def smr_vsa_9(self) -> builtins.float: ...
+    def smr_vsa_10(self) -> builtins.float: ...
+    def crippen_descriptors_with_params(self, include_hydrogens: builtins.bool, force: builtins.bool) -> CrippenTotals: ...
+    def labute_asa_with_params(self, include_hydrogens: builtins.bool, force: builtins.bool) -> builtins.float: ...
+    def labute_asa_contributions_with_params(self, include_hydrogens: builtins.bool, force: builtins.bool) -> LabuteAsaContributions: ...
+    def tpsa_with_params(self, include_sulfur_phosphorus: builtins.bool, force: builtins.bool) -> builtins.float: ...
+    def slogp_vsa_with_params(self, bins: typing.Optional[typing.Sequence[builtins.float]], force: builtins.bool) -> builtins.list[builtins.float]: ...
+    def smr_vsa_with_params(self, bins: typing.Optional[typing.Sequence[builtins.float]], force: builtins.bool) -> builtins.list[builtins.float]: ...
+    def qed(self) -> builtins.float: ...
+    def chi_0_v_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_1_v_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_2_v_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_3_v_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_4_v_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_n_v_with_params(self, order: builtins.int, force: builtins.bool) -> builtins.float: ...
+    def chi_0_n_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_1_n_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_2_n_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_3_n_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_4_n_with_params(self, force: builtins.bool) -> builtins.float: ...
+    def chi_n_n_with_params(self, order: builtins.int, force: builtins.bool) -> builtins.float: ...
 
 @typing.final
 class MorganParams:
@@ -369,6 +673,16 @@ class SparseCountFingerprint32:
     def with_divided_scalar(self, value: builtins.int) -> SparseCountFingerprint32: ...
     def __repr__(self) -> builtins.str: ...
 
+@typing.final
+class RotatableBondsOptions(enum.Enum):
+    r"""
+    Immutable source definition selector, projected from the public facade.
+    """
+    Default = ...
+    NonStrict = ...
+    Strict = ...
+    StrictLinkages = ...
+
 def element_info(element: Element) -> ElementInfo: ...
 
 def version() -> builtins.str: ...
@@ -419,3 +733,26 @@ class FingerprintError(builtins.ValueError):
     site: builtins.str
     what: builtins.str
     reason: builtins.str
+
+class DescriptorReadError(builtins.ValueError):
+    domain: builtins.str
+    kind: builtins.str
+
+class DescriptorError(builtins.ValueError):
+    domain: builtins.str
+    kind: builtins.str
+    # Context fields exist only for applicable Rust variants.
+    function: builtins.str
+    field: builtins.str
+    actual: builtins.int
+    expected: builtins.int
+    minimum: builtins.int
+    expected_rows: builtins.int
+    actual_rows: typing.Optional[builtins.int]
+    include_sulfur_phosphorus: builtins.bool
+    contribs_len: builtins.int
+    bin_prop_len: builtins.int
+    bins_len: builtins.int
+    cell: builtins.str
+    row: builtins.int
+    detail: builtins.str

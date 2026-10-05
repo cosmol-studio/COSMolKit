@@ -3,8 +3,9 @@
 //! Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8 (BSD).
 //! These domain entrypoints reproduce the complete source recomputation
 //! arithmetic only. Source vector-property cache/force/computed lifecycle
-//! remains S01 HOLD; no force parameter or cache adapter exists here.
-use crate::{DescriptorError, DescriptorInput, DescriptorResult};
+//! belongs to the cached adapters below. The retained recomputation APIs
+//! remain available for detached callers without source computed properties.
+use crate::{ChiInput, DescriptorError, DescriptorResult};
 use cosmolkit_core::{
     GraphPath, PathRepresentation, PathSearchParams, all_paths_of_length, element_info,
     total_hydrogen_count_from_validated,
@@ -37,7 +38,7 @@ pub const CHI_N_N_VERSION: &str = "1.2.0";
 
 // Local structural preflight only; supplied valence is ALWAYS borrowed.
 // Numeric implicit H is read by the source per-atom branch, never globally.
-fn validate_input(input: &DescriptorInput<'_>, function: &'static str) -> DescriptorResult<()> {
+fn validate_input(input: &ChiInput<'_>, function: &'static str) -> DescriptorResult<()> {
     input
         .topology()
         .validate()
@@ -53,7 +54,7 @@ fn validate_input(input: &DescriptorInput<'_>, function: &'static str) -> Descri
 // supplied structural metadata checks, beyond already-valid ROMol.
 // No graph/assignment/ring clone, table duplication, chemistry or cache.
 fn chi_v_weights_kernel(
-    input: &DescriptorInput<'_>,
+    input: &ChiInput<'_>,
     function: &'static str,
 ) -> DescriptorResult<Vec<f64>> {
     // RDKit❗❌: void hkDeltas(const ROMol &mol, std::vector<double> &deltas, bool force) {
@@ -116,7 +117,7 @@ fn chi_v_weights_kernel(
 // Complexity: same structural preflight/allocation debt as v, O(V) numeric
 // loop/one Vec and no cloning, preparation, second table or state writes.
 fn chi_n_weights_kernel(
-    input: &DescriptorInput<'_>,
+    input: &ChiInput<'_>,
     function: &'static str,
 ) -> DescriptorResult<Vec<f64>> {
     // RDKit❗❌: void nVals(const ROMol &mol, std::vector<double> &nVs, bool force) {
@@ -309,29 +310,21 @@ fn entry_error(error: DescriptorError, function: &'static str) -> DescriptorErro
     }
 }
 
-fn chi_v_order(
-    input: &DescriptorInput<'_>,
-    order: u32,
-    function: &'static str,
-) -> DescriptorResult<f64> {
+fn chi_v_order(input: &ChiInput<'_>, order: u32, function: &'static str) -> DescriptorResult<f64> {
     let weights = chi_v_weights_kernel(input, function)?;
     chi_order_from_weights(input.topology(), &weights, order)
         .map_err(|error| entry_error(error, function))
 }
-fn chi_n_order(
-    input: &DescriptorInput<'_>,
-    order: u32,
-    function: &'static str,
-) -> DescriptorResult<f64> {
+fn chi_n_order(input: &ChiInput<'_>, order: u32, function: &'static str) -> DescriptorResult<f64> {
     let weights = chi_n_weights_kernel(input, function)?;
     chi_order_from_weights(input.topology(), &weights, order)
         .map_err(|error| entry_error(error, function))
 }
 
 /// Chi0v arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_0_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_0_v(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi0v(const ROMol &mol, bool force) {
     // RDKit✔️❌:   std::vector<double> hkDs(mol.getNumAtoms());
     // RDKit❗❌:   detail::hkDeltas(mol, hkDs, force);
@@ -342,9 +335,9 @@ pub fn chi_0_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 }
 
 /// Chi1v arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_1_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_1_v(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi1v(const ROMol &mol, bool force) {
     // RDKit✔️❌:   std::vector<double> hkDs(mol.getNumAtoms());
     // RDKit❗❌:   detail::hkDeltas(mol, hkDs, force);
@@ -364,9 +357,9 @@ pub fn chi_1_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 }
 
 /// Chi2v arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_2_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_2_v(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi2v(const ROMol &mol, bool force) {
     // RDKit❗❌:   return calcChiNv(mol, 2, force);
     // RDKit✔️❌: };
@@ -374,9 +367,9 @@ pub fn chi_2_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 }
 
 /// Chi3v arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_3_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_3_v(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi3v(const ROMol &mol, bool force) {
     // RDKit❗❌:   return calcChiNv(mol, 3, force);
     // RDKit✔️❌: };
@@ -384,9 +377,9 @@ pub fn chi_3_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 }
 
 /// Chi4v arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_4_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_4_v(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi4v(const ROMol &mol, bool force) {
     // RDKit❗❌:   return calcChiNv(mol, 4, force);
     // RDKit✔️❌: };
@@ -396,7 +389,7 @@ pub fn chi_4_v(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 /// General order Chiv recomputation; order0/1 differ from fixed wrappers.
 /// Source u32 order wrap and path order are retained, after weight reads.
 /// Uses one core enumeration and no reassociated products or input clones.
-pub fn chi_n_v(input: &DescriptorInput<'_>, order: u32) -> DescriptorResult<f64> {
+pub fn chi_n_v(input: &ChiInput<'_>, order: u32) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChiNv(const ROMol &mol, unsigned int n, bool force) {
     // RDKit✔️❌:   std::vector<double> hkDs(mol.getNumAtoms());
     // RDKit❗❌:   detail::hkDeltas(mol, hkDs, force);
@@ -420,9 +413,9 @@ pub fn chi_n_v(input: &DescriptorInput<'_>, order: u32) -> DescriptorResult<f64>
 }
 
 /// Chi0n arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_0_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_0_n(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi0n(const ROMol &mol, bool force) {
     // RDKit✔️❌:   std::vector<double> nVs(mol.getNumAtoms());
     // RDKit❗❌:   detail::nVals(mol, nVs, force);
@@ -433,9 +426,9 @@ pub fn chi_0_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 }
 
 /// Chi1n arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_1_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_1_n(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi1n(const ROMol &mol, bool force) {
     // RDKit✔️❌:   std::vector<double> nVs(mol.getNumAtoms());
     // RDKit❗❌:   detail::nVals(mol, nVs, force);
@@ -455,9 +448,9 @@ pub fn chi_1_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 }
 
 /// Chi2n arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_2_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_2_n(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi2n(const ROMol &mol, bool force) {
     // RDKit❗❌:   return calcChiNn(mol, 2, force);
     // RDKit✔️❌: };
@@ -465,9 +458,9 @@ pub fn chi_2_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 }
 
 /// Chi3n arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_3_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_3_n(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi3n(const ROMol &mol, bool force) {
     // RDKit❗❌:   return calcChiNn(mol, 3, force);
     // RDKit✔️❌: };
@@ -475,9 +468,9 @@ pub fn chi_3_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 }
 
 /// Chi4n arithmetic recomputed from prepared state; no cache or force.
-/// Preserves all five borrowed blocks and original typed failures.
+/// Borrows only topology/valence and preserves original typed failures.
 /// Shares the private source kernel; extra structural validation costs apply.
-pub fn chi_4_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
+pub fn chi_4_n(input: &ChiInput<'_>) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChi4n(const ROMol &mol, bool force) {
     // RDKit❗❌:   return calcChiNn(mol, 4, force);
     // RDKit✔️❌: };
@@ -487,7 +480,7 @@ pub fn chi_4_n(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
 /// General order Chin recomputation; order0/1 differ from fixed wrappers.
 /// Source u32 order wrap and path order are retained, after weight reads.
 /// Uses one core enumeration and no reassociated products or input clones.
-pub fn chi_n_n(input: &DescriptorInput<'_>, order: u32) -> DescriptorResult<f64> {
+pub fn chi_n_n(input: &ChiInput<'_>, order: u32) -> DescriptorResult<f64> {
     // RDKit❗❌: double calcChiNn(const ROMol &mol, unsigned int n, bool force) {
     // RDKit✔️❌:   std::vector<double> nVs(mol.getNumAtoms());
     // RDKit❗❌:   detail::nVals(mol, nVs, force);
@@ -633,5 +626,251 @@ mod chi_weighted_tests {
                 .to_bits(),
             0.0f64.to_bits()
         );
+    }
+}
+
+fn cached_v_weights(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+    function: &'static str,
+) -> DescriptorResult<Vec<f64>> {
+    // RDKit source (ConnectivityDescriptors.cpp detail::hkDeltas):
+    // RDKit❗✔️: if (!force && mol.hasProp(common_properties::_connectivityHKDeltas)) {
+    // RDKit❗✔️:   mol.getProp(common_properties::_connectivityHKDeltas, deltas);
+    // RDKit❗✔️:   return;
+    // RDKit❗✔️: }
+    // The source copies cached rows to the caller's output vector before any
+    // chemistry work; preserve this O(V) copy and guard ordering exactly.
+    if !force {
+        if let Some(rows) = &state.chi_v_weights {
+            return Ok(rows.clone());
+        }
+    }
+    let rows = chi_v_weights_kernel(input, function)?;
+    // RDKit❗✔️: mol.setProp(common_properties::_connectivityHKDeltas, deltas, true);
+    // Cold numeric work stays in the one retained kernel, whose additional
+    // detached structural-validation cost is documented independently.
+    state.chi_v_weights = Some(rows.clone());
+    Ok(rows)
+}
+
+/// Source cached chi_0_v; reuses the existing weight and arithmetic owners.
+pub fn chi_0_v_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::hkDeltas(mol, hkDs, force);
+    let weights = cached_v_weights(input, force, state, "chi_0_v")?;
+    Ok(chi_zero_from_weights(&weights))
+}
+
+/// Source cached chi_1_v; reuses the existing weight and arithmetic owners.
+pub fn chi_1_v_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::hkDeltas(mol, hkDs, force);
+    let weights = cached_v_weights(input, force, state, "chi_1_v")?;
+    chi_one_from_weights(input.topology(), &weights).map_err(|error| entry_error(error, "chi_1_v"))
+}
+
+/// Source cached chi_2_v; reuses the existing weight and arithmetic owners.
+pub fn chi_2_v_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::hkDeltas(mol, hkDs, force);
+    let weights = cached_v_weights(input, force, state, "chi_2_v")?;
+    chi_order_from_weights(input.topology(), &weights, 2)
+        .map_err(|error| entry_error(error, "chi_2_v"))
+}
+
+/// Source cached chi_3_v; reuses the existing weight and arithmetic owners.
+pub fn chi_3_v_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::hkDeltas(mol, hkDs, force);
+    let weights = cached_v_weights(input, force, state, "chi_3_v")?;
+    chi_order_from_weights(input.topology(), &weights, 3)
+        .map_err(|error| entry_error(error, "chi_3_v"))
+}
+
+/// Source cached chi_4_v; reuses the existing weight and arithmetic owners.
+pub fn chi_4_v_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::hkDeltas(mol, hkDs, force);
+    let weights = cached_v_weights(input, force, state, "chi_4_v")?;
+    chi_order_from_weights(input.topology(), &weights, 4)
+        .map_err(|error| entry_error(error, "chi_4_v"))
+}
+
+/// Source cached chi_n_v; reuses the existing weight and arithmetic owners.
+pub fn chi_n_v_with_state(
+    input: &ChiInput<'_>,
+    order: u32,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::hkDeltas(mol, hkDs, force);
+    let weights = cached_v_weights(input, force, state, "chi_n_v")?;
+    chi_order_from_weights(input.topology(), &weights, order)
+        .map_err(|error| entry_error(error, "chi_n_v"))
+}
+
+fn cached_n_weights(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+    function: &'static str,
+) -> DescriptorResult<Vec<f64>> {
+    // RDKit source (ConnectivityDescriptors.cpp detail::nVals):
+    // RDKit❗✔️: if (!force && mol.hasProp(common_properties::_connectivityNVals)) {
+    // RDKit❗✔️:   mol.getProp(common_properties::_connectivityNVals, nVs);
+    // RDKit❗✔️:   return;
+    // RDKit❗✔️: }
+    // The source copies cached rows to the caller's output vector before any
+    // chemistry work; preserve this O(V) copy and guard ordering exactly.
+    if !force {
+        if let Some(rows) = &state.chi_n_weights {
+            return Ok(rows.clone());
+        }
+    }
+    let rows = chi_n_weights_kernel(input, function)?;
+    // RDKit❗✔️: mol.setProp(common_properties::_connectivityNVals, nVs, true);
+    // Cold numeric work stays in the one retained kernel, whose additional
+    // detached structural-validation cost is documented independently.
+    state.chi_n_weights = Some(rows.clone());
+    Ok(rows)
+}
+
+/// Source cached chi_0_n; reuses the existing weight and arithmetic owners.
+pub fn chi_0_n_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::nVals(mol, nVs, force);
+    let weights = cached_n_weights(input, force, state, "chi_0_n")?;
+    Ok(chi_zero_from_weights(&weights))
+}
+
+/// Source cached chi_1_n; reuses the existing weight and arithmetic owners.
+pub fn chi_1_n_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::nVals(mol, nVs, force);
+    let weights = cached_n_weights(input, force, state, "chi_1_n")?;
+    chi_one_from_weights(input.topology(), &weights).map_err(|error| entry_error(error, "chi_1_n"))
+}
+
+/// Source cached chi_2_n; reuses the existing weight and arithmetic owners.
+pub fn chi_2_n_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::nVals(mol, nVs, force);
+    let weights = cached_n_weights(input, force, state, "chi_2_n")?;
+    chi_order_from_weights(input.topology(), &weights, 2)
+        .map_err(|error| entry_error(error, "chi_2_n"))
+}
+
+/// Source cached chi_3_n; reuses the existing weight and arithmetic owners.
+pub fn chi_3_n_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::nVals(mol, nVs, force);
+    let weights = cached_n_weights(input, force, state, "chi_3_n")?;
+    chi_order_from_weights(input.topology(), &weights, 3)
+        .map_err(|error| entry_error(error, "chi_3_n"))
+}
+
+/// Source cached chi_4_n; reuses the existing weight and arithmetic owners.
+pub fn chi_4_n_with_state(
+    input: &ChiInput<'_>,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::nVals(mol, nVs, force);
+    let weights = cached_n_weights(input, force, state, "chi_4_n")?;
+    chi_order_from_weights(input.topology(), &weights, 4)
+        .map_err(|error| entry_error(error, "chi_4_n"))
+}
+
+/// Source cached chi_n_n; reuses the existing weight and arithmetic owners.
+pub fn chi_n_n_with_state(
+    input: &ChiInput<'_>,
+    order: u32,
+    force: bool,
+    state: &mut crate::DescriptorComputedState,
+) -> DescriptorResult<f64> {
+    // RDKit❗✔️: detail::nVals(mol, nVs, force);
+    let weights = cached_n_weights(input, force, state, "chi_n_n")?;
+    chi_order_from_weights(input.topology(), &weights, order)
+        .map_err(|error| entry_error(error, "chi_n_n"))
+}
+
+#[cfg(test)]
+mod chi_source_cache_tests {
+    use super::*;
+    use cosmolkit_core::ValenceAssignment;
+
+    #[test]
+    fn chi_cache_warm_force_failure_clear_and_clone() {
+        // Source returns supplied computed rows before reading atom valence;
+        // force instead evaluates its original kernel. Cached state survives
+        // failed cold evaluation; detached clone and clear are independent.
+        let topology = TopologyBlock::default();
+        let malformed = ValenceAssignment {
+            explicit_valence: vec![1],
+            implicit_hydrogens: vec![1],
+        };
+        let input = ChiInput::new(&topology, &malformed);
+        let mut original = crate::DescriptorComputedState::default();
+        original.chi_v_weights = Some(vec![2.0, 3.0]);
+        original.chi_n_weights = Some(vec![4.0, 5.0]);
+        let baseline = original.clone();
+        assert_eq!(
+            chi_0_v_with_state(&input, false, &mut original).unwrap(),
+            5.0
+        );
+        assert_eq!(
+            chi_0_n_with_state(&input, false, &mut original).unwrap(),
+            9.0
+        );
+        assert!(chi_0_v_with_state(&input, true, &mut original).is_err());
+        assert!(chi_0_n_with_state(&input, true, &mut original).is_err());
+        assert_eq!(original, baseline);
+        let mut peer = original.clone();
+        peer.clear();
+        assert!(chi_0_v_with_state(&input, false, &mut peer).is_err());
+        assert!(chi_0_n_with_state(&input, false, &mut peer).is_err());
+        assert_eq!(original, baseline);
+        let valid = ValenceAssignment {
+            explicit_valence: vec![],
+            implicit_hydrogens: vec![],
+        };
+        let empty = ChiInput::new(&topology, &valid);
+        assert_eq!(
+            chi_0_v_with_state(&empty, true, &mut peer)
+                .unwrap()
+                .to_bits(),
+            0_f64.to_bits()
+        );
+        assert_eq!(peer.chi_v_weights, Some(vec![]));
+        assert_eq!(original, baseline);
     }
 }

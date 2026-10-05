@@ -14,9 +14,9 @@ use cosmolkit_model::{
     AdjacencyList, AtomId, AtomMapping, AtomPdbResidueInfo, AtomSpec, Bond, BondDirection, BondId,
     BondMapping, BondOrder, BondSpec, BondStereo, ChiralTag, Conformer2D, Conformer3D,
     CoordinateBlock, CoordinateValidationError, Element, Hybridization, MappingValidationError,
-    MoleculeProperties, QueryAtom, QueryBond, QueryStateError, QueryStateRef, SGroupBondRole,
-    SdfPropertyListTarget, SubstanceGroup, TopologyBlock, TopologyEditError, TopologyMapping,
-    TopologyValidationError, remap_query_rows,
+    MoleculeProperties, MoleculePropertyError, QueryAtom, QueryBond, QueryStateError,
+    QueryStateRef, SGroupBondRole, SdfPropertyListTarget, SubstanceGroup, TopologyBlock,
+    TopologyEditError, TopologyMapping, TopologyValidationError, remap_query_rows,
 };
 
 /// Parameters corresponding to RDKit's `MolOps::AddHsParameters`.
@@ -175,6 +175,7 @@ pub enum HydrogenError {
     TopologyEdit(TopologyEditError),
     InvalidMapping(MappingValidationError),
     InvalidQueryState(QueryStateError),
+    InvalidProperty(MoleculePropertyError),
     InvalidPropertyList {
         target: SdfPropertyListTarget,
         name: String,
@@ -237,6 +238,7 @@ impl std::fmt::Display for HydrogenError {
             Self::InvalidQueryState(error) => {
                 write!(formatter, "invalid detached hydrogen query state: {error}")
             }
+            Self::InvalidProperty(error) => write!(formatter, "invalid hydrogen property: {error}"),
             Self::InvalidPropertyList {
                 target,
                 name,
@@ -3928,6 +3930,14 @@ fn remove_hydrogens_pass(
         )?;
         #[cfg(test)]
         remove_hs_ring_probe::record_sanitize_return(&sanitized.final_rings);
+        // RDKit✔️✔️: mol.setProp(common_properties::numArom, narom, true);
+        // Aromaticity.cpp supplies this scalar during the existing sanitize
+        // call. Transport it after clearComputedProps; no second ring pass.
+        if let Some(count) = sanitized.aromatic_ring_count {
+            properties
+                .set_computed_prop("numArom", count.to_string())
+                .map_err(HydrogenError::InvalidProperty)?;
+        }
         topology = sanitized.topology;
         final_rings = sanitized.final_rings;
         if let Some((atoms, bonds)) = query_rows.as_ref() {

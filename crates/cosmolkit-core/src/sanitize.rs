@@ -159,6 +159,12 @@ pub struct SanitizeAssignment {
     /// Absent when PROPERTIES is disabled; earlier intermediate assignments do
     /// not establish a valid final-topology cache.
     pub final_valence: Option<ValenceAssignment>,
+    /// The same source-stage cache when PROPERTIES is disabled. This is a
+    /// detached algorithm value; it does not certify strict runtime state.
+    pub non_strict_valence: Option<ValenceAssignment>,
+    /// Source `numArom` value from the executed aromaticity assignment, absent
+    /// when SET_AROMATICITY is disabled. No ring-count recomputation occurs.
+    pub aromatic_ring_count: Option<usize>,
     /// Final ring-state transport for the source ring lifecycle.
     ///
     /// `None` means the FINAL SOURCE-UNINITIALIZED ring state — sanitizeMol's
@@ -746,6 +752,7 @@ pub fn sanitize_topology_with_query_state(
     .into_valence();
 
     let mut rings: Option<RingInfo> = None;
+    let mut aromatic_ring_count = None;
     if operations.contains(SanitizeOperations::SYMM_RINGS) {
         #[cfg(test)]
         final_rings_probe::record_symm_acquisition();
@@ -860,7 +867,7 @@ pub fn sanitize_topology_with_query_state(
         // source-refreshed Kekulize N/P rows applied above.
         // Complexity: borrow those rows into the default aromaticity owner,
         // avoiding a second O(V+E) assignment while keeping its validation.
-        working = assign_default_aromaticity_with_cached_valence(
+        let aromaticity = assign_default_aromaticity_with_cached_valence(
             &working,
             &ring_assignment,
             &valence,
@@ -869,8 +876,11 @@ pub fn sanitize_topology_with_query_state(
         .map_err(|source| SanitizeError::Aromaticity {
             stage: SanitizeStage::SetAromaticity,
             source,
-        })?
-        .topology;
+        })?;
+        // RDKit✔️✔️:   mol.setProp(common_properties::numArom, narom, true);
+        // Transport the scalar computed by the aromaticity owner, O(1).
+        aromatic_ring_count = Some(aromaticity.aromatic_ring_count);
+        working = aromaticity.topology;
     }
 
     if operations.contains(SanitizeOperations::SET_CONJUGATION) {
@@ -964,9 +974,18 @@ pub fn sanitize_topology_with_query_state(
             })?
             .into_valence();
     }
-    let final_valence = operations
-        .contains(SanitizeOperations::PROPERTIES)
-        .then_some(valence);
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     mol.updatePropertyCache(false);
+    // RDKit✔️✔️:   }
+    // Move the final source-stage rows to exactly one typed return field.
+    // This preserves the strict-certification distinction without recalculating
+    // or cloning the rows when PROPERTIES is disabled.
+    let (final_valence, non_strict_valence) = if operations.contains(SanitizeOperations::PROPERTIES)
+    {
+        (Some(valence), None)
+    } else {
+        (None, Some(valence))
+    };
 
     working
         .validate()
@@ -986,6 +1005,8 @@ pub fn sanitize_topology_with_query_state(
     Ok(SanitizeAssignment {
         topology: working,
         final_valence,
+        non_strict_valence,
+        aromatic_ring_count,
         final_rings: rings,
     })
 }
@@ -1676,6 +1697,43 @@ mod cleanup_composed_tests {
             },
         )
         .unwrap()
+    }
+
+    #[test]
+    fn tautomer_partial_sanitize_transports_final_non_strict_cache_and_num_arom() {
+        let topology = cycle(6, BondStereo::None, true);
+        let before = topology.clone();
+        let assignment = run(
+            &topology,
+            SanitizeOperations::KEKULIZE
+                | SanitizeOperations::SET_AROMATICITY
+                | SanitizeOperations::SET_CONJUGATION
+                | SanitizeOperations::SET_HYBRIDIZATION
+                | SanitizeOperations::ADJUST_HS,
+        );
+        assert!(assignment.final_valence.is_none());
+        let valence = assignment
+            .non_strict_valence
+            .as_ref()
+            .expect("source partial cache");
+        assert_eq!(valence.implicit_hydrogens, vec![1; 6]);
+        assert_eq!(assignment.aromatic_ring_count, Some(1));
+        assert!(
+            assignment
+                .topology
+                .bonds
+                .iter()
+                .all(|bond| bond.is_aromatic())
+        );
+        assert_eq!(topology, before);
+        let strict = run(&topology, SanitizeOperations::ALL);
+        assert!(strict.final_valence.is_some());
+        assert!(strict.non_strict_valence.is_none());
+        assert_eq!(strict.aromatic_ring_count, Some(1));
+        let none = run(&topology, SanitizeOperations::NONE);
+        assert!(none.final_valence.is_none());
+        assert!(none.non_strict_valence.is_some());
+        assert_eq!(none.aromatic_ring_count, None);
     }
 
     #[test]

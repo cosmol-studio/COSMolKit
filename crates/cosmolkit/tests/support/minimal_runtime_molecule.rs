@@ -53,6 +53,21 @@ pub struct Molecule {
 }
 
 impl Molecule {
+    pub(crate) fn operation_snapshot_runtime(
+        &self,
+        _preserve_queries: bool,
+        _operation: &'static str,
+    ) -> Result<Self, OperationError> {
+        Ok(self.clone())
+    }
+
+    // This synthetic fixture models no descriptor memo. Actual copy/clear and
+    // poisoning are tested on the owning runtime Molecule, never this no-op.
+    #[cfg(feature = "cap-descriptors")]
+    pub(crate) fn take_descriptor_queries_runtime(&mut self) {}
+    #[cfg(feature = "cap-descriptors")]
+    pub(crate) fn install_descriptor_queries_runtime(&mut self, _memo: ()) {}
+
     pub fn from_parts(
         topology: TopologyBlock,
         coordinates: CoordinateBlock,

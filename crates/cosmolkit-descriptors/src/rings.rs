@@ -1279,6 +1279,14 @@ pub(crate) fn spiro_atom_ids_kernel(
 /// Complexity review: at most ONE `find_sssr` acquisition plus the
 /// kernel's R^2 pair scan.
 pub fn num_spiro_atoms_prepared(input: &DescriptorInput<'_>) -> DescriptorResult<u32> {
+    num_spiro_atoms_with_ring_info(input.topology(), Some(input.ring_info()))
+}
+
+/// Source-defined ring acquisition over borrowed topology and optional rows.
+pub fn num_spiro_atoms_with_ring_info(
+    topology: &cosmolkit_model::TopologyBlock,
+    rings: Option<&RingInfo>,
+) -> DescriptorResult<u32> {
     // RDKit source (Lipinski.cpp:438-441):
     //   if (!mol.getRingInfo() || !mol.getRingInfo()->isSssrOrBetter()) {
     //     MolOps::findSSSR(mol);
@@ -1289,14 +1297,13 @@ pub fn num_spiro_atoms_prepared(input: &DescriptorInput<'_>) -> DescriptorResult
     // RDKit✔️✔️: }
     // RDKit✔️✔️: const RingInfo *rInfo = mol.getRingInfo();
     //
-    // The prepared input always carries a RingInfo (never absent), so only
-    // the weaker-than-SSSR arm can fire here; the recompute is the ONE
-    // canonical cold owner on the input's own topology.
+    // Reuse supplied SSSR-or-better rows; absent or weaker rows use the
+    // existing canonical cold owner. No valence input or live mutation.
     let mut atoms = Vec::new();
-    if input.ring_info().is_sssr_or_better() {
-        spiro_atom_ids_kernel(input.ring_info(), &mut atoms)
+    if rings.is_some_and(RingInfo::is_sssr_or_better) {
+        spiro_atom_ids_kernel(rings.expect("checked SSSR-or-better"), &mut atoms)
     } else {
-        let ensured = crate::ring_info(input.topology(), "num_spiro_atoms")?;
+        let ensured = crate::ring_info(topology, "num_spiro_atoms")?;
         spiro_atom_ids_kernel(&ensured, &mut atoms)
     }
 }
@@ -1426,6 +1433,14 @@ pub(crate) fn bridgehead_atom_ids_kernel(
 /// source's ensure-SSSR acquisition branch (identical shape to
 /// [`num_spiro_atoms_prepared`]).
 pub fn num_bridgehead_atoms_prepared(input: &DescriptorInput<'_>) -> DescriptorResult<u32> {
+    num_bridgehead_atoms_with_ring_info(input.topology(), Some(input.ring_info()))
+}
+
+/// Source-defined ring acquisition over borrowed topology and optional rows.
+pub fn num_bridgehead_atoms_with_ring_info(
+    topology: &cosmolkit_model::TopologyBlock,
+    rings: Option<&RingInfo>,
+) -> DescriptorResult<u32> {
     // RDKit source (Lipinski.cpp:468-471):
     //   if (!mol.getRingInfo() || !mol.getRingInfo()->isSssrOrBetter()) {
     //     MolOps::findSSSR(mol);
@@ -1436,20 +1451,15 @@ pub fn num_bridgehead_atoms_prepared(input: &DescriptorInput<'_>) -> DescriptorR
     // RDKit✔️✔️: }
     // RDKit✔️✔️: const RingInfo *rInfo = mol.getRingInfo();
     let mut atoms = Vec::new();
-    if input.ring_info().is_sssr_or_better() {
+    if rings.is_some_and(RingInfo::is_sssr_or_better) {
         bridgehead_atom_ids_kernel(
-            input.ring_info(),
-            &input.topology().bonds,
-            input.topology().atoms.len(),
+            rings.expect("checked SSSR-or-better"),
+            &topology.bonds,
+            topology.atoms.len(),
             &mut atoms,
         )
     } else {
-        let ensured = crate::ring_info(input.topology(), "num_bridgehead_atoms")?;
-        bridgehead_atom_ids_kernel(
-            &ensured,
-            &input.topology().bonds,
-            input.topology().atoms.len(),
-            &mut atoms,
-        )
+        let ensured = crate::ring_info(topology, "num_bridgehead_atoms")?;
+        bridgehead_atom_ids_kernel(&ensured, &topology.bonds, topology.atoms.len(), &mut atoms)
     }
 }

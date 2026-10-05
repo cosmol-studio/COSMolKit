@@ -31,7 +31,7 @@ def declared_fields(cls: ast.ClassDef) -> dict[str, str]:
 
 def test_selected_stub_classes_and_methods():
     classes = declarations()
-    assert set(classes) == {"Molecule", "Coordinate2DParams", "DrawingError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "AdditionalOutput", "Element", "ElementInfo"}
+    assert set(classes) == {"Molecule", "Coordinate2DParams", "DrawingError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "AdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
     methods = {n.name: n for n in classes["Molecule"].body if isinstance(n, ast.FunctionDef)}
     expected = {"from_smiles": "Molecule", "num_atoms": "builtins.int", "num_bonds": "builtins.int",
                 "to_smiles": "builtins.str", "coordinates_2d": "typing.Optional[builtins.list[builtins.list[builtins.float]]]",
@@ -40,6 +40,7 @@ def test_selected_stub_classes_and_methods():
     expected.update({"new": "Molecule", "from_smiles_with_params": "Molecule", "to_smiles_with_params": "builtins.str",
         "morgan_fingerprint": "Fingerprint", "morgan_sparse_fingerprint": "SparseBitFingerprint",
         "morgan_count_fingerprint": "SparseCountFingerprint32", "morgan_sparse_count_fingerprint": "SparseCountFingerprint"})
+    expected.update({'hall_kier_alpha': 'builtins.float', 'hall_kier_alpha_with_contributions': 'tuple[builtins.float, builtins.list[builtins.float]]', 'kappa_1': 'builtins.float', 'kappa_2': 'builtins.float', 'kappa_3': 'builtins.float', 'phi': 'builtins.float', 'mqns': 'builtins.list[builtins.int]', 'chi_0_v': 'builtins.float', 'chi_1_v': 'builtins.float', 'chi_2_v': 'builtins.float', 'chi_3_v': 'builtins.float', 'chi_4_v': 'builtins.float', 'chi_n_v': 'builtins.float', 'chi_0_n': 'builtins.float', 'chi_1_n': 'builtins.float', 'chi_2_n': 'builtins.float', 'chi_3_n': 'builtins.float', 'chi_4_n': 'builtins.float', 'chi_n_n': 'builtins.float'})
     assert set(methods) == set(expected)
     for name, result in expected.items():
         assert ast.unparse(required_expression(methods[name].returns)) == result

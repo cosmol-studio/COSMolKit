@@ -320,6 +320,9 @@ name = "cosmolkit-parity-tests"
 version = "0.1.0"
 dependencies = [
  "cosmolkit",
+ "cosmolkit-core",
+ "cosmolkit-model",
+ "cosmolkit-types",
  "serde",
  "serde_json",
  "sha2",

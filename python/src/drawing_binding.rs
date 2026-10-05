@@ -6,7 +6,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 #[cfg(feature = "stubgen")]
-use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
+use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
 pyo3::create_exception!(cosmolkit, DrawingError, PyValueError);
 
@@ -240,6 +240,66 @@ impl Coordinate2DParams {
     }
 }
 
+/// Immutable source definition selector, projected from the public facade.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
+#[pyclass(module = "cosmolkit", frozen, eq)]
+#[derive(Clone, Copy, PartialEq)]
+enum RotatableBondsOptions {
+    Default,
+    NonStrict,
+    Strict,
+    StrictLinkages,
+}
+impl RotatableBondsOptions {
+    fn canonical(self) -> ck::RotatableBondsOptions {
+        match self {
+            Self::Default => ck::RotatableBondsOptions::Default,
+            Self::NonStrict => ck::RotatableBondsOptions::NonStrict,
+            Self::Strict => ck::RotatableBondsOptions::Strict,
+            Self::StrictLinkages => ck::RotatableBondsOptions::StrictLinkages,
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+struct CrippenTotals {
+    inner: ck::CrippenTotals,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl CrippenTotals {
+    #[getter]
+    fn logp(&self) -> f64 {
+        self.inner.logp
+    }
+    #[getter]
+    fn molar_refractivity(&self) -> f64 {
+        self.inner.molar_refractivity
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+struct LabuteAsaContributions {
+    inner: ck::LabuteAsaContributions,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl LabuteAsaContributions {
+    #[getter]
+    fn asa(&self) -> f64 {
+        self.inner.asa
+    }
+    #[getter]
+    fn atom_contributions(&self) -> Vec<f64> {
+        self.inner.atom_contributions.clone()
+    }
+    #[getter]
+    fn hydrogen_contribution(&self) -> f64 {
+        self.inner.hydrogen_contribution
+    }
+}
 /// Python ownership wraps the ONE live runtime value, not detached chemistry.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
@@ -251,6 +311,418 @@ struct Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    /// Descriptor query through the canonical public Rust method.
+    fn num_amide_bonds(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_amide_bonds()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn num_spiro_atoms(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_spiro_atoms()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn num_bridgehead_atoms(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_bridgehead_atoms()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn num_atom_stereo_centers(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_atom_stereo_centers()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn num_unspecified_atom_stereo_centers(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_unspecified_atom_stereo_centers()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn num_rotatable_bonds(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_rotatable_bonds()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn num_rotatable_bonds_with_params(
+        &self,
+        py: Python<'_>,
+        params: RotatableBondsOptions,
+    ) -> PyResult<u32> {
+        self.inner
+            .num_rotatable_bonds_with_params(&params.canonical())
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn molecular_weight_with_params(&self, py: Python<'_>, only_heavy: bool) -> PyResult<f64> {
+        self.inner
+            .molecular_weight_with_params(only_heavy)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn exact_molecular_weight_with_params(
+        &self,
+        py: Python<'_>,
+        only_heavy: bool,
+    ) -> PyResult<f64> {
+        self.inner
+            .exact_molecular_weight_with_params(only_heavy)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn molecular_formula_with_params(
+        &self,
+        py: Python<'_>,
+        separate_isotopes: bool,
+        abbreviate_h_isotopes: bool,
+    ) -> PyResult<String> {
+        self.inner
+            .molecular_formula_with_params(separate_isotopes, abbreviate_h_isotopes)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn molecular_weight(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .molecular_weight()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn exact_molecular_weight(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .exact_molecular_weight()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Descriptor query through the canonical public Rust method.
+    fn molecular_formula(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .molecular_formula()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_heavy_atoms(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_heavy_atoms()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn total_atom_count(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .total_atom_count()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn lipinski_hba(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .lipinski_hba()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn lipinski_hbd(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .lipinski_hbd()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn fraction_csp3(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .fraction_csp3()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_heteroatoms(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_heteroatoms()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_hba(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_hba()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_hbd(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_hbd()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_rings(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_rings()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_heterocycles(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_heterocycles()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_aromatic_rings(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_aromatic_rings()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_saturated_rings(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_saturated_rings()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_aliphatic_rings(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_aliphatic_rings()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_aromatic_heterocycles(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_aromatic_heterocycles()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_aromatic_carbocycles(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_aromatic_carbocycles()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_aliphatic_heterocycles(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_aliphatic_heterocycles()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_aliphatic_carbocycles(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_aliphatic_carbocycles()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_saturated_heterocycles(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_saturated_heterocycles()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Read-only descriptor through the canonical public Rust method.
+    fn num_saturated_carbocycles(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .num_saturated_carbocycles()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Degree-based Chi0 through the canonical public Rust method.
+    fn chi_0(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_0()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Degree-based Chi1 through the canonical public Rust method.
+    fn chi_1(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_1()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    fn hall_kier_alpha(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .hall_kier_alpha()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    fn hall_kier_alpha_with_contributions(&self, py: Python<'_>) -> PyResult<(f64, Vec<f64>)> {
+        self.inner
+            .hall_kier_alpha_with_contributions()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    fn kappa_1(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .kappa_1()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    fn kappa_2(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .kappa_2()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    fn kappa_3(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .kappa_3()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    fn phi(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .phi()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// All 42 components; the source ignores force and performs no cache write.
+    #[pyo3(signature = (force=false))]
+    fn mqns(&self, py: Python<'_>, force: bool) -> PyResult<Vec<u32>> {
+        self.inner
+            .mqns(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_0_v(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_0_v()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_1_v(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_1_v()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_2_v(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_2_v()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_3_v(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_3_v()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_4_v(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_4_v()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    #[pyo3(signature = (order))]
+    fn chi_n_v(&self, py: Python<'_>, order: u32) -> PyResult<f64> {
+        self.inner
+            .chi_n_v(order)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_0_n(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_0_n()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_1_n(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_1_n()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_2_n(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_2_n()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_3_n(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_3_n()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    fn chi_4_n(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .chi_4_n()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    /// Experimental read-only query using the canonical public facade.
+    /// Recomputes only; no vector-property caching or force parameter.
+    /// Requires existing prepared valence only; missing/reset rings succeed.
+    #[pyo3(signature = (order))]
+    fn chi_n_n(&self, py: Python<'_>, order: u32) -> PyResult<f64> {
+        self.inner
+            .chi_n_n(order)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
     #[staticmethod]
     fn new() -> Self {
         Self {
@@ -340,6 +812,15 @@ impl Molecule {
             .map_err(|error| operation_pyerr(py, error))
     }
 
+    /// Return the existing Rust sanitization operation's new molecule value.
+    /// Its runtime owns descriptor-cache clearing and atomic commit.
+    fn sanitize(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .sanitize()
+            .map(|inner| Self { inner })
+            .map_err(|error| operation_pyerr(py, error))
+    }
+
     fn with_2d_coordinates_with_params(
         &self,
         py: Python<'_>,
@@ -386,6 +867,402 @@ impl Molecule {
         let png = self.to_png(py, width, height)?;
         write_drawing_file(path, png.as_bytes())
     }
+    fn crippen_descriptors(&self, py: Python<'_>) -> PyResult<CrippenTotals> {
+        let result = self
+            .inner
+            .crippen_descriptors()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(CrippenTotals { inner: result })
+    }
+
+    fn labute_asa(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .labute_asa()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn labute_asa_contributions(&self, py: Python<'_>) -> PyResult<LabuteAsaContributions> {
+        let result = self
+            .inner
+            .labute_asa_contributions()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(LabuteAsaContributions { inner: result })
+    }
+
+    fn tpsa(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .tpsa()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa(&self, py: Python<'_>) -> PyResult<Vec<f64>> {
+        let result = self
+            .inner
+            .slogp_vsa()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa(&self, py: Python<'_>) -> PyResult<Vec<f64>> {
+        let result = self
+            .inner
+            .smr_vsa()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_1(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_1()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_2(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_2()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_3(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_3()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_4(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_4()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_5(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_5()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_6(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_6()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_7(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_7()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_8(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_8()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_9(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_9()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_10(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_10()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_11(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_11()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn slogp_vsa_12(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .slogp_vsa_12()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_1(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_1()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_2(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_2()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_3(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_3()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_4(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_4()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_5(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_5()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_6(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_6()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_7(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_7()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_8(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_8()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_9(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_9()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn smr_vsa_10(&self, py: Python<'_>) -> PyResult<f64> {
+        let result = self
+            .inner
+            .smr_vsa_10()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    #[pyo3(signature = (include_hydrogens, force))]
+    fn crippen_descriptors_with_params(
+        &self,
+        py: Python<'_>,
+        include_hydrogens: bool,
+        force: bool,
+    ) -> PyResult<CrippenTotals> {
+        let result = self
+            .inner
+            .crippen_descriptors_with_params(include_hydrogens, force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(CrippenTotals { inner: result })
+    }
+
+    #[pyo3(signature = (include_hydrogens, force))]
+    fn labute_asa_with_params(
+        &self,
+        py: Python<'_>,
+        include_hydrogens: bool,
+        force: bool,
+    ) -> PyResult<f64> {
+        let result = self
+            .inner
+            .labute_asa_with_params(include_hydrogens, force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    #[pyo3(signature = (include_hydrogens, force))]
+    fn labute_asa_contributions_with_params(
+        &self,
+        py: Python<'_>,
+        include_hydrogens: bool,
+        force: bool,
+    ) -> PyResult<LabuteAsaContributions> {
+        let result = self
+            .inner
+            .labute_asa_contributions_with_params(include_hydrogens, force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(LabuteAsaContributions { inner: result })
+    }
+
+    #[pyo3(signature = (include_sulfur_phosphorus, force))]
+    fn tpsa_with_params(
+        &self,
+        py: Python<'_>,
+        include_sulfur_phosphorus: bool,
+        force: bool,
+    ) -> PyResult<f64> {
+        let result = self
+            .inner
+            .tpsa_with_params(include_sulfur_phosphorus, force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    #[pyo3(signature = (bins, force))]
+    fn slogp_vsa_with_params(
+        &self,
+        py: Python<'_>,
+        bins: Option<Vec<f64>>,
+        force: bool,
+    ) -> PyResult<Vec<f64>> {
+        let result = self
+            .inner
+            .slogp_vsa_with_params(bins.as_deref(), force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    #[pyo3(signature = (bins, force))]
+    fn smr_vsa_with_params(
+        &self,
+        py: Python<'_>,
+        bins: Option<Vec<f64>>,
+        force: bool,
+    ) -> PyResult<Vec<f64>> {
+        let result = self
+            .inner
+            .smr_vsa_with_params(bins.as_deref(), force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))?;
+        Ok(result)
+    }
+
+    fn qed(&self, py: Python<'_>) -> PyResult<f64> {
+        self.inner
+            .qed()
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+    #[pyo3(signature = (force))]
+    fn chi_0_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_0_v_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_1_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_1_v_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_2_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_2_v_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_3_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_3_v_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_4_v_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_4_v_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (order, force))]
+    fn chi_n_v_with_params(&self, py: Python<'_>, order: u32, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_n_v_with_params(order, force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_0_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_0_n_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_1_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_1_n_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_2_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_2_n_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_3_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_3_n_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (force))]
+    fn chi_4_n_with_params(&self, py: Python<'_>, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_4_n_with_params(force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+
+    #[pyo3(signature = (order, force))]
+    fn chi_n_n_with_params(&self, py: Python<'_>, order: u32, force: bool) -> PyResult<f64> {
+        self.inner
+            .chi_n_n_with_params(order, force)
+            .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
 }
 
 #[pymodule]
@@ -402,7 +1279,11 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("DrawingError", module.py().get_type::<DrawingError>())?;
     module.add("OperationError", module.py().get_type::<OperationError>())?;
     module.add_class::<Molecule>()?;
+    module.add_class::<RotatableBondsOptions>()?;
+    module.add_class::<CrippenTotals>()?;
+    module.add_class::<LabuteAsaContributions>()?;
     module.add_class::<Coordinate2DParams>()?;
+    crate::canonical_descriptor_binding::register(module)?;
     crate::canonical_values::register(module)?;
     Ok(())
 }

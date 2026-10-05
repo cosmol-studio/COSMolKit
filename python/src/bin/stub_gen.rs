@@ -32,6 +32,8 @@ _binding_profile: builtins.str
         "SmilesWriteError",
         "MorganReadError",
         "FingerprintError",
+        "DescriptorReadError",
+        "DescriptorError",
     ] {
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
@@ -64,6 +66,7 @@ _binding_profile: builtins.str
         .replace(eq, "    def __eq__(self, value: builtins.object, /) -> builtins.bool | types.NotImplementedType: ...\n    def __ne__(self, value: builtins.object, /) -> builtins.bool | types.NotImplementedType: ...");
     text.replace_range(start..end, &class);
     text = text.replacen("import typing\n", "import typing\nimport types\n", 1);
+    text = text.replace("class DescriptorError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class DescriptorError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only for applicable Rust variants.\n    function: builtins.str\n    field: builtins.str\n    actual: builtins.int\n    expected: builtins.int\n    minimum: builtins.int\n    expected_rows: builtins.int\n    actual_rows: typing.Optional[builtins.int]\n    include_sulfur_phosphorus: builtins.bool\n    contribs_len: builtins.int\n    bin_prop_len: builtins.int\n    bins_len: builtins.int\n    cell: builtins.str\n    row: builtins.int\n    detail: builtins.str\n");
     std::fs::write(path, text)?;
     Ok(())
 }

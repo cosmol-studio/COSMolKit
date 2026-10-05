@@ -4306,6 +4306,259 @@ binding_contract! {
         },
         #[cfg(feature = "cap-descriptors")]
         {
+            semantic_id: "Molecule.chi_0",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_0,
+            python: "chi_0", javascript: "chi0",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_1",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_1,
+            python: "chi_1", javascript: "chi1",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        // D02 canonical recomputation-only read queries; no operation lifecycle.
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.hall_kier_alpha",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::hall_kier_alpha,
+            python: "hall_kier_alpha", javascript: "hallKierAlpha",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.hall_kier_alpha_with_contributions",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::hall_kier_alpha_with_contributions,
+            python: "hall_kier_alpha_with_contributions", javascript: "hallKierAlphaWithContributions",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: (f64, Vec<f64>), error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<(f64, Vec<f64>), crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.kappa_1",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::kappa_1,
+            python: "kappa_1", javascript: "kappa1",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.kappa_2",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::kappa_2,
+            python: "kappa_2", javascript: "kappa2",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.kappa_3",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::kappa_3,
+            python: "kappa_3", javascript: "kappa3",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.phi",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::phi,
+            python: "phi", javascript: "phi",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.mqns",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::mqns,
+            python: "mqns", javascript: "mqns",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: force, type: bool, default: false }],
+            output: Vec<u32>, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, bool) -> Result<Vec<u32>, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_0_v",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_0_v,
+            python: "chi_0_v", javascript: "chi0V",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_1_v",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_1_v,
+            python: "chi_1_v", javascript: "chi1V",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_2_v",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_2_v,
+            python: "chi_2_v", javascript: "chi2V",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_3_v",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_3_v,
+            python: "chi_3_v", javascript: "chi3V",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_4_v",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_4_v,
+            python: "chi_4_v", javascript: "chi4V",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_n_v",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_n_v,
+            python: "chi_n_v", javascript: "chiNV",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: order, type: u32, default: required }],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, u32) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_0_n",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_0_n,
+            python: "chi_0_n", javascript: "chi0N",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_1_n",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_1_n,
+            python: "chi_1_n", javascript: "chi1N",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_2_n",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_2_n,
+            python: "chi_2_n", javascript: "chi2N",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_3_n",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_3_n,
+            python: "chi_3_n", javascript: "chi3N",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_4_n",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_4_n,
+            python: "chi_4_n", javascript: "chi4N",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.chi_n_n",
+            item: callable, owner: molecule,
+            rust: crate::Molecule::chi_n_n,
+            python: "chi_n_n", javascript: "chiNN",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: order, type: u32, default: required }],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, u32) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
             semantic_id: "Molecule.molecular_weight",
             item: callable,
             owner: molecule,
@@ -4316,10 +4569,10 @@ binding_contract! {
             kind: instance,
             parameters: [],
             output: f64,
-            error: crate::OperationError,
+            error: crate::DescriptorReadError,
             state: read_only,
             operation: none,
-            signature: fn(&crate::Molecule) -> Result<f64, crate::OperationError>,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
         },
         #[cfg(feature = "cap-descriptors")]
         {
@@ -4333,10 +4586,10 @@ binding_contract! {
             kind: instance,
             parameters: [],
             output: f64,
-            error: crate::OperationError,
+            error: crate::DescriptorReadError,
             state: read_only,
             operation: none,
-            signature: fn(&crate::Molecule) -> Result<f64, crate::OperationError>,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
         },
         #[cfg(feature = "cap-descriptors")]
         {
@@ -4350,10 +4603,117 @@ binding_contract! {
             kind: instance,
             parameters: [],
             output: String,
-            error: crate::OperationError,
+            error: crate::DescriptorReadError,
             state: read_only,
             operation: none,
-            signature: fn(&crate::Molecule) -> Result<String, crate::OperationError>,
+            signature: fn(&crate::Molecule) -> Result<String, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "types.RotatableBondsOptions", item: type, owner: type_,
+            rust: crate::RotatableBondsOptions,
+            python: "RotatableBondsOptions", javascript: "RotatableBondsOptions",
+            feature: "cap-descriptors", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_amide_bonds", item: callable, owner: molecule,
+            rust: crate::Molecule::num_amide_bonds, python: "num_amide_bonds", javascript: "numAmideBonds",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: u32, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_spiro_atoms", item: callable, owner: molecule,
+            rust: crate::Molecule::num_spiro_atoms, python: "num_spiro_atoms", javascript: "numSpiroAtoms",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: u32, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_bridgehead_atoms", item: callable, owner: molecule,
+            rust: crate::Molecule::num_bridgehead_atoms, python: "num_bridgehead_atoms", javascript: "numBridgeheadAtoms",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: u32, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_atom_stereo_centers", item: callable, owner: molecule,
+            rust: crate::Molecule::num_atom_stereo_centers, python: "num_atom_stereo_centers", javascript: "numAtomStereoCenters",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: u32, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_unspecified_atom_stereo_centers", item: callable, owner: molecule,
+            rust: crate::Molecule::num_unspecified_atom_stereo_centers, python: "num_unspecified_atom_stereo_centers", javascript: "numUnspecifiedAtomStereoCenters",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: u32, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_rotatable_bonds", item: callable, owner: molecule,
+            rust: crate::Molecule::num_rotatable_bonds, python: "num_rotatable_bonds", javascript: "numRotatableBonds",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [],
+            output: u32, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.num_rotatable_bonds_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::num_rotatable_bonds_with_params, python: "num_rotatable_bonds_with_params", javascript: "numRotatableBondsWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: params, type: &crate::RotatableBondsOptions, default: required }],
+            output: u32, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, &crate::RotatableBondsOptions) -> Result<u32, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.molecular_weight_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::molecular_weight_with_params, python: "molecular_weight_with_params", javascript: "molecularWeightWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: only_heavy, type: bool, default: required }],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.exact_molecular_weight_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::exact_molecular_weight_with_params, python: "exact_molecular_weight_with_params", javascript: "exactMolecularWeightWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: only_heavy, type: bool, default: required }],
+            output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.molecular_formula_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::molecular_formula_with_params, python: "molecular_formula_with_params", javascript: "molecularFormulaWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: separate_isotopes, type: bool, default: required }, { name: abbreviate_h_isotopes, type: bool, default: required }],
+            output: String, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, bool, bool) -> Result<String, crate::DescriptorReadError>,
         },
         // Descriptor count queries: the two public error types precede the
         // five registered query methods. DescriptorError is the canonical
@@ -7217,5 +7577,422 @@ binding_contract! {
                 &'b crate::SmilesParseParams,
             ) -> Result<crate::Molecule, crate::SmilesError>,
         },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "types.CrippenTotals", item: type, owner: type_, rust: crate::CrippenTotals,
+            python: "CrippenTotals", javascript: "CrippenTotals", feature: "cap-descriptors", status: experimental, role: result,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "types.LabuteAsaContributions", item: type, owner: type_, rust: crate::LabuteAsaContributions,
+            python: "LabuteAsaContributions", javascript: "LabuteAsaContributions", feature: "cap-descriptors", status: experimental, role: result,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.crippen_descriptors", item: callable, owner: molecule,
+            rust: crate::Molecule::crippen_descriptors, python: "crippen_descriptors", javascript: "crippenDescriptors",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: crate::CrippenTotals, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<crate::CrippenTotals, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.labute_asa", item: callable, owner: molecule,
+            rust: crate::Molecule::labute_asa, python: "labute_asa", javascript: "labuteAsa",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.labute_asa_contributions", item: callable, owner: molecule,
+            rust: crate::Molecule::labute_asa_contributions, python: "labute_asa_contributions", javascript: "labuteAsaContributions",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: crate::LabuteAsaContributions, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<crate::LabuteAsaContributions, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.tpsa", item: callable, owner: molecule,
+            rust: crate::Molecule::tpsa, python: "tpsa", javascript: "tpsa",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa, python: "slogp_vsa", javascript: "slogpVsa",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: Vec<f64>, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<Vec<f64>, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa, python: "smr_vsa", javascript: "smrVsa",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: Vec<f64>, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<Vec<f64>, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_1", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_1, python: "slogp_vsa_1", javascript: "slogpVsa1",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_2", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_2, python: "slogp_vsa_2", javascript: "slogpVsa2",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_3", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_3, python: "slogp_vsa_3", javascript: "slogpVsa3",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_4", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_4, python: "slogp_vsa_4", javascript: "slogpVsa4",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_5", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_5, python: "slogp_vsa_5", javascript: "slogpVsa5",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_6", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_6, python: "slogp_vsa_6", javascript: "slogpVsa6",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_7", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_7, python: "slogp_vsa_7", javascript: "slogpVsa7",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_8", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_8, python: "slogp_vsa_8", javascript: "slogpVsa8",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_9", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_9, python: "slogp_vsa_9", javascript: "slogpVsa9",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_10", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_10, python: "slogp_vsa_10", javascript: "slogpVsa10",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_11", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_11, python: "slogp_vsa_11", javascript: "slogpVsa11",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_12", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_12, python: "slogp_vsa_12", javascript: "slogpVsa12",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_1", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_1, python: "smr_vsa_1", javascript: "smrVsa1",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_2", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_2, python: "smr_vsa_2", javascript: "smrVsa2",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_3", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_3, python: "smr_vsa_3", javascript: "smrVsa3",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_4", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_4, python: "smr_vsa_4", javascript: "smrVsa4",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_5", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_5, python: "smr_vsa_5", javascript: "smrVsa5",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_6", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_6, python: "smr_vsa_6", javascript: "smrVsa6",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_7", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_7, python: "smr_vsa_7", javascript: "smrVsa7",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_8", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_8, python: "smr_vsa_8", javascript: "smrVsa8",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_9", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_9, python: "smr_vsa_9", javascript: "smrVsa9",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_10", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_10, python: "smr_vsa_10", javascript: "smrVsa10",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.crippen_descriptors_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::crippen_descriptors_with_params, python: "crippen_descriptors_with_params", javascript: "crippenDescriptorsWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: include_hydrogens, type: bool, default: required }, { name: force, type: bool, default: required }], output: crate::CrippenTotals, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, bool, bool) -> Result<crate::CrippenTotals, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.labute_asa_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::labute_asa_with_params, python: "labute_asa_with_params", javascript: "labuteAsaWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: include_hydrogens, type: bool, default: required }, { name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, bool, bool) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.labute_asa_contributions_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::labute_asa_contributions_with_params, python: "labute_asa_contributions_with_params", javascript: "labuteAsaContributionsWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: include_hydrogens, type: bool, default: required }, { name: force, type: bool, default: required }], output: crate::LabuteAsaContributions, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, bool, bool) -> Result<crate::LabuteAsaContributions, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.tpsa_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::tpsa_with_params, python: "tpsa_with_params", javascript: "tpsaWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: include_sulfur_phosphorus, type: bool, default: required }, { name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, bool, bool) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.slogp_vsa_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::slogp_vsa_with_params, python: "slogp_vsa_with_params", javascript: "slogpVsaWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: bins, type: Option<&[f64]>, default: required }, { name: force, type: bool, default: required }], output: Vec<f64>, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, Option<&[f64]>, bool) -> Result<Vec<f64>, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        {
+            semantic_id: "Molecule.smr_vsa_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::smr_vsa_with_params, python: "smr_vsa_with_params", javascript: "smrVsaWithParams",
+            feature: "cap-descriptors", status: experimental,
+            kind: instance, parameters: [{ name: bins, type: Option<&[f64]>, default: required }, { name: force, type: bool, default: required }], output: Vec<f64>, error: crate::DescriptorReadError,
+            state: read_only, operation: none,
+            signature: fn(&crate::Molecule, Option<&[f64]>, bool) -> Result<Vec<f64>, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.qed", item: callable, owner: molecule,
+          rust: crate::Molecule::qed, python: "qed", javascript: "qed",
+          feature: "cap-descriptors", status: experimental, kind: instance, parameters: [],
+          output: f64, error: crate::DescriptorReadError, state: read_only, operation: none,
+          signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>, },
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_0_v_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_0_v_with_params, python: "chi_0_v_with_params", javascript: "chi0VWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_1_v_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_1_v_with_params, python: "chi_1_v_with_params", javascript: "chi1VWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_2_v_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_2_v_with_params, python: "chi_2_v_with_params", javascript: "chi2VWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_3_v_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_3_v_with_params, python: "chi_3_v_with_params", javascript: "chi3VWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_4_v_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_4_v_with_params, python: "chi_4_v_with_params", javascript: "chi4VWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_n_v_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_n_v_with_params, python: "chi_n_v_with_params", javascript: "chiNVWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: order, type: u32, default: required }, { name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, u32, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_0_n_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_0_n_with_params, python: "chi_0_n_with_params", javascript: "chi0NWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_1_n_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_1_n_with_params, python: "chi_1_n_with_params", javascript: "chi1NWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_2_n_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_2_n_with_params, python: "chi_2_n_with_params", javascript: "chi2NWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_3_n_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_3_n_with_params, python: "chi_3_n_with_params", javascript: "chi3NWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_4_n_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_4_n_with_params, python: "chi_4_n_with_params", javascript: "chi4NWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, bool) -> Result<f64, crate::DescriptorReadError>, },
+
+        #[cfg(feature = "cap-descriptors")]
+        { semantic_id: "Molecule.chi_n_n_with_params", item: callable, owner: molecule,
+          rust: crate::Molecule::chi_n_n_with_params, python: "chi_n_n_with_params", javascript: "chiNNWithParams",
+          feature: "cap-descriptors", status: experimental, kind: instance,
+          parameters: [{ name: order, type: u32, default: required }, { name: force, type: bool, default: required }], output: f64, error: crate::DescriptorReadError,
+          state: read_only, operation: none,
+          signature: fn(&crate::Molecule, u32, bool) -> Result<f64, crate::DescriptorReadError>, },
     ];
 }

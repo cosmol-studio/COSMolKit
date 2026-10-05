@@ -5,6 +5,24 @@ pub mod fingerprint_corpus;
 pub mod molecule_plan;
 use serde::{Deserialize, Serialize};
 
+/// Fixed source-regression recipes, distinct from function/corpus tasks.
+/// This is the same authoritative registry; no SMILES expansion is performed.
+pub struct SpecialRegression {
+    pub key: &'static str,
+    pub fixture: &'static str,
+    pub generator: &'static str,
+    pub output: &'static str,
+    pub rows: usize,
+}
+
+pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[SpecialRegression {
+    key: "assign_chiral_tags_from_structure",
+    fixture: "testdata/stereo/fixtures/assign_atom_chiral_tags_from_structure_cases.json",
+    generator: "tools/testdata/rdkit/_generate_tetrahedral_stereo_geometry.py",
+    output: "assign_atom_chiral_tags_from_structure.jsonl",
+    rows: 77,
+}];
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Operation {
     FuzzyAnd,
@@ -274,6 +292,111 @@ pub const TASKS: &[Task] = &[
         corpus_type: CorpusType::Smiles,
         generator: "generate_morgan_sparse_count_fingerprint",
     },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi0),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_0",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi1),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_1",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::HallKierAlpha),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_hall_kier_alpha",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::HallKierAlphaWithContributions),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_hall_kier_alpha_with_contributions",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Kappa1),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_kappa_1",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Kappa2),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_kappa_2",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Kappa3),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_kappa_3",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Phi),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_phi",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Mqns),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_mqns",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi0V),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_0_v",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi1V),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_1_v",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi2V),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_2_v",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi3V),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_3_v",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi4V),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_4_v",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi0N),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_0_n",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi1N),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_1_n",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi2N),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_2_n",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi3N),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_3_n",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Chi4N),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_4_n",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::ChiNV),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_n_v",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::ChiNN),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_chi_n_n",
+    },
 ];
 
 pub const RDKIT_VERSION: &str = "2026.03.1";
@@ -450,6 +573,27 @@ impl Input {
                     PotentialStereo { .. } => "potential_stereo",
                     Valence { .. } => "valence",
                     DistanceMatrix { .. } => "distance_matrix",
+                    Chi0 => "chi_0",
+                    Chi1 => "chi_1",
+                    HallKierAlpha => "hall_kier_alpha",
+                    HallKierAlphaWithContributions => "hall_kier_alpha_with_contributions",
+                    Kappa1 => "kappa_1",
+                    Kappa2 => "kappa_2",
+                    Kappa3 => "kappa_3",
+                    Phi => "phi",
+                    Mqns { .. } => "mqns",
+                    Chi0V => "chi_0_v",
+                    Chi1V => "chi_1_v",
+                    Chi2V => "chi_2_v",
+                    Chi3V => "chi_3_v",
+                    Chi4V => "chi_4_v",
+                    Chi0N => "chi_0_n",
+                    Chi1N => "chi_1_n",
+                    Chi2N => "chi_2_n",
+                    Chi3N => "chi_3_n",
+                    Chi4N => "chi_4_n",
+                    ChiNV { .. } => "chi_n_v",
+                    ChiNN { .. } => "chi_n_n",
                     Morgan { output, .. } => output.task_name(),
                 }
             }

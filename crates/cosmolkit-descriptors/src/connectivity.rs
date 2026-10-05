@@ -5,6 +5,82 @@ use cosmolkit_model::{Atom, Element, Hybridization, TopologyBlock};
 
 use crate::{DescriptorError, DescriptorResult};
 
+/// Degree-based Chi0; reads explicit graph degree, including explicit H.
+/// Does not require prepared valence, rings or descriptor caches.
+pub fn chi_0(topology: &TopologyBlock) -> DescriptorResult<f64> {
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8:
+    // rdkit/Chem/GraphDescriptors.py:Chi0; retained modern Rust degree kernel.
+    // The arithmetic and iteration order are unchanged. Detached topology
+    // validation adds allocation/structural work compared with ROMol's
+    // prevalidated graph; therefore the complexity axis stays ❌.
+
+    // BEGIN RDKIT PYTHON FUNCTION: rdkit.Chem.GraphDescriptors.Chi0
+    // RDKit✔️❌: def Chi0(mol):
+    // RDKit✔️❌:   """ From equations (1),(9) and (10) of Rev. Comp. Chem. vol 2, 367-422, (1991)
+    // RDKit✔️❌:
+    // RDKit✔️❌:   """
+    // RDKit✔️❌:   deltas = [x.GetDegree() for x in mol.GetAtoms()]
+    // RDKit✔️❌:   while 0 in deltas:
+    // RDKit✔️❌:     deltas.remove(0)
+    // RDKit✔️❌:   deltas = numpy.array(deltas, float)
+    // RDKit✔️❌:   res = sum(numpy.sqrt(1. / deltas))
+    // RDKit✔️❌:   return res
+    // END RDKIT PYTHON FUNCTION: rdkit.Chem.GraphDescriptors.Chi0
+    topology
+        .validate()
+        .map_err(|source| DescriptorError::InvalidTopology {
+            function: "chi_0",
+            source,
+        })?;
+    Ok(topology
+        .atoms
+        .iter()
+        .enumerate()
+        .map(|(atom_index, _)| topology.adjacency.neighbors_of(atom_index).len())
+        .filter(|degree| *degree != 0)
+        .map(|degree| (1.0 / degree as f64).sqrt())
+        .fold(0.0, |result, contribution| result + contribution))
+}
+
+/// Degree-based Chi1; reads explicit graph degree, including explicit H.
+/// Does not require prepared valence, rings or descriptor caches.
+pub fn chi_1(topology: &TopologyBlock) -> DescriptorResult<f64> {
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8:
+    // rdkit/Chem/GraphDescriptors.py:Chi1; retained modern Rust degree kernel.
+    // The arithmetic and iteration order are unchanged. Detached topology
+    // validation adds allocation/structural work compared with ROMol's
+    // prevalidated graph; therefore the complexity axis stays ❌.
+
+    // BEGIN RDKIT PYTHON FUNCTION: rdkit.Chem.GraphDescriptors.Chi1
+    // RDKit✔️❌: def Chi1(mol):
+    // RDKit✔️❌:   """ From equations (1),(11) and (12) of Rev. Comp. Chem. vol 2, 367-422, (1991)
+    // RDKit✔️❌:
+    // RDKit✔️❌:   """
+    // RDKit✔️❌:   c1s = [x.GetBeginAtom().GetDegree() * x.GetEndAtom().GetDegree() for x in mol.GetBonds()]
+    // RDKit✔️❌:   while 0 in c1s:
+    // RDKit✔️❌:     c1s.remove(0)
+    // RDKit✔️❌:   c1s = numpy.array(c1s, float)
+    // RDKit✔️❌:   res = sum(numpy.sqrt(1. / c1s))
+    // RDKit✔️❌:   return res
+    // END RDKIT PYTHON FUNCTION: rdkit.Chem.GraphDescriptors.Chi1
+    topology
+        .validate()
+        .map_err(|source| DescriptorError::InvalidTopology {
+            function: "chi_1",
+            source,
+        })?;
+    Ok(topology
+        .bonds
+        .iter()
+        .map(|bond| {
+            topology.adjacency.neighbors_of(bond.begin().index()).len()
+                * topology.adjacency.neighbors_of(bond.end().index()).len()
+        })
+        .filter(|degree_product| *degree_product != 0)
+        .map(|degree_product| (1.0 / degree_product as f64).sqrt())
+        .fold(0.0, |result, contribution| result + contribution))
+}
+
 /// Pinned RDKit Hall–Kier alpha descriptor version.
 pub const HALL_KIER_ALPHA_VERSION: &str = "1.2.0";
 
