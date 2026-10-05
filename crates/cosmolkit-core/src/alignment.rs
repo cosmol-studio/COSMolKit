@@ -479,6 +479,33 @@ pub fn align_points(
     reflect_input: bool,
     max_iterations: usize,
 ) -> Result<(f64, Transform3D), &'static str> {
+    if ref_points.is_empty() && ref_points.len() == probe_points.len() {
+        return Err("alignment requires at least one point");
+    }
+    align_points_kernel(
+        ref_points,
+        probe_points,
+        weights,
+        reflect_input,
+        max_iterations,
+    )
+}
+
+/// Source-default residual for detached conformer pruning, including empty-point NaN.
+pub fn alignment_sum_squared_residual(
+    ref_points: &[[f64; 3]],
+    probe_points: &[[f64; 3]],
+) -> Result<f64, &'static str> {
+    align_points_kernel(ref_points, probe_points, None, false, 50).map(|(ssr, _)| ssr)
+}
+
+fn align_points_kernel(
+    ref_points: &[[f64; 3]],
+    probe_points: &[[f64; 3]],
+    weights: Option<&[f64]>,
+    reflect_input: bool,
+    max_iterations: usize,
+) -> Result<(f64, Transform3D), &'static str> {
     // Fixed RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8, complete source anchor.
     // RDKit✔️✔️: double AlignPoints(const RDGeom::Point3DConstPtrVect &refPoints,
     // RDKit✔️✔️:                    const RDGeom::Point3DConstPtrVect &probePoints,
@@ -572,9 +599,6 @@ pub fn align_points(
     if ref_points.len() != probe_points.len() {
         return Err("Mismatch in number of points");
     }
-    if ref_points.is_empty() {
-        return Err("alignment requires at least one point");
-    }
     if let Some(weights) = weights {
         if weights.len() != ref_points.len() {
             return Err("Mismatch in number of points");
@@ -636,6 +660,17 @@ pub fn align_points(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pruning_residual_reuses_alignment_kernel_and_retains_source_empty_nan() {
+        assert!(alignment_sum_squared_residual(&[], &[]).unwrap().is_nan());
+        let rows = [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0]];
+        assert_eq!(
+            alignment_sum_squared_residual(&rows, &rows).unwrap(),
+            align_points(&rows, &rows, None, false, 50).unwrap().0
+        );
+        assert!(align_points(&[], &[], None, false, 50).is_err());
+    }
 
     #[test]
     fn positive_infinite_weight_keeps_source_nan_rotation_branch() {

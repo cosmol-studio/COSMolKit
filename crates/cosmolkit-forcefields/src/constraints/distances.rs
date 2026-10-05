@@ -31,14 +31,14 @@ impl Default for DistanceConstraintContribsParams {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(super) struct DistanceConstraintContribs {
+pub(crate) struct DistanceConstraintContribs {
     // RDKit source: ForceField/DistanceConstraints.h:91
     // RDKit❗✔️: std::vector<DistanceConstraintContribsParams> d_contribs;
     contribs: Vec<DistanceConstraintContribsParams>,
 }
 
 impl DistanceConstraintContribs {
-    pub(super) fn new(_owner: &ForceField<'_>) -> Self {
+    pub(crate) fn new(_owner: &ForceField<'_>) -> Self {
         // RDKit source: ForceField/DistanceConstraints.cpp:17-20
         // RDKit❗✔️: DistanceConstraintContribs::DistanceConstraintContribs(ForceField *owner) {
         // RDKit❗✔️:   PRECONDITION(owner, "bad owner");
@@ -50,7 +50,7 @@ impl DistanceConstraintContribs {
         Self::default()
     }
 
-    pub(super) fn add_contrib(
+    pub(crate) fn add_contrib(
         &mut self,
         owner: &ForceField<'_>,
         idx1: u32,
@@ -97,7 +97,7 @@ impl DistanceConstraintContribs {
         Ok(())
     }
 
-    pub(super) fn add_contrib_relative(
+    pub(crate) fn add_contrib_relative(
         &mut self,
         owner: &ForceField<'_>,
         idx1: u32,
@@ -187,17 +187,17 @@ impl DistanceConstraintContribs {
         Ok(())
     }
 
-    pub(super) fn empty(&self) -> bool {
+    pub(crate) fn empty(&self) -> bool {
         // RDKit✔️✔️: bool empty() const { return d_contribs.empty(); }
         self.contribs.is_empty()
     }
 
-    pub(super) fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         // RDKit✔️✔️: unsigned int size() const { return d_contribs.size(); }
         self.contribs.len()
     }
 
-    pub(super) fn get_energy(
+    pub(crate) fn get_energy(
         &self,
         context: &EvaluationContext<'_>,
     ) -> Result<f64, ForceFieldKernelError> {
@@ -270,7 +270,7 @@ impl DistanceConstraintContribs {
         Ok(accum)
     }
 
-    pub(super) fn get_grad(
+    pub(crate) fn get_grad(
         &self,
         context: &EvaluationContext<'_>,
         gradient: &mut [f64],

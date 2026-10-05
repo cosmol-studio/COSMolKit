@@ -201,7 +201,7 @@ pub(super) fn calc_cos_theta(p1: Point3, p2: Point3, p3: Point3, dist1: f64, dis
     cos_theta
 }
 
-pub(super) fn calc_torsion_cos_phi(i: &Point3, j: &Point3, k: &Point3, l: &Point3) -> f64 {
+pub(crate) fn calc_torsion_cos_phi(i: &Point3, j: &Point3, k: &Point3, l: &Point3) -> f64 {
     // RDKit source pin 351f8f378f8ad6bbd517980c38896e66bf907af8c,
     // Code/ForceField/MMFF/TorsionAngle.cpp:19-38:
     // RDKit❗✔️: double calcTorsionCosPhi(const RDGeom::Point3D &iPoint,
@@ -364,7 +364,7 @@ pub(super) fn calc_oop_chi(i: &Point3, j: &Point3, k: &Point3, l: &Point3) -> f6
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum MmffGradientError {
+pub(crate) enum MmffGradientError {
     GradientRowOutOfRange {
         slot: usize,
         index: usize,
@@ -449,7 +449,7 @@ pub(super) fn calc_angle_bend_grad(
     Ok(())
 }
 
-pub(super) fn calc_torsion_grad(
+pub(crate) fn calc_torsion_grad(
     r: &[Point3; 4],
     t: &[Point3; 2],
     d: &[f64; 2],

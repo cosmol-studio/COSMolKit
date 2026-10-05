@@ -3,15 +3,16 @@ use std::sync::Mutex;
 const MULTIPLIER: u32 = 48_271;
 const MODULUS: u32 = 2_147_483_647;
 
-#[derive(Debug)]
-struct MinStdRand {
+#[derive(Debug, Clone)]
+pub struct RdkitRandomEngine {
     state: u32,
 }
 
-static RDKIT_RANDOM_GENERATOR: Mutex<MinStdRand> = Mutex::new(MinStdRand { state: 42 });
+static RDKIT_RANDOM_GENERATOR: Mutex<RdkitRandomEngine> =
+    Mutex::new(RdkitRandomEngine { state: 42 });
 
-impl MinStdRand {
-    fn from_seed(seed: u32) -> Self {
+impl RdkitRandomEngine {
+    pub fn from_seed(seed: u32) -> Self {
         // BEGIN BOOST RANDOM FUNCTION linear_congruential_engine arithmetic constructor
         // Boost❗✔️: BOOST_RANDOM_DETAIL_ARITHMETIC_CONSTRUCTOR(linear_congruential_engine,
         // Boost❗✔️:                                                IntType, x0)
@@ -60,7 +61,7 @@ impl MinStdRand {
         self.state = if state == 0 { 1 } else { state };
     }
 
-    fn next_u32(&mut self) -> u32 {
+    pub fn next_u32(&mut self) -> u32 {
         // BEGIN BOOST RANDOM FUNCTION linear_congruential_engine::operator()
         // Boost❗✔️: typedef linear_congruential_engine<uint32_t, 48271, 0, 2147483647> minstd_rand;
         // Boost❗✔️: IntType operator()()
@@ -139,14 +140,33 @@ impl MinStdRand {
         self.state = next as u32;
         self.state
     }
+    /// Draw from Boost's integral-engine uniform [0,1) distribution.
+    pub fn next_unit_f64(&mut self) -> f64 {
+        // BEGIN BOOST CPP FUNCTION boost::random::detail::generate_uniform_real integral path (uniform_real_distribution.hpp)
+        // RDKit❗✔️: typedef typename Engine::result_type base_result;
+        // RDKit❗✔️: result_type numerator = static_cast<T>(subtract<base_result>()(eng(), (eng.min)()));
+        // RDKit❗✔️: result_type divisor = static_cast<T>(subtract<base_result>()((eng.max)(), (eng.min)())) + 1;
+        // RDKit❗✔️: T result = numerator / divisor * (max_value - min_value) + min_value;
+        // RDKit❗✔️: if(result < max_value) return result;
+        // END BOOST CPP FUNCTION boost::random::detail::generate_uniform_real integral path
+        // Fixed source minstd_rand bounds are 1..=2147483646: subtracting
+        // the minimum gives 0..=2147483645 and divisor2147483646. Every
+        // result is below1, so the source retry is unreachable. One draw and
+        // fixed scalar subtraction/division, O(1), no allocation or locking.
+        (f64::from(self.next_u32()) - 1.0) / (f64::from(MODULUS) - 1.0)
+    }
 }
 
 /// A borrowed draw handle for one outer RDKit-compatible random operation.
 pub struct RdkitRandomGenerator<'a> {
-    engine: &'a mut MinStdRand,
+    engine: &'a mut RdkitRandomEngine,
 }
 
 impl RdkitRandomGenerator<'_> {
+    pub fn next_unit_f64(&mut self) -> f64 {
+        self.engine.next_unit_f64()
+    }
+
     /// Advance the shared minstd_rand stream by one value.
     pub fn next_u32(&mut self) -> u32 {
         self.engine.next_u32()
@@ -189,10 +209,10 @@ pub fn with_rdkit_random_generator<T>(
 
 #[cfg(test)]
 mod tests {
-    use super::{MODULUS, MinStdRand, with_rdkit_random_generator};
+    use super::{MODULUS, RdkitRandomEngine, with_rdkit_random_generator};
 
     fn first_eight(seed: u32) -> [u32; 8] {
-        let mut engine = MinStdRand::from_seed(seed);
+        let mut engine = RdkitRandomEngine::from_seed(seed);
         std::array::from_fn(|_| engine.next_u32())
     }
 
@@ -259,7 +279,7 @@ mod tests {
         let expected = first_eight(42);
         assert_eq!(first_eight(42), expected);
 
-        let mut engine = MinStdRand::from_seed(42);
+        let mut engine = RdkitRandomEngine::from_seed(42);
         for output in expected {
             let next = engine.next_u32();
             assert_eq!(next, output);
@@ -270,8 +290,11 @@ mod tests {
 
     #[test]
     fn rdkit_rng_engine_reaches_both_source_range_endpoints() {
-        assert_eq!(MinStdRand::from_seed(1_899_818_559).next_u32(), 1);
-        assert_eq!(MinStdRand::from_seed(247_665_088).next_u32(), MODULUS - 1);
+        assert_eq!(RdkitRandomEngine::from_seed(1_899_818_559).next_u32(), 1);
+        assert_eq!(
+            RdkitRandomEngine::from_seed(247_665_088).next_u32(),
+            MODULUS - 1
+        );
     }
 
     #[test]

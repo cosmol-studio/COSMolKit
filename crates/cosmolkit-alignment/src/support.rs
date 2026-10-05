@@ -4,7 +4,10 @@ use cosmolkit_model::{
     AtomQueryPredicate, Bond, BondQueryPredicate, BondSpec, QueryAtom, QueryBond, QueryGraph,
     QueryNode,
 };
-use cosmolkit_search::{SmartsParseError, SmartsParseParams, SubstructMatchParams};
+use cosmolkit_search::{
+    QueryMatchContext, SearchTarget, SearchTargetAccess, SmartsParseError, SmartsParseParams,
+    SubstructMatchParams,
+};
 use cosmolkit_types::BondOrder;
 use std::{collections::BTreeMap, sync::OnceLock};
 
@@ -87,6 +90,23 @@ fn terminal_atom_query() -> Result<&'static QueryGraph, AlignmentError> {
 pub(super) fn symmetrize_terminal_atoms(
     input: &AlignmentInput<'_>,
 ) -> Result<QueryGraph, AlignmentError> {
+    symmetrize_terminal_query_impl(query_for(input)?, &input.search_target(), None)
+}
+
+/// Source terminal rewrite for detached conformer pruning with explicit match context.
+pub fn symmetrize_terminal_query_with_context(
+    query: QueryGraph,
+    target: &SearchTarget<'_>,
+    context: &QueryMatchContext,
+) -> Result<QueryGraph, AlignmentError> {
+    symmetrize_terminal_query_impl(query, target, Some(context))
+}
+
+fn symmetrize_terminal_query_impl(
+    mut symmetrized: QueryGraph,
+    target: &SearchTarget<'_>,
+    context: Option<&QueryMatchContext>,
+) -> Result<QueryGraph, AlignmentError> {
     // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: Code/GraphMol/MolAlign/AlignMolecules.cpp
     // BEGIN VERBATIM CPP symmetrizeTerminalAtoms
     // RDKit✔️✔️: void symmetrizeTerminalAtoms(RWMol &mol) {
@@ -118,17 +138,25 @@ pub(super) fn symmetrize_terminal_atoms(
     // END VERBATIM CPP symmetrizeTerminalAtoms
 
     let query = terminal_atom_query()?;
-    let matches = cosmolkit_search::try_get_substruct_matches_with_params(
-        &input.search_target(),
-        query,
-        &SubstructMatchParams::default(),
-    )?;
-    let mut symmetrized = query_for(input)?;
+    let matches = if let Some(context) = context {
+        cosmolkit_search::try_get_substruct_matches_with_params_and_context(
+            target,
+            query,
+            &SubstructMatchParams::default(),
+            context,
+        )?
+    } else {
+        cosmolkit_search::try_get_substruct_matches_with_params(
+            target,
+            query,
+            &SubstructMatchParams::default(),
+        )?
+    };
     for matched in matches {
         let terminal = matched.atom_mapping[0];
         let neighbor = matched.atom_mapping[1];
-        let bond = input
-            .topology
+        let bond = target
+            .topology_block()
             .adjacency
             .neighbors_of(terminal)
             .iter()
@@ -138,7 +166,7 @@ pub(super) fn symmetrize_terminal_atoms(
                 message: "could not find expected terminal bond",
             })?;
         symmetrized.atoms_mut()[terminal].set_formal_charge(0);
-        let original = &input.topology.bonds[bond];
+        let original = &target.topology_block().bonds[bond];
         // RWMol::replaceBond supplies index and endpoints to the default QueryBond;
         // the remaining carrier state is default, not the previous bond's state.
         let carrier = Bond::from_spec(

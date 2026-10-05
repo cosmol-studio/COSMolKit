@@ -336,6 +336,18 @@ pub use cosmolkit_core::CipRankError;
 #[cfg(feature = "cap-hashing")]
 pub use cosmolkit_fingerprints::MoleculeHashError;
 
+#[cfg(feature = "cap-transforms")]
+pub use cosmolkit_core::{
+    Coordinate2DInputParams, Coordinate3DInputParams, Coordinate3DReadError, CoordinateInputError,
+    CoordinateZPolicy, Replace3DCoordinatesParams,
+};
+
+#[cfg(feature = "cap-transforms")]
+pub(crate) use ops::{
+    With2dCoordinateBlockAccess, With3dCoordinatesAccess, WithAdded3dConformerAccess,
+    WithCleared3dConformersAccess, WithOnly3dConformerAccess,
+};
+
 #[cfg(feature = "cap-fingerprints")]
 mod layered_fingerprint;
 #[cfg(feature = "cap-fingerprints")]
@@ -366,3 +378,28 @@ pub(crate) use ops::{WithAlignedConformersAccess, WithAlignmentToAccess};
 mod maccs_fingerprint;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{MaccsFingerprintError, MaccsFingerprintParams};
+
+#[cfg(feature = "cap-conformer")]
+mod conformer_projection;
+
+#[cfg(feature = "cap-conformer")]
+mod conformer;
+#[cfg(feature = "cap-conformer")]
+pub use conformer::{ConformerError, ConformerRunError, EmbedFailureCause, EmbedParams};
+
+#[cfg(feature = "cap-conformer")]
+pub use conformer::{EmbedMoleculeResult, EmbedMultipleConfsResult};
+
+#[cfg(feature = "cap-conformer")]
+pub(crate) use ops::{
+    With3dConformerAccess, With3dConformerResultAccess, With3dConformersAccess,
+    With3dConformersResultAccess,
+};
+#[cfg(feature = "cap-fingerprints")]
+mod pattern_fingerprint;
+#[cfg(feature = "cap-fingerprints")]
+pub use cosmolkit_fingerprints::{
+    PATTERN_FINGERPRINT_VERSION, PatternFingerprintError, PatternFingerprintParams,
+};
+#[cfg(feature = "cap-fingerprints")]
+pub use pattern_fingerprint::{pattern_query_fingerprint, pattern_query_fingerprint_with_params};

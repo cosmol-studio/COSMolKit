@@ -28,7 +28,7 @@ fn topology(atom_count: usize) -> TopologyBlock {
 }
 
 #[test]
-fn empty_state_is_valid_and_has_one_pointer_sized_owner() {
+fn empty_state_is_valid_and_has_exact_private_owner_layout() {
     let molecule = Molecule::new();
     assert_eq!(molecule.num_atoms(), 0);
     assert_eq!(molecule.num_bonds(), 0);
@@ -38,7 +38,20 @@ fn empty_state_is_valid_and_has_one_pointer_sized_owner() {
         &CoordinateBlock::default()
     );
     assert_eq!(molecule.properties(), &MoleculeProperties::default());
+    // The sole live runtime owner remains one Arc. The accepted descriptor
+    // query projection also stores private, per-value computed rows and poison
+    // state (ROMol::initFromOther copies d_props), outside runtime block storage.
+    #[cfg(not(feature = "cap-descriptors"))]
     assert_eq!(size_of::<Molecule>(), size_of::<Arc<()>>());
+    #[cfg(feature = "cap-descriptors")]
+    assert_eq!(
+        size_of::<Molecule>(),
+        size_of::<(
+            Arc<()>,
+            std::sync::Mutex<cosmolkit_descriptors::DescriptorComputedState>,
+            bool,
+        )>()
+    );
     assert!(format!("{molecule:?}").contains("derived_cache_is_empty: true"));
 }
 

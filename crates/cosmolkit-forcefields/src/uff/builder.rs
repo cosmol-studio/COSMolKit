@@ -2865,6 +2865,30 @@ pub(super) fn needs_hydrogens_warning(
     implicit_hydrogens: &[i32],
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> Result<bool, UffBuilderError> {
+    // BEGIN RDKIT CPP FUNCTION constructForceField missing-explicit-H warning (Builder.cpp:678-684)
+    // RDKit❗✔️:   PRECONDITION(mol.getNumAtoms() == params.size(), "bad parameters");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (MolOps::needsHs(mol)) {
+    // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:         << "Molecule does not have explicit Hs. Consider calling AddHs()"
+    // RDKit❗✔️:         << std::endl;
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION constructForceField missing-explicit-H warning
+
+    let needs = needs_hydrogens(topology, implicit_hydrogens)?;
+    if needs {
+        diagnostics.push(UffTypingDiagnostic {
+            atom_id: None,
+            kind: UffTypingDiagnosticKind::Warning,
+            message_prefix: NEEDS_EXPLICIT_HYDROGENS_WARNING_MESSAGE,
+        });
+    }
+    Ok(needs)
+}
+pub(super) fn needs_hydrogens(
+    topology: &TopologyBlock,
+    implicit_hydrogens: &[i32],
+) -> Result<bool, UffBuilderError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::needsHs (AddHs.cpp:1340-1348)
     // RDKit❗✔️: bool needsHs(const ROMol &mol) {
     // RDKit❗✔️:   for (const auto atom : mol.atoms()) {
@@ -2907,16 +2931,6 @@ pub(super) fn needs_hydrogens_warning(
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION Atom::getNumImplicitHs
 
-    // BEGIN RDKIT CPP FUNCTION constructForceField missing-explicit-H warning (Builder.cpp:678-684)
-    // RDKit❗✔️:   PRECONDITION(mol.getNumAtoms() == params.size(), "bad parameters");
-    // RDKit❗✔️:
-    // RDKit❗✔️:   if (MolOps::needsHs(mol)) {
-    // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
-    // RDKit❗✔️:         << "Molecule does not have explicit Hs. Consider calling AddHs()"
-    // RDKit❗✔️:         << std::endl;
-    // RDKit❗✔️:   }
-    // END RDKIT CPP FUNCTION constructForceField missing-explicit-H warning
-
     let atom_count = topology.atoms.len();
     if implicit_hydrogens.len() != atom_count {
         return Err(UffBuilderError::ValenceAssignmentLengthMismatch {
@@ -2937,11 +2951,6 @@ pub(super) fn needs_hydrogens_warning(
         };
 
         if explicit_hydrogens + implicit_hydrogens > 0 {
-            diagnostics.push(UffTypingDiagnostic {
-                atom_id: None,
-                kind: UffTypingDiagnosticKind::Warning,
-                message_prefix: NEEDS_EXPLICIT_HYDROGENS_WARNING_MESSAGE,
-            });
             return Ok(true);
         }
     }

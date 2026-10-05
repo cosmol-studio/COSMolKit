@@ -546,3 +546,8 @@ mod tests {
         assert_eq!(match_query(&query, &topology).expect("match").len(), 2);
     }
 }
+
+#[doc(hidden)]
+pub use query_behavior::{
+    build_ring_only_query_match_context, is_pattern_complex_query, is_tautomer_bond_query,
+};

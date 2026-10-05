@@ -10,7 +10,7 @@ use super::params::{clip_to_one, is_double_zero};
 use super::utils::{calc_inversion_coefficients, calculate_cos_y};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum InversionIndexArgument {
+pub(crate) enum InversionIndexArgument {
     First,
     Second,
     Third,
@@ -18,7 +18,7 @@ pub(super) enum InversionIndexArgument {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum InversionContributionError {
+pub(crate) enum InversionContributionError {
     IndexOutOfRange {
         argument: InversionIndexArgument,
         index: u32,
@@ -27,13 +27,13 @@ pub(super) enum InversionContributionError {
 }
 
 impl InversionContributionError {
-    pub(super) const fn source_category(self) -> &'static str {
+    pub(crate) const fn source_category(self) -> &'static str {
         match self {
             Self::IndexOutOfRange { .. } => "Range Error",
         }
     }
 
-    pub(super) const fn source_message(self) -> &'static str {
+    pub(crate) const fn source_message(self) -> &'static str {
         match self {
             Self::IndexOutOfRange { argument, .. } => match argument {
                 InversionIndexArgument::First => "idx1",
@@ -44,7 +44,7 @@ impl InversionContributionError {
         }
     }
 
-    pub(super) const fn range_detail(self) -> (u32, usize) {
+    pub(crate) const fn range_detail(self) -> (u32, usize) {
         match self {
             Self::IndexOutOfRange {
                 index, upper_bound, ..
@@ -66,7 +66,7 @@ impl std::error::Error for InversionContributionError {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct InversionContrib {
+pub(crate) struct InversionContrib {
     at1_idx: u32,
     at2_idx: u32,
     at3_idx: u32,
@@ -78,7 +78,7 @@ pub(super) struct InversionContrib {
 }
 
 impl InversionContrib {
-    pub(super) fn new(
+    pub(crate) fn new(
         positions: &[&mut [f64]],
         idx1: u32,
         idx2: u32,
@@ -192,7 +192,7 @@ impl InversionContrib {
         Ok(contribution)
     }
 
-    pub(super) fn new_packed_with_scale(
+    pub(crate) fn new_packed_with_scale(
         positions: &[&mut [f64]],
         idx1: u32,
         idx2: u32,
@@ -341,7 +341,7 @@ impl InversionContrib {
         Ok(())
     }
 
-    pub(super) fn get_energy(&self, context: &mut EvaluationContext<'_>) -> f64 {
+    pub(crate) fn get_energy(&self, context: &mut EvaluationContext<'_>) -> f64 {
         // BEGIN RDKIT CPP FUNCTION ForceFields::UFF::InversionContrib::getEnergy (ForceField/UFF/Inversion.cpp:47-69)
         // RDKit❗✔️: double InversionContrib::getEnergy(double *pos) const {
         // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
@@ -423,7 +423,7 @@ impl InversionContrib {
         res
     }
 
-    pub(super) fn get_grad(
+    pub(crate) fn get_grad(
         &self,
         context: &mut EvaluationContext<'_>,
         gradient: &mut [f64],

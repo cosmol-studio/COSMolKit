@@ -139,6 +139,132 @@ pub fn uff_has_all_molecule_params(
     // END RDKIT CPP FUNCTION RDKit::UFFHasAllMoleculeParams
 }
 
+/// Error from the narrow UFF rest-length projection used by distance geometry.
+#[derive(Debug)]
+pub struct UffBoundsError {
+    cause: UffBoundsCause,
+}
+#[derive(Debug)]
+enum UffBoundsCause {
+    Parameter(UffParameterError),
+    BondOrder(cosmolkit_core::ValenceError),
+    BondMath(super::bond::BondMathError),
+    AssignmentLength {
+        field: &'static str,
+        actual: usize,
+        expected: usize,
+    },
+}
+impl fmt::Display for UffBoundsError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.cause {
+            UffBoundsCause::Parameter(e) => fmt::Display::fmt(e, f),
+            UffBoundsCause::BondOrder(e) => fmt::Display::fmt(e, f),
+            UffBoundsCause::BondMath(e) => fmt::Display::fmt(e, f),
+            UffBoundsCause::AssignmentLength {
+                field,
+                actual,
+                expected,
+            } => write!(
+                f,
+                "{field} assignment has {actual} rows; expected {expected}"
+            ),
+        }
+    }
+}
+impl Error for UffBoundsError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match &self.cause {
+            UffBoundsCause::Parameter(e) => Some(e),
+            UffBoundsCause::BondOrder(e) => Some(e),
+            UffBoundsCause::BondMath(e) => Some(e),
+            UffBoundsCause::AssignmentLength { .. } => None,
+        }
+    }
+}
+/// Ordered source UFF bond rest lengths, borrowing independently computed atom assignments.
+/// `None` is exactly the set12Bounds branch for missing endpoint parameters or nonpositive order.
+/// The caller owns the source-defined van der Waals fallback and distance-bound policy.
+pub fn uff_bond_rest_lengths(
+    topology: &cosmolkit_model::TopologyBlock,
+    assignment: &cosmolkit_core::ValenceAssignment,
+    hybridizations: &[cosmolkit_model::Hybridization],
+    conjugated_bonds: &[bool],
+) -> Result<Vec<Option<f64>>, UffBoundsError> {
+    // RDKit❗✔️:   auto [atomParams, foundAll] = UFF::getAtomTypes(mol);
+    // RDKit❗✔️:   CHECK_INVARIANT(atomParams.size() == mol.getNumAtoms(),
+    // RDKit❗✔️:                   "parameter vector size mismatch");
+    // RDKit❗✔️:   for (const auto bond : mol.bonds()) {
+    // RDKit❗✔️:     auto begId = bond->getBeginAtomIdx();
+    // RDKit❗✔️:     auto endId = bond->getEndAtomIdx();
+    // RDKit❗✔️:     auto bOrder = bond->getBondTypeAsDouble();
+    // RDKit❗✔️:     if (atomParams[begId] && atomParams[endId] && bOrder > 0) {
+    // RDKit❗✔️:       auto bl = ForceFields::UFF::Utils::calcBondRestLength(
+    // RDKit❗✔️:           bOrder, atomParams[begId], atomParams[endId]);
+    // Source: pinned BoundsMatrixBuilder.cpp:244-267. The caller retains all
+    // squish/bound/fallback writes; this projection borrows one existing typer
+    // and one existing formula. No topology, parameter table, or assignment clone.
+    // Additional ordered E optional values are the cross-owner output cost.
+    let params =
+        super::params::ParamCollection::get_params("").map_err(|source| UffBoundsError {
+            cause: UffBoundsCause::Parameter(UffParameterError {
+                cause: UffParameterCause::ParameterTable(source),
+            }),
+        })?;
+    let prepared =
+        prepare_parameter_query(topology, assignment).map_err(|source| UffBoundsError {
+            cause: UffBoundsCause::Parameter(source),
+        })?;
+    for (field, actual, expected) in [
+        ("hybridization", hybridizations.len(), topology.atoms.len()),
+        ("conjugation", conjugated_bonds.len(), topology.bonds.len()),
+    ] {
+        if actual != expected {
+            return Err(UffBoundsError {
+                cause: UffBoundsCause::AssignmentLength {
+                    field,
+                    actual,
+                    expected,
+                },
+            });
+        }
+    }
+    let mut diagnostics = Vec::new();
+    let (atom_params, _found_all) = super::atom_typer::get_atom_types_with_assignments(
+        topology,
+        prepared.typing_state,
+        &params,
+        &mut diagnostics,
+        Some((hybridizations, conjugated_bonds)),
+    )
+    .map_err(|source| UffBoundsError {
+        cause: UffBoundsCause::Parameter(UffParameterError {
+            cause: UffParameterCause::Typing(source),
+        }),
+    })?;
+    let mut lengths = Vec::with_capacity(topology.bonds.len());
+    for bond in &topology.bonds {
+        let beg = bond.begin().index();
+        let end = bond.end().index();
+        let order =
+            cosmolkit_core::bond_type_as_double(bond.order()).map_err(|source| UffBoundsError {
+                cause: UffBoundsCause::BondOrder(source),
+            })?;
+        let length = match (atom_params[beg], atom_params[end]) {
+            (Some(p1), Some(p2)) if order > 0.0 => Some(
+                super::bond::calc_bond_rest_length(order, p1, p2).map_err(|source| {
+                    UffBoundsError {
+                        cause: UffBoundsCause::BondMath(source),
+                    }
+                })?,
+            ),
+            _ => None,
+        };
+        lengths.push(length);
+    }
+    Ok(lengths)
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
@@ -688,4 +814,124 @@ mod tests {
             },
         );
     }
+}
+
+#[cfg(test)]
+mod conformer_bond_length_tests {
+    use super::*;
+    use cosmolkit_core::{
+        ValenceModel, assign_conjugation_flags, assign_hybridization_with_conjugation,
+        assign_valence_for_topology,
+    };
+    use cosmolkit_model::{
+        Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Element, TopologyBlock,
+    };
+    fn lengths(graph: &TopologyBlock) -> Vec<Option<f64>> {
+        let valence = assign_valence_for_topology(graph, ValenceModel::RdkitLike).unwrap();
+        let conjugated = assign_conjugation_flags(graph, &valence).unwrap();
+        let hybridization =
+            assign_hybridization_with_conjugation(graph, &valence, &conjugated).unwrap();
+        uff_bond_rest_lengths(graph, &valence, &hybridization.values, &conjugated).unwrap()
+    }
+    #[test]
+    fn original_explicit_sulfur_hydrogen_rest_lengths() {
+        let record = cosmolkit_smiles::parse_smiles("C[SH+][O-]", &Default::default()).unwrap();
+        let result = lengths(&record.topology);
+        assert!((result[0].unwrap() - 1.776_838_813_449_356_2).abs() < 1.0e-14);
+        assert!((result[1].unwrap() - 1.679_472_654_030_108).abs() < 1.0e-14);
+    }
+    #[test]
+    fn original_unsanitized_ethane_computed_assignment_is_used() {
+        let record = cosmolkit_smiles::parse_smiles(
+            "CC",
+            &cosmolkit_smiles::SmilesParseParams {
+                sanitize: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let stale = record
+            .topology
+            .atoms
+            .iter()
+            .map(|a| a.hybridization())
+            .collect::<Vec<_>>();
+        let result = lengths(&record.topology);
+        assert!(result[0].unwrap() > 1.4);
+        assert!(result[0].unwrap() < 1.6);
+        assert_eq!(
+            stale,
+            record
+                .topology
+                .atoms
+                .iter()
+                .map(|a| a.hybridization())
+                .collect::<Vec<_>>()
+        );
+    }
+    #[test]
+    fn original_dummy_endpoint_has_no_uff_parameter() {
+        let atoms = [Element::C, Element::DUMMY]
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| Atom::from_spec(AtomId::new(i), AtomSpec::new(e)))
+            .collect();
+        let bonds = vec![Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        )];
+        let graph = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        assert_eq!(lengths(&graph), vec![None]);
+    }
+    #[test]
+    fn detached_assignment_shape_error_keeps_typed_preparation_order() {
+        let record = cosmolkit_smiles::parse_smiles("CC", &Default::default()).unwrap();
+        let graph = &record.topology;
+        let valid = assign_valence_for_topology(graph, ValenceModel::RdkitLike).unwrap();
+        let error = uff_bond_rest_lengths(graph, &valid, &[], &[false]).unwrap_err();
+        assert!(matches!(
+            error.cause,
+            UffBoundsCause::AssignmentLength {
+                field: "hybridization",
+                actual: 0,
+                expected: 2
+            }
+        ));
+        let invalid = cosmolkit_core::ValenceAssignment {
+            explicit_valence: vec![],
+            implicit_hydrogens: vec![],
+        };
+        let error = uff_bond_rest_lengths(graph, &invalid, &[], &[]).unwrap_err();
+        assert!(
+            Error::source(&error)
+                .unwrap()
+                .downcast_ref::<UffParameterError>()
+                .is_some()
+        );
+    }
+}
+
+/// Typed source hydrogen-getter failure retained behind the existing FF owner.
+#[derive(Debug)]
+pub struct MissingExplicitHydrogensError {
+    source: UffBuilderError,
+}
+impl fmt::Display for MissingExplicitHydrogensError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.source, f)
+    }
+}
+impl Error for MissingExplicitHydrogensError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        Some(&self.source)
+    }
+}
+/// Reuse the existing source needsHs owner without emitting a UFF warning.
+#[doc(hidden)]
+pub fn needs_explicit_hydrogens(
+    topology: &cosmolkit_model::TopologyBlock,
+    implicit_hydrogens: &[i32],
+) -> Result<bool, MissingExplicitHydrogensError> {
+    super::builder::needs_hydrogens(topology, implicit_hydrogens)
+        .map_err(|source| MissingExplicitHydrogensError { source })
 }

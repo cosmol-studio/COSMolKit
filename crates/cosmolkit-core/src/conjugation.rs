@@ -163,7 +163,7 @@ fn is_atom_conjugation_candidate(
 fn mark_conjugated_atom_bonds(
     source: &TopologyBlock,
     valence: &ValenceAssignment,
-    working: &mut TopologyBlock,
+    write_flag: &mut impl FnMut(usize, bool),
     atom_id: AtomId,
 ) -> Result<(), ConjugationError> {
     // BEGIN RDKIT CPP FUNCTION markConjAtomBonds
@@ -233,8 +233,8 @@ fn mark_conjugated_atom_bonds(
                 continue;
             }
             if is_atom_conjugation_candidate(source, valence, second_atom)? {
-                working.bonds[first.bond.index()].set_conjugated(true);
-                working.bonds[second.bond.index()].set_conjugated(true);
+                write_flag(first.bond.index(), true);
+                write_flag(second.bond.index(), true);
             }
         }
     }
@@ -276,10 +276,37 @@ pub(crate) fn atom_has_conjugated_bond_from_validated(
         .any(|neighbor| topology.bonds[neighbor.bond.index()].is_conjugated())
 }
 
+// The original detached transform retains its one owned output and validation order.
 pub fn assign_conjugation(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<TopologyBlock, ConjugationError> {
+    topology.validate()?;
+    validate_valence(topology, valence)?;
+    let mut working = topology.clone();
+    assign_conjugation_with_writer(topology, valence, &mut |index, value| {
+        working.bonds[index].set_conjugated(value)
+    })?;
+    working.validate()?;
+    Ok(working)
+}
+/// Detached bond flags for consumers that do not mutate topology.
+/// Uses the same source loop and candidate/valence rules as the topology transform.
+pub fn assign_conjugation_flags(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+) -> Result<Vec<bool>, ConjugationError> {
+    topology.validate()?;
+    validate_valence(topology, valence)?;
+    let mut flags = vec![false; topology.bonds.len()];
+    assign_conjugation_with_writer(topology, valence, &mut |index, value| flags[index] = value)?;
+    Ok(flags)
+}
+fn assign_conjugation_with_writer(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    writer: &mut impl FnMut(usize, bool),
+) -> Result<(), ConjugationError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::setConjugation
     // RDKit✔️❌: void setConjugation(ROMol &mol) {
     // RDKit✔️❌:   // start with all bonds being marked unconjugated
@@ -295,18 +322,13 @@ pub fn assign_conjugation(
     // RDKit✔️❌:   }
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION MolOps::setConjugation
-    // The detached atomic API clones the complete topology and validates both
-    // boundaries; source RDKit mutates in place, so allocation cost is known
-    // to be higher even though traversal complexity remains linear.
-    topology.validate()?;
-    validate_valence(topology, valence)?;
-    let mut working = topology.clone();
-    for bond in &mut working.bonds {
-        bond.set_conjugated(bond.is_aromatic());
+    // One dispatcher and one markConjAtomBonds body serve both output forms.
+    // The flags consumer allocates only the source E result bits and borrows all atom/bond/adjacency data.
+    for (index, bond) in topology.bonds.iter().enumerate() {
+        writer(index, bond.is_aromatic());
     }
     for atom_index in 0..topology.atoms.len() {
-        mark_conjugated_atom_bonds(topology, valence, &mut working, AtomId::new(atom_index))?;
+        mark_conjugated_atom_bonds(topology, valence, writer, AtomId::new(atom_index))?;
     }
-    working.validate()?;
-    Ok(working)
+    Ok(())
 }

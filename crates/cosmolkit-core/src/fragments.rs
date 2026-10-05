@@ -89,6 +89,14 @@ pub enum FragmentCoordinateViewError {
 }
 
 impl<'a> FragmentCoordinateView<'a> {
+    /// Drop the 3D descriptors from this detached borrowed copy view.
+    /// Coordinate rows are never cloned or mutated.
+    #[must_use]
+    pub fn without_3d_conformers(mut self) -> Self {
+        self.conformers_3d.clear();
+        self
+    }
+
     /// Borrow every conformer row, ID, flag, and property map in source order.
     ///
     /// Complexity: allocates two O(C) descriptor vectors for C conformers;
@@ -1864,6 +1872,15 @@ pub struct MoleculeFragment {
 }
 
 impl MoleculeFragment {
+    /// Consume the detached fragment values, without cloning graph or coordinates.
+    pub fn into_parts(self) -> (TopologyBlock, CoordinateBlock, MoleculeProperties) {
+        (
+            self.copy.topology,
+            self.copy.coordinates,
+            self.copy.molecule_properties,
+        )
+    }
+
     /// Source atom rows in the component, in ascending order.
     pub fn component_atoms(&self) -> &[AtomId] {
         &self.component_atoms

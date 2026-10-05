@@ -1406,6 +1406,16 @@ pub(super) fn get_atom_types_from_state<'params>(
     params: &'params ParamCollection,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> Result<(Vec<Option<&'params AtomicParams>>, bool), UffTypingError> {
+    get_atom_types_with_assignments(supplied_topology, typing_state, params, diagnostics, None)
+}
+
+pub(super) fn get_atom_types_with_assignments<'params>(
+    supplied_topology: &TopologyBlock,
+    typing_state: UffAtomStateRef<'_>,
+    params: &'params ParamCollection,
+    diagnostics: &mut Vec<UffTypingDiagnostic>,
+    assignments: Option<(&[Hybridization], &[bool])>,
+) -> Result<(Vec<Option<&'params AtomicParams>>, bool), UffTypingError> {
     // BEGIN RDKIT CPP FUNCTION RDKit::UFF::getAtomTypes (AtomTyper.cpp:507-533)
     // RDKit❗✔️: std::pair<AtomicParamVect, bool> getAtomTypes(const ROMol &mol,
     // RDKit❗✔️:                                               const std::string &) {
@@ -1423,7 +1433,7 @@ pub(super) fn get_atom_types_from_state<'params>(
     // RDKit❗✔️:   paramVect.resize(mol.getNumAtoms());
     // This single ordered loop consumes either borrowed cached rows or the
     // supplied-row adapter. Its result vector remains the source N nullable
-    // parameter slots; no valence or conjugation projection is made here.
+    // parameter slots; explicit assignments are borrowed and never copied.
     let mut param_vect = Vec::with_capacity(atom_count);
     // RDKit❗✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
     for (atom_index, atom) in topology.atoms.iter().enumerate() {
@@ -1433,8 +1443,18 @@ pub(super) fn get_atom_types_from_state<'params>(
         let atom_key = get_atom_label(
             atom,
             typing_state.total_valence_at(atom_index),
-            atom.hybridization(),
-            || typing_state.conjugated_presence_at(atom_index),
+            assignments.map_or_else(
+                || atom.hybridization(),
+                |(hybridizations, _)| hybridizations[atom_index],
+            ),
+            || match assignments {
+                Some((_, conjugated_bonds)) => topology
+                    .adjacency
+                    .neighbors_of(atom_index)
+                    .iter()
+                    .any(|neighbor| conjugated_bonds[neighbor.bond.index()]),
+                None => typing_state.conjugated_presence_at(atom_index),
+            },
             diagnostics,
         )?;
         // RDKit❗✔️:     // ok, we've got the atom key, now get the parameters:

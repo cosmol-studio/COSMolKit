@@ -31,6 +31,18 @@ fn operation(name: &str, extra: &str) -> String {
 fn detached_reports_reject_ambiguous_or_pending_shapes() {
     for (fields, expected) in [
         (
+            "report_result_type: crate::CanonicalResult,",
+            "requires report_type",
+        ),
+        (
+            "report_result_type: crate::CanonicalResult, inplace_result_type: usize, inplace: true,",
+            "requires report_type",
+        ),
+        (
+            "report_type: usize, report_result_type: crate::CanonicalResult, assemble_fn: crate::assemble,",
+            "cannot be combined",
+        ),
+        (
             "report_type: usize, inplace_result_type: usize, inplace: true,",
             "mutually exclusive",
         ),
@@ -68,6 +80,11 @@ fn generated_reports_execute_once_and_survive_only_successful_commit() {
             "position",
             "inplace_result_type: crate::Report, inplace: true, default_method: position_default, default_args: [0],",
         );
+    let source = source
+        + &operation(
+            "canonical",
+            "report_type: crate::Report, report_result_type: crate::CanonicalResult, inplace: true, default_method: canonical_default, default_args: [0],",
+        );
     let registry = syn::parse_str::<declaration::MoleculeRegistry>(&source).unwrap();
     let generated = wrappers::expand_molecule_wrappers(&registry).unwrap();
     let fixture = r#"
@@ -76,11 +93,19 @@ fn generated_reports_execute_once_and_survive_only_successful_commit() {
         struct Spec { status: FunctionStatus }
         const REPORT_SPEC: Spec = Spec { status: () };
         const POSITION_SPEC: Spec = Spec { status: () };
+        const CANONICAL_SPEC: Spec = Spec { status: () };
         mod ops { #[derive(Debug, PartialEq)] pub enum OperationError { Body, Finish, New } }
         use ops::OperationError;
         #[derive(Clone)] struct Molecule { value: usize, events: Rc<RefCell<Vec<&'static str>>> }
         struct Report { value: usize, events: Rc<RefCell<Vec<&'static str>>> }
         impl Drop for Report { fn drop(&mut self) { self.events.borrow_mut().push("drop-report"); } }
+        struct CanonicalResult { molecule: Molecule, report: Report }
+        impl From<(Molecule, Report)> for CanonicalResult {
+            fn from((molecule, report): (Molecule, Report)) -> Self {
+                molecule.events.borrow_mut().push("convert");
+                Self { molecule, report }
+            }
+        }
         struct OpParts<'a> { target: Option<&'a mut Molecule>, value: usize, events: Rc<RefCell<Vec<&'static str>>>, fail: bool }
         impl<'a> OpParts<'a> {
             fn new(mol: &Molecule, _: &Spec) -> Result<Self, OperationError> {
@@ -154,6 +179,26 @@ fn generated_reports_execute_once_and_survive_only_successful_commit() {
                     }
                 }
             }
+            let mut mol = molecule();
+            let canonical: CanonicalResult = mol.canonical_default(6).unwrap();
+            assert_eq!((mol.value, canonical.molecule.value, canonical.report.value), (10, 16, 16));
+            assert_eq!(&*mol.events.borrow(), &["new", "body", "finish", "convert"]);
+            drop(canonical);
+            mol.events.borrow_mut().clear();
+            let canonical: CanonicalResult = mol.canonical_default_(7).unwrap();
+            assert_eq!((mol.value, canonical.molecule.value, canonical.report.value), (17, 17, 17));
+            assert!(Rc::ptr_eq(&mol.events, &canonical.molecule.events));
+            assert_eq!(&*mol.events.borrow(), &["new-inplace", "body", "finish-inplace", "convert"]);
+            drop(canonical);
+            for mode in [1, 2] {
+                for inplace in [false, true] {
+                    let mut mol = molecule();
+                    let error = if inplace { mol.canonical_(3, mode).err() } else { mol.canonical(3, mode).err() };
+                    assert!(error == Some(if mode == 1 { OperationError::Body } else { OperationError::Finish }));
+                    assert_eq!(mol.value, 10);
+                    assert!(!mol.events.borrow().contains(&"convert"));
+                }
+            }
             for inplace in [false, true] {
                 let mut mol = molecule(); mol.value = 999;
                 let error = if inplace { mol.report_(1, 0).err() } else { mol.report(1, 0).err() };
@@ -195,6 +240,10 @@ fn detached_value_shapes_are_declared_in_the_generated_operation_matrix() {
         (
             "report_type: crate::Report,",
             "stringify!((Molecule,crate::Report))",
+        ),
+        (
+            "report_type: crate::Report, report_result_type: crate::CanonicalResult, inplace: true,",
+            "stringify!(crate::CanonicalResult)",
         ),
         ("inplace_result_type: usize, inplace: true,", "\"Molecule\""),
     ] {

@@ -9,76 +9,78 @@
 
 use crate::bounds::BoundsMatrix;
 
-// BEGIN RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds (TriangleSmooth.cpp:14-16)
-// RDKit❗✔️: bool triangleSmoothBounds(BoundsMatPtr boundsMat, double tol) {
-// RDKit❗✔️:   return triangleSmoothBounds(boundsMat.get(), tol);
-// RDKit❗✔️: }
-// END RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds
 pub(super) fn triangle_smooth_bounds_shared(bounds_mat: &mut BoundsMatrix, tol: f64) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds (TriangleSmooth.cpp:14-16)
+    // RDKit❗✔️: bool triangleSmoothBounds(BoundsMatPtr boundsMat, double tol) {
+    // RDKit❗✔️:   return triangleSmoothBounds(boundsMat.get(), tol);
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds
+
     triangle_smooth_bounds_ptr(bounds_mat, tol)
 }
 
-// BEGIN RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds (TriangleSmooth.cpp:17-70)
-// RDKit❗✔️: bool triangleSmoothBounds(BoundsMatrix *boundsMat, double tol) {
-// RDKit❗✔️:   auto npt = boundsMat->numRows();
-// RDKit❗✔️:   for (auto k = 0u; k < npt; k++) {
-// RDKit❗✔️:     for (auto i = 0u; i < npt - 1; i++) {
-// RDKit❗✔️:       if (i == k) {
-// RDKit❗✔️:         continue;
-// RDKit❗✔️:       }
-// RDKit❗✔️:       auto ii = i;
-// RDKit❗✔️:       auto ik = k;
-// RDKit❗✔️:       if (ii > ik) {
-// RDKit❗✔️:         std::swap(ii, ik);
-// RDKit❗✔️:       }
-// RDKit❗✔️:
-// RDKit❗✔️:       const auto Uik = boundsMat->getValUnchecked(ii, ik);  // upper bound
-// RDKit❗✔️:       const auto Lik = boundsMat->getValUnchecked(ik, ii);  // lower bound
-// RDKit❗✔️:       for (auto j = i + 1; j < npt; j++) {
-// RDKit❗✔️:         if (j == k) {
-// RDKit❗✔️:           continue;
-// RDKit❗✔️:         }
-// RDKit❗✔️:         auto jj = j;
-// RDKit❗✔️:         auto jk = k;
-// RDKit❗✔️:         if (jj > jk) {
-// RDKit❗✔️:           std::swap(jj, jk);
-// RDKit❗✔️:         }
-// RDKit❗✔️:         const auto Ukj = boundsMat->getValUnchecked(jj, jk);  // upper bound
-// RDKit❗✔️:         const auto sumUikUkj = Uik + Ukj;
-// RDKit❗✔️:         if (boundsMat->getValUnchecked(i, j) > sumUikUkj) {
-// RDKit❗✔️:           // adjust the upper bound
-// RDKit❗✔️:           boundsMat->setValUnchecked(i, j, sumUikUkj);
-// RDKit❗✔️:         }
-// RDKit❗✔️:
-// RDKit❗✔️:         const auto diffLikUjk = Lik - Ukj;
-// RDKit❗✔️:         const auto diffLjkUik = boundsMat->getValUnchecked(jk, jj) - Uik;
-// RDKit❗✔️:         if (boundsMat->getValUnchecked(j, i) < diffLikUjk) {
-// RDKit❗✔️:           // adjust the lower bound
-// RDKit❗✔️:           boundsMat->setValUnchecked(j, i, diffLikUjk);
-// RDKit❗✔️:         } else if (boundsMat->getValUnchecked(j, i) < diffLjkUik) {
-// RDKit❗✔️:           // adjust the lower bound
-// RDKit❗✔️:           boundsMat->setValUnchecked(j, i, diffLjkUik);
-// RDKit❗✔️:         }
-// RDKit❗✔️:         const auto lBound = boundsMat->getValUnchecked(j, i);
-// RDKit❗✔️:         const auto uBound = boundsMat->getValUnchecked(i, j);
-// RDKit❗✔️:         if (tol > 0. && (lBound - uBound) / lBound > 0. &&
-// RDKit❗✔️:             (lBound - uBound) / lBound < tol) {
-// RDKit❗✔️:           // adjust the upper bound
-// RDKit❗✔️:           boundsMat->setValUnchecked(i, j, lBound);
-// RDKit❗✔️:         } else if (lBound - uBound > 0.) {
-// RDKit❗✔️:           return false;
-// RDKit❗✔️:         }
-// RDKit❗✔️:       }
-// RDKit❗✔️:     }
-// RDKit❗✔️:   }
-// RDKit❗✔️:   return true;
-// RDKit❗✔️: }
-// END RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds
-//
-// The loop index proof and BoundsMatrix's checked square allocation make these
-// unchecked accesses safe at each call. They retain RDKit's dense O(1) entry
-// cost instead of adding repeated Result and bounds branches inside O(n^3) work.
 pub(super) fn triangle_smooth_bounds_ptr(bounds_mat: &mut BoundsMatrix, tol: f64) -> bool {
+    // BEGIN RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds (TriangleSmooth.cpp:17-70)
+    // RDKit❗✔️: bool triangleSmoothBounds(BoundsMatrix *boundsMat, double tol) {
+    // RDKit❗✔️:   auto npt = boundsMat->numRows();
+    // RDKit❗✔️:   for (auto k = 0u; k < npt; k++) {
+    // RDKit❗✔️:     for (auto i = 0u; i < npt - 1; i++) {
+    // RDKit❗✔️:       if (i == k) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       auto ii = i;
+    // RDKit❗✔️:       auto ik = k;
+    // RDKit❗✔️:       if (ii > ik) {
+    // RDKit❗✔️:         std::swap(ii, ik);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:
+    // RDKit❗✔️:       const auto Uik = boundsMat->getValUnchecked(ii, ik);  // upper bound
+    // RDKit❗✔️:       const auto Lik = boundsMat->getValUnchecked(ik, ii);  // lower bound
+    // RDKit❗✔️:       for (auto j = i + 1; j < npt; j++) {
+    // RDKit❗✔️:         if (j == k) {
+    // RDKit❗✔️:           continue;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         auto jj = j;
+    // RDKit❗✔️:         auto jk = k;
+    // RDKit❗✔️:         if (jj > jk) {
+    // RDKit❗✔️:           std::swap(jj, jk);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         const auto Ukj = boundsMat->getValUnchecked(jj, jk);  // upper bound
+    // RDKit❗✔️:         const auto sumUikUkj = Uik + Ukj;
+    // RDKit❗✔️:         if (boundsMat->getValUnchecked(i, j) > sumUikUkj) {
+    // RDKit❗✔️:           // adjust the upper bound
+    // RDKit❗✔️:           boundsMat->setValUnchecked(i, j, sumUikUkj);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:
+    // RDKit❗✔️:         const auto diffLikUjk = Lik - Ukj;
+    // RDKit❗✔️:         const auto diffLjkUik = boundsMat->getValUnchecked(jk, jj) - Uik;
+    // RDKit❗✔️:         if (boundsMat->getValUnchecked(j, i) < diffLikUjk) {
+    // RDKit❗✔️:           // adjust the lower bound
+    // RDKit❗✔️:           boundsMat->setValUnchecked(j, i, diffLikUjk);
+    // RDKit❗✔️:         } else if (boundsMat->getValUnchecked(j, i) < diffLjkUik) {
+    // RDKit❗✔️:           // adjust the lower bound
+    // RDKit❗✔️:           boundsMat->setValUnchecked(j, i, diffLjkUik);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         const auto lBound = boundsMat->getValUnchecked(j, i);
+    // RDKit❗✔️:         const auto uBound = boundsMat->getValUnchecked(i, j);
+    // RDKit❗✔️:         if (tol > 0. && (lBound - uBound) / lBound > 0. &&
+    // RDKit❗✔️:             (lBound - uBound) / lBound < tol) {
+    // RDKit❗✔️:           // adjust the upper bound
+    // RDKit❗✔️:           boundsMat->setValUnchecked(i, j, lBound);
+    // RDKit❗✔️:         } else if (lBound - uBound > 0.) {
+    // RDKit❗✔️:           return false;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION DistGeom::triangleSmoothBounds
+    //
+    // The loop index proof and BoundsMatrix's checked square allocation make these
+    // unchecked accesses safe at each call. They retain RDKit's dense O(1) entry
+    // cost instead of adding repeated Result and bounds branches inside O(n^3) work.
+
     let npt = bounds_mat.dimension();
     for k in 0..npt {
         for i in 0..(npt - 1) {

@@ -17,6 +17,9 @@ pyo3::create_exception!(cosmolkit, FingerprintError, PyValueError);
 pyo3::create_exception!(cosmolkit, FingerprintJsonError, PyValueError);
 
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
+    if let Some(error) = source.downcast_ref::<ck::CoordinateInputError>() {
+        return crate::canonical_coordinate_input::error_pyerr(py, error);
+    }
     if let Some(preparation) = source.downcast_ref::<ck::FingerprintPreparationError>() {
         let kind = match preparation {
             ck::FingerprintPreparationError::MissingPreparedValence => "MissingPreparedValence",

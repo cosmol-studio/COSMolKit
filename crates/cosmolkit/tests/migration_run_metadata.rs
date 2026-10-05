@@ -18,6 +18,9 @@ fn expected_feature_names() -> Vec<&'static str> {
     if cfg!(feature = "cap-alignment") {
         expected.push("cap-alignment");
     }
+    if cfg!(feature = "cap-conformer") {
+        expected.push("cap-conformer");
+    }
     if cfg!(feature = "cap-tautomer") {
         expected.push("cap-tautomer");
     }
@@ -66,6 +69,14 @@ fn expected_operation_methods() -> Vec<&'static str> {
         expected.extend([
             "with_alignment_to_with_params",
             "with_aligned_conformers_with_params",
+        ]);
+    }
+    if cfg!(feature = "cap-conformer") {
+        expected.extend([
+            "with_3d_conformer_with_params",
+            "with_3d_conformer_result_with_params",
+            "with_3d_conformers_with_params",
+            "with_3d_conformers_result_with_params",
         ]);
     }
     if cfg!(feature = "cap-tautomer") {
@@ -121,11 +132,36 @@ fn expected_operation_methods() -> Vec<&'static str> {
     }
     if cfg!(feature = "cap-transforms") {
         expected.push("with_atom_position_with_params");
+        expected.extend([
+            "with_2d_coordinate_block_with_params",
+            "with_3d_coordinates_with_params",
+            "with_added_3d_conformer_with_params",
+            "with_only_3d_conformer_with_params",
+            "with_cleared_3d_conformers",
+        ]);
     }
     if cfg!(feature = "cap-depict") {
         expected.push("with_2d_coordinates_with_params");
     }
     expected
+}
+
+// The unchanged generator omits only explicitly NotApplicable declarations.
+// Keep the full literal operation fixture and every original parity row/order.
+fn expected_parity_methods() -> Vec<&'static str> {
+    expected_operation_methods()
+        .into_iter()
+        .filter(|method| {
+            !matches!(
+                *method,
+                "with_2d_coordinate_block_with_params"
+                    | "with_3d_coordinates_with_params"
+                    | "with_added_3d_conformer_with_params"
+                    | "with_only_3d_conformer_with_params"
+                    | "with_cleared_3d_conformers"
+            )
+        })
+        .collect()
 }
 
 #[test]
@@ -284,7 +320,13 @@ fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
     );
     assert_eq!(support_matrix().len(), expected_methods.len());
     assert_eq!(operation_invariant_matrix().len(), expected_methods.len());
-    assert_eq!(parity_matrix().len(), expected_methods.len());
+    assert_eq!(
+        parity_matrix()
+            .iter()
+            .map(|row| row.operation.method)
+            .collect::<Vec<_>>(),
+        expected_parity_methods()
+    );
 
     if expected_methods.is_empty() {
         assert!(feature_specs().next().is_none());
@@ -299,23 +341,34 @@ fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
     for (index, operation) in operations.iter().enumerate() {
         let support = &support_matrix()[index];
         let invariant = &operation_invariant_matrix()[index];
-        let parity = &parity_matrix()[index];
+
         assert!(core::ptr::eq(
             operation_spec(operation.method).unwrap(),
             *operation
         ));
         assert!(core::ptr::eq(support.operation.unwrap(), *operation));
         assert!(core::ptr::eq(invariant.operation, *operation));
-        assert!(core::ptr::eq(parity.operation, *operation));
+
         assert!(core::ptr::eq(
             operation_invariant(operation.method).unwrap(),
             invariant
         ));
-        assert!(core::ptr::eq(
-            operation_parity(operation.method).unwrap(),
-            parity
-        ));
-        assert!(core::ptr::eq(support.feature, parity.feature));
+        if let Some(parity_index) = expected_parity_methods()
+            .iter()
+            .position(|method| *method == operation.method)
+        {
+            let parity = &parity_matrix()[parity_index];
+            assert!(core::ptr::eq(parity.operation, *operation));
+            assert!(core::ptr::eq(
+                operation_parity(operation.method).unwrap(),
+                parity
+            ));
+            assert!(core::ptr::eq(support.feature, parity.feature));
+        } else {
+            assert_eq!(operation_parity(operation.method), None);
+            assert_eq!(operation.parity, ParityPolicy::NotApplicable);
+            assert_eq!(operation.status, FunctionStatus::Native);
+        }
         assert!(core::ptr::eq(
             feature_spec(support.feature.name).unwrap(),
             support.feature
@@ -333,8 +386,12 @@ fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
             operation_invariant_matrix()[index].profile,
             "coordinate_2d_layout"
         );
+        let parity_index = expected_parity_methods()
+            .iter()
+            .position(|method| *method == operation.method)
+            .unwrap();
         assert_eq!(
-            parity_matrix()[index].profile,
+            parity_matrix()[parity_index].profile,
             "compute_2d_coordinates_rdkit"
         );
         assert!(core::ptr::eq(operations[index], operation));
@@ -346,7 +403,10 @@ fn default_configuration_exposes_empty_generated_metadata_and_exact_misses() {
             operation_invariant_matrix()[index].operation,
             operation
         ));
-        assert!(core::ptr::eq(parity_matrix()[index].operation, operation));
+        assert!(core::ptr::eq(
+            parity_matrix()[parity_index].operation,
+            operation
+        ));
     }
 
     for name in ["", "cap-hydrogens", "Cap-hydrogens", "unknown"] {
@@ -385,7 +445,13 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
     );
     assert_eq!(support_matrix().len(), operations.len());
     assert_eq!(operation_invariant_matrix().len(), operations.len());
-    assert_eq!(parity_matrix().len(), operations.len());
+    assert_eq!(
+        parity_matrix()
+            .iter()
+            .map(|row| row.operation.method)
+            .collect::<Vec<_>>(),
+        expected_parity_methods()
+    );
 
     for (index, operation) in operations.iter().enumerate() {
         assert!(core::ptr::eq(
@@ -402,17 +468,29 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
             operation_invariant_matrix()[index].operation,
             *operation
         ));
-        assert!(core::ptr::eq(parity_matrix()[index].operation, *operation));
-        assert!(core::ptr::eq(
-            support_matrix()[index].feature,
-            parity_matrix()[index].feature
-        ));
+
         assert!(core::ptr::eq(
             feature_spec(support_matrix()[index].feature.name).expect("feature lookup"),
             support_matrix()[index].feature
         ));
-        let expected_parity = if operation.method == "with_2d_coordinates_with_params" {
+        let expected_parity = if matches!(
+            operation.method,
+            "with_2d_coordinates_with_params"
+                | "with_3d_conformer_with_params"
+                | "with_3d_conformer_result_with_params"
+                | "with_3d_conformers_with_params"
+                | "with_3d_conformers_result_with_params"
+        ) {
             ParityPolicy::RequiredWhenSupported
+        } else if matches!(
+            operation.method,
+            "with_2d_coordinate_block_with_params"
+                | "with_3d_coordinates_with_params"
+                | "with_added_3d_conformer_with_params"
+                | "with_only_3d_conformer_with_params"
+                | "with_cleared_3d_conformers"
+        ) {
+            ParityPolicy::NotApplicable
         } else {
             ParityPolicy::RequiredNow
         };
@@ -421,10 +499,24 @@ fn hydrogens_configuration_preserves_order_profiles_and_pointer_identity() {
             operation_invariant(operation.method).expect("invariant lookup"),
             &operation_invariant_matrix()[index]
         );
-        assert_eq!(
-            operation_parity(operation.method).expect("parity lookup"),
-            &parity_matrix()[index]
-        );
+        if let Some(parity_index) = expected_parity_methods()
+            .iter()
+            .position(|method| *method == operation.method)
+        {
+            let parity = &parity_matrix()[parity_index];
+            assert!(core::ptr::eq(parity.operation, *operation));
+            assert!(core::ptr::eq(
+                support_matrix()[index].feature,
+                parity.feature
+            ));
+            assert_eq!(
+                operation_parity(operation.method).expect("parity lookup"),
+                parity
+            );
+        } else {
+            assert_eq!(operation_parity(operation.method), None);
+            assert_eq!(operation.status, FunctionStatus::Native);
+        }
     }
 
     let add_index = operations

@@ -17,6 +17,8 @@ use super::{
 pub enum OperationError {
     #[cfg(feature = "cap-alignment")]
     Alignment(crate::AlignmentError),
+    #[cfg(feature = "cap-conformer")]
+    Conformer(crate::ConformerRunError),
     UnsupportedFeature {
         operation: &'static MoleculeOpSpec,
         source: UnsupportedFeatureError,
@@ -131,6 +133,8 @@ pub enum OperationError {
     CipLabeler(cosmolkit_stereo::CipLabelerError),
     #[cfg(feature = "cap-transforms")]
     Transform(cosmolkit_core::TransformError),
+    #[cfg(feature = "cap-transforms")]
+    CoordinateInput(cosmolkit_core::CoordinateInputError),
     #[cfg(feature = "cap-depict")]
     Coordinate2D(cosmolkit_depict::DepictError),
     #[cfg(feature = "cap-forcefields")]
@@ -306,6 +310,8 @@ impl fmt::Display for OperationError {
             #[cfg(feature = "cap-fingerprints")]
             Self::AtomCode(error) => write!(formatter, "{error}"),
             #[cfg(feature = "cap-transforms")]
+            Self::CoordinateInput(error) => write!(formatter, "coordinate input error: {error}"),
+            #[cfg(feature = "cap-transforms")]
             Self::Transform(error) => write!(formatter, "coordinate transform failed: {error}"),
             #[cfg(feature = "cap-depict")]
             Self::Coordinate2D(error) => {
@@ -328,6 +334,8 @@ impl fmt::Display for OperationError {
                 formatter,
                 "operation `{operation}` returned {actual} {field} rows, expected {expected}"
             ),
+            #[cfg(feature = "cap-conformer")]
+            Self::Conformer(error) => write!(formatter, "conformer operation failed: {error}"),
             Self::Algorithm { operation, detail } => {
                 write!(formatter, "operation `{operation}` failed: {detail}")
             }
@@ -346,6 +354,8 @@ impl std::error::Error for OperationError {
         match self {
             #[cfg(feature = "cap-alignment")]
             Self::Alignment(error) => Some(error),
+            #[cfg(feature = "cap-conformer")]
+            Self::Conformer(error) => Some(error),
             #[cfg(feature = "cap-tautomer")]
             Self::Tautomer(error) => Some(error),
             #[cfg(any(feature = "cap-valence", feature = "cap-stereo"))]
@@ -372,6 +382,8 @@ impl std::error::Error for OperationError {
             Self::CipLabeler(error) => Some(error),
             #[cfg(feature = "cap-fingerprints")]
             Self::AtomCode(error) => Some(error),
+            #[cfg(feature = "cap-transforms")]
+            Self::CoordinateInput(error) => Some(error),
             #[cfg(feature = "cap-transforms")]
             Self::Transform(error) => Some(error),
             #[cfg(feature = "cap-depict")]

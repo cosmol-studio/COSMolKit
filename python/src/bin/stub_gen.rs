@@ -7,6 +7,7 @@ fn main() -> pyo3_stub_gen::Result<()> {
     // to their actual native classes rather than promising nonexistent fields.
     for name in [
         "TautomerEnumerationStatus",
+        "CoordinateZPolicy",
         "PropertyValueKind",
         "SdfPropertyListTarget",
     ] {
@@ -78,6 +79,7 @@ _binding_profile: builtins.str
         "AtomPairReadError",
         "TopologicalTorsionReadError",
         "TopologicalTorsionPathScoreError",
+        "PatternFingerprintError",
         "FingerprintPreparationError",
         "FingerprintError",
         "FingerprintJsonError",
@@ -93,11 +95,19 @@ _binding_profile: builtins.str
         "UffOptimizationError",
         "UffParameterQueryError",
         "StereoReadError",
+        "CoordinateInputError",
+        "Coordinate3DReadError",
         "AlignmentError",
     ] {
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
+    // Pattern publishes a ValueError subclass; project the attributes set by
+    // canonical_pattern::pattern_pyerr, with variant-specific context fields.
+    text = text.replace(
+        "class PatternFingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n",
+        "class PatternFingerprintError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    reason: builtins.str\n    left: builtins.int\n    right: builtins.int\n",
+    );
     // Alignment publishes one create_exception! type. Context attributes match
     // alignment_binding::alignment_pyerr and exist only on applicable variants.
     text = text.replace(
@@ -122,6 +132,8 @@ _binding_profile: builtins.str
     );
     text.push_str("\nclass UffParameterError(builtins.ValueError):\n    kind: builtins.str\n");
     text = text.replace("__all__ = [\n", "__all__ = [\n    \"UffParameterError\",\n");
+    text=text.replace("class CoordinateInputError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class CoordinateInputError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Fields exist only on applicable Rust variants.\n    dimension: builtins.str\n    expected: builtins.int\n    actual: builtins.int\n    row: builtins.int\n    columns: builtins.int\n    expected_columns: builtins.str\n    column: builtins.int\n    value: builtins.float | builtins.str\n    z: builtins.float\n    conformer_id: builtins.int\n    count: builtins.int\n    max_id: builtins.int\n    conformer: builtins.int\n    axis: builtins.str\n");
+    text=text.replace("class Coordinate3DReadError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class Coordinate3DReadError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    conformer_id: builtins.int\n    count: builtins.int\n");
     // Constants share the exact public facade iterator used by native publication.
     let constants = ::cosmolkit::Element::iter_with_dummy()
         .map(|element| {

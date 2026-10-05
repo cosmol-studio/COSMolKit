@@ -9,7 +9,7 @@ use crate::kernel::{
     BondIndexArgument, EvaluationContext, ForceField, ForceFieldContribution, ForceFieldKernelError,
 };
 #[derive(Clone, Debug)]
-pub(super) struct NonbondedContrib {
+pub(crate) struct NonbondedContrib {
     atom1_indices: Vec<i16>,
     atom2_indices: Vec<i16>,
     contrib_types: Vec<u8>,
@@ -22,7 +22,7 @@ pub(super) struct NonbondedContrib {
 
 impl NonbondedContrib {
     #[must_use]
-    pub(super) fn new(_owner: &ForceField<'_>) -> Self {
+    pub(crate) fn new(_owner: &ForceField<'_>) -> Self {
         // BEGIN RDKIT CPP CONSTRUCTOR ForceFields::MMFF::NonbondedContrib::NonbondedContrib (Nonbonded.cpp:87-90)
         // RDKit❗✔️: NonbondedContrib::NonbondedContrib(ForceField *owner) {
         // RDKit❗✔️:   PRECONDITION(owner, "bad owner");
@@ -43,12 +43,12 @@ impl NonbondedContrib {
     }
 
     #[must_use]
-    pub(super) fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.atom1_indices.len()
     }
 
     #[must_use]
-    pub(super) fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.atom1_indices.is_empty()
             && self.atom2_indices.is_empty()
             && self.contrib_types.is_empty()
@@ -59,7 +59,7 @@ impl NonbondedContrib {
             && self.diel_models.is_empty()
     }
 
-    pub(super) fn add_term(
+    pub(crate) fn add_term(
         &mut self,
         positions: &[&mut [f64]],
         idx1: u32,
@@ -141,47 +141,47 @@ impl NonbondedContrib {
     }
 
     #[must_use]
-    pub(super) fn atom1_indices(&self) -> &[i16] {
+    pub(crate) fn atom1_indices(&self) -> &[i16] {
         &self.atom1_indices
     }
 
     #[must_use]
-    pub(super) fn atom2_indices(&self) -> &[i16] {
+    pub(crate) fn atom2_indices(&self) -> &[i16] {
         &self.atom2_indices
     }
 
     #[must_use]
-    pub(super) fn contrib_types(&self) -> &[u8] {
+    pub(crate) fn contrib_types(&self) -> &[u8] {
         &self.contrib_types
     }
 
     #[must_use]
-    pub(super) fn r_ij_stars(&self) -> &[f64] {
+    pub(crate) fn r_ij_stars(&self) -> &[f64] {
         &self.r_ij_stars
     }
 
     #[must_use]
-    pub(super) fn well_depths(&self) -> &[f64] {
+    pub(crate) fn well_depths(&self) -> &[f64] {
         &self.well_depths
     }
 
     #[must_use]
-    pub(super) fn charge_terms(&self) -> &[f64] {
+    pub(crate) fn charge_terms(&self) -> &[f64] {
         &self.charge_terms
     }
 
     #[must_use]
-    pub(super) fn is_1_4s(&self) -> &[u8] {
+    pub(crate) fn is_1_4s(&self) -> &[u8] {
         &self.is_1_4s
     }
 
     #[must_use]
-    pub(super) fn diel_models(&self) -> &[u8] {
+    pub(crate) fn diel_models(&self) -> &[u8] {
         &self.diel_models
     }
 
     #[must_use]
-    pub(super) fn energy(
+    pub(crate) fn energy(
         &self,
         context: &mut EvaluationContext<'_>,
     ) -> Result<f64, ForceFieldKernelError> {
@@ -237,7 +237,7 @@ impl NonbondedContrib {
         Ok(energy_sum)
     }
 
-    pub(super) fn gradient(
+    pub(crate) fn gradient(
         &self,
         context: &mut EvaluationContext<'_>,
         grad: &mut [f64],

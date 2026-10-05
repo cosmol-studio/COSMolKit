@@ -12,6 +12,8 @@ pub struct HybridizationAssignment {
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum HybridizationError {
+    #[error("conjugated bond assignment has {actual} rows; expected {expected}")]
+    ConjugatedBondAssignmentLength { actual: usize, expected: usize },
     #[error("invalid topology: {0}")]
     InvalidTopology(#[from] TopologyValidationError),
     #[error("valence assignment field {field} has {actual} rows; expected {expected}")]
@@ -185,6 +187,35 @@ pub fn assign_hybridization(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<HybridizationAssignment, HybridizationError> {
+    assign_hybridization_with_projection(topology, valence, |atom_id| {
+        crate::conjugation::atom_has_conjugated_bond_from_validated(topology, atom_id)
+    })
+}
+/// Reuse the sole hybridization algorithm with an explicit detached conjugation assignment.
+pub fn assign_hybridization_with_conjugation(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    conjugated_bonds: &[bool],
+) -> Result<HybridizationAssignment, HybridizationError> {
+    if conjugated_bonds.len() != topology.bonds.len() {
+        return Err(HybridizationError::ConjugatedBondAssignmentLength {
+            actual: conjugated_bonds.len(),
+            expected: topology.bonds.len(),
+        });
+    }
+    assign_hybridization_with_projection(topology, valence, |atom_id| {
+        topology
+            .adjacency
+            .neighbors_of(atom_id.index())
+            .iter()
+            .any(|neighbor| conjugated_bonds[neighbor.bond.index()])
+    })
+}
+fn assign_hybridization_with_projection(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    has_conjugated: impl Fn(AtomId) -> bool,
+) -> Result<HybridizationAssignment, HybridizationError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::setHybridization
     // RDKit✔️❌: void setHybridization(ROMol &mol) {
     // RDKit✔️❌:   for (auto atom : mol.atoms()) {
@@ -318,11 +349,7 @@ pub fn assign_hybridization(
             2 => Hybridization::Sp,
             3 => Hybridization::Sp2,
             4 => {
-                if degree > 3
-                    || !crate::conjugation::atom_has_conjugated_bond_from_validated(
-                        topology, atom_id,
-                    )
-                {
+                if degree > 3 || !has_conjugated(atom_id) {
                     Hybridization::Sp3
                 } else {
                     Hybridization::Sp2

@@ -1676,6 +1676,150 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "ConformerAlignmentParameters.new",
         ]);
     }
+    // Exact accepted MAIN fingerprint tail and new coordinate/conformer declarations.
+    if cfg!(feature = "cap-fingerprints") {
+        expected.extend([
+            "types.MaccsFingerprintParams",
+            "types.MaccsFingerprintError",
+            "Molecule.maccs_fingerprint",
+            "Molecule.maccs_fingerprint_raw",
+            "Molecule.maccs_fingerprint_with_params",
+            "types.LayeredFingerprintParams",
+            "types.LayeredFingerprintLayers",
+            "types.LayeredFingerprintResult",
+            "types.LayeredFingerprintError",
+            "Molecule.layered_fingerprint",
+            "Molecule.layered_fingerprint_with_params",
+            "Molecule.layered_fingerprint_with_output",
+            "Molecule.layered_fingerprint_with_output_with_params",
+            "layered_query_fingerprint_with_params",
+            "layered_query_fingerprint_with_output_with_params",
+            "LayeredFingerprintResult.fingerprint",
+            "LayeredFingerprintResult.atom_counts",
+            "LayeredFingerprintLayers.bits",
+            "LayeredFingerprintLayers.from_bits_retain",
+            "Fingerprint.from_on_bits",
+            "Fingerprint.tanimoto",
+        ]);
+    }
+    if cfg!(feature = "cap-transforms") {
+        expected.extend([
+            "types.CoordinateZPolicy",
+            "types.Coordinate2DInputParams",
+            "types.Coordinate3DInputParams",
+            "types.Replace3DCoordinatesParams",
+            "types.CoordinateInputError",
+            "types.Coordinate3DReadError",
+            "Molecule.coordinates_3d",
+            "CoordinateZPolicy.from_name",
+            "Molecule.with_2d_coordinate_block",
+            "Molecule.with_2d_coordinate_block_with_params",
+            "Molecule.set_2d_coordinates_",
+            "Molecule.set_2d_coordinates_with_params_",
+            "Molecule.with_3d_coordinates",
+            "Molecule.with_3d_coordinates_with_params",
+            "Molecule.set_3d_coordinates_",
+            "Molecule.set_3d_coordinates_with_params_",
+            "Molecule.with_added_3d_conformer",
+            "Molecule.with_added_3d_conformer_with_params",
+            "Molecule.add_3d_conformer_",
+            "Molecule.add_3d_conformer_with_params_",
+            "Molecule.with_only_3d_conformer",
+            "Molecule.with_only_3d_conformer_with_params",
+            "Molecule.set_only_3d_conformer_",
+            "Molecule.set_only_3d_conformer_with_params_",
+            "Molecule.with_cleared_3d_conformers",
+            "Molecule.clear_3d_conformers_",
+        ]);
+    }
+    if cfg!(feature = "cap-conformer") {
+        expected.extend([
+            "types.EmbedMoleculeResult",
+            "EmbedMoleculeResult.molecule",
+            "EmbedMoleculeResult.params",
+            "types.EmbedMultipleConfsResult",
+            "EmbedMultipleConfsResult.molecule",
+            "EmbedMultipleConfsResult.params",
+            "EmbedMoleculeResult.conf_id",
+            "EmbedMoleculeResult.ok",
+            "EmbedMultipleConfsResult.conf_ids",
+            "EmbedMultipleConfsResult.requested_num_confs",
+            "EmbedMultipleConfsResult.generated_count",
+            "Molecule.with_3d_conformer",
+            "Molecule.with_3d_conformer_with_params",
+            "Molecule.embed_3d_conformer_",
+            "Molecule.embed_3d_conformer_with_params_",
+            "Molecule.with_3d_conformer_result",
+            "Molecule.with_3d_conformer_result_with_params",
+            "Molecule.embed_3d_conformer_result_",
+            "Molecule.embed_3d_conformer_result_with_params_",
+            "Molecule.with_3d_conformers",
+            "Molecule.with_3d_conformers_with_params",
+            "Molecule.embed_3d_conformers_",
+            "Molecule.embed_3d_conformers_with_params_",
+            "Molecule.with_3d_conformers_result",
+            "Molecule.with_3d_conformers_result_with_params",
+            "Molecule.embed_3d_conformers_result_",
+            "Molecule.embed_3d_conformers_result_with_params_",
+            "types.EmbedParams",
+            "EmbedParams.max_iterations",
+            "EmbedParams.num_threads",
+            "EmbedParams.random_seed",
+            "EmbedParams.clear_confs",
+            "EmbedParams.use_random_coords",
+            "EmbedParams.box_size_mult",
+            "EmbedParams.rand_neg_eig",
+            "EmbedParams.num_zero_fail",
+            "EmbedParams.coord_map",
+            "EmbedParams.optimizer_force_tol",
+            "EmbedParams.ignore_smoothing_failures",
+            "EmbedParams.enforce_chirality",
+            "EmbedParams.use_exp_torsion_angle_prefs",
+            "EmbedParams.use_basic_knowledge",
+            "EmbedParams.verbose",
+            "EmbedParams.basin_thresh",
+            "EmbedParams.prune_rms_thresh",
+            "EmbedParams.only_heavy_atoms_for_rms",
+            "EmbedParams.et_version",
+            "EmbedParams.embed_fragments_separately",
+            "EmbedParams.use_small_ring_torsions",
+            "EmbedParams.use_macrocycle_torsions",
+            "EmbedParams.use_macrocycle14config",
+            "EmbedParams.timeout",
+            "EmbedParams.cpci",
+            "EmbedParams.force_trans_amides",
+            "EmbedParams.use_symmetry_for_pruning",
+            "EmbedParams.bounds_mat_force_scaling",
+            "EmbedParams.track_failures",
+            "EmbedParams.failures",
+            "EmbedParams.enable_sequential_random_seeds",
+            "EmbedParams.symmetrize_conjugated_terminal_groups_for_pruning",
+            "EmbedParams.new",
+            "EmbedParams.dg",
+            "EmbedParams.kdg",
+            "EmbedParams.etdg",
+            "EmbedParams.etdg_v2",
+            "EmbedParams.etkdg",
+            "EmbedParams.etkdg_v2",
+            "EmbedParams.etkdg_v3",
+            "EmbedParams.sr_etkdg_v3",
+            "EmbedParams.to_json",
+            "EmbedParams.with_json",
+            "Molecule.num_3d_conformers",
+            "Molecule.dg_bounds_matrix",
+        ]);
+    }
+    #[cfg(feature = "cap-fingerprints")]
+    {
+        expected.extend([
+            "types.PatternFingerprintParams",
+            "types.PatternFingerprintError",
+            "Molecule.pattern_fingerprint",
+            "Molecule.pattern_fingerprint_with_params",
+            "pattern_query_fingerprint",
+            "pattern_query_fingerprint_with_params",
+        ]);
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()
@@ -2389,7 +2533,38 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "SparseCountFingerprint32.fuzzy_and"
                 | "SparseCountFingerprint32.fuzzy_or"
         );
-        let expected = if fuzzy {
+        let native_coordinates = matches!(
+            contract.semantic_id,
+            "types.CoordinateZPolicy"
+                | "types.Coordinate2DInputParams"
+                | "types.Coordinate3DInputParams"
+                | "types.Replace3DCoordinatesParams"
+                | "types.CoordinateInputError"
+                | "types.Coordinate3DReadError"
+                | "Molecule.coordinates_3d"
+                | "CoordinateZPolicy.from_name"
+                | "Molecule.with_2d_coordinate_block"
+                | "Molecule.with_2d_coordinate_block_with_params"
+                | "Molecule.set_2d_coordinates_"
+                | "Molecule.set_2d_coordinates_with_params_"
+                | "Molecule.with_3d_coordinates"
+                | "Molecule.with_3d_coordinates_with_params"
+                | "Molecule.set_3d_coordinates_"
+                | "Molecule.set_3d_coordinates_with_params_"
+                | "Molecule.with_added_3d_conformer"
+                | "Molecule.with_added_3d_conformer_with_params"
+                | "Molecule.add_3d_conformer_"
+                | "Molecule.add_3d_conformer_with_params_"
+                | "Molecule.with_only_3d_conformer"
+                | "Molecule.with_only_3d_conformer_with_params"
+                | "Molecule.set_only_3d_conformer_"
+                | "Molecule.set_only_3d_conformer_with_params_"
+                | "Molecule.with_cleared_3d_conformers"
+                | "Molecule.clear_3d_conformers_"
+        );
+        let expected = if native_coordinates {
+            FunctionStatus::Native
+        } else if fuzzy {
             FunctionStatus::Parity { reference: "RDKit" }
         } else if matches!(
             contract.semantic_id,

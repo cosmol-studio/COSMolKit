@@ -59,7 +59,9 @@ fn expand_molecule_operation(
         .or(fields.inplace_result_type.as_ref());
     let primary = if let Some(result) = detached_result {
         let return_type = molecule_value_return_type(fields);
-        let committed_result = if fields.report_type.is_some() {
+        let committed_result = if let Some(public_result) = fields.report_result_type.as_ref() {
+            quote!(<#public_result as ::core::convert::From<(crate::Molecule, #result)>>::from((molecule, result)))
+        } else if fields.report_type.is_some() {
             quote!((molecule, result))
         } else {
             quote!({
@@ -145,10 +147,24 @@ fn expand_molecule_operation(
             .as_ref()
             .map(|text| quote!(#[doc = #text]));
         if let Some(result) = detached_result {
+            let return_type = fields.report_result_type.as_ref().unwrap_or(result);
+            let committed_return = if let Some(public_result) = fields.report_result_type.as_ref() {
+                // Borrowing the transaction ends at finish_in_place. Snapshot only
+                // the finalized live value, whose blocks remain Arc-shared.
+                quote! {
+                    parts.finish_in_place()?;
+                    Ok(<#public_result as ::core::convert::From<(crate::Molecule, #result)>>::from((self.clone(), result)))
+                }
+            } else {
+                quote! {
+                    parts.finish_in_place()?;
+                    Ok(result)
+                }
+            };
             quote! {
                 #(#cfg)*
                 #inplace_docs
-                pub fn #inplace_method(&mut self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
+                pub fn #inplace_method(&mut self, #(#params),*) -> Result<#return_type, crate::ops::OperationError> {
 
                     let mut parts = crate::OpParts::new_in_place(self, &#spec)?;
                     let result = match #impl_fn(&mut parts, #(#call_args),*) {
@@ -158,8 +174,7 @@ fn expand_molecule_operation(
                             return Err(error);
                         }
                     };
-                    parts.finish_in_place()?;
-                    Ok(result)
+                    #committed_return
                 }
             }
         } else {
@@ -216,7 +231,11 @@ fn expand_molecule_operation(
             } else {
                 quote!(, #(#forwarded_params),*)
             };
-            let return_type = detached_result.map_or_else(|| quote!(()), |result| quote!(#result));
+            let return_type = fields
+                .report_result_type
+                .as_ref()
+                .or(detached_result)
+                .map_or_else(|| quote!(()), |result| quote!(#result));
             quote! {
                 #(#cfg)*
                 pub fn #default_method(&mut self #forwarded_signature) -> Result<#return_type, crate::ops::OperationError> {
@@ -260,6 +279,9 @@ fn expand_molecule_operation(
 fn molecule_value_return_type(
     fields: &crate::declaration::MoleculeFields,
 ) -> proc_macro2::TokenStream {
+    if let Some(result) = fields.report_result_type.as_ref() {
+        return quote!(#result);
+    }
     if let Some(report) = fields.report_type.as_ref() {
         return quote!((crate::Molecule, #report));
     }

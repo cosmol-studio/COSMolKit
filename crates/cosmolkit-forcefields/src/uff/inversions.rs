@@ -8,14 +8,14 @@ use crate::kernel::EvaluationContext;
 use super::inversion::{InversionContrib, InversionContributionError};
 
 #[derive(Clone, Debug, Default)]
-pub(super) struct InversionContribs {
+pub(crate) struct InversionContribs {
     // One ordered owner for each packed source term. The per-term type already
     // owns the indices and coefficients used by both energy and gradient.
     contribs: Vec<InversionContrib>,
 }
 
 impl InversionContribs {
-    pub(super) fn add_contrib(
+    pub(crate) fn add_contrib(
         &mut self,
         positions: &[&mut [f64]],
         idx1: u32,
@@ -60,7 +60,7 @@ impl InversionContribs {
         Ok(())
     }
 
-    pub(super) fn get_energy(&self, context: &mut EvaluationContext<'_>) -> f64 {
+    pub(crate) fn get_energy(&self, context: &mut EvaluationContext<'_>) -> f64 {
         // BEGIN RDKIT CPP FUNCTION ForceFields::UFF::InversionContribs::getEnergy (ForceField/UFF/Inversions.cpp:45-64)
         // RDKit✔️✔️: double InversionContribs::getEnergy(double *pos) const {
         // RDKit✔️✔️:   PRECONDITION(dp_forceField, "no owner");
@@ -98,7 +98,7 @@ impl InversionContribs {
         accum
     }
 
-    pub(super) fn get_grad(&self, context: &mut EvaluationContext<'_>, gradient: &mut [f64]) {
+    pub(crate) fn get_grad(&self, context: &mut EvaluationContext<'_>, gradient: &mut [f64]) {
         // BEGIN RDKIT CPP FUNCTION ForceFields::UFF::InversionContribs::getGrad (ForceField/UFF/Inversions.cpp:69-135)
         // RDKit❗✔️: void InversionContribs::getGrad(double *pos, double *grad) const {
         // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
@@ -179,6 +179,32 @@ impl InversionContribs {
                 return;
             }
         }
+    }
+}
+
+impl InversionContribs {
+    pub(crate) fn empty(&self) -> bool {
+        // RDKit✔️✔️: bool empty() const { return d_contribs.empty(); }
+        self.contribs.is_empty()
+    }
+}
+impl crate::kernel::ForceFieldContribution for InversionContribs {
+    fn get_energy(
+        &self,
+        context: &mut EvaluationContext<'_>,
+    ) -> Result<f64, crate::kernel::ForceFieldKernelError> {
+        Ok(InversionContribs::get_energy(self, context))
+    }
+    fn get_grad(
+        &self,
+        context: &mut EvaluationContext<'_>,
+        gradient: &mut [f64],
+    ) -> Result<(), crate::kernel::ForceFieldKernelError> {
+        InversionContribs::get_grad(self, context, gradient);
+        Ok(())
+    }
+    fn copy(&self) -> Box<dyn crate::kernel::ForceFieldContribution> {
+        Box::new(self.clone())
     }
 }
 

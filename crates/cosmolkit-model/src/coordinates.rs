@@ -7,6 +7,10 @@ use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CoordinateValidationError {
+    #[error("3D conformer id {id} does not exist")]
+    Missing3DConformer { id: usize },
+    #[error("3D conformer id overflow after {max_id}")]
+    ConformerIdOverflow { max_id: usize },
     #[error("{dimension} conformer {conformer} has {rows} coordinate rows, expected {atom_count}")]
     RowCount {
         dimension: &'static str,
@@ -348,5 +352,82 @@ mod tests {
                 id: 4
             })
         ));
+    }
+}
+
+impl CoordinateBlock {
+    /// Replace only the selected dimension-local ID, preserving row metadata.
+    pub fn replace_3d_coordinates(
+        &mut self,
+        coords: Vec<[f64; 3]>,
+        id: usize,
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        let candidate = Conformer3D::new(id, coords, true);
+        candidate.validate_for_atom_count(atom_count)?;
+        let row = self
+            .conformers_3d
+            .iter_mut()
+            .find(|row| row.id == id)
+            .ok_or(CoordinateValidationError::Missing3DConformer { id })?;
+        row.coords = candidate.coords;
+        Ok(())
+    }
+    /// Clear the independent 3D dimension; 2D state is unchanged.
+    pub fn clear_3d_conformers(&mut self) {
+        // RDKit❗✔️: void clearConformers() { d_confs.clear(); }
+        // Approved dimension-specific generation keeps every 2D row.
+        self.conformers_3d.clear();
+    }
+    /// Install already-generated detached rows, without live commit authority.
+    pub fn install_generated_3d(&mut self, clear_existing: bool, rows: Vec<Conformer3D>) {
+        if clear_existing {
+            self.conformers_3d.clear();
+        }
+        self.conformers_3d.extend(rows);
+    }
+    pub fn append_3d_conformer(
+        &mut self,
+        coords: Vec<[f64; 3]>,
+        is_3d: bool,
+        atom_count: usize,
+        clear_existing: bool,
+    ) -> Result<usize, CoordinateValidationError> {
+        // RDKit❗✔️: unsigned int ROMol::addConformer(Conformer *conf, bool assignId) {
+        // RDKit❗✔️:   PRECONDITION(conf, "bad conformer");
+        // RDKit❗✔️:   PRECONDITION(conf->getNumAtoms() == this->getNumAtoms(),
+        // RDKit❗✔️:                "Number of atom mismatch");
+        // RDKit❗✔️:   if (assignId) {
+        // RDKit❗✔️:     int maxId = -1;
+        // RDKit❗✔️:     for (auto cptr : d_confs) {
+        // RDKit❗✔️:       maxId = std::max((int)(cptr->getId()), maxId);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     maxId++;
+        // RDKit❗✔️:     conf->setId((unsigned int)maxId);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   conf->setOwningMol(this);
+        // RDKit❗✔️:   CONFORMER_SPTR nConf(conf);
+        // RDKit❗✔️:   d_confs.push_back(nConf);
+        // RDKit❗✔️:   return conf->getId();
+        // RDKit❗✔️: }
+        // Approved typed collections scope this source scan to 3D. O(C) borrowed scan;
+        // validate first, then move one row. Wider identifier overflow is typed.
+        let id = if clear_existing {
+            0
+        } else {
+            match self.conformers_3d.iter().map(Conformer3D::id).max() {
+                None => 0,
+                Some(max_id) => max_id
+                    .checked_add(1)
+                    .ok_or(CoordinateValidationError::ConformerIdOverflow { max_id })?,
+            }
+        };
+        let candidate = Conformer3D::new(id, coords, is_3d);
+        candidate.validate_for_atom_count(atom_count)?;
+        if clear_existing {
+            self.conformers_3d.clear();
+        }
+        self.conformers_3d.push(candidate);
+        Ok(id)
     }
 }

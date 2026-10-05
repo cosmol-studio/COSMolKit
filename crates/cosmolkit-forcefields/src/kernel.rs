@@ -465,6 +465,9 @@ mod position;
 #[path = "constraints/torsion.rs"]
 mod torsion;
 
+pub(crate) use angles::AngleConstraintContribs;
+pub(crate) use distances::DistanceConstraintContribs;
+
 pub(super) struct EvaluationContext<'a> {
     coordinates: &'a [f64],
     distance_matrix: &'a mut [f64],
@@ -690,6 +693,27 @@ fn source_distance(
 }
 
 impl<'a> EvaluationContext<'a> {
+    pub(super) fn dimension(&self) -> u32 {
+        self.dimension
+    }
+    #[cfg(test)]
+    pub(super) fn for_distgeom_test(
+        coordinates: &'a [f64],
+        distance_matrix: &'a mut [f64],
+        num_points: u32,
+        dimension: u32,
+    ) -> Self {
+        distance_matrix.fill(-1.0);
+        Self {
+            coordinates,
+            distance_matrix,
+            initialized: true,
+            dimension,
+            num_points,
+            matrix_size: num_points * (num_points + 1) / 2,
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn for_oop_cache_preservation_test(
         coordinates: &'a [f64],
@@ -820,7 +844,7 @@ impl<'a> ForceField<'a> {
         copied
     }
 
-    fn dimension(&self) -> u32 {
+    pub(super) fn dimension(&self) -> u32 {
         // RDKit✔️✔️: unsigned int dimension() const { return d_dimension; }
         self.dimension
     }
@@ -1480,7 +1504,7 @@ impl<'a> ForceField<'a> {
         &self.fixed_points
     }
 
-    fn fixed_points_mut(&mut self) -> &mut Vec<i32> {
+    pub(super) fn fixed_points_mut(&mut self) -> &mut Vec<i32> {
         // RDKit✔️✔️: INT_VECT &fixedPoints() { return d_fixedPoints; }
         &mut self.fixed_points
     }
@@ -1666,7 +1690,7 @@ impl<'a> ForceField<'a> {
         Ok(())
     }
 
-    fn evaluation_context<'ctx>(
+    pub(super) fn evaluation_context<'ctx>(
         &'ctx mut self,
         coordinates: &'ctx [f64],
     ) -> EvaluationContext<'ctx> {

@@ -12,6 +12,7 @@ mod bond_dirs;
 mod cip_ranks;
 mod cleanup;
 mod conjugation;
+mod coordinate_input;
 mod double_stereo;
 mod fragments;
 mod hcount;
@@ -47,7 +48,7 @@ pub use platform_threads::{
     rdkit_threads_with_observed_hardware,
 };
 
-pub use random::{RdkitRandomGenerator, with_rdkit_random_generator};
+pub use random::{RdkitRandomEngine, RdkitRandomGenerator, with_rdkit_random_generator};
 pub use stereo_order::{invert_atom_chirality, invert_bond_chirality};
 
 pub use fragments::{MoleculeFragment, MoleculeFragmentsError, get_molecule_fragments};
@@ -118,7 +119,8 @@ pub(crate) use cleanup::{CleanupError, CleanupParams, cleanup};
 pub mod __migration_cleanup {
     pub use crate::cleanup::{CleanupError, CleanupParams, cleanup};
 }
-pub(crate) use conjugation::{ConjugationError, assign_conjugation, atom_has_conjugated_bond};
+pub use conjugation::{ConjugationError, assign_conjugation_flags};
+pub(crate) use conjugation::{assign_conjugation, atom_has_conjugated_bond};
 
 /// Strict-build-only bridge for detached migration validation.
 ///
@@ -141,7 +143,10 @@ pub use double_stereo::{
 };
 
 pub use hcount::{total_hydrogen_count, total_hydrogen_count_from_validated};
-pub(crate) use hybridization::{HybridizationAssignment, HybridizationError, assign_hybridization};
+pub(crate) use hybridization::assign_hybridization;
+pub use hybridization::{
+    HybridizationAssignment, HybridizationError, assign_hybridization_with_conjugation,
+};
 pub use nontetrahedral_stereo::{
     non_tetrahedral_across_ligand, non_tetrahedral_ideal_angle, trigonal_bipyramidal_axial_ligand,
 };
@@ -263,7 +268,7 @@ pub use stereo_order::{
 
 pub use structure_tags::{
     StereoError, StructureTagAssignment, StructureTagParams, assign_chiral_tags_from_structure,
-    nontetrahedral_enabled,
+    nontetrahedral_enabled, unsigned_dihedral_radians,
 };
 
 pub use transforms::{
@@ -298,5 +303,14 @@ pub use wedge::{
     pick_bonds_to_wedge_with_existing_ring_info, pick_bonds_to_wedge_with_ring_info,
 };
 
+pub use coordinate_input::{
+    Coordinate2DInputParams, Coordinate3DInputParams, Coordinate3DReadError, CoordinateInputError,
+    CoordinateZPolicy, Replace3DCoordinatesParams, append_3d_conformer, clear_3d_conformers,
+    coordinates_2d_from_input, coordinates_3d_for_id, coordinates_3d_from_input,
+    install_2d_coordinates, install_only_3d_conformer, replace_3d_coordinates,
+};
+
 /// Foundational quaternion alignment over detached point rows.
-pub use alignment::{align_points, alignment_transform_point};
+pub use alignment::{align_points, alignment_sum_squared_residual, alignment_transform_point};
+
+pub use periodic_table::van_der_waals_radius;

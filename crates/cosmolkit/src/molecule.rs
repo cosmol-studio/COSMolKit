@@ -618,11 +618,13 @@ impl MoleculeState {
         mut coordinates: CoordinateBlock,
         properties: MoleculeProperties,
     ) -> Result<Self, OperationError> {
-        coordinates.source_coordinate_dim = if coordinates.conformers_3d.is_empty() {
-            (!coordinates.conformers_2d.is_empty()).then_some(CoordinateDimension::TwoD)
-        } else {
-            Some(CoordinateDimension::ThreeD)
-        };
+        if coordinates.source_coordinate_dim.is_none() {
+            coordinates.source_coordinate_dim = if coordinates.conformers_3d.is_empty() {
+                (!coordinates.conformers_2d.is_empty()).then_some(CoordinateDimension::TwoD)
+            } else {
+                Some(CoordinateDimension::ThreeD)
+            };
+        }
         Self::validate_parts(&topology, &coordinates, &properties)?;
 
         Ok(Self {
@@ -958,6 +960,17 @@ impl Molecule {
     #[must_use]
     pub fn has_2d_coordinates(&self) -> bool {
         self.coordinates_2d().is_some()
+    }
+
+    /// Borrow atom-ordered XYZ rows for the exact dimension-scoped conformer ID.
+    /// Missing IDs fail even when another XYZ conformer or an XY layout exists.
+    /// This query never initializes coordinates or changes molecule state.
+    #[cfg(feature = "cap-transforms")]
+    pub fn coordinates_3d(
+        &self,
+        conformer_id: usize,
+    ) -> Result<&[[f64; 3]], crate::Coordinate3DReadError> {
+        cosmolkit_core::coordinates_3d_for_id(self.coordinate_block_runtime(), conformer_id)
     }
 
     /// Complete block access for runtime validation and detached owner calls.

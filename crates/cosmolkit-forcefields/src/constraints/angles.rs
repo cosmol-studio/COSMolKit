@@ -59,14 +59,14 @@ impl Default for AngleConstraintContribsParams {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub(super) struct AngleConstraintContribs {
+pub(crate) struct AngleConstraintContribs {
     // RDKit source: ForceField/AngleConstraints.h:91
     // RDKit❗✔️: std::vector<AngleConstraintContribsParams> d_contribs;
     contribs: Vec<AngleConstraintContribsParams>,
 }
 
 impl AngleConstraintContribs {
-    pub(super) fn new(_owner: &ForceField<'_>) -> Self {
+    pub(crate) fn new(_owner: &ForceField<'_>) -> Self {
         // BEGIN RDKIT CPP FUNCTION AngleConstraintContribs::AngleConstraintContribs (AngleConstraints.cpp:23-26)
         // RDKit❗✔️: AngleConstraintContribs::AngleConstraintContribs(ForceField *owner) {
         // RDKit❗✔️:   PRECONDITION(owner, "bad owner");
@@ -78,7 +78,7 @@ impl AngleConstraintContribs {
         Self::default()
     }
 
-    pub(super) fn add_contrib(
+    pub(crate) fn add_contrib(
         &mut self,
         owner: &ForceField<'_>,
         idx1: u32,
@@ -125,7 +125,7 @@ impl AngleConstraintContribs {
         Ok(())
     }
 
-    pub(super) fn add_contrib_relative(
+    pub(crate) fn add_contrib_relative(
         &mut self,
         owner: &ForceField<'_>,
         idx1: u32,
@@ -219,15 +219,15 @@ impl AngleConstraintContribs {
         angle_term
     }
 
-    pub(super) fn empty(&self) -> bool {
+    pub(crate) fn empty(&self) -> bool {
         self.contribs.is_empty()
     }
 
-    pub(super) fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         self.contribs.len()
     }
 
-    pub(super) fn get_energy(&self, context: &EvaluationContext<'_>) -> f64 {
+    pub(crate) fn get_energy(&self, context: &EvaluationContext<'_>) -> f64 {
         // BEGIN RDKIT CPP FUNCTION AngleConstraintContribs::getEnergy (AngleConstraints.cpp:82-103)
         // RDKit❗✔️: double AngleConstraintContribs::getEnergy(double *pos) const {
         // RDKit❗✔️:   PRECONDITION(dp_forceField, "no owner");
@@ -270,7 +270,7 @@ impl AngleConstraintContribs {
         accum
     }
 
-    pub(super) fn get_grad(
+    pub(crate) fn get_grad(
         &self,
         context: &mut EvaluationContext<'_>,
         gradient: &mut [f64],

@@ -8,6 +8,7 @@ mod canonical_binary;
 mod canonical_bio_binding;
 mod canonical_bio_residue;
 mod canonical_builder;
+mod canonical_coordinate_input;
 mod canonical_descriptor_binding;
 mod canonical_element_metadata;
 mod canonical_fingerprint_values;
@@ -32,3 +33,6 @@ mod alignment_binding;
 mod canonical_layered;
 mod canonical_maccs;
 mod canonical_path_score;
+
+mod canonical_pattern;
+mod conformer_binding;

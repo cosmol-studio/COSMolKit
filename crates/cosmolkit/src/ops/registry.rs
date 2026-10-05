@@ -116,6 +116,13 @@ pub(crate) const ALIGNMENT_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Source-backed molecular and conformer alignment over detached values.",
 };
 
+#[cfg(feature = "cap-conformer")]
+pub(crate) const CONFORMER_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cap-conformer",
+    category: "coordinates",
+    docs: "Source-backed distance geometry and independent 3D conformer storage.",
+};
+
 molecule_ops! {
     #[cfg(feature = "cap-alignment")]
     op with_alignment_to(reference: &crate::Molecule, params: &crate::AlignmentParameters) {
@@ -151,6 +158,66 @@ molecule_ops! {
         inplace: true, inplace_method: align_conformers_with_params_, default_inplace_method: align_conformers_,
     }
 
+#[cfg(feature="cap-conformer")]
+    op with_3d_conformer(params: &crate::EmbedParams) {
+        method: with_3d_conformer_with_params, impl_fn: crate::ops::conformer::with_3d_conformer_impl,
+
+        domain: coordinate, kind: weak, topology_edit: none,
+        access: { read: [topology, properties], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, fingerprint], invalidate: [stereo, drawing], operation_defined: [] },
+        cip_state: preserve, requires_mapping: none,
+        feature: crate::ops::runtime::registry::CONFORMER_FEATURE,
+        parity: required_when_supported, parity_profile: "conformer77_source_generation",
+        invariant_profile: "conformer77_preserve_2d_and_chemistry",
+        inplace: true, inplace_method: embed_3d_conformer_with_params_,
+        default_method: with_3d_conformer, default_args: [&crate::EmbedParams::etkdg_v3()], default_inplace_method: embed_3d_conformer_,
+    }
+#[cfg(feature="cap-conformer")]
+    op with_3d_conformer_result(params: &crate::EmbedParams) {
+        method: with_3d_conformer_result_with_params, impl_fn: crate::ops::conformer::with_3d_conformer_result_impl,
+        report_type: crate::conformer::EmbedConformerReport, report_result_type: crate::EmbedMoleculeResult,
+        domain: coordinate, kind: weak, topology_edit: none,
+        access: { read: [topology, properties], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, fingerprint], invalidate: [stereo, drawing], operation_defined: [] },
+        cip_state: preserve, requires_mapping: none,
+        feature: crate::ops::runtime::registry::CONFORMER_FEATURE,
+        parity: required_when_supported, parity_profile: "conformer77_source_generation",
+        invariant_profile: "conformer77_preserve_2d_and_chemistry",
+        inplace: true, inplace_method: embed_3d_conformer_result_with_params_,
+        default_method: with_3d_conformer_result, default_args: [&crate::EmbedParams::etkdg_v3()], default_inplace_method: embed_3d_conformer_result_,
+    }
+#[cfg(feature="cap-conformer")]
+    op with_3d_conformers(num_confs: u32, params: &crate::EmbedParams) {
+        method: with_3d_conformers_with_params, impl_fn: crate::ops::conformer::with_3d_conformers_impl,
+
+        domain: coordinate, kind: weak, topology_edit: none,
+        access: { read: [topology, properties], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, fingerprint], invalidate: [stereo, drawing], operation_defined: [] },
+        cip_state: preserve, requires_mapping: none,
+        feature: crate::ops::runtime::registry::CONFORMER_FEATURE,
+        parity: required_when_supported, parity_profile: "conformer77_source_generation",
+        invariant_profile: "conformer77_preserve_2d_and_chemistry",
+        inplace: true, inplace_method: embed_3d_conformers_with_params_,
+        default_method: with_3d_conformers, default_args: [&crate::EmbedParams::etkdg_v3()], default_inplace_method: embed_3d_conformers_,
+    }
+#[cfg(feature="cap-conformer")]
+    op with_3d_conformers_result(num_confs: u32, params: &crate::EmbedParams) {
+        method: with_3d_conformers_result_with_params, impl_fn: crate::ops::conformer::with_3d_conformers_result_impl,
+        report_type: crate::conformer::EmbedConformerReport, report_result_type: crate::EmbedMultipleConfsResult,
+        domain: coordinate, kind: weak, topology_edit: none,
+        access: { read: [topology, properties], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, fingerprint], invalidate: [stereo, drawing], operation_defined: [] },
+        cip_state: preserve, requires_mapping: none,
+        feature: crate::ops::runtime::registry::CONFORMER_FEATURE,
+        parity: required_when_supported, parity_profile: "conformer77_source_generation",
+        invariant_profile: "conformer77_preserve_2d_and_chemistry",
+        inplace: true, inplace_method: embed_3d_conformers_result_with_params_,
+        default_method: with_3d_conformers_result, default_args: [&crate::EmbedParams::etkdg_v3()], default_inplace_method: embed_3d_conformers_result_,
+    }
     #[cfg(feature = "cap-tautomer")]
     op enumerate_tautomers_with_params(params: &crate::TautomerParams) {
         method: enumerate_tautomers_with_params,
@@ -775,6 +842,126 @@ molecule_ops! {
         inplace: true,
         inplace_method: set_atom_position_with_params_,
         default_inplace_method: set_atom_position_,
+    }
+
+    #[cfg(feature = "cap-transforms")]
+    op with_2d_coordinate_block(coordinates: Vec<Vec<f64>>, params: &cosmolkit_core::Coordinate2DInputParams) {
+        method: with_2d_coordinate_block_with_params,
+        impl_fn: crate::ops::coordinate_input::with_2d_coordinate_block_impl,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, fingerprint], invalidate: [drawing], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        status: native,
+        parity: not_applicable,
+        io_roundtrip: true,
+        invariant_profile: "manual_coordinate_input",
+        default_method: with_2d_coordinate_block,
+        default_args: [&cosmolkit_core::Coordinate2DInputParams::default()],
+        inplace: true,
+        inplace_method: set_2d_coordinates_with_params_,
+        default_inplace_method: set_2d_coordinates_,
+    }
+    #[cfg(feature = "cap-transforms")]
+    op with_3d_coordinates(coordinates: Vec<Vec<f64>>, params: &cosmolkit_core::Replace3DCoordinatesParams) {
+        method: with_3d_coordinates_with_params,
+        impl_fn: crate::ops::coordinate_input::with_3d_coordinates_impl,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, fingerprint], invalidate: [drawing], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        status: native,
+        parity: not_applicable,
+        io_roundtrip: true,
+        invariant_profile: "manual_coordinate_input",
+        default_method: with_3d_coordinates,
+        default_args: [&cosmolkit_core::Replace3DCoordinatesParams::default()],
+        inplace: true,
+        inplace_method: set_3d_coordinates_with_params_,
+        default_inplace_method: set_3d_coordinates_,
+    }
+    #[cfg(feature = "cap-transforms")]
+    op with_added_3d_conformer(coordinates: Vec<Vec<f64>>, params: &cosmolkit_core::Coordinate3DInputParams) {
+        method: with_added_3d_conformer_with_params,
+        impl_fn: crate::ops::coordinate_input::with_added_3d_conformer_impl,
+        inplace_result_type: usize,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, fingerprint], invalidate: [drawing], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        status: native,
+        parity: not_applicable,
+        io_roundtrip: true,
+        invariant_profile: "manual_coordinate_input",
+        default_method: with_added_3d_conformer,
+        default_args: [&cosmolkit_core::Coordinate3DInputParams::default()],
+        inplace: true,
+        inplace_method: add_3d_conformer_with_params_,
+        default_inplace_method: add_3d_conformer_,
+    }
+    #[cfg(feature = "cap-transforms")]
+    op with_only_3d_conformer(coordinates: Vec<Vec<f64>>, params: &cosmolkit_core::Coordinate3DInputParams) {
+        method: with_only_3d_conformer_with_params,
+        impl_fn: crate::ops::coordinate_input::with_only_3d_conformer_impl,
+        inplace_result_type: usize,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, fingerprint], invalidate: [drawing], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        status: native,
+        parity: not_applicable,
+        io_roundtrip: true,
+        invariant_profile: "manual_coordinate_input",
+        default_method: with_only_3d_conformer,
+        default_args: [&cosmolkit_core::Coordinate3DInputParams::default()],
+        inplace: true,
+        inplace_method: set_only_3d_conformer_with_params_,
+        default_inplace_method: set_only_3d_conformer_,
+    }
+    #[cfg(feature = "cap-transforms")]
+    op with_cleared_3d_conformers {
+        method: with_cleared_3d_conformers,
+        impl_fn: crate::ops::coordinate_input::with_cleared_3d_conformers_impl,
+        domain: coordinate,
+        kind: weak,
+        topology_edit: none,
+        access: { read: [topology], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, fingerprint], invalidate: [drawing], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::TRANSFORMS_FEATURE,
+        status: native,
+        parity: not_applicable,
+        io_roundtrip: true,
+        invariant_profile: "manual_coordinate_input",
+        inplace: true,
+        inplace_method: clear_3d_conformers_,
     }
 
     #[cfg(feature = "cap-depict")]

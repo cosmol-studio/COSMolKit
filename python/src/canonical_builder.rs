@@ -108,6 +108,46 @@ impl MoleculeBuilder {
             .set_bond_order(ck::BondId::new(bond), order)
             .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
     }
+    fn set_2d_coordinates(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.atoms().len(),
+            true,
+        )?;
+        // This already registered builder accepts exactly XY; reject extra
+        // columns at numeric ingress rather than creating a binding z policy.
+        let rows = rows
+            .into_iter()
+            .enumerate()
+            .map(|(row, values)| {
+                if values.len() != 2 {
+                    return Err(crate::canonical_coordinate_input::error_pyerr(
+                        py,
+                        &ck::CoordinateInputError::Shape {
+                            dimension: "2D",
+                            row,
+                            columns: values.len(),
+                            expected: "2",
+                        },
+                    ));
+                }
+                Ok([values[0], values[1]])
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        self.inner
+            .set_2d_coordinates(rows)
+            .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
+    }
+    fn add_2d_conformer(&mut self, py: Python<'_>, coordinates: Vec<[f64; 2]>) -> PyResult<usize> {
+        self.inner
+            .add_2d_conformer(coordinates)
+            .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
+    }
     fn add_3d_conformer(&mut self, py: Python<'_>, coordinates: Vec<[f64; 3]>) -> PyResult<usize> {
         self.inner
             .add_3d_conformer(coordinates)

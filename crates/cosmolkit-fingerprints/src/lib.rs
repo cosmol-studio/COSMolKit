@@ -435,3 +435,9 @@ mod maccs;
 pub use maccs::{
     MaccsFingerprintError, MaccsFingerprintParams, maccs_fingerprint, maccs_fingerprint_raw,
 };
+
+mod pattern;
+pub use pattern::{
+    PATTERN_FINGERPRINT_VERSION, PatternFingerprintError, PatternFingerprintParams,
+    pattern_fingerprint, pattern_query_fingerprint,
+};

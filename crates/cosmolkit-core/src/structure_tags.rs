@@ -212,6 +212,34 @@ impl Vec3 {
     }
 }
 
+/// Source unsigned dihedral in radians over four detached 3D points.
+/// Unlike signed transform/forcefield angles this retains Point3D::angleTo
+/// roundoff branches and its source NaN behavior for degenerate planes.
+pub fn unsigned_dihedral_radians(points: [[f64; 3]; 4]) -> f64 {
+    // BEGIN RDKIT CPP FUNCTION unsigned_dihedral_radians (Geometry/point.cpp)
+    // RDKit❗✔️: double computeDihedralAngle(const Point3D &pt1, const Point3D &pt2,
+    // RDKit❗✔️:                             const Point3D &pt3, const Point3D &pt4) {
+    // RDKit❗✔️:   Point3D begEndVec = pt3 - pt2;
+    // RDKit❗✔️:   Point3D begNbrVec = pt1 - pt2;
+    // RDKit❗✔️:   Point3D crs1 = begNbrVec.crossProduct(begEndVec);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   Point3D endNbrVec = pt4 - pt3;
+    // RDKit❗✔️:   Point3D crs2 = endNbrVec.crossProduct(begEndVec);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   double ang = crs1.angleTo(crs2);
+    // RDKit❗✔️:   return ang;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION unsigned_dihedral_radians
+
+    let [p1, p2, p3, p4] = points;
+    let beg_end = Vec3::between(p2, p3);
+    let beg_nbr = Vec3::between(p2, p1);
+    let crs1 = beg_nbr.cross(beg_end);
+    let end_nbr = Vec3::between(p3, p4);
+    let crs2 = end_nbr.cross(beg_end);
+    crs1.angle_to(crs2)
+}
+
 fn volume_test(vectors: &[Vec3; 6], x: usize, y: usize, z: usize) -> bool {
     // RDKit✔️✔️: #define VOLTEST(X, Y, Z) (v[X].dotProduct(v[Y].crossProduct(v[Z])) >= 0.0)
     vectors[x].dot(vectors[y].cross(vectors[z])) >= 0.0

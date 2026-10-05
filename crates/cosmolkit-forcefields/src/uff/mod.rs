@@ -22,3 +22,10 @@ pub use public::{
 mod evaluation;
 
 pub use evaluation::{UffEnergyGradient, UffEvaluationError, UffEvaluationParams, evaluate_uff};
+
+pub(crate) use inversion::InversionContributionError;
+pub(crate) use inversions::InversionContribs;
+
+pub use api::{UffBoundsError, uff_bond_rest_lengths};
+
+pub use api::{MissingExplicitHydrogensError, needs_explicit_hydrogens};

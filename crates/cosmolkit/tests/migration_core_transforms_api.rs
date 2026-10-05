@@ -95,15 +95,56 @@ fn binding_contract_exposes_exactly_two_types_and_four_callables() {
         "Molecule.set_atom_position_",
         "Molecule.set_atom_position_with_params_",
     ];
-    let rows = BINDING_CONTRACT
+    let coordinate_expected = vec![
+        "types.CoordinateZPolicy",
+        "types.Coordinate2DInputParams",
+        "types.Coordinate3DInputParams",
+        "types.Replace3DCoordinatesParams",
+        "types.CoordinateInputError",
+        "types.Coordinate3DReadError",
+        "Molecule.coordinates_3d",
+        "CoordinateZPolicy.from_name",
+        "Molecule.with_2d_coordinate_block",
+        "Molecule.with_2d_coordinate_block_with_params",
+        "Molecule.set_2d_coordinates_",
+        "Molecule.set_2d_coordinates_with_params_",
+        "Molecule.with_3d_coordinates",
+        "Molecule.with_3d_coordinates_with_params",
+        "Molecule.set_3d_coordinates_",
+        "Molecule.set_3d_coordinates_with_params_",
+        "Molecule.with_added_3d_conformer",
+        "Molecule.with_added_3d_conformer_with_params",
+        "Molecule.add_3d_conformer_",
+        "Molecule.add_3d_conformer_with_params_",
+        "Molecule.with_only_3d_conformer",
+        "Molecule.with_only_3d_conformer_with_params",
+        "Molecule.set_only_3d_conformer_",
+        "Molecule.set_only_3d_conformer_with_params_",
+        "Molecule.with_cleared_3d_conformers",
+        "Molecule.clear_3d_conformers_",
+    ];
+    let mut complete_expected = expected.to_vec();
+    complete_expected.extend(coordinate_expected);
+    let complete_rows = BINDING_CONTRACT
         .iter()
         .filter(|row| row.feature == "cap-transforms")
         .collect::<Vec<_>>();
     assert_eq!(
+        complete_rows
+            .iter()
+            .map(|row| row.semantic_id)
+            .collect::<Vec<_>>(),
+        complete_expected
+    );
+    for row in &complete_rows[6..] {
+        assert_eq!(row.status, FunctionStatus::Native);
+    }
+    let rows = &complete_rows[..6];
+    assert_eq!(
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
         expected
     );
-    for row in &rows {
+    for row in rows {
         assert_eq!(row.status, FunctionStatus::Experimental);
     }
     for row in &rows[..2] {

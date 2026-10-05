@@ -1480,3 +1480,6 @@ impl ConformerAlignmentParameters {
         }
     }
 }
+
+#[doc(hidden)]
+pub use support::symmetrize_terminal_query_with_context;

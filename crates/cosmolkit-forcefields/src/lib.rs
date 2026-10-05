@@ -26,3 +26,24 @@ pub use mmff::optimization::{
 pub use mmff::optimization::{MmffEnergyGradient, MmffEvaluationParams, evaluate_mmff};
 
 pub use uff::{UffEnergyGradient, UffEvaluationError, UffEvaluationParams, evaluate_uff};
+
+mod distgeom;
+
+mod crystalff;
+
+pub use crystalff::{
+    CrystalFFDetails, CrystalffTorsionPreferencesError, get_experimental_torsions_without_bonds,
+};
+pub use distgeom::{
+    ChiralSet, ChiralSetPtr, ChiralSetStructureFlags, ConformerOptimizer, ConformerOptimizerError,
+    DistanceBoundsRead, DistanceGeometryForceFieldParams, calc_chiral_volume_rows,
+};
+
+pub use uff::{UffBoundsError, uff_bond_rest_lengths};
+
+pub use uff::{MissingExplicitHydrogensError, needs_explicit_hydrogens};
+
+#[doc(hidden)]
+pub use crystalff::{
+    CrystalTorsionEvaluationError, CrystalTorsionPairEvaluation, evaluate_crystal_torsion_pair,
+};

@@ -7967,3 +7967,93 @@ mod concrete_query_identity_tests {
         assert!(!is_complex_concrete_bond_query(&simple));
     }
 }
+
+#[doc(hidden)]
+#[inline]
+pub fn is_pattern_complex_query(query: Option<&QueryNode<BondQueryPredicate>>) -> bool {
+    // RDKit❗✔️: bool isPatternComplexQuery(const Bond *b) {
+    // RDKit❗✔️:   if (!b->hasQuery()) {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // negated things are always complex:
+    // RDKit❗✔️:   if (b->getQuery()->getNegation()) {
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   std::string descr = b->getQuery()->getDescription();
+    // RDKit❗✔️:   // std::cerr<<"   !!!!!! "<<b->getIdx()<<"
+    // RDKit❗✔️:   // "<<b->getBeginAtomIdx()<<"-"<<b->getEndAtomIdx()<<" "<<descr<<std::endl;
+    // RDKit❗✔️:   return descr != "BondOrder";
+    // RDKit❗✔️: }
+    //
+    // `Order` is the sole typed identity for RDKit's `BondOrder`
+    // description. A root `Not` is the typed equivalent of the source query's
+    // independent negation flag. Local complexity review: both versions make
+    // one optional/root query inspection in O(1), without traversal,
+    // allocation, cloning, keyed lookup, or molecule access.
+    match query {
+        None => false,
+        Some(QueryNode::Not(_)) => true,
+        Some(QueryNode::Predicate(BondQueryPredicate::Order(_))) => false,
+        Some(_) => true,
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn is_tautomer_bond_query(query: Option<&QueryNode<BondQueryPredicate>>) -> bool {
+    // RDKit❗✔️: bool isTautomerBondQuery(const Bond *b) {
+    // RDKit❗✔️:   // assumes we have already tested true for isPatternComplexQuery
+    // RDKit❗✔️:   auto description = b->getQuery()->getDescription();
+    // RDKit❗✔️:   return description == "SingleOrDoubleOrAromaticBond" ||
+    // RDKit❗✔️:          description == "SingleOrAromaticBond";
+    // RDKit❗✔️: }
+    //
+    // RDKit stores negation beside the query description, so a root `Not`
+    // does not change the description inspected here. `OrderIn` is the sole
+    // typed fixed-order-set representation, with source-order vectors
+    // preserving the two named descriptions. Local complexity review: both
+    // implementations perform O(1) root inspection and at most three O(1)
+    // enum comparisons without traversal, allocation, cloning, or lookup.
+    let query = match query {
+        Some(QueryNode::Not(child)) => child.as_ref(),
+        Some(query) => query,
+        None => return false,
+    };
+    matches!(
+        query,
+        QueryNode::Predicate(BondQueryPredicate::OrderIn(orders))
+            if orders.as_slice() == [BondOrder::Single, BondOrder::Aromatic]
+                || orders.as_slice()
+                    == [BondOrder::Single, BondOrder::Double, BondOrder::Aromatic]
+    )
+}
+
+/// Borrow rings and adjacency for fixed predicates which never read valence.
+/// Like the existing topology-only builder, this is a detached adapter, not a
+/// source chemistry algorithm. Sparse initialized ring tables retain CORE's
+/// source-defined zero membership for rows beyond their stored extents.
+#[doc(hidden)]
+pub fn build_ring_only_query_match_context<'a>(
+    topology: &'a cosmolkit_model::TopologyBlock,
+    rings: &'a RingInfo,
+) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
+    topology.validate()?;
+    for (field, actual, expected) in [
+        ("atoms", rings.atom_row_count(), topology.atoms.len()),
+        ("bonds", rings.bond_row_count(), topology.bonds.len()),
+    ] {
+        if actual > expected {
+            return Err(QueryMatchContextError::RingMembershipRows {
+                field,
+                actual,
+                expected,
+            });
+        }
+    }
+    validate_prepared_ring_rows(rings.atom_row_count(), rings.bond_row_count(), rings)?;
+    Ok(QueryMatchContext {
+        adj: Cow::Borrowed(&topology.adjacency),
+        ring_info: Some(Cow::Borrowed(rings)),
+        valence: None,
+    })
+}

@@ -541,11 +541,13 @@ impl<'a, Access> OpParts<'a, Access> {
         coordinates
             .validate_for_atom_count(local_row_count)
             .map_err(OperationError::InvalidCoordinates)?;
-        coordinates.source_coordinate_dim = if coordinates.conformers_3d.is_empty() {
-            (!coordinates.conformers_2d.is_empty()).then_some(CoordinateDimension::TwoD)
-        } else {
-            Some(CoordinateDimension::ThreeD)
-        };
+        if coordinates.source_coordinate_dim.is_none() {
+            coordinates.source_coordinate_dim = if coordinates.conformers_3d.is_empty() {
+                (!coordinates.conformers_2d.is_empty()).then_some(CoordinateDimension::TwoD)
+            } else {
+                Some(CoordinateDimension::ThreeD)
+            };
+        }
         self.coordinates = WorkingBlock::Installed(coordinates);
         Ok(())
     }

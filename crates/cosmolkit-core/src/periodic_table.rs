@@ -346,7 +346,7 @@ pub(crate) fn covalent_radius(atomic_number: u8) -> Option<f64> {
         .map(|row| row.covalent_radius)
 }
 
-pub(crate) fn van_der_waals_radius(atomic_number: u8) -> Option<f64> {
+pub fn van_der_waals_radius(atomic_number: u8) -> Option<f64> {
     // BEGIN RDKIT CPP FUNCTION PeriodicTable::getRvdw
     // RDKit✔️✔️: double getRvdw(UINT atomicNumber) const {
     // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");

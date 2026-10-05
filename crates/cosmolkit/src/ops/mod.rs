@@ -16,6 +16,8 @@ mod cow_tests;
 pub(crate) use cow_tests::ring_aromaticity_probe;
 #[cfg(feature = "cap-alignment")]
 mod alignment;
+#[cfg(feature = "cap-transforms")]
+mod coordinate_input;
 #[cfg(feature = "cap-depict")]
 mod depict;
 mod error;
@@ -121,5 +123,20 @@ pub(crate) use runtime::registry::{
     CanonicalTautomerWithParamsAccess, EnumerateTautomersWithParamsAccess,
 };
 
+#[cfg(feature = "cap-transforms")]
+pub(crate) use runtime::registry::{
+    With2dCoordinateBlockAccess, With3dCoordinatesAccess, WithAdded3dConformerAccess,
+    WithCleared3dConformersAccess, WithOnly3dConformerAccess,
+};
+
 #[cfg(feature = "cap-alignment")]
 pub(crate) use runtime::registry::{WithAlignedConformersAccess, WithAlignmentToAccess};
+
+#[cfg(feature = "cap-conformer")]
+mod conformer;
+
+#[cfg(feature = "cap-conformer")]
+pub(crate) use runtime::registry::{
+    With3dConformerAccess, With3dConformerResultAccess, With3dConformersAccess,
+    With3dConformersResultAccess,
+};

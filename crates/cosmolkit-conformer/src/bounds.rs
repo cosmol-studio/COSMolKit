@@ -1,7 +1,7 @@
 //! Dense ordered distance bounds used by the private distance-geometry code.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BoundsMatrixError {
+pub enum BoundsMatrixError {
     DimensionOverflow {
         dimension: usize,
     },
@@ -25,13 +25,13 @@ pub(crate) enum BoundsMatrixError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MatrixAxis {
+pub enum MatrixAxis {
     Row,
     Column,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BoundKind {
+pub enum BoundKind {
     Upper,
     Lower,
 }
@@ -43,25 +43,26 @@ pub(crate) struct BoundsMatrix {
 }
 
 impl BoundsMatrix {
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::BoundsMatrix (BoundsMatrix.h:31-32)
-    // RDKit❗✔️: explicit BoundsMatrix(unsigned int N)
-    // RDKit❗✔️:     : RDNumeric::SquareMatrix<double>(N, 0.0) {}
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::SquareMatrix::SquareMatrix (SquareMatrix.h:25)
-    // RDKit❗✔️: SquareMatrix(unsigned int N, TYPE val) : Matrix<TYPE>(N, N, val) {}
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Matrix::Matrix (Matrix.h:41-49)
-    // RDKit❗✔️: Matrix(unsigned int nRows, unsigned int nCols, TYPE val)
-    // RDKit❗✔️:     : d_nRows(nRows), d_nCols(nCols), d_dataSize(nRows * nCols) {
-    // RDKit❗✔️:   TYPE *data = new TYPE[d_dataSize];
-    // RDKit❗✔️:   unsigned int i;
-    // RDKit❗✔️:   for (i = 0; i < d_dataSize; i++) {
-    // RDKit❗✔️:     data[i] = val;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   d_data.reset(data);
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Matrix::Matrix
-    // END RDKIT CPP FUNCTION RDNumeric::SquareMatrix::SquareMatrix
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::BoundsMatrix
     pub(crate) fn new(dimension: usize) -> Result<Self, BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::BoundsMatrix (BoundsMatrix.h:31-32)
+        // RDKit❗✔️:   explicit BoundsMatrix(unsigned int N)
+        // RDKit❗✔️:       : RDNumeric::SquareMatrix<double>(N, 0.0) {}
+        // BEGIN RDKIT CPP FUNCTION RDNumeric::SquareMatrix::SquareMatrix (SquareMatrix.h:25)
+        // RDKit❗✔️:   SquareMatrix(unsigned int N, TYPE val) : Matrix<TYPE>(N, N, val) {}
+        // BEGIN RDKIT CPP FUNCTION RDNumeric::Matrix::Matrix (Matrix.h:41-49)
+        // RDKit❗✔️:   Matrix(unsigned int nRows, unsigned int nCols, TYPE val)
+        // RDKit❗✔️:       : d_nRows(nRows), d_nCols(nCols), d_dataSize(nRows * nCols) {
+        // RDKit❗✔️:     TYPE *data = new TYPE[d_dataSize];
+        // RDKit❗✔️:     unsigned int i;
+        // RDKit❗✔️:     for (i = 0; i < d_dataSize; i++) {
+        // RDKit❗✔️:       data[i] = val;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     d_data.reset(data);
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION RDNumeric::Matrix::Matrix
+        // END RDKIT CPP FUNCTION RDNumeric::SquareMatrix::SquareMatrix
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::BoundsMatrix
+
         let elements = dimension
             .checked_mul(dimension)
             .ok_or(BoundsMatrixError::DimensionOverflow { dimension })?;
@@ -72,28 +73,29 @@ impl BoundsMatrix {
         Ok(Self { data, dimension })
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::BoundsMatrix (BoundsMatrix.h:33-34)
-    // RDKit❗✔️: BoundsMatrix(unsigned int N, DATA_SPTR data)
-    // RDKit❗✔️:     : RDNumeric::SquareMatrix<double>(N, data) {}
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::SquareMatrix::SquareMatrix (SquareMatrix.h:27-28)
-    // RDKit❗✔️: SquareMatrix(unsigned int N, typename Matrix<TYPE>::DATA_SPTR data)
-    // RDKit❗✔️:     : Matrix<TYPE>(N, N, data) {}
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Matrix::Matrix (Matrix.h:56-59)
-    // RDKit❗✔️: Matrix(unsigned int nRows, unsigned int nCols, DATA_SPTR data)
-    // RDKit❗✔️:     : d_nRows(nRows), d_nCols(nCols), d_dataSize(nRows * nCols) {
-    // RDKit❗✔️:   d_data = data;
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Matrix::Matrix
-    // END RDKIT CPP FUNCTION RDNumeric::SquareMatrix::SquareMatrix
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::BoundsMatrix
-    // The only pinned wrapper caller copies the caller's array into a new
-    // buffer and transfers its sole shared owner here (rdDistGeom.cpp:88-98).
-    // Taking that buffer by Vec value preserves this call path without raw
-    // pointer aliasing or a per-access lock.
     pub(crate) fn from_data(
         dimension: usize,
         mut data: Vec<f64>,
     ) -> Result<Self, BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::BoundsMatrix (BoundsMatrix.h:33-34)
+        // RDKit❗✔️:   BoundsMatrix(unsigned int N, DATA_SPTR data)
+        // RDKit❗✔️:       : RDNumeric::SquareMatrix<double>(N, data) {}
+        // BEGIN RDKIT CPP FUNCTION RDNumeric::SquareMatrix::SquareMatrix (SquareMatrix.h:27-28)
+        // RDKit❗✔️:   SquareMatrix(unsigned int N, typename Matrix<TYPE>::DATA_SPTR data)
+        // RDKit❗✔️:       : Matrix<TYPE>(N, N, data) {}
+        // BEGIN RDKIT CPP FUNCTION RDNumeric::Matrix::Matrix (Matrix.h:56-59)
+        // RDKit❗✔️:   Matrix(unsigned int nRows, unsigned int nCols, DATA_SPTR data)
+        // RDKit❗✔️:       : d_nRows(nRows), d_nCols(nCols), d_dataSize(nRows * nCols) {
+        // RDKit❗✔️:     d_data = data;
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION RDNumeric::Matrix::Matrix
+        // END RDKIT CPP FUNCTION RDNumeric::SquareMatrix::SquareMatrix
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::BoundsMatrix
+        // The only pinned wrapper caller copies the caller's array into a new
+        // buffer and transfers its sole shared owner here (rdDistGeom.cpp:88-98).
+        // Taking that buffer by Vec value preserves this call path without raw
+        // pointer aliasing or a per-access lock.
+
         let elements = dimension
             .checked_mul(dimension)
             .ok_or(BoundsMatrixError::DimensionOverflow { dimension })?;
@@ -155,47 +157,51 @@ impl BoundsMatrix {
         unsafe { *self.data.get_unchecked_mut(index) = value };
     }
 
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Matrix::getVal (Matrix.h:94-99)
-    // RDKit❗✔️: inline virtual TYPE getVal(unsigned int i, unsigned int j) const {
-    // RDKit❗✔️:   PRECONDITION(i < d_nRows, "bad index");
-    // RDKit❗✔️:   PRECONDITION(j < d_nCols, "bad index");
-    // RDKit❗✔️:   unsigned int id = i * d_nCols + j;
-    // RDKit❗✔️:   return d_data[id];
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Matrix::getVal
     pub(crate) fn get_val(&self, row: usize, column: usize) -> Result<f64, BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION RDNumeric::Matrix::getVal (Matrix.h:94-99)
+        // RDKit❗✔️:   inline virtual TYPE getVal(unsigned int i, unsigned int j) const {
+        // RDKit❗✔️:     PRECONDITION(i < d_nRows, "bad index");
+        // RDKit❗✔️:     PRECONDITION(j < d_nCols, "bad index");
+        // RDKit❗✔️:     unsigned int id = i * d_nCols + j;
+        // RDKit❗✔️:     return d_data[id];
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION RDNumeric::Matrix::getVal
+
         Ok(self.data[self.index(row, column)?])
     }
 
-    // BEGIN RDKIT CPP FUNCTION RDNumeric::Matrix::setVal (Matrix.h:102-108)
-    // RDKit❗✔️: inline virtual void setVal(unsigned int i, unsigned int j, TYPE val) {
-    // RDKit❗✔️:   PRECONDITION(i < d_nRows, "bad index");
-    // RDKit❗✔️:   PRECONDITION(j < d_nCols, "bad index");
-    // RDKit❗✔️:   unsigned int id = i * d_nCols + j;
-    // RDKit❗✔️:   d_data[id] = val;
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION RDNumeric::Matrix::setVal
     pub(crate) fn set_val(
         &mut self,
         row: usize,
         column: usize,
         value: f64,
     ) -> Result<(), BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION RDNumeric::Matrix::setVal (Matrix.h:102-108)
+        // RDKit❗✔️:   inline virtual void setVal(unsigned int i, unsigned int j, TYPE val) {
+        // RDKit❗✔️:     PRECONDITION(i < d_nRows, "bad index");
+        // RDKit❗✔️:     PRECONDITION(j < d_nCols, "bad index");
+        // RDKit❗✔️:     unsigned int id = i * d_nCols + j;
+        // RDKit❗✔️:
+        // RDKit❗✔️:     d_data[id] = val;
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION RDNumeric::Matrix::setVal
+
         let index = self.index(row, column)?;
         self.data[index] = value;
         Ok(())
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getUpperBound (BoundsMatrix.h:37-43)
-    // RDKit❗✔️: inline double getUpperBound(unsigned int i, unsigned int j) const {
-    // RDKit❗✔️:   if (i < j) {
-    // RDKit❗✔️:     return getVal(i, j);
-    // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     return getVal(j, i);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getUpperBound
     pub(crate) fn get_upper(&self, row: usize, column: usize) -> Result<f64, BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getUpperBound (BoundsMatrix.h:37-43)
+        // RDKit❗✔️:   inline double getUpperBound(unsigned int i, unsigned int j) const {
+        // RDKit❗✔️:     if (i < j) {
+        // RDKit❗✔️:       return getVal(i, j);
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       return getVal(j, i);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getUpperBound
+
         if row < column {
             self.get_val(row, column)
         } else {
@@ -203,22 +209,23 @@ impl BoundsMatrix {
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBound (BoundsMatrix.h:46-53)
-    // RDKit❗✔️: inline void setUpperBound(unsigned int i, unsigned int j, double val) {
-    // RDKit❗✔️:   CHECK_INVARIANT(val >= 0.0, "Negative upper bound");
-    // RDKit❗✔️:   if (i < j) {
-    // RDKit❗✔️:     setVal(i, j, val);
-    // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     setVal(j, i, val);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBound
     pub(crate) fn set_upper(
         &mut self,
         row: usize,
         column: usize,
         value: f64,
     ) -> Result<(), BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBound (BoundsMatrix.h:46-53)
+        // RDKit❗✔️:   inline void setUpperBound(unsigned int i, unsigned int j, double val) {
+        // RDKit❗✔️:     CHECK_INVARIANT(val >= 0.0, "Negative upper bound");
+        // RDKit❗✔️:     if (i < j) {
+        // RDKit❗✔️:       setVal(i, j, val);
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       setVal(j, i, val);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBound
+
         if !(value >= 0.0) {
             return Err(BoundsMatrixError::InvalidBound {
                 kind: BoundKind::Upper,
@@ -233,36 +240,38 @@ impl BoundsMatrix {
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBoundIfBetter (BoundsMatrix.h:57-62)
-    // RDKit❗✔️: inline void setUpperBoundIfBetter(unsigned int i, unsigned int j,
-    // RDKit❗✔️:                                   double val) {
-    // RDKit❗✔️:   if ((val < getUpperBound(i, j)) && (val > getLowerBound(i, j))) {
-    // RDKit❗✔️:     setUpperBound(i, j, val);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBoundIfBetter
     pub(crate) fn set_upper_if_better(
         &mut self,
         row: usize,
         column: usize,
         value: f64,
     ) -> Result<(), BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBoundIfBetter (BoundsMatrix.h:57-62)
+        // RDKit❗✔️:   inline void setUpperBoundIfBetter(unsigned int i, unsigned int j,
+        // RDKit❗✔️:                                     double val) {
+        // RDKit❗✔️:     if ((val < getUpperBound(i, j)) && (val > getLowerBound(i, j))) {
+        // RDKit❗✔️:       setUpperBound(i, j, val);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setUpperBoundIfBetter
+
         if value < self.get_upper(row, column)? && value > self.get_lower(row, column)? {
             self.set_upper(row, column, value)?;
         }
         Ok(())
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getLowerBound (BoundsMatrix.h:84-90)
-    // RDKit❗✔️: inline double getLowerBound(unsigned int i, unsigned int j) const {
-    // RDKit❗✔️:   if (i < j) {
-    // RDKit❗✔️:     return getVal(j, i);
-    // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     return getVal(i, j);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getLowerBound
     pub(crate) fn get_lower(&self, row: usize, column: usize) -> Result<f64, BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getLowerBound (BoundsMatrix.h:84-90)
+        // RDKit❗✔️:   inline double getLowerBound(unsigned int i, unsigned int j) const {
+        // RDKit❗✔️:     if (i < j) {
+        // RDKit❗✔️:       return getVal(j, i);
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       return getVal(i, j);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::getLowerBound
+
         if row < column {
             self.get_val(column, row)
         } else {
@@ -270,22 +279,23 @@ impl BoundsMatrix {
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBound (BoundsMatrix.h:65-72)
-    // RDKit❗✔️: inline void setLowerBound(unsigned int i, unsigned int j, double val) {
-    // RDKit❗✔️:   CHECK_INVARIANT(val >= 0.0, "Negative lower bound");
-    // RDKit❗✔️:   if (i < j) {
-    // RDKit❗✔️:     setVal(j, i, val);
-    // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     setVal(i, j, val);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBound
     pub(crate) fn set_lower(
         &mut self,
         row: usize,
         column: usize,
         value: f64,
     ) -> Result<(), BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBound (BoundsMatrix.h:65-72)
+        // RDKit❗✔️:   inline void setLowerBound(unsigned int i, unsigned int j, double val) {
+        // RDKit❗✔️:     CHECK_INVARIANT(val >= 0.0, "Negative lower bound");
+        // RDKit❗✔️:     if (i < j) {
+        // RDKit❗✔️:       setVal(j, i, val);
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       setVal(i, j, val);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBound
+
         if !(value >= 0.0) {
             return Err(BoundsMatrixError::InvalidBound {
                 kind: BoundKind::Lower,
@@ -300,40 +310,42 @@ impl BoundsMatrix {
         }
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBoundIfBetter (BoundsMatrix.h:76-81)
-    // RDKit❗✔️: inline void setLowerBoundIfBetter(unsigned int i, unsigned int j,
-    // RDKit❗✔️:                                   double val) {
-    // RDKit❗✔️:   if ((val > getLowerBound(i, j)) && (val < getUpperBound(i, j))) {
-    // RDKit❗✔️:     setLowerBound(i, j, val);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBoundIfBetter
     pub(crate) fn set_lower_if_better(
         &mut self,
         row: usize,
         column: usize,
         value: f64,
     ) -> Result<(), BoundsMatrixError> {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBoundIfBetter (BoundsMatrix.h:76-81)
+        // RDKit❗✔️:   inline void setLowerBoundIfBetter(unsigned int i, unsigned int j,
+        // RDKit❗✔️:                                     double val) {
+        // RDKit❗✔️:     if ((val > getLowerBound(i, j)) && (val < getUpperBound(i, j))) {
+        // RDKit❗✔️:       setLowerBound(i, j, val);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::setLowerBoundIfBetter
+
         if value > self.get_lower(row, column)? && value < self.get_upper(row, column)? {
             self.set_lower(row, column, value)?;
         }
         Ok(())
     }
 
-    // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::checkValid (BoundsMatrix.h:94-103)
-    // RDKit❗✔️: inline bool checkValid() const {
-    // RDKit❗✔️:   unsigned int i, j;
-    // RDKit❗✔️:   for (i = 1; i < d_nRows; i++) {
-    // RDKit❗✔️:     for (j = 0; j < i; j++) {
-    // RDKit❗✔️:       if (getUpperBound(i, j) < getLowerBound(i, j)) {
-    // RDKit❗✔️:         return false;
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   return true;
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::checkValid
     pub(crate) fn check_valid(&self) -> bool {
+        // BEGIN RDKIT CPP FUNCTION DistGeom::BoundsMatrix::checkValid (BoundsMatrix.h:94-104)
+        // RDKit❗✔️:   inline bool checkValid() const {
+        // RDKit❗✔️:     unsigned int i, j;
+        // RDKit❗✔️:     for (i = 1; i < d_nRows; i++) {
+        // RDKit❗✔️:       for (j = 0; j < i; j++) {
+        // RDKit❗✔️:         if (getUpperBound(i, j) < getLowerBound(i, j)) {
+        // RDKit❗✔️:           return false;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     return true;
+        // RDKit❗✔️:   }
+        // END RDKIT CPP FUNCTION DistGeom::BoundsMatrix::checkValid
+
         for row in 1..self.dimension {
             for column in 0..row {
                 let upper = self
@@ -522,3 +534,10 @@ mod tests {
         assert!(bounds.check_valid());
     }
 }
+
+impl std::fmt::Display for BoundsMatrixError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+impl std::error::Error for BoundsMatrixError {}

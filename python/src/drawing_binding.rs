@@ -7,7 +7,9 @@ use crate::canonical_fingerprint_values::{
     TopologicalTorsionFingerprintParams,
 };
 use crate::canonical_values::*;
+use crate::conformer_binding::{EmbedMoleculeResult, EmbedMultipleConfsResult, EmbedParams};
 use ::cosmolkit as ck;
+use numpy::{IntoPyArray, ndarray::Array2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -19,11 +21,9 @@ pyo3::create_exception!(cosmolkit, DrawingError, PyValueError);
 pyo3::create_exception!(cosmolkit, OperationError, PyValueError);
 pyo3::create_exception!(cosmolkit, DrawingWriteError, pyo3::exceptions::PyOSError);
 
-// Transport actual source messages only; Python cannot retain Rust downcast identity.
+// Preserve each recognized canonical domain cause through the shared projection.
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
-    let error = PyValueError::new_err(source.to_string());
-    error.set_cause(py, source.source().map(|cause| source_pyerr(py, cause)));
-    error
+    crate::canonical_values::source_pyerr(py, source)
 }
 
 fn drawing_pyerr(py: Python<'_>, source: ck::DrawingError) -> PyErr {
@@ -118,6 +118,7 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
         E::CipLabeler(..) => "CipLabeler",
         E::AtomCode(..) => "AtomCode",
         E::Transform(..) => "Transform",
+        E::CoordinateInput(..) => "CoordinateInput",
         E::Coordinate2D(..) => "Coordinate2D",
         E::Kekulize(..) => "Kekulize",
         E::Aromaticity(..) => "Aromaticity",
@@ -126,6 +127,7 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
         E::UffOptimization(..) => "UffOptimization",
         E::MmffOptimization(..) => "MmffOptimization",
         E::Tautomer(..) => "Tautomer",
+        E::Conformer(..) => "Conformer",
     };
     let error = OperationError::new_err(source.to_string());
     if let Err(attribute_error) = error
@@ -349,6 +351,25 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    fn pattern_fingerprint(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .pattern_fingerprint()
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_pattern::pattern_pyerr(py, e))
+    }
+    fn pattern_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_pattern::PatternFingerprintParams,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .pattern_fingerprint_with_params(&params.inner)
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_pattern::pattern_pyerr(py, e))
+    }
     fn maccs_fingerprint(&self, py: Python<'_>) -> PyResult<crate::canonical_values::Fingerprint> {
         self.inner
             .maccs_fingerprint()
@@ -1359,6 +1380,273 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    fn with_2d_coordinate_block(
+        &self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            true,
+        )?;
+        self.inner
+            .with_2d_coordinate_block(rows)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_2d_coordinate_block_with_params(
+        &self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+        params: &crate::canonical_coordinate_input::Coordinate2DInputParams,
+    ) -> PyResult<Self> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            true,
+        )?;
+        self.inner
+            .with_2d_coordinate_block_with_params(rows, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn set_2d_coordinates_(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            true,
+        )?;
+        self.inner
+            .set_2d_coordinates_(rows)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn set_2d_coordinates_with_params_(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+        params: &crate::canonical_coordinate_input::Coordinate2DInputParams,
+    ) -> PyResult<()> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            true,
+        )?;
+        self.inner
+            .set_2d_coordinates_with_params_(rows, &params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_3d_coordinates(
+        &self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .with_3d_coordinates(rows)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_3d_coordinates_with_params(
+        &self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+        params: &crate::canonical_coordinate_input::Replace3DCoordinatesParams,
+    ) -> PyResult<Self> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .with_3d_coordinates_with_params(rows, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn set_3d_coordinates_(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .set_3d_coordinates_(rows)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn set_3d_coordinates_with_params_(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+        params: &crate::canonical_coordinate_input::Replace3DCoordinatesParams,
+    ) -> PyResult<()> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .set_3d_coordinates_with_params_(rows, &params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_added_3d_conformer(
+        &self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .with_added_3d_conformer(rows)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_added_3d_conformer_with_params(
+        &self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+        params: &crate::canonical_coordinate_input::Coordinate3DInputParams,
+    ) -> PyResult<Self> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .with_added_3d_conformer_with_params(rows, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn add_3d_conformer_(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<usize> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .add_3d_conformer_(rows)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn add_3d_conformer_with_params_(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+        params: &crate::canonical_coordinate_input::Coordinate3DInputParams,
+    ) -> PyResult<usize> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .add_3d_conformer_with_params_(rows, &params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_only_3d_conformer(
+        &self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .with_only_3d_conformer(rows)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_only_3d_conformer_with_params(
+        &self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+        params: &crate::canonical_coordinate_input::Coordinate3DInputParams,
+    ) -> PyResult<Self> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .with_only_3d_conformer_with_params(rows, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn set_only_3d_conformer_(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+    ) -> PyResult<usize> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .set_only_3d_conformer_(rows)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn set_only_3d_conformer_with_params_(
+        &mut self,
+        py: Python<'_>,
+        coordinates: &Bound<'_, PyAny>,
+        params: &crate::canonical_coordinate_input::Coordinate3DInputParams,
+    ) -> PyResult<usize> {
+        let rows = crate::canonical_coordinate_input::matrix(
+            py,
+            coordinates,
+            self.inner.num_atoms(),
+            false,
+        )?;
+        self.inner
+            .set_only_3d_conformer_with_params_(rows, &params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_cleared_3d_conformers(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .with_cleared_3d_conformers()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn clear_3d_conformers_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .clear_3d_conformers_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
     fn with_hydrogens(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_hydrogens()
@@ -1842,6 +2130,15 @@ impl Molecule {
             )
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(|error| morgan_pyerr(py, error))
+    }
+
+    /// Return an owned copy of existing XYZ rows for the exact conformer ID.
+    #[pyo3(signature = (conformer_id=0))]
+    fn coordinates_3d(&self, py: Python<'_>, conformer_id: usize) -> PyResult<Vec<[f64; 3]>> {
+        self.inner
+            .coordinates_3d(conformer_id)
+            .map(<[_]>::to_vec)
+            .map_err(|error| crate::canonical_coordinate_input::read_pyerr(py, &error))
     }
 
     fn coordinates_2d(&self) -> Option<Vec<[f64; 2]>> {
@@ -2573,6 +2870,185 @@ The source and reference molecules remain unchanged.
     ) -> PyResult<PyAlignmentResult> {
         Self::align_to_(slf, reference, Some(params))
     }
+
+    fn num_3d_conformers(&self) -> usize {
+        self.inner.num_3d_conformers()
+    }
+    #[gen_stub(override_return_type(type_repr="numpy.ndarray[typing.Any, typing.Any]",imports=("numpy","typing")))]
+    fn dg_bounds_matrix<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let rows = self
+            .inner
+            .dg_bounds_matrix()
+            .map_err(|e| crate::canonical_values::source_pyerr(py, &e))?;
+        let n = rows.len();
+        Array2::from_shape_vec((n, n), rows.into_iter().flatten().collect())
+            .map(|a| a.into_pyarray(py).into_any())
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+    #[pyo3(signature=(params=None))]
+    fn with_3d_conformer(&self, py: Python<'_>, params: Option<&EmbedParams>) -> PyResult<Self> {
+        let defaults;
+        let options = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::EmbedParams::etkdg_v3();
+                &defaults
+            }
+        };
+        let outcome = self
+            .inner
+            .with_3d_conformer_result_with_params(options)
+            .map_err(|e| operation_pyerr(py, e))?;
+        Ok(Self {
+            inner: outcome.molecule,
+        })
+    }
+    #[pyo3(signature=(params=None))]
+    fn embed_3d_conformer_(
+        &mut self,
+        py: Python<'_>,
+        params: Option<&EmbedParams>,
+    ) -> PyResult<()> {
+        let defaults;
+        let options = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::EmbedParams::etkdg_v3();
+                &defaults
+            }
+        };
+        let outcome = self
+            .inner
+            .embed_3d_conformer_result_with_params_(options)
+            .map_err(|e| operation_pyerr(py, e))?;
+        Ok(())
+    }
+    #[pyo3(signature=(params=None))]
+    fn with_3d_conformer_result(
+        &self,
+        py: Python<'_>,
+        params: Option<&EmbedParams>,
+    ) -> PyResult<EmbedMoleculeResult> {
+        let defaults;
+        let options = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::EmbedParams::etkdg_v3();
+                &defaults
+            }
+        };
+        let outcome = self
+            .inner
+            .with_3d_conformer_result_with_params(options)
+            .map_err(|e| operation_pyerr(py, e))?;
+        Ok(EmbedMoleculeResult { inner: outcome })
+    }
+    #[pyo3(signature=(params=None))]
+    fn embed_3d_conformer_result_(
+        &mut self,
+        py: Python<'_>,
+        params: Option<&EmbedParams>,
+    ) -> PyResult<EmbedMoleculeResult> {
+        let defaults;
+        let options = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::EmbedParams::etkdg_v3();
+                &defaults
+            }
+        };
+        let outcome = self
+            .inner
+            .embed_3d_conformer_result_with_params_(options)
+            .map_err(|e| operation_pyerr(py, e))?;
+        Ok(EmbedMoleculeResult { inner: outcome })
+    }
+    #[pyo3(signature=(num_confs, params=None))]
+    fn with_3d_conformers(
+        &self,
+        py: Python<'_>,
+        num_confs: u32,
+        params: Option<&EmbedParams>,
+    ) -> PyResult<Self> {
+        let defaults;
+        let options = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::EmbedParams::etkdg_v3();
+                &defaults
+            }
+        };
+        let outcome = self
+            .inner
+            .with_3d_conformers_result_with_params(num_confs, options)
+            .map_err(|e| operation_pyerr(py, e))?;
+        Ok(Self {
+            inner: outcome.molecule,
+        })
+    }
+    #[pyo3(signature=(num_confs, params=None))]
+    fn embed_3d_conformers_(
+        &mut self,
+        py: Python<'_>,
+        num_confs: u32,
+        params: Option<&EmbedParams>,
+    ) -> PyResult<()> {
+        let defaults;
+        let options = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::EmbedParams::etkdg_v3();
+                &defaults
+            }
+        };
+        let outcome = self
+            .inner
+            .embed_3d_conformers_result_with_params_(num_confs, options)
+            .map_err(|e| operation_pyerr(py, e))?;
+        Ok(())
+    }
+    #[pyo3(signature=(num_confs, params=None))]
+    fn with_3d_conformers_result(
+        &self,
+        py: Python<'_>,
+        num_confs: u32,
+        params: Option<&EmbedParams>,
+    ) -> PyResult<EmbedMultipleConfsResult> {
+        let defaults;
+        let options = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::EmbedParams::etkdg_v3();
+                &defaults
+            }
+        };
+        let outcome = self
+            .inner
+            .with_3d_conformers_result_with_params(num_confs, options)
+            .map_err(|e| operation_pyerr(py, e))?;
+        Ok(EmbedMultipleConfsResult { inner: outcome })
+    }
+    #[pyo3(signature=(num_confs, params=None))]
+    fn embed_3d_conformers_result_(
+        &mut self,
+        py: Python<'_>,
+        num_confs: u32,
+        params: Option<&EmbedParams>,
+    ) -> PyResult<EmbedMultipleConfsResult> {
+        let defaults;
+        let options = match params {
+            Some(params) => &params.inner,
+            None => {
+                defaults = ck::EmbedParams::etkdg_v3();
+                &defaults
+            }
+        };
+        let outcome = self
+            .inner
+            .embed_3d_conformers_result_with_params_(num_confs, options)
+            .map_err(|e| operation_pyerr(py, e))?;
+        Ok(EmbedMultipleConfsResult { inner: outcome })
+    }
 }
 
 #[pymodule]
@@ -2602,6 +3078,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_path_score::register(module)?;
     crate::canonical_maccs::register(module)?;
     crate::canonical_layered::register(module)?;
+    crate::canonical_pattern::register(module)?;
     crate::canonical_element_metadata::register(module)?;
     crate::mmff_binding::register(module)?;
     crate::uff_binding::register(module)?;
@@ -2612,10 +3089,12 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_binary::register(module)?;
     crate::canonical_molecular_hash::register(module)?;
     crate::canonical_builder::register(module)?;
+    crate::canonical_coordinate_input::register(module)?;
     crate::canonical_stereo_queries::register(module)?;
     crate::tautomer_binding::register(module)?;
     crate::canonical_property_values::register(module)?;
     crate::canonical_bio_residue::register(module)?;
     crate::canonical_bio_binding::register(module)?;
+    crate::conformer_binding::register(module)?;
     Ok(())
 }

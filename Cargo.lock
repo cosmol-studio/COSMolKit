@@ -223,7 +223,16 @@ dependencies = [
 name = "cosmolkit-conformer"
 version = "0.5.0-rc.10"
 dependencies = [
+ "cosmolkit-alignment",
+ "cosmolkit-core",
+ "cosmolkit-forcefields",
+ "cosmolkit-io",
  "cosmolkit-model",
+ "cosmolkit-search",
+ "cosmolkit-smiles",
+ "libc",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -284,10 +293,11 @@ dependencies = [
 name = "cosmolkit-forcefields"
 version = "0.5.0-rc.10"
 dependencies = [
- "cosmolkit-conformer",
  "cosmolkit-core",
+ "cosmolkit-io",
  "cosmolkit-model",
  "cosmolkit-search",
+ "cosmolkit-smiles",
  "thiserror",
 ]
 
