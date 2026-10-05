@@ -315,16 +315,39 @@ impl MmffMolProperties {
         // Source setMMFFAromaticity and RingMembershipSize both read the same
         // stored ring rows. Preserve supplied initialized rows, including empty
         // rows and Fast state. The detached boundary acquires missing rows once.
-        let acquired_rings = if supplied_rings.is_none() {
-            Some(symmetrized_sssr(
+        // Source initialized RingInfo membership queries return empty beyond
+        // the stored dimensions. AddHs preserves those existing ring rows.
+        // Transport that state to the core exact-dimension carrier by growing
+        // only empty membership rows, without finding or replacing rings.
+        // RDKit❗❌: void RingInfo::preallocate(unsigned int numAtoms, unsigned int numBonds) {
+        // RDKit❗❌:   d_atomMembers.resize(numAtoms);
+        // RDKit❗❌:   d_bondMembers.resize(numBonds);
+        // RDKit❗❌: }
+        // Behavior: ring/family rows and find quality are unchanged.
+        // Complexity: undersized carriers are cloned at the detached transport;
+        // the source grows in place. Full-size carriers remain borrowed.
+        let acquired_rings = match supplied_rings {
+            None => Some(symmetrized_sssr(
                 &prepared_molecule,
                 &RingSearchParams::default(),
-            )?)
-        } else {
-            None
+            )?),
+            Some(rings)
+                if rings.is_initialized()
+                    && rings.atom_row_count() <= prepared_molecule.atoms.len()
+                    && rings.bond_row_count() <= prepared_molecule.bonds.len()
+                    && (rings.atom_row_count() < prepared_molecule.atoms.len()
+                        || rings.bond_row_count() < prepared_molecule.bonds.len()) =>
+            {
+                let mut transported = rings.clone();
+                transported
+                    .preallocate(prepared_molecule.atoms.len(), prepared_molecule.bonds.len());
+                Some(transported)
+            }
+            Some(_) => None,
         };
-        let ring_info = supplied_rings
-            .or(acquired_rings.as_ref())
+        let ring_info = acquired_rings
+            .as_ref()
+            .or(supplied_rings)
             .expect("supplied or acquired rings");
         let aromaticity = assign_mmff_aromaticity_prepared(&prepared_molecule, ring_info)?;
         let aromatic_ring_count = aromaticity.aromatic_ring_count;

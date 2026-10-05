@@ -133,7 +133,10 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
     }
     error.set_cause(
         py,
-        std::error::Error::source(&source).map(|cause| source_pyerr(py, cause)),
+        match &source {
+            E::MmffOptimization(cause) => Some(crate::mmff_binding::optimization_pyerr(py, cause)),
+            _ => std::error::Error::source(&source).map(|cause| source_pyerr(py, cause)),
+        },
     );
     error
 }
@@ -760,6 +763,12 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    fn with_hydrogens(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .with_hydrogens()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
     fn to_builder(&self) -> crate::mmff_binding::MoleculeBuilder {
         crate::mmff_binding::MoleculeBuilder {
             inner: self.inner.to_builder(),

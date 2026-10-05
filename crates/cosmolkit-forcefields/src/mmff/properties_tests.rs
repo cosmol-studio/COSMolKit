@@ -1899,3 +1899,26 @@ fn mmff_properties_defined_si_si_missing_table_uses_empirical_fallback() {
     assert_eq!(actual.0, 0);
     assert_eq!(actual.1, empirical);
 }
+
+#[test]
+fn mmff_mol_properties_constructor_initializes_empty_molecule_defaults() {
+    let molecule = TestInput::new();
+    let props = MmffMolProperties::new(&molecule, false, "MMFF94", MMFF_VERBOSITY_HIGH)
+        .expect("empty molecule has no atom typing work");
+    assert!(props.is_valid());
+    assert_eq!(props.mmff_variant(), MmffVariant::Mmff94);
+    assert!(props.bond_term);
+    assert!(props.angle_term);
+    assert!(props.stretch_bend_term);
+    assert!(props.oop_term);
+    assert!(props.torsion_term);
+    assert!(props.vdw_term);
+    assert!(props.ele_term);
+    assert_eq!(props.dielectric_constant, 1.0);
+    assert_eq!(props.dielectric_model, MMFF_DIELECTRIC_CONSTANT);
+    assert_eq!(props.verbosity, MMFF_VERBOSITY_HIGH);
+    assert!(props.atom_properties.is_empty());
+    // _MMFFSanitized lives in the caller's property block. Its guarded
+    // computed installation and existing-value preservation are exercised
+    // by mmff_live_source_property_guard_ring_rows_and_unchanged_block_sharing.
+}

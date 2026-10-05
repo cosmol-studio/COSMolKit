@@ -10,6 +10,40 @@ binding_contract! {
             feature: "metadata", status: experimental, role: value,
         },
         {
+            semantic_id: "Element.from_atomic_number", item: callable, owner: type_,
+            rust: crate::Element::from_atomic_number, python: "from_atomic_number", javascript: "fromAtomicNumber",
+            feature: "metadata", status: experimental, kind: static_,
+            parameters: [{ name: atomic_number, type: u8, default: required }],
+            output: Option<crate::Element>, error: none,
+            state: value_returning, operation: none,
+            signature: fn(u8) -> Option<crate::Element>,
+        },
+        {
+            semantic_id: "Element.from_symbol", item: callable, owner: type_,
+            rust: crate::Element::from_symbol, python: "from_symbol", javascript: "fromSymbol",
+            feature: "metadata", status: experimental, kind: static_,
+            parameters: [{ name: symbol, type: &str, default: required }],
+            output: Option<crate::Element>, error: none,
+            state: value_returning, operation: none,
+            signature: for<'a> fn(&'a str) -> Option<crate::Element>,
+        },
+        {
+            semantic_id: "Element.atomic_number", item: callable, owner: type_,
+            rust: crate::Element::atomic_number, python: "atomic_number", javascript: "atomicNumber",
+            feature: "metadata", status: experimental, kind: instance, receiver: owned,
+            parameters: [], output: u8, error: none,
+            state: value_returning, operation: none,
+            signature: fn(crate::Element) -> u8,
+        },
+        {
+            semantic_id: "Element.symbol", item: callable, owner: type_,
+            rust: crate::Element::symbol, python: "symbol", javascript: "symbol",
+            feature: "metadata", status: experimental, kind: instance, receiver: owned,
+            parameters: [], output: &'static str, error: none,
+            state: value_returning, operation: none,
+            signature: fn(crate::Element) -> &'static str,
+        },
+        {
             semantic_id: "types.ElementInfo", item: type, owner: type_,
             rust: crate::ElementInfo, python: "ElementInfo", javascript: "ElementInfo",
             feature: "metadata", status: experimental, role: result,
@@ -23,6 +57,11 @@ binding_contract! {
             output: crate::ElementInfo, error: none,
             state: read_only, operation: none,
             signature: fn(crate::Element) -> crate::ElementInfo,
+        },
+        {
+            semantic_id: "types.QueryGraph", item: type, owner: type_,
+            rust: crate::QueryGraph, python: "QueryGraph", javascript: "QueryGraph",
+            feature: "metadata", status: experimental, role: value,
         },
 #[cfg(feature="cap-forcefields")]
 {semantic_id:"MmffAtomProperties.atom_type",item:callable,owner:type_,rust:crate::MmffAtomProperties::atom_type,python:"atom_type",javascript:"atomType",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->u8,},
@@ -138,11 +177,6 @@ binding_contract! {
         { semantic_id:"Molecule.tautomer_score_with_params", item:callable, owner:molecule, rust:crate::Molecule::tautomer_score_with_params, python:"tautomer_score_with_params", javascript:"tautomerScoreWithParams", feature:"cap-tautomer", status:experimental, kind:instance,
            parameters:[{name:params,type:&crate::TautomerScoreParams,default:required}], output:crate::TautomerScore, error:crate::TautomerRunError, state:read_only, operation:none,
            signature:for<'a, 'b> fn(&'a crate::Molecule, &'b crate::TautomerScoreParams)->Result<crate::TautomerScore,crate::TautomerRunError>, },
-        {
-            semantic_id: "types.QueryGraph", item: type, owner: type_,
-            rust: crate::QueryGraph, python: "QueryGraph", javascript: "QueryGraph",
-            feature: "metadata", status: experimental, role: value,
-        },
         #[cfg(feature = "cap-search")]
         {
             semantic_id: "types.SmartsParseParams", item: type, owner: type_,

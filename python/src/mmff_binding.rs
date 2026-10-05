@@ -5,13 +5,19 @@ use pyo3::{exceptions::PyValueError, prelude::*};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 fn cause_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
+    if let Some(source) = source.downcast_ref::<ck::MmffMolPropertiesError>() {
+        return properties_pyerr_ref(py, source);
+    }
     let error = PyValueError::new_err(source.to_string());
     error.set_cause(py, source.source().map(|next| cause_pyerr(py, next)));
     error
 }
-pyo3::create_exception!(cosmolkit, MmffPropertiesError, PyValueError);
+pyo3::create_exception!(cosmolkit, MmffMolPropertiesError, PyValueError);
 pub(crate) fn properties_pyerr(py: Python<'_>, source: ck::MmffMolPropertiesError) -> PyErr {
-    let kind = match &source {
+    properties_pyerr_ref(py, &source)
+}
+fn properties_pyerr_ref(py: Python<'_>, source: &ck::MmffMolPropertiesError) -> PyErr {
+    let kind = match source {
         ck::MmffMolPropertiesError::Params(_) => "Params",
         ck::MmffMolPropertiesError::Kekulize(_) => "Kekulize",
         ck::MmffMolPropertiesError::Aromaticity(_) => "Aromaticity",
@@ -21,7 +27,7 @@ pub(crate) fn properties_pyerr(py: Python<'_>, source: ck::MmffMolPropertiesErro
         ck::MmffMolPropertiesError::AtomTypePropertiesMissing { .. } => "AtomTypePropertiesMissing",
         ck::MmffMolPropertiesError::AtomTypePbciMissing { .. } => "AtomTypePbciMissing",
     };
-    let error = MmffPropertiesError::new_err(source.to_string());
+    let error = MmffMolPropertiesError::new_err(source.to_string());
     if let Err(attribute_error) = error
         .value(py)
         .setattr("domain", "mmff_properties")
@@ -31,22 +37,34 @@ pub(crate) fn properties_pyerr(py: Python<'_>, source: ck::MmffMolPropertiesErro
     }
     error.set_cause(
         py,
-        std::error::Error::source(&source).map(|cause| cause_pyerr(py, cause)),
+        std::error::Error::source(source).map(|cause| cause_pyerr(py, cause)),
     );
     error
 }
-pub(crate) fn source_conformer_id(py: Python<'_>, id: isize) -> PyResult<Option<usize>> {
-    if id == -1 {
-        return Ok(None);
+pyo3::create_exception!(cosmolkit, MmffOptimizationError, PyValueError);
+pub(crate) fn optimization_pyerr(py: Python<'_>, source: &ck::MmffOptimizationError) -> PyErr {
+    let error = MmffOptimizationError::new_err(source.to_string());
+    if let Err(attribute_error) = error
+        .value(py)
+        .setattr("domain", "mmff_optimization")
+        .and_then(|()| error.value(py).setattr("kind", "MmffOptimization"))
+    {
+        return attribute_error;
     }
-    if id >= 0 {
-        return Ok(Some(id as usize));
-    }
-    let error = PyValueError::new_err(format!("invalid MMFF conformer id {id}"));
-    error.value(py).setattr("domain", "mmff_optimization")?;
-    error.value(py).setattr("kind", "InvalidConformerId")?;
-    error.value(py).setattr("conf_id", id)?;
-    Err(error)
+    error.set_cause(
+        py,
+        std::error::Error::source(source).map(|cause| cause_pyerr(py, cause)),
+    );
+    error
+}
+fn source_conformer_id(id: i32) -> Option<usize> {
+    // RDKit✔️✔️:   if (id < 0) {
+    // RDKit✔️✔️:     return *(d_confs.front());
+    // RDKit✔️✔️:   }
+    // ROMol.cpp, pinned 351f8f378f8ad6bbd517980c38896e66bf907af8.
+    // All signed source selectors below zero designate the first conformer;
+    // None is the canonical Rust selection. Constant-time scalar conversion.
+    if id < 0 { None } else { Some(id as usize) }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", skip_from_py_object)]
@@ -64,9 +82,10 @@ impl MmffOptimizationParams {
         mmff_variant: &str,
         max_iterations: i32,
         non_bonded_threshold: f64,
-        conformer_id: Option<usize>,
+        conformer_id: Option<i32>,
         ignore_interfragment_interactions: bool,
     ) -> Self {
+        let conformer_id = conformer_id.and_then(source_conformer_id);
         Self {
             inner: ck::MmffOptimizationParams {
                 mmff_variant: mmff_variant.into(),
@@ -351,8 +370,12 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<MmffEvaluationParams>()?;
     module.add_class::<MmffEnergyGradient>()?;
     module.add(
-        "MmffPropertiesError",
-        module.py().get_type::<MmffPropertiesError>(),
+        "MmffMolPropertiesError",
+        module.py().get_type::<MmffMolPropertiesError>(),
+    )?;
+    module.add(
+        "MmffOptimizationError",
+        module.py().get_type::<MmffOptimizationError>(),
     )?;
     module.add_class::<MmffOptimizationParams>()?;
     module.add_class::<MmffConformerOptimizationParams>()?;
@@ -407,9 +430,10 @@ impl MmffEvaluationParams {
     fn new(
         mmff_variant: &str,
         non_bonded_threshold: f64,
-        conformer_id: Option<usize>,
+        conformer_id: Option<i32>,
         ignore_interfragment_interactions: bool,
     ) -> Self {
+        let conformer_id = conformer_id.and_then(source_conformer_id);
         Self {
             inner: ck::MmffEvaluationParams {
                 mmff_variant: mmff_variant.into(),
