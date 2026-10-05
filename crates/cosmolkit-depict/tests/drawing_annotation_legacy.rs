@@ -94,7 +94,7 @@ fn coordinate_identity(coordinates: &CoordinateBlock) -> Vec<(usize, Vec<[u64; 2
 #[test]
 fn drawing_annotation_legacy_product() {
     let reference_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../testdata/depiction/expected/legacy_0_3_0/annotations");
+        .join("../../testdata/depiction/expected/source_351f8f3/annotations");
     // Only reads the already frozen source bytes. Missing references are fatal.
     let references: Vec<_> = CASES
         .iter()

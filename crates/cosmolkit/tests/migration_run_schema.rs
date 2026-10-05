@@ -18,6 +18,13 @@ fn entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
         .unwrap_or_else(|| panic!("missing binding contract entry {semantic_id}"))
 }
 
+fn canonical_svg_identity_status() -> FunctionStatus {
+    FunctionStatus::ParityWithDifferences {
+        reference: "RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8 MolDraw2DSVG",
+        explanation: "ROOT-SVG-CANONICAL-METADATA-20261005: public SVG declares ck=https://kit.cosmol.org/ instead of the pinned source renderer identity; all other drawing bytes retain their source comparison.",
+    }
+}
+
 #[cfg(cosmolkit_uff_param_api_probe)]
 mod uff_param_api_compile_probe {
     #[cfg(cosmolkit_uff_param_api_case = "query_available")]
@@ -331,11 +338,21 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "types.Coordinate2DError",
             "types.Coordinate2DTemplateError",
             "types.Coordinate2DLayoutError",
+        ]);
+    }
+    expected.push("Molecule.has_2d_coordinates");
+    if cfg!(feature = "cap-depict") {
+        expected.extend([
             "Molecule.with_2d_coordinates",
             "Molecule.with_2d_coordinates_with_params",
             "types.DrawingError",
             "Molecule.to_svg",
             "Molecule.to_png",
+            "Molecule.compute_2d_coordinates_",
+            "Molecule.compute_2d_coordinates_with_params_",
+            "types.DrawingWriteError",
+            "Molecule.write_svg",
+            "Molecule.write_png",
         ]);
     }
     if cfg!(feature = "cap-transforms") {
@@ -1247,7 +1264,14 @@ fn drawing_entries_have_exact_experimental_shared_query_contracts() {
         assert_eq!(row.python_name, name);
         assert_eq!(row.javascript_name, javascript);
         assert_eq!(row.feature, "cap-depict");
-        assert_eq!(row.status, FunctionStatus::Experimental);
+        assert_eq!(
+            row.status,
+            if name == "to_svg" {
+                canonical_svg_identity_status()
+            } else {
+                FunctionStatus::Experimental
+            }
+        );
         let callable = row.callable.unwrap();
         assert_eq!(callable.kind, BindingKind::Instance);
         assert_eq!(callable.receiver, Some(cosmolkit::BindingReceiver::Shared));
@@ -1545,6 +1569,11 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
         );
         let expected = if fuzzy {
             FunctionStatus::Parity { reference: "RDKit" }
+        } else if matches!(
+            contract.semantic_id,
+            "Molecule.to_svg" | "Molecule.write_svg"
+        ) {
+            canonical_svg_identity_status()
         } else {
             FunctionStatus::Experimental
         };

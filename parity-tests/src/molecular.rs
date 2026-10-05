@@ -1083,22 +1083,153 @@ pub fn matches(expected: &Outcome, actual: &Outcome) -> bool {
     }
 }
 
-/// Only the four literal tool-identifier substitutions from the old SVG test.
+/// Preserve the four original substitutions and the approved canonical identity.
 pub fn svg_matches(expected: &Outcome, actual: &Outcome) -> bool {
     let (Outcome::Text(expected), Outcome::Text(actual)) = (expected, actual) else {
         return false;
     };
+    // ROOT-SVG-CANONICAL-METADATA-20261005: new CK handling is limited to
+    // namespace declarations and QNames bound to the exact canonical URI.
+    // Text, comments, CDATA and ordinary attribute values remain byte-exact.
+    fn canonical_identity(svg: &str) -> String {
+        let bytes = svg.as_bytes();
+        let mut replacements = Vec::new();
+        let mut scopes = vec![false];
+        let mut cursor = 0;
+        while cursor < bytes.len() {
+            if bytes[cursor] != b'<' {
+                cursor += 1;
+                continue;
+            }
+            let suffix = &svg[cursor..];
+            let opaque_end = if suffix.starts_with("<!--") {
+                Some("-->")
+            } else if suffix.starts_with("<![CDATA[") {
+                Some("]]>")
+            } else if suffix.starts_with("<?") {
+                Some("?>")
+            } else {
+                None
+            };
+            if let Some(end) = opaque_end {
+                cursor += suffix.find(end).map_or(suffix.len(), |n| n + end.len());
+                continue;
+            }
+            let closing = bytes.get(cursor + 1) == Some(&b'/');
+            let name_start = cursor + 1 + usize::from(closing);
+            if !bytes
+                .get(name_start)
+                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+            {
+                cursor += 1;
+                continue;
+            }
+            let mut end = name_start;
+            let mut quote = None;
+            while end < bytes.len() {
+                match (quote, bytes[end]) {
+                    (Some(q), b) if q == b => quote = None,
+                    (None, b'\'' | b'"') => quote = Some(bytes[end]),
+                    (None, b'>') => break,
+                    _ => {}
+                }
+                end += 1;
+            }
+            if end == bytes.len() {
+                break;
+            }
+            let name_end = (name_start..end)
+                .find(|&n| bytes[n].is_ascii_whitespace() || bytes[n] == b'/')
+                .unwrap_or(end);
+            let mut names = vec![(name_start, name_end)];
+            let mut active = *scopes.last().unwrap();
+            let mut pos = name_end;
+            while !closing && pos < end {
+                while pos < end && bytes[pos].is_ascii_whitespace() {
+                    pos += 1;
+                }
+                if pos == end || bytes[pos] == b'/' {
+                    break;
+                }
+                let attr_start = pos;
+                while pos < end
+                    && !bytes[pos].is_ascii_whitespace()
+                    && !matches!(bytes[pos], b'=' | b'/')
+                {
+                    pos += 1;
+                }
+                let attr_end = pos;
+                if attr_start == attr_end {
+                    break;
+                }
+                names.push((attr_start, attr_end));
+                while pos < end && bytes[pos].is_ascii_whitespace() {
+                    pos += 1;
+                }
+                if bytes.get(pos) != Some(&b'=') {
+                    break;
+                }
+                pos += 1;
+                while pos < end && bytes[pos].is_ascii_whitespace() {
+                    pos += 1;
+                }
+                let Some(&delimiter @ (b'\'' | b'"')) = bytes.get(pos) else {
+                    break;
+                };
+                pos += 1;
+                while pos < end && bytes[pos] != delimiter {
+                    pos += 1;
+                }
+                if pos < end {
+                    pos += 1;
+                }
+                if &svg[attr_start..attr_end] == "xmlns:ck" {
+                    active = &svg[attr_start..pos] == "xmlns:ck='https://kit.cosmol.org/'";
+                    if active {
+                        replacements.push((attr_start, pos, "xmlns:tool='__tool_namespace__'"));
+                    }
+                }
+            }
+            if active {
+                for (start, stop) in names {
+                    if svg[start..stop].starts_with("ck:") {
+                        replacements.push((start, start + 3, "tool:"));
+                    }
+                }
+            }
+            if closing {
+                if scopes.len() > 1 {
+                    scopes.pop();
+                }
+            } else if bytes[end - 1] != b'/' {
+                scopes.push(active);
+            }
+            cursor = end + 1;
+        }
+        replacements.sort_unstable_by_key(|&(start, _, _)| start);
+        let mut result = String::with_capacity(svg.len());
+        let mut copied = 0;
+        for (start, end, replacement) in replacements {
+            result.push_str(&svg[copied..start]);
+            result.push_str(replacement);
+            copied = end;
+        }
+        result.push_str(&svg[copied..]);
+        result
+    }
     fn normalize(svg: &str) -> String {
-        svg.replace(
-            "xmlns:rdkit='http://www.rdkit.org/xml'",
-            "xmlns:tool='__tool_namespace__'",
-        )
-        .replace(
-            "xmlns:cosmolkit='https://www.cosmol.org'",
-            "xmlns:tool='__tool_namespace__'",
-        )
-        .replace("rdkit:", "tool:")
-        .replace("cosmolkit:", "tool:")
+        let original = svg
+            .replace(
+                "xmlns:rdkit='http://www.rdkit.org/xml'",
+                "xmlns:tool='__tool_namespace__'",
+            )
+            .replace(
+                "xmlns:cosmolkit='https://www.cosmol.org'",
+                "xmlns:tool='__tool_namespace__'",
+            )
+            .replace("rdkit:", "tool:")
+            .replace("cosmolkit:", "tool:");
+        canonical_identity(&original)
     }
     normalize(expected) == normalize(actual)
 }

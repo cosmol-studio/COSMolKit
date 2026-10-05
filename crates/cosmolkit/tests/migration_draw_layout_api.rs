@@ -457,10 +457,25 @@ fn binding_registry_operation_contract_and_feature_isolation() {
             "types.DrawingError",
             "Molecule.to_svg",
             "Molecule.to_png",
+            "Molecule.compute_2d_coordinates_",
+            "Molecule.compute_2d_coordinates_with_params_",
+            "types.DrawingWriteError",
+            "Molecule.write_svg",
+            "Molecule.write_png",
         ]
     );
     for row in &rows {
-        assert_eq!(row.status, FunctionStatus::Experimental);
+        if matches!(row.semantic_id, "Molecule.to_svg" | "Molecule.write_svg") {
+            assert_eq!(
+                row.status,
+                FunctionStatus::ParityWithDifferences {
+                    reference: "RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8 MolDraw2DSVG",
+                    explanation: "ROOT-SVG-CANONICAL-METADATA-20261005: public SVG declares ck=https://kit.cosmol.org/ instead of the pinned source renderer identity; all other drawing bytes retain their source comparison.",
+                }
+            );
+        } else {
+            assert_eq!(row.status, FunctionStatus::Experimental);
+        }
     }
     for row in &rows[..4] {
         assert_eq!(row.item, BindingItem::Type);
@@ -479,13 +494,32 @@ fn binding_registry_operation_contract_and_feature_isolation() {
     assert_eq!(rows[6].item, BindingItem::Type);
     assert_eq!(rows[6].owner, BindingOwner::Type);
     assert_eq!(rows[6].callable, None);
-    for row in &rows[7..] {
+    for row in &rows[7..9] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
         let callable = row.callable.unwrap();
         assert_eq!(callable.state_model, StateModel::ReadOnly);
         assert_eq!(callable.operation_semantic_id, None);
         assert_eq!(callable.parameters.len(), 2);
+    }
+    for (row, params) in rows[9..11].iter().zip([0, 1]) {
+        assert_eq!(row.item, BindingItem::Callable);
+        assert_eq!(row.owner, BindingOwner::Molecule);
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.state_model, StateModel::InPlace);
+        assert_eq!(callable.parameters.len(), params);
+        assert_eq!(callable.operation_semantic_id, Some(row.python_name));
+    }
+    assert_eq!(rows[11].item, BindingItem::Type);
+    assert_eq!(rows[11].owner, BindingOwner::Type);
+    assert_eq!(rows[11].callable, None);
+    for row in &rows[12..14] {
+        assert_eq!(row.item, BindingItem::Callable);
+        assert_eq!(row.owner, BindingOwner::Molecule);
+        let callable = row.callable.unwrap();
+        assert_eq!(callable.state_model, StateModel::ReadOnly);
+        assert_eq!(callable.operation_semantic_id, None);
+        assert_eq!(callable.parameters.len(), 3);
     }
 
     let feature = feature_spec("cap-depict").unwrap();

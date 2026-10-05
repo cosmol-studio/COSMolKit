@@ -955,6 +955,23 @@ pub fn render_svg(
     input: DrawingInput<'_>,
     options: &DepictOptions,
 ) -> Result<String, DrawingError> {
+    render_svg_with_identity(input, options, draw::SvgIdentity::PinnedSource)
+}
+
+/// Render the public COSMolKit SVG product with its declared website namespace.
+/// Scene preparation, geometry and glyph emission use the same detached owner.
+pub fn render_cosmolkit_svg(
+    input: DrawingInput<'_>,
+    options: &DepictOptions,
+) -> Result<String, DrawingError> {
+    render_svg_with_identity(input, options, draw::SvgIdentity::Cosmolkit)
+}
+
+fn render_svg_with_identity(
+    input: DrawingInput<'_>,
+    options: &DepictOptions,
+    identity: draw::SvgIdentity,
+) -> Result<String, DrawingError> {
     if options.width == 0 || options.height == 0 {
         return Err(DrawingError::InvalidDimensions {
             width: options.width,
@@ -962,7 +979,12 @@ pub fn render_svg(
         });
     }
     let prepared = draw_prepare::prepare(input)?;
-    draw::render_prepared_svg(&prepared.borrow(), options.width, options.height)
+    draw::render_prepared_svg_with_identity(
+        &prepared.borrow(),
+        options.width,
+        options.height,
+        identity,
+    )
 }
 
 pub fn render_png(

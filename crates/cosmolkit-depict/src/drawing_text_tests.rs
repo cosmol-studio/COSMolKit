@@ -176,6 +176,7 @@ fn drawing_text_svg_glyphs_escape_once_at_output() {
             DVec2::new(30.0, 40.0),
             DrawColour::new(0.0, 0.0, 1.0),
             20.0,
+            1.0,
         );
         let mut svg = String::new();
         draw_annotation_svg(&mut svg, &annotation, 20.0);
@@ -235,7 +236,11 @@ fn drawing_text_fixed_prepared_note_product_preserves_input() {
         ("C<sub>2</sub>", "C2", 2),
         ("<sup>1<sub>2</sup>3", "123", 3),
         ("A<lit>B</lit>", "A&lt;lit&gt;B&lt;/lit&gt;", 13),
-        ("<lit>&lt;</lit>discard", "&amp;lt;", 4),
+        (
+            "<lit>&lt;</lit>discard",
+            "&lt;lit&gt;&amp;lt;&lt;/lit&gt;discard",
+            22,
+        ),
         ("<sup", "&lt;sup", 4),
         ("<foo>C</foo>", "&lt;foo&gt;C&lt;/foo&gt;", 12),
     ] {
@@ -354,4 +359,183 @@ fn drawing_text_property_and_svg_errors_keep_typed_causes() {
     let error = crate::raster::svg_to_png("<svg><text>&unknown;</text></svg>").unwrap_err();
     assert!(matches!(error, DrawingError::SvgParse(_)));
     assert!(error.source().is_some());
+}
+
+// DRAW03 proposal only; pinned source 351f8f378f8ad6bbd517980c38896e66bf907af8.
+// Positive-width printable ASCII with source-defined script reference state.
+#[test]
+fn drawing_text_annotation_unsplit_declared_alignment_geometry() {
+    // DrawAnnotation.cpp:71-81; DrawTextNotFT.cpp:27-85;
+    // DrawTextSVG.cpp:74-142 and StringRect.h:62-79.
+    // AB at effective size 16: both widths .6*16=9.6, height .8*16=12.8,
+    // running x step 9.6*1.15=11.04. Normal bounds span 20.64.
+    // Proposed tolerance is new-case-only and awaits p1/ROOT approval.
+    for (align, expected_x) in [
+        (TextAlignType::Start, [0.0, 11.04]),
+        (TextAlignType::Middle, [-10.32, 0.72]),
+        (TextAlignType::End, [-11.04, 0.0]),
+    ] {
+        let annotation = DrawAnnotation::new(
+            "AB".into(),
+            align,
+            "note".into(),
+            0.8,
+            DVec2::new(30.0, 40.0),
+            DrawColour::new(0.0, 0.0, 1.0),
+            20.0,
+            1.0,
+        );
+        assert_eq!(annotation.rects.len(), 2);
+        assert_eq!(
+            annotation.rects.iter().map(|r| r.ch).collect::<String>(),
+            "AB"
+        );
+        for (rect, x) in annotation.rects.iter().zip(expected_x) {
+            for (actual, expected) in [
+                (rect.trans.x, x),
+                (rect.trans.y, 0.0),
+                (rect.offset.x, 4.8),
+                (rect.offset.y, 8.0),
+                (rect.width, 9.6),
+                (rect.height, 12.8),
+                (rect.y_shift, 0.0),
+                (rect.rect_corr, 0.0),
+            ] {
+                assert!(
+                    (actual - expected).abs() <= 1.0e-12,
+                    "alignment={align:?}: {actual:?} != {expected:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn drawing_text_annotation_source_svg_all_alignments() {
+    // DrawText.cpp:555-570 computes each baseline; DrawTextSVG.cpp:49-70
+    // serializes source class/style/font truncation and formatDouble %.1f.
+    for (align, expected) in [
+        (
+            TextAlignType::Start,
+            concat!(
+                "<text x='25.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >A</text>\n",
+                "<text x='36.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >B</text>\n"
+            ),
+        ),
+        (
+            TextAlignType::Middle,
+            concat!(
+                "<text x='14.9' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >A</text>\n",
+                "<text x='25.9' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >B</text>\n"
+            ),
+        ),
+        (
+            TextAlignType::End,
+            concat!(
+                "<text x='14.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >A</text>\n",
+                "<text x='25.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >B</text>\n"
+            ),
+        ),
+    ] {
+        let annotation = DrawAnnotation::new(
+            "AB".into(),
+            align,
+            "note".into(),
+            0.8,
+            DVec2::new(30.0, 40.0),
+            DrawColour::new(0.0, 0.0, 1.0),
+            20.0,
+            1.0,
+        );
+        let mut svg = String::new();
+        draw_annotation_svg(&mut svg, &annotation, 20.0);
+        assert_eq!(svg, expected);
+    }
+}
+
+#[test]
+fn drawing_text_annotation_source_draw_uses_final_alignment_and_script_baselines() {
+    // DrawAnnotation::draw uses the FINAL align_ in drawString, not a stale
+    // cached extraction alignment. Source extractBrackets mutates align_ after new.
+    let mut shifted = DrawAnnotation::new(
+        "AB".into(),
+        TextAlignType::End,
+        "note".into(),
+        0.8,
+        DVec2::new(30.0, 40.0),
+        DrawColour::new(0.0, 0.0, 1.0),
+        20.0,
+        1.0,
+    );
+    shifted.align = TextAlignType::Start;
+    let mut shifted_svg = String::new();
+    draw_annotation_svg(&mut shifted_svg, &shifted, 20.0);
+    assert_eq!(
+        shifted_svg,
+        concat!(
+            "<text x='25.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >A</text>\n",
+            "<text x='36.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >B</text>\n",
+        )
+    );
+    // DrawText.cpp:392-436 shifts scripts using C height=12.8; :555-570
+    // then emits baselines normal 48.0, sub 54.4, sup 41.6. Scripts share x.
+    let mut annotation = DrawAnnotation::new(
+        "C<sub>2</sub><sup>+</sup>".into(),
+        TextAlignType::End,
+        "note".into(),
+        0.8,
+        DVec2::new(30.0, 40.0),
+        DrawColour::new(0.0, 0.0, 1.0),
+        20.0,
+        1.0,
+    );
+    annotation.align = TextAlignType::Start;
+    let mut svg = String::new();
+    draw_annotation_svg(&mut svg, &annotation, 20.0);
+    assert_eq!(
+        svg,
+        concat!(
+            "<text x='25.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >C</text>\n",
+            "<text x='36.2' y='54.4' class='note' style='font-size:10px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >2</text>\n",
+            "<text x='36.2' y='41.6' class='note' style='font-size:10px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >+</text>\n",
+        )
+    );
+}
+
+#[test]
+fn drawing_text_annotation_source_literal_wrappers_are_not_split() {
+    // DrawAnnotation.cpp:79-80 dontSplit=true. DrawText.cpp:501-505 bypasses
+    // atomLabelToPieces, preserves wrappers. XML escaping only at SVG emission.
+    for align in [
+        TextAlignType::Start,
+        TextAlignType::Middle,
+        TextAlignType::End,
+    ] {
+        for (input, serialized, count) in [
+            ("AB", "AB", 2),
+            (
+                "<lit>&lt;</lit>discard",
+                "&lt;lit&gt;&amp;lt;&lt;/lit&gt;discard",
+                22,
+            ),
+            ("<lit>CH3", "&lt;lit&gt;CH3", 8),
+            ("A<lit>B</lit>", "A&lt;lit&gt;B&lt;/lit&gt;", 13),
+            ("C<sub>2</sub><sup>+</sup>", "C2+", 3),
+        ] {
+            let annotation = DrawAnnotation::new(
+                input.into(),
+                align,
+                "note".into(),
+                0.8,
+                DVec2::new(30.0, 40.0),
+                DrawColour::new(0.0, 0.0, 1.0),
+                20.0,
+                1.0,
+            );
+            assert_eq!(annotation.rects.len(), count);
+            let mut svg = String::new();
+            draw_annotation_svg(&mut svg, &annotation, 20.0);
+            assert_eq!(text_contents(&svg), (serialized.into(), count));
+        }
+    }
 }

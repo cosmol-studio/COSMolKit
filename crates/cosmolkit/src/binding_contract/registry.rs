@@ -3078,6 +3078,13 @@ binding_contract! {
             feature: "cap-depict", status: experimental,
             role: error,
         },
+        {
+            semantic_id: "Molecule.has_2d_coordinates", item: callable, owner: molecule,
+            rust: crate::Molecule::has_2d_coordinates, python: "has_2d_coordinates", javascript: "has2dCoordinates",
+            feature: "runtime", status: experimental, kind: instance,
+            parameters: [], output: bool, error: none, state: read_only, operation: none,
+            signature: fn(&crate::Molecule) -> bool,
+        },
         #[cfg(feature = "cap-depict")]
         {
             semantic_id: "Molecule.with_2d_coordinates",
@@ -3127,7 +3134,11 @@ binding_contract! {
         {
             semantic_id: "Molecule.to_svg", item: callable, owner: molecule,
             rust: crate::Molecule::to_svg, python: "to_svg", javascript: "toSvg",
-            feature: "cap-depict", status: experimental, kind: instance,
+            feature: "cap-depict",
+            status: parity_with_differences(
+                "RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8 MolDraw2DSVG",
+                "ROOT-SVG-CANONICAL-METADATA-20261005: public SVG declares ck=https://kit.cosmol.org/ instead of the pinned source renderer identity; all other drawing bytes retain their source comparison."
+            ), kind: instance,
             parameters: [
                 { name: width, type: u32, default: required },
                 { name: height, type: u32, default: required },
@@ -3148,6 +3159,60 @@ binding_contract! {
             output: Vec<u8>, error: crate::DrawingError,
             state: read_only, operation: none,
             signature: fn(&crate::Molecule, u32, u32) -> Result<Vec<u8>, crate::DrawingError>,
+        },
+        #[cfg(feature = "cap-depict")]
+        {
+            semantic_id: "Molecule.compute_2d_coordinates_", item: callable, owner: molecule,
+            rust: crate::Molecule::compute_2d_coordinates_, python: "compute_2d_coordinates_", javascript: "compute2dCoordinates",
+            feature: "cap-depict", kind: instance,
+            parameters: [], output: (), error: crate::OperationError,
+            state: in_place, operation: "compute_2d_coordinates_",
+            signature: fn(&mut crate::Molecule) -> Result<(), crate::OperationError>,
+        },
+        #[cfg(feature = "cap-depict")]
+        {
+            semantic_id: "Molecule.compute_2d_coordinates_with_params_", item: callable, owner: molecule,
+            rust: crate::Molecule::compute_2d_coordinates_with_params_, python: "compute_2d_coordinates_with_params_", javascript: "compute2dCoordinatesWithParams",
+            feature: "cap-depict", kind: instance,
+            parameters: [{ name: params, type: &crate::Coordinate2DParams, default: required }], output: (), error: crate::OperationError,
+            state: in_place, operation: "compute_2d_coordinates_with_params_",
+            signature: for<'a, 'b> fn(&'a mut crate::Molecule, &'b crate::Coordinate2DParams) -> Result<(), crate::OperationError>,
+        },
+        #[cfg(feature = "cap-depict")]
+        {
+            semantic_id: "types.DrawingWriteError", item: type, owner: type_,
+            rust: crate::DrawingWriteError, python: "DrawingWriteError", javascript: "DrawingWriteError",
+            feature: "cap-depict", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-depict")]
+        {
+            semantic_id: "Molecule.write_svg", item: callable, owner: molecule,
+            rust: crate::Molecule::write_svg, python: "write_svg", javascript: "writeSvg",
+            feature: "cap-depict",
+            status: parity_with_differences(
+                "RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8 MolDraw2DSVG",
+                "ROOT-SVG-CANONICAL-METADATA-20261005: public SVG declares ck=https://kit.cosmol.org/ instead of the pinned source renderer identity; all other drawing bytes retain their source comparison."
+            ), kind: instance,
+            parameters: [
+                { name: path, type: &std::path::Path, default: required },
+                { name: width, type: u32, default: required },
+                { name: height, type: u32, default: required },
+            ],
+            output: (), error: crate::DrawingWriteError, state: read_only, operation: none,
+            signature: fn(&crate::Molecule, &std::path::Path, u32, u32) -> Result<(), crate::DrawingWriteError>,
+        },
+        #[cfg(feature = "cap-depict")]
+        {
+            semantic_id: "Molecule.write_png", item: callable, owner: molecule,
+            rust: crate::Molecule::write_png, python: "write_png", javascript: "writePng",
+            feature: "cap-depict", status: experimental, kind: instance,
+            parameters: [
+                { name: path, type: &std::path::Path, default: required },
+                { name: width, type: u32, default: required },
+                { name: height, type: u32, default: required },
+            ],
+            output: (), error: crate::DrawingWriteError, state: read_only, operation: none,
+            signature: fn(&crate::Molecule, &std::path::Path, u32, u32) -> Result<(), crate::DrawingWriteError>,
         },
         // CORE-transforms public projection delegates to the single detached
         // owner through the generated coordinate-operation runtime.

@@ -11,6 +11,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_py
 pyo3::create_exception!(cosmolkit, DrawingError, PyValueError);
 
 pyo3::create_exception!(cosmolkit, OperationError, PyValueError);
+pyo3::create_exception!(cosmolkit, DrawingWriteError, pyo3::exceptions::PyOSError);
 
 // Transport actual source messages only; Python cannot retain Rust downcast identity.
 fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
@@ -145,15 +146,25 @@ fn expand_user_path(path: &str) -> PyResult<std::path::PathBuf> {
     }
 }
 
-fn write_drawing_file(path: &str, bytes: &[u8]) -> PyResult<()> {
-    let expanded = expand_user_path(path)?;
-    std::fs::write(&expanded, bytes).map_err(|error| {
-        pyo3::exceptions::PyOSError::new_err((
-            error.raw_os_error(),
-            error.to_string(),
-            expanded.to_string_lossy().into_owned(),
-        ))
-    })
+fn drawing_write_pyerr(py: Python<'_>, source: ck::DrawingWriteError) -> PyErr {
+    match source {
+        ck::DrawingWriteError::Drawing(error) => drawing_pyerr(py, error),
+        ck::DrawingWriteError::Io { path, source } => {
+            let error = DrawingWriteError::new_err((
+                source.raw_os_error(),
+                source.to_string(),
+                path.to_string_lossy().into_owned(),
+            ));
+            if let Err(attribute_error) = error
+                .value(py)
+                .setattr("domain", "drawing")
+                .and_then(|()| error.value(py).setattr("kind", "Io"))
+            {
+                return attribute_error;
+            }
+            error
+        }
+    }
 }
 
 /// Immutable detached parameters projected from the public facade.
@@ -805,6 +816,26 @@ impl Molecule {
         self.inner.coordinates_2d().map(<[_]>::to_vec)
     }
 
+    fn has_2d_coordinates(&self) -> bool {
+        self.inner.has_2d_coordinates()
+    }
+
+    fn compute_2d_coordinates_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .compute_2d_coordinates_()
+            .map_err(|error| operation_pyerr(py, error))
+    }
+
+    fn compute_2d_coordinates_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &Coordinate2DParams,
+    ) -> PyResult<()> {
+        self.inner
+            .compute_2d_coordinates_with_params_(&params.inner)
+            .map_err(|error| operation_pyerr(py, error))
+    }
+
     fn with_2d_coordinates(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .with_2d_coordinates()
@@ -858,14 +889,18 @@ impl Molecule {
 
     #[pyo3(signature = (path, width, height))]
     fn write_svg(&self, py: Python<'_>, path: &str, width: u32, height: u32) -> PyResult<()> {
-        let svg = self.to_svg(py, width, height)?;
-        write_drawing_file(path, svg.as_bytes())
+        let path = expand_user_path(path)?;
+        self.inner
+            .write_svg(&path, width, height)
+            .map_err(|error| drawing_write_pyerr(py, error))
     }
 
     #[pyo3(signature = (path, width, height))]
     fn write_png(&self, py: Python<'_>, path: &str, width: u32, height: u32) -> PyResult<()> {
-        let png = self.to_png(py, width, height)?;
-        write_drawing_file(path, png.as_bytes())
+        let path = expand_user_path(path)?;
+        self.inner
+            .write_png(&path, width, height)
+            .map_err(|error| drawing_write_pyerr(py, error))
     }
     fn crippen_descriptors(&self, py: Python<'_>) -> PyResult<CrippenTotals> {
         let result = self
@@ -1277,6 +1312,10 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
         },
     )?;
     module.add("DrawingError", module.py().get_type::<DrawingError>())?;
+    module.add(
+        "DrawingWriteError",
+        module.py().get_type::<DrawingWriteError>(),
+    )?;
     module.add("OperationError", module.py().get_type::<OperationError>())?;
     module.add_class::<Molecule>()?;
     module.add_class::<RotatableBondsOptions>()?;

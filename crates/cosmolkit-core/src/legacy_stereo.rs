@@ -843,6 +843,7 @@ fn assign_legacy_stereochemistry_impl(
                 is_legal_legacy_center(&topology, valence, rings, AtomId::new(index))?;
         }
     }
+    let mut has_unassigned_double_bond = false;
     let mut has_stereo_bonds = false;
     let mut has_potential_stereo_bonds = false;
     // RDKit✔️✔️: bool hasStereoBonds = false;
@@ -927,6 +928,8 @@ fn assign_legacy_stereochemistry_impl(
         // RDKit✔️✔️:   }
         // RDKit✔️✔️: }
         let current = &topology.bonds[bond_index];
+        has_unassigned_double_bond |=
+            current.order() == BondOrder::Double && current.stereo() == BondStereo::None;
         if !has_stereo_bonds && current.order() == BondOrder::Double {
             let is_specified = [current.begin(), current.end()]
                 .into_iter()
@@ -993,14 +996,37 @@ fn assign_legacy_stereochemistry_impl(
             changed_stereo_atoms = false;
         }
         let changed_stereo_bonds;
+        // BEGIN RDKIT CPP FUNCTION assignBondStereoCodes lazy-rank boundary
+        // RDKit✔️✔️:   for (auto dblBond : mol.bonds()) {
+        // RDKit✔️✔️:     if (dblBond->getBondType() == Bond::BondType::DOUBLE) {
+        // RDKit✔️✔️:       if (dblBond->getStereo() != Bond::BondStereo::STEREONONE) {
+        // RDKit✔️✔️:         continue;
+        // RDKit✔️✔️:       }
+        // RDKit✔️✔️:       if (!ranks.size()) {
+        // RDKit✔️✔️:         assignAtomCIPRanks(mol, ranks);
+        // RDKit✔️✔️:       }
+        // END RDKIT CPP FUNCTION assignBondStereoCodes lazy-rank boundary
+        // The existing inventory records whether any double bond reaches
+        // this source branch. With no ranks and all double bonds already
+        // assigned, the source bond pass changes no state and returns false,
+        // false. Preserve the absent rank properties used by depiction.
+        // Reuse the inventory boolean; no additional graph traversal or rank
+        // allocation occurs on this branch. The existing owner handles every
+        // branch requiring ranks, with unchanged validation and effects.
         if has_stereo_bonds || has_potential_stereo_bonds {
-            if ranks.is_empty() {
-                ranks = materialize_initial_ranks(&mut topology, valence, query_state)?;
+            if ranks.is_empty() && !has_unassigned_double_bond {
+                has_stereo_bonds = false;
+                changed_stereo_bonds = false;
+            } else {
+                if ranks.is_empty() {
+                    ranks = materialize_initial_ranks(&mut topology, valence, query_state)?;
+                }
+                let bond_assignment =
+                    assign_directional_double_bond_stereo(topology, &ranks, rings)?;
+                has_stereo_bonds = bond_assignment.has_unassigned;
+                changed_stereo_bonds = bond_assignment.assigned_any;
+                topology = bond_assignment.topology;
             }
-            let bond_assignment = assign_directional_double_bond_stereo(topology, &ranks, rings)?;
-            has_stereo_bonds = bond_assignment.has_unassigned;
-            changed_stereo_bonds = bond_assignment.assigned_any;
-            topology = bond_assignment.topology;
         } else {
             changed_stereo_bonds = false;
         }
@@ -1129,6 +1155,49 @@ mod legacy_ring_prepass_tests {
             .collect();
         TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
             .expect("two source-aligned six-membered cycles")
+    }
+
+    #[test]
+    fn legacy_depiction_already_assigned_bonds_do_not_materialize_ranks() {
+        let atoms = (0..4)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let mut bonds = (0..3)
+            .map(|i| {
+                let order = if i == 1 {
+                    BondOrder::Double
+                } else {
+                    BondOrder::Single
+                };
+                let mut bond = Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(i), AtomId::new(i + 1), order),
+                );
+                if i != 1 {
+                    bond.set_direction(BondDirection::EndUpRight);
+                }
+                bond
+            })
+            .collect::<Vec<_>>();
+        bonds[1].set_stereo_atoms(Some([AtomId::new(0), AtomId::new(3)]));
+        bonds[1].set_stereo(BondStereo::E).unwrap();
+        let topology = TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new()).unwrap();
+        let rings =
+            crate::symmetrized_sssr(&topology, &crate::RingSearchParams::default()).unwrap();
+        let valence = crate::assign_valence_with_options_for_topology(
+            &topology,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let result =
+            assign_legacy_stereochemistry_for_depiction(topology.clone(), &valence, &rings)
+                .unwrap();
+        // Pinned assignBondStereoCodes continues past already assigned double
+        // bonds before its lazy assignAtomCIPRanks call. No new rank property
+        // may influence subsequent depiction ordering on this source branch.
+        assert!(result.atoms.iter().all(|a| a.prop("_CIPRank").is_none()));
+        assert_eq!(result, topology);
     }
 
     fn assign_with_rings(topology: &TopologyBlock, rings: &RingInfo) -> TopologyBlock {

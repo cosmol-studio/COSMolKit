@@ -631,6 +631,9 @@ molecule_ops! {
         invariant_profile: "coordinate_2d_layout",
         default_method: with_2d_coordinates,
         default_args: [&crate::Coordinate2DParams::default()],
+        inplace: true,
+        inplace_method: compute_2d_coordinates_with_params_,
+        default_inplace_method: compute_2d_coordinates_,
     }
 
     #[cfg(test)]

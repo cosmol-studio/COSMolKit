@@ -44,11 +44,11 @@ struct DrawOptions {
     background_colour: DrawColour,
     query_colour: DrawColour,
     flag_close_contacts_dist: i32,
-    /// Font scale for annotations (RDKit default 0.8)
+    /// Font scale for annotations (pinned RDKit default 0.5)
     annotation_font_scale: f64,
-    /// Colour for atom notes and atom CIP codes (RDKit default blue)
+    /// Colour for atom notes and atom CIP codes (pinned RDKit default black)
     atom_note_colour: DrawColour,
-    /// Colour for bond notes and bond CIP codes (RDKit default red)
+    /// Colour for bond notes and bond CIP codes (pinned RDKit default RGB 0.5, 0.5, 1.0)
     bond_note_colour: DrawColour,
     /// Colour for general annotations (RDKit default black)
     annotation_colour: DrawColour,
@@ -74,6 +74,17 @@ struct DrawOptions {
 
 impl Default for DrawOptions {
     fn default() -> Self {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: MolDraw2DHelpers.h:210-211,237-240
+        // RDKit❗✔️:   double annotationFontScale = 0.5;  // scales font relative to atom labels for
+        // RDKit❗✔️:                                      // atom and bond annotation.
+        // RDKit❗✔️:   DrawColour atomNoteColour{
+        // RDKit❗✔️:       0.0, 0.0, 0.0, 1.0};  // color to be used for atom indices and notes
+        // RDKit❗✔️:   DrawColour bondNoteColour{
+        // RDKit❗✔️:       0.5, 0.5, 1.0, 1.0};      // color to be used for bond indices and notes
+        // SOURCE-ONLY PROPOSAL: default fields are source-defined constants;
+        // independent conditions and full caller/native parity still need p1/ROOT review.
+        // Complexity: the same fixed number of scalar stores; no allocation,
+        // lookup, clone, ownership change or runtime capability is introduced.
         Self {
             padding: 0.05,
             multiple_bond_offset: 0.15,
@@ -84,9 +95,9 @@ impl Default for DrawOptions {
             background_colour: DrawColour::new(1.0, 1.0, 1.0),
             query_colour: DrawColour::new(0.0, 0.0, 0.0),
             flag_close_contacts_dist: 3,
-            annotation_font_scale: 0.8,
-            atom_note_colour: DrawColour::new(0.0, 0.0, 1.0),
-            bond_note_colour: DrawColour::new(1.0, 0.0, 0.0),
+            annotation_font_scale: 0.5,
+            atom_note_colour: DrawColour::new(0.0, 0.0, 0.0),
+            bond_note_colour: DrawColour::new(0.5, 0.5, 1.0),
             annotation_colour: DrawColour::new(0.0, 0.0, 0.0),
             dummies_are_attachments: false,
             variable_attachment_colour: DrawColour::new(0.5, 0.5, 0.5),
@@ -494,6 +505,7 @@ struct DrawAnnotation {
     align: TextAlignType,
     class_: String,
     font_scale: f64,
+    base_font_size: f64,
     pos: DVec2,
     colour: DrawColour,
     rects: Vec<StringRect>,
@@ -505,21 +517,143 @@ impl DrawAnnotation {
         text: String,
         align: TextAlignType,
         class_: String,
-        font_scale: f64,
+        rel_font_scale: f64,
         pos: DVec2,
         colour: DrawColour,
         font_size: f64,
+        text_font_scale: f64,
     ) -> Self {
-        let rects = get_string_rects(&text, OrientType::C, font_size * font_scale);
-        Self {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawAnnotation.cpp:21
+        // RDKit❗✔️: DrawAnnotation::DrawAnnotation(const std::string &note,
+        // RDKit❗✔️:                                const TextAlignType &align,
+        // RDKit❗✔️:                                const std::string &cls, double relFontScale,
+        // RDKit❗✔️:                                const Point2D &pos, const DrawColour &colour,
+        // RDKit❗✔️:                                DrawText &textDrawer)
+        // RDKit❗✔️:     : text_(note),
+        // RDKit❗✔️:       align_(align),
+        // RDKit❗✔️:       class_(cls),
+        // RDKit❗✔️:       textDrawer_(textDrawer),
+        // RDKit❗✔️:       pos_(pos),
+        // RDKit❗✔️:       colour_(colour) {
+        // RDKit❗✔️:   fontScale_ = relFontScale * textDrawer_.fontScale();
+        // RDKit❗✔️:   extractRects();
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawAnnotation.cpp
+        // RDKit❗✔️: DrawAnnotation::DrawAnnotation(const std::string &note,
+        // RDKit❗✔️:                                const TextAlignType &align,
+        // RDKit❗✔️:                                const std::string &cls, double relFontScale,
+        // RDKit❗✔️:                                const Point2D &pos, const DrawColour &colour,
+        // RDKit❗✔️:                                DrawText &textDrawer)
+        // RDKit❗✔️:     : text_(note),
+        // RDKit❗✔️:       align_(align),
+        // RDKit❗✔️:       class_(cls),
+        // RDKit❗✔️:       textDrawer_(textDrawer),
+        // RDKit❗✔️:       pos_(pos),
+        // RDKit❗✔️:       colour_(colour) {
+        // RDKit❗✔️:   fontScale_ = relFontScale * textDrawer_.fontScale();
+        // RDKit❗✔️:   extractRects();
+        // RDKit❗✔️: }
+        // PROPOSAL: store source absolute annotation scale at construction. The
+        // source multiplication order is relFontScale * currentDrawerScale; limits are
+        // applied while extracting annotation rectangles.
+        // Behavior outside finite printable ASCII with valid normal-character
+        // script references remains unresolved; existing safe guards stay.
+        // Complexity: one linear glyph extraction/alignment, as in the source.
+        let mut annotation = Self {
             text,
             align,
             class_,
-            font_scale,
+            font_scale: rel_font_scale * text_font_scale,
+            base_font_size: font_size,
             pos,
             colour,
-            rects,
-        }
+            rects: Vec::new(),
+        };
+        annotation.recalculate_rects(font_size);
+        annotation
+    }
+
+    fn recalculate_rects(&mut self, base_font_size: f64) {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawAnnotation.cpp:70
+        // RDKit❗✔️: void DrawAnnotation::extractRects() {
+        // RDKit❗✔️:   // We don't need these for notes, which are always on 1 line and plain
+        // RDKit❗✔️:   // text.
+        // RDKit❗✔️:   std::vector<TextDrawType> drawModes;
+        // RDKit❗✔️:   std::vector<char> drawChars;
+        // RDKit❗✔️:   double ofs = textDrawer_.fontScale();
+        // RDKit❗✔️:   textDrawer_.setFontScale(fontScale_, true);
+        // RDKit❗✔️:   fontScale_ = textDrawer_.fontScale();
+        // RDKit❗✔️:   textDrawer_.getStringRects(text_, OrientType::C, rects_, drawModes, drawChars,
+        // RDKit❗✔️:                              true, align_);
+        // RDKit❗✔️:   textDrawer_.setFontScale(ofs, true);
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawAnnotation.cpp
+        // RDKit❗✔️: void DrawAnnotation::extractRects() {
+        // RDKit❗✔️:   // We don't need these for notes, which are always on 1 line and plain
+        // RDKit❗✔️:   // text.
+        // RDKit❗✔️:   std::vector<TextDrawType> drawModes;
+        // RDKit❗✔️:   std::vector<char> drawChars;
+        // RDKit❗✔️:   double ofs = textDrawer_.fontScale();
+        // RDKit❗✔️:   textDrawer_.setFontScale(fontScale_, true);
+        // RDKit❗✔️:   fontScale_ = textDrawer_.fontScale();
+        // RDKit❗✔️:   textDrawer_.getStringRects(text_, OrientType::C, rects_, drawModes, drawChars,
+        // RDKit❗✔️:                              true, align_);
+        // RDKit❗✔️:   textDrawer_.setFontScale(ofs, true);
+        // RDKit❗✔️: }
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawText.cpp
+        // RDKit❗✔️: bool DrawText::setFontScale(double new_scale, bool ignoreLimits) {
+        // RDKit❗✔️:   font_scale_ = new_scale;
+        // RDKit❗✔️:   if (ignoreLimits) {
+        // RDKit❗✔️:     return true;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   font_scale_ = new_scale;
+        // RDKit❗✔️:   double nfs = fontSize();
+        // RDKit❗✔️:   if (max_font_size_ > 0.0 &&
+        // RDKit❗✔️:       nfs * (baseFontSize() / DEFAULT_FONT_SCALE) > max_font_size_) {
+        // RDKit❗✔️:     font_scale_ = max_font_size_ / baseFontSize();
+        // RDKit❗✔️:     return false;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   if (min_font_size_ > 0.0 &&
+        // RDKit❗✔️:       nfs * (baseFontSize() / DEFAULT_FONT_SCALE) < min_font_size_) {
+        // RDKit❗✔️:     font_scale_ = min_font_size_ / baseFontSize();
+        // RDKit❗✔️:     return false;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return true;
+        // RDKit❗✔️: }
+        // Explicit effective font arithmetic models ignoreLimits=true without
+        // introducing shared drawer state. Replacing the vector clears cached
+        // glyphs before re-extraction. Keep the existing empty/script guards.
+        // Complexity: linear glyph extraction/alignment and one replacement
+        // vector; old cached rects are not cloned or geometrically rescaled.
+        self.base_font_size = base_font_size;
+        self.rects = annotation_string_rects(
+            &self.text,
+            self.align,
+            self.font_scale * self.base_font_size,
+        );
+    }
+
+    fn scale(&mut self, scale_factor: DVec2) {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawAnnotation.cpp:124
+        // RDKit❗✔️: void DrawAnnotation::scale(const Point2D &scaleFactor) {
+        // RDKit❗✔️:   pos_.x *= scaleFactor.x;
+        // RDKit❗✔️:   pos_.y *= scaleFactor.y;
+        // RDKit❗✔️:   // arbitrarily choose x scale for fonts.  It is highly unlikely that the
+        // RDKit❗✔️:   // x and y are different, in any case.
+        // RDKit❗✔️:   fontScale_ *= scaleFactor.x;
+        // RDKit❗✔️:   // rebuild the rectangles, because the fontScale may be different,
+        // RDKit❗✔️:   // and the widths etc might not scale by the same amount.
+        // RDKit❗✔️:   rects_.clear();
+        // RDKit❗✔️:   extractRects();
+        // RDKit❗✔️: }
+
+        self.pos.x *= scale_factor.x;
+        self.pos.y *= scale_factor.y;
+        self.font_scale *= scale_factor.x;
+        self.rects.clear();
+        self.recalculate_rects(self.base_font_size);
     }
 
     fn find_extremes(&self, xmin: &mut f64, xmax: &mut f64, ymin: &mut f64, ymax: &mut f64) {
@@ -1250,6 +1384,78 @@ fn get_string_rects_unsplit(text: &str, act_font_size: f64) -> Vec<StringRect> {
     rects
 }
 
+fn annotation_string_rects(text: &str, align: TextAlignType, font_size: f64) -> Vec<StringRect> {
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawText.cpp
+    // RDKit❗✔️: void DrawText::getStringRects(const std::string &text, OrientType orient,
+    // RDKit❗✔️:                               std::vector<std::shared_ptr<StringRect>> &rects,
+    // RDKit❗✔️:                               std::vector<TextDrawType> &draw_modes,
+    // RDKit❗✔️:                               std::vector<char> &draw_chars, bool dontSplit,
+    // RDKit❗✔️:                               TextAlignType textAlign) const {
+    // RDKit❗✔️:   PRECONDITION(!text.empty(), "empty string");
+    // RDKit❗✔️:   std::vector<std::string> text_bits;
+    // RDKit❗✔️:   if (!dontSplit) {
+    // RDKit❗✔️:     text_bits = atomLabelToPieces(text, orient);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     text_bits.push_back(text);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   TextAlignType ta =
+    // RDKit❗✔️:       orient == OrientType::C ? textAlign : TextAlignType::MIDDLE;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (orient == OrientType::W) {
+    // RDKit❗✔️:     // stick the pieces together again backwards and draw as one so there
+    // RDKit❗✔️:     // aren't ugly splits in the string.
+    // RDKit❗✔️:     std::string new_lab;
+    // RDKit❗✔️:     for (auto i = text_bits.rbegin(); i != text_bits.rend(); ++i) {
+    // RDKit❗✔️:       new_lab += *i;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     getStringRects(new_lab, rects, draw_modes, draw_chars);
+    // RDKit❗✔️:     alignString(TextAlignType::END, draw_modes, rects);
+    // RDKit❗✔️:   } else if (orient == OrientType::E) {
+    // RDKit❗✔️:     // likewise, but forwards
+    // RDKit❗✔️:     std::string new_lab;
+    // RDKit❗✔️:     for (const auto &lab : text_bits) {
+    // RDKit❗✔️:       new_lab += lab;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     getStringRects(new_lab, rects, draw_modes, draw_chars);
+    // RDKit❗✔️:     alignString(TextAlignType::START, draw_modes, rects);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     double running_y = 0;
+    // RDKit❗✔️:     for (const auto &tb : text_bits) {
+    // RDKit❗✔️:       std::vector<std::shared_ptr<StringRect>> t_rects;
+    // RDKit❗✔️:       std::vector<TextDrawType> t_draw_modes;
+    // RDKit❗✔️:       std::vector<char> t_draw_chars;
+    // RDKit❗✔️:       getStringRects(tb, t_rects, t_draw_modes, t_draw_chars);
+    // RDKit❗✔️:       alignString(ta, t_draw_modes, t_rects);
+    // RDKit❗✔️:       double max_height = std::numeric_limits<double>::lowest();
+    // RDKit❗✔️:       for (auto r : t_rects) {
+    // RDKit❗✔️:         max_height = std::max(r->height_, max_height);
+    // RDKit❗✔️:         r->y_shift_ = running_y;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       rects.insert(rects.end(), t_rects.begin(), t_rects.end());
+    // RDKit❗✔️:       draw_modes.insert(draw_modes.end(), t_draw_modes.begin(),
+    // RDKit❗✔️:                         t_draw_modes.end());
+    // RDKit❗✔️:       draw_chars.insert(draw_chars.end(), t_draw_chars.begin(),
+    // RDKit❗✔️:                         t_draw_chars.end());
+    // RDKit❗✔️:       if (orient == OrientType::N) {
+    // RDKit❗✔️:         running_y -= 1.1 * max_height;
+    // RDKit❗✔️:       } else if (orient == OrientType::S) {
+    // RDKit❗✔️:         running_y += 1.1 * max_height;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // This private projection has Orient C and dontSplit=true: one unsplit
+    // piece, the requested alignment and zero y_shift. Empty/direct script
+    // preconditions remain the existing safe behavior, with unresolved parity.
+    // Complexity: reuse the sole glyph metrics engine, then O(n) mode collection
+    // and alignment; source retains the corresponding modes alongside rects.
+    let mut rects = get_string_rects_unsplit(text, font_size);
+    let modes: Vec<TextDrawType> = rects.iter().map(|rect| rect.draw_mode).collect();
+    align_string(align, &modes, &mut rects);
+    rects
+}
+
 fn align_string(align: TextAlignType, draw_modes: &[TextDrawType], rects: &mut [StringRect]) {
     if rects.is_empty() {
         return;
@@ -1534,9 +1740,29 @@ fn do_labels_clash(label1: &AtomLabel, label2: &AtomLabel) -> bool {
 // Rust implementation uses the same approach: checks rect-line intersection
 // by testing each of the 4 rect edges against the line segment.
 fn rect_clashes_with_line(rect: &StringRect, begin: DVec2, end: DVec2, padding: f64) -> bool {
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/MolDraw2DDetails.cpp:150
+    // RDKit❗✔️: bool doesLineIntersect(const StringRect &rect, const Point2D &end1,
+    // RDKit❗✔️:                        const Point2D &end2, double padding) {
+    // RDKit❗✔️:   Point2D tl, tr, bl, br;
+    // RDKit❗✔️:   rect.calcCorners(tl, tr, br, bl, padding);
+    // RDKit❗✔️:   if (doLinesIntersect(end2, end1, tl, tr, nullptr)) {
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (doLinesIntersect(end2, end1, tr, br, nullptr)) {
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (doLinesIntersect(end2, end1, br, bl, nullptr)) {
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (doLinesIntersect(end2, end1, bl, tl, nullptr)) {
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return false;
+    // RDKit❗✔️: }
+
     let (tl, tr, br, bl) = rect.calc_corners(padding);
     for (e1, e2) in [(tl, tr), (tr, br), (br, bl), (bl, tl)] {
-        if line_intersection(begin, end, e1, e2).is_some() {
+        if line_intersection(end, begin, e1, e2).is_some() {
             return true;
         }
     }
@@ -2042,6 +2268,7 @@ struct DrawMol {
     font_scale: f64,
     options: DrawOptions,
     annotations: Vec<DrawAnnotation>,
+    legends: Vec<DrawAnnotation>,
 }
 
 // ──────────────────────────────────────────────
@@ -2188,6 +2415,85 @@ impl DrawMol {
         height: u32,
         options: DrawOptions,
     ) -> Result<Self, DrawingError> {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:125
+        // RDKit❗✔️: void DrawMol::createDrawObjects() {
+        // RDKit❗✔️:   textDrawer_.setFontScale(fontScale_, true);
+        // RDKit❗✔️:   partitionForLegend();
+        // RDKit❗✔️:   extractAll(scale_);
+        // RDKit❗✔️:   calculateScale();
+        // RDKit❗✔️:
+        // RDKit❗✔️:   bool ignoreFontLimits = drawOptions_.fixedFontSize != -1;
+        // RDKit❗✔️:   if (!textDrawer_.setFontScale(fontScale_, ignoreFontLimits) ||
+        // RDKit❗✔️:       ignoreFontLimits) {
+        // RDKit❗✔️:     // in either of these cases, the relative font size isn't what we were
+        // RDKit❗✔️:     // expecting, so we need to rebuild everything.
+        // RDKit❗✔️:
+        // RDKit❗✔️:     // furthermore, if it's a fully flexible canvas and the font scale is
+        // RDKit❗✔️:     // greater than the global scale, if there are characters at the edge
+        // RDKit❗✔️:     // of the image, the canvas won't be big enough (Github6111). Rebuild
+        // RDKit❗✔️:     // with an appropriate relative font size.
+        // RDKit❗✔️:     if (flexiCanvasX_ && flexiCanvasY_ && (fontScale_ - scale_) > 1e-4) {
+        // RDKit❗✔️:       width_ = -1;
+        // RDKit❗✔️:       height_ = -1;
+        // RDKit❗✔️:       auto currScale = textDrawer_.fontScale();
+        // RDKit❗✔️:       auto relScale = fontScale_ / scale_;
+        // RDKit❗✔️:       resetEverything();
+        // RDKit❗✔️:       fontScale_ = relScale;
+        // RDKit❗✔️:       textDrawer_.setFontScale(relScale, true);
+        // RDKit❗✔️:       extractAll(scale_);
+        // RDKit❗✔️:       calculateScale();
+        // RDKit❗✔️:       textDrawer_.setFontScale(currScale, true);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     setScale(scale_, textDrawer_.fontScale(), ignoreFontLimits);
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     finishCreateDrawObjects();
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:2939
+        // RDKit❗✔️: void DrawMol::setScale(double newScale, double newFontScale,
+        // RDKit❗✔️:                        bool ignoreFontLimits) {
+        // RDKit❗✔️:   resetEverything();
+        // RDKit❗✔️:   fontScale_ = newFontScale / newScale;
+        // RDKit❗✔️:   textDrawer_.setFontScale(fontScale_, true);
+        // RDKit❗✔️:
+        // RDKit❗✔️:   extractAll(newScale);
+        // RDKit❗✔️:   findExtremes();
+        // RDKit❗✔️:
+        // RDKit❗✔️:   textDrawer_.setFontScale(newFontScale, ignoreFontLimits);
+        // RDKit❗✔️:   scale_ = newScale;
+        // RDKit❗✔️:   fontScale_ = textDrawer_.fontScale();
+        // RDKit❗✔️:   finishCreateDrawObjects();
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:160
+        // RDKit❗✔️: void DrawMol::finishCreateDrawObjects() {
+        // RDKit❗✔️:   // the legend and mol notes need the final scale to get the fonts the
+        // RDKit❗✔️:   // correct size.
+        // RDKit❗✔️:   extractLegend();
+        // RDKit❗✔️:   changeToDrawCoords();
+        // RDKit❗✔️:   // these need the draw coords.
+        // RDKit❗✔️:   extractMolNotes();
+        // RDKit❗✔️:   extractCloseContacts();
+        // RDKit❗✔️:   drawingInitialised_ = true;
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:1783
+        // RDKit❗✔️: void DrawMol::partitionForLegend() {
+        // RDKit❗✔️:   if (legend_.empty()) {
+        // RDKit❗✔️:     molHeight_ = drawHeight_;
+        // RDKit❗✔️:     legendHeight_ = 0;
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     if (!flexiCanvasY_) {
+        // RDKit❗✔️:       legendHeight_ = int(drawOptions_.legendFraction * float(drawHeight_));
+        // RDKit❗✔️:       molHeight_ = drawHeight_ - legendHeight_;
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       molHeight_ = drawHeight_;
+        // RDKit❗✔️:       // the legendHeight_ isn't needed for the flexiCanvas
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
         let at_cds: Vec<DVec2> = mol
             .layout
             .coordinates()
@@ -2242,6 +2548,7 @@ impl DrawMol {
             font_scale: 1.0,
             options,
             annotations: Vec::new(),
+            legends: Vec::new(),
         };
 
         let rebuild_draw_objects =
@@ -2269,6 +2576,7 @@ impl DrawMol {
                 draw.bond_draw_order.clear();
                 draw.mean_bond_length = 0.0;
                 draw.annotations.clear();
+                draw.legends.clear();
 
                 draw.extract_atom_symbols(mol);
                 draw.extract_variable_bonds(mol)?;
@@ -4449,10 +4757,74 @@ impl DrawMol {
     /// Extract CIP R/S codes from atom/bond properties and add as annotations.
     /// COSMolKit❗❌: stereo groups (STEREO_OR/STEREO_AND) masking not yet supported.
     fn extract_cip_codes(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
+        // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
+        // RDKit❗✔️: void DrawMol::extractCIPCodes(bool showAllCIPCodes) {
+        // RDKit❗✔️:   boost::dynamic_bitset<> maskedAtoms(drawMol_->getNumAtoms());
+        // RDKit❗✔️:   boost::dynamic_bitset<> maskedBonds(drawMol_->getNumBonds());
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (!showAllCIPCodes) {  // record atoms and bonds whose codes should be
+        // RDKit❗✔️:                            // hidden
+        // RDKit❗✔️:     for (const StereoGroup &group : drawMol_->getStereoGroups()) {
+        // RDKit❗✔️:       StereoGroupType stereoGroupType;
+        // RDKit❗✔️:
+        // RDKit❗✔️:       stereoGroupType = group.getGroupType();
+        // RDKit❗✔️:       if (stereoGroupType == RDKit::StereoGroupType::STEREO_OR ||
+        // RDKit❗✔️:           stereoGroupType == RDKit::StereoGroupType::STEREO_AND) {
+        // RDKit❗✔️:         for (const auto atom : group.getAtoms()) {
+        // RDKit❗✔️:           maskedAtoms.set(atom->getIdx());
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         for (const auto bond : group.getBonds()) {
+        // RDKit❗✔️:           maskedBonds.set(bond->getIdx());
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (auto atom : drawMol_->atoms()) {
+        // RDKit❗✔️:     std::string cip;
+        // RDKit❗✔️:     if (!maskedAtoms[atom->getIdx()] &&
+        // RDKit❗✔️:         atom->getPropIfPresent(common_properties::_CIPCode, cip)) {
+        // RDKit❗✔️:       cip = "(" + cip + ")";
+        // RDKit❗✔️:       DrawAnnotation *annot = new DrawAnnotation(
+        // RDKit❗✔️:           cip, TextAlignType::MIDDLE, "CIP_Code",
+        // RDKit❗✔️:           drawOptions_.annotationFontScale, Point2D(0.0, 0.0),
+        // RDKit❗✔️:           drawOptions_.atomNoteColour, textDrawer_);
+        // RDKit❗✔️:       calcAnnotationPosition(atom, *annot);
+        // RDKit❗✔️:       annotations_.emplace_back(annot);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (auto bond : drawMol_->bonds()) {
+        // RDKit❗✔️:     std::string cip;
+        // RDKit❗✔️:     // Add E or Z CIP codes if missing to be compatible with previous
+        // RDKit❗✔️:     // implemtnation. In future, user should be responsible for calling
+        // RDKit❗✔️:     // AssignCIPLabels() before drawing to harmonize behavior with
+        // RDKit❗✔️:     // how R,S,M,P CIP codes are handled
+        // RDKit❗✔️:     if (!maskedBonds[bond->getIdx()]) {
+        // RDKit❗✔️:       if (!bond->getPropIfPresent(common_properties::_CIPCode, cip)) {
+        // RDKit❗✔️:         if (bond->getStereo() == Bond::STEREOE) {
+        // RDKit❗✔️:           cip = "E";
+        // RDKit❗✔️:         } else if (bond->getStereo() == Bond::STEREOZ) {
+        // RDKit❗✔️:           cip = "Z";
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (!cip.empty()) {
+        // RDKit❗✔️:         cip = "(" + cip + ")";
+        // RDKit❗✔️:         DrawAnnotation *annot = new DrawAnnotation(
+        // RDKit❗✔️:             cip, TextAlignType::MIDDLE, "CIP_Code",
+        // RDKit❗✔️:             drawOptions_.annotationFontScale, Point2D(0.0, 0.0),
+        // RDKit❗✔️:             drawOptions_.bondNoteColour, textDrawer_);
+        // RDKit❗✔️:         calcAnnotationPosition(bond, *annot);
+        // RDKit❗✔️:         annotations_.emplace_back(annot);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
         // Skip stereo-group masking — COSMolKit does not model StereoGroup yet.
-        let annotation_font_scale = 0.8; // RDKit default annotationFontScale
-        let atom_note_colour = DrawColour::new(0.0, 0.0, 1.0); // RDKit default blue
-        let bond_note_colour = DrawColour::new(1.0, 0.0, 0.0); // RDKit default red
+        let annotation_font_scale = self.options.annotation_font_scale;
+        let atom_note_colour = self.options.atom_note_colour;
+        let bond_note_colour = self.options.bond_note_colour;
         let font_size = self.font_size * self.font_scale;
 
         // Atom CIP codes (R/S)
@@ -4471,7 +4843,8 @@ impl DrawMol {
                     annotation_font_scale,
                     DVec2::ZERO,
                     atom_note_colour,
-                    font_size,
+                    self.font_size,
+                    self.font_scale,
                 );
                 self.calc_annotation_position_for_atom(mol, idx, &mut annot);
                 self.annotations.push(annot);
@@ -4510,7 +4883,8 @@ impl DrawMol {
                     annotation_font_scale,
                     DVec2::ZERO,
                     bond_note_colour,
-                    font_size,
+                    self.font_size,
+                    self.font_scale,
                 );
                 self.calc_annotation_position_for_bond(mol, bond, &mut annot);
                 self.annotations.push(annot);
@@ -4537,6 +4911,23 @@ impl DrawMol {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractAtomNotes
     fn extract_atom_notes(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
+        // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
+        // RDKit❗✔️: void DrawMol::extractAtomNotes() {
+        // RDKit❗✔️:   for (const auto atom : drawMol_->atoms()) {
+        // RDKit❗✔️:     std::string note;
+        // RDKit❗✔️:     if (atom->getPropIfPresent(common_properties::atomNote, note)) {
+        // RDKit❗✔️:       if (!note.empty()) {
+        // RDKit❗✔️:         DrawAnnotation *annot = new DrawAnnotation(
+        // RDKit❗✔️:             note, TextAlignType::MIDDLE, "note",
+        // RDKit❗✔️:             drawOptions_.annotationFontScale, Point2D(0.0, 0.0),
+        // RDKit❗✔️:             drawOptions_.atomNoteColour, textDrawer_);
+        // RDKit❗✔️:         calcAnnotationPosition(atom, *annot);
+        // RDKit❗✔️:         annotations_.emplace_back(annot);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
         let font_size = self.font_size * self.font_scale;
         for atom in &mol.topology.atoms {
             if let Some(note) = atom
@@ -4552,7 +4943,8 @@ impl DrawMol {
                         self.options.annotation_font_scale,
                         DVec2::ZERO,
                         self.options.atom_note_colour,
-                        font_size,
+                        self.font_size,
+                        self.font_scale,
                     );
                     self.calc_annotation_position_for_atom(mol, atom.id().index(), &mut annot);
                     self.annotations.push(annot);
@@ -4580,6 +4972,23 @@ impl DrawMol {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractBondNotes
     fn extract_bond_notes(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
+        // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
+        // RDKit❗✔️: void DrawMol::extractBondNotes() {
+        // RDKit❗✔️:   for (const auto bond : drawMol_->bonds()) {
+        // RDKit❗✔️:     std::string note;
+        // RDKit❗✔️:     if (bond->getPropIfPresent(common_properties::bondNote, note)) {
+        // RDKit❗✔️:       if (!note.empty()) {
+        // RDKit❗✔️:         DrawAnnotation *annot = new DrawAnnotation(
+        // RDKit❗✔️:             note, TextAlignType::MIDDLE, "note",
+        // RDKit❗✔️:             drawOptions_.annotationFontScale, Point2D(0.0, 0.0),
+        // RDKit❗✔️:             drawOptions_.bondNoteColour, textDrawer_);
+        // RDKit❗✔️:         calcAnnotationPosition(bond, *annot);
+        // RDKit❗✔️:         annotations_.emplace_back(annot);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
         let font_size = self.font_size * self.font_scale;
         for bond in &mol.topology.bonds {
             if let Some(note) = bond
@@ -4595,7 +5004,8 @@ impl DrawMol {
                         self.options.annotation_font_scale,
                         DVec2::ZERO,
                         self.options.bond_note_colour,
-                        font_size,
+                        self.font_size,
+                        self.font_scale,
                     );
                     self.calc_annotation_position_for_bond(mol, bond, &mut annot);
                     self.annotations.push(annot);
@@ -4633,72 +5043,132 @@ impl DrawMol {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractMolNotes
     fn extract_mol_notes(&mut self, mol: &PreparedDrawingInput<'_>) {
-        if !self.options.include_annotations {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:397
+        // RDKit❗✔️: void DrawMol::extractMolNotes() {
+        // RDKit❗✔️:   std::string note;
+        // RDKit❗✔️:   // the molNote property takes priority
+        // RDKit❗✔️:   if (!drawMol_->getPropIfPresent(common_properties::molNote, note)) {
+        // RDKit❗✔️:     unsigned int chiralFlag;
+        // RDKit❗✔️:     if (drawOptions_.includeChiralFlagLabel &&
+        // RDKit❗✔️:         drawMol_->getPropIfPresent(common_properties::_MolFileChiralFlag,
+        // RDKit❗✔️:                                    chiralFlag) &&
+        // RDKit❗✔️:         chiralFlag) {
+        // RDKit❗✔️:       note = "ABS";
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (!note.empty()) {
+        // RDKit❗✔️:     // molecule annotations use a full-size font, hence the 1 below.
+        // RDKit❗✔️:     DrawAnnotation tmp(note, TextAlignType::START, "note", 1, Point2D(0.0, 0.0),
+        // RDKit❗✔️:                        drawOptions_.annotationColour, textDrawer_);
+        // RDKit❗✔️:     double height, width;
+        // RDKit❗✔️:     tmp.getDimensions(width, height);
+        // RDKit❗✔️:     // Try all 4 corners until there's no clash with the underlying molecule.
+        // RDKit❗✔️:     // Even though alignment is START, the DrawAnnotation puts the middle
+        // RDKit❗✔️:     // of the first char at the location, so that needs to be adjusted for.
+        // RDKit❗✔️:     std::vector<Point2D> locs = {
+        // RDKit❗✔️:         {width_ - width, height},
+        // RDKit❗✔️:         {0.0 + tmp.rects_[0]->width_ / 2.0, height},
+        // RDKit❗✔️:         {0.0 + tmp.rects_[0]->width_ / 2.0, double(drawHeight_ - height)},
+        // RDKit❗✔️:         {width_ - width, double(drawHeight_ - height)},
+        // RDKit❗✔️:     };
+        // RDKit❗✔️:     bool didIt = false;
+        // RDKit❗✔️:     for (int i = 0; i < 3; ++i) {
+        // RDKit❗✔️:       locs[i].x += xOffset_;
+        // RDKit❗✔️:       locs[i].y += yOffset_;
+        // RDKit❗✔️:       auto annot = std::make_unique<DrawAnnotation>(
+        // RDKit❗✔️:           note, TextAlignType::START, "note", 1.0, locs[i],
+        // RDKit❗✔️:           drawOptions_.annotationColour, textDrawer_);
+        // RDKit❗✔️:       // Put it into the legends_, because it's already in draw coords, so
+        // RDKit❗✔️:       // shouldn't be treated by changeToDrawCoords.
+        // RDKit❗✔️:       if (!doesNoteClash(*annot)) {
+        // RDKit❗✔️:         legends_.push_back(std::move(annot));
+        // RDKit❗✔️:         didIt = true;
+        // RDKit❗✔️:         break;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (!didIt) {
+        // RDKit❗✔️:       // There was nowhere to put it that didn't clash, so live with it.
+        // RDKit❗✔️:       legends_.emplace_back(
+        // RDKit❗✔️:           new DrawAnnotation(note, TextAlignType::START, "note", 1.0, locs[0],
+        // RDKit❗✔️:                              drawOptions_.annotationColour, textDrawer_));
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawAnnotation.cpp:60
+        // RDKit❗✔️: void DrawAnnotation::getDimensions(double &width, double &height) const {
+        // RDKit❗✔️:   double xMin, yMin, xMax, yMax;
+        // RDKit❗✔️:   xMin = yMin = std::numeric_limits<double>::max();
+        // RDKit❗✔️:   xMax = yMax = std::numeric_limits<double>::lowest();
+        // RDKit❗✔️:   findExtremes(xMin, xMax, yMin, yMax);
+        // RDKit❗✔️:   width = xMax - xMin;
+        // RDKit❗✔️:   height = yMax - yMin;
+        // RDKit❗✔️: }
+
+        // includeChiralFlagLabel defaults false; _MolFileChiralFlag typed/enabled path
+        // requires a separate model/condition HOLD decision before any expansion.
+        let Some(note) = mol.properties.prop("molNote") else {
+            return;
+        };
+        if note.is_empty() {
             return;
         }
-        if let Some(note) = mol.properties.prop("molNote") {
-            if note.is_empty() {
+        let tmp = DrawAnnotation::new(
+            note.to_owned(),
+            TextAlignType::Start,
+            "note".to_owned(),
+            1.0,
+            DVec2::ZERO,
+            self.options.annotation_colour,
+            self.font_size,
+            self.font_scale,
+        );
+        // Preserve existing safe empty-rectangle control; source tag-only input is undefined.
+        let Some(first) = tmp.rects.first() else {
+            return;
+        };
+        let mut xmin = f64::MAX;
+        let mut xmax = f64::MIN;
+        let mut ymin = f64::MAX;
+        let mut ymax = f64::MIN;
+        tmp.find_extremes(&mut xmin, &mut xmax, &mut ymin, &mut ymax);
+        let width = xmax - xmin;
+        let height = ymax - ymin;
+        let locs = [
+            DVec2::new(self.width - width, height),
+            DVec2::new(first.width / 2.0, height),
+            DVec2::new(first.width / 2.0, self.draw_height - height),
+            DVec2::new(self.width - width, self.draw_height - height),
+        ];
+        // The current fixed single-panel interface has source x/y offsets zero.
+        // Source tries only the first three despite the four-corner comment.
+        for pos in &locs[..3] {
+            let annot = DrawAnnotation::new(
+                note.to_owned(),
+                TextAlignType::Start,
+                "note".to_owned(),
+                1.0,
+                *pos,
+                self.options.annotation_colour,
+                self.font_size,
+                self.font_scale,
+            );
+            if self.does_note_clash(&annot) == 0 {
+                self.legends.push(annot);
                 return;
             }
-            let font_size = self.font_size * self.font_scale;
-            let mut annot = DrawAnnotation::new(
-                note.to_string(),
-                TextAlignType::Start,
-                "molnote".to_string(),
-                self.options.annotation_font_scale,
-                DVec2::ZERO,
-                self.options.annotation_colour,
-                font_size,
-            );
-            // Position at top-center of drawing area
-            // Approximate text width from rects
-            let text_width: f64 = annot.rects.iter().map(|r| r.width).sum::<f64>()
-                * self.font_size
-                * self.options.annotation_font_scale;
-            annot.pos = DVec2::new(
-                (self.draw_width - text_width) / 2.0,
-                self.draw_height * (1.0 - self.margin_padding),
-            );
-            // Move down if clashing
-            for _i in 0..50 {
-                let clash = self.does_note_clash(&annot) != 0;
-                if !clash {
-                    break;
-                }
-                annot.pos.y -= 5.0;
-            }
-            self.annotations.push(annot);
         }
-        // Also check for atomNote on molecule level (some formats store it there)
-        if let Some(note) = mol.properties.prop("atomNote") {
-            if !note.is_empty() {
-                let mut annot = DrawAnnotation::new(
-                    note.to_string(),
-                    TextAlignType::Start,
-                    "molnote".to_string(),
-                    self.options.annotation_font_scale,
-                    DVec2::ZERO,
-                    self.options.annotation_colour,
-                    self.font_size * self.font_scale,
-                );
-                let text_width: f64 = annot.rects.iter().map(|r| r.width).sum::<f64>()
-                    * self.font_size
-                    * self.font_scale
-                    * self.options.annotation_font_scale;
-                annot.pos = DVec2::new(
-                    (self.draw_width - text_width) / 2.0,
-                    self.draw_height * (1.0 - self.margin_padding * 3.0),
-                );
-                for _i in 0..50 {
-                    let clash = self.does_note_clash(&annot) != 0;
-                    if !clash {
-                        break;
-                    }
-                    annot.pos.y -= 5.0;
-                }
-                self.annotations.push(annot);
-            }
-        }
+        self.legends.push(DrawAnnotation::new(
+            note.to_owned(),
+            TextAlignType::Start,
+            "note".to_owned(),
+            1.0,
+            locs[0],
+            self.options.annotation_colour,
+            self.font_size,
+            self.font_scale,
+        ));
     }
 
     // BEGIN RDKIT CPP FUNCTION DrawMol::extractStereoGroups (DrawMol.cpp:531-568)
@@ -5054,6 +5524,103 @@ impl DrawMol {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractSGroupData
     fn extract_sgroup_data(&mut self, mol: &PreparedDrawingInput<'_>) {
+        // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
+        // RDKit❗✔️: void DrawMol::extractSGroupData() {
+        // RDKit❗✔️:   if (!includeAnnotations_) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   const auto &sgs = getSubstanceGroups(*drawMol_);
+        // RDKit❗✔️:   if (sgs.empty()) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // details of this transformation are in extractAtomCoords
+        // RDKit❗✔️:   double rot = drawOptions_.rotate * M_PI / 180.0;
+        // RDKit❗✔️:   RDGeom::Transform2D tform;
+        // RDKit❗✔️:   tform.SetTransform(Point2D(0.0, 0.0), rot);
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (const auto &sg : sgs) {
+        // RDKit❗✔️:     std::string typ;
+        // RDKit❗✔️:     if (sg.getPropIfPresent("TYPE", typ) && typ == "DAT") {
+        // RDKit❗✔️:       std::string text;
+        // RDKit❗✔️:       // it seems like we should be rendering FIELDNAME, but
+        // RDKit❗✔️:       // Marvin Sketch, Biovia Draw, and ChemDraw don't do it
+        // RDKit❗✔️:       // if (sg.getPropIfPresent("FIELDNAME", text)) {
+        // RDKit❗✔️:       //   text += "=";
+        // RDKit❗✔️:       // };
+        // RDKit❗✔️:       if (sg.hasProp("DATAFIELDS")) {
+        // RDKit❗✔️:         STR_VECT dfs = sg.getProp<STR_VECT>("DATAFIELDS");
+        // RDKit❗✔️:         for (const auto &df : dfs) {
+        // RDKit❗✔️:           text += df + "|";
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         text.pop_back();
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (text.empty()) {
+        // RDKit❗✔️:         continue;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       int atomIdx = -1;
+        // RDKit❗✔️:       if (!sg.getAtoms().empty()) {
+        // RDKit❗✔️:         atomIdx = sg.getAtoms()[0];
+        // RDKit❗✔️:       };
+        // RDKit❗✔️:       bool located = false;
+        // RDKit❗✔️:       std::string fieldDisp;
+        // RDKit❗✔️:       Point2D origLoc(0.0, 0.0);
+        // RDKit❗✔️:       if (sg.getPropIfPresent("FIELDDISP", fieldDisp)) {
+        // RDKit❗✔️:         double xp = FileParserUtils::stripSpacesAndCast<double>(
+        // RDKit❗✔️:             fieldDisp.substr(0, 10));
+        // RDKit❗✔️:         double yp = FileParserUtils::stripSpacesAndCast<double>(
+        // RDKit❗✔️:             fieldDisp.substr(10, 10));
+        // RDKit❗✔️:         // we always invert y for the molecule coords
+        // RDKit❗✔️:         origLoc = Point2D{xp, -yp};
+        // RDKit❗✔️:
+        // RDKit❗✔️:         if (fieldDisp[25] == 'R') {
+        // RDKit❗✔️:           if (atomIdx < 0) {
+        // RDKit❗✔️:             // we will warn about this below
+        // RDKit❗✔️:             text = "";
+        // RDKit❗✔️:           } else if (fabs(xp) > 1e-3 || fabs(yp) > 1e-3) {
+        // RDKit❗✔️:             // opposite sign for y
+        // RDKit❗✔️:             origLoc.x += drawMol_->getConformer().getAtomPos(atomIdx).x;
+        // RDKit❗✔️:             origLoc.y -= drawMol_->getConformer().getAtomPos(atomIdx).y;
+        // RDKit❗✔️:             located = true;
+        // RDKit❗✔️:           }
+        // RDKit❗✔️:         } else {
+        // RDKit❗✔️:           if (drawMol_->hasProp("_centroidx")) {
+        // RDKit❗✔️:             Point2D centroid;
+        // RDKit❗✔️:             drawMol_->getProp("_centroidx", centroid.x);
+        // RDKit❗✔️:             drawMol_->getProp("_centroidy", centroid.y);
+        // RDKit❗✔️:             // opposite sign for y
+        // RDKit❗✔️:             origLoc.x += centroid.x;
+        // RDKit❗✔️:             origLoc.y -= centroid.y;
+        // RDKit❗✔️:           }
+        // RDKit❗✔️:           located = true;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         tform.TransformPoint(origLoc);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:
+        // RDKit❗✔️:       if (!text.empty()) {
+        // RDKit❗✔️:         // looks like everybody renders these left justified
+        // RDKit❗✔️:         DrawAnnotation *annot = new DrawAnnotation(
+        // RDKit❗✔️:             text, TextAlignType::START, "note",
+        // RDKit❗✔️:             drawOptions_.annotationFontScale, Point2D(0.0, 0.0),
+        // RDKit❗✔️:             drawOptions_.annotationColour, textDrawer_);
+        // RDKit❗✔️:         if (!located) {
+        // RDKit❗✔️:           if (atomIdx >= 0 && !text.empty()) {
+        // RDKit❗✔️:             calcAnnotationPosition(drawMol_->getAtomWithIdx(atomIdx), *annot);
+        // RDKit❗✔️:           }
+        // RDKit❗✔️:         } else {
+        // RDKit❗✔️:           annot->pos_ = origLoc;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         annotations_.emplace_back(annot);
+        // RDKit❗✔️:       } else {
+        // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
+        // RDKit❗✔️:             << "FIELDDISP info not found for DAT SGroup which isn't "
+        // RDKit❗✔️:                "associated with an atom. SGroup will not be rendered."
+        // RDKit❗✔️:             << std::endl;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
         if !self.options.include_annotations {
             return;
         }
@@ -5117,7 +5684,8 @@ impl DrawMol {
                     self.options.annotation_font_scale,
                     DVec2::ZERO,
                     self.options.annotation_colour,
-                    font_size,
+                    self.font_size,
+                    self.font_scale,
                 );
                 if located {
                     annot.pos = orig_loc;
@@ -5279,6 +5847,162 @@ impl DrawMol {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractBrackets
     fn extract_brackets(&mut self, mol: &PreparedDrawingInput<'_>) {
+        // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
+        // RDKit❗✔️: void DrawMol::extractBrackets() {
+        // RDKit❗✔️:   auto &sgs = getSubstanceGroups(*drawMol_);
+        // RDKit❗✔️:   if (sgs.empty()) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   // details of this transformation are in extractAtomCoords
+        // RDKit❗✔️:   double rot = drawOptions_.rotate * M_PI / 180.0;
+        // RDKit❗✔️:   RDGeom::Transform2D trans;
+        // RDKit❗✔️:   trans.SetTransform(Point2D(0.0, 0.0), rot);
+        // RDKit❗✔️:   for (auto &sg : sgs) {
+        // RDKit❗✔️:     if (sg.getBrackets().empty()) {
+        // RDKit❗✔️:       continue;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     // figure out the location of the reference point we'll use to figure out
+        // RDKit❗✔️:     // which direction the bracket points
+        // RDKit❗✔️:     // Thanks to John Mayfield for the thoughts on the best way to do this:
+        // RDKit❗✔️:     //   http://efficientbits.blogspot.com/2015/11/bringing-molfile-sgroups-to-cdk.html
+        // RDKit❗✔️:     Point2D refPt{0., 0.};
+        // RDKit❗✔️:
+        // RDKit❗✔️:     if (!sg.getAtoms().empty()) {
+        // RDKit❗✔️:       // use the average position of the atoms in the sgroup
+        // RDKit❗✔️:       // Github5768 shows that this is a bit simplistic in some cases.  In
+        // RDKit❗✔️:       // that molecule, there is a long chain that stretches outside the
+        // RDKit❗✔️:       // bracket area that turns the last bracket the wrong way.
+        // RDKit❗✔️:       // Just pick out the SGroup atoms that are inside brackets, rather
+        // RDKit❗✔️:       // crudely.
+        // RDKit❗✔️:       double xMin = std::numeric_limits<double>::max() / 2.0;
+        // RDKit❗✔️:       double yMin = std::numeric_limits<double>::max() / 2.0;
+        // RDKit❗✔️:       double xMax = std::numeric_limits<double>::lowest() / 2.0;
+        // RDKit❗✔️:       double yMax = std::numeric_limits<double>::lowest() / 2.0;
+        // RDKit❗✔️:       for (const auto &brk : sg.getBrackets()) {
+        // RDKit❗✔️:         Point2D p1{brk[0].x, -brk[0].y};
+        // RDKit❗✔️:         Point2D p2{brk[1].x, -brk[1].y};
+        // RDKit❗✔️:         trans.TransformPoint(p1);
+        // RDKit❗✔️:         trans.TransformPoint(p2);
+        // RDKit❗✔️:         xMin = std::min({xMin, p1.x, p2.x});
+        // RDKit❗✔️:         yMin = std::min({yMin, p1.y, p2.y});
+        // RDKit❗✔️:         xMax = std::max({xMax, p1.x, p2.x});
+        // RDKit❗✔️:         yMax = std::max({yMax, p1.y, p2.y});
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:
+        // RDKit❗✔️:       int numIn = 0;
+        // RDKit❗✔️:       for (auto aidx : sg.getAtoms()) {
+        // RDKit❗✔️:         if (atCds_[aidx].x >= xMin && atCds_[aidx].x <= xMax &&
+        // RDKit❗✔️:             atCds_[aidx].y >= yMin && atCds_[aidx].y <= yMax) {
+        // RDKit❗✔️:           refPt += atCds_[aidx];
+        // RDKit❗✔️:           ++numIn;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (numIn) {
+        // RDKit❗✔️:         refPt /= numIn;
+        // RDKit❗✔️:       } else {
+        // RDKit❗✔️:         // we'll have to go with all of them, and live with the consequences
+        // RDKit❗✔️:         for (auto aidx : sg.getAtoms()) {
+        // RDKit❗✔️:           refPt += atCds_[aidx];
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         refPt /= sg.getAtoms().size();
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     std::vector<std::pair<Point2D, Point2D>> sgBondSegments;
+        // RDKit❗✔️:     for (auto bndIdx : sg.getBonds()) {
+        // RDKit❗✔️:       const auto bnd = drawMol_->getBondWithIdx(bndIdx);
+        // RDKit❗✔️:       if (std::find(sg.getAtoms().begin(), sg.getAtoms().end(),
+        // RDKit❗✔️:                     bnd->getBeginAtomIdx()) != sg.getAtoms().end()) {
+        // RDKit❗✔️:         sgBondSegments.push_back(std::make_pair(atCds_[bnd->getBeginAtomIdx()],
+        // RDKit❗✔️:                                                 atCds_[bnd->getEndAtomIdx()]));
+        // RDKit❗✔️:
+        // RDKit❗✔️:       } else if (std::find(sg.getAtoms().begin(), sg.getAtoms().end(),
+        // RDKit❗✔️:                            bnd->getEndAtomIdx()) != sg.getAtoms().end()) {
+        // RDKit❗✔️:         sgBondSegments.push_back(std::make_pair(
+        // RDKit❗✔️:             atCds_[bnd->getEndAtomIdx()], atCds_[bnd->getBeginAtomIdx()]));
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     int numBrackets = 0;
+        // RDKit❗✔️:     for (const auto &brk : sg.getBrackets()) {
+        // RDKit❗✔️:       // the atom coords have been inverted in y, so the bracket coords
+        // RDKit❗✔️:       // must be, too.
+        // RDKit❗✔️:       ++numBrackets;
+        // RDKit❗✔️:       Point2D p1{brk[0].x, -brk[0].y};
+        // RDKit❗✔️:       Point2D p2{brk[1].x, -brk[1].y};
+        // RDKit❗✔️:       trans.TransformPoint(p1);
+        // RDKit❗✔️:       trans.TransformPoint(p2);
+        // RDKit❗✔️:       auto points = getBracketPoints(p1, p2, refPt, sgBondSegments);
+        // RDKit❗✔️:       DrawShapePolyLine *pl =
+        // RDKit❗✔️:           new DrawShapePolyLine(points, drawOptions_.bondLineWidth, false,
+        // RDKit❗✔️:                                 DrawColour(0.0, 0.0, 0.0), false);
+        // RDKit❗✔️:       postShapes_.emplace_back(pl);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (includeAnnotations_) {
+        // RDKit❗✔️:       // Find the bottom-most or right-most bracket.  First work out if the
+        // RDKit❗✔️:       // bracket is largely horizontal or largely vertical.
+        // RDKit❗✔️:       const auto &brkShp = *postShapes_.back();
+        // RDKit❗✔️:       Point2D longline = brkShp.points_[1] - brkShp.points_[2];
+        // RDKit❗✔️:       longline.normalize();
+        // RDKit❗✔️:       static const double cos45 = 1.0 / sqrt(2.0);
+        // RDKit❗✔️:       bool horizontal = fabs(longline.x) > cos45;
+        // RDKit❗✔️:       size_t labelBrk = postShapes_.size() - 1;
+        // RDKit❗✔️:       for (int i = 1; i < numBrackets; ++i) {
+        // RDKit❗✔️:         const auto &brkShp = *postShapes_[postShapes_.size() - i - 1];
+        // RDKit❗✔️:         if (horizontal) {
+        // RDKit❗✔️:           if (brkShp.points_[2].y > postShapes_[labelBrk]->points_[2].y) {
+        // RDKit❗✔️:             labelBrk = postShapes_.size() - i - 1;
+        // RDKit❗✔️:           }
+        // RDKit❗✔️:         } else {
+        // RDKit❗✔️:           if (brkShp.points_[2].x > postShapes_[labelBrk]->points_[2].x) {
+        // RDKit❗✔️:             labelBrk = postShapes_.size() - i - 1;
+        // RDKit❗✔️:           }
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       std::string connect;
+        // RDKit❗✔️:       if (sg.getPropIfPresent("CONNECT", connect)) {
+        // RDKit❗✔️:         // annotations go on the last bracket of an sgroup
+        // RDKit❗✔️:         const auto &brkShp = *postShapes_[labelBrk];
+        // RDKit❗✔️:         // CONNECT goes at the top, but that's now the bottom due to the y
+        // RDKit❗✔️:         // inversion
+        // RDKit❗✔️:         auto botPt = brkShp.points_[2];
+        // RDKit❗✔️:         auto brkPt = brkShp.points_[3];
+        // RDKit❗✔️:         if ((!horizontal && brkShp.points_[1].y < botPt.y) ||
+        // RDKit❗✔️:             (horizontal && brkShp.points_[1].x > botPt.x)) {
+        // RDKit❗✔️:           botPt = brkShp.points_[1];
+        // RDKit❗✔️:           brkPt = brkShp.points_[0];
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         DrawAnnotation *da = new DrawAnnotation(
+        // RDKit❗✔️:             connect, TextAlignType::MIDDLE, "connect",
+        // RDKit❗✔️:             drawOptions_.annotationFontScale, botPt + (botPt - brkPt),
+        // RDKit❗✔️:             DrawColour(0.0, 0.0, 0.0), textDrawer_);
+        // RDKit❗✔️:         // if we're to the right of the bracket, we need to left justify,
+        // RDKit❗✔️:         // otherwise things seem to work as is
+        // RDKit❗✔️:         if (brkPt.x < botPt.x) {
+        // RDKit❗✔️:           da->align_ = TextAlignType::START;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         annotations_.emplace_back(da);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:
+        // RDKit❗✔️:       std::string label;
+        // RDKit❗✔️:       if (sg.getPropIfPresent("LABEL", label)) {
+        // RDKit❗✔️:         auto da = drawBottomLabel(label, *postShapes_[labelBrk], drawOptions_,
+        // RDKit❗✔️:                                   textDrawer_, horizontal);
+        // RDKit❗✔️:         annotations_.emplace_back(da);
+        // RDKit❗✔️:       } else if (sg.getPropIfPresent("TYPE", label)) {
+        // RDKit❗✔️:         if (label == "GEN") {
+        // RDKit❗✔️:           // ChemDraw doesn't draw the GEN (type=generic) label.
+        // RDKit❗✔️:           continue;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         // draw the lowercase type if there's no label to go there.
+        // RDKit❗✔️:         std::transform(label.begin(), label.end(), label.begin(), ::tolower);
+        // RDKit❗✔️:         auto da = drawBottomLabel(label, *postShapes_[labelBrk], drawOptions_,
+        // RDKit❗✔️:                                   textDrawer_, horizontal);
+        // RDKit❗✔️:         annotations_.emplace_back(da);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
         let sgs = &mol.topology.substance_groups;
         if sgs.is_empty() {
             return;
@@ -5410,7 +6134,8 @@ impl DrawMol {
                         self.options.annotation_font_scale,
                         bot_pt + (bot_pt - brk_pt),
                         DrawColour::new(0.0, 0.0, 0.0),
-                        font_size,
+                        self.font_size,
+                        self.font_scale,
                     );
                     if brk_pt.x < bot_pt.x {
                         da.align = TextAlignType::Start;
@@ -5457,7 +6182,8 @@ impl DrawMol {
                         self.options.annotation_font_scale,
                         final_top + (final_top - final_brk),
                         DrawColour::new(0.0, 0.0, 0.0),
-                        font_size,
+                        self.font_size,
+                        self.font_scale,
                     );
                     if final_brk.x < final_top.x {
                         da.align = TextAlignType::Start;
@@ -5479,6 +6205,64 @@ impl DrawMol {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractLinkNodes
     fn extract_link_nodes(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
+        // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
+        // RDKit❗✔️: void DrawMol::extractLinkNodes() {
+        // RDKit❗✔️:   if (!drawMol_->hasProp(common_properties::molFileLinkNodes)) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   bool strict = false;
+        // RDKit❗✔️:   auto linkNodes = MolEnumerator::utils::getMolLinkNodes(*drawMol_, strict);
+        // RDKit❗✔️:   for (const auto &node : linkNodes) {
+        // RDKit❗✔️:     const double crossingFrac = 0.333;
+        // RDKit❗✔️:     const double lengthFrac = 0.333;
+        // RDKit❗✔️:     Point2D labelPt{-1000, -1000};
+        // RDKit❗✔️:     Point2D labelPerp{0, 0};
+        // RDKit❗✔️:     for (const auto &bAts : node.bondAtoms) {
+        // RDKit❗✔️:       // unlike brackets, we know how these point
+        // RDKit❗✔️:       Point2D startLoc = atCds_[bAts.first];
+        // RDKit❗✔️:       Point2D endLoc = atCds_[bAts.second];
+        // RDKit❗✔️:       auto vect = endLoc - startLoc;
+        // RDKit❗✔️:       auto offset = vect * crossingFrac;
+        // RDKit❗✔️:       auto crossingPt = startLoc + offset;
+        // RDKit❗✔️:       Point2D perp{vect.y, -vect.x};
+        // RDKit❗✔️:       perp *= lengthFrac;
+        // RDKit❗✔️:       Point2D p1 = crossingPt + perp / 2.;
+        // RDKit❗✔️:       Point2D p2 = crossingPt - perp / 2.;
+        // RDKit❗✔️:
+        // RDKit❗✔️:       std::vector<std::pair<Point2D, Point2D>> bondSegments;  // not needed here
+        // RDKit❗✔️:       std::vector<Point2D> points{
+        // RDKit❗✔️:           getBracketPoints(p1, p2, startLoc, bondSegments)};
+        // RDKit❗✔️:       DrawShapePolyLine *pl =
+        // RDKit❗✔️:           new DrawShapePolyLine(points, drawOptions_.bondLineWidth, false,
+        // RDKit❗✔️:                                 DrawColour(0.0, 0.0, 0.0), false);
+        // RDKit❗✔️:       postShapes_.emplace_back(pl);
+        // RDKit❗✔️:
+        // RDKit❗✔️:       if (p1.x > labelPt.x) {
+        // RDKit❗✔️:         labelPt = p1;
+        // RDKit❗✔️:         labelPerp = crossingPt - startLoc;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (p2.x > labelPt.x) {
+        // RDKit❗✔️:         labelPt = p2;
+        // RDKit❗✔️:         labelPerp = crossingPt - startLoc;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     // the label
+        // RDKit❗✔️:     if (includeAnnotations_) {
+        // RDKit❗✔️:       std::string label =
+        // RDKit❗✔️:           (boost::format("(%d-%d)") % node.minRep % node.maxRep).str();
+        // RDKit❗✔️:       Point2D perp = labelPerp;
+        // RDKit❗✔️:       perp /= perp.length() * 5;
+        // RDKit❗✔️:       DrawAnnotation *da =
+        // RDKit❗✔️:           new DrawAnnotation(label, TextAlignType::START, "linknode",
+        // RDKit❗✔️:                              drawOptions_.annotationFontScale, labelPt + perp,
+        // RDKit❗✔️:                              DrawColour(0.0, 0.0, 0.0), textDrawer_);
+        // RDKit❗✔️:       annotations_.emplace_back(da);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
         if mol.properties.prop("molFileLinkNodes").is_none() {
             return Ok(());
         }
@@ -5552,7 +6336,8 @@ impl DrawMol {
                     self.options.annotation_font_scale,
                     label_pt + perp,
                     DrawColour::new(0.0, 0.0, 0.0),
-                    font_size,
+                    self.font_size,
+                    self.font_scale,
                 );
                 self.annotations.push(da);
             }
@@ -5688,6 +6473,42 @@ impl DrawMol {
         atom_idx: usize,
         annot: &mut DrawAnnotation,
     ) {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:2570
+        // RDKit❗✔️: void DrawMol::calcAnnotationPosition(const Atom *atom,
+        // RDKit❗✔️:                                      DrawAnnotation &annot) const {
+        // RDKit❗✔️:   PRECONDITION(atom, "no atom");
+        // RDKit❗✔️:   double start_ang = getNoteStartAngle(atom);
+        // RDKit❗✔️:   Point2D const &atCds = atCds_[atom->getIdx()];
+        // RDKit❗✔️:   double radStep = 0.25;
+        // RDKit❗✔️:   Point2D leastWorstPos = atCds;
+        // RDKit❗✔️:   int leastWorstScore = 100;
+        // RDKit❗✔️:   for (int j = 1; j < 4; ++j) {
+        // RDKit❗✔️:     double note_rad = j * radStep;
+        // RDKit❗✔️:     // experience suggests if there's an atom symbol, the close in
+        // RDKit❗✔️:     // radius won't work.
+        // RDKit❗✔️:     if (j == 1 && atomLabels_[atom->getIdx()]) {
+        // RDKit❗✔️:       continue;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     // scan at 30 degree intervals around the atom looking for somewhere
+        // RDKit❗✔️:     // clear for the annotation.
+        // RDKit❗✔️:     for (int i = 0; i < 12; ++i) {
+        // RDKit❗✔️:       double ang = start_ang + i * 30.0 * M_PI / 180.0;
+        // RDKit❗✔️:       annot.pos_.x = atCds.x + cos(ang) * note_rad;
+        // RDKit❗✔️:       annot.pos_.y = atCds.y + sin(ang) * note_rad;
+        // RDKit❗✔️:       int clashScore = doesNoteClash(annot);
+        // RDKit❗✔️:       if (!clashScore) {
+        // RDKit❗✔️:         return;
+        // RDKit❗✔️:       } else {
+        // RDKit❗✔️:         if (clashScore < leastWorstScore) {
+        // RDKit❗✔️:           leastWorstScore = clashScore;
+        // RDKit❗✔️:           leastWorstPos = annot.pos_;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   annot.pos_ = leastWorstPos;
+        // RDKit❗✔️: }
+
         let start_ang = self.calc_note_start_angle(mol, atom_idx);
         let at_cds = self.at_cds[atom_idx];
         let rad_step = 0.25;
@@ -5706,7 +6527,7 @@ impl DrawMol {
                 continue;
             }
             for i in 0..12 {
-                let ang = start_ang + i as f64 * 30.0_f64.to_radians();
+                let ang = start_ang + i as f64 * 30.0 * std::f64::consts::PI / 180.0;
                 annot.pos = DVec2::new(
                     at_cds.x + ang.cos() * note_rad,
                     at_cds.y + ang.sin() * note_rad,
@@ -5874,6 +6695,78 @@ impl DrawMol {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::getNoteStartAngle
     fn calc_note_start_angle(&self, mol: &PreparedDrawingInput<'_>, atom_idx: usize) -> f64 {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:2656
+        // RDKit❗✔️: double DrawMol::getNoteStartAngle(const Atom *atom) const {
+        // RDKit❗✔️:   if (atom->getDegree() == 0) {
+        // RDKit❗✔️:     return M_PI / 2.0;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   const Point2D &at_cds = atCds_[atom->getIdx()];
+        // RDKit❗✔️:   std::vector<Point2D> bond_vecs;
+        // RDKit❗✔️:   for (auto nbr : make_iterator_range(drawMol_->getAtomNeighbors(atom))) {
+        // RDKit❗✔️:     // If the nbr has the same coords as atom, bond_vec comes out as NaN, NaN
+        // RDKit❗✔️:     // (issue 6559), so use a short arbitrary vector instead.
+        // RDKit❗✔️:     Point2D bond_vec;
+        // RDKit❗✔️:     if ((at_cds - atCds_[nbr]).lengthSq() < 0.0001) {
+        // RDKit❗✔️:       bond_vec.x = 0.1;
+        // RDKit❗✔️:       bond_vec.y = 0.1;
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       bond_vec = at_cds.directionVector(atCds_[nbr]);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     bond_vec.normalize();
+        // RDKit❗✔️:     bond_vecs.push_back(bond_vec);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   Point2D ret_vec;
+        // RDKit❗✔️:   if (bond_vecs.size() == 1) {
+        // RDKit❗✔️:     if (!atomLabels_[atom->getIdx()]) {
+        // RDKit❗✔️:       // go with perpendicular to bond.  This is mostly to avoid getting
+        // RDKit❗✔️:       // a zero at the end of a bond to carbon, which looks like a black
+        // RDKit❗✔️:       // oxygen atom in the default font in SVG and PNG.
+        // RDKit❗✔️:       ret_vec.x = bond_vecs[0].y;
+        // RDKit❗✔️:       ret_vec.y = -bond_vecs[0].x;
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       // go opposite end
+        // RDKit❗✔️:       ret_vec = -bond_vecs[0];
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   } else if (bond_vecs.size() == 2) {
+        // RDKit❗✔️:     ret_vec = bond_vecs[0] + bond_vecs[1];
+        // RDKit❗✔️:     if (ret_vec.lengthSq() > 1.0e-6) {
+        // RDKit❗✔️:       if (!atom->getNumImplicitHs() || atom->getAtomicNum() == 6) {
+        // RDKit❗✔️:         // prefer outside the angle, unless there are Hs that will be in
+        // RDKit❗✔️:         // the way, probably.
+        // RDKit❗✔️:         ret_vec *= -1.0;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       // it must be a -# or == or some such.  Take perpendicular to
+        // RDKit❗✔️:       // one of them
+        // RDKit❗✔️:       ret_vec.x = -bond_vecs.front().y;
+        // RDKit❗✔️:       ret_vec.y = bond_vecs.front().x;
+        // RDKit❗✔️:       ret_vec.normalize();
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     // just take 2 that are probably adjacent
+        // RDKit❗✔️:     double discrim = 4.0 * M_PI / bond_vecs.size();
+        // RDKit❗✔️:     for (size_t i = 0; i < bond_vecs.size() - 1; ++i) {
+        // RDKit❗✔️:       for (size_t j = i + 1; j < bond_vecs.size(); ++j) {
+        // RDKit❗✔️:         double ang = acos(bond_vecs[i].dotProduct(bond_vecs[j]));
+        // RDKit❗✔️:         if (ang < discrim) {
+        // RDKit❗✔️:           ret_vec = bond_vecs[i] + bond_vecs[j];
+        // RDKit❗✔️:           ret_vec.normalize();
+        // RDKit❗✔️:           discrim = -1.0;
+        // RDKit❗✔️:           break;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (discrim > 0.0) {
+        // RDKit❗✔️:       ret_vec = bond_vecs[0] + bond_vecs[1];
+        // RDKit❗✔️:       ret_vec *= -1.0;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // start angle is the angle between ret_vec and the x axis
+        // RDKit❗✔️:   return atan2(ret_vec.y, ret_vec.x);
+        // RDKit❗✔️: }
+
         let degree = atom_degree(mol.topology, atom_idx);
         if degree == 0 {
             return std::f64::consts::FRAC_PI_2;
@@ -5903,8 +6796,11 @@ impl DrawMol {
         } else if bond_vecs.len() == 2 {
             let mut rv = bond_vecs[0] + bond_vecs[1];
             if rv.length_squared() > 1.0e-6 {
-                // prefer outside the angle if no implicit Hs
-                rv *= -1.0;
+                if self.implicit_hs[atom_idx] == 0
+                    || mol.topology.atoms[atom_idx].atomic_number() == 6
+                {
+                    rv *= -1.0;
+                }
             } else {
                 rv = DVec2::new(-bond_vecs[0].y, bond_vecs[0].x).normalize();
             }
@@ -5912,14 +6808,14 @@ impl DrawMol {
         } else {
             let mut discrim = 4.0 * std::f64::consts::PI / bond_vecs.len() as f64;
             let mut ret = bond_vecs[0] + bond_vecs[1];
-            'outer: for i in 0..bond_vecs.len() - 1 {
+            for i in 0..bond_vecs.len() - 1 {
                 for j in (i + 1)..bond_vecs.len() {
                     let ang = bond_vecs[i].dot(bond_vecs[j]).acos();
                     if ang < discrim {
                         ret = bond_vecs[i] + bond_vecs[j];
                         ret = ret.normalize();
                         discrim = -1.0;
-                        break 'outer;
+                        break;
                     }
                 }
             }
@@ -5984,6 +6880,52 @@ impl DrawMol {
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::doesRectClash
     fn does_rect_clash_with_score(&self, rect: &StringRect, padding: f64) -> i32 {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:2749
+        // RDKit❗✔️: int DrawMol::doesRectClash(const StringRect &rect, double padding) const {
+        // RDKit❗✔️:   // No longer checks if it clashes with highlights.  This frequently
+        // RDKit❗✔️:   // results in bad pictures and things look ok on top of highlights
+        // RDKit❗✔️:   // (issues 5269 and 5195, PR 5272)
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // see if the rectangle clashes with any of the double bonds themselves,
+        // RDKit❗✔️:   // as opposed to the draw shapes derived from them.  Github 5185 shows
+        // RDKit❗✔️:   // that sometimes atom indices can just fit between the lines of a
+        // RDKit❗✔️:   // double bond.
+        // RDKit❗✔️:   // Also, no longer check if it clashes with highlights.  This frequently
+        // RDKit❗✔️:   // results in bad pictures and things look ok on top of highlights.
+        // RDKit❗✔️:   for (auto bond : drawMol_->bonds()) {
+        // RDKit❗✔️:     if (bond->getBondType() == Bond::DOUBLE) {
+        // RDKit❗✔️:       auto at1 = bond->getBeginAtomIdx();
+        // RDKit❗✔️:       auto at2 = bond->getEndAtomIdx();
+        // RDKit❗✔️:       if (doesLineIntersect(rect, atCds_[at1], atCds_[at2], 0.0)) {
+        // RDKit❗✔️:         return 1;
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (const auto &bond : bonds_) {
+        // RDKit❗✔️:     if (bond->doesRectClash(rect, padding)) {
+        // RDKit❗✔️:       return 1;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (const auto &al : atomLabels_) {
+        // RDKit❗✔️:     if (al && al->doesRectClash(rect, padding)) {
+        // RDKit❗✔️:       return 2;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (const auto &a : annotations_) {
+        // RDKit❗✔️:     if (a->doesRectClash(rect, padding)) {
+        // RDKit❗✔️:       return 3;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return 0;
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawShape.cpp:279
+        // RDKit❗✔️: bool DrawShapeSimpleLine::doesRectClash(const StringRect &rect,
+        // RDKit❗✔️:                                         double padding) const {
+        // RDKit❗✔️:   padding = scaleLineWidth_ ? padding * lineWidth_ : padding;
+        // RDKit❗✔️:   return doesLineIntersect(rect, points_[0], points_[1], padding);
+        // RDKit❗✔️: }
+
         // RDKit uses source-molecule DOUBLE bond center lines here, not all
         // rendered bond segments.
         for &(at1, at2) in &self.raw_double_bonds {
@@ -5991,6 +6933,19 @@ impl DrawMol {
                 return 1;
             }
         }
+        for bond in &self.bonds {
+            let shape_padding = if bond.scale_width {
+                padding * bond.width
+            } else {
+                padding
+            };
+            if rect_clashes_with_line(rect, bond.begin, bond.end, shape_padding) {
+                return 1;
+            }
+        }
+        // Remaining wedge/arrow/wavy/polyline source collision variants need their
+        // independently assigned complete shape-owner prerequisite; absent in all16
+        // original single-simple-line scenes, no unsupported relabel is proposed.
         // Check atom labels
         for label in self.atom_labels.iter().flatten() {
             if label_rects_intersect(&label.rects, label.cds, rect, padding) {
@@ -6361,6 +7316,207 @@ impl DrawMol {
     }
 
     fn change_to_draw_coords(&mut self) {
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:2996
+        // RDKit❗✔️: void DrawMol::transformAll(const Point2D *trans, Point2D *scale,
+        // RDKit❗✔️:                            const Point2D *toCentre) {
+        // RDKit❗✔️:   for (auto &ps : preShapes_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       ps->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       ps->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       ps->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &bond : bonds_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       bond->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       bond->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       bond->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &hl : highlights_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       hl->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       hl->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       hl->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &annot : annotations_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       annot->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       annot->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       annot->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &label : atomLabels_) {
+        // RDKit❗✔️:     if (label) {
+        // RDKit❗✔️:       if (trans) {
+        // RDKit❗✔️:         label->move(*trans);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (scale) {
+        // RDKit❗✔️:         label->scale(*scale);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (toCentre) {
+        // RDKit❗✔️:         label->move(*toCentre);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // radicals are based on StringRect so don't have their own class.
+        // RDKit❗✔️:   // They need to be moved according to scale and scaled according to
+        // RDKit❗✔️:   // fontscale.
+        // RDKit❗✔️:   for (auto &rad : radicals_) {
+        // RDKit❗✔️:     auto &r = get<0>(rad);
+        // RDKit❗✔️:     r.trans_ = transformPoint(r.trans_, trans, scale, toCentre);
+        // RDKit❗✔️:     r.width_ *= fontScale_;
+        // RDKit❗✔️:     r.height_ *= fontScale_;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &ps : postShapes_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       ps->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       ps->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       ps->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:2874
+        // RDKit❗✔️: void DrawMol::getDrawTransformers(Point2D &trans, Point2D &scale,
+        // RDKit❗✔️:                                   Point2D &toCentre) const {
+        // RDKit❗✔️:   trans = Point2D(-xMin_, -yMin_);
+        // RDKit❗✔️:   scale = Point2D(scale_, scale_);
+        // RDKit❗✔️:   Point2D scaledRanges(scale_ * xRange_, scale_ * yRange_);
+        // RDKit❗✔️:   toCentre = Point2D(
+        // RDKit❗✔️:       (drawWidth_ - scaledRanges.x) / 2.0 + xOffset_ + width_ * marginPadding_,
+        // RDKit❗✔️:       (molHeight_ - scaledRanges.y) / 2.0 + yOffset_ +
+        // RDKit❗✔️:           height_ * marginPadding_);
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawAnnotation.cpp:137
+        // RDKit❗✔️: void DrawAnnotation::move(const Point2D &trans) {
+        // RDKit❗✔️:   pos_ += trans;
+        // RDKit❗✔️:   // the internals of the rects_ are all relative to pos_, so no need to
+        // RDKit❗✔️:   // do anything to them.
+        // RDKit❗✔️: }
+
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawMol.cpp
+        // RDKit❗✔️: void DrawMol::changeToDrawCoords() {
+        // RDKit❗✔️:   Point2D trans, scale, toCentre;
+        // RDKit❗✔️:   getDrawTransformers(trans, scale, toCentre);
+        // RDKit❗✔️:   transformAll(&trans, &scale, &toCentre);
+        // RDKit❗✔️: }
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawMol.cpp
+        // RDKit❗✔️: void DrawMol::transformAll(const Point2D *trans, Point2D *scale,
+        // RDKit❗✔️:                            const Point2D *toCentre) {
+        // RDKit❗✔️:   for (auto &ps : preShapes_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       ps->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       ps->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       ps->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &bond : bonds_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       bond->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       bond->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       bond->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &hl : highlights_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       hl->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       hl->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       hl->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &annot : annotations_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       annot->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       annot->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       annot->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &label : atomLabels_) {
+        // RDKit❗✔️:     if (label) {
+        // RDKit❗✔️:       if (trans) {
+        // RDKit❗✔️:         label->move(*trans);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (scale) {
+        // RDKit❗✔️:         label->scale(*scale);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       if (toCentre) {
+        // RDKit❗✔️:         label->move(*toCentre);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // radicals are based on StringRect so don't have their own class.
+        // RDKit❗✔️:   // They need to be moved according to scale and scaled according to
+        // RDKit❗✔️:   // fontscale.
+        // RDKit❗✔️:   for (auto &rad : radicals_) {
+        // RDKit❗✔️:     auto &r = get<0>(rad);
+        // RDKit❗✔️:     r.trans_ = transformPoint(r.trans_, trans, scale, toCentre);
+        // RDKit❗✔️:     r.width_ *= fontScale_;
+        // RDKit❗✔️:     r.height_ *= fontScale_;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto &ps : postShapes_) {
+        // RDKit❗✔️:     if (trans) {
+        // RDKit❗✔️:       ps->move(*trans);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (scale) {
+        // RDKit❗✔️:       ps->scale(*scale);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (toCentre) {
+        // RDKit❗✔️:       ps->move(*toCentre);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawMol.cpp
+        // RDKit❗✔️: void DrawMol::getDrawTransformers(Point2D &trans, Point2D &scale,
+        // RDKit❗✔️:                                   Point2D &toCentre) const {
+        // RDKit❗✔️:   trans = Point2D(-xMin_, -yMin_);
+        // RDKit❗✔️:   scale = Point2D(scale_, scale_);
+        // RDKit❗✔️:   Point2D scaledRanges(scale_ * xRange_, scale_ * yRange_);
+        // RDKit❗✔️:   toCentre = Point2D(
+        // RDKit❗✔️:       (drawWidth_ - scaledRanges.x) / 2.0 + xOffset_ + width_ * marginPadding_,
+        // RDKit❗✔️:       (molHeight_ - scaledRanges.y) / 2.0 + yOffset_ +
+        // RDKit❗✔️:           height_ * marginPadding_);
+        // RDKit❗✔️: }
         // BEGIN RDKIT CPP FUNCTION DrawMol::getDrawTransformers (DrawMol.cpp)
         // RDKit✔️✔️: trans = Point2D(-xMin_, -yMin_);
         // RDKit✔️✔️: scale = Point2D(scale_, scale_);
@@ -6454,12 +7610,9 @@ impl DrawMol {
         }
 
         for annot in &mut self.annotations {
-            annot.pos = transform_point(annot.pos, trans, scale, to_centre);
-            annot.rects = get_string_rects(
-                &annot.text,
-                OrientType::C,
-                self.font_size * self.font_scale * annot.font_scale,
-            );
+            annot.pos += trans;
+            annot.scale(scale);
+            annot.pos += to_centre;
         }
 
         for poly in &mut self.post_shapes {
@@ -6583,15 +7736,74 @@ impl DrawMol {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum SvgIdentity {
+    PinnedSource,
+    Cosmolkit,
+}
+
 pub(crate) fn render_prepared_svg(
     input: &PreparedDrawingInput<'_>,
     width: u32,
     height: u32,
 ) -> Result<String, DrawingError> {
+    render_prepared_svg_with_identity(input, width, height, SvgIdentity::PinnedSource)
+}
+
+pub(crate) fn render_prepared_svg_with_identity(
+    input: &PreparedDrawingInput<'_>,
+    width: u32,
+    height: u32,
+    identity: SvgIdentity,
+) -> Result<String, DrawingError> {
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:1286
+    // RDKit❗✔️: void DrawMol::draw(MolDraw2D &drawer) const {
+    // RDKit❗✔️:   PRECONDITION(drawingInitialised_,
+    // RDKit❗✔️:                "you must call createDrawingObjects before calling draw")
+    // RDKit❗✔️:   if (atCds_.empty()) {
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   auto keepScale = drawer.scale();
+    // RDKit❗✔️:   drawer.setScale(scale_);
+    // RDKit❗✔️:   auto keepFontScale = textDrawer_.fontScale();
+    // RDKit❗✔️:   textDrawer_.setFontScale(fontScale_, true);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   for (auto &ps : preShapes_) {
+    // RDKit❗✔️:     ps->draw(drawer);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto &hl : highlights_) {
+    // RDKit❗✔️:     hl->draw(drawer);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto &bond : bonds_) {
+    // RDKit❗✔️:     bond->draw(drawer);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto &label : atomLabels_) {
+    // RDKit❗✔️:     if (label) {
+    // RDKit❗✔️:       label->draw(drawer);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (includeAnnotations_) {
+    // RDKit❗✔️:     for (auto &annot : annotations_) {
+    // RDKit❗✔️:       annot->draw(drawer);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (drawOptions_.includeRadicals) {
+    // RDKit❗✔️:     drawRadicals(drawer);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto &ps : postShapes_) {
+    // RDKit❗✔️:     ps->draw(drawer);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto &leg : legends_) {
+    // RDKit❗✔️:     leg->draw(drawer);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   drawer.setScale(keepScale);
+    // RDKit❗✔️:   textDrawer_.setFontScale(keepFontScale, true);
+    // RDKit❗✔️: }
+
     let draw_mol = DrawMol::from_prepared(input, width, height, DrawOptions::default())?;
 
     let mut out = String::new();
-    init_drawing(&mut out, width, height);
+    init_drawing_with_identity(&mut out, width, height, identity);
 
     let bg = draw_mol.options.background_colour;
     if draw_mol.options.clear_background {
@@ -6634,17 +7846,23 @@ pub(crate) fn render_prepared_svg(
     // BEGIN RDKIT CPP FUNCTION DrawMol::drawRadicals (DrawMol.cpp)
     // RDKit✔️✔️: double spot_rad = 0.2 * drawOptions_.multipleBondOffset * fontScale_;
     // END RDKIT CPP FUNCTION DrawMol::drawRadicals
-    let spot_rad = 0.2 * draw_mol.options.multiple_bond_offset * draw_mol.font_scale;
-    draw_radical_svg(&mut out, &draw_mol.radicals, spot_rad);
 
     // Draw annotations (CIP codes, notes, etc.)
-    for annot in &draw_mol.annotations {
-        draw_annotation_svg(&mut out, annot, base_font_size);
+    if draw_mol.options.include_annotations {
+        for annot in &draw_mol.annotations {
+            draw_annotation_svg(&mut out, annot, base_font_size);
+        }
     }
+    let spot_rad = 0.2 * draw_mol.options.multiple_bond_offset * draw_mol.font_scale;
+    draw_radical_svg(&mut out, &draw_mol.radicals, spot_rad);
 
     // Draw remaining shapes
     for shape in &draw_mol.post_shapes {
         draw_polyline_svg(&mut out, shape, scale);
+    }
+
+    for legend in &draw_mol.legends {
+        draw_annotation_svg(&mut out, legend, base_font_size);
     }
 
     out.push_str("</svg>\n");
@@ -7364,26 +8582,44 @@ fn element_symbol(atomic_num: u8) -> &'static str {
 // SVG rendering primitives
 // ──────────────────────────────────────────────
 
-// BEGIN RDKIT CPP FUNCTION MolDraw2DSVG::initDrawing (MolDraw2DSVG.cpp:122-133)
-// RDKit✔️✔️: void MolDraw2DSVG::initDrawing() {
-// RDKit✔️✔️:   d_os << "<?xml version='1.0' encoding='iso-8859-1'?>\n";
-// RDKit✔️✔️:   d_os << "<svg version='1.1' baseProfile='full'\n      \
-// RDKit✔️✔️:         xmlns='http://www.w3.org/2000/svg'\n              \
-// RDKit✔️✔️:         xmlns:rdkit='http://www.rdkit.org/xml'\n              \
-// RDKit✔️✔️:         xmlns:xlink='http://www.w3.org/1999/xlink'\n          \
-// RDKit✔️✔️:         xml:space='preserve'\n";
-// RDKit✔️✔️:   d_os
-// RDKit✔️✔️:       << boost::format{"width='%1%px' height='%2%px' viewBox='0 0 %1% %2%'>\n"} %
-// RDKit✔️✔️:              width() % height();
-// RDKit✔️✔️:   d_os << "<!-- END OF HEADER -->\n";
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION MolDraw2DSVG::initDrawing
 fn init_drawing(out: &mut String, width: u32, height: u32) {
+    init_drawing_with_identity(out, width, height, SvgIdentity::PinnedSource);
+}
+
+fn init_drawing_with_identity(out: &mut String, width: u32, height: u32, identity: SvgIdentity) {
+    // BEGIN RDKIT CPP FUNCTION MolDraw2DSVG::initDrawing (MolDraw2DSVG.cpp:122-133)
+    // RDKit✔️✔️: void MolDraw2DSVG::initDrawing() {
+    // RDKit✔️✔️:   d_os << "<?xml version='1.0' encoding='iso-8859-1'?>\n";
+    // RDKit✔️✔️:   d_os << "<svg version='1.1' baseProfile='full'\n      \
+    // RDKit✔️✔️:         xmlns='http://www.w3.org/2000/svg'\n              \
+    // RDKit✔️✔️:         xmlns:rdkit='http://www.rdkit.org/xml'\n              \
+    // RDKit✔️✔️:         xmlns:xlink='http://www.w3.org/1999/xlink'\n          \
+    // RDKit✔️✔️:         xml:space='preserve'\n";
+    // RDKit✔️✔️:   d_os
+    // RDKit✔️✔️:       << boost::format{"width='%1%px' height='%2%px' viewBox='0 0 %1% %2%'>\n"} %
+    // RDKit✔️✔️:              width() % height();
+    // RDKit✔️✔️:   d_os << "<!-- END OF HEADER -->\n";
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION MolDraw2DSVG::initDrawing
+
+    // RDKit❗✔️:         xmlns:rdkit='http://www.rdkit.org/xml'\n              \
+    // The public COSMolKit product uses its declared website namespace, as
+    // required by python/tests/test_svg_identity.py. Pinned-source detached
+    // regressions retain the source identity. Geometry/text emission shares
+    // this producer; bindings and the facade never rewrite completed SVG.
+
     out.push_str("<?xml version='1.0' encoding='iso-8859-1'?>\n");
     out.push_str(concat!(
         "<svg version='1.1' baseProfile='full'\n",
         "              xmlns='http://www.w3.org/2000/svg'\n",
-        "                      xmlns:rdkit='http://www.rdkit.org/xml'\n",
+    ));
+    out.push_str(match identity {
+        SvgIdentity::PinnedSource => {
+            "                      xmlns:rdkit='http://www.rdkit.org/xml'\n"
+        }
+        SvgIdentity::Cosmolkit => "                      xmlns:ck='https://kit.cosmol.org/'\n",
+    });
+    out.push_str(concat!(
         "                      xmlns:xlink='http://www.w3.org/1999/xlink'\n",
         "                  xml:space='preserve'\n",
     ));
@@ -7986,70 +9222,177 @@ fn draw_polyline_svg(out: &mut String, polyline: &DrawPolyline, scale: f64) {
     ));
 }
 
-/// RDKit❗✔️: SVG text output for molecule annotations (CIP codes, notes, etc.).
-/// Analogous to DrawAnnotation::draw(MolDraw2D &) → DrawTextSVG::drawString().
-/// COSMolKit renders annotation text as an SVG <text> element positioned at
-/// the annotation's computed position.
-fn draw_annotation_svg(out: &mut String, annot: &DrawAnnotation, base_font_size: f64) {
-    let col = draw_colour_to_svg(annot.colour);
-    let font_size = format_svg_font_size_px(base_font_size * annot.font_scale);
+/// Private detached projection of DrawAnnotation::draw and text-aligned drawString.
+fn draw_annotation_svg(out: &mut String, annot: &DrawAnnotation, _base_font_size: f64) {
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawAnnotation.cpp:84
+    // RDKit❗✔️: void DrawAnnotation::draw(MolDraw2D &molDrawer) const {
+    // RDKit❗✔️:   std::string o_class = molDrawer.getActiveClass();
+    // RDKit❗✔️:   std::string actClass = o_class;
+    // RDKit❗✔️:   if (!actClass.empty()) {
+    // RDKit❗✔️:     actClass += " ";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   actClass += class_;
+    // RDKit❗✔️:   molDrawer.setActiveClass(actClass);
+    // RDKit❗✔️:   textDrawer_.setColour(colour_);
+    // RDKit❗✔️:   double ofs = textDrawer_.fontScale();
+    // RDKit❗✔️:   textDrawer_.setFontScale(fontScale_, true);
+    // RDKit❗✔️:   textDrawer_.drawString(text_, pos_, align_);
+    // RDKit❗✔️:   textDrawer_.setFontScale(ofs, true);
+    // RDKit❗✔️:   molDrawer.setActiveClass(o_class);
+    // RDKit❗✔️:   // drawRects(molDrawer);
+    // RDKit❗✔️: }
 
-    out.push_str(&format!("<!-- annotation class={} -->\n", annot.class_));
-    for rect in &annot.rects {
-        let x = format_double(rect.trans.x + annot.pos.x);
-        let y = format_double(rect.trans.y + annot.pos.y);
-        let ch_str = xml_escape(&rect.ch.to_string());
-        let dy = match rect.draw_mode {
-            TextDrawType::Superscript => "-0.35em",
-            TextDrawType::Subscript => "0.35em",
-            TextDrawType::Normal => "0",
-        };
-        let font_size_attr = match rect.draw_mode {
-            TextDrawType::Normal => format!("font-size='{}px'", font_size),
-            TextDrawType::Superscript | TextDrawType::Subscript => {
-                let sz = font_size.parse::<f64>().unwrap_or(0.0) * 0.7;
-                format!("font-size='{}px'", format_svg_font_size_px(sz))
-            }
-        };
-        out.push_str(&format!(
-            "<text x='{}' y='{}' text-anchor='middle' dominant-baseline='central' \
-             fill='{}' font-family='{}' {} dy='{}'>{}</text>\n",
-            x, y, col, EMBEDDED_DRAW_FONT_FAMILY, font_size_attr, dy, ch_str,
-        ));
-    }
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawAnnotation.cpp
+    // RDKit❗✔️: void DrawAnnotation::draw(MolDraw2D &molDrawer) const {
+    // RDKit❗✔️:   std::string o_class = molDrawer.getActiveClass();
+    // RDKit❗✔️:   std::string actClass = o_class;
+    // RDKit❗✔️:   if (!actClass.empty()) {
+    // RDKit❗✔️:     actClass += " ";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   actClass += class_;
+    // RDKit❗✔️:   molDrawer.setActiveClass(actClass);
+    // RDKit❗✔️:   textDrawer_.setColour(colour_);
+    // RDKit❗✔️:   double ofs = textDrawer_.fontScale();
+    // RDKit❗✔️:   textDrawer_.setFontScale(fontScale_, true);
+    // RDKit❗✔️:   textDrawer_.drawString(text_, pos_, align_);
+    // RDKit❗✔️:   textDrawer_.setFontScale(ofs, true);
+    // RDKit❗✔️:   molDrawer.setActiveClass(o_class);
+    // RDKit❗✔️:   // drawRects(molDrawer);
+    // RDKit❗✔️: }
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawText.cpp
+    // RDKit❗✔️: void DrawText::drawString(const std::string &str, const Point2D &cds,
+    // RDKit❗✔️:                           TextAlignType talign) {
+    // RDKit❗✔️:   std::vector<std::shared_ptr<StringRect>> rects;
+    // RDKit❗✔️:   std::vector<TextDrawType> draw_modes;
+    // RDKit❗✔️:   std::vector<char> draw_chars;
+    // RDKit❗✔️:   getStringRects(str, rects, draw_modes, draw_chars);
+    // RDKit❗✔️:   alignString(talign, draw_modes, rects);
+    // RDKit❗✔️:   drawChars(cds, rects, draw_modes, draw_chars);
+    // RDKit❗✔️: }
+    // The pure renderer has no prior active drawer class/font/colour to mutate.
+    // Pass the actual annotation class, colour and effective font explicitly;
+    // local values preserve all modeled caller state without a new runtime.
+    // Source drawing re-extracts using FINAL align_, independently of cached
+    // collision/extents rectangles and source-timed SGroup alignment mutations.
+    // Behavior remains unresolved for the guarded source-undefined states.
+    // Complexity: one source-shaped linear extraction/alignment and emission;
+    // the cached extraction rects and caller input are neither mutated nor cloned.
+    let font_size = annot.font_scale * annot.base_font_size;
+    let rects = annotation_string_rects(&annot.text, annot.align, font_size);
+    draw_text_rects_svg(
+        out,
+        &rects,
+        annot.pos,
+        annot.colour,
+        font_size,
+        &annot.class_,
+    );
 }
 
 fn draw_atom_label_svg(out: &mut String, label: &AtomLabel, base_font_size: f64) {
-    // BEGIN RDKIT CPP FUNCTION DrawText::drawChars + DrawTextSVG::drawChar
-    // RDKit✔️✔️: draw_cds.x = a_cds.x + rects[i]->trans_.x - rects[i]->offset_.x;
-    // RDKit✔️✔️: draw_cds.y = a_cds.y - rects[i]->trans_.y + rects[i]->offset_.y;
-    // RDKit✔️✔️: draw_cds.y -= rects[i]->rect_corr_ + rects[i]->y_shift_;
-    // RDKit✔️✔️: setFontScale(full_scale * selectScaleFactor(draw_chars[i], draw_modes[i]), true);
-    // RDKit✔️✔️: oss_ << "<text";
-    // RDKit✔️✔️: oss_ << " x='" << formatDouble(cds.x);
-    // RDKit✔️✔️: oss_ << "' y='" << formatDouble(cds.y) << "'";
-    // RDKit✔️✔️: if (!d_active_class_.empty()) { oss_ << " class='" << d_active_class_ << "'"; }
-    // RDKit✔️✔️: oss_ << " style='font-size:" << fontSz
-    // RDKit✔️✔️:      << "px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;"
-    // RDKit✔️✔️:         "font-family:sans-serif;text-anchor:start;"
-    // RDKit✔️✔️:      << "fill:" << col << "'";
-    // RDKit✔️✔️: oss_ << " >" << cs << "</text>\n";
-    // END RDKIT CPP FUNCTION DrawText::drawChars + DrawTextSVG::drawChar
-    let col = draw_colour_to_svg(label.colour);
-    for rect in &label.rects {
-        let x = format_double(label.cds.x + rect.trans.x - rect.offset.x);
-        let y = format_double(
-            label.cds.y - rect.trans.y + rect.offset.y - rect.rect_corr - rect.y_shift,
-        );
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawText.cpp
+    // RDKit❗✔️: void DrawText::drawString(const std::string &label, const Point2D &cds,
+    // RDKit❗✔️:                           OrientType orient) {
+    // RDKit❗✔️:   std::vector<std::shared_ptr<StringRect>> rects;
+    // RDKit❗✔️:   std::vector<TextDrawType> draw_modes;
+    // RDKit❗✔️:   std::vector<char> draw_chars;
+    // RDKit❗✔️:   getStringRects(label, orient, rects, draw_modes, draw_chars);
+    // RDKit❗✔️:   drawChars(cds, rects, draw_modes, draw_chars);
+    // RDKit❗✔️: }
+    // Atom labels keep their orientation-split cached source rectangles and
+    // existing exact SVG bytes. Only the unchanged glyph emission is shared.
+    // Complexity: O(n) glyph emission, with no copy of the label rect vector.
+    draw_text_rects_svg(
+        out,
+        &label.rects,
+        label.cds,
+        label.colour,
+        base_font_size,
+        &format!("atom-{}", label.atom_idx),
+    );
+}
+
+fn draw_text_rects_svg(
+    out: &mut String,
+    rects: &[StringRect],
+    pos: DVec2,
+    colour: DrawColour,
+    base_font_size: f64,
+    class_: &str,
+) {
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawText.cpp
+    // RDKit❗✔️: void DrawText::drawChars(const Point2D &a_cds,
+    // RDKit❗✔️:                          const std::vector<std::shared_ptr<StringRect>> &rects,
+    // RDKit❗✔️:                          const std::vector<TextDrawType> &draw_modes,
+    // RDKit❗✔️:                          const std::vector<char> &draw_chars) {
+    // RDKit❗✔️:   double full_scale = fontScale();
+    // RDKit❗✔️:   for (size_t i = 0; i < rects.size(); ++i) {
+    // RDKit❗✔️:     Point2D draw_cds;
+    // RDKit❗✔️:     draw_cds.x = a_cds.x + rects[i]->trans_.x - rects[i]->offset_.x;
+    // RDKit❗✔️:     draw_cds.y = a_cds.y - rects[i]->trans_.y +
+    // RDKit❗✔️:                  rects[i]->offset_.y;  // opposite sign convention
+    // RDKit❗✔️:     draw_cds.y -= rects[i]->rect_corr_ + rects[i]->y_shift_;
+    // RDKit❗✔️:     setFontScale(full_scale * selectScaleFactor(draw_chars[i], draw_modes[i]),
+    // RDKit❗✔️:                  true);
+    // RDKit❗✔️:     drawChar(draw_chars[i], draw_cds);
+    // RDKit❗✔️:     setFontScale(full_scale, true);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawTextSVG.cpp
+    // RDKit❗✔️: void DrawTextSVG::drawChar(char c, const Point2D &cds) {
+    // RDKit❗✔️:   unsigned int fontSz = fontSize();
+    // RDKit❗✔️:   std::string col = DrawColourToSVG(colour());
+    // RDKit❗✔️:
+    // RDKit❗✔️:   oss_ << "<text";
+    // RDKit❗✔️:   oss_ << " x='" << MolDraw2D_detail::formatDouble(cds.x);
+    // RDKit❗✔️:   oss_ << "' y='" << MolDraw2D_detail::formatDouble(cds.y) << "'";
+    // RDKit❗✔️:   if (!d_active_class_.empty()) {
+    // RDKit❗✔️:     oss_ << " class='" << d_active_class_ << "'";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   std::string cs;
+    // RDKit❗✔️:   cs += c;
+    // RDKit❗✔️:   escape_xhtml(cs);
+    // RDKit❗✔️:   oss_ << " style='font-size:" << fontSz
+    // RDKit❗✔️:        << "px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;"
+    // RDKit❗✔️:           "font-family:sans-serif;text-anchor:start;"
+    // RDKit❗✔️:        << "fill:" << col << "'";
+    // RDKit❗✔️:   oss_ << " >";
+    // RDKit❗✔️:   oss_ << cs;
+    // RDKit❗✔️:   oss_ << "</text>"
+    // RDKit❗✔️:        << "\n";
+    // RDKit❗✔️: }
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawTextSVG.cpp
+    // RDKit❗✔️: void escape_xhtml(std::string &data) {
+    // RDKit❗✔️:   boost::algorithm::replace_all(data, "&", "&amp;");
+    // RDKit❗✔️:   boost::algorithm::replace_all(data, "\"", "&quot;");
+    // RDKit❗✔️:   boost::algorithm::replace_all(data, "\'", "&apos;");
+    // RDKit❗✔️:   boost::algorithm::replace_all(data, "<", "&lt;");
+    // RDKit❗✔️:   boost::algorithm::replace_all(data, ">", "&gt;");
+    // RDKit❗✔️: }
+    // The caller passes effective font, colour and active class by value/ref;
+    // source temporary glyph scale is a local expression, so no borrowed state
+    // survives emission. Reuse source-shaped formatting, scales and XML escapes.
+    // Scoped behavior: finite printable ASCII, valid normal script references,
+    // valid colour/positive font. Existing broader safe helper behavior remains
+    // unresolved and is not upgraded by this detached projection.
+    // Complexity: O(n) emission, one per-glyph escape/format and no rect clones;
+    // allocation/buffering shape matches the existing source-shaped label path.
+    let col = draw_colour_to_svg(colour);
+    for rect in rects {
+        let x = format_double(pos.x + rect.trans.x - rect.offset.x);
+        let y = format_double(pos.y - rect.trans.y + rect.offset.y - rect.rect_corr - rect.y_shift);
         let ch_str = xml_escape(&rect.ch.to_string());
         let font_size =
             format_svg_font_size_px(base_font_size * select_scale_factor(rect.ch, rect.draw_mode));
-
+        out.push_str(&format!("<text x='{}' y='{}'", x, y));
+        if !class_.is_empty() {
+            out.push_str(&format!(" class='{}'", class_));
+        }
         out.push_str(&format!(
-            "<text x='{}' y='{}' class='atom-{}' style='font-size:{}px;font-style:normal;\
-             font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;\
+            " style='font-size:{}px;font-style:normal;font-weight:normal;\
+             fill-opacity:1;stroke:none;font-family:sans-serif;\
              text-anchor:start;fill:{}' >{}</text>\n",
-            x, y, label.atom_idx, font_size, col, ch_str,
+            font_size, col, ch_str,
         ));
     }
 }

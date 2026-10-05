@@ -18,6 +18,10 @@ fn main() -> pyo3_stub_gen::Result<()> {
     row: typing.Optional[builtins.int]
     reason: builtins.str
 
+class DrawingWriteError(builtins.OSError):
+    domain: builtins.str
+    kind: builtins.str
+
 class OperationError(builtins.ValueError):
     domain: builtins.str
     kind: builtins.str
@@ -26,6 +30,7 @@ __version__: builtins.str
 _binding_profile: builtins.str
 "#
     );
+    let text = text.replace("__all__ = [\n", "__all__ = [\n    \"DrawingWriteError\",\n");
     let mut text = text;
     for name in [
         "SmilesError",

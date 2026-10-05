@@ -3,6 +3,40 @@
 use crate::{DrawingError, Molecule};
 use cosmolkit_depict::{DepictOptions, DrawingInput};
 
+/// Rendering and file-system failures remain distinct when writing a drawing.
+#[derive(Debug)]
+pub enum DrawingWriteError {
+    Drawing(DrawingError),
+    Io {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+}
+
+impl std::fmt::Display for DrawingWriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Drawing(source) => source.fmt(f),
+            Self::Io { path, source } => write!(f, "drawing file {}: {source}", path.display()),
+        }
+    }
+}
+
+impl std::error::Error for DrawingWriteError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(match self {
+            Self::Drawing(source) => source,
+            Self::Io { source, .. } => source,
+        })
+    }
+}
+
+impl From<DrawingError> for DrawingWriteError {
+    fn from(source: DrawingError) -> Self {
+        Self::Drawing(source)
+    }
+}
+
 #[cfg(all(test, feature = "cap-smiles", feature = "cap-rings"))]
 #[path = "drawing_state_probe.rs"]
 mod drawing_state_probe;
@@ -143,9 +177,27 @@ impl Molecule {
             feature = "cap-descriptors"
         )))]
         let valence = None;
-        #[cfg(feature = "cap-rings")]
+        #[cfg(any(
+            feature = "cap-rings",
+            feature = "cap-descriptors",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-hydrogens",
+            feature = "cap-kekulize",
+            feature = "cap-aromaticity",
+            feature = "cap-fingerprints"
+        ))]
         let rings = self.derived_cache_runtime().valid_ring_info();
-        #[cfg(not(feature = "cap-rings"))]
+        #[cfg(not(any(
+            feature = "cap-rings",
+            feature = "cap-descriptors",
+            feature = "cap-smiles",
+            feature = "cap-sanitize",
+            feature = "cap-hydrogens",
+            feature = "cap-kekulize",
+            feature = "cap-aromaticity",
+            feature = "cap-fingerprints"
+        )))]
         let rings = None;
         DrawingInput {
             topology: self.topology(),
@@ -159,12 +211,43 @@ impl Molecule {
     /// Render Experimental SVG using the first stored 2D layout, or generate
     /// a detached layout when absent. Stored coordinates and caches are preserved.
     pub fn to_svg(&self, width: u32, height: u32) -> Result<String, DrawingError> {
-        cosmolkit_depict::render_svg(self.drawing_input(), &DepictOptions { width, height })
+        cosmolkit_depict::render_cosmolkit_svg(
+            self.drawing_input(),
+            &DepictOptions { width, height },
+        )
     }
 
     /// Rasterize the same Experimental SVG with the embedded Noto Sans font.
     /// Preparation and rendering never install changes in this molecule.
     pub fn to_png(&self, width: u32, height: u32) -> Result<Vec<u8>, DrawingError> {
         cosmolkit_depict::render_png(self.drawing_input(), &DepictOptions { width, height })
+    }
+
+    /// Render completely before opening the destination, then write the SVG bytes.
+    pub fn write_svg(
+        &self,
+        path: &std::path::Path,
+        width: u32,
+        height: u32,
+    ) -> Result<(), DrawingWriteError> {
+        let svg = self.to_svg(width, height)?;
+        std::fs::write(path, svg.as_bytes()).map_err(|source| DrawingWriteError::Io {
+            path: path.to_owned(),
+            source,
+        })
+    }
+
+    /// Render completely before opening the destination, then write the PNG bytes.
+    pub fn write_png(
+        &self,
+        path: &std::path::Path,
+        width: u32,
+        height: u32,
+    ) -> Result<(), DrawingWriteError> {
+        let png = self.to_png(width, height)?;
+        std::fs::write(path, png).map_err(|source| DrawingWriteError::Io {
+            path: path.to_owned(),
+            source,
+        })
     }
 }

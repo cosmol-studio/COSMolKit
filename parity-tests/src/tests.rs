@@ -100,6 +100,68 @@ fn svg_typed_comparison_normalizes_only_the_four_literal_branding_substitutions(
 }
 
 #[test]
+fn svg_current_canonical_identity_preserves_uri_path_and_glyph_bytes() {
+    use molecular::Outcome;
+    let native = "<svg xmlns:rdkit='http://www.rdkit.org/xml'><rdkit:mol/><path d='M 1.0,2.0 L 3.0,4.0'/><text>N</text></svg>";
+    let canonical = native
+        .replace(
+            "xmlns:rdkit='http://www.rdkit.org/xml'",
+            "xmlns:ck='https://kit.cosmol.org/'",
+        )
+        .replace("rdkit:", "ck:");
+    let expected = Outcome::Text(native.into());
+    assert!(molecular::svg_matches(
+        &expected,
+        &Outcome::Text(canonical.clone())
+    ));
+    for changed in [
+        canonical.replace("https://kit.cosmol.org/", "https://kit.cosmol.org/wrong"),
+        canonical.replace("https://kit.cosmol.org/", "https://kit.cosmol.org"),
+        canonical.replace("xmlns:ck", "xmlns:other"),
+        canonical.replace("1.0", "1.1"),
+        canonical.replace("<text>N</text>", "<text>O</text>"),
+        canonical.replace("<path", " <path"),
+    ] {
+        assert!(
+            !molecular::svg_matches(&expected, &Outcome::Text(changed.clone())),
+            "must reject unapproved metadata or changed drawing bytes: {changed}"
+        );
+    }
+    assert!(!molecular::matches(&expected, &Outcome::Text(canonical)));
+    for (native, canonical) in [
+        ("<text>rdkit:A</text>", "<text>ck:A</text>"),
+        (
+            "<text label='rdkit:A'>N</text>",
+            "<text label='ck:A'>N</text>",
+        ),
+        ("<!-- rdkit:A -->", "<!-- ck:A -->"),
+        ("<![CDATA[rdkit:A]]>", "<![CDATA[ck:A]]>"),
+        (
+            "<text>xmlns:rdkit='http://www.rdkit.org/xml'</text>",
+            "<text>xmlns:ck='https://kit.cosmol.org/'</text>",
+        ),
+    ] {
+        let native = format!("<svg xmlns:rdkit='http://www.rdkit.org/xml'>{native}</svg>");
+        let canonical = format!("<svg xmlns:ck='https://kit.cosmol.org/'>{canonical}</svg>");
+        assert!(
+            !molecular::svg_matches(&Outcome::Text(native), &Outcome::Text(canonical)),
+            "ordinary content must remain exact"
+        );
+    }
+    let native = Outcome::Text(
+        "<svg xmlns:rdkit='http://www.rdkit.org/xml'><rdkit:mol rdkit:numAtoms='2'/></svg>".into(),
+    );
+    let canonical = Outcome::Text(
+        "<svg xmlns:ck='https://kit.cosmol.org/'><ck:mol ck:numAtoms='2'/></svg>".into(),
+    );
+    assert!(molecular::svg_matches(&native, &canonical));
+    assert!(!molecular::svg_matches(
+        &Outcome::Text("<svg><rdkit:mol/></svg>".into()),
+        &Outcome::Text("<svg><ck:mol/></svg>".into()),
+    ));
+}
+
+#[test]
 fn svg_registration_preserves_complete_cargo_task_key_census() {
     let keys: Vec<_> = registry::TASKS.iter().map(|task| task.key()).collect();
     assert_eq!(

@@ -31,11 +31,12 @@ def declared_fields(cls: ast.ClassDef) -> dict[str, str]:
 
 def test_selected_stub_classes_and_methods():
     classes = declarations()
-    assert set(classes) == {"Molecule", "Coordinate2DParams", "DrawingError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "AdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
+    assert set(classes) == {"Molecule", "Coordinate2DParams", "DrawingError", "DrawingWriteError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "AdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
     methods = {n.name: n for n in classes["Molecule"].body if isinstance(n, ast.FunctionDef)}
     expected = {"from_smiles": "Molecule", "num_atoms": "builtins.int", "num_bonds": "builtins.int",
                 "to_smiles": "builtins.str", "coordinates_2d": "typing.Optional[builtins.list[builtins.list[builtins.float]]]",
-                "with_2d_coordinates": "Molecule", "with_2d_coordinates_with_params": "Molecule",
+                "has_2d_coordinates": "builtins.bool", "compute_2d_coordinates_": "None",
+                "compute_2d_coordinates_with_params_": "None", "with_2d_coordinates": "Molecule", "with_2d_coordinates_with_params": "Molecule",
                 "to_svg": "builtins.str", "to_png": "builtins.bytes", "write_svg": "None", "write_png": "None"}
     expected.update({"new": "Molecule", "from_smiles_with_params": "Molecule", "to_smiles_with_params": "builtins.str",
         "morgan_fingerprint": "Fingerprint", "morgan_sparse_fingerprint": "SparseBitFingerprint",
@@ -57,6 +58,12 @@ def test_selected_stub_classes_and_methods():
         runtime = inspect.signature(descriptor)
         assert list(runtime.parameters) == names
         assert all(cast(object, p.default) is inspect.Parameter.empty for p in runtime.parameters.values())
+    for name in ("has_2d_coordinates", "compute_2d_coordinates_"):
+        assert [a.arg for a in methods[name].args.args] == ["self"]
+        assert list(inspect.signature(getattr(cosmolkit.Molecule, name)).parameters) == ["self"]
+    inplace = methods["compute_2d_coordinates_with_params_"]
+    assert [a.arg for a in inplace.args.args] == ["self", "params"]
+    assert ast.unparse(required_expression(inplace.args.args[1].annotation)) == "Coordinate2DParams"
     configured = methods["with_2d_coordinates_with_params"]
     assert [a.arg for a in configured.args.args] == ["self", "params"]
     assert ast.unparse(required_expression(configured.args.args[1].annotation)) == "Coordinate2DParams"
@@ -85,7 +92,7 @@ def test_nine_parameter_properties_types_and_defaults():
 
 def test_generated_exception_and_profile_declarations():
     classes = declarations()
-    for name in ("DrawingError", "OperationError"):
+    for name in ("DrawingError", "DrawingWriteError", "OperationError"):
         assert [ast.unparse(base) for base in classes[name].bases] == ["builtins.ValueError"]
         fields = declared_fields(classes[name])
         assert fields["domain"] == fields["kind"] == "builtins.str"
@@ -94,3 +101,10 @@ def test_generated_exception_and_profile_declarations():
     assert cosmolkit._binding_profile in {"drawing-bindings", "canonical-bootstrap"}
     assert issubclass(cosmolkit.DrawingError, ValueError)
     assert issubclass(cosmolkit.OperationError, ValueError)
+
+
+def test_generated_drawing_write_error_projection():
+    cls = declarations()["DrawingWriteError"]
+    assert [ast.unparse(base) for base in cls.bases] == ["builtins.OSError"]
+    assert declared_fields(cls) == {"domain": "builtins.str", "kind": "builtins.str"}
+    assert issubclass(cosmolkit.DrawingWriteError, OSError)

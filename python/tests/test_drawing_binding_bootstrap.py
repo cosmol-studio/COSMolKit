@@ -26,9 +26,11 @@ def test_svg_png_are_real_and_preserve_the_receiver():
         assert root.tag == "{http://www.w3.org/2000/svg}svg"
         assert root.attrib["width"] == "120px"
         assert root.attrib["height"] == "80px"
-        # Exact current Rust emitter (draw.rs::init_drawing); binding must not
-        # rewrite XML branding. The older Python branding test is separate.
-        assert "xmlns:rdkit='http://www.rdkit.org/xml'" in svg
+        # The domain producer emits the public identity required by test_svg_identity.
+        # Keep exact repeats, parsed XML, PNG bytes and receiver preservation.
+        assert "xmlns:ck='https://kit.cosmol.org/'" in svg
+        assert "xmlns:rdkit" not in svg
+        assert "www.rdkit.org" not in svg
         png = molecule.to_png(120, 80)
         assert type(png) is bytes
         assert png[:8] == b"\x89PNG\r\n\x1a\n"

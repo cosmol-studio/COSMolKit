@@ -219,7 +219,9 @@ def test_svg_png_exact_repeats_and_observable_state(smiles: str, dimensions: tup
         root = ET.fromstring(svg)
         assert root.tag == "{http://www.w3.org/2000/svg}svg"
         assert (root.attrib["width"], root.attrib["height"]) == tuple(f"{v}px" for v in dimensions)
-        assert "xmlns:rdkit='http://www.rdkit.org/xml'" in svg
+        assert "xmlns:ck='https://kit.cosmol.org/'" in svg
+        assert "xmlns:rdkit" not in svg
+        assert "www.rdkit.org" not in svg
         svg_outputs.append(svg)
         assert state(source) == before
         png = source.to_png(*dimensions)

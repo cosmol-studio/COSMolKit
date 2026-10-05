@@ -824,6 +824,13 @@ impl Molecule {
             .map(Conformer2D::coordinates)
     }
 
+    /// Whether a stored 2D layout exists, including a stored empty layout.
+    /// This query never generates coordinates or inspects 3D conformers.
+    #[must_use]
+    pub fn has_2d_coordinates(&self) -> bool {
+        self.coordinates_2d().is_some()
+    }
+
     /// Complete block access for runtime validation and detached owner calls.
     pub(crate) fn coordinate_block_runtime(&self) -> &CoordinateBlock {
         self.state.coordinates.as_ref()

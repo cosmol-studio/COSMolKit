@@ -1,7 +1,9 @@
 //! Small Rust-owned parity pilot; no performance or binding claims.
 pub mod descriptor_reference;
+mod draw_reference;
 pub mod execute;
 pub mod molecular;
+mod native_draw_reference;
 pub mod reference_parity;
 pub mod registry;
 pub mod special_regression;
@@ -119,6 +121,10 @@ struct Manifest {
 fn adapter_digest(task: &Task) -> String {
     if descriptor_reference::handles(task) {
         digest(include_str!("descriptor_reference.rs").as_bytes())
+    } else if draw_reference::handles(task) {
+        digest(include_str!("draw_reference.rs").as_bytes())
+    } else if native_draw_reference::handles(task) {
+        digest(include_str!("native_draw_reference.rs").as_bytes())
     } else {
         digest(ORACLE.as_bytes())
     }
@@ -138,7 +144,9 @@ fn identity(task: &Task, input: &[u8], reference: &[u8], rows: usize) -> Manifes
         input_sha256: digest(input),
         reference_sha256: digest(reference),
         rows,
-        imported_reference: descriptor_reference::provenance(task),
+        imported_reference: descriptor_reference::provenance(task)
+            .or_else(|| draw_reference::provenance(task))
+            .or_else(|| native_draw_reference::provenance(task)),
     }
 }
 
@@ -213,6 +221,12 @@ fn oracle(task: &Task, cases: &Corpus, python: &Path, threads: usize) -> Result<
     }
     if descriptor_reference::handles(task) {
         return descriptor_reference::generate(task, cases);
+    }
+    if draw_reference::handles(task) {
+        return draw_reference::generate(task, cases);
+    }
+    if native_draw_reference::handles(task) {
+        return native_draw_reference::generate(task, cases);
     }
     let script = root().join("tools/oracles/rdkit/fingerprint_values_pilot.py");
     // Run the exact checksummed source, from a real file so process workers

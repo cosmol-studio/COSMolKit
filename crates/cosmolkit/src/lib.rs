@@ -47,6 +47,8 @@ pub use cosmolkit_descriptors::{
 };
 #[cfg(feature = "cap-descriptors")]
 pub use descriptors::DescriptorReadError;
+#[cfg(feature = "cap-depict")]
+pub use drawing::DrawingWriteError;
 #[cfg(feature = "cap-matrices")]
 mod matrices;
 mod molecule;
