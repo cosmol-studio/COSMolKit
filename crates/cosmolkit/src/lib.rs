@@ -349,3 +349,8 @@ pub use cosmolkit_fingerprints::{TopologicalTorsionPathScoreError, explain_path_
 
 #[cfg(feature = "cap-alignment")]
 pub(crate) use ops::{WithAlignedConformersAccess, WithAlignmentToAccess};
+
+#[cfg(feature = "cap-fingerprints")]
+mod maccs_fingerprint;
+#[cfg(feature = "cap-fingerprints")]
+pub use cosmolkit_fingerprints::{MaccsFingerprintError, MaccsFingerprintParams};

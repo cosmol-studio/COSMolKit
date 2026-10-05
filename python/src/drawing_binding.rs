@@ -349,6 +349,31 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    fn maccs_fingerprint(&self, py: Python<'_>) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .maccs_fingerprint()
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_maccs::maccs_pyerr(py, e))
+    }
+    fn maccs_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_maccs::MaccsFingerprintParams,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .maccs_fingerprint_with_params(&params.inner)
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_maccs::maccs_pyerr(py, e))
+    }
+    fn maccs_fingerprint_raw(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .maccs_fingerprint_raw()
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_maccs::maccs_pyerr(py, e))
+    }
     #[pyo3(signature=(path,size,atom_codes=None))]
     fn topological_torsion_path_score(
         &self,
@@ -2537,6 +2562,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_descriptor_binding::register(module)?;
     crate::canonical_values::register(module)?;
     crate::canonical_path_score::register(module)?;
+    crate::canonical_maccs::register(module)?;
     crate::canonical_element_metadata::register(module)?;
     crate::mmff_binding::register(module)?;
     crate::uff_binding::register(module)?;

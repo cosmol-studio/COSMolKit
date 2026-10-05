@@ -422,3 +422,8 @@ mod topological_torsion_path;
 pub use topological_torsion_path::{
     TopologicalTorsionPathScoreError, explain_path_score, topological_torsion_path_score,
 };
+
+mod maccs;
+pub use maccs::{
+    MaccsFingerprintError, MaccsFingerprintParams, maccs_fingerprint, maccs_fingerprint_raw,
+};
