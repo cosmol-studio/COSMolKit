@@ -175,6 +175,29 @@ pub(crate) fn emit_atom_site_rows(
     params: &BioMmcifWriteParams,
     schema: &AtomSiteSchema,
 ) -> Result<(Vec<String>, Vec<AnisoRowRef>), super::BioMmcifWriteError> {
+    // Gemmi❗✔️: inline elname_t& element_uppercase_name(El el) {
+    // Gemmi❗✔️:   static constexpr elname_t names[] = {
+    // Gemmi❗✔️:     "X",  "H",  "HE", "LI", "BE", "B",  "C",  "N",  "O", "F", "NE",
+    // Gemmi❗✔️:     "NA", "MG", "AL", "SI", "P",  "S",  "CL", "AR",
+    // Gemmi❗✔️:     "K",  "CA", "SC", "TI", "V",  "CR", "MN", "FE", "CO",
+    // Gemmi❗✔️:     "NI", "CU", "ZN", "GA", "GE", "AS", "SE", "BR", "KR",
+    // Gemmi❗✔️:     "RB", "SR", "Y",  "ZR", "NB", "MO", "TC", "RU", "RH",
+    // Gemmi❗✔️:     "PD", "AG", "CD", "IN", "SN", "SB", "TE", "I", "XE",
+    // Gemmi❗✔️:     "CS", "BA", "LA", "CE", "PR", "ND", "PM", "SM", "EU",
+    // Gemmi❗✔️:     "GD", "TB", "DY", "HO", "ER", "TM", "YB", "LU",
+    // Gemmi❗✔️:     "HF", "TA", "W",  "RE", "OS", "IR", "PT", "AU", "HG",
+    // Gemmi❗✔️:     "TL", "PB", "BI", "PO", "AT", "RN",
+    // Gemmi❗✔️:     "FR", "RA", "AC", "TH", "PA", "U",  "NP", "PU", "AM",
+    // Gemmi❗✔️:     "CM", "BK", "CF", "ES", "FM", "MD", "NO", "LR",
+    // Gemmi❗✔️:     "RF", "DB", "SG", "BH", "HS", "MT", "DS", "RG", "CN",
+    // Gemmi❗✔️:     "NH", "FL", "MC", "LV", "TS", "OG",
+    // Gemmi❗✔️:     "D", "", ""
+    // Gemmi❗✔️:   };
+    // Gemmi❗✔️:   static_assert(sizeof(names) / sizeof(names[0]) == 122, "not 122");
+    // Gemmi❗✔️:   return names[static_cast<int>(el)];
+    // Gemmi❗✔️: }
+    // Gemmi❗✔️:
+
     // Gemmi✔️✔️:   for (const Model& model : st.models) {
     // Gemmi✔️✔️:     for (const Chain& chain : model.chains) {
     // Gemmi✔️✔️:       for (const Residue& res : chain.residues) {
@@ -236,7 +259,7 @@ pub(crate) fn emit_atom_site_rows(
     // to 0; CK readers always populate source_model_number, and a None only
     // arises for programmatically built parts, where unwrap_or_default keeps
     // the Gemmi default rather than inventing a number. Element uname() is
-    // the uppercase canonical symbol, matching Element::symbol().
+    // the uppercase canonical symbol, matching Gemmi Element::uname().
     // Complexity: one hierarchy walk, one output String per column per atom
     // and constant per-row work; no repeated schema or entity rescans (the
     // per-residue entity id is looked up once per residue, like the source).
@@ -307,7 +330,7 @@ pub(crate) fn emit_atom_site_rows(
                         values.push(if as_het { "HETATM" } else { "ATOM" }.to_string());
                     }
                     values.push(serial.to_string());
-                    values.push(atom.element().symbol().to_string());
+                    values.push(atom.element().symbol().to_ascii_uppercase());
                     let label_atom = quote_cif_value(atom_name_text(atom.name(), input_format));
                     values.push(label_atom.clone());
                     values.push(
@@ -449,7 +472,7 @@ pub(crate) fn add_cif_atoms(
         for row in &aniso {
             let atom = &data.atoms()[row.atom_index];
             aniso_values.push(row.serial.to_string());
-            aniso_values.push(atom.element().symbol().to_string());
+            aniso_values.push(atom.element().symbol().to_ascii_uppercase());
             aniso_values.push(float_field_text(atom.anisou()[0]));
             aniso_values.push(float_field_text(atom.anisou()[1]));
             aniso_values.push(float_field_text(atom.anisou()[2]));

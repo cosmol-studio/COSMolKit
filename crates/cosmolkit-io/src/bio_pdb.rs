@@ -4393,6 +4393,7 @@ impl PdbEntityState {
 
 #[derive(Debug, Clone, PartialEq)]
 struct PdbAtomFields {
+    coordinate_text: [u8; 24],
     serial: PdbAtomSerial,
     name: AtomName,
     altloc: Option<AltLocLabel>,
@@ -6542,21 +6543,24 @@ fn materialize_pdb_bio_structure(
                 }
                 let atom_start = atoms.len();
                 for atom in &residue.atoms {
-                    atoms.push(BioAtomRow::new(
-                        residue.row_id,
-                        atom.name,
-                        atom.element,
-                        atom.isotope_mass_number,
-                        atom.altloc,
-                        atom.formal_charge,
-                        BioCalcFlag::NotSet,
-                        atom.occupancy,
-                        atom.b_iso,
-                        atom.anisou,
-                        -1,
-                        0.0,
-                        AtomSourceIds::new(Some(atom.serial)),
-                    ));
+                    atoms.push(
+                        BioAtomRow::new(
+                            residue.row_id,
+                            atom.name,
+                            atom.element,
+                            atom.isotope_mass_number,
+                            atom.altloc,
+                            atom.formal_charge,
+                            BioCalcFlag::NotSet,
+                            atom.occupancy,
+                            atom.b_iso,
+                            atom.anisou,
+                            -1,
+                            0.0,
+                            AtomSourceIds::new(Some(atom.serial)),
+                        )
+                        .with_pdb_coordinate_text(atom.coordinate_text),
+                    );
                     positions.push(atom.position);
                 }
                 let atom_span = BioRowSpan::from_usize(atom_start, atoms.len() - atom_start)?;
@@ -6831,6 +6835,9 @@ fn decode_pdb_atom_fields(
     // O(1), with no per-atom allocation on success; source helper scans are
     // bounded by their declared field widths.
     Ok(PdbAtomFields {
+        coordinate_text: source_line_buffer[30..54]
+            .try_into()
+            .expect("fixed source field"),
         serial,
         name,
         altloc: read_altloc(source_line_buffer[16]),

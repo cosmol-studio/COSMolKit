@@ -133,6 +133,7 @@ struct BindingEntry {
     python: LitStr,
     javascript: LitStr,
     feature: LitStr,
+    requires: Vec<LitStr>,
     status: Option<FunctionStatus>,
     callable: Option<CallablePayload>,
     type_role: Option<TypeRole>,
@@ -158,6 +159,7 @@ struct BindingEntryDraft {
     python: Option<LitStr>,
     javascript: Option<LitStr>,
     feature: Option<LitStr>,
+    requires: Option<Vec<LitStr>>,
     status: Option<FunctionStatus>,
     kind: Option<Ident>,
     receiver: Option<Ident>,
@@ -217,6 +219,14 @@ fn parse_binding_entry(
             "python" => set_once(&mut draft.python, input.parse()?, &key)?,
             "javascript" => set_once(&mut draft.javascript, input.parse()?, &key)?,
             "feature" => set_once(&mut draft.feature, input.parse()?, &key)?,
+            "requires" => {
+                let values;
+                bracketed!(values in input);
+                let required = Punctuated::<LitStr, Token![,]>::parse_terminated(&values)?
+                    .into_iter()
+                    .collect();
+                set_once(&mut draft.requires, required, &key)?;
+            }
             "status" => set_once(&mut draft.status, input.parse()?, &key)?,
             "kind" => set_once(&mut draft.kind, input.parse()?, &key)?,
             "receiver" => set_once(&mut draft.receiver, input.parse()?, &key)?,
@@ -263,6 +273,13 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
     require_nonempty(&javascript, "javascript")?;
     require_nonempty(&feature, "feature")?;
     validate_cfg(&cfg_attrs, &feature)?;
+    let requires = match draft.requires {
+        None => Vec::new(),
+        Some(values) => {
+            validate_required_capabilities(&feature, &values)?;
+            values
+        }
+    };
 
     let (callable, type_role) = match item {
         ItemClass::Callable => {
@@ -335,6 +352,7 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         python,
         javascript,
         feature,
+        requires,
         status: draft.status,
         callable,
         type_role,
@@ -699,6 +717,55 @@ fn validate_type_names(
     Ok(())
 }
 
+fn validate_required_capabilities(owner: &LitStr, requires: &[LitStr]) -> syn::Result<()> {
+    fn is_capability(value: &str) -> bool {
+        value.strip_prefix("cap-").is_some_and(|tail| {
+            !tail.is_empty()
+                && tail.split('-').all(|part| {
+                    !part.is_empty()
+                        && part
+                            .bytes()
+                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+                })
+        })
+    }
+    if requires.is_empty() {
+        return Err(syn::Error::new_spanned(
+            owner,
+            "requires must contain at least one capability",
+        ));
+    }
+    if !is_capability(&owner.value()) {
+        return Err(syn::Error::new_spanned(
+            owner,
+            "requires owner must use a cap- capability spelling",
+        ));
+    }
+    let mut seen = HashSet::new();
+    for requirement in requires {
+        let value = requirement.value();
+        if !is_capability(&value) {
+            return Err(syn::Error::new_spanned(
+                requirement,
+                "requires must use nonempty cap- capability spelling",
+            ));
+        }
+        if value == owner.value() {
+            return Err(syn::Error::new_spanned(
+                requirement,
+                "requires must not repeat its owner capability",
+            ));
+        }
+        if !seen.insert(value) {
+            return Err(syn::Error::new_spanned(
+                requirement,
+                "duplicate required capability",
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_cfg(attrs: &[Attribute], feature: &LitStr) -> syn::Result<()> {
     if attrs.len() > 1 {
         return Err(syn::Error::new_spanned(
@@ -770,7 +837,15 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
     let mut values = Vec::with_capacity(entries.len());
     let mut assertions = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
-        let cfg = &entry.cfg_attrs;
+        // The effective gate is generated once from the owning declaration;
+        // registry rows and every signature/type assertion use the same value.
+        let requires = &entry.requires;
+        let cfg = if requires.is_empty() {
+            entry.cfg_attrs.clone()
+        } else {
+            let owner = &entry.feature;
+            vec![syn::parse_quote!(#[cfg(all(feature = #owner, #(feature = #requires),*))])]
+        };
         let semantic_id = &entry.semantic_id;
         let item = item_tokens(entry.item);
         let owner = owner_tokens(entry.owner);
@@ -853,7 +928,7 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             crate::BindingContractEntry {
                 semantic_id: #semantic_id, item: #item, owner: #owner,
                 rust_path: stringify!(#rust), python_name: #python, javascript_name: #javascript,
-                feature: #feature, status: #status,
+                feature: #feature, required_capabilities: &[#(#requires),*], status: #status,
                 callable: #callable, type_role: #role,
             }
         });

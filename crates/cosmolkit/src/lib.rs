@@ -296,5 +296,9 @@ pub use tautomer::{
     default_tautomer_score_terms,
 };
 
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+pub use bio::BioMoleculeError;
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams};
 #[cfg(feature = "cap-forcefields")]
 pub use ops::{UffEnergyGradient, UffEvaluationParams};

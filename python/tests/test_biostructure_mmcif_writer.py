@@ -15,7 +15,7 @@ END
 
 
 def test_biostructure_mmcif_string_writer_defaults_reparse_without_mutation() -> None:
-    structure = cosmolkit.BioStructure.from_pdb_str(PDB)
+    structure = cosmolkit.BioStructure.from_pdb(PDB)
     before = (
         repr(structure),
         structure.name(),
@@ -27,7 +27,7 @@ def test_biostructure_mmcif_string_writer_defaults_reparse_without_mutation() ->
     )
 
     output = structure.to_mmcif()
-    reparsed = cosmolkit.BioStructure.from_mmcif_str(output, "python-roundtrip.cif")
+    reparsed = cosmolkit.BioStructure.from_mmcif(output)
 
     assert output.startswith("data_")
     assert "_atom_site.Cartn_x" in output
@@ -52,30 +52,26 @@ def test_biostructure_mmcif_string_writer_defaults_reparse_without_mutation() ->
 def test_biostructure_mmcif_options_and_file_writer_share_serialization(
     tmp_path: Path,
 ) -> None:
-    structure = cosmolkit.BioStructure.from_pdb_str(PDB)
-    groups = cosmolkit.MmcifOutputGroups(False)
-    groups.atoms = True
-    groups.block_name = True
-    groups.group_pdb = True
-    options = cosmolkit.MmcifWriteOptions()
-    options.groups = groups
-    options.compact = True
+    structure = cosmolkit.BioStructure.from_pdb(PDB)
+    options = cosmolkit.BioMmcifWriteParams(
+        all_groups=False, atoms=True, block_name=True, group_pdb=True, compact=True
+    )
 
-    expected = structure.to_mmcif(options)
+    expected = structure.to_mmcif_with_params(options)
     output_path = tmp_path / "selected.cif"
-    structure.write_mmcif(str(output_path), options)
+    structure.write_mmcif_with_params(output_path, options)
 
     assert output_path.read_text(encoding="utf-8") == expected
     assert "_atom_site." in expected
     assert "_entry." not in expected
     assert "_entity." not in expected
-    assert options.groups.atoms is True
-    assert options.groups.entry is False
-    assert cosmolkit.MmcifWriteOptions().groups.auth_all is False
+    assert options.atoms is True
+    assert options.entry is False
+    assert cosmolkit.BioMmcifWriteParams().auth_all is False
 
 
 def test_biostructure_mmcif_writer_errors_and_api_ownership(tmp_path: Path) -> None:
-    structure = cosmolkit.BioStructure.from_pdb_str(PDB)
+    structure = cosmolkit.BioStructure.from_pdb(PDB)
 
     with pytest.raises(OSError):
         structure.write_mmcif(str(tmp_path / "missing" / "output.cif"))

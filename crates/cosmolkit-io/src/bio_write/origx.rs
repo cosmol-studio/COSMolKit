@@ -13,7 +13,7 @@ use super::super::cif::{CifBlock, format_cif_f64};
 /// Source `nontrivial_origx` predicate. The two `is_identity` helper
 /// bodies are copied here (cross-file rule); BioTransform has no public
 /// `is_identity` and none is invented.
-fn origx_is_nontrivial(has_origx: bool, origx: &BioTransform) -> bool {
+pub(super) fn origx_is_nontrivial(has_origx: bool, origx: &BioTransform) -> bool {
     // BEGIN GEMMI CPP HELPERS Mat33::is_identity (math.hpp:232-236) + Transform::is_identity (math.hpp:408-410)
     // Gemmi✔️✔️:   bool is_identity() const {
     // Gemmi✔️✔️:     return a[0][0] == 1 && a[0][1] == 0 && a[0][2] == 0 &&
@@ -515,12 +515,15 @@ mod bio_origx_writer_tests {
                                         .starts_with("_database_PDB_matrix.")))
                             })
                             .count();
-                        if category_loops != 0 {
-                            discrepancies
-                                .push(format!("{label}: remaining category loop {category_loops}"));
+                        let is_active = has_origx && profile.active;
+                        // Proposal: pinned Gemmi guard execution retains the
+                        // whole preexisting F2 loop on the 36 no-op branches.
+                        // Active branches must still erase the original loop.
+                        let expected_loops = usize::from(!is_active && block_name == "F2");
+                        if category_loops != expected_loops {
+                            discrepancies.push(format!("{label}: remaining category loop {category_loops}, expected {expected_loops}"));
                         }
 
-                        let is_active = has_origx && profile.active;
                         if !is_active {
                             // False flag or exact IEEE identity: WHOLE block
                             // untouched (stale mixed loop preserved).

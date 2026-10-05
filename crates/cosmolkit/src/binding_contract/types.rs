@@ -90,6 +90,8 @@ pub struct BindingContractEntry {
     pub python_name: &'static str,
     pub javascript_name: &'static str,
     pub feature: &'static str,
+    /// Additional capability selectors required together with the owning feature.
+    pub required_capabilities: &'static [&'static str],
     pub status: FunctionStatus,
     pub callable: Option<BindingCallableContract>,
     pub type_role: Option<BindingTypeRole>,

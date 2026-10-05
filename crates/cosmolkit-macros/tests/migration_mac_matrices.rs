@@ -254,8 +254,8 @@ fn molecule_output_result_and_topology_edit_branches_are_exact() {
 fn molecule_tautomer_transition_and_operation_defined_valence_are_not_rewritten() {
     let tautomer = molecule(
         r#"
-        op enumerate_tautomers_with_options(options: crate::Options) {
-            method: enumerate_tautomers_with_options,
+        op enumerate_tautomers_with_params(options: crate::Options) {
+            method: enumerate_tautomers_with_params,
             impl_fn: crate::enumerate_tautomers_impl,
             output: multiple,
             kind: weak,

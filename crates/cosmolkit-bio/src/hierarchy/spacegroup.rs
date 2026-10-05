@@ -465,6 +465,13 @@ fn find_structure_spacegroup(crystal: &super::BioCrystalInfo) -> Option<&'static
     )
 }
 
+pub(super) fn structure_space_group_number(crystal: &super::BioCrystalInfo) -> Option<i32> {
+    // Gemmi❗✔️: if (const SpaceGroup* sg = st.find_spacegroup())
+    // Gemmi❗✔️:   span.set_pair("_symmetry.Int_Tables_number", std::to_string(sg->number));
+    // Thin scalar projection of the unique source-backed lookup, with no copied table.
+    find_structure_spacegroup(crystal).map(|group| group.number)
+}
+
 fn set_crystal_symmetry_images(crystal: &mut super::BioCrystalInfo) {
     // Gemmi❗✔️:   void set_cell_images_from_groupops(const GroupOps& group_ops) {
     // Gemmi❗✔️:     images.clear();

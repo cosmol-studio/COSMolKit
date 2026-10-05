@@ -237,6 +237,7 @@ pub fn altloc_matches(stored: Option<AltLocLabel>, request: AltLocRequest) -> bo
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BioAtomRow {
+    pdb_coordinate_text: Option<[u8; 24]>,
     residue_id: BioResidueId,
     name: AtomName,
     element: Element,
@@ -253,6 +254,17 @@ pub struct BioAtomRow {
 }
 
 impl BioAtomRow {
+    /// Narrow IO provenance: exact PDB coordinate columns, independent of
+    /// parsed coordinates and retained when a detached row is copied.
+    #[doc(hidden)]
+    pub fn with_pdb_coordinate_text(mut self, text: [u8; 24]) -> Self {
+        self.pdb_coordinate_text = Some(text);
+        self
+    }
+    #[doc(hidden)]
+    pub const fn pdb_coordinate_text(&self) -> Option<&[u8; 24]> {
+        self.pdb_coordinate_text.as_ref()
+    }
     /// `isotope_mass_number` is independent of `element` and `name`. `None`
     /// means that no isotope mass is specified; it does not mean explicit
     /// protium. This value constructor does not impose physical isotope rules.
@@ -284,6 +296,7 @@ impl BioAtomRow {
         // Behavior review: IO supplies source values; no value-layer normalization is performed.
         // Complexity review: construction is constant-time with no allocation.
         Self {
+            pdb_coordinate_text: None,
             residue_id,
             name,
             element,
@@ -724,6 +737,37 @@ impl BioTransform {
     }
 
     #[must_use]
+    /// Source affine-transform approximate equality, including its asymmetric NaN treatment.
+    #[must_use]
+    pub fn approx(&self, other: &Self, epsilon: f64) -> bool {
+        // Gemmi❗✔️:   bool approx(const Transform& o, double epsilon) const {
+        // Gemmi❗✔️:     return mat.approx(o.mat, epsilon) && vec.approx(o.vec, epsilon);
+        // Gemmi❗✔️:   }
+        // Gemmi❗✔️:   double trace() const { return a[0][0] + a[1][1] + a[2][2]; }
+        // Gemmi❗✔️:
+        // Gemmi❗✔️:   bool approx(const Mat33& other, double epsilon) const {
+        // Gemmi❗✔️:     for (int i = 0; i < 3; ++i)
+        // Gemmi❗✔️:       for (int j = 0; j < 3; ++j)
+        // Gemmi❗✔️:         if (std::fabs(a[i][j] - other.a[i][j]) > epsilon)
+        // Gemmi❗✔️:           return false;
+        // Gemmi❗✔️:     return true;
+        // Gemmi❗✔️:   }
+        // Gemmi❗✔️:   bool approx(const Vec3_& o, Real epsilon) const {
+        // Gemmi❗✔️:     return std::fabs(x - o.x) <= epsilon &&
+        // Gemmi❗✔️:            std::fabs(y - o.y) <= epsilon &&
+        // Gemmi❗✔️:            std::fabs(z - o.z) <= epsilon;
+        // Gemmi❗✔️:   }
+        // Cost: fixed 3x3 and three-vector comparisons, without allocation.
+        for i in 0..3 {
+            for j in 0..3 {
+                if (self.matrix[i][j] - other.matrix[i][j]).abs() > epsilon {
+                    return false;
+                }
+            }
+        }
+        (0..3).all(|i| (self.translation[i] - other.translation[i]).abs() <= epsilon)
+    }
+
     pub fn apply(&self, point: [f64; 3]) -> [f64; 3] {
         // Gemmi✔️✔️: Vec3 apply(const Vec3& x) const { return mat.multiply(x) + vec; }
         // Behavior review: row-major matrix-vector multiplication precedes translation.
@@ -1068,6 +1112,16 @@ impl BioCrystalInfo {
     pub const fn cs_count(&self) -> i16 {
         self.cs_count
     }
+    /// International Tables number selected by Gemmi's structure space-group lookup.
+    #[must_use]
+    pub fn space_group_number(&self) -> Option<i32> {
+        // Gemmi❗✔️: if (const SpaceGroup* sg = st.find_spacegroup())
+        // Gemmi❗✔️:   span.set_pair("_symmetry.Int_Tables_number", std::to_string(sg->number));
+        // Behavior: expose only the selected scalar; lookup stays in the BIO table owner.
+        // Cost: no additional table scan or allocation after lookup.
+        spacegroup::structure_space_group_number(self)
+    }
+
     #[must_use]
     pub fn symmetry_images(&self) -> &[BioTransform] {
         &self.symmetry_images
@@ -1658,6 +1712,101 @@ impl BioStructureData {
             })
     }
 
+    /// Resolve a source address in one model, preserving the first residue match.
+    pub fn find_cra(
+        &self,
+        model_id: BioModelId,
+        address: &crate::AtomAddress,
+        ignore_segment: bool,
+    ) -> Result<Option<(BioChainId, BioResidueId, Option<BioAtomId>)>, BioStructureError> {
+        // Gemmi❗✔️:   CRA find_cra(const AtomAddress& address, bool ignore_segment=false) {
+        // Gemmi❗✔️:     for (Chain& chain : chains)
+        // Gemmi❗✔️:       if (chain.name == address.chain_name) {
+        // Gemmi❗✔️:         for (Residue& res : chain.residues)
+        // Gemmi❗✔️:           if (address.res_id.matches_noseg(res) &&
+        // Gemmi❗✔️:               (ignore_segment || address.res_id.segment == res.segment)) {
+        // Gemmi❗✔️:             Atom *at = nullptr;
+        // Gemmi❗✔️:             if (!address.atom_name.empty())
+        // Gemmi❗✔️:               at = res.find_atom(address.atom_name, address.altloc);
+        // Gemmi❗✔️:             return {&chain, &res, at};
+        // Gemmi❗✔️:           }
+        // Gemmi❗✔️:       }
+        // Gemmi❗✔️:     return {nullptr, nullptr, nullptr};
+        // Gemmi❗✔️:   }
+        // Behavior: delegates residue matching and altloc matching to the canonical BIO owners.
+        // Cost: one ordered chain/residue/atom traversal, no cloned rows or temporary atom names.
+        let model = self.models.get(model_id.index()).ok_or(
+            BioStructureError::RowReferenceOutOfBounds {
+                table: "models",
+                index: model_id.value(),
+                table_len: self.models.len(),
+            },
+        )?;
+        for (chain_offset, chain) in model.chain_span().slice(&self.chains)?.iter().enumerate() {
+            if !chain.source().auth_chain_id().map_or_else(
+                || address.chain_name().as_str().is_empty(),
+                |id| id == address.chain_name(),
+            ) {
+                continue;
+            }
+            for (residue_offset, residue) in chain
+                .residue_span()
+                .slice(&self.residues)?
+                .iter()
+                .enumerate()
+            {
+                let seq = residue.source().seq_id();
+                let segment = residue.source().segment_id().map_or(&[][..], |bytes| {
+                    let end = bytes
+                        .iter()
+                        .rposition(|b| *b != 0 && *b != b' ')
+                        .map_or(0, |i| i + 1);
+                    &bytes[..end]
+                });
+                let candidate = crate::ResidueAddress::new(
+                    seq.map(|s| s.seq_num()),
+                    seq.and_then(|s| s.ins_code()),
+                    segment,
+                    residue.name(),
+                )
+                .expect("validated BIO source identifiers are bounded ASCII");
+                if !address.residue().matches_without_segment(&candidate)
+                    || (!ignore_segment && address.residue().segment() != candidate.segment())
+                {
+                    continue;
+                }
+                let chain_id = BioChainId::new(model.chain_span().start() + chain_offset as u32);
+                let residue_id =
+                    BioResidueId::new(chain.residue_span().start() + residue_offset as u32);
+                let atom_id = if address.logical_atom_name().is_empty() {
+                    None
+                } else {
+                    residue
+                        .atom_span()
+                        .slice(&self.atoms)?
+                        .iter()
+                        .enumerate()
+                        .find_map(|(offset, atom)| {
+                            let requested = if address.altloc() == b'*' {
+                                AltLocRequest::Any
+                            } else {
+                                AltLocRequest::Exact(
+                                    (address.altloc() != 0)
+                                        .then(|| crate::AltLocLabel::new(address.altloc())),
+                                )
+                            };
+                            (atom_name_logical_view(&atom.name(), self.input_format)
+                                == address.logical_atom_name()
+                                && altloc_matches(atom.altloc(), requested))
+                            .then(|| BioAtomId::new(residue.atom_span().start() + offset as u32))
+                        })
+                };
+                return Ok(Some((chain_id, residue_id, atom_id)));
+            }
+        }
+        Ok(None)
+    }
+
     #[must_use]
     pub fn find_atom(
         &self,
@@ -1967,6 +2116,9 @@ pub enum BioStructureError {
     EntitySubchainMismatch {
         entity_id: BioEntityId,
         subchain: String,
+    },
+    EmptyResidueSpan {
+        operation: &'static str,
     },
     ImpossibleCrystalAngle,
     AtomNotFound,

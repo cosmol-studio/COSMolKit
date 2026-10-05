@@ -4,6 +4,12 @@
 //! dependencies. `bio` independently enables structural-biology formats and
 //! CID selection; it does not activate molecular IO or the search owner.
 
+#[cfg(all(feature = "bio", feature = "molecule"))]
+mod bio_molecule;
+#[cfg(all(feature = "bio", feature = "molecule"))]
+pub use bio_molecule::{
+    BioMoleculeConversionError, BioMoleculeParams, bio_structure_to_molecule_parts,
+};
 #[cfg(feature = "bio")]
 mod bio_chemcomp;
 #[cfg(feature = "bio")]

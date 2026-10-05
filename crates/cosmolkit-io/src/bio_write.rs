@@ -1,11 +1,4 @@
-//! IO-owned options and typed failures for detached BIO coordinate mmCIF output.
-//!
-//! These options drive a **coordinate-only** serializer: the emitted document
-//! contains the block name, `_entry.id`, `_atom_site` and (when atoms carry
-//! anisotropic tensors) `_atom_site_anisotrop` — nothing else. Crystal,
-//! symmetry/space-group, NCS, assembly, connection, cis-peptide, refinement
-//! and all other source categories are preserved on input objects but are
-//! never serialized here; no lossless roundtrip is claimed.
+//! IO-owned full Gemmi mmCIF writer over detached BIO values.
 
 pub mod atoms;
 mod author;
@@ -14,6 +7,7 @@ mod cell;
 mod cell_category;
 mod database_status;
 mod entity;
+mod full;
 mod ncs;
 mod origx;
 pub mod tags;
@@ -26,15 +20,44 @@ use cosmolkit_bio::{BioStructureData, BioStructureError};
 
 use crate::cif::CifReadError;
 
-/// The exact seven writer controls for BIO coordinate mmCIF output.
+/// Full source-defined mmCIF category switches and canonical CIF layout controls.
 ///
-/// Source profile: pinned Gemmi `make_mmcif_document` invoked with
-/// `MmcifOutputGroups(false)` then `atoms=block_name=entry=true`; only the
-/// `group_pdb` and `auth_all` group bits remain user-selectable, plus the
-/// five `cif::WriteOptions` layout controls. No other group switch exists in
-/// this scope and no symmetry parameter is exposed.
+/// The default enables every category and `group_pdb`; `auth_all` is false.
+/// Switches are flattened into this single IO-owned parameter value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BioMmcifWriteParams {
+    pub atoms: bool,
+    pub block_name: bool,
+    pub entry: bool,
+    pub database_status: bool,
+    pub author: bool,
+    pub cell: bool,
+    pub symmetry: bool,
+    pub entity: bool,
+    pub entity_poly: bool,
+    pub struct_ref: bool,
+    pub chem_comp: bool,
+    pub exptl: bool,
+    pub diffrn: bool,
+    pub reflns: bool,
+    pub refine: bool,
+    pub title_keywords: bool,
+    pub ncs: bool,
+    pub struct_asym: bool,
+    pub origx: bool,
+    pub struct_conf: bool,
+    pub struct_sheet: bool,
+    pub struct_biol: bool,
+    pub assembly: bool,
+    pub conn: bool,
+    pub cis: bool,
+    pub modres: bool,
+    pub scale: bool,
+    pub atom_type: bool,
+    pub entity_poly_seq: bool,
+    pub tls: bool,
+    pub software: bool,
+
     /// Emit the `_atom_site.group_PDB` column (ATOM/HETATM records).
     pub group_pdb: bool,
     /// Emit `_atom_site.auth_atom_id`/`auth_comp_id` in addition to label ids.
@@ -53,20 +76,48 @@ pub struct BioMmcifWriteParams {
 
 impl Default for BioMmcifWriteParams {
     fn default() -> Self {
-        // Gemmi✔️✔️: MmcifOutputGroups groups = MmcifOutputGroups(false);
-        // Gemmi✔️✔️: groups.atoms = groups.block_name = groups.entry = true;
-        // Gemmi✔️✔️: // group_pdb and auth_all stay caller-selected bits
-        // Gemmi✔️✔️: struct WriteOptions {
-        // Gemmi✔️✔️:   bool prefer_pairs = false;
-        // Gemmi✔️✔️:   bool compact = false;
-        // Gemmi✔️✔️:   bool misuse_hash = false;
-        // Gemmi✔️✔️:   std::uint16_t align_pairs = 0;
-        // Gemmi✔️✔️:   std::uint16_t align_loops = 0;
-        // Gemmi✔️✔️: };
-        // Behavior: fixed coordinate profile defaults; every group other than
-        // atoms/block_name/entry is permanently off in this scope.
-        // Complexity: constant-size construction, no allocation.
+        // Gemmi❗✔️:   explicit MmcifOutputGroups(bool all)
+        // Gemmi❗✔️:     : atoms(all), block_name(all), entry(all), database_status(all),
+        // Gemmi❗✔️:       author(all), cell(all), symmetry(all), entity(all), entity_poly(all),
+        // Gemmi❗✔️:       struct_ref(all), chem_comp(all), exptl(all), diffrn(all),
+        // Gemmi❗✔️:       reflns(all), refine(all), title_keywords(all), ncs(all),
+        // Gemmi❗✔️:       struct_asym(all), origx(all), struct_conf(all), struct_sheet(all),
+        // Gemmi❗✔️:       struct_biol(all), assembly(all), conn(all), cis(all), modres(all),
+        // Gemmi❗✔️:       scale(all), atom_type(all), entity_poly_seq(all), tls(all),
+        // Gemmi❗✔️:       software(all), group_pdb(all), auth_all(false) {}
+        // Cost: fixed-size scalar construction, no allocation.
         Self {
+            atoms: true,
+            block_name: true,
+            entry: true,
+            database_status: true,
+            author: true,
+            cell: true,
+            symmetry: true,
+            entity: true,
+            entity_poly: true,
+            struct_ref: true,
+            chem_comp: true,
+            exptl: true,
+            diffrn: true,
+            reflns: true,
+            refine: true,
+            title_keywords: true,
+            ncs: true,
+            struct_asym: true,
+            origx: true,
+            struct_conf: true,
+            struct_sheet: true,
+            struct_biol: true,
+            assembly: true,
+            conn: true,
+            cis: true,
+            modres: true,
+            scale: true,
+            atom_type: true,
+            entity_poly_seq: true,
+            tls: true,
+            software: true,
             group_pdb: true,
             auth_all: false,
             prefer_pairs: false,
@@ -137,61 +188,30 @@ impl From<std::io::Error> for BioMmcifWriteError {
     }
 }
 
-/// Gemmi `make_mmcif_document` under this packet's coordinate-only profile:
-/// one fresh block, the `update_mmcif_block` preamble
-/// (block name + `_entry.id`) and `add_cif_atoms` including the anisotropic
-/// tail. No other group section is invoked and `add_minimal_mmcif_data` is
-/// never called.
-pub(crate) fn make_coordinate_mmcif_document(
+/// Build the complete selected-group document using the single canonical CIF owner.
+pub(crate) fn make_mmcif_document(
     data: &BioStructureData,
     params: &BioMmcifWriteParams,
 ) -> Result<crate::cif::CifDocument, BioMmcifWriteError> {
-    // Gemmi✔️✔️: cif::Document make_mmcif_document(const Structure& st, MmcifOutputGroups groups) {
-    // Gemmi✔️✔️:   cif::Document doc;
-    // Gemmi✔️✔️:   doc.blocks.resize(1);
-    // Gemmi✔️✔️:   update_mmcif_block(st, doc.blocks[0], groups);
-    // Gemmi✔️✔️:   return doc;
-    // Gemmi✔️✔️: }
-    // Gemmi✔️✔️: void update_mmcif_block(const Structure& st, cif::Block& block, MmcifOutputGroups groups) {
-    // Gemmi✔️✔️:   if (st.models.empty())
-    // Gemmi✔️✔️:     return;
-    // Gemmi✔️✔️:   if (groups.block_name)
-    // Gemmi✔️✔️:     block.name = is_valid_block_name(st.name) ? st.name : "model";
-    // Gemmi✔️✔️:   auto e_id = st.info.find("_entry.id");
-    // Gemmi✔️✔️:   std::string id = cif::quote(e_id != st.info.end() ? e_id->second : block.name);
-    // Gemmi✔️✔️:   if (groups.entry)
-    // Gemmi✔️✔️:     block.set_pair("_entry.id", id);
-    // Gemmi✔️✔️:   ...
-    // Gemmi✔️✔️:   if (groups.atoms)
-    // Gemmi✔️✔️:     add_cif_atoms(st, block, groups.group_pdb, groups.auth_all);
-    // Behavior: the packet's fixed profile has block_name=entry=atoms=true
-    // and every other group false, so the composed document is exactly one
-    // fresh block carrying the preamble pair and the `_atom_site` loop plus
-    // conditional `_atom_site_anisotrop`. The zero-model early return
-    // inside the preamble leaves the fresh block empty (Gemmi's resized
-    // block keeps the default empty name). group_pdb/auth_all thread from
-    // BioMmcifWriteParams exactly as the source threads its group bits.
-    // Complexity: one document allocation, one preamble pass and one
-    // add_cif_atoms pass; no document copies or second scans.
+    // Gemmi❗✔️: cif::Document make_mmcif_document(const Structure& st, MmcifOutputGroups groups) {
+    // Gemmi❗✔️:   cif::Document doc;
+    // Gemmi❗✔️:   doc.blocks.resize(1);
+    // Gemmi❗✔️:   update_mmcif_block(st, doc.blocks[0], groups);
+    // Gemmi❗✔️:   return doc;
+    // Gemmi❗✔️: }
+    // Behavior: preserve the source whole-function zero-model early return.
+    // Cost: one document and category output storage; no reparse or cloned BIO data.
     let mut document = crate::cif::CifDocument::with_single_block("");
-    let block = document.sole_block_mut()?;
-    // The source early return guards the entire update_mmcif_block body,
-    // including the add_cif_atoms dispatch at to_mmcif.cpp:1215-1216, so a
-    // zero-model structure receives neither preamble nor atom loop.
-    if data.models().is_empty() {
-        return Ok(document);
+    if !data.models().is_empty() {
+        let block = document.sole_block_mut()?;
+        let id = full::write_primary_mmcif_categories(data, block, params)?;
+        full::write_secondary_mmcif_categories(data, block, *params, &id)?;
     }
-    categories::update_mmcif_block_preamble(data, block);
-    atoms::add_cif_atoms(block, data, params)?;
     Ok(document)
 }
 
-/// Serialize a detached BIO structure to coordinate-only mmCIF text.
+/// Serialize a detached BIO structure with all selected source categories.
 ///
-/// The text is the pinned profile's complete output: `data_<block>` header,
-/// the `_entry.id` pair, `_atom_site` and the conditional
-/// `_atom_site_anisotrop`, with the five layout controls applied. Crystal,
-/// NCS, assembly, connection and refinement categories are never emitted.
 pub fn bio_structure_to_mmcif_text(
     data: &BioStructureData,
     params: &BioMmcifWriteParams,
@@ -215,15 +235,15 @@ pub fn bio_structure_to_mmcif_text(
     // Behavior: compose the profile document, then serialize it with the
     // c08/c09 pipeline driven by the params' five layout controls; the
     // returned String holds exactly the emitted bytes. The input is
-    // borrowed and never mutated, and no other category is produced.
+    // borrowed and never mutated; group dispatch belongs to the composition owner.
     // Complexity: one document construction plus one serialization pass;
     // no reparse, document copy or double buffering beyond the returned
     // String.
-    let document = make_coordinate_mmcif_document(data, params)?;
+    let document = make_mmcif_document(data, params)?;
     crate::cif::bio_coordinate_document_to_string(&document, params).map_err(BioMmcifWriteError::Io)
 }
 
-/// Write a detached BIO structure to a coordinate-only mmCIF file.
+/// Write a detached BIO structure to a selected-group mmCIF file.
 ///
 /// The full document is serialized in memory before the destination is
 /// opened, so a serialization failure never creates or truncates the file.
@@ -249,8 +269,54 @@ pub fn write_bio_structure_mmcif_file(
 }
 
 #[cfg(test)]
+fn coordinate_test_params() -> BioMmcifWriteParams {
+    // Proposal: retain the original coordinate-profile expected bytes with
+    // explicit pinned group controls. Full defaults have separate native tests.
+    BioMmcifWriteParams {
+        atoms: true,
+        block_name: true,
+        entry: true,
+        database_status: false,
+        author: false,
+        cell: false,
+        symmetry: false,
+        entity: false,
+        entity_poly: false,
+        struct_ref: false,
+        chem_comp: false,
+        exptl: false,
+        diffrn: false,
+        reflns: false,
+        refine: false,
+        title_keywords: false,
+        ncs: false,
+        struct_asym: false,
+        origx: false,
+        struct_conf: false,
+        struct_sheet: false,
+        struct_biol: false,
+        assembly: false,
+        conn: false,
+        cis: false,
+        modres: false,
+        scale: false,
+        atom_type: false,
+        entity_poly_seq: false,
+        tls: false,
+        software: false,
+        group_pdb: true,
+        auth_all: false,
+        prefer_pairs: false,
+        compact: false,
+        misuse_hash: false,
+        align_pairs: 0,
+        align_loops: 0,
+    }
+}
+
+#[cfg(test)]
 mod compose_tests {
-    use super::{BioMmcifWriteParams, make_coordinate_mmcif_document};
+    use super::{BioMmcifWriteParams, make_mmcif_document};
     use crate::cif::CifItem;
     use cosmolkit_bio::{
         AtomName, AtomSourceIds, BioAtomRow, BioCalcFlag, BioChainId, BioChainRow, BioConnection,
@@ -337,8 +403,7 @@ mod compose_tests {
         // make_mmcif_document + the preamble early return: the resized block
         // keeps Gemmi's default empty name and receives no items at all.
         let data = BioStructureData::from_parts(empty_base()).unwrap();
-        let document =
-            make_coordinate_mmcif_document(&data, &BioMmcifWriteParams::default()).unwrap();
+        let document = make_mmcif_document(&data, &super::coordinate_test_params()).unwrap();
         assert_eq!(document.blocks().len(), 1);
         let block = document.sole_block().unwrap();
         assert_eq!(block.name(), "");
@@ -351,8 +416,7 @@ mod compose_tests {
         // then the conditional _atom_site_anisotrop loop for the nonzero
         // tensor. Nothing else exists in the document.
         let data = BioStructureData::from_parts(populated_parts()).unwrap();
-        let document =
-            make_coordinate_mmcif_document(&data, &BioMmcifWriteParams::default()).unwrap();
+        let document = make_mmcif_document(&data, &super::coordinate_test_params()).unwrap();
         let block = document.sole_block().unwrap();
         assert_eq!(block.name(), "1abc");
         let tags: Vec<&str> = block
@@ -404,8 +468,7 @@ mod compose_tests {
         let data = BioStructureData::from_parts(parts).unwrap();
         let atoms_before = data.atoms().len();
         let coords_before = data.coordinates().positions().len();
-        let document =
-            make_coordinate_mmcif_document(&data, &BioMmcifWriteParams::default()).unwrap();
+        let document = make_mmcif_document(&data, &super::coordinate_test_params()).unwrap();
         let block = document.sole_block().unwrap();
         for forbidden in [
             "_struct_ncs_oper.",
@@ -547,7 +610,7 @@ mod text_tests {
         // write_out_loop / write_cif_block_to_stream layout rules and the
         // add_cif_atoms column profile, not from CK output.
         let data = BioStructureData::from_parts(one_atom_parts("1abc", None)).unwrap();
-        let text = bio_structure_to_mmcif_text(&data, &BioMmcifWriteParams::default()).unwrap();
+        let text = bio_structure_to_mmcif_text(&data, &super::coordinate_test_params()).unwrap();
         let expected = concat!(
             "data_1abc\n",
             "_entry.id 1abc\n",
@@ -600,7 +663,7 @@ mod text_tests {
             let params = BioMmcifWriteParams {
                 group_pdb,
                 auth_all,
-                ..BioMmcifWriteParams::default()
+                ..super::coordinate_test_params()
             };
             let text = bio_structure_to_mmcif_text(&data, &params).unwrap();
             let lines: Vec<&str> = text.lines().collect();
@@ -643,13 +706,13 @@ mod text_tests {
         // empty block, so the text is exactly the mandatory data_ header.
         let empty = BioStructureData::from_parts(empty_base()).unwrap();
         assert_eq!(
-            bio_structure_to_mmcif_text(&empty, &BioMmcifWriteParams::default()).unwrap(),
+            bio_structure_to_mmcif_text(&empty, &super::coordinate_test_params()).unwrap(),
             "data_\n"
         );
         // An entry id containing a newline is quoted as a semicolon text
         // field (cif::quote \n branch + write_out_pair is_text_field path).
         let data = BioStructureData::from_parts(one_atom_parts("n", Some("a\nb"))).unwrap();
-        let text = bio_structure_to_mmcif_text(&data, &BioMmcifWriteParams::default()).unwrap();
+        let text = bio_structure_to_mmcif_text(&data, &super::coordinate_test_params()).unwrap();
         assert!(text.starts_with("data_n\n_entry.id\n;a\nb\n;\n\nloop_\n"));
     }
 
@@ -660,8 +723,12 @@ mod text_tests {
         let path = directory.join(format!("ck-bio-pdb-file-{}.cif", std::process::id()));
         // A longer pre-existing sentinel proves full truncation, not append.
         std::fs::write(&path, b"sentinel content that is longer than the output\n").unwrap();
-        super::super::write_bio_structure_mmcif_file(&data, &BioMmcifWriteParams::default(), &path)
-            .unwrap();
+        super::super::write_bio_structure_mmcif_file(
+            &data,
+            &super::coordinate_test_params(),
+            &path,
+        )
+        .unwrap();
         let written = std::fs::read(&path).unwrap();
         let text = String::from_utf8(written).unwrap();
         // The same independently derived default-profile bytes as the TEXT
@@ -715,7 +782,7 @@ mod text_tests {
         let missing = std::path::PathBuf::from("/nonexistent-ck-bio-pdb-dir/out.cif");
         let error = super::super::write_bio_structure_mmcif_file(
             &data,
-            &BioMmcifWriteParams::default(),
+            &super::coordinate_test_params(),
             &missing,
         )
         .unwrap_err();
@@ -737,7 +804,7 @@ mod text_tests {
         let directory = std::env::temp_dir();
         let error = super::super::write_bio_structure_mmcif_file(
             &data,
-            &BioMmcifWriteParams::default(),
+            &super::coordinate_test_params(),
             &directory,
         )
         .unwrap_err();
@@ -762,7 +829,8 @@ mod scope_tests {
         assert!(!defaults.misuse_hash);
         assert_eq!(defaults.align_pairs, 0);
         assert_eq!(defaults.align_loops, 0);
-        // Exactly seven controls exist; construction names every field.
+        // Preserve the original seven layout/atom controls; category defaults
+        // now follow the pinned full MmcifOutputGroups constructor.
         let all_set = Params {
             group_pdb: false,
             auth_all: true,
@@ -771,6 +839,7 @@ mod scope_tests {
             misuse_hash: true,
             align_pairs: 33,
             align_loops: 30,
+            ..Params::default()
         };
         assert_ne!(all_set, defaults);
         // Each control flips independently of the others.

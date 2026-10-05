@@ -100,6 +100,15 @@ impl<'a> Iterator for ProteinChainIter<'a> {
         })
     }
 
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        // The legacy Range::map iterator forwards nth to Range::nth.
+        // Preserve that O(1) skip and exhaustion behavior in this borrowed view.
+        self.cursor.nth(n).map(|index| Self::Item {
+            structure: self.structure,
+            chain_id: BioChainId::new(index as u32),
+        })
+    }
+
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.cursor.size_hint()
     }
@@ -133,6 +142,15 @@ impl<'a> Iterator for ProteinResidueIter<'a> {
         // the same source-order traversal without collecting skipped rows.
         // Complexity: constant time per row and no per-next allocations.
         self.cursor.next().map(|index| ProteinResidueRef {
+            structure: self.structure,
+            residue_id: BioResidueId::new(index as u32),
+        })
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        // The legacy Range::map iterator forwards nth to Range::nth.
+        // Preserve that O(1) skip and exhaustion behavior in this borrowed view.
+        self.cursor.nth(n).map(|index| Self::Item {
             structure: self.structure,
             residue_id: BioResidueId::new(index as u32),
         })
@@ -184,6 +202,15 @@ impl<'a> Iterator for ProteinAtomIter<'a> {
         // including zero-width residue spans between populated residues.
         // Complexity: O(1) per row, no per-residue Vec or heap allocation.
         self.cursor.next().map(|index| ProteinAtomRef {
+            structure: self.structure,
+            atom_id: BioAtomId::new(index as u32),
+        })
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        // The legacy Range::map iterator forwards nth to Range::nth.
+        // Preserve that O(1) skip and exhaustion behavior in this borrowed view.
+        self.cursor.nth(n).map(|index| Self::Item {
             structure: self.structure,
             atom_id: BioAtomId::new(index as u32),
         })

@@ -28,6 +28,22 @@ pub struct Protein {
 }
 
 impl BioStructure {
+    /// Convert through the IO detached owner and the checked Molecule constructor.
+    #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+    pub fn to_molecule_with_params(
+        &self,
+        params: &crate::BioMoleculeParams,
+    ) -> Result<crate::Molecule, crate::BioMoleculeError> {
+        let (topology, coordinates, properties) =
+            cosmolkit_io::bio_structure_to_molecule_parts(&self.data, params)
+                .map_err(crate::BioMoleculeError::Conversion)?;
+        crate::Molecule::from_parts(topology, coordinates, properties)
+            .map_err(crate::BioMoleculeError::Construction)
+    }
+    #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+    pub fn to_molecule(&self) -> Result<crate::Molecule, crate::BioMoleculeError> {
+        self.to_molecule_with_params(&crate::BioMoleculeParams::default())
+    }
     /// Validate and construct a structure from detached BIO parts.
     pub fn from_parts(parts: BioStructureParts) -> Result<Self, BioStructureError> {
         Ok(Self {
@@ -105,29 +121,25 @@ impl BioStructure {
             data: cosmolkit_io::read_mmcif_bio_structure(text, "<string>")?,
         })
     }
-    /// Serialize structure coordinates to mmCIF text with explicit options.
-    ///
-    /// Experimental: this emits ONLY the coordinate profile — the block
-    /// name/`_entry.id`, `_atom_site` and the conditional
-    /// `_atom_site_anisotrop`. Crystal/symmetry, NCS, assembly, connection,
-    /// cis-peptide, refinement and all other source categories are never
-    /// written; no lossless roundtrip is claimed.
+    /// Serialize the selected modeled mmCIF categories through the IO owner.
+    /// Defaults follow pinned Gemmi's full 33-group selection; omitted groups
+    /// are controlled by BioMmcifWriteParams. This is not a lossless CIF editor.
     pub fn to_mmcif_with_params(
         &self,
         params: &crate::BioMmcifWriteParams,
     ) -> Result<String, crate::BioMmcifWriteError> {
         cosmolkit_io::bio_structure_to_mmcif_text(&self.data, params)
     }
-    /// Serialize structure coordinates to mmCIF text with default options.
+    /// Serialize structure data to mmCIF text with default options.
     ///
-    /// Experimental: same coordinate-only category set and exclusions as
+    /// Selected categories and defaults follow
     /// [`BioStructure::to_mmcif_with_params`].
     pub fn to_mmcif(&self) -> Result<String, crate::BioMmcifWriteError> {
         self.to_mmcif_with_params(&crate::BioMmcifWriteParams::default())
     }
-    /// Write structure coordinates to an mmCIF file with explicit options.
+    /// Write structure data to an mmCIF file with explicit options.
     ///
-    /// Experimental: same coordinate-only category set and exclusions as
+    /// Selected categories and defaults follow
     /// [`BioStructure::to_mmcif_with_params`]; the document is fully
     /// serialized before the destination is created or truncated, and write
     /// failures retain the path and underlying IO error.
@@ -138,9 +150,9 @@ impl BioStructure {
     ) -> Result<(), crate::BioMmcifWriteError> {
         cosmolkit_io::write_bio_structure_mmcif_file(&self.data, params, path)
     }
-    /// Write structure coordinates to an mmCIF file with default options.
+    /// Write structure data to an mmCIF file with default options.
     ///
-    /// Experimental: same coordinate-only category set and exclusions as
+    /// Selected categories and defaults follow
     /// [`BioStructure::to_mmcif_with_params`].
     pub fn write_mmcif(&self, path: &std::path::Path) -> Result<(), crate::BioMmcifWriteError> {
         self.write_mmcif_with_params(path, &crate::BioMmcifWriteParams::default())
@@ -317,6 +329,17 @@ impl BioStructure {
 }
 
 impl Protein {
+    #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+    pub fn to_molecule_with_params(
+        &self,
+        params: &crate::BioMoleculeParams,
+    ) -> Result<crate::Molecule, crate::BioMoleculeError> {
+        self.structure.to_molecule_with_params(params)
+    }
+    #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+    pub fn to_molecule(&self) -> Result<crate::Molecule, crate::BioMoleculeError> {
+        self.to_molecule_with_params(&crate::BioMoleculeParams::default())
+    }
     /// Return the original input format retained by the underlying structure.
     ///
     /// This reads source metadata; it does not infer a format from the coordinates.

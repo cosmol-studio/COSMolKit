@@ -12,6 +12,12 @@ pub(crate) struct Element {
     pub(crate) inner: ck::Element,
 }
 
+impl Element {
+    pub(crate) fn from_inner(inner: ck::Element) -> Self {
+        Self { inner }
+    }
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Element {

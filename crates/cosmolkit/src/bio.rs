@@ -6,6 +6,32 @@ use crate::{
 };
 pub use runtime::{BioStructure, Protein};
 
+/// Conversion retains the detached owner failure or checked construction failure.
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+#[derive(Debug)]
+pub enum BioMoleculeError {
+    Conversion(crate::BioMoleculeConversionError),
+    Construction(crate::OperationError),
+}
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+impl std::fmt::Display for BioMoleculeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Conversion(e) => e.fmt(f),
+            Self::Construction(e) => e.fmt(f),
+        }
+    }
+}
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
+impl std::error::Error for BioMoleculeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(match self {
+            Self::Conversion(e) => e,
+            Self::Construction(e) => e,
+        })
+    }
+}
+
 /// Thin root CID-selection wrapper (BIO-CID C26) around the one
 /// canonical detached selection data. The field stays private: this is a
 /// projection type, not a second selection engine; construction goes

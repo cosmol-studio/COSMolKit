@@ -274,7 +274,16 @@ fn bio_pdbscope_public_text_signatures_defaults_registry_and_bytes() {
     // Pinned-profile bytes through the public method: the real fixture's
     // first atom row and preamble, derived from the source layout rules.
     let structure = BioStructure::from_mmcif(CIF).unwrap();
-    let text = structure.to_mmcif().unwrap();
+    let full_text = structure.to_mmcif().unwrap();
+    assert_eq!(
+        full_text,
+        include_str!(
+            "../../../testdata/bio/expected/gemmi/bio_mmcif_writer/mmcif_full_default.cif"
+        )
+    );
+    let text = structure
+        .to_mmcif_with_params(&coordinate_test_params())
+        .unwrap();
     let first_line = text.lines().next().unwrap();
     assert!(first_line.starts_with("data_"), "header line: {first_line}");
     assert!(text.contains("\nloop_\n_atom_site.group_PDB\n_atom_site.id\n"));
@@ -293,7 +302,7 @@ fn bio_pdbscope_public_text_signatures_defaults_registry_and_bytes() {
     // The borrowed structure is unchanged and both entries agree on bytes.
     assert_eq!(
         structure
-            .to_mmcif_with_params(&cosmolkit::BioMmcifWriteParams::default())
+            .to_mmcif_with_params(&coordinate_test_params())
             .unwrap(),
         text
     );
@@ -343,7 +352,16 @@ fn bio_pdbscope_public_file_output_errors_input_and_protein_projection() {
         .write_mmcif_with_params(&path, &cosmolkit::BioMmcifWriteParams::default())
         .unwrap();
     assert_eq!(std::fs::read(&path).unwrap(), default_bytes);
-    let text = String::from_utf8(default_bytes).unwrap();
+    assert_eq!(
+        default_bytes,
+        include_bytes!(
+            "../../../testdata/bio/expected/gemmi/bio_mmcif_writer/mmcif_full_default.cif"
+        )
+    );
+    structure
+        .write_mmcif_with_params(&path, &coordinate_test_params())
+        .unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.starts_with("data_"));
     assert!(text.contains("_atom_site."));
     // Coordinate-only: no lossless whole-structure claim; forbidden
@@ -482,7 +500,12 @@ fn bio_pdbscope_matrix_parsed_values_and_order_roundtrip() {
     // re-read through the delivered mmCIF reader; every value below is
     // pinned from the fixture definition, not from writer output.
     let single = BioStructure::from_parts(matrix_f2_parts()).unwrap();
-    let reread = BioStructure::from_mmcif(&single.to_mmcif().unwrap()).unwrap();
+    let reread = BioStructure::from_mmcif(
+        &single
+            .to_mmcif_with_params(&coordinate_test_params())
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(reread.atoms().len(), 2);
     assert_eq!(reread.residues().len(), 1);
     assert_eq!(reread.models().len(), 1);
@@ -528,7 +551,12 @@ fn bio_pdbscope_matrix_parsed_values_and_order_roundtrip() {
     assert_eq!(reread.coordinates().positions()[1], [-4.0, 5.0, 6.0]);
 
     let multi = BioStructure::from_parts(matrix_f3_parts()).unwrap();
-    let reread = BioStructure::from_mmcif(&multi.to_mmcif().unwrap()).unwrap();
+    let reread = BioStructure::from_mmcif(
+        &multi
+            .to_mmcif_with_params(&coordinate_test_params())
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(reread.models().len(), 2);
     let model_nums: Vec<Option<i32>> = reread
         .models()
@@ -570,13 +598,13 @@ fn bio_pdbscope_matrix_parsed_values_and_order_roundtrip() {
     for params in [
         cosmolkit::BioMmcifWriteParams {
             prefer_pairs: true,
-            ..cosmolkit::BioMmcifWriteParams::default()
+            ..coordinate_test_params()
         },
         cosmolkit::BioMmcifWriteParams {
             align_pairs: 33,
             align_loops: 33,
             compact: true,
-            ..cosmolkit::BioMmcifWriteParams::default()
+            ..coordinate_test_params()
         },
     ] {
         let again =
@@ -593,6 +621,51 @@ fn bio_pdbscope_matrix_parsed_values_and_order_roundtrip() {
             ]
         );
         assert_eq!(again.atoms().len(), 2);
+    }
+}
+
+fn coordinate_test_params() -> cosmolkit::BioMmcifWriteParams {
+    // Proposal: retain the original coordinate-profile expected bytes with
+    // explicit pinned group controls. Full defaults have separate native tests.
+    cosmolkit::BioMmcifWriteParams {
+        atoms: true,
+        block_name: true,
+        entry: true,
+        database_status: false,
+        author: false,
+        cell: false,
+        symmetry: false,
+        entity: false,
+        entity_poly: false,
+        struct_ref: false,
+        chem_comp: false,
+        exptl: false,
+        diffrn: false,
+        reflns: false,
+        refine: false,
+        title_keywords: false,
+        ncs: false,
+        struct_asym: false,
+        origx: false,
+        struct_conf: false,
+        struct_sheet: false,
+        struct_biol: false,
+        assembly: false,
+        conn: false,
+        cis: false,
+        modres: false,
+        scale: false,
+        atom_type: false,
+        entity_poly_seq: false,
+        tls: false,
+        software: false,
+        group_pdb: true,
+        auth_all: false,
+        prefer_pairs: false,
+        compact: false,
+        misuse_hash: false,
+        align_pairs: 0,
+        align_loops: 0,
     }
 }
 
@@ -616,6 +689,7 @@ fn matrix_params() -> impl Iterator<Item = cosmolkit::BioMmcifWriteParams> {
                     misuse_hash: bools[4],
                     align_pairs,
                     align_loops,
+                    ..coordinate_test_params()
                 })
         })
     })

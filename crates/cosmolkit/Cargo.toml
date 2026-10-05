@@ -237,3 +237,7 @@ required-features = ["cap-forcefields", "cap-smiles", "cap-valence", "cap-hydrog
 [[test]]
 name = "migration_d02_descriptor_projection"
 required-features = ["cap-descriptors", "cap-smiles"]
+
+[[test]]
+name = "bio157_conversion"
+required-features = ["cap-bio", "cap-io"]

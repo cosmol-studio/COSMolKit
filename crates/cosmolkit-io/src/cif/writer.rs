@@ -818,6 +818,7 @@ mod tests {
             misuse_hash: true,
             align_pairs: 33,
             align_loops: 30,
+            ..BioMmcifWriteParams::default()
         };
         let layout = CifWriteLayout::from(&params);
         assert_eq!(

@@ -611,7 +611,7 @@ pub(super) fn is_blacklisted_pair(atoms: &[Atom], begin: AtomId, end: AtomId) ->
             || end_info.residue_name() == "HOH")
 }
 
-fn apply_conect_target(
+pub(super) fn apply_conect_target(
     atoms: &[Atom],
     serial_to_index: &HashMap<i32, AtomId>,
     bonds: &mut Vec<Bond>,

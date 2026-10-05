@@ -707,6 +707,58 @@ binding_contract! {
             rust: crate::BioPdbReadParams, python: "BioPdbReadParams", javascript: "BioPdbReadParams",
             feature: "cap-bio", status: experimental, role: parameter,
         },
+        #[cfg(feature = "cap-io")]
+        {
+            semantic_id: "types.BioMoleculeParams", item: type, owner: type_,
+            rust: crate::BioMoleculeParams, python: "BioMoleculeParams", javascript: "BioMoleculeParams",
+            feature: "cap-io", requires: ["cap-bio"], status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-io")]
+        {
+            semantic_id: "types.BioMoleculeError", item: type, owner: type_,
+            rust: crate::BioMoleculeError, python: "BioMoleculeError", javascript: "BioMoleculeError",
+            feature: "cap-io", requires: ["cap-bio"], status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-io")]
+        {
+            semantic_id: "types.BioMoleculeConversionError", item: type, owner: type_,
+            rust: crate::BioMoleculeConversionError, python: "BioMoleculeConversionError", javascript: "BioMoleculeConversionError",
+            feature: "cap-io", requires: ["cap-bio"], status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-io")]
+        {
+            semantic_id: "BioStructure.to_molecule_with_params", item: callable, owner: type_,
+            rust: crate::BioStructure::to_molecule_with_params, python: "to_molecule_with_params", javascript: "toMoleculeWithParams",
+            feature: "cap-io", requires: ["cap-bio"], status: experimental, kind: instance,
+            parameters: [{name: params, type: &crate::BioMoleculeParams, default: required}],
+            output: crate::Molecule, error: crate::BioMoleculeError, state: value_returning, operation: none,
+            signature: fn(&crate::BioStructure, &crate::BioMoleculeParams) -> Result<crate::Molecule,crate::BioMoleculeError>,
+        },
+        #[cfg(feature = "cap-io")]
+        {
+            semantic_id: "BioStructure.to_molecule", item: callable, owner: type_,
+            rust: crate::BioStructure::to_molecule, python: "to_molecule", javascript: "toMolecule",
+            feature: "cap-io", requires: ["cap-bio"], status: experimental, kind: instance, parameters: [],
+            output: crate::Molecule, error: crate::BioMoleculeError, state: value_returning, operation: none,
+            signature: fn(&crate::BioStructure) -> Result<crate::Molecule,crate::BioMoleculeError>,
+        },
+        #[cfg(feature = "cap-io")]
+        {
+            semantic_id: "Protein.to_molecule_with_params", item: callable, owner: type_,
+            rust: crate::Protein::to_molecule_with_params, python: "to_molecule_with_params", javascript: "toMoleculeWithParams",
+            feature: "cap-io", requires: ["cap-bio"], status: experimental, kind: instance,
+            parameters: [{name: params, type: &crate::BioMoleculeParams, default: required}],
+            output: crate::Molecule, error: crate::BioMoleculeError, state: value_returning, operation: none,
+            signature: fn(&crate::Protein, &crate::BioMoleculeParams) -> Result<crate::Molecule,crate::BioMoleculeError>,
+        },
+        #[cfg(feature = "cap-io")]
+        {
+            semantic_id: "Protein.to_molecule", item: callable, owner: type_,
+            rust: crate::Protein::to_molecule, python: "to_molecule", javascript: "toMolecule",
+            feature: "cap-io", requires: ["cap-bio"], status: experimental, kind: instance, parameters: [],
+            output: crate::Molecule, error: crate::BioMoleculeError, state: value_returning, operation: none,
+            signature: fn(&crate::Protein) -> Result<crate::Molecule,crate::BioMoleculeError>,
+        },
         #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioPdbReadError", item: type, owner: type_,
@@ -748,6 +800,23 @@ binding_contract! {
             semantic_id: "types.ProteinReadError", item: type, owner: type_,
             rust: crate::ProteinReadError, python: "ProteinReadError", javascript: "ProteinReadError",
             feature: "cap-bio", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioCrystalInfo.space_group_number", item: callable, owner: type_,
+            rust: crate::BioCrystalInfo::space_group_number, python: "space_group_number", javascript: "spaceGroupNumber",
+            feature: "cap-bio", status: experimental, kind: instance, parameters: [],
+            output: Option<i32>, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioCrystalInfo) -> Option<i32>,
+        },
+        #[cfg(feature = "cap-bio")]
+        {
+            semantic_id: "BioTransform.approx", item: callable, owner: type_,
+            rust: crate::BioTransform::approx, python: "approx", javascript: "approx",
+            feature: "cap-bio", status: experimental, kind: instance,
+            parameters: [{ name: other, type: &crate::BioTransform, default: required }, { name: epsilon, type: f64, default: required }],
+            output: bool, error: none, state: read_only, operation: none,
+            signature: fn(&crate::BioTransform, &crate::BioTransform, f64) -> bool,
         },
         #[cfg(feature = "cap-bio")]
         {

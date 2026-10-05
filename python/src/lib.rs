@@ -4,6 +4,8 @@
 //! Historical adapters remain as source evidence, outside module compilation.
 
 mod canonical_atom_bond;
+mod canonical_bio_binding;
+mod canonical_bio_residue;
 mod canonical_builder;
 mod canonical_descriptor_binding;
 mod canonical_element_metadata;

@@ -332,6 +332,11 @@ impl LabuteAsaContributions {
 pub(crate) struct Molecule {
     pub(crate) inner: ck::Molecule,
 }
+impl Molecule {
+    pub(crate) fn from_inner(inner: ck::Molecule) -> Self {
+        Self { inner }
+    }
+}
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
@@ -2055,5 +2060,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_atom_bond::register(module)?;
     crate::canonical_potential_stereo::register(module)?;
     crate::canonical_builder::register(module)?;
+    crate::canonical_bio_residue::register(module)?;
+    crate::canonical_bio_binding::register(module)?;
     Ok(())
 }

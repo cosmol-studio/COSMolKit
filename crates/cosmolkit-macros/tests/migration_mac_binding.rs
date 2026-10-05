@@ -104,6 +104,7 @@ struct BindingContractEntry {
     python_name: &'static str,
     javascript_name: &'static str,
     feature: &'static str,
+    required_capabilities: &'static [&'static str],
     status: FunctionStatus,
     callable: Option<BindingCallableContract>,
     type_role: Option<BindingTypeRole>,

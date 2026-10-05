@@ -85,6 +85,76 @@ _binding_profile: builtins.str
     text.replace_range(start..end, &class);
     text = text.replacen("import typing\n", "import typing\nimport types\n", 1);
     text = text.replace("class DescriptorError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class DescriptorError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only for applicable Rust variants.\n    function: builtins.str\n    field: builtins.str\n    actual: builtins.int\n    expected: builtins.int\n    minimum: builtins.int\n    expected_rows: builtins.int\n    actual_rows: typing.Optional[builtins.int]\n    include_sulfur_phosphorus: builtins.bool\n    contribs_len: builtins.int\n    bin_prop_len: builtins.int\n    bins_len: builtins.int\n    cell: builtins.str\n    row: builtins.int\n    detail: builtins.str\n");
+    let text = expose_bio_types(text);
     std::fs::write(path, text)?;
     Ok(())
+}
+
+// Generated declarations use the same canonical owners as native publication.
+fn expose_bio_types(mut text: String) -> String {
+    text = text.replacen("import builtins\n", "import builtins\nimport enum\n", 1);
+    let mut definitions = String::from("\nclass ResidueCode(enum.IntEnum):\n");
+    let mut index = 0;
+    while let Some(info) = ::cosmolkit::residue_info_checked(index) {
+        definitions.push_str(&format!("    {:?} = {}\n", info.code, info.code.as_u16()));
+        index += 1;
+    }
+    definitions.push_str("\nclass ResidueInfoKind(enum.IntEnum):\n");
+    use ::cosmolkit::ResidueInfoKind as K;
+    for kind in [
+        K::Unknown,
+        K::Aa,
+        K::Aad,
+        K::Paa,
+        K::Maa,
+        K::Rna,
+        K::Dna,
+        K::Buf,
+        K::Hoh,
+        K::Pyr,
+        K::Ket,
+        K::Els,
+    ] {
+        definitions.push_str(&format!("    {} = {}\n", kind.name(), kind as u8));
+    }
+    definitions.push_str("\nclass BioCoordinateFormat(enum.IntEnum):\n");
+    for format in [
+        ::cosmolkit::BioCoordinateFormat::Unknown,
+        ::cosmolkit::BioCoordinateFormat::Detect,
+        ::cosmolkit::BioCoordinateFormat::Pdb,
+        ::cosmolkit::BioCoordinateFormat::Mmcif,
+        ::cosmolkit::BioCoordinateFormat::Mmjson,
+        ::cosmolkit::BioCoordinateFormat::ChemComp,
+    ] {
+        definitions.push_str(&format!("    {format:?} = {}\n", format as u8));
+    }
+    definitions.push_str("\nRESIDUE_CODE_MAP: typing.Mapping[builtins.str, ResidueCode]\nRESIDUE_INFO_KIND_MAP: typing.Mapping[builtins.str, ResidueInfoKind]\n");
+    for (name, base) in [
+        ("BioReadError", "builtins.ValueError"),
+        ("BioPdbReadError", "BioReadError"),
+        ("BioMmcifReadError", "BioReadError"),
+        ("ProteinReadError", "BioReadError"),
+        ("BioOperationError", "builtins.ValueError"),
+        ("BioMmcifWriteError", "builtins.ValueError"),
+        ("BioPdbWriteError", "builtins.ValueError"),
+        ("BioSelectionParseError", "builtins.ValueError"),
+        ("BioMoleculeError", "builtins.ValueError"),
+        ("BioMoleculeConversionError", "builtins.ValueError"),
+    ] {
+        definitions.push_str(&format!(
+            "\nclass {name}({base}):\n    domain: builtins.str\n    kind: builtins.str\n"
+        ));
+        text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
+    }
+    for name in [
+        "ResidueCode",
+        "ResidueInfoKind",
+        "BioCoordinateFormat",
+        "RESIDUE_CODE_MAP",
+        "RESIDUE_INFO_KIND_MAP",
+    ] {
+        text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
+    }
+    text.push_str(&definitions);
+    text
 }

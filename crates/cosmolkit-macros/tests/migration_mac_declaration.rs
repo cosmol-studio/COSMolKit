@@ -312,8 +312,8 @@ fn molecule_strong_edit_and_mapping_branches_parse() {
 #[test]
 fn molecule_multiple_typed_result_and_tautomer_transition_parse() {
     let source = r#"
-        op enumerate_tautomers_with_options(options: crate::Options) {
-            method: enumerate_tautomers_with_options,
+        op enumerate_tautomers_with_params(options: crate::Options) {
+            method: enumerate_tautomers_with_params,
             impl_fn: crate::enumerate_impl,
             output: multiple,
             result_type: crate::TautomerResult,
@@ -733,8 +733,8 @@ fn molecule_method_suffix_and_parity_rules_are_enforced() {
 #[test]
 fn molecule_tautomer_transition_guardrail_rejects_each_wrong_shape() {
     let good = r#"
-        enumerate_tautomers_with_options {
-            method: enumerate_tautomers_with_options,
+        enumerate_tautomers_with_params {
+            method: enumerate_tautomers_with_params,
             impl_fn: crate::enumerate,
             output: multiple,
             kind: weak,
@@ -755,13 +755,19 @@ fn molecule_tautomer_transition_guardrail_rejects_each_wrong_shape() {
         "may_mutate: [topology]",
     );
     for bad in [
-        replace(good, "enumerate_tautomers_with_options {", "tautomers {"),
+        replace(good, "enumerate_tautomers_with_params {", "tautomers {"),
         replace(
             good,
-            "method: enumerate_tautomers_with_options",
+            "method: enumerate_tautomers_with_params",
             "method: tautomers",
         ),
         replace(good, "output: multiple", "output: single"),
+        // The old spelling must not regain the canonical transition authority.
+        replace(
+            good,
+            "enumerate_tautomers_with_params",
+            "enumerate_tautomers_with_options",
+        ),
         topology_only,
     ] {
         assert!(molecule_error(&bad).contains("tautomer_source_transition is permitted only"));

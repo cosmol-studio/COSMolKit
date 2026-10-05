@@ -10,6 +10,8 @@ mod metadata;
 mod protein;
 mod relationships;
 mod residue;
+mod residue_span;
+pub use residue_span::{auth_seq_id_to_label, label_seq_id_to_auth};
 mod secondary_structure;
 mod selection;
 mod source_ids;
