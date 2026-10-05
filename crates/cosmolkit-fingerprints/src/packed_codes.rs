@@ -7,9 +7,9 @@
 //! Huge forward paths retain upstream u32 comparison indexes and termination.
 use crate::{FingerprintError, hash::hash_combine};
 
-const CODE_BITS: u32 = 4 + 2 + 3;
-const CHIRAL_BITS: u32 = 2;
-const PATH_BITS: u32 = 5;
+const CODE_BITS: u32 = crate::AtomPairsParameters::code_size();
+const CHIRAL_BITS: u32 = crate::AtomPairsParameters::num_chiral_bits();
+const PATH_BITS: u32 = crate::AtomPairsParameters::num_path_bits();
 const MAX_PATH_LENGTH: u32 = (1 << PATH_BITS) - 1;
 
 // Callers establish nonempty paths. This helper is the only paired-end

@@ -4,6 +4,29 @@ use cosmolkit_macros::binding_contract;
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "types.AtomPairsParameters", item: type, owner: type_, rust: crate::AtomPairsParameters, python: "AtomPairsParameters", javascript: "AtomPairsParameters", feature: "cap-fingerprints", status: experimental, role: value, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.version", item: callable, owner: type_, rust: crate::AtomPairsParameters::version, python: "version", javascript: "version", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: &'static str, error: none, state: read_only, operation: none, signature: fn()->&'static str, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.num_type_bits", item: callable, owner: type_, rust: crate::AtomPairsParameters::num_type_bits, python: "num_type_bits", javascript: "numTypeBits", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn()->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.num_pi_bits", item: callable, owner: type_, rust: crate::AtomPairsParameters::num_pi_bits, python: "num_pi_bits", javascript: "numPiBits", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn()->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.num_branch_bits", item: callable, owner: type_, rust: crate::AtomPairsParameters::num_branch_bits, python: "num_branch_bits", javascript: "numBranchBits", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn()->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.num_chiral_bits", item: callable, owner: type_, rust: crate::AtomPairsParameters::num_chiral_bits, python: "num_chiral_bits", javascript: "numChiralBits", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn()->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.code_size", item: callable, owner: type_, rust: crate::AtomPairsParameters::code_size, python: "code_size", javascript: "codeSize", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn()->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.num_path_bits", item: callable, owner: type_, rust: crate::AtomPairsParameters::num_path_bits, python: "num_path_bits", javascript: "numPathBits", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn()->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.max_path_length", item: callable, owner: type_, rust: crate::AtomPairsParameters::max_path_length, python: "max_path_length", javascript: "maxPathLength", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn()->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.num_atom_pair_fingerprint_bits", item: callable, owner: type_, rust: crate::AtomPairsParameters::num_atom_pair_fingerprint_bits, python: "num_atom_pair_fingerprint_bits", javascript: "numAtomPairFingerprintBits", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn()->u32, },
+        #[cfg(feature = "cap-fingerprints")]
+        { semantic_id: "AtomPairsParameters.atom_types", item: callable, owner: type_, rust: crate::AtomPairsParameters::atom_types, python: "atom_types", javascript: "atomTypes", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: Vec<u32>, error: none, state: read_only, operation: none, signature: fn()->Vec<u32>, },
+
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"types.MorganAtomInvariantsGenerator",item:type,owner:type_,rust:crate::MorganAtomInvariantsGenerator,python:"MorganAtomInvariantsGenerator",javascript:"MorganAtomInvariantsGenerator",feature:"cap-fingerprints",status:experimental,role:parameter,},
         #[cfg(feature="cap-fingerprints")]
@@ -1083,6 +1106,7 @@ binding_contract! {
         semantic_id: "types.BioRowChainError", item: type, owner: type_,
         rust: crate::BioRowChainError, python: "BioRowChainError", javascript: "BioRowChainError",
         feature: "cap-bio", status: experimental, role: error,
+
     },
     // Structural readers and explicit Protein projection. Binding names are
         // declarations, not implemented Python/JS adapters; no parity promotion.

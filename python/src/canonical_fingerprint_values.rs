@@ -610,6 +610,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<TopologicalTorsionCallParams>()?;
     module.add_class::<TopologicalTorsionParams>()?;
     module.add_class::<AtomCodeExplanation>()?;
+    module.add_class::<AtomPairsParameters>()?;
     module.add_class::<AtomPairAtomCodeResult>()?;
     module.add(
         "AtomCodeExplanationError",
@@ -1502,5 +1503,53 @@ impl MorganSettings {
             .params()
             .map(|inner| MorganParams { inner })
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct AtomPairsParameters;
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AtomPairsParameters {
+    #[classattr]
+    fn version() -> &'static str {
+        ck::AtomPairsParameters::version()
+    }
+    #[classattr]
+    fn num_type_bits() -> u32 {
+        ck::AtomPairsParameters::num_type_bits()
+    }
+    #[classattr]
+    fn num_pi_bits() -> u32 {
+        ck::AtomPairsParameters::num_pi_bits()
+    }
+    #[classattr]
+    fn num_branch_bits() -> u32 {
+        ck::AtomPairsParameters::num_branch_bits()
+    }
+    #[classattr]
+    fn num_chiral_bits() -> u32 {
+        ck::AtomPairsParameters::num_chiral_bits()
+    }
+    #[classattr]
+    fn code_size() -> u32 {
+        ck::AtomPairsParameters::code_size()
+    }
+    #[classattr]
+    fn num_path_bits() -> u32 {
+        ck::AtomPairsParameters::num_path_bits()
+    }
+    #[classattr]
+    fn max_path_length() -> u32 {
+        ck::AtomPairsParameters::max_path_length()
+    }
+    #[classattr]
+    fn num_atom_pair_fingerprint_bits() -> u32 {
+        ck::AtomPairsParameters::num_atom_pair_fingerprint_bits()
+    }
+    #[classattr]
+    fn atom_types() -> Vec<u32> {
+        ck::AtomPairsParameters::atom_types()
     }
 }

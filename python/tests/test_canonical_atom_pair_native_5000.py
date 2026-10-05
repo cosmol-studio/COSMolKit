@@ -6,13 +6,15 @@ All original inputs/branches/outputs are preserved; independent review pending.
 import ast
 import hashlib
 import json
+import os
 from pathlib import Path
 import pytest
 import cosmolkit as ck
 
 ROOT = Path(__file__).resolve().parents[2]
 CORPUS = ROOT / "testdata/smiles/corpus/smiles_5000.smi"
-GOLDEN = ROOT / "target/agent-handoff/structure-oracle-native-env/generated-source-native-v1/atom_pair_fingerprint.jsonl"
+REFERENCE_ROOT = Path(os.environ["COSMOLKIT_FP_SOURCE_REFERENCE_ROOT"]).resolve()
+GOLDEN = REFERENCE_ROOT / "target/agent-handoff/structure-oracle-native-env/generated-source-native-v1/atom_pair_fingerprint.jsonl"
 GENERATOR = ROOT / "tools/testdata/rdkit/_generate_atom_pair_fingerprint_golden.py"
 assert hashlib.sha256(CORPUS.read_bytes()).hexdigest() == "a4d579cd72621af27772256bb23ba796452276bb924fd20aac83625ffa67d849"
 assert hashlib.sha256(GOLDEN.read_bytes()).hexdigest() == "5ad83a60e5109fe21510390f2a7fb21a4eaa72de9aa911c35dcd7a1a3663765a"
@@ -30,7 +32,7 @@ with GOLDEN.open("rb") as handle:
         if not handle.readline(): break
         POSITIONS.append(position)
 assert len(POSITIONS) == 5000
-ACTUAL = (ROOT / "target/agent-handoff/fp-graph-block/atom-pair-native-5000-u64-full-observations-v2.jsonl").open("x")
+ACTUAL = Path(os.environ["COSMOLKIT_FP_ACTUAL_OUTPUT"]).open("x")
 METHODS = [("sparse_count", "atom_pair_sparse_count_fingerprint_with_params"), ("sparse_bit", "atom_pair_sparse_fingerprint_with_params"), ("count", "atom_pair_count_fingerprint_with_params"), ("explicit_bit", "atom_pair_fingerprint_with_params")]
 
 

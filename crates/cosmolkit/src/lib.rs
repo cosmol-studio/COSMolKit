@@ -313,7 +313,9 @@ pub use tautomer::{
 #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
 pub use bio::BioMoleculeError;
 #[cfg(feature = "cap-fingerprints")]
-pub use cosmolkit_fingerprints::{AtomCodeExplanation, AtomCodeExplanationError};
+pub use cosmolkit_fingerprints::{
+    AtomCodeExplanation, AtomCodeExplanationError, AtomPairsParameters,
+};
 #[cfg(feature = "cap-serialization")]
 pub use cosmolkit_io::PickleError;
 #[cfg(all(feature = "cap-bio", feature = "cap-io"))]

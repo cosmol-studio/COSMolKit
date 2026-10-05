@@ -57,22 +57,28 @@ impl AtomCodeExplanation {
         // RDKit❗✔️:     RDKit::AtomPairs::atomNumberTypes,
         // RDKit❗✔️:     RDKit::AtomPairs::atomNumberTypes +
         // RDKit❗✔️:         sizeof(RDKit::AtomPairs::atomNumberTypes) / sizeof(unsigned int));
-        let branch_count = (code & 7) as u32;
-        code >>= 3;
-        let pi_electrons = (code & 3) as u32;
-        code >>= 2;
-        let atomic_number = crate::atom_code::ATOM_NUMBER_TYPES[(code & 15) as usize];
+        let branch_count =
+            (code & ((1 << crate::AtomPairsParameters::num_branch_bits()) - 1)) as u32;
+        code >>= crate::AtomPairsParameters::num_branch_bits();
+        let pi_electrons = (code & ((1 << crate::AtomPairsParameters::num_pi_bits()) - 1)) as u32;
+        code >>= crate::AtomPairsParameters::num_pi_bits();
+        let atomic_number = crate::atom_code::ATOM_NUMBER_TYPES
+            [(code & ((1 << crate::AtomPairsParameters::num_type_bits()) - 1)) as usize];
         let symbol = Element::from_atomic_number(atomic_number as u8)
             .expect("source atom number table contains valid Elements")
             .symbol();
         let chirality = if include_chirality {
-            code >>= 4;
-            Some(match (code & 3) as u8 {
-                0 => "",
-                1 => "R",
-                2 => "S",
-                value => return Err(AtomCodeExplanationError::UnknownChirality { code: value }),
-            })
+            code >>= crate::AtomPairsParameters::num_type_bits();
+            Some(
+                match (code & ((1 << crate::AtomPairsParameters::num_chiral_bits()) - 1)) as u8 {
+                    0 => "",
+                    1 => "R",
+                    2 => "S",
+                    value => {
+                        return Err(AtomCodeExplanationError::UnknownChirality { code: value });
+                    }
+                },
+            )
         } else {
             None
         };

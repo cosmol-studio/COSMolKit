@@ -414,3 +414,6 @@ impl From<FingerprintWorkerError> for MorganError {
         Self::Worker(e)
     }
 }
+
+mod atom_pairs_parameters;
+pub use atom_pairs_parameters::AtomPairsParameters;
