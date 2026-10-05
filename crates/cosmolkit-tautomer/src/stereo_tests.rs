@@ -586,7 +586,7 @@ fn single_query_endpoint_transfers_hydrogen_in_source_order() {
         &matches[0],
         &BTreeSet::new(),
         &BTreeSet::new(),
-        &BTreeSet::new(),
+        &|_| false,
         TautomerParams::default(),
     )
     .unwrap();

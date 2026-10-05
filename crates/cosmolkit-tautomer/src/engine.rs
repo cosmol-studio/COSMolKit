@@ -568,7 +568,7 @@ pub(crate) fn apply_tautomer_transform_match(
     match_result: &SubstructMatchResult,
     current_modified_atoms: &BTreeSet<AtomId>,
     current_modified_bonds: &BTreeSet<BondId>,
-    existing_smiles: &BTreeSet<String>,
+    contains_smiles: &dyn Fn(&str) -> bool,
     options: TautomerParams,
 ) -> Result<TautomerExpansionAttempt<Arc<TautomerRecord>>, TautomerRunError> {
     // RDKit✔️❌:           RWMOL_SPTR product(new RWMol(*kmol));
@@ -806,7 +806,7 @@ pub(crate) fn apply_tautomer_transform_match(
     // RDKit✔️❌:           if (res.d_tautomers.find(tsmiles) != res.d_tautomers.end()) {
     // RDKit✔️❌:             continue;
     // RDKit✔️❌:           }
-    if existing_smiles.contains(&canonical_smiles) {
+    if contains_smiles(&canonical_smiles) {
         return Ok(TautomerExpansionAttempt::Duplicate {
             canonical_smiles,
             modified_atoms,

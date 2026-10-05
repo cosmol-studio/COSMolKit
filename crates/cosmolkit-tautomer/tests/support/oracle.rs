@@ -207,7 +207,7 @@ pub fn validate_oracle(
     .unwrap();
     assert!(
         failures.is_empty(),
-        "{} differences across {checked} source branches; full evidence in target/TAU-focused-detached-failures.json; first: {:?}",
+        "{} differences across {checked} source branches; full evidence in target/TAU-{label}-detached-failures.json; first: {:?}",
         failures.len(),
         failures
             .first()

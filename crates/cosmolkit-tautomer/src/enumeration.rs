@@ -196,6 +196,27 @@ pub fn pick_canonical_with(
     coordinates: &CoordinateBlock,
     mut scorer: impl FnMut(TautomerRecordView<'_>) -> Result<i32, TautomerRunError>,
 ) -> Result<TautomerRecord, TautomerRunError> {
+    // RDKit✔️✔️:   ROMOL_SPTR bestMol;
+    // RDKit✔️✔️:   if (tautRes.d_tautomers.size() == 1) {
+    // RDKit✔️✔️:     bestMol = tautRes.d_tautomers.begin()->second.tautomer;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     // Calculate score for each tautomer
+    // RDKit✔️✔️:     int bestScore = std::numeric_limits<int>::min();
+    // RDKit✔️✔️:     std::string bestSmiles = "";
+    // RDKit✔️✔️:     for (const auto &t : tautRes.d_tautomers) {
+    // RDKit✔️✔️:       auto score = scoreFunc(*t.second.tautomer);
+    // RDKit✔️✔️:       if (score > bestScore) {
+    // RDKit✔️✔️:         bestScore = score;
+    // RDKit✔️✔️:         bestSmiles = t.first;
+    // RDKit✔️✔️:         bestMol = t.second.tautomer;
+    // RDKit✔️✔️:       } else if (score == bestScore) {
+    // RDKit✔️✔️:         if (t.first < bestSmiles) {
+    // RDKit✔️✔️:           bestSmiles = t.first;
+    // RDKit✔️✔️:           bestMol = t.second.tautomer;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
     let selected = if result.entries.len() == 1 {
         &result.entries[0].1
     } else {

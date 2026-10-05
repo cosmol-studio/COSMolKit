@@ -86,7 +86,7 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
         &SubstructMatchResult,
         &BTreeSet<AtomId>,
         &BTreeSet<BondId>,
-        &BTreeSet<String>,
+        &dyn Fn(&str) -> bool,
     ) -> Result<TautomerExpansionAttempt<M>, E>,
     mut callback: impl FnMut(&TautomerExpansionState<M>) -> Result<bool, E>,
 ) -> Result<TautomerExpansionPass, TautomerExpansionError<E>> {
@@ -101,10 +101,12 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
     // RDKit✔️✔️:   while (!completed && !bailOut) {
     // RDKit✔️✔️:     // std::map automatically sorts res.d_tautomers into alphabetical order
     // RDKit✔️✔️:     // (SMILES)
-    // RDKit✔️✔️:     for (auto &smilesTautomerPair : res.d_tautomers) {
+    // RDKit✔️❌:     for (auto &smilesTautomerPair : res.d_tautomers) {
     // A BTreeMap range cursor, rather than a snapshot of keys, reproduces
     // std::map iterator behavior when a transform inserts during traversal:
     // later keys are visible in this pass and earlier keys wait for the next.
+    // Each BTreeMap cursor step seeks in O(log T), unlike the source
+    // std::map iterator advance; that traversal overhead remains explicit.
     let mut previous_key: Option<String> = None;
     loop {
         let next_key = match previous_key.as_deref() {
@@ -197,14 +199,16 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
                     break;
                 }
 
-                let existing_smiles = state.candidates.keys().cloned().collect::<BTreeSet<_>>();
+                // Source res.d_tautomers.find(tsmiles) is one O(log T) lookup.
+                // Borrow the retained map through this lookup, without copying keys.
+                let contains_smiles = |key: &str| state.candidates.contains_key(key);
                 let attempt = apply_match(
                     &kekulized,
                     transform,
                     matched,
                     &state.modified_atoms,
                     &state.modified_bonds,
-                    &existing_smiles,
+                    &contains_smiles,
                 )
                 .map_err(TautomerExpansionError::Backend)?;
 
@@ -630,7 +634,7 @@ mod tests {
                 if matched.bond_mapping[0] == 0 {
                     Ok::<_, &'static str>(expansion_product("z", 0))
                 } else {
-                    assert!(existing.contains("z"));
+                    assert!(existing("z"));
                     Ok(TautomerExpansionAttempt::Duplicate {
                         canonical_smiles: "z".to_owned(),
                         modified_atoms: modified_atoms

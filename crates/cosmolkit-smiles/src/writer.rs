@@ -992,18 +992,12 @@ fn write_smiles_output_with_random_stream<'record>(
     let rings =
         fast_find_rings_from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency)
             .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
-    if topology.bonds.iter().any(|bond| {
-        matches!(
-            bond.direction(),
-            BondDirection::EndDownRight | BondDirection::EndUpRight
-        )
-    }) {
-        let ranks = cosmolkit_core::assign_atom_cip_ranks(&topology, &valence)
-            .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
-        topology = cosmolkit_core::assign_directional_double_bond_stereo(topology, &ranks, &rings)
-            .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?
-            .topology;
-    }
+    // RDKit✔️✔️:       if (!tmol->hasProp(common_properties::_StereochemDone)) {
+    // RDKit✔️✔️:         MolOps::assignStereochemistry(*tmol, params.cleanStereo);
+    // RDKit✔️✔️:       }
+    // The marker-aware preparation above is the source's sole stereo assignment.
+    // A second direction-to-stereo pass would reinterpret residual slashes on
+    // newly transformed bonds even when the source marker forbids reassignment.
     let mut ranking_topology = topology.clone();
     if doing_cx_smiles {
         for atom in dative_donors
