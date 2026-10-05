@@ -2,7 +2,7 @@ mod angle;
 mod api;
 mod atom_typer;
 pub(super) mod bond;
-mod builder;
+pub(crate) mod builder;
 pub(super) mod convenience;
 mod inversion;
 mod inversions;

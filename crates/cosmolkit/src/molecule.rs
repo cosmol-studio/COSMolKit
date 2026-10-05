@@ -37,6 +37,7 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
         feature = "cap-aromaticity",
+        feature = "cap-forcefields",
         feature = "cap-fingerprints"
     ))]
     rings: Option<cosmolkit_core::RingInfo>,
@@ -82,6 +83,7 @@ impl DerivedCacheBlock {
                     feature = "cap-hydrogens",
                     feature = "cap-kekulize",
                     feature = "cap-aromaticity",
+                    feature = "cap-forcefields",
                     feature = "cap-fingerprints"
                 ))]
                 {
@@ -102,6 +104,7 @@ impl DerivedCacheBlock {
                     feature = "cap-hydrogens",
                     feature = "cap-kekulize",
                     feature = "cap-aromaticity",
+                    feature = "cap-forcefields",
                     feature = "cap-fingerprints"
                 )))]
                 {
@@ -140,6 +143,7 @@ impl DerivedCacheBlock {
             feature = "cap-hydrogens",
             feature = "cap-kekulize",
             feature = "cap-aromaticity",
+            feature = "cap-forcefields",
             feature = "cap-fingerprints"
         ))]
         if states.intersects(DerivedState::RINGS) {
@@ -192,6 +196,7 @@ impl DerivedCacheBlock {
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
         feature = "cap-aromaticity",
+        feature = "cap-forcefields",
         feature = "cap-fingerprints"
     ))]
     pub(crate) fn install_ring_info(&mut self, rings: cosmolkit_core::RingInfo) {
@@ -206,6 +211,7 @@ impl DerivedCacheBlock {
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
         feature = "cap-aromaticity",
+        feature = "cap-forcefields",
         feature = "cap-fingerprints"
     ))]
     pub(crate) fn ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
@@ -223,6 +229,7 @@ impl DerivedCacheBlock {
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
         feature = "cap-aromaticity",
+        feature = "cap-forcefields",
         feature = "cap-fingerprints"
     ))]
     pub(crate) fn valid_ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
@@ -307,6 +314,7 @@ impl DerivedCacheBlock {
             feature = "cap-hydrogens",
             feature = "cap-kekulize",
             feature = "cap-aromaticity",
+            feature = "cap-forcefields",
             feature = "cap-fingerprints"
         ))]
         {

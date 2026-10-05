@@ -76,7 +76,7 @@ fn drawing_pyerr(py: Python<'_>, source: ck::DrawingError) -> PyErr {
     error
 }
 
-fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyErr {
+pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyErr {
     use ck::OperationError as E;
     let kind = match &source {
         E::UnsupportedFeature { .. } => "UnsupportedFeature",
@@ -116,6 +116,7 @@ fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyErr {
         E::Sanitize(..) => "Sanitize",
         E::Hydrogen(..) => "Hydrogen",
         E::UffOptimization(..) => "UffOptimization",
+        E::MmffOptimization(..) => "MmffOptimization",
     };
     let error = OperationError::new_err(source.to_string());
     if let Err(attribute_error) = error
@@ -313,9 +314,10 @@ impl LabuteAsaContributions {
 }
 /// Python ownership wraps the ONE live runtime value, not detached chemistry.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit")]
-struct Molecule {
-    inner: ck::Molecule,
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
+#[derive(Clone)]
+pub(crate) struct Molecule {
+    pub(crate) inner: ck::Molecule,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -732,6 +734,98 @@ impl Molecule {
         self.inner
             .chi_n_n(order)
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
+    }
+    fn mmff_energy_gradient(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<Option<crate::mmff_binding::MmffEnergyGradient>> {
+        self.inner
+            .mmff_energy_gradient()
+            .map(|value| value.map(|inner| crate::mmff_binding::MmffEnergyGradient { inner }))
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn mmff_energy_gradient_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::mmff_binding::MmffEvaluationParams,
+    ) -> PyResult<Option<crate::mmff_binding::MmffEnergyGradient>> {
+        self.inner
+            .mmff_energy_gradient_with_params(&params.inner)
+            .map(|value| value.map(|inner| crate::mmff_binding::MmffEnergyGradient { inner }))
+            .map_err(|e| operation_pyerr(py, e))
+    }
+
+    fn to_builder(&self) -> crate::mmff_binding::MoleculeBuilder {
+        crate::mmff_binding::MoleculeBuilder {
+            inner: self.inner.to_builder(),
+        }
+    }
+    fn conformers_3d(&self) -> Vec<crate::mmff_binding::Conformer3D> {
+        self.inner
+            .conformers_3d()
+            .iter()
+            .cloned()
+            .map(|inner| crate::mmff_binding::Conformer3D { inner })
+            .collect()
+    }
+    fn mmff_has_all_molecule_params(&self, py: Python<'_>) -> PyResult<bool> {
+        self.inner
+            .mmff_has_all_molecule_params()
+            .map_err(|e| crate::mmff_binding::properties_pyerr(py, e))
+    }
+    fn mmff_properties(&self, py: Python<'_>) -> PyResult<crate::mmff_binding::MmffProperties> {
+        self.inner
+            .mmff_properties()
+            .map(|inner| crate::mmff_binding::MmffProperties { inner })
+            .map_err(|e| crate::mmff_binding::properties_pyerr(py, e))
+    }
+    fn mmff_properties_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::mmff_binding::MmffPropertiesParams,
+    ) -> PyResult<crate::mmff_binding::MmffProperties> {
+        self.inner
+            .mmff_properties_with_params(&params.inner)
+            .map(|inner| crate::mmff_binding::MmffProperties { inner })
+            .map_err(|e| crate::mmff_binding::properties_pyerr(py, e))
+    }
+    fn with_mmff_optimized(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::mmff_binding::MmffOptimizeMoleculeResult> {
+        self.inner
+            .with_mmff_optimized()
+            .map(|inner| crate::mmff_binding::MmffOptimizeMoleculeResult { inner })
+            .map_err(|error| operation_pyerr(py, error))
+    }
+    fn with_mmff_optimized_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::mmff_binding::MmffOptimizationParams,
+    ) -> PyResult<crate::mmff_binding::MmffOptimizeMoleculeResult> {
+        self.inner
+            .with_mmff_optimized_with_params(&params.inner)
+            .map(|inner| crate::mmff_binding::MmffOptimizeMoleculeResult { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_mmff_optimized_confs(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::mmff_binding::MmffOptimizeMoleculeConfsResult> {
+        self.inner
+            .with_mmff_optimized_confs()
+            .map(|inner| crate::mmff_binding::MmffOptimizeMoleculeConfsResult { inner })
+            .map_err(|error| operation_pyerr(py, error))
+    }
+    fn with_mmff_optimized_confs_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::mmff_binding::MmffConformerOptimizationParams,
+    ) -> PyResult<crate::mmff_binding::MmffOptimizeMoleculeConfsResult> {
+        self.inner
+            .with_mmff_optimized_confs_with_params(&params.inner)
+            .map(|inner| crate::mmff_binding::MmffOptimizeMoleculeConfsResult { inner })
+            .map_err(|e| operation_pyerr(py, e))
     }
 
     #[staticmethod]
@@ -1324,5 +1418,6 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Coordinate2DParams>()?;
     crate::canonical_descriptor_binding::register(module)?;
     crate::canonical_values::register(module)?;
+    crate::mmff_binding::register(module)?;
     Ok(())
 }

@@ -128,6 +128,8 @@ pub enum OperationError {
     Coordinate2D(cosmolkit_depict::DepictError),
     #[cfg(feature = "cap-forcefields")]
     UffOptimization(crate::UffOptimizationError),
+    #[cfg(feature = "cap-forcefields")]
+    MmffOptimization(crate::MmffOptimizationError),
     #[cfg(feature = "cap-kekulize")]
     Kekulize(cosmolkit_core::KekulizeError),
     #[cfg(feature = "cap-aromaticity")]
@@ -318,6 +320,8 @@ impl fmt::Display for OperationError {
                 write!(formatter, "operation `{operation}` failed: {detail}")
             }
             #[cfg(feature = "cap-forcefields")]
+            Self::MmffOptimization(error) => write!(formatter, "MMFF optimization failed: {error}"),
+            #[cfg(feature = "cap-forcefields")]
             Self::UffOptimization(error) => write!(formatter, "UFF optimization failed: {error}"),
         }
     }
@@ -330,6 +334,8 @@ impl std::error::Error for OperationError {
             Self::Valence(error) => Some(error),
             #[cfg(feature = "cap-forcefields")]
             Self::UffOptimization(error) => Some(error),
+            #[cfg(feature = "cap-forcefields")]
+            Self::MmffOptimization(error) => Some(error),
             #[cfg(feature = "cap-radicals")]
             Self::Radical(error) => Some(error),
             #[cfg(any(

@@ -94,3 +94,13 @@ pub(crate) use runtime::registry::{
 pub(crate) use runtime::registry::{WithAssignedRingFamiliesAccess, WithAssignedRingsAccess};
 #[cfg(feature = "cap-hydrogens")]
 pub(crate) use runtime::registry::{WithHydrogensAccess, WithoutHydrogensAccess};
+
+#[cfg(feature = "cap-forcefields")]
+pub(crate) mod mmff_optimization;
+#[cfg(feature = "cap-forcefields")]
+pub use mmff_optimization::{
+    MmffConformerOptimizationParams, MmffOptimizationError, MmffOptimizationParams,
+    MmffOptimizeMoleculeConfResult, MmffOptimizeMoleculeConfsResult, MmffOptimizeMoleculeResult,
+};
+#[cfg(feature = "cap-forcefields")]
+pub(crate) use runtime::registry::{WithMmffOptimizedAccess, WithMmffOptimizedConfsAccess};

@@ -2200,6 +2200,18 @@ fn set_mmff_aromaticity(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION setMMFFAromaticity
+    // RDKit source pin 351f8f378f8ad6bbd517980c38896e66bf907af8,
+    // Code/GraphMol/Aromaticity.cpp, setMMFFAromaticity noncarbon H update:
+    // RDKit❗❌:         int iv = atom->calcImplicitValence(false);
+    // RDKit❗❌:         atom->calcExplicitValence(false);
+    // Behavior: bond aromaticization does not update the source atom's cached
+    // explicit valence. Preserve its pre-aromaticity value for the first
+    // implicit calculation, before the following explicit recalculation.
+    // Complexity: an O(V) detached cache projection replaces source-resident
+    // rows, adding allocation; graph traversals remain in the existing owner.
+    let mut pre_aromaticity_explicit_valence =
+        crate::assign_valence_for_topology(topology, crate::ValenceModel::RdkitLike)?
+            .explicit_valence;
     let atom_rings = rings.atom_rings();
     let mut perceived_atoms = vec![false; topology.atoms.len()];
     let mut aromatic_rings = vec![false; atom_rings.len()];
@@ -2357,9 +2369,15 @@ fn set_mmff_aromaticity(
                 continue;
             }
             let implicit = crate::calculate_implicit_valence_for_topology(
-                topology, atom_id, -1, false, false,
+                topology,
+                atom_id,
+                pre_aromaticity_explicit_valence[atom_id.index()],
+                false,
+                false,
             )?;
-            let _ =
+            // Preserve the source cache write before setNumExplicitHs, including
+            // subsequent visits to the same atom in fused aromatic rings.
+            pre_aromaticity_explicit_valence[atom_id.index()] =
                 crate::calculate_explicit_valence_for_topology(topology, atom_id, false, false)?;
             if implicit != 0 {
                 let explicit_hydrogens =
@@ -2370,7 +2388,11 @@ fn set_mmff_aromaticity(
                     })?;
                 topology.atoms[atom_id.index()].set_explicit_hydrogens(explicit_hydrogens);
                 let _ = crate::calculate_implicit_valence_for_topology(
-                    topology, atom_id, -1, false, false,
+                    topology,
+                    atom_id,
+                    pre_aromaticity_explicit_valence[atom_id.index()],
+                    false,
+                    false,
                 )?;
             }
         }
@@ -2396,13 +2418,14 @@ fn mmff94_aromaticity_helper(
     topology: &TopologyBlock,
     rings: &RingInfo,
 ) -> Result<AromaticityAssignment, AromaticityError> {
-    mmff94_aromaticity_helper_with_query_state(topology, rings, None)
+    mmff94_aromaticity_helper_with_query_state(topology, rings, None, false)
 }
 
 fn mmff94_aromaticity_helper_with_query_state(
     topology: &TopologyBlock,
     rings: &RingInfo,
     query_state: Option<QueryStateRef<'_>>,
+    mmff_sanitized: bool,
 ) -> Result<AromaticityAssignment, AromaticityError> {
     // BEGIN RDKIT CPP FUNCTION mmff94AromaticityHelper
     // RDKit✔️✔️: int mmff94AromaticityHelper(RWMol &mol, const VECT_INT_VECT &srings) {
@@ -2443,7 +2466,7 @@ fn mmff94_aromaticity_helper_with_query_state(
     // END RDKIT CPP FUNCTION mmff94AromaticityHelper
     validate_inputs(topology, rings)?;
     let mut working = topology.clone();
-    if working.atoms.iter().any(Atom::is_aromatic) {
+    if !mmff_sanitized && working.atoms.iter().any(Atom::is_aromatic) {
         working = crate::kekulize::kekulize_with_query_state(
             &working,
             &crate::KekulizeParams::default(),
@@ -2475,6 +2498,19 @@ fn mmff94_aromaticity_helper_with_query_state(
         topology: working,
         aromatic_ring_count,
     })
+}
+
+/// Assign source MMFF aromaticity after the constructor's guarded preparation.
+/// The caller supplies the topology after its _MMFFSanitized guard; no second
+/// Kekulize, computed-property installation, or runtime cache authority occurs.
+pub fn assign_mmff_aromaticity_prepared(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+) -> Result<AromaticityAssignment, AromaticityError> {
+    // RDKit❗❌:   MolOps::setMMFFAromaticity((RWMol &)mol);
+    // Behavior: one existing core owner, including source cached-valence order.
+    // Complexity: one existing detached aromaticity assignment and row traversal.
+    mmff94_aromaticity_helper_with_query_state(topology, rings, None, true)
 }
 
 pub fn assign_aromaticity(
@@ -2585,7 +2621,7 @@ fn assign_aromaticity_impl(
             mdl_aromaticity_helper_with_query_state(topology, rings, query_state)?
         }
         AromaticityModel::Mmff94 => {
-            mmff94_aromaticity_helper_with_query_state(topology, rings, query_state)?
+            mmff94_aromaticity_helper_with_query_state(topology, rings, query_state, false)?
         }
         AromaticityModel::Custom => {
             return Err(AromaticityError::UnsupportedModel {
@@ -4094,6 +4130,28 @@ mod tests {
     }
 
     #[test]
+    fn mmff94_pyrrole_restores_prearomaticity_implicit_hydrogen() {
+        let c = || AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2);
+        let n = AtomSpec::new(Element::N).with_hybridization(Hybridization::Sp2);
+        let graph = topology(
+            vec![n, c(), c(), c(), c()],
+            vec![
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (3, 4, BondOrder::Double),
+                (4, 0, BondOrder::Single),
+            ],
+        );
+        let rings = ring_info(&graph, &[vec![0, 1, 2, 3, 4]]);
+        let assignment = super::assign_mmff_aromaticity_prepared(&graph, &rings).unwrap();
+        assert_eq!(assignment.topology.atoms[0].explicit_hydrogens(), 1);
+        assert_eq!(graph.atoms[0].explicit_hydrogens(), 0);
+        assert!(assignment.topology.atoms.iter().all(Atom::is_aromatic));
+        assert!(assignment.topology.bonds.iter().all(Bond::is_aromatic));
+    }
+
+    #[test]
     fn mmff94_noncarbon_hydrogen_adjustment_and_kekulization_failure_are_atomic() {
         let c = || AtomSpec::new(Element::C).with_hybridization(Hybridization::Sp2);
         let cationic_n = AtomSpec::new(Element::N)
@@ -4110,9 +4168,18 @@ mod tests {
             ],
         );
         let rings = ring_info(&graph, &[vec![0, 1, 2, 3, 4]]);
+        // Pinned Aromaticity.cpp:1084 calculates implicit valence with the
+        // pre-aromatic cached explicit valence; Atom.cpp:42,499,552 uses
+        // effective Z=7-1=6 and carbon default valence=4. Two single bonds
+        // provide explicit valence=2, hence iv=4-2=2 before aromatic recalc.
+        // Original expected=1 recomputed the cache after bond aromaticization.
+        let before =
+            crate::assign_valence_for_topology(&graph, crate::ValenceModel::RdkitLike).unwrap();
+        assert_eq!(before.explicit_valence[0], 2);
+        assert_eq!(before.implicit_hydrogens[0], 2);
         let assignment = mmff94_aromaticity_helper(&graph, &rings).unwrap();
         assert_eq!(assignment.aromatic_ring_count, 2);
-        assert_eq!(assignment.topology.atoms[0].explicit_hydrogens(), 1);
+        assert_eq!(assignment.topology.atoms[0].explicit_hydrogens(), 2);
         assert_eq!(graph.atoms[0].explicit_hydrogens(), 0);
 
         let mut impossible = topology(

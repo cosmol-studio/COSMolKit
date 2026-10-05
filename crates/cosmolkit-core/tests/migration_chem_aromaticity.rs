@@ -320,7 +320,10 @@ fn mmff94_covers_positive_negative_hetero_hydrogen_and_input_immutability() {
         ],
     );
     let adjusted = assignment(&cationic_n, AromaticityModel::Mmff94);
-    assert_eq!(adjusted.topology.atoms[0].explicit_hydrogens(), 1);
+    // Same pinned cache sequence as the original unit fixture: N+ has
+    // effective Z=6, default valence=4, pre-aromatic explicit valence=2.
+    // Keep the original topology, aromaticity and input immutability assertions.
+    assert_eq!(adjusted.topology.atoms[0].explicit_hydrogens(), 2);
     assert_eq!(cationic_n.atoms[0].explicit_hydrogens(), 0);
     assert_eq!(aromatic_atom_count(&adjusted.topology), 5);
 }

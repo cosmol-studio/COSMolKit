@@ -22,7 +22,10 @@ pub use cosmolkit_fingerprints::{
     SparseCountFingerprint, SparseCountFingerprint32,
 };
 #[cfg(feature = "cap-forcefields")]
-pub use forcefields::{UffParameterError, UffParameterErrorKind, UffParameterQueryError};
+pub use forcefields::{
+    MmffAtomProperties, MmffMolPropertiesError, MmffProperties, MmffPropertiesParams, MmffVariant,
+    UffParameterError, UffParameterErrorKind, UffParameterQueryError,
+};
 #[cfg(feature = "cap-forcefields")]
 pub(crate) use ops::WithUffOptimizedConformersAccess;
 #[cfg(feature = "cap-forcefields")]
@@ -241,3 +244,15 @@ pub fn element_info(element: Element) -> ElementInfo {
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }
+
+#[cfg(feature = "cap-forcefields")]
+pub use ops::{
+    MmffConformerOptimizationParams, MmffOptimizationError, MmffOptimizationParams,
+    MmffOptimizeMoleculeConfResult, MmffOptimizeMoleculeConfsResult, MmffOptimizeMoleculeResult,
+};
+
+#[cfg(feature = "cap-forcefields")]
+pub(crate) use ops::{WithMmffOptimizedAccess, WithMmffOptimizedConfsAccess};
+
+#[cfg(feature = "cap-forcefields")]
+pub use forcefields::{MmffEnergyGradient, MmffEvaluationParams};

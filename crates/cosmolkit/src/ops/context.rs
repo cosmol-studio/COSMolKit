@@ -81,12 +81,16 @@ pub(crate) enum PreservationProof {
     UnchangedInput,
     CoordinateOnly,
     StereoCleanup,
-    StructureTagAssignment { clear_stereochem_done: bool },
+    StructureTagAssignment {
+        clear_stereochem_done: bool,
+    },
     CipLabelAssignment,
     LeafAtomAppend,
     RadicalElectronAssignment,
     KekulizeBondAssignment,
     AromaticityAssignment,
+    #[cfg(feature = "cap-forcefields")]
+    MmffPreparedOptimization,
     SanitizeTopologyState,
 }
 
@@ -1564,6 +1568,118 @@ impl<'a, Access> OpParts<'a, Access> {
                         states,
                         "aromaticity-assignment proof failed",
                     ));
+                }
+            }
+            #[cfg(feature = "cap-forcefields")]
+            PreservationProof::MmffPreparedOptimization => {
+                // MMFF preparation preserves graph identity and only adjusts
+                // aromatic atom/H and bond-order flags; minimization may alter
+                // stored 3D positions. Permit precisely these source writes.
+                // Existing proof variants and their checks remain unchanged.
+                let allowed = DerivedState::RING_FAMILIES.union(DerivedState::COORDINATES);
+                let candidate = self.current_topology_candidate()?;
+                let source = self.source.topology();
+                let atom_rows = candidate.atoms.len() == source.atoms.len()
+                    && candidate.atoms.iter().zip(&source.atoms).all(|(row, old)| {
+                        let mut expected = old.clone();
+                        expected.set_aromatic(row.is_aromatic());
+                        expected.set_explicit_hydrogens(row.explicit_hydrogens());
+                        &expected == row
+                    });
+                let bond_rows = candidate.bonds.len() == source.bonds.len()
+                    && candidate.bonds.iter().zip(&source.bonds).all(|(row, old)| {
+                        let mut expected = old.clone();
+                        expected.set_order(row.order());
+                        expected.set_aromatic(row.is_aromatic());
+                        &expected == row
+                    });
+                let graph_identity = atom_rows
+                    && bond_rows
+                    && candidate.adjacency == source.adjacency
+                    && candidate.substance_groups == source.substance_groups
+                    && candidate.stereo_groups == source.stereo_groups;
+                let coordinates = self.current_coordinates_candidate()?;
+                let old_coordinates = self.source.coordinate_block_runtime();
+                let coordinate_metadata = coordinates.conformers_2d
+                    == old_coordinates.conformers_2d
+                    && coordinates.source_coordinate_dim == old_coordinates.source_coordinate_dim
+                    && coordinates.conformers_3d.len() == old_coordinates.conformers_3d.len()
+                    && coordinates
+                        .conformers_3d
+                        .iter()
+                        .zip(&old_coordinates.conformers_3d)
+                        .all(|(row, old)| {
+                            row.id() == old.id()
+                                && row.is_3d() == old.is_3d()
+                                && row.props() == old.props()
+                        })
+                    && coordinates
+                        .validate_for_atom_count(source.atoms.len())
+                        .is_ok();
+                let mut expected_properties = self.source.properties().clone();
+                if expected_properties.prop("_MMFFSanitized").is_none() {
+                    expected_properties
+                        .set_computed_prop("_MMFFSanitized", "1")
+                        .map_err(OperationError::InvalidProperty)?;
+                }
+                let properties_match = self.current_properties_candidate()? == &expected_properties;
+                let cache_match = self
+                    .current_cache_candidate()?
+                    .valid_states()
+                    .intersection(states)
+                    == self
+                        .source
+                        .derived_cache_runtime()
+                        .valid_states()
+                        .intersection(states);
+                #[cfg(any(feature = "cap-rings", feature = "cap-fingerprints"))]
+                let cache_match = cache_match
+                    && self.current_cache_candidate()?.ring_family_info()
+                        == self.source.derived_cache_runtime().ring_family_info();
+                if !allowed.contains(states)
+                    || !graph_identity
+                    || !coordinate_metadata
+                    || !properties_match
+                    || !cache_match
+                {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "MMFF graph/property/coordinate-metadata preservation proof failed",
+                    ));
+                }
+                // Runtime retains source sharing only when final values are
+                // unchanged. Coordinates require bit equality: signed zeros
+                // cannot erase a real source result by ordinary f64 equality.
+                let same_topology = candidate == source;
+                let same_coordinates = coordinate_metadata
+                    && coordinates
+                        .conformers_3d
+                        .iter()
+                        .zip(&old_coordinates.conformers_3d)
+                        .all(|(row, old)| {
+                            row.coordinates()
+                                .iter()
+                                .flatten()
+                                .zip(old.coordinates().iter().flatten())
+                                .all(|(a, b)| a.to_bits() == b.to_bits())
+                        });
+                let same_properties =
+                    self.current_properties_candidate()? == self.source.properties();
+                let same_cache =
+                    self.current_cache_candidate()? == self.source.derived_cache_runtime();
+                if same_topology {
+                    self.topology = WorkingBlock::Shared;
+                }
+                if same_coordinates {
+                    self.coordinates = WorkingBlock::Shared;
+                }
+                if same_properties {
+                    self.properties = WorkingBlock::Shared;
+                }
+                if same_cache {
+                    self.derived_cache = WorkingBlock::Shared;
                 }
             }
             PreservationProof::SanitizeTopologyState => {

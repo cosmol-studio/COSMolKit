@@ -65,7 +65,7 @@ pub use atropisomer::{
 
 pub use aromaticity::{
     AromaticityAssignment, AromaticityError, AromaticityModel, AromaticityParams,
-    assign_aromaticity, assign_aromaticity_with_query_state,
+    assign_aromaticity, assign_aromaticity_with_query_state, assign_mmff_aromaticity_prepared,
 };
 
 pub use bond_dirs::{BondDirectionStereoError, assign_chiral_types_from_bond_dirs};

@@ -4,6 +4,76 @@ use cosmolkit_macros::binding_contract;
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"MmffAtomProperties.atom_type",item:callable,owner:type_,rust:crate::MmffAtomProperties::atom_type,python:"atom_type",javascript:"atomType",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:u8,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->u8,},
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"MmffAtomProperties.formal_charge",item:callable,owner:type_,rust:crate::MmffAtomProperties::formal_charge,python:"formal_charge",javascript:"formalCharge",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->f64,},
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"MmffAtomProperties.partial_charge",item:callable,owner:type_,rust:crate::MmffAtomProperties::partial_charge,python:"partial_charge",javascript:"partialCharge",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffAtomProperties)->f64,},
+
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"types.MmffEvaluationParams",item:type,owner:type_,rust:crate::MmffEvaluationParams,python:"MmffEvaluationParams",javascript:"MmffEvaluationParams",feature:"cap-forcefields",status:experimental,role:parameter,},
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"types.MmffEnergyGradient",item:type,owner:type_,rust:crate::MmffEnergyGradient,python:"MmffEnergyGradient",javascript:"MmffEnergyGradient",feature:"cap-forcefields",status:experimental,role:result,},
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"Molecule.mmff_energy_gradient",item:callable,owner:molecule,rust:crate::Molecule::mmff_energy_gradient,python:"mmff_energy_gradient",javascript:"mmffEnergyGradient",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:Option<crate::MmffEnergyGradient>,error:crate::OperationError,state:read_only,operation:none,signature:fn(&crate::Molecule)->Result<Option<crate::MmffEnergyGradient>,crate::OperationError>,},
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"Molecule.mmff_energy_gradient_with_params",item:callable,owner:molecule,rust:crate::Molecule::mmff_energy_gradient_with_params,python:"mmff_energy_gradient_with_params",javascript:"mmffEnergyGradientWithParams",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[{name:params,type:&crate::MmffEvaluationParams,default:required}],output:Option<crate::MmffEnergyGradient>,error:crate::OperationError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::MmffEvaluationParams)->Result<Option<crate::MmffEnergyGradient>,crate::OperationError>,},
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"MmffEnergyGradient.energy",item:callable,owner:type_,rust:crate::MmffEnergyGradient::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffEnergyGradient)->f64,},
+#[cfg(feature="cap-forcefields")]
+{semantic_id:"MmffEnergyGradient.gradient",item:callable,owner:type_,rust:crate::MmffEnergyGradient::gradient,python:"gradient",javascript:"gradient",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [f64],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffEnergyGradient)->&'a [f64],},
+
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffOptimizeMoleculeResult.molecule",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeResult)->&'a crate::Molecule,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffOptimizeMoleculeResult.needs_more",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::needs_more,python:"needs_more",javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeResult)->bool,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffOptimizeMoleculeResult.status_code",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeResult::status_code,python:"status_code",javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeResult)->i32,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffOptimizeMoleculeConfsResult.molecule",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfsResult::molecule,python:"molecule",javascript:"molecule",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a crate::Molecule,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeConfsResult)->&'a crate::Molecule,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffOptimizeMoleculeConfsResult.conformer_results",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfsResult::conformer_results,python:"conformer_results",javascript:"conformerResults",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::MmffOptimizeMoleculeConfResult],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffOptimizeMoleculeConfsResult)->&'a [crate::MmffOptimizeMoleculeConfResult],},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffOptimizeMoleculeConfResult.needs_more",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::needs_more,python:"needs_more",javascript:"needsMore",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->bool,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffOptimizeMoleculeConfResult.status_code",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::status_code,python:"status_code",javascript:"statusCode",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:i32,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->i32,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffOptimizeMoleculeConfResult.energy",item:callable,owner:type_,rust:crate::MmffOptimizeMoleculeConfResult::energy,python:"energy",javascript:"energy",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::MmffOptimizeMoleculeConfResult)->f64,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffProperties.is_valid",item:callable,owner:type_,rust:crate::MmffProperties::is_valid,python:"is_valid",javascript:"isValid",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:bool,error:none,state:read_only,operation:none,signature:fn(&crate::MmffProperties)->bool,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffProperties.variant",item:callable,owner:type_,rust:crate::MmffProperties::variant,python:"variant",javascript:"variant",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:crate::MmffVariant,error:none,state:read_only,operation:none,signature:fn(&crate::MmffProperties)->crate::MmffVariant,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffProperties.atoms",item:callable,owner:type_,rust:crate::MmffProperties::atoms,python:"atoms",javascript:"atoms",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[],output:&'a [crate::MmffAtomProperties],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::MmffProperties)->&'a [crate::MmffAtomProperties],},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffProperties.atom_type",item:callable,owner:type_,rust:crate::MmffProperties::atom_type,python:"atom_type",javascript:"atomType",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[{ name: atom_index, type: usize, default: required }],output:u8,error:crate::MmffMolPropertiesError,state:read_only,operation:none,signature:fn(&crate::MmffProperties,usize)->Result<u8,crate::MmffMolPropertiesError>,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffProperties.formal_charge",item:callable,owner:type_,rust:crate::MmffProperties::formal_charge,python:"formal_charge",javascript:"formalCharge",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[{ name: atom_index, type: usize, default: required }],output:f64,error:crate::MmffMolPropertiesError,state:read_only,operation:none,signature:fn(&crate::MmffProperties,usize)->Result<f64,crate::MmffMolPropertiesError>,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"MmffProperties.partial_charge",item:callable,owner:type_,rust:crate::MmffProperties::partial_charge,python:"partial_charge",javascript:"partialCharge",feature:"cap-forcefields",status:experimental,kind:instance,parameters:[{ name: atom_index, type: usize, default: required }],output:f64,error:crate::MmffMolPropertiesError,state:read_only,operation:none,signature:fn(&crate::MmffProperties,usize)->Result<f64,crate::MmffMolPropertiesError>,},
+
+        #[cfg(feature="cap-forcefields")]
+        { semantic_id: "types.MmffOptimizationParams", item: type, owner: type_, rust: crate::MmffOptimizationParams, python: "MmffOptimizationParams", javascript: "MmffOptimizationParams", feature: "cap-forcefields", status: experimental, role: parameter, },
+        #[cfg(feature="cap-forcefields")]
+        { semantic_id: "types.MmffConformerOptimizationParams", item: type, owner: type_, rust: crate::MmffConformerOptimizationParams, python: "MmffConformerOptimizationParams", javascript: "MmffConformerOptimizationParams", feature: "cap-forcefields", status: experimental, role: parameter, },
+        #[cfg(feature="cap-forcefields")]
+        { semantic_id: "types.MmffOptimizeMoleculeResult", item: type, owner: type_, rust: crate::MmffOptimizeMoleculeResult, python: "MmffOptimizeMoleculeResult", javascript: "MmffOptimizeMoleculeResult", feature: "cap-forcefields", status: experimental, role: result, },
+        #[cfg(feature="cap-forcefields")]
+        { semantic_id: "types.MmffOptimizeMoleculeConfResult", item: type, owner: type_, rust: crate::MmffOptimizeMoleculeConfResult, python: "MmffOptimizeMoleculeConfResult", javascript: "MmffOptimizeMoleculeConfResult", feature: "cap-forcefields", status: experimental, role: result, },
+        #[cfg(feature="cap-forcefields")]
+        { semantic_id: "types.MmffOptimizeMoleculeConfsResult", item: type, owner: type_, rust: crate::MmffOptimizeMoleculeConfsResult, python: "MmffOptimizeMoleculeConfsResult", javascript: "MmffOptimizeMoleculeConfsResult", feature: "cap-forcefields", status: experimental, role: result, },
+        #[cfg(feature="cap-forcefields")]
+        { semantic_id: "types.MmffOptimizationError", item: type, owner: type_, rust: crate::MmffOptimizationError, python: "MmffOptimizationError", javascript: "MmffOptimizationError", feature: "cap-forcefields", status: experimental, role: error, },
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"Molecule.with_mmff_optimized",item:callable,owner:molecule,rust:crate::Molecule::with_mmff_optimized,python:"with_mmff_optimized",javascript:"withMmffOptimized",feature:"cap-forcefields",kind:instance,parameters:[],output:crate::MmffOptimizeMoleculeResult,error:crate::OperationError,state:value_returning,operation:"with_mmff_optimized",signature:fn(&crate::Molecule) -> Result<crate::MmffOptimizeMoleculeResult, crate::OperationError>,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"Molecule.with_mmff_optimized_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_mmff_optimized_with_params,python:"with_mmff_optimized_with_params",javascript:"withMmffOptimizedWithParams",feature:"cap-forcefields",kind:instance,parameters:[{ name: params, type: &crate::MmffOptimizationParams, default: required }],output:crate::MmffOptimizeMoleculeResult,error:crate::OperationError,state:value_returning,operation:"with_mmff_optimized_with_params",signature:fn(&crate::Molecule, &crate::MmffOptimizationParams) -> Result<crate::MmffOptimizeMoleculeResult, crate::OperationError>,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"Molecule.with_mmff_optimized_confs",item:callable,owner:molecule,rust:crate::Molecule::with_mmff_optimized_confs,python:"with_mmff_optimized_confs",javascript:"withMmffOptimizedConfs",feature:"cap-forcefields",kind:instance,parameters:[],output:crate::MmffOptimizeMoleculeConfsResult,error:crate::OperationError,state:value_returning,operation:"with_mmff_optimized_confs",signature:fn(&crate::Molecule) -> Result<crate::MmffOptimizeMoleculeConfsResult, crate::OperationError>,},
+        #[cfg(feature="cap-forcefields")]
+        {semantic_id:"Molecule.with_mmff_optimized_confs_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_mmff_optimized_confs_with_params,python:"with_mmff_optimized_confs_with_params",javascript:"withMmffOptimizedConfsWithParams",feature:"cap-forcefields",kind:instance,parameters:[{ name: params, type: &crate::MmffConformerOptimizationParams, default: required }],output:crate::MmffOptimizeMoleculeConfsResult,error:crate::OperationError,state:value_returning,operation:"with_mmff_optimized_confs_with_params",signature:fn(&crate::Molecule, &crate::MmffConformerOptimizationParams) -> Result<crate::MmffOptimizeMoleculeConfsResult, crate::OperationError>,},
+
         {
             semantic_id: "types.Element", item: type, owner: type_,
             rust: crate::Element, python: "Element", javascript: "Element",
@@ -5128,6 +5198,60 @@ binding_contract! {
             state: read_only,
             operation: none,
             signature: fn(&crate::Molecule) -> Result<f64, crate::DescriptorReadError>,
+        },
+        #[cfg(feature = "cap-forcefields")]
+        {
+            semantic_id: "types.MmffProperties", item: type, owner: type_,
+            rust: crate::MmffProperties, python: "MmffProperties", javascript: "MmffProperties",
+            feature: "cap-forcefields", status: experimental, role: result,
+        },
+        #[cfg(feature = "cap-forcefields")]
+        {
+            semantic_id: "types.MmffPropertiesParams", item: type, owner: type_,
+            rust: crate::MmffPropertiesParams, python: "MmffPropertiesParams", javascript: "MmffPropertiesParams",
+            feature: "cap-forcefields", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-forcefields")]
+        {
+            semantic_id: "types.MmffAtomProperties", item: type, owner: type_,
+            rust: crate::MmffAtomProperties, python: "MmffAtomProperties", javascript: "MmffAtomProperties",
+            feature: "cap-forcefields", status: experimental, role: result,
+        },
+        #[cfg(feature = "cap-forcefields")]
+        {
+            semantic_id: "types.MmffVariant", item: type, owner: type_,
+            rust: crate::MmffVariant, python: "MmffVariant", javascript: "MmffVariant",
+            feature: "cap-forcefields", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-forcefields")]
+        {
+            semantic_id: "types.MmffMolPropertiesError", item: type, owner: type_,
+            rust: crate::MmffMolPropertiesError, python: "MmffMolPropertiesError", javascript: "MmffMolPropertiesError",
+            feature: "cap-forcefields", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-forcefields")]
+        {
+            semantic_id: "Molecule.mmff_has_all_molecule_params", item: callable, owner: molecule,
+            rust: crate::Molecule::mmff_has_all_molecule_params, python: "mmff_has_all_molecule_params", javascript: "mmffHasAllMoleculeParams",
+            feature: "cap-forcefields", status: experimental, kind: instance,
+            parameters: [], output: bool, error: crate::MmffMolPropertiesError,
+            state: read_only, operation: none, signature: fn(&crate::Molecule) -> Result<bool, crate::MmffMolPropertiesError>,
+        },
+        #[cfg(feature = "cap-forcefields")]
+        {
+            semantic_id: "Molecule.mmff_properties", item: callable, owner: molecule,
+            rust: crate::Molecule::mmff_properties, python: "mmff_properties", javascript: "mmffProperties",
+            feature: "cap-forcefields", status: experimental, kind: instance,
+            parameters: [], output: crate::MmffProperties, error: crate::MmffMolPropertiesError,
+            state: read_only, operation: none, signature: fn(&crate::Molecule) -> Result<crate::MmffProperties, crate::MmffMolPropertiesError>,
+        },
+        #[cfg(feature = "cap-forcefields")]
+        {
+            semantic_id: "Molecule.mmff_properties_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::mmff_properties_with_params, python: "mmff_properties_with_params", javascript: "mmffPropertiesWithParams",
+            feature: "cap-forcefields", status: experimental, kind: instance,
+            parameters: [{ name: params, type: &crate::MmffPropertiesParams, default: required }], output: crate::MmffProperties, error: crate::MmffMolPropertiesError,
+            state: read_only, operation: none, signature: fn(&crate::Molecule, &crate::MmffPropertiesParams) -> Result<crate::MmffProperties, crate::MmffMolPropertiesError>,
         },
         #[cfg(feature = "cap-forcefields")]
         {

@@ -1076,3 +1076,56 @@ mod tests {
         );
     }
 }
+
+pub use cosmolkit_forcefields::{
+    MmffAtomProperties, MmffMolPropertiesError, MmffProperties, MmffPropertiesParams, MmffVariant,
+};
+
+impl crate::Molecule {
+    /// Whether the default MMFF94 parameter set covers all input atoms.
+    pub fn mmff_has_all_molecule_params(&self) -> Result<bool, MmffMolPropertiesError> {
+        cosmolkit_forcefields::mmff_has_all_molecule_params(
+            self.topology(),
+            self.properties().prop("_MMFFSanitized").is_some(),
+            self.derived_cache_runtime().valid_ring_info(),
+        )
+    }
+
+    /// MMFF94 atom types, formal charges and partial charges in atom order.
+    pub fn mmff_properties(&self) -> Result<MmffProperties, MmffMolPropertiesError> {
+        self.mmff_properties_with_params(&MmffPropertiesParams::default())
+    }
+
+    /// Atom types and charges using the source-defined variant selection.
+    pub fn mmff_properties_with_params(
+        &self,
+        params: &MmffPropertiesParams,
+    ) -> Result<MmffProperties, MmffMolPropertiesError> {
+        cosmolkit_forcefields::mmff_properties(
+            self.topology(),
+            self.properties().prop("_MMFFSanitized").is_some(),
+            params,
+            self.derived_cache_runtime().valid_ring_info(),
+        )
+    }
+}
+
+pub use cosmolkit_forcefields::{MmffEnergyGradient, MmffEvaluationParams};
+impl crate::Molecule {
+    pub fn mmff_energy_gradient(&self) -> Result<Option<MmffEnergyGradient>, OperationError> {
+        self.mmff_energy_gradient_with_params(&MmffEvaluationParams::default())
+    }
+    pub fn mmff_energy_gradient_with_params(
+        &self,
+        params: &MmffEvaluationParams,
+    ) -> Result<Option<MmffEnergyGradient>, OperationError> {
+        cosmolkit_forcefields::evaluate_mmff(
+            self.topology(),
+            self.coordinate_block_runtime(),
+            self.properties(),
+            params,
+            self.derived_cache_runtime().valid_ring_info(),
+        )
+        .map_err(crate::ops::mmff_optimization::owner_error)
+    }
+}

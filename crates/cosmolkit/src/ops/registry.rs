@@ -97,6 +97,51 @@ pub(crate) const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
 
 molecule_ops! {
     #[cfg(feature = "cap-forcefields")]
+    op with_mmff_optimized(params: &crate::MmffOptimizationParams) {
+        method: with_mmff_optimized_with_params,
+        impl_fn: crate::ops::mmff_optimization::with_mmff_optimized_impl,
+        result_type: crate::MmffOptimizeMoleculeResult,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [rings, aromaticity], preserve: [ring_families, coordinates], invalidate: [valence, stereo, drawing, fingerprint], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::FORCEFIELDS_FEATURE,
+        parity: required_now,
+        parity_profile: "mmff_complete_optimization_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "mmff_preparation_and_coordinates_value",
+        default_method: with_mmff_optimized,
+        default_args: [&crate::MmffOptimizationParams::default()],
+    }
+    #[cfg(feature = "cap-forcefields")]
+    op with_mmff_optimized_confs(params: &crate::MmffConformerOptimizationParams) {
+        method: with_mmff_optimized_confs_with_params,
+        impl_fn: crate::ops::mmff_optimization::with_mmff_optimized_confs_impl,
+        result_type: crate::MmffOptimizeMoleculeConfsResult,
+        domain: topology,
+        kind: weak,
+        topology_edit: local,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
+        auto_remap: [],
+        derived_effects: { recompute: [rings, aromaticity], preserve: [ring_families, coordinates], invalidate: [valence, stereo, drawing, fingerprint], operation_defined: [] },
+        cip_state: preserve,
+        requires_mapping: none,
+        feature: crate::ops::runtime::registry::FORCEFIELDS_FEATURE,
+        parity: required_now,
+        parity_profile: "mmff_complete_optimization_rdkit",
+        io_roundtrip: false,
+        invariant_profile: "mmff_preparation_and_coordinates_value",
+        default_method: with_mmff_optimized_confs,
+        default_args: [&crate::MmffConformerOptimizationParams::default()],
+    }
+
+    #[cfg(feature = "cap-forcefields")]
     op with_uff_optimized_coordinates(params: &crate::UffOptimizationParams) {
         method: with_uff_optimized_coordinates_with_params,
         impl_fn: crate::ops::uff_optimization::with_uff_optimized_coordinates_impl,

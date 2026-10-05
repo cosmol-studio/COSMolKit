@@ -167,13 +167,13 @@ impl std::error::Error for UffBuilderError {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum DefaultTorsionQueryError {
+pub(crate) enum DefaultTorsionQueryError {
     Parse(SmartsParseError),
     Compile(QueryCompileError),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum TorsionBondQueryError {
+pub(crate) enum TorsionBondQueryError {
     DefaultQuery(DefaultTorsionQueryError),
     Parse(SmartsParseError),
     Compile(QueryCompileError),
@@ -222,13 +222,13 @@ impl std::error::Error for TorsionBondQueryError {
     }
 }
 
-pub(super) const DEFAULT_TORSION_BOND_SMARTS: &str = "[!$(*#*)&!D1]~[!$(*#*)&!D1]";
+pub(crate) const DEFAULT_TORSION_BOND_SMARTS: &str = "[!$(*#*)&!D1]~[!$(*#*)&!D1]";
 
 /// Source `AtomicParamVect` rows borrow the canonical cached parameter table.
 type UffParamsByAtom<'a> = [Option<&'a AtomicParams>];
 
 #[derive(Debug)]
-pub(super) enum NonbondedFragmentMappingError {
+pub(crate) enum NonbondedFragmentMappingError {
     FragmentCopy(MoleculeFragmentsError),
     CoordinateView(FragmentCoordinateViewError),
     RequestedMappingMissing,
@@ -349,7 +349,7 @@ impl From<NonbondedAssemblyError> for ForceFieldConstructionError {
     }
 }
 
-fn prepare_nonbonded_fragment_mapping(
+pub(crate) fn prepare_nonbonded_fragment_mapping(
     topology: &TopologyBlock,
     coordinates: &FragmentCoordinateView<'_>,
     molecule_properties: &MoleculeProperties,
@@ -739,7 +739,7 @@ fn default_torsion_query() -> Result<&'static CompiledQuery, DefaultTorsionQuery
         .map_err(Clone::clone)
 }
 
-fn torsion_bond_matches(
+pub(crate) fn torsion_bond_matches(
     topology: &TopologyBlock,
     rings: &RingInfo,
     valence: &ValenceAssignment,
@@ -812,7 +812,7 @@ fn torsion_bond_matches(
 
 /// Resolve the source `getBondBetweenAtoms` invariant after the source
 /// per-center parameter guard has accepted both matched atoms.
-fn source_torsion_bond_index(
+pub(crate) fn source_torsion_bond_index(
     topology: &TopologyBlock,
     begin_atom_index: usize,
     end_atom_index: usize,

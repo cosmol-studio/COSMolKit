@@ -45,7 +45,7 @@ impl SingleConformerOptions {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum UffThreadCountError {
+pub(crate) enum UffThreadCountError {
     UndefinedSignedNegation,
 }
 
@@ -164,9 +164,9 @@ fn resolve_conformer_dispatch(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub(super) struct OptimizationOutcome {
-    pub(super) status: i32,
-    pub(super) energy: f64,
+pub(crate) struct OptimizationOutcome {
+    pub(crate) status: i32,
+    pub(crate) energy: f64,
 }
 
 fn resize_conformer_results(results: &mut Vec<OptimizationOutcome>, conformer_count: usize) {
@@ -187,9 +187,9 @@ fn resize_conformer_results(results: &mut Vec<OptimizationOutcome>, conformer_co
     );
 }
 
-pub(super) struct SerialConformer<'a> {
-    pub(super) id: usize,
-    pub(super) positions: &'a mut [[f64; 3]],
+pub(crate) struct SerialConformer<'a> {
+    pub(crate) id: usize,
+    pub(crate) positions: &'a mut [[f64; 3]],
 }
 
 struct SourceIndexedWorkerRow<'rows, 'coordinates> {
@@ -407,13 +407,13 @@ fn partition_worker_lanes<'rows, 'coordinates>(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SerialResultCapacityError {
+pub(crate) struct SerialResultCapacityError {
     pub(super) conformers: usize,
     pub(super) result_slots: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SerialCoordinateCountError {
+pub(crate) struct SerialCoordinateCountError {
     pub(super) conformer_id: usize,
     pub(super) atoms: usize,
     pub(super) coordinates: usize,
@@ -444,7 +444,7 @@ impl std::error::Error for SerialCoordinateCountError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SerialConformerOptimizationError {
+pub(crate) enum SerialConformerOptimizationError {
     ResultCapacity(SerialResultCapacityError),
     CoordinateCount {
         input_index: usize,
@@ -459,7 +459,7 @@ pub(super) enum SerialConformerOptimizationError {
 
 #[cfg(not(target_family = "wasm"))]
 // Keep serial stage errors and every raw worker join result for the caller.
-pub(super) enum PreparedConformerDispatchOutcome {
+pub(crate) enum PreparedConformerDispatchOutcome {
     Serial(Result<(), SerialConformerOptimizationError>),
     Workers(
         Result<
@@ -654,7 +654,7 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum OptimizationStageError {
+pub(crate) enum OptimizationStageError {
     Initialize(ForceFieldKernelError),
     Minimize(ForceFieldKernelError),
     FinalEnergy(ForceFieldKernelError),
@@ -1077,7 +1077,7 @@ where
 }
 
 #[cfg(not(target_family = "wasm"))]
-fn optimize_prepared_conformers_dispatch<'field, 'rows, 'coordinates>(
+pub(crate) fn optimize_prepared_conformers_dispatch<'field, 'rows, 'coordinates>(
     field: ForceField<'field>,
     conformers: &'rows mut [SerialConformer<'coordinates>],
     results: &'rows mut Vec<OptimizationOutcome>,
@@ -1173,7 +1173,7 @@ where
     }
 }
 
-fn optimize_serial_conformers<'field, 'rows>(
+pub(crate) fn optimize_serial_conformers<'field, 'rows>(
     field: ForceField<'field>,
     conformers: &'rows mut [SerialConformer<'_>],
     results: &mut [OptimizationOutcome],

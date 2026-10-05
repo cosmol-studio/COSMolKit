@@ -234,6 +234,13 @@ pub(super) enum ForceFieldKernelError {
     TransferPostcondition,
     // Proposed pinned OopBend addTerm nullable-parameter precondition.
     OopParametersMissing,
+    // Proposed Native safety beyond source-defined nullable parameter/address inputs.
+    // ROOT approval required; these are not C++ preconditions or Unsupported.
+    TorsionParametersOutsideDefinedSource,
+    TorsionAddressOutsideDefinedSource {
+        index: i16,
+        buffer_len: usize,
+    },
     // Proposed Native safety policy for C++-undefined signed/buffer addresses;
     // ROOT authorized this Native safety policy; no C++ parity or Unsupported claim.
     OopAddressOutsideDefinedSource {
@@ -270,13 +277,21 @@ impl ForceFieldKernelError {
             Self::BadIndex
             | Self::BadFixedPoint { .. }
             | Self::OptimizerBadDirection
-            | Self::OopAddressOutsideDefinedSource { .. } => "Invariant Violation",
+            | Self::OopAddressOutsideDefinedSource { .. }
+            | Self::TorsionParametersOutsideDefinedSource
+            | Self::TorsionAddressOutsideDefinedSource { .. } => "Invariant Violation",
             Self::TransferPostcondition => "Post-condition Violation",
         }
     }
 
     const fn source_message(self) -> &'static str {
         match self {
+            Self::TorsionParametersOutsideDefinedSource => {
+                "Native torsion parameter outside defined source"
+            }
+            Self::TorsionAddressOutsideDefinedSource { .. } => {
+                "Native torsion address outside defined source"
+            }
             Self::OopParametersMissing => "no OOP parameters",
             Self::OopAddressOutsideDefinedSource { .. } => {
                 "OOP address outside defined source storage"
@@ -358,7 +373,9 @@ impl ForceFieldKernelError {
         match self {
             Self::OopParametersMissing => Some("mmffOopParams".to_owned()),
             // Native safe-boundary error: C++ defines no corresponding expression.
-            Self::OopAddressOutsideDefinedSource { .. } => None,
+            Self::OopAddressOutsideDefinedSource { .. }
+            | Self::TorsionParametersOutsideDefinedSource
+            | Self::TorsionAddressOutsideDefinedSource { .. } => None,
             Self::NoPoints => Some("d_numPoints".to_owned()),
             Self::NoDistanceMatrix => Some("dp_distMat".to_owned()),
             Self::MatrixSizeMismatch => Some(
@@ -1319,7 +1336,10 @@ impl<'a> ForceField<'a> {
         Ok(energy)
     }
 
-    fn calc_grad_current(&mut self, gradient: &mut [f64]) -> Result<(), ForceFieldKernelError> {
+    pub(super) fn calc_grad_current(
+        &mut self,
+        gradient: &mut [f64],
+    ) -> Result<(), ForceFieldKernelError> {
         // BEGIN RDKIT CPP FUNCTION ForceFields::ForceField::calcGrad(current) (ForceField.cpp:329-352)
         // RDKit✔️✔️: void ForceField::calcGrad(double *grad) const {
         // RDKit✔️✔️:   PRECONDITION(df_init, "not initialized");

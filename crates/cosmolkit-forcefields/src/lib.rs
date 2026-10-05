@@ -24,11 +24,6 @@ pub struct ForceFieldOptions {
     pub max_iterations: usize,
 }
 
-pub fn mmff_has_all_molecule_params(topology: &TopologyBlock) -> Result<bool, ForceFieldError> {
-    let _ = topology;
-    Err(ForceFieldError::Unsupported)
-}
-
 pub fn mmff_optimize(
     topology: &TopologyBlock,
     coordinates: &CoordinateBlock,
@@ -37,3 +32,16 @@ pub fn mmff_optimize(
     let _ = (topology, coordinates, options);
     Err(ForceFieldError::Unsupported)
 }
+
+pub use mmff::mol_properties::{MmffAtomProperties, MmffMolPropertiesError, MmffVariant};
+pub use mmff::properties_api::{
+    MmffProperties, MmffPropertiesParams, mmff_has_all_molecule_params, mmff_properties,
+};
+
+pub use mmff::optimization::{
+    MmffConformerOptimizationParams, MmffConformerOutcomes, MmffOptimizationError,
+    MmffOptimizationParams, MmffOptimizeMoleculeConfResult, MmffSingleOutcome,
+    optimize_mmff_conformers, optimize_mmff_single,
+};
+
+pub use mmff::optimization::{MmffEnergyGradient, MmffEvaluationParams, evaluate_mmff};
