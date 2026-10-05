@@ -61,6 +61,8 @@ pub enum QueryMatchContextError {
         expected: usize,
         actual: usize,
     },
+    #[error(transparent)]
+    Valence(#[from] cosmolkit_core::ValenceError),
     #[error("prepared ring information is not initialized")]
     UninitializedRings,
     #[error("ring membership table {field} has {actual} rows; expected {expected}")]
@@ -112,6 +114,21 @@ pub fn build_prepared_query_match_context<'a>(
     let atom_count = topology.atoms.len();
     let bond_count = topology.bonds.len();
     validate_valence_row_counts(atom_count, valence)?;
+    validate_prepared_ring_rows(atom_count, bond_count, ring_info)?;
+    Ok(QueryMatchContext {
+        adj: Cow::Borrowed(&topology.adjacency),
+        ring_info: Some(Cow::Borrowed(ring_info)),
+        valence: Some(Cow::Borrowed(valence)),
+    })
+}
+
+// Shared structural ring validation preserves the original prepared builder's
+// field/error order. It verifies alignment, not topology provenance.
+fn validate_prepared_ring_rows(
+    atom_count: usize,
+    bond_count: usize,
+    ring_info: &RingInfo,
+) -> Result<(), QueryMatchContextError> {
     if !ring_info.is_initialized() {
         return Err(QueryMatchContextError::UninitializedRings);
     }
@@ -187,10 +204,91 @@ pub fn build_prepared_query_match_context<'a>(
             }
         }
     }
+    Ok(())
+}
+
+/// Internal boundary for a validity-checked authoritative ring assignment.
+///
+/// The caller owns final-topology correspondence. RDKit ring membership tables
+/// are sparse: AddHs preserves existing rows, and getters return zero/empty for
+/// appended atoms/bonds beyond those tables. This adapter retains that state
+/// without changing the existing exact-size prepared/detached contract. It
+/// borrows adjacency/rings and cached valence, or obtains only missing valence
+/// from the sole CORE owner under the existing non-strict cache policy.
+///
+/// Cost: topology/ring validation, plus O(V+E) computation and O(V) storage only
+/// if valence is absent. No ring perception, ring clone or adjacency clone.
+/// This is a CK boundary adapter; no C++ context constructor is claimed.
+#[doc(hidden)]
+pub fn build_ring_query_match_context<'a>(
+    topology: &'a cosmolkit_model::TopologyBlock,
+    ring_info: &'a RingInfo,
+    valence: Option<&'a ValenceAssignment>,
+) -> Result<QueryMatchContext<'a>, QueryMatchContextError> {
+    // Source RingInfo.cpp: retained sparse table semantics. CORE owns these
+    // getters; this boundary preserves their exact assignment, not a copy.
+    // RDKit❗✔️: unsigned int RingInfo::numAtomRings(unsigned int idx) const {
+    // RDKit❗✔️:   PRECONDITION(df_init, "RingInfo not initialized");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (idx < d_atomMembers.size()) {
+    // RDKit❗✔️:     return rdcast<unsigned int>(d_atomMembers[idx].size());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return 0;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: unsigned int RingInfo::numBondRings(unsigned int idx) const {
+    // RDKit❗✔️:   PRECONDITION(df_init, "RingInfo not initialized");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (idx < d_bondMembers.size()) {
+    // RDKit❗✔️:     return rdcast<unsigned int>(d_bondMembers[idx].size());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return 0;
+    // RDKit❗✔️: }
+    // The copied getters remain implemented only by CORE. Validation is a CK
+    // boundary cost, not source getter O(1) equivalence. The two-axis marker
+    // describes retained table access, not whole-context construction.
+    let atom_count = topology.atoms.len();
+    let bond_count = topology.bonds.len();
+    if let Some(valence) = valence {
+        if ring_info.atom_row_count() == atom_count && ring_info.bond_row_count() == bond_count {
+            return build_prepared_query_match_context(topology, ring_info, valence);
+        }
+    }
+    topology.validate()?;
+    if let Some(valence) = valence {
+        validate_valence_row_counts(atom_count, valence)?;
+    }
+    // An authoritative sparse table may be shorter, never longer than its
+    // target. Shared row/index/family validation uses the actual table extents;
+    // this leaves exact-size prepared validation and stale-target tests intact.
+    for (field, actual, expected) in [
+        ("atoms", ring_info.atom_row_count(), atom_count),
+        ("bonds", ring_info.bond_row_count(), bond_count),
+    ] {
+        if actual > expected {
+            return Err(QueryMatchContextError::RingMembershipRows {
+                field,
+                expected,
+                actual,
+            });
+        }
+    }
+    validate_prepared_ring_rows(
+        ring_info.atom_row_count(),
+        ring_info.bond_row_count(),
+        ring_info,
+    )?;
+    let valence = match valence {
+        Some(value) => Cow::Borrowed(value),
+        None => Cow::Owned(cosmolkit_core::assign_valence_with_options_for_topology(
+            topology,
+            ValenceModel::RdkitLike,
+            false,
+        )?),
+    };
     Ok(QueryMatchContext {
         adj: Cow::Borrowed(&topology.adjacency),
         ring_info: Some(Cow::Borrowed(ring_info)),
-        valence: Some(Cow::Borrowed(valence)),
+        valence: Some(valence),
     })
 }
 
@@ -335,6 +433,45 @@ mod prepared_query_context_tests {
         assert!(matches!(cold.adj, Cow::Owned(_)));
         assert!(matches!(cold.ring_info, Some(Cow::Owned(_))));
         assert!(matches!(cold.valence, Some(Cow::Owned(_))));
+    }
+
+    #[test]
+    fn original_smarts_ring_context_without_cached_valence() {
+        let topology = chain(&[Element::C, Element::C, Element::O]);
+        let (rings, valence) = prepare(&topology);
+        let before = COLD_QUERY_CONTEXT_BUILDS.with(std::cell::Cell::get);
+        let context = build_ring_query_match_context(&topology, &rings, None).unwrap();
+        assert!(
+            matches!(&context.adj, Cow::Borrowed(value) if std::ptr::eq(*value, &topology.adjacency))
+        );
+        assert!(
+            matches!(&context.ring_info, Some(Cow::Borrowed(value)) if std::ptr::eq(*value, &rings))
+        );
+        assert!(matches!(&context.valence, Some(Cow::Owned(value)) if value == &valence));
+        assert_eq!(COLD_QUERY_CONTEXT_BUILDS.with(std::cell::Cell::get), before);
+        let too_long = RingInfo::new(
+            RingFindType::Sssr,
+            topology.atoms.len() + 1,
+            topology.bonds.len(),
+        );
+        assert!(matches!(
+            build_ring_query_match_context(&topology, &too_long, None),
+            Err(QueryMatchContextError::RingMembershipRows { field: "atoms", .. })
+        ));
+        let sparse = RingInfo::new(RingFindType::Sssr, 0, 0);
+        let sparse_context =
+            build_ring_query_match_context(&topology, &sparse, Some(&valence)).unwrap();
+        assert!(
+            matches!(&sparse_context.ring_info, Some(Cow::Borrowed(value)) if std::ptr::eq(*value, &sparse))
+        );
+        assert!(
+            matches!(&sparse_context.valence, Some(Cow::Borrowed(value)) if std::ptr::eq(*value, &valence))
+        );
+        assert_eq!(sparse.num_atom_rings(AtomId::new(2)), 0);
+        assert!(matches!(
+            build_prepared_query_match_context(&topology, &sparse, &valence),
+            Err(QueryMatchContextError::RingMembershipRows { field: "atoms", .. })
+        ));
     }
 
     #[test]

@@ -142,11 +142,14 @@ impl Molecule {
         query: &QueryGraph,
         params: &SubstructMatchParams,
     ) -> Result<Vec<MatchResult>, SubstructMatchError> {
-        cosmolkit_search::try_get_substruct_matches_with_params(
-            &self.detached_search_target(),
-            query,
-            params,
-        )
+        let target = self.detached_search_target();
+        if let Some(context) = prepared_live_search_context(&target)? {
+            cosmolkit_search::try_get_substruct_matches_with_params_and_context(
+                &target, query, params, &context,
+            )
+        } else {
+            cosmolkit_search::try_get_substruct_matches_with_params(&target, query, params)
+        }
     }
 
     /// Test for a match without converting an unsupported branch into false.
@@ -159,6 +162,223 @@ impl Molecule {
         &self,
         query: &crate::CompiledQuery,
     ) -> Result<Vec<MatchResult>, crate::MatchError> {
-        query.matches_target(&self.detached_search_target())
+        let target = self.detached_search_target();
+        if let Some(context) = prepared_live_search_context(&target)? {
+            query.matches_prepared_target(&target, &context)
+        } else {
+            query.matches_target(&target)
+        }
+    }
+}
+
+// The facade owns topology correspondence and reads validity-checked cache
+// assignments. Passing its exact prepared context preserves source ring
+// quality, memberships and initialized-empty state through direct, recursive
+// and compiled matching; no domain algorithm or cache mutation occurs here.
+fn prepared_live_search_context<'a>(
+    target: &'a cosmolkit_search::SearchTarget<'_>,
+) -> Result<Option<cosmolkit_search::QueryMatchContext<'a>>, SubstructMatchError> {
+    use cosmolkit_search::SearchTargetAccess;
+    match target.ring_info() {
+        Some(rings) => cosmolkit_search::build_ring_query_match_context(
+            target.topology_block(),
+            rings,
+            target.valence(),
+        )
+        .map(Some)
+        .map_err(SubstructMatchError::from),
+        None => Ok(None),
+    }
+}
+
+#[cfg(all(test, feature = "cap-smiles", feature = "cap-hydrogens"))]
+mod original_smarts_public_regressions {
+    use super::*;
+    use cosmolkit_search::SearchTargetAccess;
+    use std::sync::Arc;
+
+    #[test]
+    fn original_smarts_prepared_rings_are_borrowed_unchanged() {
+        let molecule = Molecule::from_smiles("C12C3C4C1C5C2C3C45").unwrap();
+        let topology = molecule.topology_arc_runtime();
+        let cache = molecule.derived_cache_arc_runtime();
+        let target = molecule.detached_search_target();
+        let rings = target.ring_info().unwrap();
+        assert_eq!(rings.num_rings(), 6);
+        let context = prepared_live_search_context(&target).unwrap().unwrap();
+        let query = crate::parse_smarts("[R3]").unwrap();
+        let expected = (0..8).map(|i| vec![i]).collect::<Vec<_>>();
+        let matches = cosmolkit_search::try_get_substruct_matches_with_params_and_context(
+            &target,
+            &query,
+            &SubstructMatchParams::default(),
+            &context,
+        )
+        .unwrap();
+        assert_eq!(
+            matches
+                .iter()
+                .map(|m| m.atom_mapping.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            molecule
+                .substruct_matches(&query)
+                .unwrap()
+                .iter()
+                .map(|m| m.atom_mapping.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        let compiled = crate::compile_query(&query).unwrap();
+        assert_eq!(
+            molecule
+                .substruct_matches_compiled(&compiled)
+                .unwrap()
+                .iter()
+                .map(|m| m.atom_mapping.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
+        assert!(Arc::ptr_eq(&cache, &molecule.derived_cache_arc_runtime()));
+        assert!(std::ptr::eq(
+            rings,
+            molecule.detached_search_target().ring_info().unwrap()
+        ));
+    }
+
+    #[test]
+    fn original_smarts_add_hs_preserves_rings_without_valence_cache() {
+        let source = Molecule::from_smiles("C12C3C4C1C5C2C3C45").unwrap();
+        let molecule = source.with_hydrogens().unwrap();
+        let cache = molecule.derived_cache_arc_runtime();
+        let topology = molecule.topology_arc_runtime();
+        let target = molecule.detached_search_target();
+        assert!(target.valence().is_none());
+        let rings = target.ring_info().unwrap();
+        assert_eq!(rings.num_rings(), 6);
+        assert_eq!(
+            rings.atom_rings(),
+            source
+                .detached_search_target()
+                .ring_info()
+                .unwrap()
+                .atom_rings()
+        );
+        assert!(prepared_live_search_context(&target).unwrap().is_some());
+        let query = crate::parse_smarts("[C;H1]-[C;R3]").unwrap();
+        let expected = vec![
+            vec![0, 1],
+            vec![0, 3],
+            vec![0, 5],
+            vec![1, 2],
+            vec![1, 6],
+            vec![2, 3],
+            vec![2, 7],
+            vec![3, 4],
+            vec![4, 5],
+            vec![4, 7],
+            vec![5, 6],
+            vec![6, 7],
+        ];
+        assert_eq!(
+            molecule
+                .substruct_matches(&query)
+                .unwrap()
+                .iter()
+                .map(|r| r.atom_mapping.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        let compiled = crate::compile_query(&query).unwrap();
+        assert_eq!(
+            molecule
+                .substruct_matches_compiled(&compiled)
+                .unwrap()
+                .iter()
+                .map(|r| r.atom_mapping.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(Arc::ptr_eq(&cache, &molecule.derived_cache_arc_runtime()));
+        assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
+        assert!(std::ptr::eq(
+            rings,
+            molecule.detached_search_target().ring_info().unwrap()
+        ));
+        assert!(molecule.detached_search_target().valence().is_none());
+        // Independent valence preparation must also retain sparse ring rows.
+        let assigned = molecule.with_assigned_valence().unwrap();
+        assert!(assigned.detached_search_target().valence().is_some());
+        assert_eq!(
+            assigned
+                .substruct_matches(&query)
+                .unwrap()
+                .iter()
+                .map(|r| r.atom_mapping.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(
+            assigned
+                .substruct_matches_compiled(&compiled)
+                .unwrap()
+                .iter()
+                .map(|r| r.atom_mapping.clone())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+
+    #[test]
+    fn original_smarts_all_142_ordered_public_observations() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../testdata/regression/smarts_user_original104/observations142.json"
+        ))
+        .unwrap();
+        assert_eq!(fixture["groups"].as_array().unwrap().len(), 104);
+        let observations = fixture["observations"].as_array().unwrap();
+        assert_eq!(observations.len(), 142);
+        for o in observations {
+            let label = o["id"].as_str().unwrap();
+            let mut molecule = Molecule::from_smiles(o["smiles"].as_str().unwrap()).unwrap();
+            if o["add_hydrogens"].as_bool().unwrap() {
+                molecule = molecule.with_hydrogens().unwrap();
+            }
+            let query = crate::parse_smarts(o["query"].as_str().unwrap()).unwrap();
+            let params = SubstructMatchParams {
+                max_matches: o["max_matches"].as_u64().unwrap() as usize,
+                uniquify: o["uniquify"].as_bool().unwrap(),
+                use_chirality: o["use_chirality"].as_bool().unwrap(),
+                ..Default::default()
+            };
+            let expected: Vec<Vec<usize>> =
+                serde_json::from_value(o["rdkit_maps"].clone()).unwrap();
+            let actual = molecule
+                .substruct_matches_with_params(&query, &params)
+                .unwrap();
+            assert_eq!(
+                actual
+                    .iter()
+                    .map(|m| m.atom_mapping.clone())
+                    .collect::<Vec<_>>(),
+                expected,
+                "{label}"
+            );
+            if !params.use_chirality {
+                let compiled = crate::compile_query(&query).unwrap();
+                let actual = molecule.substruct_matches_compiled(&compiled).unwrap();
+                assert_eq!(
+                    actual
+                        .iter()
+                        .map(|m| m.atom_mapping.clone())
+                        .collect::<Vec<_>>(),
+                    expected,
+                    "compiled {label}"
+                );
+            }
+        }
     }
 }

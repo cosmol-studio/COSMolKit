@@ -56,6 +56,8 @@ pub enum SubstructMatchError {
     PeriodicTable(#[from] PeriodicTableError),
     #[error(transparent)]
     PropertyString(#[from] cosmolkit_core::PropertyStringError),
+    #[error(transparent)]
+    QueryContext(#[from] super::query_behavior::QueryMatchContextError),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4204,6 +4206,22 @@ fn project_substruct_matches(
     raw_matches: &[Vec<(NodeId, NodeId)>],
 ) -> Vec<SubstructMatchResult> {
     project_match_results::<FullMatchResultProjection>(query, target_graph, raw_matches)
+}
+
+pub(crate) fn full_matches_with_compiled_query_and_context(
+    target: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    plan: &CompiledQueryGraph,
+    context: &QueryMatchContext,
+) -> Result<Vec<crate::MatchResult>, SubstructMatchError> {
+    substruct_matches_with_compiled_query_and_context::<FullMatchResultProjection>(
+        target,
+        query,
+        params,
+        plan,
+        Some(context),
+    )
 }
 
 fn substruct_matches_with_compiled_query<P: MatchResultProjection>(

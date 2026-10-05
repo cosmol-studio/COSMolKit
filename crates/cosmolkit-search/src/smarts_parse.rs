@@ -164,6 +164,36 @@ impl QueryGraphBuilder {
     /// `SmartsParser` and are consumed when their ordinary bond is emitted;
     /// the builder does not keep a cloned mirror of them.
     fn finish(self) -> Result<QueryGraph, SmartsParseError> {
+        // RDKit❗✔️:     func(inp, molVect);
+        // RDKit❗✔️:     if (!molVect.empty()) {
+        // RDKit❗✔️:       res.reset(molVect[0]);
+        // RDKit❗✔️:       SmilesParseOps::CloseMolRings(res.get(), false);
+        // RDKit❗✔️:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
+        // RDKit❗✔️:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
+        // RDKit❗✔️:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
+        // Root toMol finalization applies to this graph only. Recursive mol
+        // grammar reductions call finish_recursive(), which only closes rings.
+        let mut graph = self.finish_recursive()?;
+        for atom in graph.atoms_mut() {
+            materialize_smarts_atom_state(atom)?;
+        }
+        crate::query_graph_behavior::finalize_query_parser_chirality(&mut graph)
+            .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+        Ok(graph)
+    }
+
+    fn finish_recursive(self) -> Result<QueryGraph, SmartsParseError> {
+        // RDKit❗✔️: recursive_query: BEGIN_RECURSE mol END_RECURSE {
+        // RDKit❗✔️:   // this is a recursive SMARTS expression
+        // RDKit❗✔️:   QueryAtom *qA = new QueryAtom();
+        // RDKit❗✔️:   //  FIX: there's maybe a leak here
+        // RDKit❗✔️:   RWMol *molP = (*molList)[$2];
+        // RDKit❗✔️:   // close any rings in the molecule:
+        // RDKit❗✔️:   SmilesParseOps::CloseMolRings(molP,0);
+        // RDKit❗✔️:
+        // RDKit❗✔️:   //molP->debugMol(std::cout);
+        // RDKit❗✔️:   qA->setQuery(new RecursiveStructureQuery(molP));
+        // RDKit❗✔️:   //std::cout << "qA: " << qA << " " << qA->getQuery() << std::endl;
         let Self {
             mut atoms,
             bond_queries,
@@ -202,10 +232,6 @@ impl QueryGraphBuilder {
         // Complexity review: row indexing is O(V+E); model construction and
         // validation add allocation/work beyond RDKit's incremental RWMol
         // insertion, and their relative cost is unresolved.
-        for atom in &mut atoms {
-            materialize_smarts_atom_state(atom)?;
-        }
-
         let mut bonds = Vec::with_capacity(bond_queries.len());
         for (bond_index, ((endpoints, query), direction)) in bond_edges
             .into_iter()
@@ -250,8 +276,6 @@ impl QueryGraphBuilder {
             Vec::new(),
         )
         .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
-        crate::query_graph_behavior::finalize_query_parser_chirality(&mut graph)
-            .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
         Ok(graph)
     }
 }
@@ -280,126 +304,61 @@ fn query_graph_for_test(inp: &str) -> Result<QueryGraph, String> {
 }
 
 fn materialize_smarts_atom_state(atom: &mut QueryAtom) -> Result<(), SmartsParseError> {
-    // BEGIN RDKIT CPP FUNCTION atom_expr_and_point_query / atom_expr reductions
-    // RDKit✔️✔️: atom_expr->expandQuery(point_query->getQuery()->copy(), Queries::COMPOSITE_AND, true);
-    // RDKit✔️✔️: if (atom_expr->getChiralTag() == Atom::CHI_UNSPECIFIED) {
-    // RDKit✔️✔️:   atom_expr->setChiralTag(point_query->getChiralTag());
-    // RDKit✔️✔️:   int perm;
-    // RDKit✔️✔️:   if (point_query->getPropIfPresent(common_properties::_chiralPermutation, perm)) {
-    // RDKit✔️✔️:     atom_expr->setProp(common_properties::_chiralPermutation, perm);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_OR,true);
-    // RDKit✔️✔️: if ($1->getChiralTag()==Atom::CHI_UNSPECIFIED) { $1->setChiralTag($3->getChiralTag()); }
-    // END RDKIT CPP FUNCTION atom_expr_and_point_query / atom_expr reductions
-    // RDKit's SMARTS grammar stores chirality on QueryAtom, independently of
-    // its query tree. The recursive parser initially represents every grammar
-    // reduction as a typed node; strip the two temporary chirality nodes here
-    // while rebuilding composites through QueryAtom::expandQuery's null
-    // algebra, then apply CheckChiralitySpecifications exactly once.
-    fn strip(
-        query: QueryNode<AtomQueryPredicate>,
-        chiral_tag: &mut ChiralTag,
-        chiral_permutation: &mut Option<u32>,
-        accept_permutation: &mut bool,
-    ) -> QueryNode<AtomQueryPredicate> {
-        fn rebuild(
-            children: Vec<QueryNode<AtomQueryPredicate>>,
-            how: CompositeQueryType,
-            chiral_tag: &mut ChiralTag,
-            chiral_permutation: &mut Option<u32>,
-            accept_permutation: &mut bool,
-        ) -> QueryNode<AtomQueryPredicate> {
-            let mut children = children.into_iter();
-            let mut rebuilt = children.next().map_or_else(make_atom_null_query, |child| {
-                strip(child, chiral_tag, chiral_permutation, accept_permutation)
-            });
-            for child in children {
-                let child = strip(child, chiral_tag, chiral_permutation, accept_permutation);
-                crate::query_behavior::query_atom_expand_query(&mut rebuilt, child, how, true);
-            }
-            rebuilt
-        }
-
-        match query {
-            QueryNode::Predicate(AtomQueryPredicate::ChiralTagMatch(tag)) => {
-                *accept_permutation = *chiral_tag == ChiralTag::Unspecified;
-                if *accept_permutation {
-                    *chiral_tag = tag;
-                }
-                make_atom_null_query()
-            }
-            QueryNode::Predicate(AtomQueryPredicate::ChiralPermutationMatch(permutation)) => {
-                if *accept_permutation {
-                    *chiral_permutation = Some(permutation);
-                }
-                *accept_permutation = false;
-                make_atom_null_query()
-            }
-            QueryNode::And(children) => rebuild(
-                children,
-                CompositeQueryType::And,
-                chiral_tag,
-                chiral_permutation,
-                accept_permutation,
-            ),
-            QueryNode::Or(children) => rebuild(
-                children,
-                CompositeQueryType::Or,
-                chiral_tag,
-                chiral_permutation,
-                accept_permutation,
-            ),
-            QueryNode::Xor(children) => rebuild(
-                children,
-                CompositeQueryType::Xor,
-                chiral_tag,
-                chiral_permutation,
-                accept_permutation,
-            ),
-            QueryNode::Not(child) => QueryNode::not(strip(
-                *child,
-                chiral_tag,
-                chiral_permutation,
-                accept_permutation,
-            )),
-            query => {
-                *accept_permutation = false;
-                query
-            }
-        }
-    }
-
-    let query = std::mem::replace(atom.predicate_mut(), make_atom_null_query());
-    let mut chiral_tag = ChiralTag::Unspecified;
-    let mut chiral_permutation = None;
-    let mut accept_permutation = false;
-    let query = strip(
-        query,
-        &mut chiral_tag,
-        &mut chiral_permutation,
-        &mut accept_permutation,
-    );
-    if let Some(permutation) = chiral_permutation {
-        if !crate::query_graph_behavior::check_chiral_permutation(chiral_tag, permutation as i32) {
+    // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
+    // RDKit❗✔️:   for (const auto atom : mol->atoms()) {
+    // RDKit❗✔️:     int permutation;
+    // RDKit❗✔️:     if (atom->getChiralTag() > RDKit::Atom::ChiralType::CHI_OTHER &&
+    // RDKit❗✔️:         permutationLimits.find(atom->getChiralTag()) !=
+    // RDKit❗✔️:             permutationLimits.end() &&
+    // RDKit❗✔️:         atom->getPropIfPresent(common_properties::_chiralPermutation,
+    // RDKit❗✔️:                                permutation)) {
+    // RDKit❗✔️:       if (!checkChiralPermutation(atom->getChiralTag(), permutation)) {
+    // RDKit❗✔️:         std::string error =
+    // RDKit❗✔️:             (boost::format("Invalid chiral specification on atom %d") %
+    // RDKit❗✔️:              atom->getIdx())
+    // RDKit❗✔️:                 .str();
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog) << error << std::endl;
+    // RDKit❗✔️:         if (strict) {
+    // RDKit❗✔️:           throw SmilesParseException(error);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       // directly convert @TH1 -> @ and @TH2 -> @@
+    // RDKit❗✔️:       if (atom->getChiralTag() == RDKit::Atom::ChiralType::CHI_TETRAHEDRAL) {
+    // RDKit❗✔️:         if (permutation == 0 || permutation == 1) {
+    // RDKit❗✔️:           atom->setChiralTag(RDKit::Atom::ChiralType::CHI_TETRAHEDRAL_CCW);
+    // RDKit❗✔️:           atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit❗✔️:         } else if (permutation == 2) {
+    // RDKit❗✔️:           atom->setChiralTag(RDKit::Atom::ChiralType::CHI_TETRAHEDRAL_CW);
+    // RDKit❗✔️:           atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // The grammar has already moved tag/permutation carrier fields. Checking
+    // only the surviving property preserves asymmetric comma/semicolon
+    // reductions; traversing the predicate would recreate a deleted property.
+    // This is one constant-time check per atom, with no tree rebuild or clone.
+    let mut tag = atom.chiral_tag();
+    if let Some(permutation) = atom.chiral_permutation() {
+        if !crate::query_graph_behavior::check_chiral_permutation(tag, permutation as i32) {
             return Err(SmartsParseError::Parse(format!(
                 "invalid chiral permutation {permutation} for {}",
-                chiral_tag.rdkit_name()
+                tag.rdkit_name()
             )));
         }
-        if chiral_tag == ChiralTag::Tetrahedral {
+        if tag == ChiralTag::Tetrahedral {
             if permutation <= 1 {
-                chiral_tag = ChiralTag::TetrahedralCcw;
-                chiral_permutation = None;
+                tag = ChiralTag::TetrahedralCcw;
+                atom.set_chiral_permutation(None);
             } else if permutation == 2 {
-                chiral_tag = ChiralTag::TetrahedralCw;
-                chiral_permutation = None;
+                tag = ChiralTag::TetrahedralCw;
+                atom.set_chiral_permutation(None);
             }
+            atom.set_chiral_tag(tag);
         }
     }
-    atom.set_chiral_tag(chiral_tag);
-    atom.set_chiral_permutation(chiral_permutation);
-    *atom.predicate_mut() = query;
     Ok(())
 }
 
@@ -4496,6 +4455,30 @@ impl ParsedAtomExpr {
             how,
             true,
         );
+        // RDKit❗✔️: atom_expr: atom_expr AND_TOKEN atom_expr {
+        // RDKit❗✔️:   $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_AND,true);
+        // RDKit❗✔️:   if ($1->getChiralTag()==Atom::CHI_UNSPECIFIED) { $1->setChiralTag($3->getChiralTag()); }
+        // RDKit❗✔️:   SmilesParseOps::ClearAtomChemicalProps($1);
+        // RDKit❗✔️:   delete $3;
+        // RDKit❗✔️:   $$ = $1;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: | atom_expr OR_TOKEN atom_expr {
+        // RDKit❗✔️:   $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_OR,true);
+        // RDKit❗✔️:   if ($1->getChiralTag()==Atom::CHI_UNSPECIFIED) { $1->setChiralTag($3->getChiralTag()); }
+        // RDKit❗✔️:   SmilesParseOps::ClearAtomChemicalProps($1);
+        // RDKit❗✔️:   $1->setAtomicNum(0);
+        // RDKit❗✔️:   delete $3;
+        // RDKit❗✔️:   $$ = $1;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: | atom_expr SEMI_TOKEN atom_expr {
+        // RDKit❗✔️:   $1->expandQuery($3->getQuery()->copy(),Queries::COMPOSITE_AND,true);
+        // RDKit❗✔️:   if ($1->getChiralTag()==Atom::CHI_UNSPECIFIED) { $1->setChiralTag($3->getChiralTag()); }
+        // RDKit❗✔️:   SmilesParseOps::ClearAtomChemicalProps($1);
+        // RDKit❗✔️:   delete $3;
+        if self.carrier.chiral_tag() == ChiralTag::Unspecified {
+            self.carrier.set_chiral_tag(other_carrier.chiral_tag());
+        }
+        // atom_expr reductions deliberately keep only the left permutation.
         self.clear_chemical_properties();
         if how == CompositeQueryType::Or {
             self = self.reset_atomic_number();
@@ -4545,6 +4528,21 @@ impl ParsedAtomExpr {
             CompositeQueryType::And,
             true,
         );
+        // RDKit❗✔️:     atom_expr->expandQuery(point_query->getQuery()->copy(), Queries::COMPOSITE_AND, true);
+        // RDKit❗✔️:     if (atom_expr->getChiralTag() == Atom::CHI_UNSPECIFIED) {
+        // RDKit❗✔️:       atom_expr->setChiralTag(point_query->getChiralTag());
+        // RDKit❗✔️:       int perm;
+        // RDKit❗✔️:       if (point_query->getPropIfPresent(common_properties::_chiralPermutation, perm)) {
+        // RDKit❗✔️:         atom_expr->setProp(common_properties::_chiralPermutation, perm);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (point_query->getFlags() & SMARTS_H_MASK) {
+        if self.carrier.chiral_tag() == ChiralTag::Unspecified {
+            self.carrier.set_chiral_tag(point_carrier.chiral_tag());
+            if let Some(permutation) = point_carrier.chiral_permutation() {
+                self.carrier.set_chiral_permutation(Some(permutation));
+            }
+        }
         if point_hydrogen_mask {
             if !self.hydrogen_mask {
                 self.carrier.set_explicit_hydrogens(point_hydrogens);
@@ -5729,6 +5727,78 @@ impl<'a> SmartsParser<'a> {
             }
         }
         let ch = chars[start];
+        if ch == '@' {
+            // RDKit❗✔️: | AT_TOKEN AT_TOKEN {
+            // RDKit❗✔️:   QueryAtom *newQ = new QueryAtom();
+            // RDKit❗✔️:   newQ->setQuery(makeAtomNullQuery());
+            // RDKit❗✔️:   newQ->setChiralTag(Atom::CHI_TETRAHEDRAL_CW);
+            // RDKit❗✔️:   $$=newQ;
+            // RDKit❗✔️: }
+            // RDKit❗✔️: | AT_TOKEN {
+            // RDKit❗✔️:   QueryAtom *newQ = new QueryAtom();
+            // RDKit❗✔️:   newQ->setQuery(makeAtomNullQuery());
+            // RDKit❗✔️:   newQ->setChiralTag(Atom::CHI_TETRAHEDRAL_CCW);
+            // RDKit❗✔️:   $$=newQ;
+            // RDKit❗✔️: }
+            // RDKit❗✔️: | CHI_CLASS_TOKEN {
+            // RDKit❗✔️:   QueryAtom *newQ = new QueryAtom();
+            // RDKit❗✔️:   newQ->setQuery(makeAtomNullQuery());
+            // RDKit❗✔️:   newQ->setChiralTag($1);
+            // RDKit❗✔️:   newQ->setProp(common_properties::_chiralPermutation,0);
+            // RDKit❗✔️:   $$=newQ;
+            // RDKit❗✔️: }
+            // RDKit❗✔️: | CHI_CLASS_TOKEN number {
+            // RDKit❗✔️:   if($2==0){
+            // RDKit❗✔️:     yyerror(input,molList,branchPoints,scanner,start_token, current_token_position,
+            // RDKit❗✔️:             "chiral permutation cannot be zero");
+            // RDKit❗✔️:     yyErrorCleanup(molList);
+            // RDKit❗✔️:     YYABORT;
+            // RDKit❗✔️:   }
+            // RDKit❗✔️:
+            // RDKit❗✔️:   QueryAtom *newQ = new QueryAtom();
+            // RDKit❗✔️:   newQ->setQuery(makeAtomNullQuery());
+            // RDKit❗✔️:   newQ->setChiralTag($1);
+            // RDKit❗✔️:   newQ->setProp(common_properties::_chiralPermutation,$2);
+            // RDKit❗✔️:   $$=newQ;
+            // RDKit❗✔️: }
+            // RDKit❗✔️: | HYB_TOKEN
+            // RDKit❗✔️: | number {
+            // Only one bounded grammar primitive is decoded here, before
+            // negation and atom_expr reductions. Carrier state stays separate
+            // from predicate algebra, as in the source QueryAtom actions.
+            let query = std::mem::replace(atom.carrier.predicate_mut(), make_atom_null_query());
+            match query {
+                QueryNode::Predicate(AtomQueryPredicate::ChiralTagMatch(tag)) => {
+                    atom.carrier.set_chiral_tag(tag);
+                }
+                QueryNode::And(children) => {
+                    let mut children = children.into_iter();
+                    match (children.next(), children.next(), children.next()) {
+                        (
+                            Some(QueryNode::Predicate(AtomQueryPredicate::ChiralTagMatch(tag))),
+                            Some(QueryNode::Predicate(AtomQueryPredicate::ChiralPermutationMatch(
+                                permutation,
+                            ))),
+                            None,
+                        ) => {
+                            atom.carrier.set_chiral_tag(tag);
+                            atom.carrier.set_chiral_permutation(Some(permutation));
+                        }
+                        _ => {
+                            return Err(SmartsParseError::Parse(
+                                "invalid chiral point-query carrier".into(),
+                            ));
+                        }
+                    }
+                }
+                _ => {
+                    return Err(SmartsParseError::Parse(
+                        "invalid chiral point-query primitive".into(),
+                    ));
+                }
+            }
+            return Ok(atom);
+        }
         if ch == '#' {
             let (number, _) = self.parse_number(chars, start + 1, end)?;
             atom = set_atom_carrier_identity(atom, number, false, start)?;
@@ -7086,7 +7156,7 @@ impl<'a> SmartsParser<'a> {
             let tokens = tokenize(inner)?;
             let mut parser = SmartsParser::new(&tokens, inner);
             parser.num_bonds_parsed = Rc::clone(&self.num_bonds_parsed);
-            parser.parse_smarts_molecule()?.finish()
+            parser.parse_smarts_molecule()?.finish_recursive()
         })()
         .map_err(
             |error: SmartsParseError| SmartsParseError::InvalidAtomPrimitive {
@@ -9998,5 +10068,82 @@ mod uint_complete_source_condition_cells {
         parser.num_bonds_parsed.set(4294967295_u32);
         assert_eq!(parser.next_bond_source_index(), Ok(4294967295_u32));
         assert_eq!(parser.num_bonds_parsed.get(), 0_u32);
+    }
+}
+
+#[cfg(test)]
+mod original_smarts_boundary_regressions {
+    use super::*;
+
+    #[test]
+    fn original_smarts_grammar_permutation_transfer() {
+        // Actual pinned native yysmarts_parse/CheckChiralitySpecifications
+        // observations, including right/left invalid-permutation asymmetry.
+        for (text, permutation, final_tag) in [
+            ("[O;@TH2]", None, ChiralTag::Tetrahedral),
+            ("[C,@TH1]", None, ChiralTag::Tetrahedral),
+            ("[C&@TH1]", Some(1), ChiralTag::TetrahedralCcw),
+            ("[C@TH1]", Some(1), ChiralTag::TetrahedralCcw),
+            ("[@TH1;C]", Some(1), ChiralTag::TetrahedralCcw),
+            ("[C;@TH9]", None, ChiralTag::Tetrahedral),
+            ("[C@TH1@TH2]", Some(1), ChiralTag::TetrahedralCcw),
+        ] {
+            let tokens = generic_parse_helper(text, ScannerStart::Atom).unwrap();
+            let mut parser = SmartsParser::new(&tokens, text);
+            let mut atom = parser.parse_atomd().unwrap().carrier;
+            assert_eq!(atom.chiral_tag(), ChiralTag::Tetrahedral, "grammar {text}");
+            assert_eq!(atom.chiral_permutation(), permutation, "grammar {text}");
+            materialize_smarts_atom_state(&mut atom).unwrap();
+            assert_eq!(atom.chiral_tag(), final_tag, "checked {text}");
+            assert_eq!(atom.chiral_permutation(), None, "checked {text}");
+        }
+        let text = "[@TH9;C]";
+        let tokens = generic_parse_helper(text, ScannerStart::Atom).unwrap();
+        let mut parser = SmartsParser::new(&tokens, text);
+        let mut atom = parser.parse_atomd().unwrap().carrier;
+        assert_eq!(atom.chiral_tag(), ChiralTag::Tetrahedral);
+        assert_eq!(atom.chiral_permutation(), Some(9));
+        assert!(materialize_smarts_atom_state(&mut atom).is_err());
+    }
+
+    fn recursive_graph(query: &QueryNode<AtomQueryPredicate>) -> Option<&QueryGraph> {
+        match query {
+            QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => {
+                recursive.query_graph()
+            }
+            QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
+                children.iter().find_map(recursive_graph)
+            }
+            QueryNode::Not(child) => recursive_graph(child),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn original_smarts_recursive_mol_keeps_raw_chirality() {
+        for (text, permutation) in [
+            ("[c;$([@TH1])]", 1),
+            ("[O;$([@TH2])]", 2),
+            ("[C;$([@TH2])]", 2),
+            ("[$([@TH9])]", 9),
+        ] {
+            let graph = parse_smarts(text, &SmartsParseParams::default()).unwrap();
+            let recursive = recursive_graph(graph.atoms()[0].predicate()).unwrap();
+            assert_eq!(
+                recursive.atoms()[0].chiral_tag(),
+                ChiralTag::Tetrahedral,
+                "{text}"
+            );
+            assert_eq!(
+                recursive.atoms()[0].chiral_permutation(),
+                Some(permutation),
+                "{text}"
+            );
+            assert!(
+                recursive.atoms()[0].prop("_SmilesStart").is_some(),
+                "{text}"
+            );
+        }
+        assert!(parse_smarts("[@TH9]", &SmartsParseParams::default()).is_err());
     }
 }

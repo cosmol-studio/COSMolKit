@@ -29,7 +29,7 @@ pub use query_behavior::{
     SmartsParseError, atom_matches_query, atom_matches_query_with_context, atom_predicate_matches,
     atom_predicate_matches_with_context, atom_query_has_magic_value, bond_matches_query,
     bond_matches_query_with_context, bond_predicate_matches, bond_predicate_matches_with_context,
-    build_prepared_query_match_context, build_query_match_context,
+    build_prepared_query_match_context, build_query_match_context, build_ring_query_match_context,
     build_topology_query_match_context, build_valence_query_match_context, complete_mol_queries,
     convert_complex_name_to_query, is_atom_aromatic, make_single_or_aromatic_bond_query,
     query_bond_min_ring_size, query_is_bond_in_ring,
@@ -115,6 +115,24 @@ impl CompiledQuery {
         let coordinates = CoordinateBlock::default();
         let target = SearchTarget::new(topology, &coordinates, &topology.stereo_groups, None, None);
         self.matches_target(&target)
+    }
+
+    /// Internal complete-result entry for a context borrowed from the current
+    /// authoritative target. Query plan and matcher state remain SEARCH-owned.
+    #[doc(hidden)]
+    pub fn matches_prepared_target(
+        &self,
+        target: &SearchTarget<'_>,
+        context: &QueryMatchContext,
+    ) -> Result<Vec<MatchResult>, MatchError> {
+        matcher::full_matches_with_compiled_query_and_context(
+            target,
+            &self.query,
+            &SubstructMatchParams::default(),
+            &self.compiled_graph,
+            context,
+        )
+        .map_err(MatchError::from)
     }
 
     /// Match against the complete detached target view, including conformers

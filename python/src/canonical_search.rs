@@ -102,6 +102,7 @@ pub(crate) fn substruct_pyerr(py: Python<'_>, source: ck::SubstructMatchError) -
         ck::SubstructMatchError::Unsupported { .. } => "Unsupported",
         ck::SubstructMatchError::PeriodicTable(_) => "PeriodicTable",
         ck::SubstructMatchError::PropertyString(_) => "PropertyString",
+        ck::SubstructMatchError::QueryContext(_) => "QueryContext",
     };
     let error = crate::canonical_values::annotate(
         py,
