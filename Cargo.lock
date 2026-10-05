@@ -261,6 +261,7 @@ dependencies = [
  "cosmolkit-model",
  "cosmolkit-search",
  "cosmolkit-smiles",
+ "serde_json",
  "thiserror",
 ]
 

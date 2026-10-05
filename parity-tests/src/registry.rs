@@ -441,6 +441,181 @@ pub const TASKS: &[Task] = &[
         corpus_type: CorpusType::Smiles,
         generator: "generate_tautomer_canonicalization",
     },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumAmideBonds),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_amide_bonds",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumSpiroAtoms),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_spiro_atoms",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumBridgeheadAtoms),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_bridgehead_atoms",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumAtomStereoCenters),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_atom_stereo_centers",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumUnspecifiedAtomStereoCenters),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_unspecified_atom_stereo_centers",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::NumRotatableBonds),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_num_rotatable_bonds",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::CrippenDescriptors),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_crippen_descriptors",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::LabuteAsa),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_labute_asa",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::LabuteAsaContributions),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_labute_asa_contributions",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Tpsa),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_tpsa",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa1),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_1",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa2),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_2",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa3),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_3",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa4),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_4",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa5),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_5",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa6),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_6",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa7),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_7",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa8),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_8",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa9),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_9",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa10),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_10",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa11),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_11",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SlogpVsa12),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_slogp_vsa_12",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa1),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_1",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa2),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_2",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa3),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_3",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa4),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_4",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa5),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_5",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa6),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_6",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa7),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_7",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa8),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_8",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa9),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_9",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::SmrVsa10),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_smr_vsa_10",
+    },
+    Task {
+        operation: Operation::Molecular(molecule_plan::TaskId::Qed),
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_qed",
+    },
 ];
 
 pub const RDKIT_VERSION: &str = "2026.03.1";
@@ -619,6 +794,58 @@ impl Input {
                     PotentialStereo { .. } => "potential_stereo",
                     Valence { .. } => "valence",
                     DistanceMatrix { .. } => "distance_matrix",
+                    NumAmideBonds => "num_amide_bonds",
+                    NumSpiroAtoms => "num_spiro_atoms",
+                    NumBridgeheadAtoms => "num_bridgehead_atoms",
+                    NumAtomStereoCenters => "num_atom_stereo_centers",
+                    NumUnspecifiedAtomStereoCenters => "num_unspecified_atom_stereo_centers",
+                    NumRotatableBonds { .. } => "num_rotatable_bonds",
+                    CrippenDescriptors { .. } => "crippen_descriptors",
+                    LabuteAsa { .. } => "labute_asa",
+                    LabuteAsaContributions { .. } => "labute_asa_contributions",
+                    Tpsa { .. } => "tpsa",
+                    SlogpVsa { .. } => "slogp_vsa",
+                    SmrVsa { .. } => "smr_vsa",
+                    SlogpVsa1 => "slogp_vsa_1",
+                    SlogpVsa2 => "slogp_vsa_2",
+                    SlogpVsa3 => "slogp_vsa_3",
+                    SlogpVsa4 => "slogp_vsa_4",
+                    SlogpVsa5 => "slogp_vsa_5",
+                    SlogpVsa6 => "slogp_vsa_6",
+                    SlogpVsa7 => "slogp_vsa_7",
+                    SlogpVsa8 => "slogp_vsa_8",
+                    SlogpVsa9 => "slogp_vsa_9",
+                    SlogpVsa10 => "slogp_vsa_10",
+                    SlogpVsa11 => "slogp_vsa_11",
+                    SlogpVsa12 => "slogp_vsa_12",
+                    SmrVsa1 => "smr_vsa_1",
+                    SmrVsa2 => "smr_vsa_2",
+                    SmrVsa3 => "smr_vsa_3",
+                    SmrVsa4 => "smr_vsa_4",
+                    SmrVsa5 => "smr_vsa_5",
+                    SmrVsa6 => "smr_vsa_6",
+                    SmrVsa7 => "smr_vsa_7",
+                    SmrVsa8 => "smr_vsa_8",
+                    SmrVsa9 => "smr_vsa_9",
+                    SmrVsa10 => "smr_vsa_10",
+                    Qed => "qed",
+                    Chi0VWithParams { .. } => "chi_0_v",
+                    Chi1VWithParams { .. } => "chi_1_v",
+                    Chi2VWithParams { .. } => "chi_2_v",
+                    Chi3VWithParams { .. } => "chi_3_v",
+                    Chi4VWithParams { .. } => "chi_4_v",
+                    Chi0NWithParams { .. } => "chi_0_n",
+                    Chi1NWithParams { .. } => "chi_1_n",
+                    Chi2NWithParams { .. } => "chi_2_n",
+                    Chi3NWithParams { .. } => "chi_3_n",
+                    Chi4NWithParams { .. } => "chi_4_n",
+                    ChiNVWithParams { .. } => "chi_n_v",
+                    ChiNNWithParams { .. } => "chi_n_n",
+                    LabuteAsaCacheSequence => "labute_asa",
+                    SlogpVsaCacheSequence => "slogp_vsa",
+                    SmrVsaCacheSequence => "smr_vsa",
+                    ChiNVCacheSequence => "chi_n_v",
+                    ChiNNCacheSequence => "chi_n_n",
                     Chi0 => "chi_0",
                     Chi1 => "chi_1",
                     HallKierAlpha => "hall_kier_alpha",
@@ -778,7 +1005,11 @@ impl Task {
 pub fn select(name: Option<&str>) -> Result<Vec<&'static Task>, String> {
     let selected: Vec<_> = TASKS
         .iter()
-        .filter(|t| name.is_none_or(|n| n == t.key() || n == t.operation.name()))
+        .filter(|t| name.is_none_or(|n| {
+            n == t.key() || n == t.operation.name()
+                || (n == "descriptors" && matches!(t.operation,
+                    Operation::Molecular(id) if id.category() == molecule_plan::Category::Descriptors))
+        }))
         .collect();
     if selected.is_empty() {
         return Err(format!("unknown task: {name:?}"));

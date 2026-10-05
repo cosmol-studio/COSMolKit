@@ -19,3 +19,4 @@ thiserror = "2.0.18"
 
 [dev-dependencies]
 cosmolkit-smiles = { version = "0.5.0-rc.10", path = "../cosmolkit-smiles" }
+serde_json = { version = "1", features = ["float_roundtrip"] }

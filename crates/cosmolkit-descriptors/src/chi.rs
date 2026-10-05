@@ -874,3 +874,99 @@ mod chi_source_cache_tests {
         assert_eq!(original, baseline);
     }
 }
+
+#[cfg(test)]
+mod original_condition_tests {
+    use super::*;
+    use crate::original_condition_fixture::{Fixture, assert_f64_bits, assert_slice_bits};
+    #[test]
+    fn connectivity_deltas_match_source_total_h_and_periodic_row_branches() {
+        let ethanol = Fixture::from_smiles("CCO");
+        let inverse_sqrt_2 = 1.0 / 2.0_f64.sqrt();
+        let inverse_sqrt_5 = 1.0 / 5.0_f64.sqrt();
+        assert_slice_bits(
+            &chi_v_weights_kernel(&ethanol.chi(), "hk_deltas").unwrap(),
+            &[1.0, inverse_sqrt_2, inverse_sqrt_5],
+            "ethanol HK deltas",
+        );
+        assert_slice_bits(
+            &chi_n_weights_kernel(&ethanol.chi(), "n_vals").unwrap(),
+            &[1.0, inverse_sqrt_2, inverse_sqrt_5],
+            "ethanol nVals",
+        );
+
+        let explicit_hydrogens = Fixture::from_smiles("[CH2]");
+        assert_slice_bits(
+            &chi_v_weights_kernel(&explicit_hydrogens.chi(), "hk_deltas").unwrap(),
+            &[inverse_sqrt_2],
+            "explicit-H HK delta",
+        );
+        assert_slice_bits(
+            &chi_n_weights_kernel(&explicit_hydrogens.chi(), "n_vals").unwrap(),
+            &[inverse_sqrt_2],
+            "explicit-H nVal",
+        );
+
+        let periodic_rows = Fixture::from_smiles("*.[Li+].[Na+].[K+]");
+        assert_slice_bits(
+            &chi_v_weights_kernel(&periodic_rows.chi(), "hk_deltas").unwrap(),
+            &[0.0, 1.0, 3.0, 17.0_f64.sqrt()],
+            "periodic-row HK deltas",
+        );
+        assert_slice_bits(
+            &chi_n_weights_kernel(&periodic_rows.chi(), "n_vals").unwrap(),
+            &[0.0, 1.0, 1.0, 1.0],
+            "periodic-row nVals",
+        );
+    }
+}
+
+#[cfg(test)]
+mod original_condition_cache_tests {
+    use super::*;
+    use crate::original_condition_fixture::{Fixture, assert_slice_bits};
+    #[test]
+    fn connectivity_delta_caches_obey_cold_warm_force_and_family_independence() {
+        let fixture = Fixture::from_smiles("CCO");
+        let input = fixture.chi();
+        let mut state = crate::DescriptorComputedState::default();
+        assert!(state.chi_v_weights.is_none());
+        assert!(state.chi_n_weights.is_none());
+        let hk_cold = cached_v_weights(&input, false, &mut state, "hk_deltas").unwrap();
+        let hk_address = state.chi_v_weights.as_ref().unwrap().as_ptr();
+        let hk_warm = cached_v_weights(&input, false, &mut state, "hk_deltas").unwrap();
+        assert_slice_bits(&hk_cold, &hk_warm, "HK cold/warm rows");
+        assert_eq!(hk_address, state.chi_v_weights.as_ref().unwrap().as_ptr());
+        assert_ne!(
+            hk_cold.as_ptr(),
+            hk_warm.as_ptr(),
+            "source getProp copies vectors"
+        );
+        assert!(state.chi_n_weights.is_none());
+        let n_cold = cached_n_weights(&input, false, &mut state, "n_vals").unwrap();
+        let n_address = state.chi_n_weights.as_ref().unwrap().as_ptr();
+        let n_warm = cached_n_weights(&input, false, &mut state, "n_vals").unwrap();
+        assert_slice_bits(&n_cold, &n_warm, "nVal cold/warm rows");
+        assert_eq!(n_address, state.chi_n_weights.as_ref().unwrap().as_ptr());
+        assert_eq!(hk_address, state.chi_v_weights.as_ref().unwrap().as_ptr());
+        state.chi_v_weights = Some(vec![9.0, 9.0, 9.0]);
+        assert_slice_bits(
+            &cached_v_weights(&input, false, &mut state, "hk_deltas").unwrap(),
+            &[9.0, 9.0, 9.0],
+            "warm injected HK cache",
+        );
+        let hk_forced = cached_v_weights(&input, true, &mut state, "hk_deltas").unwrap();
+        assert_slice_bits(&hk_forced, &hk_cold, "forced HK recomputation");
+        assert_ne!(hk_forced.as_ptr(), hk_cold.as_ptr());
+        assert_eq!(n_address, state.chi_n_weights.as_ref().unwrap().as_ptr());
+        state.chi_n_weights = Some(vec![8.0, 8.0, 8.0]);
+        assert_slice_bits(
+            &cached_n_weights(&input, false, &mut state, "n_vals").unwrap(),
+            &[8.0, 8.0, 8.0],
+            "warm injected nVal cache",
+        );
+        let n_forced = cached_n_weights(&input, true, &mut state, "n_vals").unwrap();
+        assert_slice_bits(&n_forced, &n_cold, "forced nVal recomputation");
+        assert_ne!(n_forced.as_ptr(), n_cold.as_ptr());
+    }
+}

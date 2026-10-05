@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "purpose": "Fixed 15-case source regression; not a SMILES corpus",
+  "reference_implementation": {
+    "name": "rdkit",
+    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8c",
+    "version": "2026.03.1"
+  },
+  "recorded_source_revision_status": "Original 41-character spelling preserved as historical provenance, not a valid Git revision or fresh oracle claim",
+  "source_anchor": {
+    "project": "RDKit",
+    "revision": "351f8f378f8ad6bbd517980c38896e66bf907af8",
+    "path": "Code/GraphMol/ChemTransforms/ChemTransforms.cpp",
+    "function": "deleteSubstructs",
+    "license": "BSD-3-Clause"
+  },
+  "selection": {
+    "generator": "tools/testdata/rdkit/_generate_delete_substructs_golden.py",
+    "generator_sha256": "dacc0f3acb6180f29851aaf530e4a62dbede1cf6ee0b15c7dde324e8d9ffd877",
+    "inputs": "All 15 CASES literals in the generator, unchanged order and parameters"
+  },
+  "historical_manifest_sha256": "534161ed662483c2d63ce8cf62fffd654055fd226228e604e4889b58dad7717b",
+  "outputs": [
+    {
+      "path": "delete_substructs_onlyfrags_chirality.jsonl",
+      "records": 15,
+      "sha256": "f18c749aea4e1f364f77b4571d1cbe9042fa47584a595157d90d61c6c21ff662",
+      "output_schema_version": 1
+    }
+  ],
+  "preparation_command": "python tools/testdata/rdkit/_generate_delete_substructs_golden.py --output testdata/substructure/fixtures/rdkit/delete_substructs_onlyfrags_chirality.jsonl",
+  "ordinary_tests": "Read-only fixed expectations; no oracle or generator invocation"
+}

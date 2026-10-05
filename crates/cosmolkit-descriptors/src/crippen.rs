@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{DescriptorComputedState, DescriptorError, DescriptorInput, DescriptorResult};
 use cosmolkit_search::{
     QueryGraph, SearchTarget, SmartsParseParams, SubstructMatchParams,
-    build_prepared_query_match_context, parse_smarts,
+    build_ring_query_match_context, parse_smarts,
     try_get_substruct_matches_with_params_and_context,
 };
 
@@ -590,8 +590,12 @@ pub(crate) fn crippen_cold_kernel(
     );
     #[cfg(test)]
     CRIPPEN_CONTEXT_CALLS.with(|count| count.set(count.get() + 1));
+    // Reuse SEARCH's authoritative sparse-ring boundary: RDKit AddHs retains
+    // ring membership rows, and RingInfo.cpp returns zero/empty beyond them.
+    // The input owns topology correspondence; no ring perception or padding is
+    // performed here, and supplied valence remains borrowed.
     let context =
-        build_prepared_query_match_context(input.topology(), input.ring_info(), input.valence())
+        build_ring_query_match_context(input.topology(), input.ring_info(), Some(input.valence()))
             .map_err(|source| DescriptorError::Search {
                 function: "crippen_cold_kernel",
                 source: crate::DescriptorSearchCause::Context(source),
@@ -1432,4 +1436,26 @@ pub fn default_crippen_params() -> &'static [CrippenParamRow] {
         }
         rows
     })
+}
+
+#[cfg(test)]
+mod original_condition_query_tests {
+    use super::*;
+    #[test]
+    fn crippen_parameter_collection_reuses_parsed_queries() {
+        let first = default_crippen_params();
+        let second = default_crippen_params();
+        assert!(!first.is_empty());
+        assert!(std::ptr::eq(first.as_ptr(), second.as_ptr()));
+        let queries = crippen_patterns();
+        let queries_again = crippen_patterns();
+        assert!(std::ptr::eq(queries.as_ptr(), queries_again.as_ptr()));
+        assert!(std::sync::Arc::ptr_eq(
+            queries[0].as_ref().unwrap(),
+            queries_again[0].as_ref().unwrap()
+        ));
+        assert_eq!(first[0].idx, 0);
+        assert_eq!(first[0].label, "C1");
+        assert_eq!(first[0].smarts, "[CH4]");
+    }
 }

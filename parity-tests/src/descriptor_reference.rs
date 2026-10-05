@@ -18,7 +18,43 @@ pub fn handles(task: &Task) -> bool {
     matches!(
         task.operation,
         Operation::Molecular(
-            Chi0 | Chi1
+            NumAmideBonds
+                | NumSpiroAtoms
+                | NumBridgeheadAtoms
+                | NumAtomStereoCenters
+                | NumUnspecifiedAtomStereoCenters
+                | NumRotatableBonds
+                | CrippenDescriptors
+                | LabuteAsa
+                | LabuteAsaContributions
+                | Tpsa
+                | SlogpVsa
+                | SmrVsa
+                | SlogpVsa1
+                | SlogpVsa2
+                | SlogpVsa3
+                | SlogpVsa4
+                | SlogpVsa5
+                | SlogpVsa6
+                | SlogpVsa7
+                | SlogpVsa8
+                | SlogpVsa9
+                | SlogpVsa10
+                | SlogpVsa11
+                | SlogpVsa12
+                | SmrVsa1
+                | SmrVsa2
+                | SmrVsa3
+                | SmrVsa4
+                | SmrVsa5
+                | SmrVsa6
+                | SmrVsa7
+                | SmrVsa8
+                | SmrVsa9
+                | SmrVsa10
+                | Qed
+                | Chi0
+                | Chi1
                 | HallKierAlpha
                 | HallKierAlphaWithContributions
                 | Kappa1
@@ -79,10 +115,29 @@ fn bits(value: &Json) -> Result<u64> {
     Ok(value)
 }
 
+fn bit_vector(value: &Json) -> Result<Vec<u64>> {
+    value
+        .as_array()
+        .ok_or("missing reference f64 vector")?
+        .iter()
+        .map(bits)
+        .collect()
+}
+
 fn observation(profile: Profile, row: &Json) -> Result<Outcome> {
     use Profile::*;
     let scalar = &row["high_feasibility_descriptor_bits"];
     let key = match profile {
+        Chi0VWithParams { .. } => "chi_0v",
+        Chi1VWithParams { .. } => "chi_1v",
+        Chi2VWithParams { .. } => "chi_2v",
+        Chi3VWithParams { .. } => "chi_3v",
+        Chi4VWithParams { .. } => "chi_4v",
+        Chi0NWithParams { .. } => "chi_0n",
+        Chi1NWithParams { .. } => "chi_1n",
+        Chi2NWithParams { .. } => "chi_2n",
+        Chi3NWithParams { .. } => "chi_3n",
+        Chi4NWithParams { .. } => "chi_4n",
         Chi0 => "chi_0",
         Chi1 => "chi_1",
         HallKierAlpha => "hall_kier_alpha",
@@ -100,8 +155,11 @@ fn observation(profile: Profile, row: &Json) -> Result<Outcome> {
         Chi2N => "chi_2n",
         Chi3N => "chi_3n",
         Chi4N => "chi_4n",
-        ChiNV { order } | ChiNN { order } => {
-            let field = if matches!(profile, ChiNV { .. }) {
+        ChiNV { order }
+        | ChiNN { order }
+        | ChiNVWithParams { order, .. }
+        | ChiNNWithParams { order, .. } => {
+            let field = if matches!(profile, ChiNV { .. } | ChiNVWithParams { .. }) {
                 "chi_nv_orders_0_6"
             } else {
                 "chi_nn_orders_0_6"
@@ -127,6 +185,201 @@ fn observation(profile: Profile, row: &Json) -> Result<Outcome> {
                 value: bits(&contribution["value"])?,
                 atom_contributions: atoms.iter().map(bits).collect::<Result<_>>()?,
             });
+        }
+        NumAmideBonds => {
+            return Ok(Outcome::Unsigned(
+                row["high_feasibility_descriptors"]["num_amide_bonds"]
+                    .as_u64()
+                    .and_then(|v| v.try_into().ok())
+                    .ok_or("missing u32 num_amide_bonds")?,
+            ));
+        }
+        NumSpiroAtoms => {
+            return Ok(Outcome::Unsigned(
+                row["high_feasibility_descriptors"]["num_spiro_atoms"]
+                    .as_u64()
+                    .and_then(|v| v.try_into().ok())
+                    .ok_or("missing u32 num_spiro_atoms")?,
+            ));
+        }
+        NumBridgeheadAtoms => {
+            return Ok(Outcome::Unsigned(
+                row["high_feasibility_descriptors"]["num_bridgehead_atoms"]
+                    .as_u64()
+                    .and_then(|v| v.try_into().ok())
+                    .ok_or("missing u32 num_bridgehead_atoms")?,
+            ));
+        }
+        NumAtomStereoCenters => {
+            return Ok(Outcome::Unsigned(
+                row["high_feasibility_descriptors"]["num_atom_stereo_centers"]
+                    .as_u64()
+                    .and_then(|v| v.try_into().ok())
+                    .ok_or("missing u32 num_atom_stereo_centers")?,
+            ));
+        }
+        NumUnspecifiedAtomStereoCenters => {
+            return Ok(Outcome::Unsigned(
+                row["high_feasibility_descriptors"]["num_unspecified_atom_stereo_centers"]
+                    .as_u64()
+                    .and_then(|v| v.try_into().ok())
+                    .ok_or("missing u32 num_unspecified_atom_stereo_centers")?,
+            ));
+        }
+        SlogpVsa1 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][0])?)),
+        SlogpVsa2 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][1])?)),
+        SlogpVsa3 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][2])?)),
+        SlogpVsa4 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][3])?)),
+        SlogpVsa5 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][4])?)),
+        SlogpVsa6 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][5])?)),
+        SlogpVsa7 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][6])?)),
+        SlogpVsa8 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][7])?)),
+        SlogpVsa9 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][8])?)),
+        SlogpVsa10 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][9])?)),
+        SlogpVsa11 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][10])?)),
+        SlogpVsa12 => return Ok(Outcome::Float64Bits(bits(&scalar["slogp_vsa"][11])?)),
+        SmrVsa1 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][0])?)),
+        SmrVsa2 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][1])?)),
+        SmrVsa3 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][2])?)),
+        SmrVsa4 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][3])?)),
+        SmrVsa5 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][4])?)),
+        SmrVsa6 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][5])?)),
+        SmrVsa7 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][6])?)),
+        SmrVsa8 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][7])?)),
+        SmrVsa9 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][8])?)),
+        SmrVsa10 => return Ok(Outcome::Float64Bits(bits(&scalar["smr_vsa"][9])?)),
+        Qed => return Ok(Outcome::Float64Bits(bits(&row["descriptor_bits"]["qed"])?)),
+        NumRotatableBonds { mode } => {
+            use crate::registry::molecule_plan::RotatableBondMode as M;
+            let mode = match mode {
+                None | Some(M::Default) => "default",
+                Some(M::NonStrict) => "non_strict",
+                Some(M::Strict) => "strict",
+                Some(M::StrictLinkages) => "strict_linkages",
+            };
+            return Ok(Outcome::Unsigned(
+                row["descriptors"][format!("num_rotatable_bonds_{mode}")]
+                    .as_u64()
+                    .and_then(|v| v.try_into().ok())
+                    .ok_or("missing rotatable count")?,
+            ));
+        }
+        CrippenDescriptors {
+            include_hydrogens,
+            force,
+        } => {
+            let value = &row["descriptor_option_bits"]["crippen"][format!(
+                "include_hs_{}_force_{}",
+                include_hydrogens.unwrap_or(true),
+                force
+            )];
+            return Ok(Outcome::Float64PairBits {
+                first: bits(&value["logp"])?,
+                second: bits(&value["molar_refractivity"])?,
+            });
+        }
+        Tpsa {
+            include_sulfur_phosphorus,
+            force,
+        } => {
+            return Ok(Outcome::Float64Bits(bits(
+                &row["descriptor_option_bits"]["tpsa"][format!(
+                    "force_{force}_include_sandp_{}",
+                    include_sulfur_phosphorus.unwrap_or(false)
+                )],
+            )?));
+        }
+        LabuteAsa {
+            include_hydrogens, ..
+        } => {
+            return Ok(Outcome::Float64Bits(bits(
+                &scalar[format!(
+                    "labute_asa_include_hs_{}",
+                    include_hydrogens.unwrap_or(true)
+                )],
+            )?));
+        }
+        LabuteAsaContributions {
+            include_hydrogens, ..
+        } => {
+            let value = &row["high_feasibility_contribution_bits"]["labute_asa"]
+                [format!("include_hs_{}", include_hydrogens.unwrap_or(true))];
+            let atoms = bit_vector(&value["atom_contributions"])?;
+            let hall =
+                row["high_feasibility_contribution_bits"]["hall_kier_alpha"]["atom_contributions"]
+                    .as_array()
+                    .ok_or("missing stored-atom row identity")?;
+            if atoms.len() != hall.len() {
+                return Err("Labute contribution count differs from stored atoms".into());
+            }
+            return Ok(Outcome::LabuteAsaContributionsBits {
+                asa: bits(&value["asa"])?,
+                atom_contributions: atoms,
+                hydrogen_contribution: bits(&value["hydrogen_contribution"])?,
+            });
+        }
+        SlogpVsa { bins, .. } | SmrVsa { bins, .. } => {
+            let family = if matches!(profile, SlogpVsa { .. }) {
+                "slogp_vsa"
+            } else {
+                "smr_vsa"
+            };
+            let value = match bins {
+                crate::registry::molecule_plan::VsaBins::Default => &scalar[family],
+                crate::registry::molecule_plan::VsaBins::CustomDuplicates => {
+                    &row["high_feasibility_cache_profile_bits"][format!("{family}_custom_forced")]
+                }
+            };
+            return Ok(Outcome::Float64VectorBits(bit_vector(value)?));
+        }
+        LabuteAsaCacheSequence => {
+            let rows = row["high_feasibility_cache_profile_bits"]["labute_asa_sequence"]
+                .as_array()
+                .ok_or("missing Labute sequence")?;
+            let flags = [(false, false), (true, false), (true, true), (false, false)];
+            if rows.len() != flags.len() {
+                return Err("wrong Labute sequence length".into());
+            }
+            for (r, (include, force)) in rows.iter().zip(flags) {
+                if r["include_hs"] != include || r["force"] != force {
+                    return Err("wrong Labute sequence options".into());
+                }
+            }
+            return Ok(Outcome::Float64VectorBits(
+                rows.iter()
+                    .map(|r| bits(&r["value"]))
+                    .collect::<Result<_>>()?,
+            ));
+        }
+        ChiNVCacheSequence | ChiNNCacheSequence => {
+            let family = if matches!(profile, ChiNVCacheSequence) {
+                "chi_nv"
+            } else {
+                "chi_nn"
+            };
+            let value = &row["high_feasibility_cache_profile_bits"][family];
+            return Ok(Outcome::Float64VectorsBits(
+                ["cold", "warm", "forced"]
+                    .into_iter()
+                    .map(|key| bit_vector(&value[key]))
+                    .collect::<Result<_>>()?,
+            ));
+        }
+        SlogpVsaCacheSequence | SmrVsaCacheSequence => {
+            let keys: &[&str] = if matches!(profile, SlogpVsaCacheSequence) {
+                &[
+                    "slogp_vsa_default_cold",
+                    "slogp_vsa_default_warm",
+                    "slogp_vsa_custom_forced",
+                ]
+            } else {
+                &["smr_vsa_default_warm", "smr_vsa_custom_forced"]
+            };
+            return Ok(Outcome::Float64VectorsBits(
+                keys.iter()
+                    .map(|key| bit_vector(&row["high_feasibility_cache_profile_bits"][key]))
+                    .collect::<Result<_>>()?,
+            ));
         }
         Mqns { .. } => {
             // The pinned source calcMQNs explicitly ignores force. Exercise
@@ -233,5 +486,96 @@ mod tests {
                 atom_contributions: vec![0, 0, 0]
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod complete_descriptor_tests {
+    use super::*;
+    use crate::registry::molecule_plan::{Category, TaskId, VsaBins};
+
+    #[test]
+    fn complete_descriptor_registration_has_all78_and_preserves_individual_tasks() {
+        let descriptors = registry::TASKS
+            .iter()
+            .filter(|task| {
+                matches!(task.operation,
+            registry::Operation::Molecular(id) if id.category()==Category::Descriptors)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(descriptors.len(), 78);
+        let selected = registry::select(Some("descriptors")).unwrap();
+        assert_eq!(selected.len(), 78);
+        assert!(
+            selected
+                .iter()
+                .zip(&descriptors)
+                .all(|(a, b)| std::ptr::eq(*a, *b))
+        );
+        assert_eq!(descriptors.iter().filter(|task| handles(task)).count(), 56);
+        assert_eq!(TaskId::ChiNV.profiles().len(), 22);
+        assert_eq!(TaskId::SlogpVsa.profiles().len(), 6);
+        assert_eq!(TaskId::LabuteAsa.profiles().len(), 6);
+    }
+
+    #[test]
+    fn full_labute_reference_requires_every_atom_and_hydrogen_field() {
+        let mut row = json!({"high_feasibility_contribution_bits": {
+            "hall_kier_alpha": {"atom_contributions":["0000000000000000","0000000000000000"]},
+            "labute_asa": {"include_hs_false": {"asa":"4000000000000000", "atom_contributions":["3ff0000000000000","3ff0000000000000"], "hydrogen_contribution":"0000000000000000"}}}});
+        let profile = Profile::LabuteAsaContributions {
+            include_hydrogens: Some(false),
+            force: true,
+        };
+        let expected = Outcome::LabuteAsaContributionsBits {
+            asa: 2.0_f64.to_bits(),
+            atom_contributions: vec![1.0_f64.to_bits(); 2],
+            hydrogen_contribution: 0.0_f64.to_bits(),
+        };
+        assert_eq!(observation(profile, &row).unwrap(), expected);
+        row["high_feasibility_contribution_bits"]["labute_asa"]["include_hs_false"]["atom_contributions"] =
+            json!(["4000000000000000"]);
+        assert!(observation(profile, &row).is_err());
+        row["high_feasibility_contribution_bits"]["labute_asa"]["include_hs_false"]["hydrogen_contribution"] =
+            Json::Null;
+        assert!(observation(profile, &row).is_err());
+    }
+
+    #[test]
+    fn vsa_reference_keeps_duplicate_bin_vectors_and_rejects_wrong_shape() {
+        let profile = Profile::SlogpVsa {
+            bins: VsaBins::CustomDuplicates,
+            force: Some(true),
+        };
+        let row = json!({"high_feasibility_cache_profile_bits":{"slogp_vsa_custom_forced":["0000000000000000","0000000000000000","3ff0000000000000","0000000000000000","0000000000000000","0000000000000000"]}});
+        let outcome = observation(profile, &row).unwrap();
+        crate::molecular::validate_output(&profile, &outcome).unwrap();
+        assert!(
+            crate::molecular::validate_output(&profile, &Outcome::Float64VectorBits(vec![0; 5]))
+                .is_err()
+        );
+        assert!(
+            crate::molecular::validate_output(
+                &profile,
+                &Outcome::Float64VectorBits(vec![f64::NAN.to_bits(); 6])
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn labute_sequence_preserves_option_order_before_any_execution() {
+        let mut row = json!({"high_feasibility_cache_profile_bits":{"labute_asa_sequence":[
+            {"include_hs":false,"force":false,"value":"0000000000000000"},
+            {"include_hs":true,"force":false,"value":"0000000000000000"},
+            {"include_hs":true,"force":true,"value":"0000000000000000"},
+            {"include_hs":false,"force":false,"value":"0000000000000000"}]}});
+        assert_eq!(
+            observation(Profile::LabuteAsaCacheSequence, &row).unwrap(),
+            Outcome::Float64VectorBits(vec![0; 4])
+        );
+        row["high_feasibility_cache_profile_bits"]["labute_asa_sequence"][2]["force"] =
+            json!(false);
+        assert!(observation(Profile::LabuteAsaCacheSequence, &row).is_err());
     }
 }

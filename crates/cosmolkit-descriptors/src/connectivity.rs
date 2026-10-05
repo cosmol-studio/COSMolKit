@@ -559,3 +559,86 @@ fn path_count(
         .map(|paths| paths.len() as f64)
         .map_err(|source| DescriptorError::Path { function, source })
 }
+
+#[cfg(test)]
+mod original_condition_tests {
+    use super::*;
+    use crate::original_condition_fixture::{Fixture, assert_f64_bits, assert_slice_bits};
+    use cosmolkit_model::{Element, Hybridization};
+    #[test]
+    fn get_alpha_covers_every_source_element_hybridization_and_fallback_branch() {
+        let cases = [
+            (Element::H, Hybridization::Unspecified, 0.0, true),
+            (Element::C, Hybridization::Sp, -0.22, true),
+            (Element::C, Hybridization::Sp2, -0.13, true),
+            (Element::C, Hybridization::Sp3, 0.00, true),
+            (Element::N, Hybridization::Sp, -0.29, true),
+            (Element::N, Hybridization::Sp2, -0.20, true),
+            (Element::N, Hybridization::Sp3, -0.04, true),
+            (Element::O, Hybridization::Sp2, -0.20, true),
+            (Element::O, Hybridization::Sp3, -0.04, true),
+            (Element::F, Hybridization::Sp3, -0.07, true),
+            (Element::P, Hybridization::Sp2, 0.30, true),
+            (Element::P, Hybridization::Sp3, 0.43, true),
+            (Element::S, Hybridization::Sp2, 0.22, true),
+            (Element::S, Hybridization::Sp3, 0.35, true),
+            (Element::CL, Hybridization::Sp3, 0.29, true),
+            (Element::BR, Hybridization::Sp3, 0.48, true),
+            (Element::I, Hybridization::Sp3, 0.73, true),
+            (Element::DUMMY, Hybridization::Unspecified, 0.0, false),
+            (Element::XE, Hybridization::Sp3, 0.0, false),
+        ];
+
+        for (element, hybridization, expected, expected_found) in cases {
+            let atom = cosmolkit_model::Atom::from_spec(
+                cosmolkit_model::AtomId::new(0),
+                cosmolkit_model::AtomSpec::new(element).with_hybridization(hybridization),
+            );
+            let value = get_alpha(&atom);
+            let found = value.is_some();
+            let actual = match value {
+                Some(value) => value,
+                None => {
+                    assert!(!expected_found);
+                    0.0
+                }
+            };
+            assert_f64_bits(actual, expected, element.symbol());
+            assert_eq!(found, expected_found, "{} found state", element.symbol());
+        }
+    }
+
+    #[test]
+    fn hall_kier_alpha_preserves_atom_order_dummy_skip_and_rb0_fallback() {
+        let fixture = Fixture::from_smiles("*.CP(=O)(O)SCl.[Xe]");
+        let mut contributions = vec![99.0; fixture.topology.atoms.len()];
+        let actual = hall_kier_alpha(&fixture.topology.atoms, Some(&mut contributions)).unwrap();
+
+        assert_eq!(actual.to_bits(), 0x4003_3620_2ecf_b9c8);
+        assert_slice_bits(
+            &contributions,
+            &[
+                99.0,
+                0.0,
+                0.43,
+                -0.20,
+                -0.04,
+                0.35,
+                0.29,
+                1.5714285714285712,
+            ],
+            "Hall-Kier atom contributions",
+        );
+    }
+
+    #[test]
+    fn kappa_helpers_cover_zero_denominators_and_kappa3_parity_branches() {
+        assert_f64_bits(kappa_1_helper(0.0, 3.0, 0.0), 0.0, "kappa1 zero");
+        assert_f64_bits(kappa_2_helper(0.0, 3.0, 0.0), 0.0, "kappa2 zero");
+        assert_f64_bits(kappa_3_helper(0.0, 3, 0.0), 0.0, "kappa3 zero");
+        assert_f64_bits(kappa_1_helper(2.0, 3.0, 0.0), 3.0, "kappa1");
+        assert_f64_bits(kappa_2_helper(1.0, 3.0, 0.0), 2.0, "kappa2");
+        assert_f64_bits(kappa_3_helper(1.0, 5, 0.0), 16.0, "kappa3 odd");
+        assert_f64_bits(kappa_3_helper(1.0, 6, 0.0), 36.0, "kappa3 even");
+    }
+}

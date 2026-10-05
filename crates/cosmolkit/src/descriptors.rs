@@ -3497,3 +3497,325 @@ mod descriptor_query_lifecycle_tests {
         assert!(Arc::ptr_eq(&derived, &original.derived_cache_arc_runtime()));
     }
 }
+
+#[cfg(all(
+    test,
+    feature = "cap-descriptors",
+    feature = "cap-smiles",
+    feature = "cap-hydrogens",
+    feature = "cap-sanitize",
+    feature = "cap-rings"
+))]
+mod original_runtime_descriptor_conditions {
+    use super::*;
+    use std::sync::Arc;
+    fn bits(rows: &[f64]) -> Vec<u64> {
+        rows.iter().map(|value| value.to_bits()).collect()
+    }
+    fn owner_contribs(
+        molecule: &Molecule,
+        force: bool,
+    ) -> cosmolkit_descriptors::CrippenContributions {
+        let input = required_descriptor_input(molecule).unwrap();
+        let mut memo = molecule.descriptor_queries_runtime().unwrap();
+        cosmolkit_descriptors::crippen_contributions(&input, force, &mut memo, None, None).unwrap()
+    }
+    fn memo(molecule: &Molecule) -> cosmolkit_descriptors::DescriptorComputedState {
+        molecule.descriptor_queries_runtime().unwrap().clone()
+    }
+    #[test]
+    fn crippen_and_vsa_mixed_call_order_preserves_exact_outputs() {
+        let crippen_first = Molecule::from_smiles("CCOc1ccc(C(=O)N)cc1Cl")
+            .expect("Crippen/VSA call-order fixture must parse");
+        let crippen_values = crippen_first
+            .crippen_descriptors_with_params(true, false)
+            .unwrap();
+        let slogp = crippen_first.slogp_vsa_with_params(None, false).unwrap();
+        let smr = crippen_first.smr_vsa_with_params(None, false).unwrap();
+        let contributions = owner_contribs(&crippen_first, false);
+
+        let vsa_first = Molecule::from_smiles("CCOc1ccc(C(=O)N)cc1Cl")
+            .expect("Crippen/VSA reverse call-order fixture must parse");
+        let reverse_smr = vsa_first.smr_vsa_with_params(None, false).unwrap();
+        let reverse_slogp = vsa_first.slogp_vsa_with_params(None, false).unwrap();
+        let reverse_values = vsa_first
+            .crippen_descriptors_with_params(true, false)
+            .unwrap();
+        let reverse_contributions = owner_contribs(&vsa_first, false);
+
+        assert_eq!(crippen_values.logp.to_bits(), reverse_values.logp.to_bits());
+        assert_eq!(
+            crippen_values.molar_refractivity.to_bits(),
+            reverse_values.molar_refractivity.to_bits()
+        );
+        assert_eq!(bits(&slogp), bits(&reverse_slogp));
+        assert_eq!(bits(&smr), bits(&reverse_smr));
+        assert_eq!(bits(&contributions.logp), bits(&reverse_contributions.logp));
+        assert_eq!(
+            bits(&contributions.molar_refractivity),
+            bits(&reverse_contributions.molar_refractivity)
+        );
+    }
+
+    #[test]
+    fn crippen_and_vsa_parallel_reads_share_only_immutable_cached_arrays() {
+        let molecule = Arc::new(
+            Molecule::from_smiles("CCOc1ccc(C(=O)N)cc1Cl")
+                .expect("parallel Crippen/VSA fixture must parse"),
+        );
+        let expected_contributions = owner_contribs(&molecule, false);
+        let expected_logp = bits(&expected_contributions.logp);
+        let expected_mr = bits(&expected_contributions.molar_refractivity);
+        let expected_slogp = bits(&molecule.slogp_vsa_with_params(None, false).unwrap());
+        let expected_smr = bits(&molecule.smr_vsa_with_params(None, false).unwrap());
+
+        let readers = (0..16)
+            .map(|_| {
+                let molecule = Arc::clone(&molecule);
+                let expected_logp = expected_logp.clone();
+                let expected_mr = expected_mr.clone();
+                let expected_slogp = expected_slogp.clone();
+                let expected_smr = expected_smr.clone();
+                std::thread::spawn(move || {
+                    let contributions = owner_contribs(&molecule, false);
+                    assert_eq!(bits(&contributions.logp), expected_logp);
+                    assert_eq!(bits(&contributions.molar_refractivity), expected_mr);
+                    assert_eq!(
+                        bits(&molecule.slogp_vsa_with_params(None, false).unwrap()),
+                        expected_slogp
+                    );
+                    assert_eq!(
+                        bits(&molecule.smr_vsa_with_params(None, false).unwrap()),
+                        expected_smr
+                    );
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for reader in readers {
+            reader.join().expect("parallel Crippen/VSA reader");
+        }
+    }
+
+    #[test]
+    fn crippen_atom_contribution_cache_reuses_and_force_replaces_typed_arrays() {
+        let molecule = Molecule::from_smiles("CC(=O)Oc1ccccc1C(=O)O").unwrap();
+        assert_eq!(memo(&molecule), Default::default());
+        let cold = owner_contribs(&molecule, false);
+        let stored = memo(&molecule);
+        assert_ne!(stored, Default::default());
+        let warm = owner_contribs(&molecule, false);
+        assert_eq!(memo(&molecule), stored);
+        assert_eq!(bits(&cold.logp), bits(&warm.logp));
+        assert_eq!(
+            bits(&cold.molar_refractivity),
+            bits(&warm.molar_refractivity)
+        );
+        assert_ne!(
+            cold.logp.as_ptr(),
+            warm.logp.as_ptr(),
+            "source getProp copies typed output vectors"
+        );
+        assert_ne!(
+            cold.molar_refractivity.as_ptr(),
+            warm.molar_refractivity.as_ptr()
+        );
+        let forced = owner_contribs(&molecule, true);
+        assert_ne!(cold.logp.as_ptr(), forced.logp.as_ptr());
+        assert_ne!(
+            cold.molar_refractivity.as_ptr(),
+            forced.molar_refractivity.as_ptr()
+        );
+        assert_eq!(bits(&cold.logp), bits(&forced.logp));
+        assert_eq!(
+            bits(&cold.molar_refractivity),
+            bits(&forced.molar_refractivity)
+        );
+        let replaced = owner_contribs(&molecule, false);
+        assert_eq!(bits(&forced.logp), bits(&replaced.logp));
+        assert_eq!(
+            bits(&forced.molar_refractivity),
+            bits(&replaced.molar_refractivity)
+        );
+    }
+    #[test]
+    fn crippen_atom_contribution_cache_clone_and_topology_lifecycles_are_independent() {
+        let molecule = Molecule::from_smiles("c1ccncc1O").unwrap();
+        let source = owner_contribs(&molecule, false);
+        let source_memo = memo(&molecule);
+        let cloned = molecule.clone();
+        assert_eq!(memo(&cloned), source_memo);
+        let clone_initial = owner_contribs(&cloned, false);
+        assert_eq!(bits(&source.logp), bits(&clone_initial.logp));
+        assert_eq!(
+            bits(&source.molar_refractivity),
+            bits(&clone_initial.molar_refractivity)
+        );
+        let clone_forced = owner_contribs(&cloned, true);
+        assert_ne!(source.logp.as_ptr(), clone_forced.logp.as_ptr());
+        assert_ne!(
+            source.molar_refractivity.as_ptr(),
+            clone_forced.molar_refractivity.as_ptr()
+        );
+        assert_eq!(memo(&molecule), source_memo);
+        let source_after = owner_contribs(&molecule, false);
+        assert_eq!(bits(&source.logp), bits(&source_after.logp));
+        assert_eq!(
+            bits(&source.molar_refractivity),
+            bits(&source_after.molar_refractivity)
+        );
+        let hydrogenated = molecule.with_hydrogens().unwrap();
+        assert_eq!(memo(&hydrogenated), Default::default());
+        assert!(matches!(
+            required_descriptor_input(&hydrogenated),
+            Err(DescriptorReadError::MissingPreparedValence)
+        ));
+        let hydrogenated = hydrogenated.with_assigned_valence().unwrap();
+        assert_eq!(memo(&hydrogenated), Default::default());
+        let output = owner_contribs(&hydrogenated, false);
+        assert_eq!(output.logp.len(), hydrogenated.num_atoms());
+        assert_eq!(output.molar_refractivity.len(), hydrogenated.num_atoms());
+        assert_eq!(source.logp.len(), molecule.num_atoms());
+        assert_eq!(memo(&molecule), source_memo);
+    }
+    #[test]
+    fn labute_cache_preserves_source_call_order_force_clone_and_invalidation_semantics() {
+        const WITHOUT_HYDROGENS: u64 = 0x402b_ca6e_1564_c404;
+        const WITH_HYDROGENS: u64 = 0x402e_3558_cdb4_a85c;
+        let molecule = Molecule::from_smiles("CC").unwrap();
+        assert_eq!(memo(&molecule), Default::default());
+        assert_eq!(
+            molecule
+                .labute_asa_with_params(false, false)
+                .unwrap()
+                .to_bits(),
+            WITHOUT_HYDROGENS
+        );
+        assert_eq!(
+            molecule
+                .labute_asa_with_params(true, false)
+                .unwrap()
+                .to_bits(),
+            WITHOUT_HYDROGENS
+        );
+        let clone = molecule.clone();
+        assert_eq!(
+            clone.labute_asa_with_params(true, true).unwrap().to_bits(),
+            WITH_HYDROGENS
+        );
+        assert_eq!(
+            molecule
+                .labute_asa_with_params(true, false)
+                .unwrap()
+                .to_bits(),
+            WITHOUT_HYDROGENS
+        );
+        assert_eq!(
+            molecule
+                .labute_asa_with_params(true, true)
+                .unwrap()
+                .to_bits(),
+            WITH_HYDROGENS
+        );
+        assert_eq!(
+            molecule
+                .labute_asa_with_params(false, false)
+                .unwrap()
+                .to_bits(),
+            WITH_HYDROGENS
+        );
+        // The old unrestricted replace_topology_block test hook is retired. The
+        // canonical sanitize value operation really invalidates query properties.
+        let before = memo(&molecule);
+        let invalidated = molecule.sanitize().unwrap();
+        assert_eq!(invalidated.atoms(), molecule.atoms());
+        assert_eq!(invalidated.bonds(), molecule.bonds());
+        assert_eq!(memo(&invalidated), Default::default());
+        assert_eq!(
+            invalidated
+                .labute_asa_with_params(false, false)
+                .unwrap()
+                .to_bits(),
+            WITHOUT_HYDROGENS
+        );
+        assert_eq!(memo(&molecule), before);
+    }
+    #[test]
+    fn descriptor_ring_info_borrows_initialized_cache_for_both_requirements() {
+        let molecule = Molecule::from_smiles("C1CC2CCC1C2").unwrap();
+        let cached = molecule.derived_cache_runtime().valid_ring_info().unwrap();
+        assert!(cached.is_initialized());
+        assert!(cached.is_sssr_or_better());
+        // The retired private bool acquisition helper is represented by the actual
+        // canonical prepared-input and runtime ring-read borrow paths.
+        let descriptor = required_descriptor_input(&molecule).unwrap();
+        assert!(std::ptr::eq(descriptor.ring_info(), cached));
+        let borrowed = molecule.derived_cache_runtime().valid_ring_info().unwrap();
+        assert!(std::ptr::eq(borrowed, cached));
+    }
+    #[test]
+    fn descriptor_ring_info_computes_owned_cold_state_without_mutating_caller() {
+        let molecule = Molecule::from_smiles_with_params(
+            "C1CC2CCC1C2",
+            &crate::SmilesParseParams {
+                sanitize: false,
+                remove_hydrogens: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(molecule.derived_cache_runtime().valid_ring_info().is_none());
+        let before = molecule.clone();
+        let symmetrized =
+            cosmolkit_core::symmetrized_sssr(molecule.topology(), &Default::default()).unwrap();
+        assert_eq!(symmetrized.num_rings(), 2);
+        let sssr = cosmolkit_core::find_sssr(molecule.topology(), &Default::default()).unwrap();
+        assert_eq!(sssr.num_rings(), 2);
+        assert_eq!(
+            cosmolkit_descriptors::num_spiro_atoms_with_ring_info(molecule.topology(), None)
+                .unwrap(),
+            0
+        );
+        assert!(molecule.derived_cache_runtime().valid_ring_info().is_none());
+        assert_eq!(molecule, before);
+        assert!(matches!(
+            molecule.num_rings(),
+            Err(DescriptorReadError::MissingInitializedRings)
+        ));
+    }
+    #[test]
+    fn descriptor_ring_info_clone_reuses_state_until_topology_invalidation() {
+        let molecule = Molecule::from_smiles("C1CCCCC1")
+            .unwrap()
+            .with_assigned_rings()
+            .unwrap();
+        let cloned = molecule.clone();
+        let source = molecule.derived_cache_runtime().valid_ring_info().unwrap();
+        let cloned_rows = cloned.derived_cache_runtime().valid_ring_info().unwrap();
+        assert!(std::ptr::eq(source, cloned_rows));
+        assert!(std::ptr::eq(
+            required_descriptor_input(&cloned).unwrap().ring_info(),
+            source
+        ));
+        let hydrogenated = cloned.with_hydrogens().unwrap();
+        assert_eq!(
+            hydrogenated.derived_cache_runtime().valid_ring_info(),
+            Some(source)
+        );
+        let removed = hydrogenated
+            .without_hydrogens_with_params(&crate::RemoveHsParams {
+                sanitize: false,
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(removed.derived_cache_runtime().valid_ring_info().is_none());
+        let cold =
+            cosmolkit_core::symmetrized_sssr(removed.topology(), &Default::default()).unwrap();
+        assert_eq!(cold.num_rings(), 1);
+        assert!(matches!(
+            removed.num_rings(),
+            Err(DescriptorReadError::MissingInitializedRings)
+        ));
+        assert!(removed.derived_cache_runtime().valid_ring_info().is_none());
+    }
+}

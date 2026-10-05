@@ -284,3 +284,57 @@ mod source_upper_bound_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod original_condition_tests {
+    use super::*;
+    use crate::original_condition_fixture::{Fixture, assert_f64_bits, assert_slice_bits};
+    #[test]
+    fn shared_vsa_binning_matches_source_boundaries_nonfinite_values_and_order() {
+        assert_eq!(
+            assign_contribs_to_bins(
+                &[1.0, 2.0, 4.0, 8.0, 16.0],
+                &[-1.0, 0.0, 1.0, 2.0, 3.0],
+                &[0.0, 1.0, 2.0],
+            ),
+            Ok(vec![1.0, 2.0, 4.0, 24.0])
+        );
+        assert_eq!(
+            assign_contribs_to_bins(&[2.0], &[1.0], &[1.0, 1.0, 1.0]),
+            Ok(vec![0.0, 0.0, 0.0, 2.0])
+        );
+        assert_eq!(
+            assign_contribs_to_bins(&[1.0, 2.0, 3.0], &[0.0, 1.0, 2.0], &[]),
+            Ok(vec![6.0])
+        );
+        assert_eq!(
+            assign_contribs_to_bins(
+                &[1.0, 2.0, 4.0],
+                &[f64::NEG_INFINITY, f64::INFINITY, f64::NAN],
+                &[0.0],
+            ),
+            Ok(vec![1.0, 6.0])
+        );
+        assert_eq!(
+            assign_contribs_to_bins(
+                &[1.0, 2.0, 4.0, 8.0, 16.0],
+                &[-1.0, 0.0, 0.5, 1.0, 2.0],
+                &[2.0, 0.0, 1.0],
+            ),
+            Ok(vec![1.0, 0.0, 6.0, 24.0])
+        );
+
+        let ordered =
+            assign_contribs_to_bins(&[1.0e16, 1.0, -1.0e16], &[0.0, 0.0, 0.0], &[]).unwrap();
+        assert_eq!(ordered[0].to_bits(), 0.0_f64.to_bits());
+
+        assert_eq!(
+            assign_contribs_to_bins(&[1.0, 2.0], &[0.0], &[0.0]),
+            Err(DescriptorError::MismatchedBinArrays {
+                contribs_len: 2,
+                bin_prop_len: 1,
+                bins_len: 1,
+            })
+        );
+    }
+}

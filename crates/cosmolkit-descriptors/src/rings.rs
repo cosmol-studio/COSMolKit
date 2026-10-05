@@ -1463,3 +1463,110 @@ pub fn num_bridgehead_atoms_with_ring_info(
         bridgehead_atom_ids_kernel(&ensured, &topology.bonds, topology.atoms.len(), &mut atoms)
     }
 }
+
+#[cfg(test)]
+mod original_condition_query_tests {
+    use super::*;
+    use crate::original_condition_fixture::Fixture;
+    use cosmolkit_model::AtomId;
+    #[test]
+    fn spiro_and_bridgehead_atoms_match_pinned_rdkit_order_and_deduplication() {
+        const CASES: [(&str, &[usize], &[usize]); 5] = [
+            ("C1CC2CCC1CC2", &[], &[2, 5]),
+            ("C1CCC2(C1)CC1CCC2CC1", &[3], &[6, 9]),
+            ("C1CCC2(CC1)CCC1(CC2)CCCC1", &[3, 8], &[]),
+            ("C1C2CC3CC1CC(C2)C3", &[], &[1, 5, 3, 7]),
+            ("C1CCC2CCCCC2C1", &[], &[]),
+        ];
+
+        for (smiles, expected_spiro, expected_bridgehead) in CASES {
+            let molecule = Fixture::from_smiles(smiles);
+            let mut spiro_atoms = Vec::new();
+            let mut bridgehead_atoms = Vec::new();
+
+            assert_eq!(
+                spiro_atom_ids_kernel(&molecule.rings, &mut spiro_atoms).unwrap(),
+                u32::try_from(expected_spiro.len()).unwrap(),
+                "{smiles:?} spiro count"
+            );
+            assert_eq!(
+                spiro_atoms,
+                expected_spiro
+                    .iter()
+                    .copied()
+                    .map(AtomId::new)
+                    .collect::<Vec<_>>(),
+                "{smiles:?} spiro atom order"
+            );
+            assert_eq!(
+                bridgehead_atom_ids_kernel(
+                    &molecule.rings,
+                    &molecule.topology.bonds,
+                    molecule.topology.atoms.len(),
+                    &mut bridgehead_atoms
+                )
+                .unwrap(),
+                u32::try_from(expected_bridgehead.len()).unwrap(),
+                "{smiles:?} bridgehead count"
+            );
+            assert_eq!(
+                bridgehead_atoms,
+                expected_bridgehead
+                    .iter()
+                    .copied()
+                    .map(AtomId::new)
+                    .collect::<Vec<_>>(),
+                "{smiles:?} bridgehead atom order"
+            );
+        }
+
+        let molecule = Fixture::from_smiles("C1CCC2(CC1)CCC1(CC2)CCCC1");
+        let mut atoms = vec![AtomId::new(3)];
+        assert_eq!(spiro_atom_ids_kernel(&molecule.rings, &mut atoms), Ok(2));
+        assert_eq!(atoms, vec![AtomId::new(3), AtomId::new(8)]);
+    }
+}
+
+#[cfg(test)]
+mod original_condition_cache_tests {
+    use super::*;
+    use crate::original_condition_fixture::Fixture;
+    #[test]
+    fn ring_descriptor_call_order_is_stable_for_cached_and_cold_state() {
+        let fixture = Fixture::from_smiles("c1ccc2c(c1)C1CCC2(C1)C1CCCCC1");
+        let before = fixture.rings.clone();
+        let topology_before = fixture.topology.clone();
+        let observe = |rings: &RingInfo| {
+            let input = crate::DescriptorInput::new(
+                &fixture.topology,
+                &fixture.coordinates,
+                &fixture.properties,
+                &fixture.valence,
+                rings,
+            );
+            let mut spiro = Vec::new();
+            let mut bridgehead = Vec::new();
+            let aromatic =
+                crate::num_aromatic_rings_with_ring_info(&fixture.topology, rings).unwrap();
+            let mqn = crate::mqns(&input, false).unwrap();
+            let count = crate::num_rings_with_ring_info(rings).unwrap();
+            bridgehead_atom_ids_kernel(
+                rings,
+                &fixture.topology.bonds,
+                fixture.topology.atoms.len(),
+                &mut bridgehead,
+            )
+            .unwrap();
+            spiro_atom_ids_kernel(rings, &mut spiro).unwrap();
+            (count, aromatic, spiro, bridgehead, mqn)
+        };
+        let cached_first = observe(&fixture.rings);
+        let cold_rows = crate::ring_info(&fixture.topology, "original_ring_call_order").unwrap();
+        let cold_first = observe(&cold_rows);
+        assert_eq!(cached_first, cold_first);
+        assert_eq!(observe(&fixture.rings), cached_first);
+        assert_eq!(observe(&cold_rows), cold_first);
+        assert_eq!(fixture.rings, before);
+        assert_eq!(fixture.topology, topology_before);
+    }
+}

@@ -416,3 +416,39 @@ pub fn num_rotatable_bonds_prepared(
         }
     }
 }
+
+#[cfg(test)]
+mod original_condition_query_tests {
+    use super::*;
+    #[test]
+    fn fixed_rotatable_bond_queries_are_singletons_across_repeated_and_parallel_reads() {
+        for pattern in [
+            NON_STRICT_ROTATABLE_PATTERN,
+            STRICT_ROTATABLE_PATTERN,
+            STRICT_LINKAGES_BASE_PATTERN,
+            NON_RING_AMIDES_PATTERN,
+            SYMMETRIC_RINGS_PATTERN,
+            TERMINAL_TRIPLE_BONDS_PATTERN,
+        ] {
+            let first = crate::patterns::retained_pattern("num_rotatable_bonds", pattern).unwrap();
+            let second = crate::patterns::retained_pattern("num_rotatable_bonds", pattern).unwrap();
+            assert!(std::sync::Arc::ptr_eq(&first, &second));
+            let address = std::sync::Arc::as_ptr(&first) as usize;
+            std::thread::scope(|scope| {
+                let handles = (0..8)
+                    .map(|_| {
+                        scope.spawn(move || {
+                            std::sync::Arc::as_ptr(
+                                &crate::patterns::retained_pattern("num_rotatable_bonds", pattern)
+                                    .unwrap(),
+                            ) as usize
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                for handle in handles {
+                    assert_eq!(handle.join().unwrap(), address);
+                }
+            });
+        }
+    }
+}

@@ -18792,3 +18792,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod original_condition_fixture;

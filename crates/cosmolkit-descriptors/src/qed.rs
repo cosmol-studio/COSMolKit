@@ -470,57 +470,10 @@ fn qed_arom(
     input: &DescriptorInput<'_>,
     context: &cosmolkit_search::QueryMatchContext<'_>,
 ) -> DescriptorResult<u32> {
-    // Source QED calls DeleteSubstructs with onlyFrags/useChirality both false.
-    // It only reads GetSSSR of the returned graph, so coordinate/property
-    // transport is not an input here. Reuse the detached model batch editor.
-    // RDKit❗❌: SubstructMatch(*res, query, fgpMatches, uniquify, recursionPossible,
-    // RDKit❗❌:                useChirality);
-    let matches = crate::patterns::pattern_matches_with_context(
-        input,
-        "qed",
-        RDKIT_QED_ALIPHATIC_RINGS_SMARTS,
-        context,
-    )?;
-    let topology = if matches.is_empty() {
-        std::borrow::Cow::Borrowed(input.topology())
-    } else {
-        // RDKit❗❌: for (const auto &mxi : matches) {
-        // RDKit❗❌:   INT_VECT tmp;
-        // RDKit❗❌:   Union(mxi, delList, tmp);
-        // RDKit❗❌:   delList = tmp;
-        // RDKit❗❌: }
-        let mut atoms = std::collections::BTreeSet::new();
-        for matched in matches {
-            atoms.extend(matched.atom_mapping);
-        }
-        // RDKit❗❌: res->beginBatchEdit();
-        // RDKit❗❌: for (auto idx : delList) {
-        // RDKit❗❌:   res->removeAtom(idx);
-        // RDKit❗❌: }
-        // RDKit❗❌: res->commitBatchEdit();
-        // Batch edit has existing two-topology snapshot allocation debt; no
-        // duplicate graph compaction algorithm is introduced in descriptors.
-        let mut edit = input.topology().begin_batch_edit().map_err(|source| {
-            DescriptorError::TopologyEdit {
-                function: "qed",
-                source,
-            }
-        })?;
-        for atom in atoms {
-            edit.remove_atom(cosmolkit_model::AtomId::new(atom))
-                .map_err(|source| DescriptorError::TopologyEdit {
-                    function: "qed",
-                    source,
-                })?;
-        }
-        let (topology, _) = edit
-            .finish()
-            .map_err(|source| DescriptorError::TopologyEdit {
-                function: "qed",
-                source,
-            })?;
-        std::borrow::Cow::Owned(topology)
-    };
+    // QED's source false/false call reuses the same private graph helper as
+    // the original onlyFrags/chirality regression matrix.
+    let query = crate::patterns::retained_pattern("qed", RDKIT_QED_ALIPHATIC_RINGS_SMARTS)?;
+    let topology = qed_delete_substructs(input, &query, false, false, context)?;
     // RDKit❗✔️: AROM=len(Chem.GetSSSR(Chem.DeleteSubstructs(Chem.Mol(mol), AliphaticRings))),
     // This MUST be ordinary SSSR, not symmetrized SSSR. The existing owner
     // borrows only graph rows, independent of computed valence properties.
@@ -575,4 +528,361 @@ pub fn qed(input: &DescriptorInput<'_>) -> DescriptorResult<f64> {
     );
     // RDKit✔️✔️:   return math.exp(t / sum(w))
     Ok((t / rdkit_qed_python313_sum(weights)).exp())
+}
+
+#[cfg(test)]
+mod original_condition_tests {
+    use super::*;
+    use crate::original_condition_fixture::{Fixture, assert_f64_bits, assert_slice_bits};
+    #[test]
+    fn qed_sum_matches_pinned_cpython_313_compensated_float_sum() {
+        let actual = rdkit_qed_python313_sum([1.0e16, 1.0, -1.0e16]);
+        assert_eq!(actual.to_bits(), 1.0_f64.to_bits());
+    }
+}
+
+/// Private graph projection used by QED; SEARCH owns matching and CORE owns
+/// connected components. Model batch editing owns compression and stereo remaps.
+/// No live state, runtime permission or generalized public transform is created.
+fn qed_delete_substructs<'a>(
+    input: &DescriptorInput<'a>,
+    query: &cosmolkit_search::QueryGraph,
+    only_frags: bool,
+    use_chirality: bool,
+    context: &cosmolkit_search::QueryMatchContext<'_>,
+) -> DescriptorResult<std::borrow::Cow<'a, cosmolkit_model::TopologyBlock>> {
+    // RDKit❗❌: ROMol *deleteSubstructs(const ROMol &mol, const ROMol &query, bool onlyFrags,
+    // RDKit❗❌:                         bool useChirality) {
+    // RDKit❗❌:   auto *res = new RWMol(mol, false);
+    // RDKit❗❌:   std::vector<MatchVectType> fgpMatches;
+    // RDKit❗❌:   // do the substructure matching and get the atoms that match the query
+    // RDKit❗❌:   const bool uniquify = true;
+    // RDKit❗❌:   const bool recursionPossible = true;
+    // RDKit❗❌:   SubstructMatch(*res, query, fgpMatches, uniquify, recursionPossible,
+    // RDKit❗❌:                  useChirality);
+    // RDKit❗❌:
+    // RDKit❗❌:   // if didn't find any matches nothing to be done here
+    // RDKit❗❌:   // simply return a copy of the molecule
+    // RDKit❗❌:   if (fgpMatches.empty()) {
+    // RDKit❗❌:     return res;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // all matches on the molecule - list of list of atom ids
+    // RDKit❗❌:   VECT_INT_VECT matches;
+    // RDKit❗❌:   matches.reserve(fgpMatches.size());
+    // RDKit❗❌:   for (const auto &mati : fgpMatches) {
+    // RDKit❗❌:     INT_VECT match;  // each match onto the molecule - list of atoms ids
+    // RDKit❗❌:     match.reserve(mati.size());
+    // RDKit❗❌:     for (const auto &mi : mati) {
+    // RDKit❗❌:       match.push_back(mi.second);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     matches.push_back(std::move(match));
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // now loop over the list of matches and check if we can delete any of them
+    // RDKit❗❌:   INT_VECT delList;
+    // RDKit❗❌:   if (onlyFrags) {
+    // RDKit❗❌:     VECT_INT_VECT frags;
+    // RDKit❗❌:     MolOps::getMolFrags(*res, frags);
+    // RDKit❗❌:     for (auto &fi : frags) {
+    // RDKit❗❌:       std::sort(fi.begin(), fi.end());
+    // RDKit❗❌:       for (auto &mxi : matches) {
+    // RDKit❗❌:         std::sort(mxi.begin(), mxi.end());
+    // RDKit❗❌:         if (fi == mxi) {
+    // RDKit❗❌:           INT_VECT tmp;
+    // RDKit❗❌:           Union(mxi, delList, tmp);
+    // RDKit❗❌:           delList = tmp;
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         }  // end of if we found a matching fragment
+    // RDKit❗❌:       }  // end of loop over matches
+    // RDKit❗❌:     }  // end of loop over fragments
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     // in this case we want to delete any matches we find
+    // RDKit❗❌:     // simply loop over the matches and collect the atoms that need to
+    // RDKit❗❌:     // be removed
+    // RDKit❗❌:     for (const auto &mxi : matches) {
+    // RDKit❗❌:       INT_VECT tmp;
+    // RDKit❗❌:       Union(mxi, delList, tmp);
+    // RDKit❗❌:       delList = tmp;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (delList.empty()) {
+    // RDKit❗❌:     return res;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // now loop over the union list and delete the atoms
+    // RDKit❗❌:   res->beginBatchEdit();
+    // RDKit❗❌:   boost::dynamic_bitset<> removedAtoms(mol.getNumAtoms());
+    // RDKit❗❌:   for (auto idx : delList) {
+    // RDKit❗❌:     removedAtoms.set(idx);
+    // RDKit❗❌:     res->removeAtom(idx);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   res->commitBatchEdit();
+    // RDKit❗❌:
+    // RDKit❗❌:   details::updateSubMolConfs(mol, *res, removedAtoms);
+    // RDKit❗❌:
+    // RDKit❗❌:   res->clearComputedProps(true);
+    // RDKit❗❌:   // update our properties, but allow unhappiness:
+    // RDKit❗❌:   res->updatePropertyCache(false);
+    // RDKit❗❌:
+    // RDKit❗❌:   return res;
+    // RDKit❗❌: }
+    // Behavior scope: the graph projection consumed by QED and the original
+    // private graph goldens. Coordinates, ordinary properties and computed cache
+    // authority are outside this return boundary. No coordinate/property transform
+    // is exposed or claimed. The no-match graph is immutably borrowed, avoiding
+    // a source copy that QED immediately discards after GetSSSR.
+    // Complexity: matching is the existing owner. onlyFrags keeps source exact
+    // fragment equality and nested fragment/match scans; BTreeSet unions and
+    // model batch snapshot/validation retain known allocation/complexity debt.
+    let target = cosmolkit_search::SearchTarget::new(
+        input.topology(),
+        input.coordinates(),
+        &input.topology().stereo_groups,
+        Some(input.ring_info()),
+        Some(input.valence()),
+    );
+    let params = cosmolkit_search::SubstructMatchParams {
+        use_chirality,
+        ..Default::default()
+    };
+    let matches = cosmolkit_search::try_get_substruct_matches_with_params_and_context(
+        &target, query, &params, context,
+    )
+    .map_err(|source| DescriptorError::Search {
+        function: "qed",
+        source: crate::DescriptorSearchCause::Match(source),
+    })?;
+    if matches.is_empty() {
+        return Ok(std::borrow::Cow::Borrowed(input.topology()));
+    }
+    let mut removed = std::collections::BTreeSet::<usize>::new();
+    if only_frags {
+        let components =
+            cosmolkit_core::connected_components(input.topology()).map_err(|source| {
+                DescriptorError::Path {
+                    function: "qed",
+                    source,
+                }
+            })?;
+        let mut rows = matches
+            .iter()
+            .map(|m| m.atom_mapping.clone())
+            .collect::<Vec<_>>();
+        for component in components.components {
+            let mut fragment = component.into_iter().map(|a| a.index()).collect::<Vec<_>>();
+            fragment.sort_unstable();
+            for row in &mut rows {
+                row.sort_unstable();
+                if fragment == *row {
+                    removed.extend(row.iter().copied());
+                    break;
+                }
+            }
+        }
+    } else {
+        for matched in matches {
+            removed.extend(matched.atom_mapping);
+        }
+    }
+    if removed.is_empty() {
+        return Ok(std::borrow::Cow::Borrowed(input.topology()));
+    }
+    let mut edit =
+        input
+            .topology()
+            .begin_batch_edit()
+            .map_err(|source| DescriptorError::TopologyEdit {
+                function: "qed",
+                source,
+            })?;
+    for atom in removed {
+        edit.remove_atom(cosmolkit_model::AtomId::new(atom))
+            .map_err(|source| DescriptorError::TopologyEdit {
+                function: "qed",
+                source,
+            })?;
+    }
+    let (topology, _) = edit
+        .finish()
+        .map_err(|source| DescriptorError::TopologyEdit {
+            function: "qed",
+            source,
+        })?;
+    Ok(std::borrow::Cow::Owned(topology))
+}
+
+#[cfg(test)]
+mod original_qed_source_conditions {
+    use super::*;
+    use crate::original_condition_fixture::Fixture;
+    #[test]
+    fn qed_aromatic_ring_count_uses_rdkit_sssr_not_symmetrized_sssr() {
+        let cases = [
+            (
+                "c1cc2ccc1Cn1cc[n+](c1)Cc1ccc(cc1)C[n+]1ccn(c1)Cc1ccc(cc1)O2",
+                6.0,
+                0x3fd51cef6aee9da4,
+            ),
+            (
+                "COC(=O)c1cc2cc(c1)Cn1cc[n+](c1)Cc1ccc(cc1)-c1ccc(cc1)C[n+]1ccn(c1)Cc1cc(cc(C(=O)OC)c1)Cn1cc[n+](c1)Cc1ccc(cc1)-c1ccc(cc1)C[n+]1ccn(c1)C2.[Cl-].[Cl-].[Cl-].[Cl-]",
+                11.0,
+                0x3fc09baf58464657,
+            ),
+        ];
+        for (smiles, expected_arom, expected_qed_bits) in cases {
+            let mol = Fixture::from_smiles(smiles);
+            let properties = qed_properties(&mol.input()).unwrap();
+            assert_eq!(properties.arom, expected_arom, "{smiles}");
+            assert_eq!(
+                qed(&mol.input()).unwrap().to_bits(),
+                expected_qed_bits,
+                "{smiles}"
+            );
+        }
+    }
+
+    #[test]
+    fn qed_properties_none_input_is_unrepresentable_in_rust_core_api() {
+        let _: fn(&DescriptorInput<'_>) -> DescriptorResult<f64> = qed;
+        let _: fn(&DescriptorInput<'_>) -> DescriptorResult<QedProperties> = qed_properties;
+    }
+
+    fn structural_alert_hits(smiles: &str) -> Vec<usize> {
+        let fixture = Fixture::from_smiles(smiles);
+        let input = fixture.input();
+        let context = crate::patterns::prepared_context(&input, "qed").unwrap();
+        RDKIT_QED_STRUCTURAL_ALERT_SMARTS
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &pattern)| {
+                qed_has_match(&input, pattern, &context)
+                    .unwrap()
+                    .then_some(index)
+            })
+            .collect()
+    }
+    fn load_delete_substructs_golden() -> Vec<serde_json::Value> {
+        let path=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/substructure/fixtures/rdkit/delete_substructs_onlyfrags_chirality.jsonl");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("missing original golden {}: {error}", path.display()));
+        let rows = text
+            .lines()
+            .enumerate()
+            .map(|(index, line)| {
+                serde_json::from_str(line)
+                    .unwrap_or_else(|error| panic!("original golden row {}: {error}", index + 1))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 15);
+        rows
+    }
+    #[test]
+    fn delete_substructs_golden_covers_required_parameter_branches() {
+        let records = load_delete_substructs_golden();
+        for flag in ["only_frags", "use_chirality"] {
+            for expected in [false, true] {
+                assert!(
+                    records
+                        .iter()
+                        .any(|record| record[flag].as_bool() == Some(expected)),
+                    "original golden lacks {flag}={expected}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn delete_substructs_matches_rdkit_golden_for_only_frags_matrix() {
+        let records = load_delete_substructs_golden();
+        let mut failures = Vec::new();
+        let mut compared = 0;
+        for (index, record) in records.iter().enumerate() {
+            let smiles = record["smiles"].as_str().unwrap();
+            let smarts = record["smarts"].as_str().unwrap();
+            let only_frags = record["only_frags"].as_bool().unwrap();
+            let use_chirality = record["use_chirality"].as_bool().unwrap();
+            let label = format!(
+                "row{} case{} {smiles} {smarts} onlyFrags={only_frags} useChirality={use_chirality}",
+                index + 1,
+                record["case"]
+            );
+            if !record["rdkit_ok"].as_bool().unwrap() {
+                assert!(
+                    record["error"].as_str().is_some(),
+                    "{label} source rejected row missing error"
+                );
+                continue;
+            }
+            let fixture = Fixture::from_smiles(smiles);
+            let before = fixture.topology.clone();
+            let input = fixture.input();
+            let context = crate::patterns::prepared_context(&input, "qed").unwrap();
+            let query = cosmolkit_search::parse_smarts(smarts, &Default::default()).unwrap();
+            match qed_delete_substructs(&input, &query, only_frags, use_chirality, &context) {
+                Ok(topology) => {
+                    let coordinates = Default::default();
+                    let properties = Default::default();
+                    let output = cosmolkit_smiles::SmilesRecordView {
+                        topology: &topology,
+                        coordinates: &coordinates,
+                        properties: &properties,
+                    };
+                    let actual = cosmolkit_smiles::write_smiles_with_params(
+                        output,
+                        &cosmolkit_smiles::SmilesWriteParams {
+                            do_isomeric_smiles: true,
+                            canonical: true,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap();
+                    let expected = record["result_smiles"].as_str().unwrap();
+                    if actual != expected {
+                        failures.push(format!(
+                            "{label}: SMILES actual{actual:?} expected{expected:?}"
+                        ));
+                    }
+                    if topology.atoms.len() as u64 != record["num_atoms"].as_u64().unwrap() {
+                        failures.push(format!("{label}: atom count"));
+                    }
+                    if topology.bonds.len() as u64 != record["num_bonds"].as_u64().unwrap() {
+                        failures.push(format!("{label}: bond count"));
+                    }
+                }
+                Err(error) => failures.push(format!("{label}: failed closed {error}")),
+            }
+            assert_eq!(
+                fixture.topology, before,
+                "{label} original caller unchanged"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 15);
+        assert!(
+            failures.is_empty(),
+            "original full deletion matrix failures:\n{}",
+            failures.join("\n")
+        );
+    }
+    #[test]
+    fn smarts_consumer_descriptor_patterns() {
+        assert_eq!(structural_alert_hits("C=C"), vec![19]);
+        assert_eq!(structural_alert_hits("N#C"), Vec::<usize>::new());
+        assert_eq!(structural_alert_hits("c1ccsc1"), Vec::<usize>::new());
+        assert_eq!(structural_alert_hits("c1cc[se]c1"), vec![26]);
+        assert_eq!(structural_alert_hits("c1cc[te]c1"), vec![26]);
+        assert_eq!(structural_alert_hits("CC(=O)O"), Vec::<usize>::new());
+        assert_eq!(structural_alert_hits("F[C@@H]1O[C@H](Cl)S1"), vec![2]);
+        assert_eq!(
+            structural_alert_hits(
+                "NC(=O)CNC(=O)[C@H](CC(C)C)NC(=O)[C@@H]1CCCN1C(=O)[C@@H](NC(=O)[C@H](CC(=O)N)NC(=O)[C@@H](N2)CCC(=O)N)CSCCCC(=O)N(C)[C@H](C(=O)N[C@H](C2=O)[C@@H](C)CC)Cc3ccc(O)cc3"
+            ),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            structural_alert_hits("O=[S](=O)(CCC(=O)N/C1=C/C=C(/NC(=O)C)C=C1)C2=CC=CC3=NON=C23"),
+            Vec::<usize>::new()
+        );
+    }
 }

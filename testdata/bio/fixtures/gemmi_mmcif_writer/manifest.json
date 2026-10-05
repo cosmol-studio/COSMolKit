@@ -1,0 +1,98 @@
+{
+  "domain": "bio",
+  "family": "gemmi",
+  "input": {
+    "path": "testdata/bio/gemmi_mmcif_writer_profile.json",
+    "sha256": "5e8f24ef18ef09f04c79bafb96871bdf5fc2464a061704de1ac6dc455610cb3b"
+  },
+  "outputs": [
+    {
+      "generator": [
+        {
+          "path": "tools/testdata/gemmi/generate_all.py",
+          "sha256": "b37664b9ef27386efce42027136da1a0a36f60bd9c35c8cbacfcc403cf519e65"
+        },
+        {
+          "path": "tools/testdata/gemmi/mmcif_writer_oracle.cpp",
+          "sha256": "8405efe5e3e1d735e487861ac7357c321c9631c150ef88294ef398fd8adb0abb"
+        },
+        {
+          "path": "third_party/gemmi/CMakeLists.txt",
+          "sha256": "0b8552d75f795ed6af740a42ce43740f6cb6315d865016158c5ea0cf3dbe9aae"
+        },
+        {
+          "path": "third_party/gemmi/include/gemmi/cifdoc.hpp",
+          "sha256": "2622215dbbd7e093285877fec7e36a1986326e5f1da3a33f2116a3fed2cd9b34"
+        },
+        {
+          "path": "third_party/gemmi/include/gemmi/to_cif.hpp",
+          "sha256": "8d27f60b91295c5703ae949f4c0d09df9f539cb90ed85b3e2336fa32b8e17866"
+        },
+        {
+          "path": "third_party/gemmi/include/gemmi/to_mmcif.hpp",
+          "sha256": "d2388a87f3b05ff6477955fc28e13c27dc191a92039c2ffb62fa2741480b7e7b"
+        },
+        {
+          "path": "third_party/gemmi/include/gemmi/version.hpp",
+          "sha256": "0aad13cb253dccaada4819b5593b5cc88e49590d1775dfbbf62fb2b4ac284c1f"
+        },
+        {
+          "path": "third_party/gemmi/src/mmcif.cpp",
+          "sha256": "676d3b6fbed822bbe6084cfa255aba828f1ad8b54e4a8019cd9b67c24dc30a5a"
+        },
+        {
+          "path": "third_party/gemmi/src/pdb.cpp",
+          "sha256": "ab64447896fc7575537e0fe22f3d984b9c9d7f1b2b20da10a3607133fb2446e6"
+        },
+        {
+          "path": "third_party/gemmi/src/to_mmcif.cpp",
+          "sha256": "d747726769c5941a026575e929ca690aaa9049187b534c6681a5bc5fa969aade"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "testdata/bio/gemmi_mmcif_writer_profile.json",
+          "sha256": "5e8f24ef18ef09f04c79bafb96871bdf5fc2464a061704de1ac6dc455610cb3b"
+        },
+        {
+          "path": "testdata/bio/fixtures/gemmi_full_feature_sample.cif",
+          "sha256": "4f6bab1d8073e223da1126906ca3a46e9a49f778f3d7e19fb980c82d3a9a145d"
+        }
+      ],
+      "options": {
+        "arguments": [
+          "--input",
+          "testdata/bio/gemmi_mmcif_writer_profile.json",
+          "--output",
+          "mmcif_full_default.cif"
+        ],
+        "profile": "bio_mmcif_writer"
+      },
+      "output_schema_version": 1,
+      "path": "mmcif_full_default.cif",
+      "platform": {
+        "machine": "x86_64",
+        "system": "Linux"
+      },
+      "records": 226,
+      "sha256": "7188230395bc1f660adc47054de5859c4bd2673d8cdd6c301d1fc76bfa5c7391"
+    }
+  ],
+  "profile": "bio_mmcif_writer",
+  "reference_implementation": {
+    "name": "gemmi",
+    "version": "0.7.5",
+    "source_revision": "5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e"
+  },
+  "reference_runtime": {
+    "implementation": "gemmi-cpp",
+    "version": "0.7.5"
+  },
+  "schema_version": 1,
+  "purpose": "Single fixed ordinary mmCIF writer regression snapshot, not a generated corpus or runtime oracle",
+  "historical_manifest_sha256": "d01bfaf1c6733b9de74f3c1d5e04e70b1edc200d31489961e821e87ed60f5561",
+  "license": "See third_party/gemmi/LICENSE.txt",
+  "selection": "Only mmcif_full_default from existing pinned profile; byte-identical 6342-byte expected output",
+  "preparation_command": "python tools/testdata/gemmi/generate_all.py --profile bio_mmcif_writer --suite mmcif_writer --jobs 4",
+  "ordinary_tests": "Read this fixed snapshot only; no generation or oracle calls"
+}

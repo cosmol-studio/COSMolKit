@@ -32,7 +32,7 @@ def test_tautomer_generators_and_profiles_are_registered() -> None:
 
 def test_profile_pins_sources_branches_and_exact_comparison_fields() -> None:
     profile = oracle.load_profile()
-    assert profile["source_revision"] == "351f8f378f8ad6bbd517980c38896e66bf907af8c"
+    assert profile["source_revision"] == "351f8f378f8ad6bbd517980c38896e66bf907af8"
     assert profile["comparison_fields"] == [
         "parse",
         "enumeration_outcome",

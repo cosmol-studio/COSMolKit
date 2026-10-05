@@ -240,6 +240,17 @@ pub enum Outcome {
     MorganHashedCounts(MorganHashedCountsOutput),
     MorganSparseCounts(MorganSparseCountsOutput),
     Float64Bits(u64),
+    Float64PairBits {
+        first: u64,
+        second: u64,
+    },
+    Float64VectorBits(Vec<u64>),
+    Float64VectorsBits(Vec<Vec<u64>>),
+    LabuteAsaContributionsBits {
+        asa: u64,
+        atom_contributions: Vec<u64>,
+        hydrogen_contribution: u64,
+    },
     Float64ContributionsBits {
         value: u64,
         atom_contributions: Vec<u64>,
@@ -417,6 +428,107 @@ pub fn validate_output(profile: &Profile, output: &Outcome) -> Result<(), String
             f64::from_bits(*value).is_finite()
                 && atom_contributions
                     .iter()
+                    .all(|b| f64::from_bits(*b).is_finite())
+        }
+        (
+            NumAmideBonds
+            | NumSpiroAtoms
+            | NumBridgeheadAtoms
+            | NumAtomStereoCenters
+            | NumUnspecifiedAtomStereoCenters
+            | NumRotatableBonds { .. },
+            Outcome::Unsigned(_),
+        ) => true,
+        (
+            LabuteAsa { .. }
+            | Tpsa { .. }
+            | SlogpVsa1
+            | SlogpVsa2
+            | SlogpVsa3
+            | SlogpVsa4
+            | SlogpVsa5
+            | SlogpVsa6
+            | SlogpVsa7
+            | SlogpVsa8
+            | SlogpVsa9
+            | SlogpVsa10
+            | SlogpVsa11
+            | SlogpVsa12
+            | SmrVsa1
+            | SmrVsa2
+            | SmrVsa3
+            | SmrVsa4
+            | SmrVsa5
+            | SmrVsa6
+            | SmrVsa7
+            | SmrVsa8
+            | SmrVsa9
+            | SmrVsa10
+            | Qed
+            | Chi0VWithParams { .. }
+            | Chi1VWithParams { .. }
+            | Chi2VWithParams { .. }
+            | Chi3VWithParams { .. }
+            | Chi4VWithParams { .. }
+            | Chi0NWithParams { .. }
+            | Chi1NWithParams { .. }
+            | Chi2NWithParams { .. }
+            | Chi3NWithParams { .. }
+            | Chi4NWithParams { .. }
+            | ChiNVWithParams { .. }
+            | ChiNNWithParams { .. },
+            Outcome::Float64Bits(bits),
+        ) => f64::from_bits(*bits).is_finite(),
+        (CrippenDescriptors { .. }, Outcome::Float64PairBits { first, second }) => [first, second]
+            .into_iter()
+            .all(|b| f64::from_bits(*b).is_finite()),
+        (
+            LabuteAsaContributions { .. },
+            Outcome::LabuteAsaContributionsBits {
+                asa,
+                atom_contributions,
+                hydrogen_contribution,
+            },
+        ) => [asa, hydrogen_contribution]
+            .into_iter()
+            .chain(atom_contributions)
+            .all(|b| f64::from_bits(*b).is_finite()),
+        (SlogpVsa { bins, force } | SmrVsa { bins, force }, Outcome::Float64VectorBits(values)) => {
+            let expected = match bins {
+                crate::registry::molecule_plan::VsaBins::Default => {
+                    if matches!(profile, SlogpVsa { .. }) {
+                        12
+                    } else {
+                        10
+                    }
+                }
+                crate::registry::molecule_plan::VsaBins::CustomDuplicates => 6,
+            };
+            (force.is_some() || matches!(bins, crate::registry::molecule_plan::VsaBins::Default))
+                && values.len() == expected
+                && values.iter().all(|b| f64::from_bits(*b).is_finite())
+        }
+        (LabuteAsaCacheSequence, Outcome::Float64VectorBits(values)) => {
+            values.len() == 4 && values.iter().all(|b| f64::from_bits(*b).is_finite())
+        }
+        (ChiNVCacheSequence | ChiNNCacheSequence, Outcome::Float64VectorsBits(values)) => {
+            values.len() == 3
+                && values
+                    .iter()
+                    .all(|v| v.len() == 7 && v.iter().all(|b| f64::from_bits(*b).is_finite()))
+        }
+        (SlogpVsaCacheSequence, Outcome::Float64VectorsBits(values)) => {
+            values.iter().map(Vec::len).collect::<Vec<_>>() == [12, 12, 6]
+                && values
+                    .iter()
+                    .flatten()
+                    .all(|b| f64::from_bits(*b).is_finite())
+        }
+        (SmrVsaCacheSequence, Outcome::Float64VectorsBits(values)) => {
+            values.iter().map(Vec::len).collect::<Vec<_>>() == [10, 6]
+                && values
+                    .iter()
+                    .flatten()
                     .all(|b| f64::from_bits(*b).is_finite())
         }
         (Mqns { .. }, Outcome::UnsignedVector(values)) => values.len() == 42,
@@ -711,6 +823,387 @@ pub fn run(input: &Input) -> Result<Record, String> {
                     .map_err(|e| e.to_string());
             }
 
+            NumAmideBonds => {
+                return mol
+                    .num_amide_bonds()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumSpiroAtoms => {
+                return mol
+                    .num_spiro_atoms()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumBridgeheadAtoms => {
+                return mol
+                    .num_bridgehead_atoms()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumAtomStereoCenters => {
+                return mol
+                    .num_atom_stereo_centers()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumUnspecifiedAtomStereoCenters => {
+                return mol
+                    .num_unspecified_atom_stereo_centers()
+                    .map(Outcome::Unsigned)
+                    .map_err(|e| e.to_string());
+            }
+            NumRotatableBonds { mode } => {
+                return match mode {
+                    None => mol.num_rotatable_bonds(),
+                    Some(mode) => {
+                        use crate::registry::molecule_plan::RotatableBondMode as M;
+                        let params = match mode {
+                            M::Default => cosmolkit::RotatableBondsOptions::Default,
+                            M::NonStrict => cosmolkit::RotatableBondsOptions::NonStrict,
+                            M::Strict => cosmolkit::RotatableBondsOptions::Strict,
+                            M::StrictLinkages => cosmolkit::RotatableBondsOptions::StrictLinkages,
+                        };
+                        mol.num_rotatable_bonds_with_params(&params)
+                    }
+                }
+                .map(Outcome::Unsigned)
+                .map_err(|e| e.to_string());
+            }
+            CrippenDescriptors {
+                include_hydrogens,
+                force,
+            } => {
+                return (match include_hydrogens {
+                    None => mol.crippen_descriptors(),
+                    Some(flag) => mol.crippen_descriptors_with_params(*flag, *force),
+                })
+                .map(|v| Outcome::Float64PairBits {
+                    first: v.logp.to_bits(),
+                    second: v.molar_refractivity.to_bits(),
+                })
+                .map_err(|e| e.to_string());
+            }
+            LabuteAsa {
+                include_hydrogens,
+                force,
+            } => {
+                return (match include_hydrogens {
+                    None => mol.labute_asa(),
+                    Some(flag) => mol.labute_asa_with_params(*flag, *force),
+                })
+                .map(|v| Outcome::Float64Bits(v.to_bits()))
+                .map_err(|e| e.to_string());
+            }
+            LabuteAsaContributions {
+                include_hydrogens,
+                force,
+            } => {
+                return (match include_hydrogens {
+                    None => mol.labute_asa_contributions(),
+                    Some(flag) => mol.labute_asa_contributions_with_params(*flag, *force),
+                })
+                .map(|v| Outcome::LabuteAsaContributionsBits {
+                    asa: v.asa.to_bits(),
+                    atom_contributions: v.atom_contributions.iter().map(|x| x.to_bits()).collect(),
+                    hydrogen_contribution: v.hydrogen_contribution.to_bits(),
+                })
+                .map_err(|e| e.to_string());
+            }
+            Tpsa {
+                include_sulfur_phosphorus,
+                force,
+            } => {
+                return (match include_sulfur_phosphorus {
+                    None => mol.tpsa(),
+                    Some(flag) => mol.tpsa_with_params(*flag, *force),
+                })
+                .map(|v| Outcome::Float64Bits(v.to_bits()))
+                .map_err(|e| e.to_string());
+            }
+            SlogpVsa { bins, force } => {
+                return (match force {
+                    None => mol.slogp_vsa(),
+                    Some(flag) => mol.slogp_vsa_with_params(bins.values(), *flag),
+                })
+                .map(|v| Outcome::Float64VectorBits(v.iter().map(|x| x.to_bits()).collect()))
+                .map_err(|e| e.to_string());
+            }
+            SmrVsa { bins, force } => {
+                return (match force {
+                    None => mol.smr_vsa(),
+                    Some(flag) => mol.smr_vsa_with_params(bins.values(), *flag),
+                })
+                .map(|v| Outcome::Float64VectorBits(v.iter().map(|x| x.to_bits()).collect()))
+                .map_err(|e| e.to_string());
+            }
+            SlogpVsa1 => {
+                return mol
+                    .slogp_vsa_1()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa2 => {
+                return mol
+                    .slogp_vsa_2()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa3 => {
+                return mol
+                    .slogp_vsa_3()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa4 => {
+                return mol
+                    .slogp_vsa_4()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa5 => {
+                return mol
+                    .slogp_vsa_5()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa6 => {
+                return mol
+                    .slogp_vsa_6()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa7 => {
+                return mol
+                    .slogp_vsa_7()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa8 => {
+                return mol
+                    .slogp_vsa_8()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa9 => {
+                return mol
+                    .slogp_vsa_9()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa10 => {
+                return mol
+                    .slogp_vsa_10()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa11 => {
+                return mol
+                    .slogp_vsa_11()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SlogpVsa12 => {
+                return mol
+                    .slogp_vsa_12()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa1 => {
+                return mol
+                    .smr_vsa_1()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa2 => {
+                return mol
+                    .smr_vsa_2()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa3 => {
+                return mol
+                    .smr_vsa_3()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa4 => {
+                return mol
+                    .smr_vsa_4()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa5 => {
+                return mol
+                    .smr_vsa_5()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa6 => {
+                return mol
+                    .smr_vsa_6()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa7 => {
+                return mol
+                    .smr_vsa_7()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa8 => {
+                return mol
+                    .smr_vsa_8()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa9 => {
+                return mol
+                    .smr_vsa_9()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            SmrVsa10 => {
+                return mol
+                    .smr_vsa_10()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Qed => {
+                return mol
+                    .qed()
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi0VWithParams { force } => {
+                return mol
+                    .chi_0_v_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi1VWithParams { force } => {
+                return mol
+                    .chi_1_v_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi2VWithParams { force } => {
+                return mol
+                    .chi_2_v_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi3VWithParams { force } => {
+                return mol
+                    .chi_3_v_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi4VWithParams { force } => {
+                return mol
+                    .chi_4_v_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi0NWithParams { force } => {
+                return mol
+                    .chi_0_n_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi1NWithParams { force } => {
+                return mol
+                    .chi_1_n_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi2NWithParams { force } => {
+                return mol
+                    .chi_2_n_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi3NWithParams { force } => {
+                return mol
+                    .chi_3_n_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            Chi4NWithParams { force } => {
+                return mol
+                    .chi_4_n_with_params(*force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            ChiNVWithParams { order, force } => {
+                return mol
+                    .chi_n_v_with_params(*order, *force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            ChiNNWithParams { order, force } => {
+                return mol
+                    .chi_n_n_with_params(*order, *force)
+                    .map(|v| Outcome::Float64Bits(v.to_bits()))
+                    .map_err(|e| e.to_string());
+            }
+            LabuteAsaCacheSequence => {
+                let values = [(false, false), (true, false), (true, true), (false, false)]
+                    .into_iter()
+                    .map(|(include, force)| {
+                        mol.labute_asa_with_params(include, force)
+                            .map(f64::to_bits)
+                            .map_err(|e| e.to_string())
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                return Ok(Outcome::Float64VectorBits(values));
+            }
+            SlogpVsaCacheSequence => {
+                let cold = mol.slogp_vsa().map_err(|e| e.to_string())?;
+                let warm = mol.slogp_vsa().map_err(|e| e.to_string())?;
+                let forced = mol
+                    .slogp_vsa_with_params(Some(&[-0.2, 0.0, 0.25, 0.25, 0.8]), true)
+                    .map_err(|e| e.to_string())?;
+                return Ok(Outcome::Float64VectorsBits(
+                    [cold, warm, forced]
+                        .into_iter()
+                        .map(|v| v.into_iter().map(f64::to_bits).collect())
+                        .collect(),
+                ));
+            }
+            SmrVsaCacheSequence => {
+                mol.slogp_vsa().map_err(|e| e.to_string())?;
+                mol.slogp_vsa_with_params(Some(&[-0.2, 0.0, 0.25, 0.25, 0.8]), true)
+                    .map_err(|e| e.to_string())?;
+                let warm = mol.smr_vsa().map_err(|e| e.to_string())?;
+                let forced = mol
+                    .smr_vsa_with_params(Some(&[-0.2, 0.0, 0.25, 0.25, 0.8]), true)
+                    .map_err(|e| e.to_string())?;
+                return Ok(Outcome::Float64VectorsBits(
+                    [warm, forced]
+                        .into_iter()
+                        .map(|v| v.into_iter().map(f64::to_bits).collect())
+                        .collect(),
+                ));
+            }
+            ChiNVCacheSequence | ChiNNCacheSequence => {
+                let mut values = Vec::new();
+                for force in [false, false, true] {
+                    let row = (0..=6)
+                        .map(|order| {
+                            if matches!(profile, ChiNVCacheSequence) {
+                                mol.chi_n_v_with_params(order, force)
+                            } else {
+                                mol.chi_n_n_with_params(order, force)
+                            }
+                            .map(f64::to_bits)
+                            .map_err(|e| e.to_string())
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    values.push(row);
+                }
+                return Ok(Outcome::Float64VectorsBits(values));
+            }
             SvgDefault => {
                 return mol
                     .to_svg(300, 300)

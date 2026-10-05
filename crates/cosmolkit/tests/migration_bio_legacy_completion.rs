@@ -277,9 +277,7 @@ fn bio_pdbscope_public_text_signatures_defaults_registry_and_bytes() {
     let full_text = structure.to_mmcif().unwrap();
     assert_eq!(
         full_text,
-        include_str!(
-            "../../../testdata/bio/expected/gemmi/bio_mmcif_writer/mmcif_full_default.cif"
-        )
+        include_str!("../../../testdata/bio/fixtures/gemmi_mmcif_writer/mmcif_full_default.cif")
     );
     let text = structure
         .to_mmcif_with_params(&coordinate_test_params())
@@ -354,9 +352,7 @@ fn bio_pdbscope_public_file_output_errors_input_and_protein_projection() {
     assert_eq!(std::fs::read(&path).unwrap(), default_bytes);
     assert_eq!(
         default_bytes,
-        include_bytes!(
-            "../../../testdata/bio/expected/gemmi/bio_mmcif_writer/mmcif_full_default.cif"
-        )
+        include_bytes!("../../../testdata/bio/fixtures/gemmi_mmcif_writer/mmcif_full_default.cif")
     );
     structure
         .write_mmcif_with_params(&path, &coordinate_test_params())

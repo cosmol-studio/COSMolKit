@@ -589,6 +589,41 @@ impl TaskId {
             Self::Chi4N => "chi_4_n",
             Self::ChiNV => "chi_n_v",
             Self::ChiNN => "chi_n_n",
+            Self::NumAmideBonds => "num_amide_bonds",
+            Self::NumSpiroAtoms => "num_spiro_atoms",
+            Self::NumBridgeheadAtoms => "num_bridgehead_atoms",
+            Self::NumAtomStereoCenters => "num_atom_stereo_centers",
+            Self::NumUnspecifiedAtomStereoCenters => "num_unspecified_atom_stereo_centers",
+            Self::NumRotatableBonds => "num_rotatable_bonds",
+            Self::CrippenDescriptors => "crippen_descriptors",
+            Self::LabuteAsa => "labute_asa",
+            Self::LabuteAsaContributions => "labute_asa_contributions",
+            Self::Tpsa => "tpsa",
+            Self::SlogpVsa => "slogp_vsa",
+            Self::SmrVsa => "smr_vsa",
+            Self::SlogpVsa1 => "slogp_vsa_1",
+            Self::SlogpVsa2 => "slogp_vsa_2",
+            Self::SlogpVsa3 => "slogp_vsa_3",
+            Self::SlogpVsa4 => "slogp_vsa_4",
+            Self::SlogpVsa5 => "slogp_vsa_5",
+            Self::SlogpVsa6 => "slogp_vsa_6",
+            Self::SlogpVsa7 => "slogp_vsa_7",
+            Self::SlogpVsa8 => "slogp_vsa_8",
+            Self::SlogpVsa9 => "slogp_vsa_9",
+            Self::SlogpVsa10 => "slogp_vsa_10",
+            Self::SlogpVsa11 => "slogp_vsa_11",
+            Self::SlogpVsa12 => "slogp_vsa_12",
+            Self::SmrVsa1 => "smr_vsa_1",
+            Self::SmrVsa2 => "smr_vsa_2",
+            Self::SmrVsa3 => "smr_vsa_3",
+            Self::SmrVsa4 => "smr_vsa_4",
+            Self::SmrVsa5 => "smr_vsa_5",
+            Self::SmrVsa6 => "smr_vsa_6",
+            Self::SmrVsa7 => "smr_vsa_7",
+            Self::SmrVsa8 => "smr_vsa_8",
+            Self::SmrVsa9 => "smr_vsa_9",
+            Self::SmrVsa10 => "smr_vsa_10",
+            Self::Qed => "qed",
             Self::SmilesRead => "smiles_read",
             Self::Sanitize => "sanitize",
             Self::Kekulize => "kekulize",
@@ -652,6 +687,41 @@ impl TaskId {
             | Self::Chi4N
             | Self::ChiNV
             | Self::ChiNN => Category::Descriptors,
+            Self::NumAmideBonds
+            | Self::NumSpiroAtoms
+            | Self::NumBridgeheadAtoms
+            | Self::NumAtomStereoCenters
+            | Self::NumUnspecifiedAtomStereoCenters
+            | Self::NumRotatableBonds
+            | Self::CrippenDescriptors
+            | Self::LabuteAsa
+            | Self::LabuteAsaContributions
+            | Self::Tpsa
+            | Self::SlogpVsa
+            | Self::SmrVsa
+            | Self::SlogpVsa1
+            | Self::SlogpVsa2
+            | Self::SlogpVsa3
+            | Self::SlogpVsa4
+            | Self::SlogpVsa5
+            | Self::SlogpVsa6
+            | Self::SlogpVsa7
+            | Self::SlogpVsa8
+            | Self::SlogpVsa9
+            | Self::SlogpVsa10
+            | Self::SlogpVsa11
+            | Self::SlogpVsa12
+            | Self::SmrVsa1
+            | Self::SmrVsa2
+            | Self::SmrVsa3
+            | Self::SmrVsa4
+            | Self::SmrVsa5
+            | Self::SmrVsa6
+            | Self::SmrVsa7
+            | Self::SmrVsa8
+            | Self::SmrVsa9
+            | Self::SmrVsa10
+            | Self::Qed => Category::Descriptors,
             Self::SmilesRead => Category::Notation,
             Self::Sanitize
             | Self::Kekulize
@@ -733,6 +803,42 @@ mod catalog_tests {
 pub enum TaskId {
     TautomerEnumeration,
     TautomerCanonicalization,
+    NumAmideBonds,
+    NumSpiroAtoms,
+    NumBridgeheadAtoms,
+    NumAtomStereoCenters,
+    NumUnspecifiedAtomStereoCenters,
+    NumRotatableBonds,
+    CrippenDescriptors,
+    LabuteAsa,
+    LabuteAsaContributions,
+    Tpsa,
+    SlogpVsa,
+    SmrVsa,
+    SlogpVsa1,
+    SlogpVsa2,
+    SlogpVsa3,
+    SlogpVsa4,
+    SlogpVsa5,
+    SlogpVsa6,
+    SlogpVsa7,
+    SlogpVsa8,
+    SlogpVsa9,
+    SlogpVsa10,
+    SlogpVsa11,
+    SlogpVsa12,
+    SmrVsa1,
+    SmrVsa2,
+    SmrVsa3,
+    SmrVsa4,
+    SmrVsa5,
+    SmrVsa6,
+    SmrVsa7,
+    SmrVsa8,
+    SmrVsa9,
+    SmrVsa10,
+    Qed,
+
     DistanceMatrix,
     SmilesRead,
     Sanitize,
@@ -854,6 +960,27 @@ impl TautomerProfile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum RotatableBondMode {
+    Default,
+    NonStrict,
+    Strict,
+    StrictLinkages,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum VsaBins {
+    Default,
+    CustomDuplicates,
+}
+impl VsaBins {
+    pub const fn values(self) -> Option<&'static [f64]> {
+        match self {
+            Self::Default => None,
+            Self::CustomDuplicates => Some(&[-0.2, 0.0, 0.25, 0.25, 0.8]),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Profile {
     TautomerEnumeration {
         parameters: TautomerProfile,
@@ -861,6 +988,105 @@ pub enum Profile {
     TautomerCanonicalization {
         parameters: TautomerProfile,
     },
+    NumAmideBonds,
+    NumSpiroAtoms,
+    NumBridgeheadAtoms,
+    NumAtomStereoCenters,
+    NumUnspecifiedAtomStereoCenters,
+    NumRotatableBonds {
+        mode: Option<RotatableBondMode>,
+    },
+    CrippenDescriptors {
+        include_hydrogens: Option<bool>,
+        force: bool,
+    },
+    LabuteAsa {
+        include_hydrogens: Option<bool>,
+        force: bool,
+    },
+    LabuteAsaContributions {
+        include_hydrogens: Option<bool>,
+        force: bool,
+    },
+    Tpsa {
+        include_sulfur_phosphorus: Option<bool>,
+        force: bool,
+    },
+    SlogpVsa {
+        bins: VsaBins,
+        force: Option<bool>,
+    },
+    SmrVsa {
+        bins: VsaBins,
+        force: Option<bool>,
+    },
+    SlogpVsa1,
+    SlogpVsa2,
+    SlogpVsa3,
+    SlogpVsa4,
+    SlogpVsa5,
+    SlogpVsa6,
+    SlogpVsa7,
+    SlogpVsa8,
+    SlogpVsa9,
+    SlogpVsa10,
+    SlogpVsa11,
+    SlogpVsa12,
+    SmrVsa1,
+    SmrVsa2,
+    SmrVsa3,
+    SmrVsa4,
+    SmrVsa5,
+    SmrVsa6,
+    SmrVsa7,
+    SmrVsa8,
+    SmrVsa9,
+    SmrVsa10,
+    Qed,
+    Chi0VWithParams {
+        force: bool,
+    },
+    Chi1VWithParams {
+        force: bool,
+    },
+    Chi2VWithParams {
+        force: bool,
+    },
+    Chi3VWithParams {
+        force: bool,
+    },
+    Chi4VWithParams {
+        force: bool,
+    },
+    Chi0NWithParams {
+        force: bool,
+    },
+    Chi1NWithParams {
+        force: bool,
+    },
+    Chi2NWithParams {
+        force: bool,
+    },
+    Chi3NWithParams {
+        force: bool,
+    },
+    Chi4NWithParams {
+        force: bool,
+    },
+    ChiNVWithParams {
+        order: u32,
+        force: bool,
+    },
+    ChiNNWithParams {
+        order: u32,
+        force: bool,
+    },
+    LabuteAsaCacheSequence,
+    SlogpVsaCacheSequence,
+    SmrVsaCacheSequence,
+    ChiNVCacheSequence,
+    ChiNNCacheSequence,
+
     DistanceMatrix {
         use_bond_order: bool,
         use_atom_weights: bool,
@@ -1013,6 +1239,9 @@ pub enum Comparison {
     MatrixBits,
     TopologyAndOutcome,
     Float64Bits,
+    Float64PairBits,
+    Float64VectorBits,
+    LabuteAsaContributionsBits,
     Float64ContributionsBits,
     UnsignedVector,
     ExactText,
@@ -1407,6 +1636,216 @@ pub const TASKS: &[Task] = &[
         comparison: TautomerFullCanonicalization,
         prerequisite: MolecularPipeline,
     },
+    Task {
+        id: NumAmideBonds,
+        input: SanitizedHydrogensRemoved,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumSpiroAtoms,
+        input: SanitizedHydrogensRemoved,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumBridgeheadAtoms,
+        input: SanitizedHydrogensRemoved,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumAtomStereoCenters,
+        input: SanitizedHydrogensRemoved,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumUnspecifiedAtomStereoCenters,
+        input: SanitizedHydrogensRemoved,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: NumRotatableBonds,
+        input: SanitizedHydrogensRemoved,
+        comparison: Unsigned,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: CrippenDescriptors,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64PairBits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: LabuteAsa,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: LabuteAsaContributions,
+        input: SanitizedHydrogensRemoved,
+        comparison: LabuteAsaContributionsBits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Tpsa,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64VectorBits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64VectorBits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa1,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa2,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa3,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa4,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa5,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa6,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa7,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa8,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa9,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa10,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa11,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SlogpVsa12,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa1,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa2,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa3,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa4,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa5,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa6,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa7,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa8,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa9,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: SmrVsa10,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
+    Task {
+        id: Qed,
+        input: SanitizedHydrogensRemoved,
+        comparison: Float64Bits,
+        prerequisite: MolecularPipeline,
+    },
 ];
 
 impl TaskId {
@@ -1435,6 +1874,132 @@ impl TaskId {
                     })
                     .into()
             }
+            NumAmideBonds => vec![Profile::NumAmideBonds],
+            NumSpiroAtoms => vec![Profile::NumSpiroAtoms],
+            NumBridgeheadAtoms => vec![Profile::NumBridgeheadAtoms],
+            NumAtomStereoCenters => vec![Profile::NumAtomStereoCenters],
+            NumUnspecifiedAtomStereoCenters => vec![Profile::NumUnspecifiedAtomStereoCenters],
+            NumRotatableBonds => vec![
+                Profile::NumRotatableBonds { mode: None },
+                Profile::NumRotatableBonds {
+                    mode: Some(RotatableBondMode::Default),
+                },
+                Profile::NumRotatableBonds {
+                    mode: Some(RotatableBondMode::NonStrict),
+                },
+                Profile::NumRotatableBonds {
+                    mode: Some(RotatableBondMode::Strict),
+                },
+                Profile::NumRotatableBonds {
+                    mode: Some(RotatableBondMode::StrictLinkages),
+                },
+            ],
+            CrippenDescriptors => [Profile::CrippenDescriptors {
+                include_hydrogens: None,
+                force: false,
+            }]
+            .into_iter()
+            .chain(booleans.into_iter().flat_map(|flag| {
+                booleans.map(move |force| Profile::CrippenDescriptors {
+                    include_hydrogens: Some(flag),
+                    force,
+                })
+            }))
+            .collect(),
+            LabuteAsa => [Profile::LabuteAsa {
+                include_hydrogens: None,
+                force: false,
+            }]
+            .into_iter()
+            .chain(booleans.into_iter().flat_map(|flag| {
+                booleans.map(move |force| Profile::LabuteAsa {
+                    include_hydrogens: Some(flag),
+                    force,
+                })
+            }))
+            .chain([Profile::LabuteAsaCacheSequence])
+            .collect(),
+            LabuteAsaContributions => [Profile::LabuteAsaContributions {
+                include_hydrogens: None,
+                force: false,
+            }]
+            .into_iter()
+            .chain(booleans.into_iter().flat_map(|flag| {
+                booleans.map(move |force| Profile::LabuteAsaContributions {
+                    include_hydrogens: Some(flag),
+                    force,
+                })
+            }))
+            .collect(),
+            Tpsa => [Profile::Tpsa {
+                include_sulfur_phosphorus: None,
+                force: false,
+            }]
+            .into_iter()
+            .chain(booleans.into_iter().flat_map(|flag| {
+                booleans.map(move |force| Profile::Tpsa {
+                    include_sulfur_phosphorus: Some(flag),
+                    force,
+                })
+            }))
+            .collect(),
+            SlogpVsa => [Profile::SlogpVsa {
+                bins: VsaBins::Default,
+                force: None,
+            }]
+            .into_iter()
+            .chain(
+                [VsaBins::Default, VsaBins::CustomDuplicates]
+                    .into_iter()
+                    .flat_map(|bins| {
+                        booleans.map(move |force| Profile::SlogpVsa {
+                            bins,
+                            force: Some(force),
+                        })
+                    }),
+            )
+            .chain([Profile::SlogpVsaCacheSequence])
+            .collect(),
+            SmrVsa => [Profile::SmrVsa {
+                bins: VsaBins::Default,
+                force: None,
+            }]
+            .into_iter()
+            .chain(
+                [VsaBins::Default, VsaBins::CustomDuplicates]
+                    .into_iter()
+                    .flat_map(|bins| {
+                        booleans.map(move |force| Profile::SmrVsa {
+                            bins,
+                            force: Some(force),
+                        })
+                    }),
+            )
+            .chain([Profile::SmrVsaCacheSequence])
+            .collect(),
+            SlogpVsa1 => vec![Profile::SlogpVsa1],
+            SlogpVsa2 => vec![Profile::SlogpVsa2],
+            SlogpVsa3 => vec![Profile::SlogpVsa3],
+            SlogpVsa4 => vec![Profile::SlogpVsa4],
+            SlogpVsa5 => vec![Profile::SlogpVsa5],
+            SlogpVsa6 => vec![Profile::SlogpVsa6],
+            SlogpVsa7 => vec![Profile::SlogpVsa7],
+            SlogpVsa8 => vec![Profile::SlogpVsa8],
+            SlogpVsa9 => vec![Profile::SlogpVsa9],
+            SlogpVsa10 => vec![Profile::SlogpVsa10],
+            SlogpVsa11 => vec![Profile::SlogpVsa11],
+            SlogpVsa12 => vec![Profile::SlogpVsa12],
+            SmrVsa1 => vec![Profile::SmrVsa1],
+            SmrVsa2 => vec![Profile::SmrVsa2],
+            SmrVsa3 => vec![Profile::SmrVsa3],
+            SmrVsa4 => vec![Profile::SmrVsa4],
+            SmrVsa5 => vec![Profile::SmrVsa5],
+            SmrVsa6 => vec![Profile::SmrVsa6],
+            SmrVsa7 => vec![Profile::SmrVsa7],
+            SmrVsa8 => vec![Profile::SmrVsa8],
+            SmrVsa9 => vec![Profile::SmrVsa9],
+            SmrVsa10 => vec![Profile::SmrVsa10],
+            Qed => vec![Profile::Qed],
             Chi0 => vec![Profile::Chi0],
             Chi1 => vec![Profile::Chi1],
             HallKierAlpha => vec![Profile::HallKierAlpha],
@@ -1444,18 +2009,70 @@ impl TaskId {
             Kappa3 => vec![Profile::Kappa3],
             Phi => vec![Profile::Phi],
             Mqns => booleans.map(|force| Profile::Mqns { force }).into(),
-            Chi0V => vec![Profile::Chi0V],
-            Chi1V => vec![Profile::Chi1V],
-            Chi2V => vec![Profile::Chi2V],
-            Chi3V => vec![Profile::Chi3V],
-            Chi4V => vec![Profile::Chi4V],
-            Chi0N => vec![Profile::Chi0N],
-            Chi1N => vec![Profile::Chi1N],
-            Chi2N => vec![Profile::Chi2N],
-            Chi3N => vec![Profile::Chi3N],
-            Chi4N => vec![Profile::Chi4N],
-            ChiNV => (0..=6).map(|order| Profile::ChiNV { order }).collect(),
-            ChiNN => (0..=6).map(|order| Profile::ChiNN { order }).collect(),
+            Chi0V => vec![
+                Profile::Chi0V,
+                Profile::Chi0VWithParams { force: false },
+                Profile::Chi0VWithParams { force: true },
+            ],
+            Chi1V => vec![
+                Profile::Chi1V,
+                Profile::Chi1VWithParams { force: false },
+                Profile::Chi1VWithParams { force: true },
+            ],
+            Chi2V => vec![
+                Profile::Chi2V,
+                Profile::Chi2VWithParams { force: false },
+                Profile::Chi2VWithParams { force: true },
+            ],
+            Chi3V => vec![
+                Profile::Chi3V,
+                Profile::Chi3VWithParams { force: false },
+                Profile::Chi3VWithParams { force: true },
+            ],
+            Chi4V => vec![
+                Profile::Chi4V,
+                Profile::Chi4VWithParams { force: false },
+                Profile::Chi4VWithParams { force: true },
+            ],
+            Chi0N => vec![
+                Profile::Chi0N,
+                Profile::Chi0NWithParams { force: false },
+                Profile::Chi0NWithParams { force: true },
+            ],
+            Chi1N => vec![
+                Profile::Chi1N,
+                Profile::Chi1NWithParams { force: false },
+                Profile::Chi1NWithParams { force: true },
+            ],
+            Chi2N => vec![
+                Profile::Chi2N,
+                Profile::Chi2NWithParams { force: false },
+                Profile::Chi2NWithParams { force: true },
+            ],
+            Chi3N => vec![
+                Profile::Chi3N,
+                Profile::Chi3NWithParams { force: false },
+                Profile::Chi3NWithParams { force: true },
+            ],
+            Chi4N => vec![
+                Profile::Chi4N,
+                Profile::Chi4NWithParams { force: false },
+                Profile::Chi4NWithParams { force: true },
+            ],
+            ChiNV => (0..=6)
+                .map(|order| Profile::ChiNV { order })
+                .chain((0..=6).flat_map(|order| {
+                    booleans.map(move |force| Profile::ChiNVWithParams { order, force })
+                }))
+                .chain([Profile::ChiNVCacheSequence])
+                .collect(),
+            ChiNN => (0..=6)
+                .map(|order| Profile::ChiNN { order })
+                .chain((0..=6).flat_map(|order| {
+                    booleans.map(move |force| Profile::ChiNNWithParams { order, force })
+                }))
+                .chain([Profile::ChiNNCacheSequence])
+                .collect(),
             DistanceMatrix => booleans
                 .into_iter()
                 .flat_map(|use_bond_order| {
@@ -1655,8 +2272,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             [
                 4, 4, 1, 2, 2, 2, 4, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-                4, 8, 1, 1, 2, 16, 16, 16, 16, 1, 1, 1, 1, 1, 1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1,
-                1, 1, 7, 7, 2, 2
+                4, 8, 1, 1, 2, 16, 16, 16, 16, 1, 1, 1, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3,
+                3, 3, 22, 22, 2, 2, 1, 1, 1, 1, 1, 5, 5, 6, 5, 5, 6, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
             ]
         );
         assert_eq!(
@@ -1678,7 +2296,7 @@ mod tests {
     #[test]
     fn parity_morgan_registry_molecular_plan_tracks_executable_registration() {
         let executable = super::super::select(None).unwrap();
-        assert_eq!(executable.len(), 65);
+        assert_eq!(executable.len(), 100);
         assert_eq!(
             executable[62].operation,
             super::super::Operation::SubstructureMatch
