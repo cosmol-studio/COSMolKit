@@ -142,5 +142,82 @@ class RunUnitValidationRegressionTests(unittest.TestCase):
         self.assertIn("compilation or test failure", evidence["output"])
 
 
+class LibraryTargetRegressionTests(unittest.TestCase):
+    execute_with_results = RunUnitValidationRegressionTests.execute_with_results
+    def manifest(self, **overrides: object) -> dict[str, object]:
+        config = dict(status="planned", package="cosmolkit-forcefields",
+                      target="cosmolkit_forcefields", target_kind="lib",
+                      features=[], profile="release", require_nonzero_tests=True,
+                      require_runtime_strict=False)
+        config.update(overrides)
+        return {"units": [{"id": "MMFF-private", "tests": {"detached": config}}]}
+
+    def validation(self) -> runner.SelectedValidation:
+        return runner.select_validation(self.manifest(), "MMFF-private", "detached")
+
+    def library_metadata(self, *, kind: str = "lib", name: str = "cosmolkit_forcefields") -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(runner.cargo_metadata_command(), 0,
+            json.dumps({"packages": [{"name": "cosmolkit-forcefields", "features": {},
+                                      "targets": [{"name": name, "kind": [kind]}]}]}))
+
+    def test_library_manifest_selects_complete_lib_without_filters(self) -> None:
+        value = self.validation()
+        self.assertEqual(runner.cargo_test_command(value),
+                         ["cargo", "test", "-p", "cosmolkit-forcefields", "--release", "--lib"])
+
+    def test_default_external_test_manifest_keeps_original_command(self) -> None:
+        config = self.manifest()
+        del config["units"][0]["tests"]["detached"]["target_kind"]
+        value = runner.select_validation(config, "MMFF-private", "detached")
+        self.assertEqual(value.target_kind, "test")
+        self.assertEqual(runner.cargo_test_command(value),
+                         ["cargo", "test", "-p", "cosmolkit-forcefields", "--release",
+                          "--test", "cosmolkit_forcefields"])
+
+    def test_invalid_target_kinds_rejected_before_execution(self) -> None:
+        for kind in ["bin", "", None, [], {}, "lib --ignored"]:
+            with self.subTest(kind=kind), self.assertRaises(runner.ConfigurationError):
+                runner.select_validation(self.manifest(target_kind=kind), "MMFF-private", "detached")
+
+    def test_library_wrong_name_and_nonlibrary_kind_rejected(self) -> None:
+        for metadata in [self.library_metadata(name="other"), self.library_metadata(kind="test")]:
+            with self.subTest(metadata=metadata.stdout):
+                code, evidence = self.execute_with_results(self.validation(), metadata)
+                self.assertEqual(code, 2)
+                self.assertEqual(evidence["status"], "configuration_failed")
+                self.assertIn("must resolve exactly once", evidence["error"])
+
+    def test_library_missing_and_duplicate_targets_rejected(self) -> None:
+        base = json.loads(self.library_metadata().stdout)
+        for targets in [None, [], base["packages"][0]["targets"] * 2]:
+            base["packages"][0]["targets"] = targets
+            metadata = subprocess.CompletedProcess(runner.cargo_metadata_command(), 0, json.dumps(base))
+            with self.subTest(targets=targets):
+                code, evidence = self.execute_with_results(self.validation(), metadata)
+                self.assertEqual(code, 2)
+                self.assertEqual(evidence["status"], "configuration_failed")
+
+    def test_nonzero_library_execution_records_selected_kind_and_count(self) -> None:
+        test = subprocess.CompletedProcess([], 0, "test result: ok. 50 passed; 0 failed; 0 ignored;\n")
+        code, evidence = self.execute_with_results(self.validation(), self.library_metadata(), test)
+        self.assertEqual(code, 0)
+        self.assertEqual(evidence["target_kind"], "lib")
+        self.assertEqual(evidence["test_count"], 50)
+        self.assertEqual(evidence["status"], "passed")
+
+    def test_zero_library_execution_still_rejected(self) -> None:
+        test = subprocess.CompletedProcess([], 0, "test result: ok. 0 passed; 0 failed; 3 ignored;\n")
+        code, evidence = self.execute_with_results(self.validation(), self.library_metadata(), test)
+        self.assertEqual(code, 2)
+        self.assertEqual(evidence["status"], "zero_tests_rejected")
+
+    def test_library_subprocess_failure_still_propagates(self) -> None:
+        test = subprocess.CompletedProcess([], 7, "test result: FAILED. 49 passed; 1 failed; 0 ignored;\n")
+        code, evidence = self.execute_with_results(self.validation(), self.library_metadata(), test)
+        self.assertEqual(code, 7)
+        self.assertEqual(evidence["status"], "test_command_failed")
+        self.assertEqual(evidence["test_count"], 50)
+
+
 if __name__ == "__main__":
     unittest.main()

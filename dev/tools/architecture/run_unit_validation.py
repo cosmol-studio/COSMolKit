@@ -43,6 +43,7 @@ class SelectedValidation:
     profile: str
     require_nonzero_tests: bool
     require_runtime_strict: bool
+    target_kind: str = "test"
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -87,11 +88,16 @@ def select_validation(
     package = config.get("package")
     target = config.get("target")
     features = config.get("features")
+    target_kind = config.get("target_kind", "test")
     profile = config.get("profile")
     if not isinstance(package, str) or not package:
         raise ConfigurationError(f"unit {unit_id} layer {layer} has no package")
     if not isinstance(target, str) or not target:
         raise ConfigurationError(f"unit {unit_id} layer {layer} has no test target")
+    if not isinstance(target_kind, str) or target_kind not in {"test", "lib"}:
+        raise ConfigurationError(
+            f"unit {unit_id} layer {layer} has invalid target kind {target_kind!r}"
+        )
     if not isinstance(features, list) or any(
         not isinstance(feature, str) or not feature for feature in features
     ):
@@ -123,6 +129,7 @@ def select_validation(
         profile=profile,
         require_nonzero_tests=require_nonzero,
         require_runtime_strict=require_runtime_strict,
+        target_kind=target_kind,
     )
 
 
@@ -136,7 +143,10 @@ def cargo_test_command(selected: SelectedValidation) -> list[str]:
         command.append("--release")
     if selected.features:
         command.extend(["--features", ",".join(selected.features)])
-    command.extend(["--test", selected.target])
+    if selected.target_kind == "lib":
+        command.append("--lib")
+    else:
+        command.extend(["--test", selected.target])
     return command
 
 
@@ -154,6 +164,33 @@ def package_features(metadata: dict[str, Any], package: str) -> set[str]:
     if not isinstance(features, dict):
         raise ConfigurationError(f"package {package!r} has invalid Cargo feature metadata")
     return set(features)
+
+
+def validate_library_target(metadata: dict[str, Any], selected: SelectedValidation) -> None:
+    if selected.target_kind != "lib":
+        return
+    packages = [
+        item
+        for item in metadata.get("packages", [])
+        if isinstance(item, dict) and item.get("name") == selected.package
+    ]
+    if len(packages) != 1:
+        raise ConfigurationError(
+            f"package {selected.package!r} must resolve exactly once in Cargo metadata"
+        )
+    targets = packages[0].get("targets")
+    matches = [
+        item
+        for item in targets if isinstance(item, dict)
+        and item.get("name") == selected.target
+        and isinstance(item.get("kind"), list)
+        and "lib" in item["kind"]
+    ] if isinstance(targets, list) else []
+    if len(matches) != 1:
+        raise ConfigurationError(
+            f"library target {selected.target!r} of package {selected.package!r} "
+            f"must resolve exactly once in Cargo metadata; found {len(matches)}"
+        )
 
 
 def dependency_feature_selectors(metadata: dict[str, Any], package: str) -> set[str]:
@@ -287,6 +324,7 @@ def execute_validation(
         "layer": selected.layer,
         "package": selected.package,
         "target": selected.target,
+        "target_kind": selected.target_kind,
         "features": list(selected.features),
         "require_runtime_strict": selected.require_runtime_strict,
         "started_at": started_at,
@@ -318,6 +356,7 @@ def execute_validation(
             dependency_feature_selectors(metadata, selected.package)
         )
         validate_features(selected, available_features)
+        validate_library_target(metadata, selected)
     except (json.JSONDecodeError, ConfigurationError) as error:
         evidence.update(
             status="configuration_failed",
