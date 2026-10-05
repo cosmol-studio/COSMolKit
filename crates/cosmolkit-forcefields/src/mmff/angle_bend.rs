@@ -32,7 +32,7 @@ pub(super) struct AngleBendContrib {
     ka: Vec<f64>,
 }
 
-fn source_sin_theta(cos_theta: f64) -> f64 {
+pub(super) fn source_sin_theta(cos_theta: f64) -> f64 {
     // RDKit✔️✔️:     double sinThetaSq = 1.0 - cosTheta * cosTheta;
     // RDKit✔️✔️:     double sinTheta =
     // RDKit✔️✔️:         std::max(((sinThetaSq > 0.0) ? sqrt(sinThetaSq) : 0.0), 1.0e-8);

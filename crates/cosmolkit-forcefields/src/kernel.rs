@@ -232,6 +232,14 @@ pub(super) enum ForceFieldKernelError {
         upper_bound: u32,
     },
     TransferPostcondition,
+    // Proposed pinned OopBend addTerm nullable-parameter precondition.
+    OopParametersMissing,
+    // Proposed Native safety policy for C++-undefined signed/buffer addresses;
+    // ROOT authorized this Native safety policy; no C++ parity or Unsupported claim.
+    OopAddressOutsideDefinedSource {
+        index: i32,
+        buffer_len: usize,
+    },
 }
 
 impl ForceFieldKernelError {
@@ -252,21 +260,27 @@ impl ForceFieldKernelError {
             | Self::TorsionDegeneratePoints
             | Self::TorsionBadHybridizations
             | Self::TorsionBadOrder { .. }
-            | Self::TorsionBoundsOrder => "Pre-condition Violation",
+            | Self::TorsionBoundsOrder
+            | Self::OopParametersMissing => "Pre-condition Violation",
             Self::IndexOutOfRange { .. }
             | Self::BondIndexOutOfRange { .. }
             | Self::AngleIndexOutOfRange { .. }
             | Self::TorsionIndexOutOfRange { .. }
             | Self::AngleOutOfRange { .. } => "Range Error",
-            Self::BadIndex | Self::BadFixedPoint { .. } | Self::OptimizerBadDirection => {
-                "Invariant Violation"
-            }
+            Self::BadIndex
+            | Self::BadFixedPoint { .. }
+            | Self::OptimizerBadDirection
+            | Self::OopAddressOutsideDefinedSource { .. } => "Invariant Violation",
             Self::TransferPostcondition => "Post-condition Violation",
         }
     }
 
     const fn source_message(self) -> &'static str {
         match self {
+            Self::OopParametersMissing => "no OOP parameters",
+            Self::OopAddressOutsideDefinedSource { .. } => {
+                "OOP address outside defined source storage"
+            }
             Self::NoPoints => "no points",
             Self::NoDistanceMatrix => "no distance matrix",
             Self::MatrixSizeMismatch => "matrix size mismatch",
@@ -342,6 +356,9 @@ impl ForceFieldKernelError {
 
     fn source_expression(self) -> Option<String> {
         match self {
+            Self::OopParametersMissing => Some("mmffOopParams".to_owned()),
+            // Native safe-boundary error: C++ defines no corresponding expression.
+            Self::OopAddressOutsideDefinedSource { .. } => None,
             Self::NoPoints => Some("d_numPoints".to_owned()),
             Self::NoDistanceMatrix => Some("dp_distMat".to_owned()),
             Self::MatrixSizeMismatch => Some(
@@ -656,6 +673,24 @@ fn source_distance(
 }
 
 impl<'a> EvaluationContext<'a> {
+    #[cfg(test)]
+    pub(super) fn for_oop_cache_preservation_test(
+        coordinates: &'a [f64],
+        distance_matrix: &'a mut [f64],
+        num_points: u32,
+    ) -> Self {
+        // Test fixture: preserve caller sentinel bytes before OOP evaluation.
+        // Existing for_test resets caches for distance-using contribution tests.
+        Self {
+            coordinates,
+            distance_matrix,
+            initialized: true,
+            dimension: 3,
+            num_points,
+            matrix_size: num_points * (num_points + 1) / 2,
+        }
+    }
+
     #[cfg(test)]
     pub(super) fn for_test(
         coordinates: &'a [f64],
