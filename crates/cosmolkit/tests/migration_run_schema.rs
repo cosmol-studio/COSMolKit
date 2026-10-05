@@ -276,6 +276,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         "PropertyValue.kind",
         "PropertyValue.as_string",
         "PropertyValue.as_int",
+        "PropertyValue.as_uint",
+        "PropertyValue.as_int_vector",
         "PropertyValue.as_double",
         "PropertyValue.as_bool",
         "types.TemplateAttachment",

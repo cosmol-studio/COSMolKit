@@ -36,6 +36,63 @@ pub enum CxQueryLoweringError {
     InvalidGraph(String),
 }
 
+/// Resolve a validated CX grammar index to its final QueryGraph bond row.
+pub(crate) fn query_bond_row_from_source_index(
+    graph: &QueryGraph,
+    index: usize,
+) -> Result<usize, CxQueryLoweringError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return v.value.u;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+    // RDKit✔️✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+    // RDKit✔️✔️:   for (auto bnd : mol.bonds()) {
+    // RDKit✔️✔️:     unsigned int smilesIdx;
+    // RDKit✔️✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+    // RDKit✔️✔️:         smilesIdx == idx) {
+    // RDKit✔️✔️:       return bnd;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return nullptr;
+    // RDKit✔️✔️: }
+    // Scan in final row order, O(E), without cloning or an alternative map.
+    // UInt is the proposed parser scalar; existing Int/String properties retain
+    // unsigned conversion. Missing metadata never falls back to the row ID.
+    for (row, bond) in graph.bonds().iter().enumerate() {
+        let Some(value) = bond.bond().prop("_cxsmilesBondIdx") else {
+            continue;
+        };
+        let source_index = match value {
+            cosmolkit_model::PropertyValue::Int(value) => u32::try_from(*value).ok(),
+            cosmolkit_model::PropertyValue::UInt(value) => Some(*value),
+            cosmolkit_model::PropertyValue::String(value) => value.parse::<u32>().ok(),
+            cosmolkit_model::PropertyValue::IntVector(_) => {
+                return Err(CxQueryLoweringError::InvalidGraph(
+                    "bad_any_cast reading _cxsmilesBondIdx as unsigned int".to_owned(),
+                ));
+            }
+            _ => None,
+        }
+        .ok_or_else(|| {
+            CxQueryLoweringError::InvalidGraph(
+                "query CX bond index property is not a source unsigned integer".to_owned(),
+            )
+        })?;
+        if usize::try_from(source_index).ok() == Some(index) {
+            return Ok(row);
+        }
+    }
+    Err(CxQueryLoweringError::BondIndex { index })
+}
+
 pub(crate) struct CxStereoGroupTracker {
     hashes: Vec<u32>,
     first_group_index: usize,
@@ -704,127 +761,128 @@ pub(crate) fn apply_cx_wedge_bond_to_query(
     wedge: &CxWedgeBond,
 ) -> Result<(), CxQueryLoweringError> {
     // RDKit source (verbatim; CXSmilesOps.cpp::parse_wedged_bonds):
-    // RDKit❗🔝: template <typename Iterator>
-    // RDKit❗🔝: bool parse_wedged_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
-    // RDKit❗🔝:                         unsigned int startAtomIdx, unsigned int startBondIdx) {
-    // RDKit❗🔝:   // these look like: CC(O)Cl |w:1.0|
-    // RDKit❗🔝:   // also wD and wU for down and up wedges.
-    // RDKit❗🔝:   //
-    // RDKit❗🔝:   // We do not end up using this to set stereochemistry, but the relevant bond
-    // RDKit❗🔝:   // properties are set in case client code wants to do something with the
-    // RDKit❗🔝:   // information.
-    // RDKit❗🔝:   if (first >= last || *first != 'w' || first + 1 >= last) {
-    // RDKit❗🔝:     return false;
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   ++first;
-    // RDKit❗🔝:   Bond::BondDir state = Bond::BondDir::NONE;
-    // RDKit❗🔝:   unsigned int cfg = 0;
-    // RDKit❗🔝:   switch (*first) {
-    // RDKit❗🔝:     case ':':
-    // RDKit❗🔝:       state = Bond::BondDir::UNKNOWN;
-    // RDKit❗🔝:       cfg = 2;
-    // RDKit❗🔝:       break;
-    // RDKit❗🔝:     case 'U':
-    // RDKit❗🔝:       state = Bond::BondDir::BEGINWEDGE;
-    // RDKit❗🔝:       cfg = 1;
-    // RDKit❗🔝:       ++first;
-    // RDKit❗🔝:       break;
-    // RDKit❗🔝:     case 'D':
-    // RDKit❗🔝:       state = Bond::BondDir::BEGINDASH;
-    // RDKit❗🔝:       cfg = 3;
-    // RDKit❗🔝:       ++first;
-    // RDKit❗🔝:       break;
-    // RDKit❗🔝:     default:
-    // RDKit❗🔝:       break;
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   if (state == Bond::BondDir::NONE || first >= last || first + 1 >= last ||
-    // RDKit❗🔝:       *first != ':') {
-    // RDKit❗🔝:     return false;
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   ++first;
-    // RDKit❗🔝:   while (first < last && *first >= '0' && *first <= '9') {
-    // RDKit❗🔝:     unsigned int atomIdx;
-    // RDKit❗🔝:     if (!read_int(first, last, atomIdx)) {
-    // RDKit❗🔝:       return false;
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     if (first < last && *first == '.') {
-    // RDKit❗🔝:       ++first;
-    // RDKit❗🔝:     } else {
-    // RDKit❗🔝:       BOOST_LOG(rdWarningLog) << "improperly formatted w block" << std::endl;
-    // RDKit❗🔝:       return false;
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     unsigned int bondIdx;
-    // RDKit❗🔝:     if (!read_int(first, last, bondIdx)) {
-    // RDKit❗🔝:       return false;
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     if (VALID_ATIDX(atomIdx) && VALID_BNDIDX(bondIdx)) {
-    // RDKit❗🔝:       auto atom = mol.getAtomWithIdx(atomIdx - startAtomIdx);
-    // RDKit❗🔝:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
-    // RDKit❗🔝:       if (!bond) {
-    // RDKit❗🔝:         BOOST_LOG(rdWarningLog)
-    // RDKit❗🔝:             << "bond " << bondIdx << " not found, wedge from atom " << atomIdx
-    // RDKit❗🔝:             << " cannot be applied." << std::endl;
-    // RDKit❗🔝:         return false;
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:       if (bond->hasProp(common_properties::_MolFileBondCfg)) {
-    // RDKit❗🔝:         BOOST_LOG(rdWarningLog)
-    // RDKit❗🔝:             << "w block attempts to set wedging on bond " << bond->getIdx()
-    // RDKit❗🔝:             << " more than once." << std::endl;
-    // RDKit❗🔝:         return false;
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:       if (atom->getIdx() != bond->getBeginAtomIdx()) {
-    // RDKit❗🔝:         if (atom->getIdx() != bond->getEndAtomIdx()) {
-    // RDKit❗🔝:           BOOST_LOG(rdWarningLog)
-    // RDKit❗🔝:               << "atom " << atomIdx << " is not associated with bond "
-    // RDKit❗🔝:               << bondIdx << "(" << bond->getBeginAtomIdx() + startAtomIdx << "-"
-    // RDKit❗🔝:               << bond->getEndAtomIdx() + startAtomIdx << ")"
-    // RDKit❗🔝:               << " in w block" << std::endl;
-    // RDKit❗🔝:           return false;
-    // RDKit❗🔝:         }
-    // RDKit❗🔝:         auto eidx = bond->getBeginAtomIdx();
-    // RDKit❗🔝:         bond->setBeginAtomIdx(atom->getIdx());
-    // RDKit❗🔝:         bond->setEndAtomIdx(eidx);
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:       bond->setProp(common_properties::_MolFileBondCfg, cfg);
-    // RDKit❗🔝:       bond->setBondDir(state);
-    // RDKit❗🔝:       if (cfg == 2 && canHaveDirection(*bond)) {
-    // RDKit❗🔝:         bond->getBeginAtom()->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
-    // RDKit❗🔝:         mol.setProp(detail::_needsDetectBondStereo, 1);
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:       if ((cfg == 1 || cfg == 3) && canHaveDirection(*bond)) {
-    // RDKit❗🔝:         mol.setProp(detail::_needsDetectAtomStereo, 1);
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     if (first < last && *first == ',') {
-    // RDKit❗🔝:       ++first;
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   return true;
-    // RDKit❗🔝: }
+    // RDKit❗✔️: template <typename Iterator>
+    // RDKit❗✔️: bool parse_wedged_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit❗✔️:                         unsigned int startAtomIdx, unsigned int startBondIdx) {
+    // RDKit❗✔️:   // these look like: CC(O)Cl |w:1.0|
+    // RDKit❗✔️:   // also wD and wU for down and up wedges.
+    // RDKit❗✔️:   //
+    // RDKit❗✔️:   // We do not end up using this to set stereochemistry, but the relevant bond
+    // RDKit❗✔️:   // properties are set in case client code wants to do something with the
+    // RDKit❗✔️:   // information.
+    // RDKit❗✔️:   if (first >= last || *first != 'w' || first + 1 >= last) {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:   Bond::BondDir state = Bond::BondDir::NONE;
+    // RDKit❗✔️:   unsigned int cfg = 0;
+    // RDKit❗✔️:   switch (*first) {
+    // RDKit❗✔️:     case ':':
+    // RDKit❗✔️:       state = Bond::BondDir::UNKNOWN;
+    // RDKit❗✔️:       cfg = 2;
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     case 'U':
+    // RDKit❗✔️:       state = Bond::BondDir::BEGINWEDGE;
+    // RDKit❗✔️:       cfg = 1;
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     case 'D':
+    // RDKit❗✔️:       state = Bond::BondDir::BEGINDASH;
+    // RDKit❗✔️:       cfg = 3;
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     default:
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (state == Bond::BondDir::NONE || first >= last || first + 1 >= last ||
+    // RDKit❗✔️:       *first != ':') {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit❗✔️:     unsigned int atomIdx;
+    // RDKit❗✔️:     if (!read_int(first, last, atomIdx)) {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (first < last && *first == '.') {
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       BOOST_LOG(rdWarningLog) << "improperly formatted w block" << std::endl;
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     unsigned int bondIdx;
+    // RDKit❗✔️:     if (!read_int(first, last, bondIdx)) {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (VALID_ATIDX(atomIdx) && VALID_BNDIDX(bondIdx)) {
+    // RDKit❗✔️:       auto atom = mol.getAtomWithIdx(atomIdx - startAtomIdx);
+    // RDKit❗✔️:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+    // RDKit❗✔️:       if (!bond) {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:             << "bond " << bondIdx << " not found, wedge from atom " << atomIdx
+    // RDKit❗✔️:             << " cannot be applied." << std::endl;
+    // RDKit❗✔️:         return false;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (bond->hasProp(common_properties::_MolFileBondCfg)) {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:             << "w block attempts to set wedging on bond " << bond->getIdx()
+    // RDKit❗✔️:             << " more than once." << std::endl;
+    // RDKit❗✔️:         return false;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (atom->getIdx() != bond->getBeginAtomIdx()) {
+    // RDKit❗✔️:         if (atom->getIdx() != bond->getEndAtomIdx()) {
+    // RDKit❗✔️:           BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:               << "atom " << atomIdx << " is not associated with bond "
+    // RDKit❗✔️:               << bondIdx << "(" << bond->getBeginAtomIdx() + startAtomIdx << "-"
+    // RDKit❗✔️:               << bond->getEndAtomIdx() + startAtomIdx << ")"
+    // RDKit❗✔️:               << " in w block" << std::endl;
+    // RDKit❗✔️:           return false;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         auto eidx = bond->getBeginAtomIdx();
+    // RDKit❗✔️:         bond->setBeginAtomIdx(atom->getIdx());
+    // RDKit❗✔️:         bond->setEndAtomIdx(eidx);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       bond->setProp(common_properties::_MolFileBondCfg, cfg);
+    // RDKit❗✔️:       bond->setBondDir(state);
+    // RDKit❗✔️:       if (cfg == 2 && canHaveDirection(*bond)) {
+    // RDKit❗✔️:         bond->getBeginAtom()->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit❗✔️:         mol.setProp(detail::_needsDetectBondStereo, 1);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if ((cfg == 1 || cfg == 3) && canHaveDirection(*bond)) {
+    // RDKit❗✔️:         mol.setProp(detail::_needsDetectAtomStereo, 1);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (first < last && *first == ',') {
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
     // RDKit source helper (verbatim; CXSmilesOps.cpp::get_bond_with_smiles_idx):
-    // RDKit❗🔝: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-    // RDKit❗🔝:   for (auto bnd : mol.bonds()) {
-    // RDKit❗🔝:     unsigned int smilesIdx;
-    // RDKit❗🔝:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-    // RDKit❗🔝:         smilesIdx == idx) {
-    // RDKit❗🔝:       return bnd;
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   return nullptr;
-    // RDKit❗🔝: }
+    // RDKit❗✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+    // RDKit❗✔️:   for (auto bnd : mol.bonds()) {
+    // RDKit❗✔️:     unsigned int smilesIdx;
+    // RDKit❗✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+    // RDKit❗✔️:         smilesIdx == idx) {
+    // RDKit❗✔️:       return bnd;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return nullptr;
+    // RDKit❗✔️: }
     // RDKit source helper (verbatim; Bond.h::canHaveDirection):
-    // RDKit❗🔝: inline bool canHaveDirection(const Bond &bond) {
-    // RDKit❗🔝:   auto bondType = bond.getBondType();
-    // RDKit❗🔝:   return (bondType == Bond::SINGLE || bondType == Bond::AROMATIC);
-    // RDKit❗🔝: }
-    // CX source IDs equal QueryGraph bond insertion order; direct indexing
-    // replaces RDKit's property scan with one vector lookup.
+    // RDKit❗✔️: inline bool canHaveDirection(const Bond &bond) {
+    // RDKit❗✔️:   auto bondType = bond.getBondType();
+    // RDKit❗✔️:   return (bondType == Bond::SINGLE || bondType == Bond::AROMATIC);
+    // RDKit❗✔️: }
+    // Source grammar indices and final bond rows are distinct. Lookup scans
+    // the preserved scalar properties in final row order, O(E) as in RDKit.
     if wedge.atom >= graph.num_atoms() || wedge.bond >= graph.num_bonds() {
         return Ok(());
     }
+    let row = query_bond_row_from_source_index(graph, wedge.bond)?;
     let bond = graph
         .bonds_mut()
-        .get_mut(wedge.bond)
+        .get_mut(row)
         .ok_or(CxQueryLoweringError::BondIndex { index: wedge.bond })?;
     if bond.bond().prop("_MolFileBondCfg").is_some() {
         return Err(CxQueryLoweringError::InvalidGraph(format!(
@@ -876,84 +934,85 @@ pub(crate) fn apply_cx_double_bond_stereo_to_query(
     stereo: CxDoubleBondStereoKind,
 ) -> Result<(), CxQueryLoweringError> {
     // RDKit source (verbatim; CXSmilesOps.cpp::parse_doublebond_stereo):
-    // RDKit❗🔝: template <typename Iterator>
-    // RDKit❗🔝: bool parse_doublebond_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
-    // RDKit❗🔝:                              unsigned int, unsigned int startBondIdx,
-    // RDKit❗🔝:                              Bond::BondStereo stereo) {
-    // RDKit❗🔝:   // these look like: C1CCCC/C=C/CCC1 |ctu:5|
-    // RDKit❗🔝:   // also c and t for cis or trans
-    // RDKit❗🔝:   while (first < last && *first != ':') {
-    // RDKit❗🔝:     ++first;
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   if (first >= last || *first != ':') {
-    // RDKit❗🔝:     return false;
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   ++first;
-    // RDKit❗🔝:   while (first < last && *first >= '0' && *first <= '9') {
-    // RDKit❗🔝:     unsigned int bondIdx;
-    // RDKit❗🔝:     if (!read_int(first, last, bondIdx)) {
-    // RDKit❗🔝:       return false;
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     if (VALID_BNDIDX(bondIdx)) {
-    // RDKit❗🔝:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
-    // RDKit❗🔝:       if (!bond) {
-    // RDKit❗🔝:         BOOST_LOG(rdWarningLog)
-    // RDKit❗🔝:             << "bond " << bondIdx
-    // RDKit❗🔝:             << " not found, cannot mark as stereo double bond." << std::endl;
-    // RDKit❗🔝:         return false;
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:       bool useCXOrdering = true;
-    // RDKit❗🔝:       Chirality::detail::setStereoForBond(mol, bond, stereo, useCXOrdering);
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     if (first < last && *first == ',') {
-    // RDKit❗🔝:       ++first;
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   return true;
-    // RDKit❗🔝: }
+    // RDKit❗✔️: template <typename Iterator>
+    // RDKit❗✔️: bool parse_doublebond_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit❗✔️:                              unsigned int, unsigned int startBondIdx,
+    // RDKit❗✔️:                              Bond::BondStereo stereo) {
+    // RDKit❗✔️:   // these look like: C1CCCC/C=C/CCC1 |ctu:5|
+    // RDKit❗✔️:   // also c and t for cis or trans
+    // RDKit❗✔️:   while (first < last && *first != ':') {
+    // RDKit❗✔️:     ++first;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (first >= last || *first != ':') {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit❗✔️:     unsigned int bondIdx;
+    // RDKit❗✔️:     if (!read_int(first, last, bondIdx)) {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (VALID_BNDIDX(bondIdx)) {
+    // RDKit❗✔️:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+    // RDKit❗✔️:       if (!bond) {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:             << "bond " << bondIdx
+    // RDKit❗✔️:             << " not found, cannot mark as stereo double bond." << std::endl;
+    // RDKit❗✔️:         return false;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       bool useCXOrdering = true;
+    // RDKit❗✔️:       Chirality::detail::setStereoForBond(mol, bond, stereo, useCXOrdering);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (first < last && *first == ',') {
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
     // RDKit source helper (verbatim; Chirality.cpp::setStereoForBond):
-    // RDKit❗🔝: void setStereoForBond(ROMol &mol, Bond *bond, Bond::BondStereo stereo,
-    // RDKit❗🔝:                       bool useCXSmilesOrdering) {
-    // RDKit❗🔝:   // NOTE:  moved from parse_doublebond_stereo CXSmilesOps
-    // RDKit❗🔝:   // IF useCXSmilesOrdering is true, the cis/trans/unknown marker will be
-    // RDKit❗🔝:   // assigned relative to the lowest-numbered neighbor of each double bond atom.
-    // RDKit❗🔝:   // Otherwise it uses the lowest-numbered neighbor on the lower-numbered atom
-    // RDKit❗🔝:   // of the double bond and the highest-numbered neighbor on the higher-numbered
-    // RDKit❗🔝:   // atom
-    // RDKit❗🔝:   auto begAtom = bond->getBeginAtom();
-    // RDKit❗🔝:   auto endAtom = bond->getEndAtom();
-    // RDKit❗🔝:   if (begAtom->getIdx() > endAtom->getIdx()) {
-    // RDKit❗🔝:     std::swap(begAtom, endAtom);
-    // RDKit❗🔝:   }
-    // RDKit❗🔝:   if (begAtom->getDegree() > 1 && endAtom->getDegree() > 1) {
-    // RDKit❗🔝:     unsigned int begControl = mol.getNumAtoms();
-    // RDKit❗🔝:     for (auto nbr : mol.atomNeighbors(begAtom)) {
-    // RDKit❗🔝:       if (nbr == endAtom) {
-    // RDKit❗🔝:         continue;
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:       begControl = std::min(nbr->getIdx(), begControl);
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     unsigned int endControl = useCXSmilesOrdering ? mol.getNumAtoms() : 0;
-    // RDKit❗🔝:     for (auto nbr : mol.atomNeighbors(endAtom)) {
-    // RDKit❗🔝:       if (nbr == begAtom) {
-    // RDKit❗🔝:         continue;
-    // RDKit❗🔝:       }
-    // RDKit❗🔝:       endControl = useCXSmilesOrdering ? std::min(nbr->getIdx(), endControl)
-    // RDKit❗🔝:                                        : std::max(nbr->getIdx(), endControl);
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     if (begAtom != bond->getBeginAtom()) {
-    // RDKit❗🔝:       std::swap(begControl, endControl);
-    // RDKit❗🔝:     }
-    // RDKit❗🔝:     bond->setStereoAtoms(begControl, endControl);
-    // RDKit❗🔝:     bond->setStereo(stereo);
-    // RDKit❗🔝:     mol.setProp("_needsDetectBondStereo", 1);
-    // RDKit❗🔝:   }
-    // RDKit❗🔝: }
-    // CX source IDs equal QueryGraph insertion order, so direct indexing
-    // removes the source scan; adjacency iteration retains the same minima.
+    // RDKit❗✔️: void setStereoForBond(ROMol &mol, Bond *bond, Bond::BondStereo stereo,
+    // RDKit❗✔️:                       bool useCXSmilesOrdering) {
+    // RDKit❗✔️:   // NOTE:  moved from parse_doublebond_stereo CXSmilesOps
+    // RDKit❗✔️:   // IF useCXSmilesOrdering is true, the cis/trans/unknown marker will be
+    // RDKit❗✔️:   // assigned relative to the lowest-numbered neighbor of each double bond atom.
+    // RDKit❗✔️:   // Otherwise it uses the lowest-numbered neighbor on the lower-numbered atom
+    // RDKit❗✔️:   // of the double bond and the highest-numbered neighbor on the higher-numbered
+    // RDKit❗✔️:   // atom
+    // RDKit❗✔️:   auto begAtom = bond->getBeginAtom();
+    // RDKit❗✔️:   auto endAtom = bond->getEndAtom();
+    // RDKit❗✔️:   if (begAtom->getIdx() > endAtom->getIdx()) {
+    // RDKit❗✔️:     std::swap(begAtom, endAtom);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (begAtom->getDegree() > 1 && endAtom->getDegree() > 1) {
+    // RDKit❗✔️:     unsigned int begControl = mol.getNumAtoms();
+    // RDKit❗✔️:     for (auto nbr : mol.atomNeighbors(begAtom)) {
+    // RDKit❗✔️:       if (nbr == endAtom) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       begControl = std::min(nbr->getIdx(), begControl);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     unsigned int endControl = useCXSmilesOrdering ? mol.getNumAtoms() : 0;
+    // RDKit❗✔️:     for (auto nbr : mol.atomNeighbors(endAtom)) {
+    // RDKit❗✔️:       if (nbr == begAtom) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       endControl = useCXSmilesOrdering ? std::min(nbr->getIdx(), endControl)
+    // RDKit❗✔️:                                        : std::max(nbr->getIdx(), endControl);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (begAtom != bond->getBeginAtom()) {
+    // RDKit❗✔️:       std::swap(begControl, endControl);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     bond->setStereoAtoms(begControl, endControl);
+    // RDKit❗✔️:     bond->setStereo(stereo);
+    // RDKit❗✔️:     mol.setProp("_needsDetectBondStereo", 1);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // Source property lookup scans final rows, O(E) as in RDKit;
+    // adjacency iteration retains the same source control-atom minima.
     if bond_index >= graph.num_bonds() {
         return Ok(());
     }
+    let bond_index = query_bond_row_from_source_index(graph, bond_index)?;
     let (begin, end, begin_degree, end_degree) = {
         let bond = graph
             .bonds()
@@ -1596,39 +1655,42 @@ pub fn apply_cx_to_query_graph(
                     CxCoordinateBondKind::Hydrogen => BondOrder::Hydrogen,
                 };
                 for reference in &annotation.bonds {
-                    // RDKit❗🔝: if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
-                    // RDKit❗🔝:   auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
-                    // RDKit❗🔝:   if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
-                    // RDKit❗🔝:                bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
-                    // RDKit❗🔝:     return false;
-                    // RDKit❗🔝:   }
-                    // RDKit❗🔝:   bnd->setBondType(typ);
-                    // RDKit❗🔝:   if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
-                    // RDKit❗🔝:     unsigned int tmp = bnd->getBeginAtomIdx();
-                    // RDKit❗🔝:     bnd->setBeginAtomIdx(aidx - startAtomIdx);
-                    // RDKit❗🔝:     bnd->setEndAtomIdx(tmp);
-                    // RDKit❗🔝:   }
-                    // RDKit❗🔝: }
-                    // RDKit❗🔝: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-                    // RDKit❗🔝:   for (auto bnd : mol.bonds()) {
-                    // RDKit❗🔝:     unsigned int smilesIdx;
-                    // RDKit❗🔝:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-                    // RDKit❗🔝:         smilesIdx == idx) {
-                    // RDKit❗🔝:       return bnd;
-                    // RDKit❗🔝:     }
-                    // RDKit❗🔝:   }
-                    // RDKit❗🔝:   return nullptr;
-                    // RDKit❗🔝: }
-                    // The detached parser assigns source indices in bond
-                    // insertion order; direct indexing removes the source scan.
+                    // RDKit❗✔️: if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
+                    // RDKit❗✔️:   auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
+                    // RDKit❗✔️:   if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
+                    // RDKit❗✔️:                bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
+                    // RDKit❗✔️:     return false;
+                    // RDKit❗✔️:   }
+                    // RDKit❗✔️:   bnd->setBondType(typ);
+                    // RDKit❗✔️:   if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
+                    // RDKit❗✔️:     unsigned int tmp = bnd->getBeginAtomIdx();
+                    // RDKit❗✔️:     bnd->setBeginAtomIdx(aidx - startAtomIdx);
+                    // RDKit❗✔️:     bnd->setEndAtomIdx(tmp);
+                    // RDKit❗✔️:   }
+                    // RDKit❗✔️: }
+                    // RDKit❗✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+                    // RDKit❗✔️:   for (auto bnd : mol.bonds()) {
+                    // RDKit❗✔️:     unsigned int smilesIdx;
+                    // RDKit❗✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+                    // RDKit❗✔️:         smilesIdx == idx) {
+                    // RDKit❗✔️:       return bnd;
+                    // RDKit❗✔️:     }
+                    // RDKit❗✔️:   }
+                    // RDKit❗✔️:   return nullptr;
+                    // RDKit❗✔️: }
+                    // Grammar source index is resolved by a source-shaped
+                    // property scan, independently of final row ordering.
                     if reference.atom >= graph.num_atoms() || reference.bond >= graph.num_bonds() {
                         continue;
                     }
-                    let bond = graph.bonds_mut().get_mut(reference.bond).ok_or(
-                        CxQueryLoweringError::BondIndex {
-                            index: reference.bond,
-                        },
-                    )?;
+                    let row = query_bond_row_from_source_index(graph, reference.bond)?;
+                    let bond =
+                        graph
+                            .bonds_mut()
+                            .get_mut(row)
+                            .ok_or(CxQueryLoweringError::BondIndex {
+                                index: reference.bond,
+                            })?;
                     if bond.begin().index() != reference.atom
                         && bond.end().index() != reference.atom
                     {
@@ -1647,33 +1709,32 @@ pub fn apply_cx_to_query_graph(
             }
             CxRecord::ZeroBonds(indices) => {
                 for &index in indices {
-                    // RDKit❗🔝: if (VALID_BNDIDX(bondIdx)) {
-                    // RDKit❗🔝:   auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
-                    // RDKit❗🔝:   if (!bond) {
-                    // RDKit❗🔝:     return false;
-                    // RDKit❗🔝:   }
-                    // RDKit❗🔝:   bond->setBondType(Bond::ZERO);
-                    // RDKit❗🔝: }
-                    // RDKit❗🔝: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-                    // RDKit❗🔝:   for (auto bnd : mol.bonds()) {
-                    // RDKit❗🔝:     unsigned int smilesIdx;
-                    // RDKit❗🔝:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-                    // RDKit❗🔝:         smilesIdx == idx) {
-                    // RDKit❗🔝:       return bnd;
-                    // RDKit❗🔝:     }
-                    // RDKit❗🔝:   }
-                    // RDKit❗🔝:   return nullptr;
-                    // RDKit❗🔝: }
-                    // Parser-order bond IDs make direct vector lookup remove
-                    // the pinned source's linear scan without changing order.
-                    // The detached parser assigns this source index in bond
-                    // insertion order; direct indexing avoids this linear scan.
+                    // RDKit❗✔️: if (VALID_BNDIDX(bondIdx)) {
+                    // RDKit❗✔️:   auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+                    // RDKit❗✔️:   if (!bond) {
+                    // RDKit❗✔️:     return false;
+                    // RDKit❗✔️:   }
+                    // RDKit❗✔️:   bond->setBondType(Bond::ZERO);
+                    // RDKit❗✔️: }
+                    // RDKit❗✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+                    // RDKit❗✔️:   for (auto bnd : mol.bonds()) {
+                    // RDKit❗✔️:     unsigned int smilesIdx;
+                    // RDKit❗✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+                    // RDKit❗✔️:         smilesIdx == idx) {
+                    // RDKit❗✔️:       return bnd;
+                    // RDKit❗✔️:     }
+                    // RDKit❗✔️:   }
+                    // RDKit❗✔️:   return nullptr;
+                    // RDKit❗✔️: }
+                    // Valid source window uses final bond count; an index
+                    // hole is an error rather than an invented row fallback.
                     if index >= graph.num_bonds() {
                         continue;
                     }
+                    let row = query_bond_row_from_source_index(graph, index)?;
                     let bond = graph
                         .bonds_mut()
-                        .get_mut(index)
+                        .get_mut(row)
                         .ok_or(CxQueryLoweringError::BondIndex { index })?;
                     bond.bond_mut().set_order(BondOrder::Zero);
                 }
@@ -2091,6 +2152,13 @@ mod tests {
     #[test]
     fn cx_progress_bonds_record_lowering_orients_pairs_and_skips_invalid_indices() {
         let mut query = graph();
+        // CXSmilesOps::get_bond_with_smiles_idx resolves parser properties,
+        // never final row IDs. Source smarts.yy assigns this UInt on insertion.
+        // Preserve every original orientation/order/invalid-index assertion.
+        query.bonds_mut()[0]
+            .bond_mut()
+            .set_prop("_cxsmilesBondIdx", PropertyValue::UInt(0))
+            .expect("source parser bond-index property");
         let coordinate = ParsedCxExtensions::new(
             vec![CxRecord::CoordinateBonds(CxCoordinateBonds {
                 kind: CxCoordinateBondKind::Dative,
@@ -2464,5 +2532,117 @@ mod tests {
         let child = &query_substance_groups(&query)[1];
         assert_eq!(child.parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(child.props().get("PARENT").map(String::as_str), Some("17"));
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    fn query_graph(props: Vec<cosmolkit_model::PropertyValue>) -> cosmolkit_model::QueryGraph {
+        let atoms = (0..props.len() + 1)
+            .map(|i| {
+                cosmolkit_model::QueryAtom::new(
+                    cosmolkit_model::AtomId::new(i),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_types::Element::C),
+                )
+            })
+            .collect();
+        let bonds = props
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                cosmolkit_model::QueryBond::new(
+                    cosmolkit_model::BondId::new(i),
+                    cosmolkit_model::BondSpec::new(
+                        cosmolkit_model::AtomId::new(i),
+                        cosmolkit_model::AtomId::new(i + 1),
+                        cosmolkit_types::BondOrder::Single,
+                    )
+                    .with_prop("_cxsmilesBondIdx", v)
+                    .unwrap(),
+                )
+            })
+            .collect();
+        cosmolkit_model::QueryGraph::from_parts(
+            atoms,
+            bonds,
+            Default::default(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_search/CXlower_0
+    #[test]
+    fn uint_cell_unsigned_consumer_search_cxlower_0_cx_lowering() {
+        let g = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0_u32)]);
+        let before = g.clone();
+        assert_eq!(query_bond_row_from_source_index(&g, 0_usize), Ok(0));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_search/CXlower_1
+    #[test]
+    fn uint_cell_unsigned_consumer_search_cxlower_1_cx_lowering() {
+        let g = query_graph(vec![cosmolkit_model::PropertyValue::UInt(1_u32)]);
+        let before = g.clone();
+        assert_eq!(query_bond_row_from_source_index(&g, 1_usize), Ok(0));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_search/CXlower_2147483646
+    #[test]
+    fn uint_cell_unsigned_consumer_search_cxlower_2147483646_cx_lowering() {
+        let g = query_graph(vec![cosmolkit_model::PropertyValue::UInt(2147483646_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            query_bond_row_from_source_index(&g, 2147483646_usize),
+            Ok(0)
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_search/CXlower_2147483647
+    #[test]
+    fn uint_cell_unsigned_consumer_search_cxlower_2147483647_cx_lowering() {
+        let g = query_graph(vec![cosmolkit_model::PropertyValue::UInt(2147483647_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            query_bond_row_from_source_index(&g, 2147483647_usize),
+            Ok(0)
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_search/CXlower_2147483648
+    #[test]
+    fn uint_cell_unsigned_consumer_search_cxlower_2147483648_cx_lowering() {
+        let g = query_graph(vec![cosmolkit_model::PropertyValue::UInt(2147483648_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            query_bond_row_from_source_index(&g, 2147483648_usize),
+            Ok(0)
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_search/CXlower_4294967295
+    #[test]
+    fn uint_cell_unsigned_consumer_search_cxlower_4294967295_cx_lowering() {
+        let g = query_graph(vec![cosmolkit_model::PropertyValue::UInt(4294967295_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            query_bond_row_from_source_index(&g, 4294967295_usize),
+            Ok(0)
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: CX_FIRST_MATCH
+    #[test]
+    fn uint_cell_cx_first_match_cx_lowering() {
+        let g = query_graph(vec![
+            cosmolkit_model::PropertyValue::UInt(0),
+            cosmolkit_model::PropertyValue::IntVector(vec![]),
+        ]);
+        let before = g.clone();
+        assert_eq!(query_bond_row_from_source_index(&g, 0), Ok(0));
+        assert_eq!(g, before);
     }
 }

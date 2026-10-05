@@ -46,6 +46,22 @@ pub struct DoubleBondStereoAssignment {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DoubleBondStereoError {
+    #[error(
+        "property {property} unsigned value {value} causes positive_overflow converting UInt to signed int at atom {atom:?} bond {bond:?}"
+    )]
+    UnsignedPropertyOverflow {
+        atom: Option<AtomId>,
+        bond: Option<BondId>,
+        property: &'static str,
+        value: u32,
+    },
+    #[error("property {property} has invalid kind {kind:?} at atom {atom:?} bond {bond:?}")]
+    InvalidPropertyKind {
+        atom: Option<AtomId>,
+        bond: Option<BondId>,
+        property: &'static str,
+        kind: cosmolkit_model::PropertyValueKind,
+    },
     #[error("invalid topology: {0}")]
     InvalidTopology(#[from] TopologyValidationError),
     #[error("invalid bond value: {0}")]
@@ -433,12 +449,12 @@ pub fn double_bond_stereo_info(
         end_controls[0],
         end_controls[1],
     ];
-    let seen_unknown = atom_has_unknown_stereo(topology, bond_value.begin())
-        || atom_has_unknown_stereo(topology, bond_value.end())
-        || incident_bonds(topology, bond_value.begin())
-            .chain(incident_bonds(topology, bond_value.end()))
-            .filter(|candidate| candidate.id() != bond)
-            .any(|candidate| candidate.direction() == BondDirection::Unknown);
+    let seen_unknown = incident_bonds(topology, bond_value.begin())
+        .chain(incident_bonds(topology, bond_value.end()))
+        .filter(|candidate| candidate.id() != bond)
+        .any(|candidate| candidate.direction() == BondDirection::Unknown)
+        || atom_has_unknown_stereo(topology, bond_value.begin())?
+        || atom_has_unknown_stereo(topology, bond_value.end())?;
     if seen_unknown
         || bond_value.stereo() == BondStereo::Any
         || bond_value.direction() == BondDirection::EitherDouble
@@ -754,22 +770,22 @@ pub fn assign_directional_double_bond_stereo(
             continue;
         }
         unassigned_bonds += 1;
-        let mut explicit_unknown = atom_has_unknown_stereo(&topology, bond.begin())
-            || atom_has_unknown_stereo(&topology, bond.end());
+        let mut explicit_unknown = atom_has_unknown_stereo(&topology, bond.begin())?
+            || atom_has_unknown_stereo(&topology, bond.end())?;
         let begin_neighbors = neighbor_directions(
             &topology,
             bond.begin(),
             bond.id(),
             ranks,
             &mut explicit_unknown,
-        );
+        )?;
         let end_neighbors = neighbor_directions(
             &topology,
             bond.end(),
             bond.id(),
             ranks,
             &mut explicit_unknown,
-        );
+        )?;
         if begin_neighbors.is_empty() || end_neighbors.is_empty() {
             continue;
         }
@@ -961,7 +977,11 @@ pub fn set_double_bond_neighbor_directions(
                     single_bond_counts[neighbor.bond.index()] += 1;
                     if neighbor_bond.begin() == endpoint
                         && neighbor_bond.direction() == BondDirection::Unknown
-                        && property_is_true(neighbor_bond.prop("_UnknownStereo"))
+                        && property_is_true(
+                            neighbor_bond.prop("_UnknownStereo"),
+                            None,
+                            Some(neighbor_bond.id()),
+                        )?
                     {
                         candidate = false;
                     } else {
@@ -1187,16 +1207,64 @@ fn other_atom(bond: &Bond, atom: AtomId) -> AtomId {
     }
 }
 
-fn atom_has_unknown_stereo(topology: &TopologyBlock, atom: AtomId) -> bool {
-    topology.atoms[atom.index()].unknown_stereo()
-        || property_is_true(topology.atoms[atom.index()].prop("_UnknownStereo"))
+fn atom_has_unknown_stereo(
+    topology: &TopologyBlock,
+    atom: AtomId,
+) -> Result<bool, DoubleBondStereoError> {
+    Ok(topology.atoms[atom.index()].unknown_stereo()
+        || property_is_true(
+            topology.atoms[atom.index()].prop("_UnknownStereo"),
+            Some(atom),
+            None,
+        )?)
 }
 
-fn property_is_true(value: Option<&PropertyValue>) -> bool {
-    value.is_some_and(|value| match value {
-        PropertyValue::Int(value) => *value != 0,
-        PropertyValue::String(value) => value.parse::<i32>().ok().is_some_and(|value| value != 0),
-        PropertyValue::Double(_) | PropertyValue::Bool(_) => false,
+fn property_is_true(
+    value: Option<&PropertyValue>,
+    atom: Option<AtomId>,
+    bond: Option<BondId>,
+) -> Result<bool, DoubleBondStereoError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return v.value.i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+
+    // RDKit❗✔️: int explicitUnknownStereo = 0;
+    // RDKit❗✔️: common_properties::_UnknownStereo, explicitUnknownStereo) &&
+    // A vector cannot be cast to int; errors propagate at the guarded read.
+    // Existing scalar handling is retained. One discriminant match, no copy.
+    Ok(match value {
+        None => false,
+        Some(PropertyValue::Int(value)) => *value != 0,
+        Some(PropertyValue::UInt(value)) => {
+            i32::try_from(*value).map_err(|_| DoubleBondStereoError::UnsignedPropertyOverflow {
+                atom,
+                bond,
+                property: "_UnknownStereo",
+                value: *value,
+            })? != 0
+        }
+        Some(PropertyValue::String(value)) => {
+            value.parse::<i32>().ok().is_some_and(|value| value != 0)
+        }
+        Some(PropertyValue::IntVector(value)) => {
+            let _ = value;
+            return Err(DoubleBondStereoError::InvalidPropertyKind {
+                atom,
+                bond,
+                property: "_UnknownStereo",
+                kind: cosmolkit_model::PropertyValueKind::IntVector,
+            });
+        }
+        Some(PropertyValue::Double(_) | PropertyValue::Bool(_)) => false,
     })
 }
 
@@ -1450,7 +1518,7 @@ fn neighbor_directions(
     reference: BondId,
     ranks: &[u32],
     explicit_unknown: &mut bool,
-) -> Vec<(AtomId, BondDirection)> {
+) -> Result<Vec<(AtomId, BondDirection)>, DoubleBondStereoError> {
     // BEGIN RDKIT CPP FUNCTION findAtomNeighborDirHelper
     // RDKit❗✔️: void findAtomNeighborDirHelper(const ROMol &mol, const Atom *atom,
     // RDKit❗✔️:                                const Bond *refBond, UINT_VECT &ranks,
@@ -1525,7 +1593,7 @@ fn neighbor_directions(
         if !*explicit_unknown
             && (bond.direction() == BondDirection::Unknown
                 || bond.unknown_stereo()
-                || property_is_true(bond.prop("_UnknownStereo")))
+                || property_is_true(bond.prop("_UnknownStereo"), None, Some(bond.id()))?)
         {
             *explicit_unknown = true;
         }
@@ -1544,14 +1612,14 @@ fn neighbor_directions(
     if !saw_direction
         || result.len() == 2 && ranks[result[0].0.index()] == ranks[result[1].0.index()]
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     if !has_stereo_bond_direction(result[0].1) {
         result[0].1 = opposite_unchecked(result[1].1);
     } else if result.len() > 1 && !has_stereo_bond_direction(result[1].1) {
         result[1].1 = opposite_unchecked(result[0].1);
     }
-    result
+    Ok(result)
 }
 
 fn highest_ranked_direction(
@@ -1597,7 +1665,7 @@ fn controlling_bonds(
     counts: &[usize],
     double_bond: BondId,
     atom: AtomId,
-) -> Controls {
+) -> Result<Controls, DoubleBondStereoError> {
     // BEGIN RDKIT CPP FUNCTION controllingBondFromAtom
     // RDKit❗✔️: void controllingBondFromAtom(const ROMol &mol,
     // RDKit❗✔️:                              const boost::dynamic_bitset<> &needsDir,
@@ -1681,17 +1749,17 @@ fn controlling_bonds(
         if matches!(bond.order(), BondOrder::Single | BondOrder::Aromatic)
             && (bond.direction() == BondDirection::Unknown
                 || bond.unknown_stereo()
-                || property_is_true(bond.prop("_UnknownStereo")))
+                || property_is_true(bond.prop("_UnknownStereo"), None, Some(bond.id()))?)
         {
             squiggle = true;
             break;
         }
     }
-    Controls {
+    Ok(Controls {
         primary,
         secondary,
         squiggle,
-    }
+    })
 }
 
 fn update_double_bond_neighbors(
@@ -1932,7 +2000,7 @@ fn update_double_bond_neighbors(
         counts,
         double_bond,
         double.begin(),
-    );
+    )?;
     if begin_controls.squiggle {
         set_stereo_for_bond(topology, double_bond, BondStereo::Any, false)?;
         return Ok(());
@@ -1941,7 +2009,7 @@ fn update_double_bond_neighbors(
         return Ok(());
     };
     let mut end_controls =
-        controlling_bonds(topology, needs_direction, counts, double_bond, double.end());
+        controlling_bonds(topology, needs_direction, counts, double_bond, double.end())?;
     if end_controls.squiggle {
         set_stereo_for_bond(topology, double_bond, BondStereo::Any, false)?;
         return Ok(());
@@ -2219,4 +2287,126 @@ fn dihedral(i: [f64; 3], j: [f64; 3], k: [f64; 3], l: [f64; 3]) -> f64 {
     let second = cross(end_neighbor, begin_end);
     let cosine = dot(first, second) / (norm_squared(first) * norm_squared(second)).sqrt();
     cosine.clamp(-1.0, 1.0).acos()
+}
+
+#[cfg(test)]
+mod uint_unknown_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_unknown_signed_getter_and_native_flag_guard() {
+        for (value, truth) in [
+            (0_u32, false),
+            (1, true),
+            (2147483646, true),
+            (2147483647, true),
+        ] {
+            assert_eq!(
+                property_is_true(
+                    Some(&cosmolkit_model::PropertyValue::UInt(value)),
+                    Some(AtomId::new(0)),
+                    None
+                ),
+                Ok(truth)
+            );
+        }
+        for value in [2147483648_u32, 4294967295] {
+            assert_eq!(
+                property_is_true(
+                    Some(&cosmolkit_model::PropertyValue::UInt(value)),
+                    Some(AtomId::new(0)),
+                    None
+                ),
+                Err(DoubleBondStereoError::UnsignedPropertyOverflow {
+                    atom: Some(AtomId::new(0)),
+                    bond: None,
+                    property: "_UnknownStereo",
+                    value
+                })
+            );
+            let atom = cosmolkit_model::Atom::from_spec(
+                AtomId::new(0),
+                cosmolkit_model::AtomSpec::new(cosmolkit_types::Element::C)
+                    .with_unknown_stereo(true)
+                    .with_prop(
+                        "_UnknownStereo",
+                        cosmolkit_model::PropertyValue::UInt(value),
+                    )
+                    .unwrap(),
+            );
+            let graph = TopologyBlock::try_from_parts(vec![atom], vec![], vec![], vec![]).unwrap();
+            assert_eq!(atom_has_unknown_stereo(&graph, AtomId::new(0)), Ok(true));
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, PropertyValue};
+    use cosmolkit_types::Element;
+
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/double_stereo__UnknownStereo_0
+    #[test]
+    fn uint_cell_signed_consumer_core_double_stereo__unknownstereo_0() {
+        let v = PropertyValue::UInt(0_u32);
+        assert_eq!(
+            property_is_true(Some(&v), Some(AtomId::new(0)), None),
+            Ok(false)
+        );
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/double_stereo__UnknownStereo_1
+    #[test]
+    fn uint_cell_signed_consumer_core_double_stereo__unknownstereo_1() {
+        let v = PropertyValue::UInt(1_u32);
+        assert_eq!(
+            property_is_true(Some(&v), Some(AtomId::new(0)), None),
+            Ok(true)
+        );
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/double_stereo__UnknownStereo_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_core_double_stereo__unknownstereo_2147483646() {
+        let v = PropertyValue::UInt(2147483646_u32);
+        assert_eq!(
+            property_is_true(Some(&v), Some(AtomId::new(0)), None),
+            Ok(true)
+        );
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/double_stereo__UnknownStereo_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_core_double_stereo__unknownstereo_2147483647() {
+        let v = PropertyValue::UInt(2147483647_u32);
+        assert_eq!(
+            property_is_true(Some(&v), Some(AtomId::new(0)), None),
+            Ok(true)
+        );
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/double_stereo__UnknownStereo_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_core_double_stereo__unknownstereo_2147483648() {
+        let v = PropertyValue::UInt(2147483648_u32);
+        assert_eq!(
+            property_is_true(Some(&v), Some(AtomId::new(0)), None),
+            Err(DoubleBondStereoError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "_UnknownStereo",
+                value: 2147483648_u32
+            })
+        );
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/double_stereo__UnknownStereo_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_core_double_stereo__unknownstereo_4294967295() {
+        let v = PropertyValue::UInt(4294967295_u32);
+        assert_eq!(
+            property_is_true(Some(&v), Some(AtomId::new(0)), None),
+            Err(DoubleBondStereoError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "_UnknownStereo",
+                value: 4294967295_u32
+            })
+        );
+    }
 }

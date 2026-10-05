@@ -44,10 +44,24 @@ fn source_string_property<'a>(
 }
 
 fn source_unsigned_property(value: &PropertyValue, name: &str) -> Result<u32, SmilesParseError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return v.value.u;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+
     let parsed = match value {
         PropertyValue::Int(value) => u32::try_from(*value).ok(),
+        PropertyValue::UInt(value) => Some(*value),
         PropertyValue::String(value) => value.parse::<u32>().ok(),
-        PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
+        PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
     };
     parsed.ok_or_else(|| {
         SmilesParseError::WriterStereo(format!("bad_any_cast reading {name} as unsigned int"))
@@ -4034,5 +4048,617 @@ mod tests {
         ] {
             assert_eq!(format_general(value), expected, "{value:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod uint_cx_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_cx_unsigned_and_string_full_width() {
+        for (value, text) in [
+            (0_u32, "0"),
+            (1, "1"),
+            (2147483646, "2147483646"),
+            (2147483647, "2147483647"),
+            (2147483648, "2147483648"),
+            (4294967295, "4294967295"),
+        ] {
+            assert_eq!(
+                source_unsigned_property(&PropertyValue::UInt(value), "_MolFileBondCfg"),
+                Ok(value)
+            );
+            assert_eq!(
+                source_string_property(&PropertyValue::UInt(value), "atomLabel").unwrap(),
+                text
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::PropertyValue;
+    fn graph(props: Vec<cosmolkit_model::PropertyValue>) -> cosmolkit_model::TopologyBlock {
+        let atoms = (0..props.len() + 1)
+            .map(|i| {
+                cosmolkit_model::Atom::from_spec(
+                    cosmolkit_model::AtomId::new(i),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_types::Element::C),
+                )
+            })
+            .collect();
+        let bonds = props
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                cosmolkit_model::Bond::from_spec(
+                    cosmolkit_model::BondId::new(i),
+                    cosmolkit_model::BondSpec::new(
+                        cosmolkit_model::AtomId::new(i),
+                        cosmolkit_model::AtomId::new(i + 1),
+                        cosmolkit_types::BondOrder::Single,
+                    )
+                    .with_prop("_cxsmilesBondIdx", v)
+                    .unwrap(),
+                )
+            })
+            .collect();
+        cosmolkit_model::TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_0
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxwriter_0_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(0_u32)]);
+        let value = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_unsigned_property(value, "_cxsmilesBondIdx"),
+            Ok(0_u32)
+        );
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_smiles/CXtext_0
+    #[test]
+    fn uint_cell_text_consumer_smiles_cxtext_0_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(0_u32)]);
+        let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(source_string_property(v, "_cxsmilesBondIdx").unwrap(), "0");
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_1
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxwriter_1_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(1_u32)]);
+        let value = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_unsigned_property(value, "_cxsmilesBondIdx"),
+            Ok(1_u32)
+        );
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_smiles/CXtext_1
+    #[test]
+    fn uint_cell_text_consumer_smiles_cxtext_1_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(1_u32)]);
+        let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(source_string_property(v, "_cxsmilesBondIdx").unwrap(), "1");
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483646
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxwriter_2147483646_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(2147483646_u32)]);
+        let value = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_unsigned_property(value, "_cxsmilesBondIdx"),
+            Ok(2147483646_u32)
+        );
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_smiles/CXtext_2147483646
+    #[test]
+    fn uint_cell_text_consumer_smiles_cxtext_2147483646_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(2147483646_u32)]);
+        let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_string_property(v, "_cxsmilesBondIdx").unwrap(),
+            "2147483646"
+        );
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483647
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxwriter_2147483647_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(2147483647_u32)]);
+        let value = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_unsigned_property(value, "_cxsmilesBondIdx"),
+            Ok(2147483647_u32)
+        );
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_smiles/CXtext_2147483647
+    #[test]
+    fn uint_cell_text_consumer_smiles_cxtext_2147483647_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(2147483647_u32)]);
+        let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_string_property(v, "_cxsmilesBondIdx").unwrap(),
+            "2147483647"
+        );
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483648
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxwriter_2147483648_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(2147483648_u32)]);
+        let value = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_unsigned_property(value, "_cxsmilesBondIdx"),
+            Ok(2147483648_u32)
+        );
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_smiles/CXtext_2147483648
+    #[test]
+    fn uint_cell_text_consumer_smiles_cxtext_2147483648_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(2147483648_u32)]);
+        let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_string_property(v, "_cxsmilesBondIdx").unwrap(),
+            "2147483648"
+        );
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_4294967295
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxwriter_4294967295_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(4294967295_u32)]);
+        let value = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_unsigned_property(value, "_cxsmilesBondIdx"),
+            Ok(4294967295_u32)
+        );
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_smiles/CXtext_4294967295
+    #[test]
+    fn uint_cell_text_consumer_smiles_cxtext_4294967295_cx_writer() {
+        let g = graph(vec![PropertyValue::UInt(4294967295_u32)]);
+        let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
+        assert_eq!(
+            source_string_property(v, "_cxsmilesBondIdx").unwrap(),
+            "4294967295"
+        );
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_0
+    #[test]
+    fn uint_cell_unsigned_cfg_0_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(0_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 0_u32);
+        assert_eq!(molfile_cfg_bond_direction(Some(cfg)), BondDirection::None);
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_1
+    #[test]
+    fn uint_cell_unsigned_cfg_1_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(1_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 1_u32);
+        assert_eq!(
+            molfile_cfg_bond_direction(Some(cfg)),
+            BondDirection::BeginWedge
+        );
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("wU:0.0".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_2
+    #[test]
+    fn uint_cell_unsigned_cfg_2_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(2_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 2_u32);
+        assert_eq!(
+            molfile_cfg_bond_direction(Some(cfg)),
+            BondDirection::Unknown
+        );
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("w:0.0".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_3
+    #[test]
+    fn uint_cell_unsigned_cfg_3_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(3_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 3_u32);
+        assert_eq!(
+            molfile_cfg_bond_direction(Some(cfg)),
+            BondDirection::BeginDash
+        );
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("wD:0.0".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_4
+    #[test]
+    fn uint_cell_unsigned_cfg_4_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(4_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 4_u32);
+        assert_eq!(molfile_cfg_bond_direction(Some(cfg)), BondDirection::None);
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_255
+    #[test]
+    fn uint_cell_unsigned_cfg_255_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(255_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 255_u32);
+        assert_eq!(molfile_cfg_bond_direction(Some(cfg)), BondDirection::None);
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_256
+    #[test]
+    fn uint_cell_unsigned_cfg_256_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(256_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 256_u32);
+        assert_eq!(molfile_cfg_bond_direction(Some(cfg)), BondDirection::None);
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_2147483647
+    #[test]
+    fn uint_cell_unsigned_cfg_2147483647_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(2147483647_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 2147483647_u32);
+        assert_eq!(molfile_cfg_bond_direction(Some(cfg)), BondDirection::None);
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_2147483648
+    #[test]
+    fn uint_cell_unsigned_cfg_2147483648_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(2147483648_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 2147483648_u32);
+        assert_eq!(molfile_cfg_bond_direction(Some(cfg)), BondDirection::None);
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("".into())
+        );
+        assert_eq!(record.topology, g);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_4294967295
+    #[test]
+    fn uint_cell_unsigned_cfg_4294967295_cx_writer() {
+        let mut g = graph(vec![PropertyValue::UInt(0)]);
+        g.bonds[0]
+            .set_prop("_MolFileBondCfg", PropertyValue::UInt(4294967295_u32))
+            .unwrap();
+        let before = g.clone();
+        let cfg = source_unsigned_property(
+            g.bonds[0].prop("_MolFileBondCfg").unwrap(),
+            "_MolFileBondCfg",
+        )
+        .unwrap();
+        assert_eq!(cfg, 4294967295_u32);
+        assert_eq!(molfile_cfg_bond_direction(Some(cfg)), BondDirection::None);
+        assert_eq!(g, before);
+        let record = crate::SmilesRecord {
+            topology: g.clone(),
+            coordinates: Default::default(),
+            properties: Default::default(),
+        };
+        let valence = cosmolkit_core::assign_valence(
+            &record.topology,
+            &cosmolkit_core::ValenceParams::default(),
+        )
+        .unwrap();
+        let rings = cosmolkit_core::RingInfo::new(cosmolkit_core::RingFindType::Fast, 2, 1);
+        let context = CrossedBondContext::new(&record.topology, &valence, &rings, true).unwrap();
+        assert_eq!(
+            write_bond_config(
+                &record,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true,
+                false,
+                &WedgeAssignments::default(),
+                Some(&context),
+                None
+            ),
+            Ok("".into())
+        );
+        assert_eq!(record.topology, g);
     }
 }

@@ -873,6 +873,36 @@ impl<'a> Vf2GraphRef<'a> {
 // Atom and bond matching functors
 // ---------------------------------------------------------------------------
 
+fn vector_related_property_equal(
+    left: Option<&PropertyValue>,
+    right: Option<&PropertyValue>,
+) -> bool {
+    // RDKit✔️✔️: bool hasprop1 = r1->getPropIfPresent<std::string>(prop, prop1);
+    // RDKit✔️✔️: bool hasprop2 = r2->getPropIfPresent<std::string>(prop, prop2);
+    // Bracket projection cannot equal scalar Int/Double/Bool text. Only vector
+    // comparisons change here; preexisting scalar conversion debt is retained.
+    // Ordered vector equality is linear without allocation; mixed String uses
+    // the single core formatter, linear in the number of emitted characters.
+    match (left, right) {
+        (Some(PropertyValue::UInt(a)), Some(PropertyValue::UInt(b))) => a == b,
+        (Some(a @ PropertyValue::UInt(_)), Some(b))
+        | (Some(a), Some(b @ PropertyValue::UInt(_))) => {
+            match (
+                cosmolkit_core::property_value_to_string(a),
+                cosmolkit_core::property_value_to_string(b),
+            ) {
+                (Ok(a), Ok(b)) => a == b,
+                _ => false,
+            }
+        }
+        (Some(PropertyValue::IntVector(a)), Some(PropertyValue::String(b)))
+        | (Some(PropertyValue::String(b)), Some(PropertyValue::IntVector(a))) => {
+            cosmolkit_core::int_vector_to_string(a) == *b
+        }
+        _ => left == right,
+    }
+}
+
 fn property_compat(
     properties1: &BTreeMap<String, PropertyValue>,
     properties2: &BTreeMap<String, PropertyValue>,
@@ -910,7 +940,7 @@ fn property_compat(
     // its vector of entries for each lookup (O(P*N)); BTreeMap lookup is
     // O(log N), making this O(P*log N) while preserving lookup semantics.
     for property in properties {
-        if properties1.get(property) != properties2.get(property) {
+        if !vector_related_property_equal(properties1.get(property), properties2.get(property)) {
             return false;
         }
     }
@@ -4420,7 +4450,9 @@ fn chiral_atom_compat(
         let query_cip = query_atom.prop("_CIPCode");
         let mol_cip = mol_atom.prop("_CIPCode");
         if query_cip.is_some() || mol_cip.is_some() {
-            matches = query_cip.is_some() && mol_cip.is_some() && query_cip == mol_cip;
+            matches = query_cip.is_some()
+                && mol_cip.is_some()
+                && vector_related_property_equal(query_cip, mol_cip);
         }
     }
     eprintln!(
@@ -8065,5 +8097,133 @@ mod search_shared_perf_s08_tests {
 
         assert_eq!(actual_calls, 3);
         assert_eq!(VF2_GRAPH_BUILD_ENTRIES.with(std::cell::Cell::get), 1);
+    }
+}
+
+#[cfg(test)]
+mod uint_compat_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_property_compat_uses_source_strings() {
+        for (value, text) in [
+            (0_u32, "0"),
+            (1, "1"),
+            (2147483646, "2147483646"),
+            (2147483647, "2147483647"),
+            (2147483648, "2147483648"),
+            (4294967295, "4294967295"),
+        ] {
+            let a = PropertyValue::UInt(value);
+            let b = PropertyValue::String(text.into());
+            assert!(vector_related_property_equal(Some(&a), Some(&b)));
+            assert!(vector_related_property_equal(Some(&b), Some(&a)));
+            assert!(vector_related_property_equal(Some(&a), Some(&a)));
+            assert!(!vector_related_property_equal(Some(&a), None));
+            assert!(!vector_related_property_equal(
+                Some(&a),
+                Some(&PropertyValue::String(format!("0{text}")))
+            ));
+        }
+        assert!(vector_related_property_equal(
+            Some(&PropertyValue::UInt(1)),
+            Some(&PropertyValue::Bool(true))
+        ));
+        assert!(vector_related_property_equal(
+            Some(&PropertyValue::UInt(1)),
+            Some(&PropertyValue::Int(1))
+        ));
+        assert!(!vector_related_property_equal(
+            Some(&PropertyValue::UInt(1)),
+            Some(&PropertyValue::Int(-1))
+        ));
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    // FROZEN UINT CONDITION: MATCH_0
+    #[test]
+    fn uint_cell_match_0_matcher() {
+        let a = PropertyValue::UInt(0_u32);
+        let text = PropertyValue::String("0".into());
+        assert!(vector_related_property_equal(Some(&a), Some(&a)));
+        assert!(vector_related_property_equal(Some(&a), Some(&text)));
+        assert!(vector_related_property_equal(Some(&text), Some(&a)));
+        assert!(!vector_related_property_equal(Some(&a), None));
+        assert!(!vector_related_property_equal(
+            Some(&a),
+            Some(&PropertyValue::UInt(1))
+        ));
+    }
+    // FROZEN UINT CONDITION: MATCH_1
+    #[test]
+    fn uint_cell_match_1_matcher() {
+        let a = PropertyValue::UInt(1_u32);
+        let text = PropertyValue::String("1".into());
+        assert!(vector_related_property_equal(Some(&a), Some(&a)));
+        assert!(vector_related_property_equal(Some(&a), Some(&text)));
+        assert!(vector_related_property_equal(Some(&text), Some(&a)));
+        assert!(!vector_related_property_equal(Some(&a), None));
+        assert!(!vector_related_property_equal(
+            Some(&a),
+            Some(&PropertyValue::UInt(0))
+        ));
+    }
+    // FROZEN UINT CONDITION: MATCH_2147483646
+    #[test]
+    fn uint_cell_match_2147483646_matcher() {
+        let a = PropertyValue::UInt(2147483646_u32);
+        let text = PropertyValue::String("2147483646".into());
+        assert!(vector_related_property_equal(Some(&a), Some(&a)));
+        assert!(vector_related_property_equal(Some(&a), Some(&text)));
+        assert!(vector_related_property_equal(Some(&text), Some(&a)));
+        assert!(!vector_related_property_equal(Some(&a), None));
+        assert!(!vector_related_property_equal(
+            Some(&a),
+            Some(&PropertyValue::UInt(0))
+        ));
+    }
+    // FROZEN UINT CONDITION: MATCH_2147483647
+    #[test]
+    fn uint_cell_match_2147483647_matcher() {
+        let a = PropertyValue::UInt(2147483647_u32);
+        let text = PropertyValue::String("2147483647".into());
+        assert!(vector_related_property_equal(Some(&a), Some(&a)));
+        assert!(vector_related_property_equal(Some(&a), Some(&text)));
+        assert!(vector_related_property_equal(Some(&text), Some(&a)));
+        assert!(!vector_related_property_equal(Some(&a), None));
+        assert!(!vector_related_property_equal(
+            Some(&a),
+            Some(&PropertyValue::UInt(0))
+        ));
+    }
+    // FROZEN UINT CONDITION: MATCH_2147483648
+    #[test]
+    fn uint_cell_match_2147483648_matcher() {
+        let a = PropertyValue::UInt(2147483648_u32);
+        let text = PropertyValue::String("2147483648".into());
+        assert!(vector_related_property_equal(Some(&a), Some(&a)));
+        assert!(vector_related_property_equal(Some(&a), Some(&text)));
+        assert!(vector_related_property_equal(Some(&text), Some(&a)));
+        assert!(!vector_related_property_equal(Some(&a), None));
+        assert!(!vector_related_property_equal(
+            Some(&a),
+            Some(&PropertyValue::UInt(0))
+        ));
+    }
+    // FROZEN UINT CONDITION: MATCH_4294967295
+    #[test]
+    fn uint_cell_match_4294967295_matcher() {
+        let a = PropertyValue::UInt(4294967295_u32);
+        let text = PropertyValue::String("4294967295".into());
+        assert!(vector_related_property_equal(Some(&a), Some(&a)));
+        assert!(vector_related_property_equal(Some(&a), Some(&text)));
+        assert!(vector_related_property_equal(Some(&text), Some(&a)));
+        assert!(!vector_related_property_equal(Some(&a), None));
+        assert!(!vector_related_property_equal(
+            Some(&a),
+            Some(&PropertyValue::UInt(0))
+        ));
     }
 }

@@ -18,10 +18,24 @@ pub(crate) enum GeometryError {
 }
 
 fn unsigned_rank_property(value: &PropertyValue) -> Option<u32> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return v.value.u;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+
     match value {
         PropertyValue::Int(value) => u32::try_from(*value).ok(),
+        PropertyValue::UInt(value) => Some(*value),
         PropertyValue::String(value) => value.parse().ok(),
-        PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
+        PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
     }
 }
 
@@ -1219,5 +1233,60 @@ mod accepted_transform_regressions {
             ));
         }
         assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod uint_geometry_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_unsigned_geometry_accepts_full_width() {
+        for value in [0_u32, 1, 2147483646, 2147483647, 2147483648, 4294967295] {
+            assert_eq!(
+                unsigned_rank_property(&PropertyValue::UInt(value)),
+                Some(value)
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_0
+    #[test]
+    fn uint_cell_unsigned_consumer_depict_geometry_0_geometry() {
+        let v = cosmolkit_model::PropertyValue::UInt(0_u32);
+        assert_eq!(unsigned_rank_property(&v), Some(0_u32));
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_1
+    #[test]
+    fn uint_cell_unsigned_consumer_depict_geometry_1_geometry() {
+        let v = cosmolkit_model::PropertyValue::UInt(1_u32);
+        assert_eq!(unsigned_rank_property(&v), Some(1_u32));
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_2147483646
+    #[test]
+    fn uint_cell_unsigned_consumer_depict_geometry_2147483646_geometry() {
+        let v = cosmolkit_model::PropertyValue::UInt(2147483646_u32);
+        assert_eq!(unsigned_rank_property(&v), Some(2147483646_u32));
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_2147483647
+    #[test]
+    fn uint_cell_unsigned_consumer_depict_geometry_2147483647_geometry() {
+        let v = cosmolkit_model::PropertyValue::UInt(2147483647_u32);
+        assert_eq!(unsigned_rank_property(&v), Some(2147483647_u32));
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_2147483648
+    #[test]
+    fn uint_cell_unsigned_consumer_depict_geometry_2147483648_geometry() {
+        let v = cosmolkit_model::PropertyValue::UInt(2147483648_u32);
+        assert_eq!(unsigned_rank_property(&v), Some(2147483648_u32));
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_4294967295
+    #[test]
+    fn uint_cell_unsigned_consumer_depict_geometry_4294967295_geometry() {
+        let v = cosmolkit_model::PropertyValue::UInt(4294967295_u32);
+        assert_eq!(unsigned_rank_property(&v), Some(4294967295_u32));
     }
 }

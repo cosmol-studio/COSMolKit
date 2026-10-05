@@ -1393,10 +1393,7 @@ fn prepare_writer_stereochemistry(
     // clean stereo would clear computed ring relations before serialization.
     for atom in &topology.atoms {
         if let Some(encoded) = atom.prop("_ringStereoAtoms") {
-            parse_ring_stereo_atoms(
-                source_string_property(encoded, "_ringStereoAtoms")?,
-                topology.atoms.len(),
-            )?;
+            parse_ring_stereo_atoms(encoded, topology.atoms.len())?;
         }
     }
     if !params.do_isomeric_smiles {
@@ -2279,23 +2276,19 @@ fn merge_writer_stereo_fragment(
                 continue;
             }
             let value = if key == "_ringStereoAtoms" {
-                parse_ring_stereo_atoms(
-                    source_string_property(value, "_ringStereoAtoms")?,
-                    assigned.atoms.len(),
-                )?
-                .into_iter()
-                .map(|(same_orientation, local_atom)| {
-                    let source_atom = source_atoms[local_atom].index() + 1;
-                    let signed = if same_orientation {
-                        i64::try_from(source_atom).unwrap_or(i64::MAX)
-                    } else {
-                        -i64::try_from(source_atom).unwrap_or(i64::MAX)
-                    };
-                    signed.to_string()
-                })
-                .collect::<Vec<_>>()
-                .join(",")
-                .into()
+                parse_ring_stereo_atoms(value, assigned.atoms.len())?
+                    .into_iter()
+                    .map(|(same_orientation, local_atom)| {
+                        let source_atom = source_atoms[local_atom].index() + 1;
+                        let signed = i32::try_from(source_atom).map_err(|_| {
+                            SmilesParseError::WriterStereo(
+                                "`_ringStereoAtoms` index is out of range".into(),
+                            )
+                        })?;
+                        Ok(if same_orientation { signed } else { -signed })
+                    })
+                    .collect::<Result<Vec<i32>, SmilesParseError>>()?
+                    .into()
             } else {
                 value.clone()
             };
@@ -3120,10 +3113,7 @@ fn apply_relative_chiral_adjustments(
             continue;
         }
         if let Some(encoded) = atom.prop("_ringStereoAtoms") {
-            let relations = parse_ring_stereo_atoms(
-                source_string_property(encoded, "_ringStereoAtoms")?,
-                topology.atoms.len(),
-            )?;
+            let relations = parse_ring_stereo_atoms(encoded, topology.atoms.len())?;
             let source_inverted = adjustments[atom_index].invert_tetrahedral;
             if !ring_stereo_adjusted[atom_index] {
                 adjustments[atom_index].chiral_tag_override = Some(ChiralTag::TetrahedralCcw);
@@ -3188,7 +3178,7 @@ fn apply_relative_chiral_adjustments(
 }
 
 fn parse_ring_stereo_atoms(
-    encoded: &str,
+    encoded: &cosmolkit_model::PropertyValue,
     atom_count: usize,
 ) -> Result<Vec<(bool, usize)>, SmilesParseError> {
     // BEGIN RDKIT CPP TYPE RDGeneral/types.h INT_VECT
@@ -3202,15 +3192,16 @@ fn parse_ring_stereo_atoms(
     // RDKit❗❌:               if (nbrV < 0) {
     // RDKit❗❌:                 mol.getAtomWithIdx(nbrIdx)->invertChirality();
     // END RDKIT CPP FUNCTION Canon::canonicalizeFragment ring-relative references
-    // The detached model stores this computed property as text; decode only
-    // the source's signed, one-based int entries and preserve their order.
-    let mut result = Vec::new();
-    for token in encoded.split(',') {
-        let value = token.parse::<i32>().map_err(|_| {
-            SmilesParseError::WriterStereo(
-                "`_ringStereoAtoms` is not a signed source INT_VECT value (bad_any_cast)".into(),
-            )
-        })?;
+    // Source getProp<INT_VECT> is a strict tag cast, not string projection.
+    // Preserve signed entries and duplicates. Borrow the stored vector and
+    // scan once; no text parsing or compatibility encoding remains.
+    let values = encoded.as_int_vector().map_err(|_| {
+        SmilesParseError::WriterStereo(
+            "`_ringStereoAtoms` is not a signed source INT_VECT value (bad_any_cast)".into(),
+        )
+    })?;
+    let mut result = Vec::with_capacity(values.len());
+    for &value in values {
         if value == 0 {
             return Err(SmilesParseError::WriterStereo(
                 "`_ringStereoAtoms` cannot contain zero".into(),
@@ -4471,18 +4462,18 @@ mod tests {
         for (input, relation, expected) in [
             (
                 "C1[C@H](F)CC[C@H](Cl)C1",
-                ("6", "2"),
+                (6_i32, 2_i32),
                 "F[C@H]1CC[C@@H](Cl)CC1",
             ),
             (
                 "C1[C@H](F)CC[C@@H](Cl)C1",
-                ("-6", "-2"),
+                (-6_i32, -2_i32),
                 "F[C@H]1CC[C@H](Cl)CC1",
             ),
         ] {
             let mut record = parse_smiles(input, &Default::default()).unwrap();
-            record.topology.atoms[1].set_prop("_ringStereoAtoms", relation.0);
-            record.topology.atoms[5].set_prop("_ringStereoAtoms", relation.1);
+            record.topology.atoms[1].set_prop("_ringStereoAtoms", vec![relation.0]);
+            record.topology.atoms[5].set_prop("_ringStereoAtoms", vec![relation.1]);
             assert_eq!(write_smiles(&record).unwrap(), expected, "{input}");
         }
     }
@@ -4835,7 +4826,7 @@ mod tests {
             .set_prop("incoming_atom_ordinary", "do-not-copy")
             .unwrap();
         assigned.topology.atoms[0]
-            .set_computed_prop("_ringStereoAtoms", "-2,4")
+            .set_computed_prop("_ringStereoAtoms", vec![-2_i32, 4])
             .unwrap();
         assigned.topology.atoms[0]
             .set_computed_prop("_incoming_atom_computed", "copy")
@@ -4871,8 +4862,8 @@ mod tests {
         );
         assert_eq!(target.topology.atoms[2].prop("_stale_atom"), None);
         assert_eq!(
-            string_property(target.topology.atoms[2].prop("_ringStereoAtoms")),
-            Some("-4,6")
+            target.topology.atoms[2].prop("_ringStereoAtoms"),
+            Some(&PropertyValue::IntVector(vec![-4_i32, 6]))
         );
         assert!(target.topology.atoms[2].is_prop_computed("_ringStereoAtoms"));
         assert_eq!(
@@ -5507,5 +5498,20 @@ mod enhanced_stereo_canonical_tests {
         assert_eq!(record, before, "detached writer must preserve its input");
         assert_eq!(output.atom_order.len(), atoms.len());
         assert_eq!(output.text.matches('.').count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::PropertyValue;
+    // FROZEN UINT CONDITION: STRICT_BOOL_VECTOR
+    #[test]
+    fn uint_cell_strict_bool_vector_writer() {
+        for n in [0_u32, 1, 4294967295] {
+            assert!(
+                matches!(parse_ring_stereo_atoms(&PropertyValue::UInt(n),2),Err(SmilesParseError::WriterStereo(message)) if message=="`_ringStereoAtoms` is not a signed source INT_VECT value (bad_any_cast)")
+            );
+        }
     }
 }

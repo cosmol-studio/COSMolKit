@@ -6,6 +6,7 @@ pub mod molecular;
 mod native_draw_reference;
 pub mod reference_parity;
 pub mod registry;
+pub mod search;
 pub mod special_regression;
 pub mod testing;
 pub mod uff;
@@ -93,7 +94,8 @@ fn registry_digest() -> String {
             include_str!("registry/fingerprint_corpus.rs"),
             include_str!("registry/fingerprint.rs"),
             include_str!("molecular.rs"),
-            include_str!("uff.rs")
+            include_str!("uff.rs"),
+            include_str!("search.rs")
         )
         .as_bytes(),
     )
@@ -168,6 +170,10 @@ struct LabeledRecord {
 
 fn reference_label(task: &Task, input: &Input) -> Result<ReferenceLabel> {
     let (case_id, parameters) = match input {
+        Input::Search(row) => (
+            &row.case.id,
+            serde_json::to_value(&row.profile).map_err(|e| e.to_string())?,
+        ),
         Input::Uff(row) => (
             &row.case.id,
             serde_json::to_value(row.profile).map_err(|e| e.to_string())?,
@@ -235,6 +241,10 @@ fn oracle(task: &Task, cases: &Corpus, python: &Path, threads: usize) -> Result<
         return Err("oracle source changed; rebuild the preparation binary".into());
     }
     let (corpus, parameters) = match task.operation {
+        registry::Operation::SubstructureMatch => (
+            serde_json::to_value(&cases.molecules),
+            serde_json::to_value(search::profiles()),
+        ),
         registry::Operation::Molecular(id) => (
             serde_json::to_value(&cases.molecules),
             serde_json::to_value(id.profiles()),

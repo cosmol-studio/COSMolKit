@@ -337,13 +337,7 @@ pub const FUTURE_TASKS: &[FutureTask] = &[
         parameter_axes: "supported text/binary form and index width",
         comparison: "Bytes/text and reconstructed entries",
     },
-    FutureTask {
-        id: "substructure_match",
-        category: Category::Query,
-        reference: Reference::Rdkit,
-        parameter_axes: "chirality, query-query, recursion, uniqueness, max matches, properties, callbacks",
-        comparison: "Boolean, ordered mappings and errors",
-    },
+    // Ordinary matching is registered with explicit typed profiles in search.rs.
     FutureTask {
         id: "compiled_query",
         category: Category::Query,
@@ -1627,7 +1621,11 @@ mod tests {
     #[test]
     fn parity_morgan_registry_molecular_plan_tracks_executable_registration() {
         let executable = super::super::select(None).unwrap();
-        assert_eq!(executable.len(), 62);
+        assert_eq!(executable.len(), 63);
+        assert_eq!(
+            executable[62].operation,
+            super::super::Operation::SubstructureMatch
+        );
         assert_eq!(
             executable[0].operation,
             super::super::Operation::BioPdbOutput

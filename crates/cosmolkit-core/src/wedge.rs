@@ -74,6 +74,14 @@ impl WedgeAssignments {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum WedgeError {
+    #[error(
+        "atom {atom} property {property} unsigned value {value} causes positive_overflow converting UInt to signed int"
+    )]
+    UnsignedRankOverflow {
+        atom: AtomId,
+        property: &'static str,
+        value: u32,
+    },
     #[error("invalid topology: {0}")]
     Topology(#[from] TopologyValidationError),
     #[error("invalid coordinates: {0}")]
@@ -551,6 +559,18 @@ fn can_be_stereo_bond(
     bond: &Bond,
     use_legacy_stereo_perception: bool,
 ) -> Result<bool, WedgeError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return v.value.i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
     // BEGIN RDKIT CPP FUNCTION Chirality::canBeStereoBond
     // RDKit❗❌: bool canBeStereoBond(const Bond *bond) {
     // RDKit❗❌:   PRECONDITION(bond, "no bond");
@@ -640,6 +660,13 @@ fn can_be_stereo_bond(
             };
             let rank = match rank_text {
                 PropertyValue::Int(rank) => *rank,
+                PropertyValue::UInt(rank) => {
+                    i32::try_from(*rank).map_err(|_| WedgeError::UnsignedRankOverflow {
+                        atom: neighbor_atom.id(),
+                        property: rank_property,
+                        value: *rank,
+                    })?
+                }
                 PropertyValue::String(rank_text) => {
                     rank_text
                         .parse::<i32>()
@@ -649,7 +676,7 @@ fn can_be_stereo_bond(
                             value: rank_text.to_owned(),
                         })?
                 }
-                PropertyValue::Double(_) | PropertyValue::Bool(_) => {
+                PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => {
                     return Err(WedgeError::InvalidStereoRankType {
                         atom: neighbor_atom.id(),
                         property: rank_property,
@@ -3464,5 +3491,437 @@ mod tests {
                 AtomId::new(4)
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod q01_b1_wedge_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec, PropertyValueKind};
+    use cosmolkit_types::Element;
+    #[test]
+    fn q01_b1_wedge_vector_rank_is_named_wrong_kind() {
+        let mut topology = TopologyBlock::try_from_parts(
+            (0..4)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            [
+                (0, 1, BondOrder::Double),
+                (0, 2, BondOrder::Single),
+                (1, 3, BondOrder::Single),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (a, b, o))| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(a), AtomId::new(b), o),
+                )
+            })
+            .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        for (key, legacy) in [("_CIPRank", true), ("_ChiralAtomRank", false)] {
+            assert!(can_be_stereo_bond(&topology, &topology.bonds[0], legacy).unwrap());
+            topology.atoms[2].set_prop(key, vec![1_i32]).unwrap();
+            assert_eq!(
+                can_be_stereo_bond(&topology, &topology.bonds[0], legacy),
+                Err(WedgeError::InvalidStereoRankType {
+                    atom: AtomId::new(2),
+                    property: key,
+                    kind: PropertyValueKind::IntVector
+                })
+            );
+            assert!(can_be_stereo_bond(&topology, &topology.bonds[0], !legacy).unwrap());
+            topology.atoms[2].clear_prop(key);
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_wedge_proposed_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec};
+    use cosmolkit_types::Element;
+    #[test]
+    fn proposed_uint_wedge_reads_selected_profile_and_single_neighbors_lazily() {
+        for value in [0_u32, 1, 2147483646, 2147483647, 2147483648, 4294967295] {
+            let atoms = (0..4)
+                .map(|index| {
+                    Atom::from_spec(
+                        AtomId::new(index),
+                        if index == 2 {
+                            AtomSpec::new(Element::C)
+                                .with_prop("_CIPRank", PropertyValue::UInt(value))
+                                .unwrap()
+                        } else {
+                            AtomSpec::new(Element::C)
+                        },
+                    )
+                })
+                .collect();
+            let mut graph = TopologyBlock::try_from_parts(
+                atoms,
+                vec![
+                    Bond::from_spec(
+                        BondId::new(0),
+                        BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Double),
+                    ),
+                    Bond::from_spec(
+                        BondId::new(1),
+                        BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single),
+                    ),
+                    Bond::from_spec(
+                        BondId::new(2),
+                        BondSpec::new(AtomId::new(1), AtomId::new(3), BondOrder::Single),
+                    ),
+                ],
+                vec![],
+                vec![],
+            )
+            .unwrap();
+            let expected = if value <= 2147483647 {
+                Ok(true)
+            } else {
+                Err(WedgeError::UnsignedRankOverflow {
+                    atom: AtomId::new(2),
+                    property: "_CIPRank",
+                    value,
+                })
+            };
+            let original = graph.clone();
+            assert_eq!(can_be_stereo_bond(&graph, &graph.bonds[0], true), expected);
+            assert_eq!(graph, original);
+            assert_eq!(can_be_stereo_bond(&graph, &graph.bonds[0], false), Ok(true));
+            graph.bonds[1].set_direction(BondDirection::EndUpRight);
+            assert_eq!(can_be_stereo_bond(&graph, &graph.bonds[0], true), Ok(false));
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec};
+    use cosmolkit_types::Element;
+
+    fn graph(key: &str, v: u32) -> TopologyBlock {
+        let atoms = (0..4)
+            .map(|i| {
+                Atom::from_spec(
+                    AtomId::new(i),
+                    if i == 2 {
+                        AtomSpec::new(Element::C)
+                            .with_prop(key, PropertyValue::UInt(v))
+                            .unwrap()
+                    } else {
+                        AtomSpec::new(Element::C)
+                    },
+                )
+            })
+            .collect();
+        let bonds = [
+            (0, 1, BondOrder::Double),
+            (0, 2, BondOrder::Single),
+            (1, 3, BondOrder::Single),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (a, b, o))| {
+            Bond::from_spec(
+                BondId::new(i),
+                BondSpec::new(AtomId::new(a), AtomId::new(b), o),
+            )
+        })
+        .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__CIPRank_0
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__ciprank_0_wedge() {
+        let g = graph("_CIPRank", 0_u32);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], true), Ok(true));
+        assert_eq!(g, before);
+        let mut tied = g.clone();
+        tied.atoms.push(Atom::from_spec(
+            AtomId::new(4),
+            AtomSpec::new(Element::C)
+                .with_prop("_CIPRank", PropertyValue::Int(0))
+                .unwrap(),
+        ));
+        tied.bonds.push(Bond::from_spec(
+            BondId::new(3),
+            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+        ));
+        let mut tied =
+            TopologyBlock::try_from_parts(tied.atoms, tied.bonds, vec![], vec![]).unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], true), Ok(false));
+        tied.atoms[4]
+            .set_prop("_CIPRank", PropertyValue::Int(1))
+            .unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], true), Ok(true));
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__ChiralAtomRank_0
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__chiralatomrank_0_wedge() {
+        let g = graph("_ChiralAtomRank", 0_u32);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], false), Ok(true));
+        assert_eq!(g, before);
+        let mut tied = g.clone();
+        tied.atoms.push(Atom::from_spec(
+            AtomId::new(4),
+            AtomSpec::new(Element::C)
+                .with_prop("_ChiralAtomRank", PropertyValue::Int(0))
+                .unwrap(),
+        ));
+        tied.bonds.push(Bond::from_spec(
+            BondId::new(3),
+            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+        ));
+        let mut tied =
+            TopologyBlock::try_from_parts(tied.atoms, tied.bonds, vec![], vec![]).unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], false), Ok(false));
+        tied.atoms[4]
+            .set_prop("_ChiralAtomRank", PropertyValue::Int(1))
+            .unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], false), Ok(true));
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__CIPRank_1
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__ciprank_1_wedge() {
+        let g = graph("_CIPRank", 1_u32);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], true), Ok(true));
+        assert_eq!(g, before);
+        let mut tied = g.clone();
+        tied.atoms.push(Atom::from_spec(
+            AtomId::new(4),
+            AtomSpec::new(Element::C)
+                .with_prop("_CIPRank", PropertyValue::Int(1))
+                .unwrap(),
+        ));
+        tied.bonds.push(Bond::from_spec(
+            BondId::new(3),
+            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+        ));
+        let mut tied =
+            TopologyBlock::try_from_parts(tied.atoms, tied.bonds, vec![], vec![]).unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], true), Ok(false));
+        tied.atoms[4]
+            .set_prop("_CIPRank", PropertyValue::Int(0))
+            .unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], true), Ok(true));
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__ChiralAtomRank_1
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__chiralatomrank_1_wedge() {
+        let g = graph("_ChiralAtomRank", 1_u32);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], false), Ok(true));
+        assert_eq!(g, before);
+        let mut tied = g.clone();
+        tied.atoms.push(Atom::from_spec(
+            AtomId::new(4),
+            AtomSpec::new(Element::C)
+                .with_prop("_ChiralAtomRank", PropertyValue::Int(1))
+                .unwrap(),
+        ));
+        tied.bonds.push(Bond::from_spec(
+            BondId::new(3),
+            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+        ));
+        let mut tied =
+            TopologyBlock::try_from_parts(tied.atoms, tied.bonds, vec![], vec![]).unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], false), Ok(false));
+        tied.atoms[4]
+            .set_prop("_ChiralAtomRank", PropertyValue::Int(0))
+            .unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], false), Ok(true));
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__CIPRank_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__ciprank_2147483646_wedge() {
+        let g = graph("_CIPRank", 2147483646_u32);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], true), Ok(true));
+        assert_eq!(g, before);
+        let mut tied = g.clone();
+        tied.atoms.push(Atom::from_spec(
+            AtomId::new(4),
+            AtomSpec::new(Element::C)
+                .with_prop("_CIPRank", PropertyValue::Int(2147483646))
+                .unwrap(),
+        ));
+        tied.bonds.push(Bond::from_spec(
+            BondId::new(3),
+            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+        ));
+        let mut tied =
+            TopologyBlock::try_from_parts(tied.atoms, tied.bonds, vec![], vec![]).unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], true), Ok(false));
+        tied.atoms[4]
+            .set_prop("_CIPRank", PropertyValue::Int(2147483645))
+            .unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], true), Ok(true));
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__ChiralAtomRank_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__chiralatomrank_2147483646_wedge() {
+        let g = graph("_ChiralAtomRank", 2147483646_u32);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], false), Ok(true));
+        assert_eq!(g, before);
+        let mut tied = g.clone();
+        tied.atoms.push(Atom::from_spec(
+            AtomId::new(4),
+            AtomSpec::new(Element::C)
+                .with_prop("_ChiralAtomRank", PropertyValue::Int(2147483646))
+                .unwrap(),
+        ));
+        tied.bonds.push(Bond::from_spec(
+            BondId::new(3),
+            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+        ));
+        let mut tied =
+            TopologyBlock::try_from_parts(tied.atoms, tied.bonds, vec![], vec![]).unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], false), Ok(false));
+        tied.atoms[4]
+            .set_prop("_ChiralAtomRank", PropertyValue::Int(2147483645))
+            .unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], false), Ok(true));
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__CIPRank_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__ciprank_2147483647_wedge() {
+        let g = graph("_CIPRank", 2147483647_u32);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], true), Ok(true));
+        assert_eq!(g, before);
+        let mut tied = g.clone();
+        tied.atoms.push(Atom::from_spec(
+            AtomId::new(4),
+            AtomSpec::new(Element::C)
+                .with_prop("_CIPRank", PropertyValue::Int(2147483647))
+                .unwrap(),
+        ));
+        tied.bonds.push(Bond::from_spec(
+            BondId::new(3),
+            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+        ));
+        let mut tied =
+            TopologyBlock::try_from_parts(tied.atoms, tied.bonds, vec![], vec![]).unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], true), Ok(false));
+        tied.atoms[4]
+            .set_prop("_CIPRank", PropertyValue::Int(2147483646))
+            .unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], true), Ok(true));
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__ChiralAtomRank_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__chiralatomrank_2147483647_wedge() {
+        let g = graph("_ChiralAtomRank", 2147483647_u32);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], false), Ok(true));
+        assert_eq!(g, before);
+        let mut tied = g.clone();
+        tied.atoms.push(Atom::from_spec(
+            AtomId::new(4),
+            AtomSpec::new(Element::C)
+                .with_prop("_ChiralAtomRank", PropertyValue::Int(2147483647))
+                .unwrap(),
+        ));
+        tied.bonds.push(Bond::from_spec(
+            BondId::new(3),
+            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+        ));
+        let mut tied =
+            TopologyBlock::try_from_parts(tied.atoms, tied.bonds, vec![], vec![]).unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], false), Ok(false));
+        tied.atoms[4]
+            .set_prop("_ChiralAtomRank", PropertyValue::Int(2147483646))
+            .unwrap();
+        assert_eq!(can_be_stereo_bond(&tied, &tied.bonds[0], false), Ok(true));
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__CIPRank_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__ciprank_2147483648_wedge() {
+        let g = graph("_CIPRank", 2147483648_u32);
+        let before = g.clone();
+        assert_eq!(
+            can_be_stereo_bond(&g, &g.bonds[0], true),
+            Err(WedgeError::UnsignedRankOverflow {
+                atom: AtomId::new(2),
+                property: "_CIPRank",
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__ChiralAtomRank_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__chiralatomrank_2147483648_wedge() {
+        let g = graph("_ChiralAtomRank", 2147483648_u32);
+        let before = g.clone();
+        assert_eq!(
+            can_be_stereo_bond(&g, &g.bonds[0], false),
+            Err(WedgeError::UnsignedRankOverflow {
+                atom: AtomId::new(2),
+                property: "_ChiralAtomRank",
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__CIPRank_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__ciprank_4294967295_wedge() {
+        let g = graph("_CIPRank", 4294967295_u32);
+        let before = g.clone();
+        assert_eq!(
+            can_be_stereo_bond(&g, &g.bonds[0], true),
+            Err(WedgeError::UnsignedRankOverflow {
+                atom: AtomId::new(2),
+                property: "_CIPRank",
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_core/wedge__ChiralAtomRank_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_core_wedge__chiralatomrank_4294967295_wedge() {
+        let g = graph("_ChiralAtomRank", 4294967295_u32);
+        let before = g.clone();
+        assert_eq!(
+            can_be_stereo_bond(&g, &g.bonds[0], false),
+            Err(WedgeError::UnsignedRankOverflow {
+                atom: AtomId::new(2),
+                property: "_ChiralAtomRank",
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: WEDGE_PROFILE_GUARD
+    #[test]
+    fn uint_cell_wedge_profile_guard_wedge() {
+        let g = graph("_CIPRank", 4294967295);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], false), Ok(true));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: WEDGE_DIRECTION_GUARD
+    #[test]
+    fn uint_cell_wedge_direction_guard_wedge() {
+        let mut g = graph("_CIPRank", 4294967295);
+        g.bonds[1].set_direction(BondDirection::EndUpRight);
+        let before = g.clone();
+        assert_eq!(can_be_stereo_bond(&g, &g.bonds[0], true), Ok(false));
+        assert_eq!(g, before);
     }
 }

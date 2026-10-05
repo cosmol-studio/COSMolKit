@@ -1419,10 +1419,7 @@ mod d2_probe1_tests {
                 let value = unhex(fields[9]);
                 let value = match fields[7] {
                     "1" => PropertyValue::Int(parse(&value)),
-                    "6" => PropertyValue::Int(
-                        i32::try_from(parse::<u32>(&value))
-                            .expect("native unsigned CIP rank fits modeled signed integer"),
-                    ),
+                    "6" => PropertyValue::UInt(parse::<u32>(&value)),
                     "2" => PropertyValue::Double(f64::from_bits(parse(&value))),
                     "3" => PropertyValue::String(value),
                     "5" => PropertyValue::Bool(match value.as_str() {

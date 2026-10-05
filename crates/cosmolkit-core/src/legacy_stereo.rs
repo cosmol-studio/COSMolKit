@@ -178,20 +178,17 @@ fn materialize_initial_ranks(
     // RDKit✔️✔️:
     // RDKit✔️✔️:   // copy the ranks onto the atoms:
     // RDKit✔️✔️:   for (unsigned int i = 0; i < numAtoms; ++i) {
-    // RDKit✔️✔️:     mol[i]->setProp(common_properties::_CIPRank, ranks[i], 1);
+    // RDKit❗✔️:     mol[i]->setProp(common_properties::_CIPRank, ranks[i], 1);
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION materialize_initial_ranks
     // Behavior: the pinned legacy rank engine returns segmented u32 ranks;
-    // checked i32 admission retains numeric values and computed membership.
+    // proposed exact UInt preserves unsigned width and computed membership.
     // Modern compile-time ranking is unmodeled. Complexity: the same single
     // refinement plus O(V) writes; numeric conversion removes temporary text.
     let ranks = assign_atom_cip_ranks_with_query_state(topology, valence, query_state)?;
     for (atom, rank) in topology.atoms.iter_mut().zip(&ranks) {
-        let value = i32::try_from(*rank).map_err(|_| CipRankError::InvariantOutOfRange {
-            atom: atom.id(),
-            value: i64::from(*rank),
-        })?;
+        let value = cosmolkit_model::PropertyValue::UInt(*rank);
         atom.set_computed_prop("_CIPRank", value)?;
     }
     Ok(ranks)
@@ -420,7 +417,7 @@ fn rerank_atoms(
     // RDKit✔️✔️:   iterateCIPRanks(mol, invars, ranks, true);
     // RDKit✔️✔️:   // copy the ranks onto the atoms:
     // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
-    // RDKit✔️✔️:     mol.getAtomWithIdx(i)->setProp(common_properties::_CIPRank, ranks[i]);
+    // RDKit❗✔️:     mol.getAtomWithIdx(i)->setProp(common_properties::_CIPRank, ranks[i]);
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:
     // RDKit❌❌: #ifdef VERBOSE_CANON
@@ -470,10 +467,7 @@ fn rerank_atoms(
         query_state,
     )?;
     for (atom, rank) in topology.atoms.iter_mut().zip(&ranks) {
-        let value = i32::try_from(*rank).map_err(|_| CipRankError::InvariantOutOfRange {
-            atom: atom.id(),
-            value: i64::from(*rank),
-        })?;
+        let value = cosmolkit_model::PropertyValue::UInt(*rank);
         atom.set_prop("_CIPRank", value)?;
     }
     Ok(ranks)
@@ -503,43 +497,18 @@ fn install_ring_special_cases(
     // RDKit✔️❌: }
     // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION findChiralAtomSpecialCases delegated relation installation
-    // Behavior review: the unique graph/BFS owner returns every reciprocal
-    // relation from the complete canonical helper; this adapter retains source
-    // sign and one-based indexing in the established comma encoding and marks
-    // only nonempty relation rows.
-    // Complexity review: ordered accumulation is O(R log V) instead of the
-    // source's vector-indexed property writes, so behavior is exact but this
-    // small internal-property materialization is algorithmically worse.
-    let relations =
-        crate::potential_stereo::special_ring_relations(topology, valence, rings, ranks)?;
-    let mut encoded = BTreeMap::<usize, Vec<i64>>::new();
-    for relation in relations {
-        let one_based = i64::try_from(relation.other.index() + 1).map_err(|_| {
-            CipRankError::InvariantOutOfRange {
-                atom: relation.other,
-                value: i64::MAX,
-            }
-        })?;
-        encoded
-            .entry(relation.atom.index())
-            .or_default()
-            .push(if relation.same_orientation {
-                one_based
-            } else {
-                -one_based
-            });
+    // Apply the one engine's detached changes in source property insertion
+    // order; ordinary writes retain computed membership in the model store.
+    let result = crate::potential_stereo::special_ring_cases(topology, valence, rings, ranks)?;
+    for update in result.updates {
+        let atom = &mut topology.atoms[update.atom.index()];
+        if update.computed {
+            atom.set_computed_prop(update.key, update.value)?;
+        } else {
+            atom.set_prop(update.key, update.value)?;
+        }
     }
-    let mut special = vec![false; topology.atoms.len()];
-    for (index, values) in encoded {
-        let value = values
-            .iter()
-            .map(i64::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        topology.atoms[index].set_computed_prop("_ringStereoAtoms", value)?;
-        special[index] = true;
-    }
-    Ok(special)
+    Ok(result.flags)
 }
 
 fn clean_directional_state(topology: &mut TopologyBlock) {
@@ -1452,7 +1421,7 @@ mod state_owner_tests {
             }
             let value = match row[3].as_str() {
                 "1" => PropertyValue::Int(parse(&row[5])),
-                "6" => PropertyValue::Int(i32::try_from(parse::<u32>(&row[5])).unwrap()),
+                "6" => PropertyValue::UInt(parse::<u32>(&row[5])),
                 "3" => PropertyValue::String(unquote(&row[5])),
                 kind => panic!("unmodeled fixed atom/bond kind {kind}"),
             };

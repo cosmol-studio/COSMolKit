@@ -62,9 +62,16 @@ mod morgan;
 pub mod ops;
 #[cfg(feature = "cap-io")]
 mod sdf;
+#[cfg(feature = "cap-search")]
+pub mod search;
 #[cfg(feature = "cap-smiles")]
 mod smiles;
 mod strict;
+#[cfg(feature = "cap-search")]
+pub use cosmolkit_search::{
+    CompiledQuery, MatchError, MatchResult, QueryCompileError, SmartsParseError, SmartsParseParams,
+    SmartsWriteError, SmartsWriteParams, SubstructMatchError, SubstructMatchParams,
+};
 
 #[doc(hidden)]
 pub use binding_contract::{

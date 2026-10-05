@@ -829,6 +829,72 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    fn substruct_match(
+        &self,
+        py: Python<'_>,
+        query: &crate::canonical_search::QueryGraph,
+    ) -> PyResult<Option<crate::canonical_search::MatchResult>> {
+        self.inner
+            .substruct_match(&query.inner)
+            .map(|result| result.map(|inner| crate::canonical_search::MatchResult { inner }))
+            .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
+    }
+    fn substruct_matches(
+        &self,
+        py: Python<'_>,
+        query: &crate::canonical_search::QueryGraph,
+    ) -> PyResult<Vec<crate::canonical_search::MatchResult>> {
+        self.inner
+            .substruct_matches(&query.inner)
+            .map(|results| {
+                results
+                    .into_iter()
+                    .map(|inner| crate::canonical_search::MatchResult { inner })
+                    .collect()
+            })
+            .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
+    }
+    fn substruct_matches_with_params(
+        &self,
+        py: Python<'_>,
+        query: &crate::canonical_search::QueryGraph,
+        params: &crate::canonical_search::SubstructMatchParams,
+    ) -> PyResult<Vec<crate::canonical_search::MatchResult>> {
+        self.inner
+            .substruct_matches_with_params(&query.inner, &params.inner)
+            .map(|results| {
+                results
+                    .into_iter()
+                    .map(|inner| crate::canonical_search::MatchResult { inner })
+                    .collect()
+            })
+            .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
+    }
+    fn has_substruct_match(
+        &self,
+        py: Python<'_>,
+        query: &crate::canonical_search::QueryGraph,
+    ) -> PyResult<bool> {
+        self.inner
+            .has_substruct_match(&query.inner)
+            .map_err(|e| crate::canonical_search::substruct_pyerr(py, e))
+    }
+    fn substruct_matches_compiled(
+        &self,
+        py: Python<'_>,
+        query: &crate::canonical_search::CompiledQuery,
+    ) -> PyResult<Vec<crate::canonical_search::MatchResult>> {
+        self.inner
+            .substruct_matches_compiled(&query.inner)
+            .map(|results| {
+                results
+                    .into_iter()
+                    .map(|inner| crate::canonical_search::MatchResult { inner })
+                    .collect()
+            })
+            .map_err(|e| crate::canonical_search::match_pyerr(py, e))
+    }
+
     #[staticmethod]
     fn new() -> Self {
         Self {
@@ -1420,5 +1486,6 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_descriptor_binding::register(module)?;
     crate::canonical_values::register(module)?;
     crate::mmff_binding::register(module)?;
+    crate::canonical_search::register(module)?;
     Ok(())
 }

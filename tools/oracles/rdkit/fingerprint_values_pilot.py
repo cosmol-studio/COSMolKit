@@ -642,7 +642,54 @@ def generate_morgan_sparse_count_fingerprint(corpus, parameters, threads):
     return _generate(corpus, parameters, threads, _molecular_case)
 
 
+
+def _search_case(case, parameters):
+    rows=[]
+    mol=Chem.MolFromSmiles(case["smiles"])
+    for profile in parameters:
+        input_row={"case":case,"profile":profile}
+        if mol is None:
+            output={"Error":{"stage":"Parse","kind":"SmilesParse"}}
+        else:
+            query=Chem.MolFromSmarts(profile["smarts"])
+            if query is None:
+                raise ValueError(f"frozen query parse failed: {profile}")
+            p=Chem.SubstructMatchParameters()
+            o=profile["options"]
+            fields={"max_matches":"maxMatches","uniquify":"uniquify","use_chirality":"useChirality",
+                "use_enhanced_stereo":"useEnhancedStereo","specified_stereo_query_matches_unspecified":"specifiedStereoQueryMatchesUnspecified",
+                "use_query_query_matches":"useQueryQueryMatches","recursion_possible":"recursionPossible",
+                "max_recursive_matches":"maxRecursiveMatches","num_threads":"numThreads",
+                "aromatic_matches_conjugated":"aromaticMatchesConjugated","aromatic_matches_single_or_double":"aromaticMatchesSingleOrDouble",
+                "atom_properties":"atomProperties","bond_properties":"bondProperties",
+                "extra_atom_check_overrides_default_check":"extraAtomCheckOverridesDefaultCheck",
+                "extra_bond_check_overrides_default_check":"extraBondCheckOverridesDefaultCheck","use_generic_matchers":"useGenericMatchers"}
+            for name,source in fields.items():
+                setattr(p,source,o[name])
+            matches=mol.GetSubstructMatches(query) if profile["default_entrypoints"] else mol.GetSubstructMatches(query,p)
+            atoms=[list(m) for m in matches]
+            bonds=[]
+            for match in matches:
+                mapped=[]
+                for b in query.GetBonds():
+                    target=mol.GetBondBetweenAtoms(match[b.GetBeginAtomIdx()],match[b.GetEndAtomIdx()])
+                    if target is None:
+                        raise ValueError("matched bond missing")
+                    mapped.append(target.GetIdx())
+                bonds.append(mapped)
+            first=list(mol.GetSubstructMatch(query)) or None if profile["default_entrypoints"] else (atoms[0] if atoms else None)
+            has=mol.HasSubstructMatch(query) if profile["default_entrypoints"] else bool(atoms)
+            output={"Matches":{"atom_mappings":atoms,"bond_mappings":bonds,"first_mapping":first,"has_match":has,
+                "compiled_atom_mappings":atoms if profile["default_entrypoints"] else None}}
+        rows.append({"input":{"Search":input_row},"output":{"Search":output}})
+    return rows
+
+
+def generate_substructure_match(corpus,parameters,threads):
+    return _generate(corpus,parameters,threads,_search_case)
+
 GENERATORS = {
+    "generate_substructure_match":generate_substructure_match,
     "generate_fuzzy_and": generate_fuzzy_and,
     "generate_fuzzy_or": generate_fuzzy_or,
     "generate_smiles_read": generate_smiles_read,

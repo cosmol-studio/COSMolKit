@@ -1289,7 +1289,9 @@ fn update_neighbor_layer(
                 "S" => 2,
                 _ => 1,
             },
-            Some(PropertyValue::Int(_))
+            Some(PropertyValue::IntVector(_))
+            | Some(PropertyValue::Int(_))
+            | Some(PropertyValue::UInt(_))
             | Some(PropertyValue::Double(_))
             | Some(PropertyValue::Bool(_))
             | None => 1,
@@ -5329,5 +5331,196 @@ mod tests {
         );
         assert_eq!(original.topology, original_topology_before);
         assert_eq!(original.properties, original_properties_before);
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Element};
+    fn m07_topology(chiral_tag: ChiralTag, cip_code: Option<PropertyValue>) -> TopologyBlock {
+        let mut center_spec = AtomSpec::new(Element::C).with_chiral_tag(chiral_tag);
+        if let Some(cip_code) = cip_code {
+            center_spec = center_spec
+                .with_prop("_CIPCode", cip_code)
+                .expect("the fixed CIP property key is valid");
+        }
+
+        let mut atoms = vec![Atom::from_spec(AtomId::new(0), center_spec)];
+        atoms.extend(
+            (1..5).map(|index| Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C))),
+        );
+        let bonds = (1..5)
+            .enumerate()
+            .map(|(bond_index, atom_index)| {
+                Bond::from_spec(
+                    BondId::new(bond_index),
+                    BondSpec::new(AtomId::new(0), AtomId::new(atom_index), BondOrder::Single),
+                )
+            })
+            .collect();
+
+        TopologyBlock::try_from_parts(atoms, bonds, Vec::new(), Vec::new())
+            .expect("the fixed M07 four-neighbor topology is valid")
+    }
+
+    fn m07_layer_code(
+        topology: &TopologyBlock,
+        layer: u32,
+        include_chirality: bool,
+        current_invariants: &[u32],
+        bond_invariants: &[u32],
+        chiral_atoms: &mut MorganChiralAtoms,
+    ) -> u32 {
+        let atom_neighborhoods =
+            vec![MorganBondEnvironment::new(topology.bonds.len()); topology.atoms.len()];
+        let mut round_atom_neighborhoods = atom_neighborhoods.clone();
+        let mut neighborhood_invariants = Vec::with_capacity(8);
+        update_neighbor_layer(
+            topology,
+            0,
+            layer,
+            include_chirality,
+            chiral_atoms,
+            current_invariants,
+            bond_invariants,
+            &atom_neighborhoods,
+            &mut round_atom_neighborhoods,
+            &mut neighborhood_invariants,
+        )
+        .expect("the fixed M07 center has four source neighbors")
+    }
+
+    // FROZEN UINT CONDITION: MORGAN_0
+    #[test]
+    fn uint_cell_morgan_0_morgan() {
+        let g = m07_topology(ChiralTag::TetrahedralCw, Some(PropertyValue::UInt(0_u32)));
+        let before = g.clone();
+        let mut chiral = MorganChiralAtoms::new(g.atoms.len());
+        assert_eq!(
+            m07_layer_code(
+                &g,
+                2,
+                true,
+                &[0x12345678, 11, 22, 33, 44],
+                &[1; 4],
+                &mut chiral
+            ),
+            3427473677
+        );
+        assert!(chiral.contains(0));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: MORGAN_1
+    #[test]
+    fn uint_cell_morgan_1_morgan() {
+        let g = m07_topology(ChiralTag::TetrahedralCw, Some(PropertyValue::UInt(1_u32)));
+        let before = g.clone();
+        let mut chiral = MorganChiralAtoms::new(g.atoms.len());
+        assert_eq!(
+            m07_layer_code(
+                &g,
+                2,
+                true,
+                &[0x12345678, 11, 22, 33, 44],
+                &[1; 4],
+                &mut chiral
+            ),
+            3427473677
+        );
+        assert!(chiral.contains(0));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: MORGAN_2147483646
+    #[test]
+    fn uint_cell_morgan_2147483646_morgan() {
+        let g = m07_topology(
+            ChiralTag::TetrahedralCw,
+            Some(PropertyValue::UInt(2147483646_u32)),
+        );
+        let before = g.clone();
+        let mut chiral = MorganChiralAtoms::new(g.atoms.len());
+        assert_eq!(
+            m07_layer_code(
+                &g,
+                2,
+                true,
+                &[0x12345678, 11, 22, 33, 44],
+                &[1; 4],
+                &mut chiral
+            ),
+            3427473677
+        );
+        assert!(chiral.contains(0));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: MORGAN_2147483647
+    #[test]
+    fn uint_cell_morgan_2147483647_morgan() {
+        let g = m07_topology(
+            ChiralTag::TetrahedralCw,
+            Some(PropertyValue::UInt(2147483647_u32)),
+        );
+        let before = g.clone();
+        let mut chiral = MorganChiralAtoms::new(g.atoms.len());
+        assert_eq!(
+            m07_layer_code(
+                &g,
+                2,
+                true,
+                &[0x12345678, 11, 22, 33, 44],
+                &[1; 4],
+                &mut chiral
+            ),
+            3427473677
+        );
+        assert!(chiral.contains(0));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: MORGAN_2147483648
+    #[test]
+    fn uint_cell_morgan_2147483648_morgan() {
+        let g = m07_topology(
+            ChiralTag::TetrahedralCw,
+            Some(PropertyValue::UInt(2147483648_u32)),
+        );
+        let before = g.clone();
+        let mut chiral = MorganChiralAtoms::new(g.atoms.len());
+        assert_eq!(
+            m07_layer_code(
+                &g,
+                2,
+                true,
+                &[0x12345678, 11, 22, 33, 44],
+                &[1; 4],
+                &mut chiral
+            ),
+            3427473677
+        );
+        assert!(chiral.contains(0));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: MORGAN_4294967295
+    #[test]
+    fn uint_cell_morgan_4294967295_morgan() {
+        let g = m07_topology(
+            ChiralTag::TetrahedralCw,
+            Some(PropertyValue::UInt(4294967295_u32)),
+        );
+        let before = g.clone();
+        let mut chiral = MorganChiralAtoms::new(g.atoms.len());
+        assert_eq!(
+            m07_layer_code(
+                &g,
+                2,
+                true,
+                &[0x12345678, 11, 22, 33, 44],
+                &[1; 4],
+                &mut chiral
+            ),
+            3427473677
+        );
+        assert!(chiral.contains(0));
+        assert_eq!(g, before);
     }
 }

@@ -70,6 +70,15 @@ pub enum SdfReadError {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SdfWriteError {
+    #[error(
+        "property {property} UInt {value} causes positive_overflow converting to signed int at atom {atom:?} bond {bond:?}"
+    )]
+    UnsignedPropertyOverflow {
+        atom: Option<AtomId>,
+        bond: Option<BondId>,
+        property: String,
+        value: u32,
+    },
     #[error("V2000 mol block supports at most 999 atoms, bonds, and substance groups")]
     CountLimit,
     #[error("detached topology is invalid: {0}")]
@@ -87,15 +96,27 @@ pub enum SdfWriteError {
 fn model_int_property(value: &PropertyValue) -> Result<i32, ()> {
     match value {
         PropertyValue::Int(value) => Ok(*value),
+        PropertyValue::UInt(value) => i32::try_from(*value).map_err(|_| ()),
         PropertyValue::String(value) => parse_rdkit_int(value),
-        PropertyValue::Double(_) | PropertyValue::Bool(_) => Err(()),
+        PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => Err(()),
     }
 }
 
-fn model_string_property(value: &PropertyValue) -> Result<&str, SdfWriteError> {
-    value
-        .as_string()
-        .map_err(|_| SdfWriteError::Atom("molfile property has a non-string value kind"))
+fn model_string_property(
+    value: &PropertyValue,
+) -> Result<std::borrow::Cow<'_, str>, SdfWriteError> {
+    // RDKit❗✔️: rdvalue_tostring(i.val, res);
+    // Use the sole source vector formatter; scalar wrong-kind debt retained.
+    match value {
+        PropertyValue::String(value) => Ok(std::borrow::Cow::Borrowed(value)),
+        PropertyValue::UInt(value) => Ok(std::borrow::Cow::Owned(value.to_string())),
+        PropertyValue::IntVector(value) => Ok(std::borrow::Cow::Owned(
+            cosmolkit_core::int_vector_to_string(value),
+        )),
+        _ => Err(SdfWriteError::Atom(
+            "molfile property has a non-string value kind",
+        )),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -6907,14 +6928,53 @@ fn v2000_writer_atom_symbol(atom: &Atom) -> Result<&str, SdfWriteError> {
     }
 }
 
-fn atom_int_prop(atom: &Atom, names: &[&str]) -> i32 {
-    names
-        .iter()
-        .find_map(|name| {
-            atom.prop(name)
-                .and_then(|value| model_int_property(value).ok())
-        })
-        .unwrap_or(0)
+fn atom_int_prop(atom: &Atom, names: &[&str], source_reads: bool) -> Result<i32, SdfWriteError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return v.value.i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+
+    // RDKit❗✔️: atom->getPropIfPresent(common_properties::molRxnRole, rxnComponentType);
+    // RDKit❗✔️: atom->getPropIfPresent(common_properties::molRxnComponent,
+    // Source does not read HCount/stereoCare/exactChange/totValence properties
+    // here. Skip new vectors there, retaining original scalar conditions/debt.
+    for name in names {
+        if let Some(value) = atom.prop(name) {
+            if let PropertyValue::UInt(value) = value {
+                if !source_reads {
+                    continue;
+                }
+                return i32::try_from(*value).map_err(|_| {
+                    SdfWriteError::UnsignedPropertyOverflow {
+                        atom: Some(atom.id()),
+                        bond: None,
+                        property: (*name).to_owned(),
+                        value: *value,
+                    }
+                });
+            }
+            if matches!(value, PropertyValue::IntVector(_)) {
+                if source_reads {
+                    return Err(SdfWriteError::Atom(
+                        "molfile integer property has an invalid value",
+                    ));
+                }
+                continue;
+            }
+            if let Ok(value) = model_int_property(value) {
+                return Ok(value);
+            }
+        }
+    }
+    Ok(0)
 }
 
 fn v2000_writer_atom_line(atom: &Atom, coordinate: [f64; 3]) -> Result<String, SdfWriteError> {
@@ -6940,14 +7000,14 @@ fn v2000_writer_atom_line(atom: &Atom, coordinate: [f64; 3]) -> Result<String, S
         0,
         0,
         atom.mol_parity().unwrap_or(0),
-        atom_int_prop(atom, &["_MolFileHCount"]),
-        atom_int_prop(atom, &["molStereoCare", "_MolFileStereoCare"]),
-        atom_int_prop(atom, &["molTotValence"]),
-        atom_int_prop(atom, &["molRxnRole"]),
-        atom_int_prop(atom, &["molRxnComponent"]),
+        atom_int_prop(atom, &["_MolFileHCount"], false)?,
+        atom_int_prop(atom, &["molStereoCare", "_MolFileStereoCare"], false)?,
+        atom_int_prop(atom, &["molTotValence"], false)?,
+        atom_int_prop(atom, &["molRxnRole"], true)?,
+        atom_int_prop(atom, &["molRxnComponent"], true)?,
         atom.atom_map().unwrap_or(0),
         atom.mol_inversion_flag().unwrap_or(0),
-        atom_int_prop(atom, &["molRxnExactChange"]),
+        atom_int_prop(atom, &["molRxnExactChange"], false)?,
     ))
     // END RDKIT CPP FUNCTION
 }
@@ -7195,9 +7255,33 @@ fn append_v3000_atom_int_prop(
     key: &str,
     label: &str,
 ) -> Result<(), SdfWriteError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return v.value.i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+
     if let Some(value) = atom.prop(key) {
-        let value = model_int_property(value)
-            .map_err(|()| SdfWriteError::Atom("molfile integer property has an invalid value"))?;
+        let value = match value {
+            PropertyValue::UInt(number) => {
+                i32::try_from(*number).map_err(|_| SdfWriteError::UnsignedPropertyOverflow {
+                    atom: Some(atom.id()),
+                    bond: None,
+                    property: key.to_owned(),
+                    value: *number,
+                })?
+            }
+            value => model_int_property(value).map_err(|()| {
+                SdfWriteError::Atom("molfile integer property has an invalid value")
+            })?,
+        };
         if value != 0 {
             output.push_str(&format!(" {label}={value}"));
         }
@@ -7331,7 +7415,12 @@ fn v3000_writer_atom_line(
             if radical_electrons % 2 == 1 { 2 } else { 3 }
         ));
     }
-    if let Some(total_valence) = atom.prop("molTotValence") {
+    // Source total valence comes from structure, not this property getter.
+    // Retain old scalar output debt; vectors take the source no-read branch.
+    if let Some(total_valence) = atom
+        .prop("molTotValence")
+        .filter(|value| !matches!(value, PropertyValue::IntVector(_) | PropertyValue::UInt(_)))
+    {
         let total_valence = model_int_property(total_valence)
             .map_err(|()| SdfWriteError::Atom("molTotValence has an invalid value"))?;
         if total_valence != 0 {
@@ -7358,14 +7447,8 @@ fn v3000_writer_atom_line(
         output.push_str(&format!(" INVRET={value}"));
     }
     append_v3000_atom_int_prop(&mut output, atom, "molStereoCare", "STBOX")?;
-    if atom
-        .prop("molSubstCount")
-        .and_then(|value| model_int_property(value).ok())
-        .is_some_and(|value| value != 0)
-        || atom
-            .prop("molRingBondCount")
-            .and_then(|value| model_int_property(value).ok())
-            .is_some_and(|value| value != 0)
+    if atom_int_prop(atom, &["molSubstCount"], true)? != 0
+        || atom_int_prop(atom, &["molRingBondCount"], true)? != 0
     {
         return Err(SdfWriteError::Atom(
             "substitution/ring-bond-count query atoms require query-aware V3000 serialization",
@@ -7393,6 +7476,19 @@ fn v3000_writer_bond_type(bond: &Bond) -> Result<u32, SdfWriteError> {
 }
 
 fn v3000_writer_bond_line(bond: &Bond) -> Result<String, SdfWriteError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return v.value.i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+
     // BEGIN RDKIT CPP FUNCTION GetV3000MolFileBondLine
     // RDKit✔️✔️: ss << "M  V30 " << bond->getIdx() + 1;
     // RDKit✔️✔️: ss << " " << GetV3000BondCode(bond);
@@ -7436,8 +7532,28 @@ fn v3000_writer_bond_line(bond: &Bond) -> Result<String, SdfWriteError> {
     if let Some(configuration) = configuration {
         output.push_str(&format!(" CFG={configuration}"));
     }
+    // RXCTR uses a numeric source getter, unlike the three following strings.
+    // Keep old nonvector scalar output conditions; a vector must throw here.
+    if let Some(value) = bond.prop("molReactStatus") {
+        if let PropertyValue::UInt(value) = value {
+            i32::try_from(*value).map_err(|_| SdfWriteError::UnsignedPropertyOverflow {
+                atom: None,
+                bond: Some(bond.id()),
+                property: "molReactStatus".to_owned(),
+                value: *value,
+            })?;
+        }
+        if matches!(value, PropertyValue::IntVector(_)) {
+            return Err(SdfWriteError::Atom(
+                "molfile integer property has an invalid value",
+            ));
+        }
+        let value = model_string_property(value)?;
+        if value != "0" {
+            output.push_str(&format!(" RXCTR={value}"));
+        }
+    }
     for (key, label) in [
-        ("molReactStatus", "RXCTR"),
         ("molStereoCare", "STBOX"),
         ("_MolFileBondEndPts", "ENDPTS"),
         ("_MolFileBondAttach", "ATTACH"),
@@ -9828,5 +9944,1027 @@ mod v3k_tokens_tests {
             split_v3000_assignment("CLASS=hello world"),
             Some(("CLASS".to_owned(), "hello world"))
         );
+    }
+}
+
+#[cfg(test)]
+mod uint_sdf_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_molfile_readable_and_no_read_integer_keys() {
+        for (value, expected) in [
+            (0_u32, Some(0)),
+            (1, Some(1)),
+            (2147483646, Some(2147483646)),
+            (2147483647, Some(2147483647)),
+            (2147483648, None),
+            (4294967295, None),
+        ] {
+            let atom = Atom::from_spec(
+                AtomId::new(0),
+                cosmolkit_model::AtomSpec::new(Element::C)
+                    .with_prop("molRxnRole", PropertyValue::UInt(value))
+                    .unwrap(),
+            );
+            assert_eq!(atom_int_prop(&atom, &["molRxnRole"], false), Ok(0));
+            assert_eq!(
+                atom_int_prop(&atom, &["molRxnRole"], true),
+                expected.ok_or(SdfWriteError::UnsignedPropertyOverflow {
+                    atom: Some(AtomId::new(0)),
+                    bond: None,
+                    property: "molRxnRole".into(),
+                    value
+                })
+            );
+            let mut output = String::new();
+            let result = append_v3000_atom_int_prop(&mut output, &atom, "molRxnRole", "RXNROLE");
+            match expected {
+                Some(number) => {
+                    assert_eq!(result, Ok(()));
+                    assert_eq!(
+                        output,
+                        if number == 0 {
+                            String::new()
+                        } else {
+                            format!(" RXNROLE={number}")
+                        }
+                    );
+                }
+                None => {
+                    assert_eq!(
+                        result,
+                        Err(SdfWriteError::UnsignedPropertyOverflow {
+                            atom: Some(AtomId::new(0)),
+                            bond: None,
+                            property: "molRxnRole".into(),
+                            value
+                        })
+                    );
+                    assert_eq!(output, "");
+                }
+            }
+            assert_eq!(
+                model_string_property(&PropertyValue::UInt(value)).unwrap(),
+                match value {
+                    0 => "0",
+                    1 => "1",
+                    2147483646 => "2147483646",
+                    2147483647 => "2147483647",
+                    2147483648 => "2147483648",
+                    4294967295 => "4294967295",
+                    _ => unreachable!(),
+                }
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_sdf_rxctr_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_rxctr_numeric_errors_and_valence_no_read() {
+        for (number, text) in [
+            (0_u32, "0"),
+            (1, "1"),
+            (2147483646, "2147483646"),
+            (2147483647, "2147483647"),
+            (2147483648, "2147483648"),
+            (4294967295, "4294967295"),
+        ] {
+            let bond = Bond::from_spec(
+                BondId::new(0),
+                cosmolkit_model::BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                    .with_prop("molReactStatus", PropertyValue::UInt(number))
+                    .unwrap(),
+            );
+            let result = v3000_writer_bond_line(&bond);
+            if number > 2147483647 {
+                assert_eq!(
+                    result,
+                    Err(SdfWriteError::UnsignedPropertyOverflow {
+                        atom: None,
+                        bond: Some(BondId::new(0)),
+                        property: "molReactStatus".into(),
+                        value: number
+                    })
+                );
+            } else {
+                let row = result.unwrap();
+                assert_eq!(row.contains(" RXCTR="), number != 0);
+                if number != 0 {
+                    assert!(row.ends_with(&format!(" RXCTR={text}")));
+                }
+            }
+            let atom = Atom::from_spec(
+                AtomId::new(0),
+                cosmolkit_model::AtomSpec::new(Element::C)
+                    .with_prop("molTotValence", PropertyValue::UInt(number))
+                    .unwrap(),
+            );
+            let graph = TopologyBlock::try_from_parts(vec![atom], vec![], vec![], vec![]).unwrap();
+            let original = graph.clone();
+            let row = v3000_writer_atom_line(&graph, &graph.atoms[0], [0.0; 3]).unwrap();
+            assert!(!row.contains(" VAL="));
+            assert_eq!(graph, original);
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, BondSpec};
+
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnRole_0
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxnrole_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnRole", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molRxnRole"], true), Ok(0));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnComponent_0
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxncomponent_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnComponent", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molRxnComponent"], true), Ok(0));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molAttachPoint_0
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molattachpoint_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molAttachPoint"], true), Ok(0));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molStereoCare_0
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molstereocare_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molStereoCare", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], true), Ok(0));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molReactStatus_0
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molreactstatus_0() {
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                .with_prop("molReactStatus", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = bond.clone();
+        let line = v3000_writer_bond_line(&bond).unwrap();
+        assert_eq!(line.contains(" RXCTR="), false);
+        assert_eq!(bond, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molHCount_0
+    #[test]
+    fn uint_cell_no_read_sdf_molhcount_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molHCount", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
+        assert!(a.is_prop_computed("molHCount"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_0
+    #[test]
+    fn uint_cell_no_read_sdf_molstereocare_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molStereoCare", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
+        assert!(a.is_prop_computed("molStereoCare"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_0
+    #[test]
+    fn uint_cell_no_read_sdf_molexactchangeflag_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molExactChangeFlag", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
+        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_0
+    #[test]
+    fn uint_cell_no_read_sdf_moltotvalence_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molTotValence", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
+        assert!(a.is_prop_computed("molTotValence"));
+        assert_eq!(a, before);
+        let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
+        let before = g.clone();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        assert!(!line.contains(" VAL="));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnRole_1
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxnrole_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnRole", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molRxnRole"], true), Ok(1));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnComponent_1
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxncomponent_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnComponent", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molRxnComponent"], true), Ok(1));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molAttachPoint_1
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molattachpoint_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molAttachPoint"], true), Ok(1));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molStereoCare_1
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molstereocare_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molStereoCare", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], true), Ok(1));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molReactStatus_1
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molreactstatus_1() {
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                .with_prop("molReactStatus", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = bond.clone();
+        let line = v3000_writer_bond_line(&bond).unwrap();
+        assert_eq!(line.contains(" RXCTR="), true);
+        assert!(line.ends_with(" RXCTR=1"));
+        assert_eq!(bond, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molHCount_1
+    #[test]
+    fn uint_cell_no_read_sdf_molhcount_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molHCount", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
+        assert!(a.is_prop_computed("molHCount"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_1
+    #[test]
+    fn uint_cell_no_read_sdf_molstereocare_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molStereoCare", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
+        assert!(a.is_prop_computed("molStereoCare"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_1
+    #[test]
+    fn uint_cell_no_read_sdf_molexactchangeflag_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molExactChangeFlag", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
+        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_1
+    #[test]
+    fn uint_cell_no_read_sdf_moltotvalence_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molTotValence", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
+        assert!(a.is_prop_computed("molTotValence"));
+        assert_eq!(a, before);
+        let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
+        let before = g.clone();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        assert!(!line.contains(" VAL="));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnRole_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxnrole_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnRole", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molRxnRole"], true), Ok(2147483646));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnComponent_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxncomponent_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnComponent", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molRxnComponent"], true),
+            Ok(2147483646)
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molAttachPoint_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molattachpoint_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molAttachPoint"], true), Ok(2147483646));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molStereoCare_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molstereocare_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molStereoCare", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], true), Ok(2147483646));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molReactStatus_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molreactstatus_2147483646() {
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                .with_prop("molReactStatus", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = bond.clone();
+        let line = v3000_writer_bond_line(&bond).unwrap();
+        assert_eq!(line.contains(" RXCTR="), true);
+        assert!(line.ends_with(" RXCTR=2147483646"));
+        assert_eq!(bond, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molHCount_2147483646
+    #[test]
+    fn uint_cell_no_read_sdf_molhcount_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molHCount", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
+        assert!(a.is_prop_computed("molHCount"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_2147483646
+    #[test]
+    fn uint_cell_no_read_sdf_molstereocare_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molStereoCare", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
+        assert!(a.is_prop_computed("molStereoCare"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_2147483646
+    #[test]
+    fn uint_cell_no_read_sdf_molexactchangeflag_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molExactChangeFlag", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
+        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_2147483646
+    #[test]
+    fn uint_cell_no_read_sdf_moltotvalence_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molTotValence", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
+        assert!(a.is_prop_computed("molTotValence"));
+        assert_eq!(a, before);
+        let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
+        let before = g.clone();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        assert!(!line.contains(" VAL="));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnRole_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxnrole_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnRole", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molRxnRole"], true), Ok(2147483647));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnComponent_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxncomponent_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnComponent", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molRxnComponent"], true),
+            Ok(2147483647)
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molAttachPoint_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molattachpoint_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molAttachPoint"], true), Ok(2147483647));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molStereoCare_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molstereocare_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molStereoCare", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], true), Ok(2147483647));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molReactStatus_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molreactstatus_2147483647() {
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                .with_prop("molReactStatus", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = bond.clone();
+        let line = v3000_writer_bond_line(&bond).unwrap();
+        assert_eq!(line.contains(" RXCTR="), true);
+        assert!(line.ends_with(" RXCTR=2147483647"));
+        assert_eq!(bond, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molHCount_2147483647
+    #[test]
+    fn uint_cell_no_read_sdf_molhcount_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molHCount", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
+        assert!(a.is_prop_computed("molHCount"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_2147483647
+    #[test]
+    fn uint_cell_no_read_sdf_molstereocare_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molStereoCare", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
+        assert!(a.is_prop_computed("molStereoCare"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_2147483647
+    #[test]
+    fn uint_cell_no_read_sdf_molexactchangeflag_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molExactChangeFlag", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
+        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_2147483647
+    #[test]
+    fn uint_cell_no_read_sdf_moltotvalence_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molTotValence", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
+        assert!(a.is_prop_computed("molTotValence"));
+        assert_eq!(a, before);
+        let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
+        let before = g.clone();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        assert!(!line.contains(" VAL="));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnRole_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxnrole_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnRole", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molRxnRole"], true),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "molRxnRole".into(),
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnComponent_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxncomponent_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnComponent", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molRxnComponent"], true),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "molRxnComponent".into(),
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molAttachPoint_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molattachpoint_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molAttachPoint"], true),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "molAttachPoint".into(),
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molStereoCare_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molstereocare_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molStereoCare", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molStereoCare"], true),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "molStereoCare".into(),
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molReactStatus_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molreactstatus_2147483648() {
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                .with_prop("molReactStatus", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = bond.clone();
+        assert_eq!(
+            v3000_writer_bond_line(&bond),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: None,
+                bond: Some(BondId::new(0)),
+                property: "molReactStatus".into(),
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(bond, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molHCount_2147483648
+    #[test]
+    fn uint_cell_no_read_sdf_molhcount_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molHCount", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
+        assert!(a.is_prop_computed("molHCount"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_2147483648
+    #[test]
+    fn uint_cell_no_read_sdf_molstereocare_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molStereoCare", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
+        assert!(a.is_prop_computed("molStereoCare"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_2147483648
+    #[test]
+    fn uint_cell_no_read_sdf_molexactchangeflag_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molExactChangeFlag", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
+        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_2147483648
+    #[test]
+    fn uint_cell_no_read_sdf_moltotvalence_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molTotValence", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
+        assert!(a.is_prop_computed("molTotValence"));
+        assert_eq!(a, before);
+        let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
+        let before = g.clone();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        assert!(!line.contains(" VAL="));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnRole_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxnrole_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnRole", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molRxnRole"], true),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "molRxnRole".into(),
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molRxnComponent_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molrxncomponent_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molRxnComponent", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molRxnComponent"], true),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "molRxnComponent".into(),
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molAttachPoint_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molattachpoint_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molAttachPoint"], true),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "molAttachPoint".into(),
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molStereoCare_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molstereocare_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molStereoCare", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            atom_int_prop(&a, &["molStereoCare"], true),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: Some(AtomId::new(0)),
+                bond: None,
+                property: "molStereoCare".into(),
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/sdf_molReactStatus_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_io_sdf_molreactstatus_4294967295() {
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
+                .with_prop("molReactStatus", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = bond.clone();
+        assert_eq!(
+            v3000_writer_bond_line(&bond),
+            Err(SdfWriteError::UnsignedPropertyOverflow {
+                atom: None,
+                bond: Some(BondId::new(0)),
+                property: "molReactStatus".into(),
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(bond, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molHCount_4294967295
+    #[test]
+    fn uint_cell_no_read_sdf_molhcount_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molHCount", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
+        assert!(a.is_prop_computed("molHCount"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_4294967295
+    #[test]
+    fn uint_cell_no_read_sdf_molstereocare_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molStereoCare", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
+        assert!(a.is_prop_computed("molStereoCare"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_4294967295
+    #[test]
+    fn uint_cell_no_read_sdf_molexactchangeflag_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molExactChangeFlag", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
+        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_4294967295
+    #[test]
+    fn uint_cell_no_read_sdf_moltotvalence_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("molTotValence", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
+        assert!(a.is_prop_computed("molTotValence"));
+        assert_eq!(a, before);
+        let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
+        let before = g.clone();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        assert!(!line.contains(" VAL="));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_0
+    #[test]
+    fn uint_cell_text_consumer_io_sdftext_0_sdf() {
+        let v = PropertyValue::UInt(0_u32);
+        assert_eq!(model_string_property(&v).unwrap(), "0");
+        assert_eq!(v, PropertyValue::UInt(0_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_1
+    #[test]
+    fn uint_cell_text_consumer_io_sdftext_1_sdf() {
+        let v = PropertyValue::UInt(1_u32);
+        assert_eq!(model_string_property(&v).unwrap(), "1");
+        assert_eq!(v, PropertyValue::UInt(1_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_2147483646
+    #[test]
+    fn uint_cell_text_consumer_io_sdftext_2147483646_sdf() {
+        let v = PropertyValue::UInt(2147483646_u32);
+        assert_eq!(model_string_property(&v).unwrap(), "2147483646");
+        assert_eq!(v, PropertyValue::UInt(2147483646_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_2147483647
+    #[test]
+    fn uint_cell_text_consumer_io_sdftext_2147483647_sdf() {
+        let v = PropertyValue::UInt(2147483647_u32);
+        assert_eq!(model_string_property(&v).unwrap(), "2147483647");
+        assert_eq!(v, PropertyValue::UInt(2147483647_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_2147483648
+    #[test]
+    fn uint_cell_text_consumer_io_sdftext_2147483648_sdf() {
+        let v = PropertyValue::UInt(2147483648_u32);
+        assert_eq!(model_string_property(&v).unwrap(), "2147483648");
+        assert_eq!(v, PropertyValue::UInt(2147483648_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_4294967295
+    #[test]
+    fn uint_cell_text_consumer_io_sdftext_4294967295_sdf() {
+        let v = PropertyValue::UInt(4294967295_u32);
+        assert_eq!(model_string_property(&v).unwrap(), "4294967295");
+        assert_eq!(v, PropertyValue::UInt(4294967295_u32));
     }
 }

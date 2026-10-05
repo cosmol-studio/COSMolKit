@@ -20,7 +20,9 @@
 //! serialization; concrete molecules remain query-free at the public API
 //! boundary.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::rc::Rc;
 
 use cosmolkit_cx::{
     CxCoordinateBondKind, CxParseProgress, CxProgressPhase, CxRecord, CxSGroupHierarchy,
@@ -65,6 +67,10 @@ struct QueryGraphBuilder {
     bond_orders: Vec<BondOrder>,
     /// Directional state aligned with `bond_queries`.
     bond_directions: Vec<BondDirection>,
+    /// Source grammar encounter indexes, independent of final graph rows.
+    bond_source_indexes: Vec<u32>,
+    /// Source unspecified-order properties aligned with emitted bond rows.
+    bond_unspecified_orders: Vec<bool>,
     /// Query bond endpoints in SMARTS atom-index space.
     bond_edges: Vec<(usize, usize)>,
     /// Undirected endpoint index for source `getBondBetweenAtoms` checks.
@@ -110,6 +116,7 @@ impl QueryGraphBuilder {
         end: usize,
         bond: ParsedSmartsBond,
         direction: BondDirection,
+        source_index: u32,
     ) {
         // Local complexity: endpoint lookup is O(log E) in the BTreeSet and
         // keeps one O(E) duplicate-edge index alongside the source rows.
@@ -117,6 +124,8 @@ impl QueryGraphBuilder {
         self.bond_queries.push(bond.query);
         self.bond_orders.push(bond.carrier_order);
         self.bond_directions.push(direction);
+        self.bond_source_indexes.push(source_index);
+        self.bond_unspecified_orders.push(bond.unspecified_order);
         self.bond_edges.push((begin, end));
     }
 
@@ -160,6 +169,8 @@ impl QueryGraphBuilder {
             bond_queries,
             bond_orders,
             bond_directions,
+            bond_source_indexes,
+            bond_unspecified_orders,
             bond_edges,
             bond_pairs: _,
         } = self;
@@ -167,6 +178,8 @@ impl QueryGraphBuilder {
         if bond_queries.len() != bond_directions.len()
             || bond_queries.len() != bond_orders.len()
             || bond_queries.len() != bond_edges.len()
+            || bond_queries.len() != bond_source_indexes.len()
+            || bond_queries.len() != bond_unspecified_orders.len()
             || atoms
                 .iter()
                 .enumerate()
@@ -206,7 +219,7 @@ impl QueryGraphBuilder {
                     "SMARTS bond {bond_index} references an atom outside the graph"
                 )));
             }
-            let bond = Bond::from_spec(
+            let mut bond = Bond::from_spec(
                 cosmolkit_model::BondId::new(bond_index),
                 BondSpec::new(
                     cosmolkit_model::AtomId::new(begin),
@@ -216,14 +229,19 @@ impl QueryGraphBuilder {
                 .with_direction(direction)
                 .with_prop(
                     crate::query_graph_behavior::CXSMILES_BOND_IDX_PROP,
-                    bond_index.to_string(),
+                    cosmolkit_model::PropertyValue::UInt(bond_source_indexes[bond_index]),
                 )
                 .expect("the internal CXSMARTS bond-index property key is non-empty"),
             );
+            // RDKit✔️✔️: newB->setProp(RDKit::common_properties::_unspecifiedOrder, 1);
+            if bond_unspecified_orders[bond_index] {
+                bond.set_prop(crate::query_graph_behavior::UNSPECIFIED_ORDER_PROP, 1_i32)
+                    .expect("the internal unspecified-order property key is non-empty");
+            }
             bonds.push(QueryBond::from_parts(bond, query));
         }
 
-        QueryGraph::from_parts(
+        let mut graph = QueryGraph::from_parts(
             atoms,
             bonds,
             BTreeMap::new(),
@@ -231,7 +249,10 @@ impl QueryGraphBuilder {
             Vec::new(),
             Vec::new(),
         )
-        .map_err(|error| SmartsParseError::Parse(error.to_string()))
+        .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+        cosmolkit_smiles::finalize_query_parser_chirality(&mut graph)
+            .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+        Ok(graph)
     }
 }
 
@@ -1612,13 +1633,14 @@ fn apply_cx_coordinate_bond_to_query(
     }
     */
     // RDKit❗❌: item checkpoints retain O(n) source references; each graph
-    // lookup/update remains constant-time and follows the source commit order.
-    // The parser assigns `_cxsmilesBondIdx` from `numBondsParsed++` as bonds
-    // enter QueryGraph order; direct indexing removes the source linear scan.
+    // lookup scans O(E) source-index properties, matching source commit order.
+    // Grammar encounter indices are independent of final bond row order.
     if reference.atom >= graph.num_atoms() || reference.bond >= graph.num_bonds() {
         return Ok(());
     }
-    let Some(bond) = graph.bonds_mut().get_mut(reference.bond) else {
+    let row = crate::cx_lowering::query_bond_row_from_source_index(graph, reference.bond)
+        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+    let Some(bond) = graph.bonds_mut().get_mut(row) else {
         return Err(SmartsParseError::CxSmiles(format!(
             "CX bond index {} is outside the SMARTS graph",
             reference.bond
@@ -1700,14 +1722,16 @@ fn apply_cx_zero_bond_to_query(
     */
     // RDKit❗❌: item checkpoints retain O(n) indices for partial effects;
     // valid graph indices mutate one bond and invalid indices are source skips.
-    // Parser-order bond IDs make this vector lookup the direct form of the
-    // pinned `_cxsmilesBondIdx` lookup, whose source helper scans all bonds.
+    // Source validity window uses final bond count; the separate O(E)
+    // property lookup can fail for an in-window grammar index hole.
     if index >= graph.num_bonds() {
         return Ok(());
     }
-    let Some(bond) = graph.bonds_mut().get_mut(index) else {
-        return Ok(());
-    };
+    let row = crate::cx_lowering::query_bond_row_from_source_index(graph, index)
+        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+    let bond = graph.bonds_mut().get_mut(row).ok_or_else(|| {
+        SmartsParseError::CxSmiles("resolved CX bond row is outside graph".to_owned())
+    })?;
     bond.bond_mut().set_order(BondOrder::Zero);
     Ok(())
 }
@@ -1801,11 +1825,10 @@ pub fn parse_smarts(
     // RDKit✔️❌:   return res;
     // RDKit✔️❌: };
     // END RDKIT CPP FUNCTION MolFromSmarts
-    // Local complexity review: preprocessing, recursive labeling, parsing,
-    // stereo assignment, and cleanup remain linear in their inputs or graph.
-    // Shared CX and cleanup adapters rebuild through MoleculeBuilder, adding
-    // material O(V + E) cloning versus RDKit's in-place edits. Query-H merging
-    // uses the same canonical typed query graph and one builder compaction.
+    // Local complexity review: the lexer allocates remaining-tail strings,
+    // making tokenization O(n^2), unlike the pinned scanner. CX source-index
+    // lookup scans O(E) properties per reference, matching RDKit. Query-H
+    // merging compacts the detached graph; no MoleculeBuilder is used here.
     if params.debug_parse {
         return Err(SmartsParseError::UnsupportedFeature(
             "Bison debug_parse diagnostic output",
@@ -1942,9 +1965,8 @@ fn smarts_parse_helper(input: &str) -> Result<QueryGraphBuilder, SmartsParseErro
     // RDKit✔️✔️:     setup_smarts_string, yysmarts_lex_destroy>(yysmarts_parse,
     // RDKit✔️✔️:     inp, molVect, atom, bond, start_tok, "SMARTS");
     // Local complexity review: preprocessing has already produced one input
-    // buffer; molecule tokenization and recursive descent each make one linear
-    // pass. This wrapper adds no copy, rescan, alternate parser, or consumer
-    // local decoding and keeps SMARTS on the sole canonical query path.
+    // buffer. Recursive descent follows source reductions, but the lexer
+    // still allocates remaining-tail strings, with known O(n^2) cost.
     let tokens = tokenize(input)?;
     let mut parser = SmartsParser::new(&tokens, input);
     parser.parse_smarts_molecule()
@@ -4329,6 +4351,8 @@ struct SmartsParser<'a> {
     pos: usize,
     /// Preserve every occurrence in the source's sorted-label/token order.
     ring_closure_targets: BTreeMap<u32, Vec<RingClosureOccurrence>>,
+    /// One grammar invocation shares this counter through recursive atomd.
+    num_bonds_parsed: Rc<Cell<u32>>,
 }
 
 struct ParsedSmartsAtom {
@@ -4355,6 +4379,7 @@ struct RingClosureOccurrence {
     atom_idx: usize,
     bond: ParsedSmartsBond,
     direction: BondDirection,
+    source_index: Option<u32>,
 }
 
 impl ParsedSmartsBond {
@@ -4575,7 +4600,20 @@ impl<'a> SmartsParser<'a> {
             input,
             pos: 0,
             ring_closure_targets: BTreeMap::new(),
+            num_bonds_parsed: Rc::new(Cell::new(0)),
         }
+    }
+
+    fn next_bond_source_index(&self) -> Result<u32, SmartsParseError> {
+        // RDKit❗✔️: $2->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // One shared counter follows grammar reductions, including recursive
+        // atomd before its parent bond. Allocation is O(1), with no graph scan.
+        // Source unsigned32 postincrement wraps at UINT_MAX; this counter is
+        // source encounter metadata, never a persistent BondId.
+        let index = self.num_bonds_parsed.get();
+        let next = index.wrapping_add(1);
+        self.num_bonds_parsed.set(next);
+        Ok(index)
     }
 
     fn peek(&self) -> &(Token, SmartsTokenSpan) {
@@ -4791,6 +4829,10 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️: mol: atomd {
         let first = self.parse_atomd()?;
         graph.push_atom(first);
+        // RDKit✔️✔️: $1->setProp(RDKit::common_properties::_SmilesStart,1);
+        graph.atoms[0]
+            .set_prop(crate::query_graph_behavior::SMILES_START_PROP, 1_i32)
+            .expect("the internal source-start property key is non-empty");
 
         // RDKit✔️✔️: | mol atomd       {
         let _ = self.parse_smarts_chain(&mut graph, 0)?;
@@ -4832,16 +4874,36 @@ impl<'a> SmartsParser<'a> {
                             // RDKit✔️✔️:   $2->setBeginAtomIdx(atom->getIdx());
                             // RDKit✔️✔️:   $2->setProp("_cxsmilesBondIdx",numBondsParsed++);
                             // RDKit✔️✔️:   mp->setAtomBookmark(atom,$3);
-                            self.record_ring_closure(num, active_atom_idx, bond, direction);
+                            self.record_ring_closure(
+                                graph,
+                                num,
+                                active_atom_idx,
+                                bond,
+                                direction,
+                                true,
+                            )?;
                         }
                         _ => {
                             let (bond, reverse_endpoints) = normalize_dative_bond(bond);
                             let atom = self.parse_atomd()?;
                             let end_atom_idx = graph.push_atom(atom);
+                            let source_index = self.next_bond_source_index()?;
                             if reverse_endpoints {
-                                graph.push_bond(end_atom_idx, active_atom_idx, bond, direction);
+                                graph.push_bond(
+                                    end_atom_idx,
+                                    active_atom_idx,
+                                    bond,
+                                    direction,
+                                    source_index,
+                                );
                             } else {
-                                graph.push_bond(active_atom_idx, end_atom_idx, bond, direction);
+                                graph.push_bond(
+                                    active_atom_idx,
+                                    end_atom_idx,
+                                    bond,
+                                    direction,
+                                    source_index,
+                                );
                             }
                             active_atom_idx = end_atom_idx;
                         }
@@ -4857,6 +4919,7 @@ impl<'a> SmartsParser<'a> {
                             self.advance();
                             // Record ring closure on the parser's active atom.
                             self.record_ring_closure(
+                                graph,
                                 num,
                                 active_atom_idx,
                                 ParsedSmartsBond {
@@ -4865,7 +4928,8 @@ impl<'a> SmartsParser<'a> {
                                     unspecified_order: true,
                                 },
                                 BondDirection::None,
-                            );
+                                false,
+                            )?;
                         }
                         (Token::OpenParen, _) => {
                             let _branch_position = self.parse_branch_open_token()?;
@@ -4919,6 +4983,13 @@ impl<'a> SmartsParser<'a> {
                             self.advance();
                             let atom = self.parse_atomd()?;
                             active_atom_idx = graph.push_atom(atom);
+                            // RDKit✔️✔️: $3->setProp(RDKit::common_properties::_SmilesStart,1,true);
+                            graph.atoms[active_atom_idx]
+                                .set_computed_prop(
+                                    crate::query_graph_behavior::SMILES_START_PROP,
+                                    1_i32,
+                                )
+                                .expect("the internal source-start property key is non-empty");
                         }
                         // Atom follows implicitly with default bond
                         _ => {
@@ -4934,6 +5005,7 @@ impl<'a> SmartsParser<'a> {
                                     unspecified_order: true,
                                 },
                                 BondDirection::None,
+                                self.next_bond_source_index()?,
                             );
                             active_atom_idx = end_atom_idx;
                         }
@@ -4947,11 +5019,13 @@ impl<'a> SmartsParser<'a> {
 
     fn record_ring_closure(
         &mut self,
+        graph: &mut QueryGraphBuilder,
         num: u32,
         atom_idx: usize,
         bond: ParsedSmartsBond,
         direction: BondDirection,
-    ) {
+        explicit: bool,
+    ) -> Result<(), SmartsParseError> {
         // RDKit✔️✔️: mp->setBondBookmark(newB,$2);
         // RDKit✔️✔️: mp->setAtomBookmark(atom,$2);
         // RDKit✔️✔️: mp->setBondBookmark($2,$3);
@@ -4960,6 +5034,34 @@ impl<'a> SmartsParser<'a> {
         // BTreeMap preserves CloseMolRings label order and Vec preserves the
         // source atom occurrence order without rescanning parser input.
         // Local complexity: O(log L) label lookup and amortized O(1) append.
+        // RDKit✔️✔️: if(!(mp->getAllBondsWithBookmark($2).size()%2)){
+        // RDKit✔️✔️:   newB->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: $2->setProp("_cxsmilesBondIdx",numBondsParsed++);
+        // The implicit action checks bookmark count after appending; explicit
+        // bond_expr allocates at every occurrence, including opening tokens.
+        // RDKit❗✔️: tmp.push_back(-($2+1));
+        // Preserve the source token-position placeholders on the atom carrier;
+        // explicit wrapping spells out the source signed carrier conversion.
+        let atom = &mut graph.atoms[atom_idx];
+        let mut closures = match atom.prop("_RingClosures") {
+            Some(cosmolkit_model::PropertyValue::IntVector(ids)) => ids.clone(),
+            None => Vec::new(),
+            Some(_) => {
+                return Err(SmartsParseError::Parse(
+                    "ring closure property has the wrong type".into(),
+                ));
+            }
+        };
+        closures.push((num as i32).wrapping_add(1).wrapping_neg());
+        atom.set_prop("_RingClosures", closures)
+            .expect("the internal ring-closure property key is non-empty");
+        let count_before = self.ring_closure_targets.get(&num).map_or(0, Vec::len);
+        let source_index = if explicit || count_before % 2 == 1 {
+            Some(self.next_bond_source_index()?)
+        } else {
+            None
+        };
         self.ring_closure_targets
             .entry(num)
             .or_default()
@@ -4967,7 +5069,9 @@ impl<'a> SmartsParser<'a> {
                 atom_idx,
                 bond,
                 direction,
+                source_index,
             });
+        Ok(())
     }
 
     fn close_ring_closures(
@@ -5149,6 +5253,17 @@ impl<'a> SmartsParser<'a> {
                     )));
                 }
 
+                // RDKit✔️✔️: if (bond2->hasProp("_cxsmilesBondIdx")) {
+                // RDKit✔️✔️:   bond1->setProp("_cxsmilesBondIdx",
+                // RDKit✔️✔️:                bond2->getProp<unsigned int>("_cxsmilesBondIdx"));
+                // RDKit✔️✔️: }
+                // Both implicit closing occurrences and explicit tokens carry
+                // the second index; final ring row order does not renumber it.
+                let source_index = close.source_index.or(open.source_index).ok_or_else(|| {
+                    SmartsParseError::Parse(
+                        "closed SMARTS ring has no source bond index".to_owned(),
+                    )
+                })?;
                 let open_is_unspecified = ring_closure_is_unspecified(&open.bond);
                 let selected_is_open = !open_is_unspecified;
                 let (mut selected_bond, selected_direction, other_direction) = if selected_is_open {
@@ -5185,7 +5300,34 @@ impl<'a> SmartsParser<'a> {
                     selected_bond.carrier_order =
                         graph.implicit_bond_order(open_atom_idx, close_atom_idx);
                 }
-                graph.push_bond(begin, end, selected_bond, direction);
+                let bond_index = i32::try_from(graph.bond_queries.len()).map_err(|_| {
+                    SmartsParseError::Parse(
+                        "ring bond index exceeds the source signed carrier".into(),
+                    )
+                })?;
+                graph.push_bond(begin, end, selected_bond, direction, source_index);
+                // RDKit❗✔️: *closurePos = bondIdx - 1;
+                for index in [open_atom_idx, close_atom_idx] {
+                    let atom = &mut graph.atoms[index];
+                    let mut ids = atom
+                        .prop("_RingClosures")
+                        .and_then(|value| value.as_int_vector().ok())
+                        .ok_or_else(|| {
+                            SmartsParseError::Parse("missing ring atom-order placeholder".into())
+                        })?
+                        .to_vec();
+                    let position = ids
+                        .iter()
+                        .position(|&id| id == (number as i32).wrapping_add(1).wrapping_neg())
+                        .ok_or_else(|| {
+                            SmartsParseError::Parse(
+                                "missing unresolved ring atom-order placeholder".into(),
+                            )
+                        })?;
+                    ids[position] = bond_index;
+                    atom.set_prop("_RingClosures", ids)
+                        .expect("the internal ring-closure property key is non-empty");
+                }
             }
         }
         Ok(())
@@ -6936,12 +7078,22 @@ impl<'a> SmartsParser<'a> {
             .strip_prefix("$(")
             .and_then(|value| value.strip_suffix(')'))
             .expect("balanced recursive SMARTS has delimiters");
-        let query_mol = parse_smarts(inner, &SmartsParseParams::default()).map_err(|error| {
-            SmartsParseError::InvalidAtomPrimitive {
+        // RDKit✔️✔️: SmilesParseOps::CloseMolRings(molP,0);
+        // RDKit✔️✔️: qA->setQuery(new RecursiveStructureQuery(molP));
+        // Recursive mol reductions are part of the same grammar invocation.
+        // Do not run public preprocessing/CX/cleanup or reset the counter.
+        let query_mol = (|| {
+            let tokens = tokenize(inner)?;
+            let mut parser = SmartsParser::new(&tokens, inner);
+            parser.num_bonds_parsed = Rc::clone(&self.num_bonds_parsed);
+            parser.parse_smarts_molecule()?.finish()
+        })()
+        .map_err(
+            |error: SmartsParseError| SmartsParseError::InvalidAtomPrimitive {
                 position: start,
                 detail: error.to_string(),
-            }
-        })?;
+            },
+        )?;
         Ok((
             QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(
                 crate::query_behavior::RecursiveStructureQuery::from_query_graph(
@@ -9765,5 +9917,86 @@ mod cx_progress_directions_tests {
             .expect("source does not set stereo without two endpoint neighbors");
         assert_eq!(graph.bond(0).unwrap().bond().stereo(), BondStereo::None);
         assert_eq!(graph.bond(0).unwrap().bond().stereo_atoms(), None);
+    }
+}
+
+#[cfg(test)]
+mod uint_counter_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_source_counter_preserves_unsigned_postincrement() {
+        let tokens = [];
+        let parser = SmartsParser::new(&tokens, "");
+        for (value, next) in [
+            (0_u32, 1_u32),
+            (1, 2),
+            (2147483646, 2147483647),
+            (2147483647, 2147483648),
+            (2147483648, 2147483649),
+            (4294967295, 0),
+        ] {
+            parser.num_bonds_parsed.set(value);
+            assert_eq!(parser.next_bond_source_index(), Ok(value));
+            assert_eq!(parser.num_bonds_parsed.get(), next);
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    // FROZEN UINT CONDITION: COUNTER_0
+    #[test]
+    fn uint_cell_counter_0_smarts_parse() {
+        let tokens = [];
+        let parser = SmartsParser::new(&tokens, "");
+        parser.num_bonds_parsed.set(0_u32);
+        assert_eq!(parser.next_bond_source_index(), Ok(0_u32));
+        assert_eq!(parser.num_bonds_parsed.get(), 1_u32);
+    }
+    // FROZEN UINT CONDITION: COUNTER_1
+    #[test]
+    fn uint_cell_counter_1_smarts_parse() {
+        let tokens = [];
+        let parser = SmartsParser::new(&tokens, "");
+        parser.num_bonds_parsed.set(1_u32);
+        assert_eq!(parser.next_bond_source_index(), Ok(1_u32));
+        assert_eq!(parser.num_bonds_parsed.get(), 2_u32);
+    }
+    // FROZEN UINT CONDITION: COUNTER_2147483646
+    #[test]
+    fn uint_cell_counter_2147483646_smarts_parse() {
+        let tokens = [];
+        let parser = SmartsParser::new(&tokens, "");
+        parser.num_bonds_parsed.set(2147483646_u32);
+        assert_eq!(parser.next_bond_source_index(), Ok(2147483646_u32));
+        assert_eq!(parser.num_bonds_parsed.get(), 2147483647_u32);
+    }
+    // FROZEN UINT CONDITION: COUNTER_2147483647
+    #[test]
+    fn uint_cell_counter_2147483647_smarts_parse() {
+        let tokens = [];
+        let parser = SmartsParser::new(&tokens, "");
+        parser.num_bonds_parsed.set(2147483647_u32);
+        assert_eq!(parser.next_bond_source_index(), Ok(2147483647_u32));
+        assert_eq!(parser.num_bonds_parsed.get(), 2147483648_u32);
+    }
+    // FROZEN UINT CONDITION: COUNTER_2147483648
+    #[test]
+    fn uint_cell_counter_2147483648_smarts_parse() {
+        let tokens = [];
+        let parser = SmartsParser::new(&tokens, "");
+        parser.num_bonds_parsed.set(2147483648_u32);
+        assert_eq!(parser.next_bond_source_index(), Ok(2147483648_u32));
+        assert_eq!(parser.num_bonds_parsed.get(), 2147483649_u32);
+    }
+    // FROZEN UINT CONDITION: COUNTER_4294967295
+    #[test]
+    fn uint_cell_counter_4294967295_smarts_parse() {
+        let tokens = [];
+        let parser = SmartsParser::new(&tokens, "");
+        parser.num_bonds_parsed.set(4294967295_u32);
+        assert_eq!(parser.next_bond_source_index(), Ok(4294967295_u32));
+        assert_eq!(parser.num_bonds_parsed.get(), 0_u32);
     }
 }

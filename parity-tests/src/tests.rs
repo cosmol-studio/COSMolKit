@@ -229,6 +229,7 @@ fn svg_registration_preserves_complete_cargo_task_key_census() {
             "chi_4_n_smiles",
             "chi_n_v_smiles",
             "chi_n_n_smiles",
+            "substructure_match_smiles",
         ]
     );
     let task = registry::select(Some("svg_smiles")).unwrap()[0];
@@ -1025,6 +1026,12 @@ fn molecular_missing_final_reference_blocks_all_rust_calls() {
                 .iter()
                 .map(|input| {
                     let output = match input {
+                        Input::Search(_) => {
+                            registry::Value::Search(crate::search::Outcome::Error {
+                                stage: "Parse".into(),
+                                kind: "SmilesParse".into(),
+                            })
+                        }
                         Input::Uff(_) => {
                             return Err("UFF reference intentionally unavailable".into());
                         }
@@ -1611,6 +1618,12 @@ fn descriptor_query_global_preflight_missing_final_new_task_reference_blocks_rus
                 .iter()
                 .map(|input| {
                     let output = match input {
+                        Input::Search(_) => {
+                            registry::Value::Search(crate::search::Outcome::Error {
+                                stage: "Parse".into(),
+                                kind: "SmilesParse".into(),
+                            })
+                        }
                         Input::Molecular { .. } => {
                             registry::Value::Molecular(molecular::Outcome::Unsigned(0))
                         }
@@ -2133,6 +2146,11 @@ fn uff_new_registration_order_profiles_and_canonical_list_rows() {
         ("chi_4_n_smiles", "generate_chi_4_n", CorpusType::Smiles),
         ("chi_n_v_smiles", "generate_chi_n_v", CorpusType::Smiles),
         ("chi_n_n_smiles", "generate_chi_n_n", CorpusType::Smiles),
+        (
+            "substructure_match_smiles",
+            "generate_substructure_match",
+            CorpusType::Smiles,
+        ),
     ];
     assert_eq!(tasks.len(), expected.len());
     assert_eq!(
@@ -2241,6 +2259,7 @@ fn uff_new_registration_order_profiles_and_canonical_list_rows() {
             "chi_4_n_smiles: 1 cases; generate_chi_4_n",
             "chi_n_v_smiles: 7 cases; generate_chi_n_v",
             "chi_n_n_smiles: 7 cases; generate_chi_n_n",
+            "substructure_match_smiles: 18 cases; generate_substructure_match",
         ]
         .map(str::to_string)
     );
@@ -2405,7 +2424,11 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
 
     let selected_all = registry::select(None).unwrap();
     assert_eq!(selected_all.len(), registry::TASKS.len());
-    assert_eq!(selected_all.len(), 62);
+    assert_eq!(selected_all.len(), 63);
+    assert_eq!(
+        selected_all[62].operation,
+        crate::registry::Operation::SubstructureMatch
+    );
     assert!(
         selected_all
             .iter()
@@ -2480,6 +2503,7 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
             "chi_4_n",
             "chi_n_v",
             "chi_n_n",
+            "substructure_match",
         ]
     );
     assert_eq!(
@@ -2550,6 +2574,7 @@ fn parity_morgan_registry_profiles_names_counts_defaults_and_selection() {
             "chi_4_n_smiles",
             "chi_n_v_smiles",
             "chi_n_n_smiles",
+            "substructure_match_smiles",
         ]
     );
 

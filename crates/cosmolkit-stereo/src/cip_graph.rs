@@ -18,6 +18,12 @@ use cosmolkit_types::{BondOrder, ChiralTag, Element};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CipLabelerError {
+    #[error("atom {atom} property {property} has invalid kind {kind:?}")]
+    InvalidPropertyKind {
+        atom: usize,
+        property: &'static str,
+        kind: cosmolkit_model::PropertyValueKind,
+    },
     #[error("CIPLabeler atom index {index} is out of range for {atom_count} atoms")]
     AtomIndexOutOfRange { index: usize, atom_count: usize },
     #[error("CIPLabeler bond index {index} is out of range for {bond_count} bonds")]

@@ -359,23 +359,23 @@ fn canonical_writer_decodes_signed_ring_relative_stereo_ids_in_source_order() {
     for (input, first_relation, second_relation, expected) in [
         (
             "C1[C@H](F)CC[C@H](Cl)C1",
-            "6",
-            "2",
+            6_i32,
+            2_i32,
             "F[C@H]1CC[C@@H](Cl)CC1",
         ),
         (
             "C1[C@H](F)CC[C@@H](Cl)C1",
-            "-6",
-            "-2",
+            -6_i32,
+            -2_i32,
             "F[C@H]1CC[C@H](Cl)CC1",
         ),
     ] {
         let mut parsed = record(input);
         parsed.topology.atoms[1]
-            .set_prop("_ringStereoAtoms", first_relation)
+            .set_prop("_ringStereoAtoms", vec![first_relation])
             .unwrap();
         parsed.topology.atoms[5]
-            .set_prop("_ringStereoAtoms", second_relation)
+            .set_prop("_ringStereoAtoms", vec![second_relation])
             .unwrap();
 
         assert_eq!(write_smiles(&parsed).unwrap(), expected, "{input}");
@@ -406,10 +406,10 @@ fn canonical_writer_reports_source_bad_any_cast_for_malformed_ring_stereo_proper
 fn canonical_writer_does_not_propagate_from_a_broken_relative_stereo_center() {
     let mut parsed = record("C1[C@H](F)CC[C@H](Cl)C1");
     parsed.topology.atoms[1]
-        .set_computed_prop("_ringStereoAtoms", "6")
+        .set_computed_prop("_ringStereoAtoms", vec![6_i32])
         .unwrap();
     parsed.topology.atoms[5]
-        .set_computed_prop("_ringStereoAtoms", "2")
+        .set_computed_prop("_ringStereoAtoms", vec![2_i32])
         .unwrap();
     parsed.topology.atoms[1]
         .set_prop("_brokenChirality", "1")
@@ -435,37 +435,37 @@ fn canonical_writer_maps_ring_relative_references_across_component_order() {
         (
             "N.C1[C@H](F)CC[C@H](Cl)C1",
             2,
-            "7",
+            7_i32,
             6,
-            "3",
+            3_i32,
             2,
             "N.[C@H]1(F)CC[C@@H](Cl)CC1",
         ),
         (
             "C1[C@H](F)CC[C@H](Cl)C1.N",
             1,
-            "6",
+            6_i32,
             5,
-            "2",
+            2_i32,
             1,
             "[C@H]1(F)CC[C@@H](Cl)CC1.N",
         ),
     ] {
         let mut parsed = record(input);
         parsed.topology.atoms[first_center]
-            .set_computed_prop("_ringStereoAtoms", first_reference)
+            .set_computed_prop("_ringStereoAtoms", vec![first_reference])
             .unwrap();
         parsed.topology.atoms[second_center]
-            .set_computed_prop("_ringStereoAtoms", second_reference)
+            .set_computed_prop("_ringStereoAtoms", vec![second_reference])
             .unwrap();
         assert_eq!(
             parsed.topology.atoms[first_center].prop("_ringStereoAtoms"),
-            Some(&PropertyValue::String(first_reference.to_owned())),
+            Some(&PropertyValue::IntVector(vec![first_reference])),
             "first parsed relation for {input}"
         );
         assert_eq!(
             parsed.topology.atoms[second_center].prop("_ringStereoAtoms"),
-            Some(&PropertyValue::String(second_reference.to_owned())),
+            Some(&PropertyValue::IntVector(vec![second_reference])),
             "second parsed relation for {input}"
         );
 

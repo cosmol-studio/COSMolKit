@@ -850,3 +850,33 @@ fn receiver_capability_is_independent_of_business_type() {
     }
     assert_eq!(OWNED_PROTEIN_BINDINGS.len(), 1);
 }
+
+#[test]
+fn value_and_inplace_same_verb_keep_distinct_canonical_javascript_names() {
+    let entries = r#"{
+        semantic_id:"Molecule.sanitize",item:callable,owner:molecule,
+        rust:crate::Molecule::sanitize,python:"sanitize",javascript:"sanitize",
+        feature:"cap-sanitize",kind:instance,parameters:[],output:crate::Molecule,
+        error:crate::OperationError,state:value_returning,operation:"sanitize",
+        signature:fn(&crate::Molecule)->Result<crate::Molecule,crate::OperationError>
+    },{
+        semantic_id:"Molecule.sanitize_",item:callable,owner:molecule,
+        rust:crate::Molecule::sanitize_,python:"sanitize_",javascript:"sanitize_",
+        feature:"cap-sanitize",kind:instance,parameters:[],output:(),
+        error:crate::OperationError,state:in_place,operation:"sanitize_",
+        signature:fn(&mut crate::Molecule)->Result<(),crate::OperationError>
+    }"#;
+    expand_binding_contract(registry_with(entries)).expect("distinct paired projections");
+    let ambiguous = entries.replace(r#"javascript:"sanitize_""#, r#"javascript:"sanitize""#);
+    assert!(
+        error_for(registry_with(&ambiguous))
+            .contains("JavaScript callable name must be `sanitize_`")
+    );
+    let wrong = entries.replace(
+        r#"javascript:"sanitize_""#,
+        r#"javascript:"sanitizeInPlace""#,
+    );
+    assert!(
+        error_for(registry_with(&wrong)).contains("JavaScript callable name must be `sanitize_`")
+    );
+}

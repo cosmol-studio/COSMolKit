@@ -692,3 +692,2163 @@ fn source_bodies_and_reviewed_two_axis_markers_are_local_to_the_owner() {
     assert!(!source.contains("RDKit❗"));
     assert!(!source.contains("RDKit❌"));
 }
+
+#[test]
+fn q01_b1_canonical_vector_rank_is_lazy_and_named() {
+    use cosmolkit_core::{
+        CanonicalRankError, CanonicalRankParams, rank_fragment_atoms_with_params,
+        rank_mol_atoms_with_params,
+    };
+    use cosmolkit_model::PropertyValueKind;
+    let mut t = topology(
+        vec![
+            atom(0, AtomSpec::new(Element::C)),
+            atom(1, AtomSpec::new(Element::C)),
+        ],
+        vec![],
+    );
+    let control = rank_mol_atoms_with_params(&t, &CanonicalRankParams::default()).unwrap();
+    t.atoms[0]
+        .set_prop("_CanonicalRankingNumber", vec![1_i32])
+        .unwrap();
+    assert_eq!(
+        rank_mol_atoms_with_params(&t, &CanonicalRankParams::default()).unwrap(),
+        control
+    );
+    let mut params = CanonicalRankParams::default();
+    params.use_non_stereo_ranks = true;
+    let before = t.clone();
+    assert_eq!(
+        rank_mol_atoms_with_params(&t, &params),
+        Err(CanonicalRankError::InvalidPropertyKind {
+            atom_index: 0,
+            property: "_CanonicalRankingNumber",
+            kind: PropertyValueKind::IntVector
+        })
+    );
+    assert_eq!(t, before);
+    t.atoms[0].clear_prop("_CanonicalRankingNumber");
+    t.atoms[1]
+        .set_prop("_CanonicalRankingNumber", vec![-2_i32])
+        .unwrap();
+    assert_eq!(
+        rank_mol_atoms_with_params(&t, &params),
+        Err(CanonicalRankError::InvalidPropertyKind {
+            atom_index: 1,
+            property: "_CanonicalRankingNumber",
+            kind: PropertyValueKind::IntVector
+        })
+    );
+    assert!(rank_fragment_atoms_with_params(&t, &[true, true], &[], None, None, &params).is_ok());
+    let singleton = topology(
+        vec![atom(
+            0,
+            AtomSpec::new(Element::C)
+                .with_prop("_CanonicalRankingNumber", vec![1_i32])
+                .unwrap(),
+        )],
+        vec![],
+    );
+    assert!(rank_mol_atoms_with_params(&singleton, &params).is_ok());
+}
+
+fn q01_b1_scalar_rank_source_cases() -> Vec<(
+    &'static str,
+    Option<PropertyValue>,
+    Result<i32, cosmolkit_model::PropertyValueKind>,
+)> {
+    use cosmolkit_model::PropertyValueKind;
+    vec![
+        ("S000", Some(PropertyValue::String("0".to_owned())), Ok(0)),
+        ("S001", Some(PropertyValue::String("-0".to_owned())), Ok(0)),
+        ("S002", Some(PropertyValue::String("+0".to_owned())), Ok(0)),
+        ("S003", Some(PropertyValue::String("1".to_owned())), Ok(1)),
+        ("S004", Some(PropertyValue::String("-1".to_owned())), Ok(-1)),
+        ("S005", Some(PropertyValue::String("+1".to_owned())), Ok(1)),
+        ("S006", Some(PropertyValue::String("001".to_owned())), Ok(1)),
+        (
+            "S007",
+            Some(PropertyValue::String("-001".to_owned())),
+            Ok(-1),
+        ),
+        (
+            "S008",
+            Some(PropertyValue::String("+001".to_owned())),
+            Ok(1),
+        ),
+        (
+            "S009",
+            Some(PropertyValue::String("2147483647".to_owned())),
+            Ok(2147483647),
+        ),
+        (
+            "S010",
+            Some(PropertyValue::String("-2147483648".to_owned())),
+            Ok(-2147483648),
+        ),
+        (
+            "S011",
+            Some(PropertyValue::String("+2147483647".to_owned())),
+            Ok(2147483647),
+        ),
+        (
+            "S012",
+            Some(PropertyValue::String("2147483648".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S013",
+            Some(PropertyValue::String("-2147483649".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S014",
+            Some(PropertyValue::String("+2147483648".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S015",
+            Some(PropertyValue::String(
+                "999999999999999999999999999999999999".to_owned(),
+            )),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S016",
+            Some(PropertyValue::String(
+                "000000000000000000000000000000000000000000001".to_owned(),
+            )),
+            Ok(1),
+        ),
+        (
+            "S017",
+            Some(PropertyValue::String(
+                "-000000000000000000000000000000002147483648".to_owned(),
+            )),
+            Ok(-2147483648),
+        ),
+        ("S018", Some(PropertyValue::String("7 ".to_owned())), Ok(7)),
+        ("S019", Some(PropertyValue::String("7\t".to_owned())), Ok(7)),
+        ("S020", Some(PropertyValue::String("7\n".to_owned())), Ok(7)),
+        ("S021", Some(PropertyValue::String("7\r".to_owned())), Ok(7)),
+        (
+            "S022",
+            Some(PropertyValue::String("7\u{000b}".to_owned())),
+            Ok(7),
+        ),
+        (
+            "S023",
+            Some(PropertyValue::String("7\u{000c}".to_owned())),
+            Ok(7),
+        ),
+        (
+            "S024",
+            Some(PropertyValue::String(
+                "+7 \t\n\r\u{000b}\u{000c}".to_owned(),
+            )),
+            Ok(7),
+        ),
+        (
+            "S025",
+            Some(PropertyValue::String(" 7".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S026",
+            Some(PropertyValue::String("\t7".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S027",
+            Some(PropertyValue::String("\n7".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S028",
+            Some(PropertyValue::String("\r7".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S029",
+            Some(PropertyValue::String("\u{000b}7".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S030",
+            Some(PropertyValue::String("\u{000c}7".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S031",
+            Some(PropertyValue::String(" 7 ".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S032",
+            Some(PropertyValue::String("".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S033",
+            Some(PropertyValue::String(" ".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S034",
+            Some(PropertyValue::String("\t\n\r\u{000b}\u{000c}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S035",
+            Some(PropertyValue::String("+".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S036",
+            Some(PropertyValue::String("-".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S037",
+            Some(PropertyValue::String("+-1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S038",
+            Some(PropertyValue::String("--1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S039",
+            Some(PropertyValue::String("++1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S040",
+            Some(PropertyValue::String("1-".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S041",
+            Some(PropertyValue::String("1+".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S042",
+            Some(PropertyValue::String("1 2".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S043",
+            Some(PropertyValue::String("1\t2".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S044",
+            Some(PropertyValue::String("1.0".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S045",
+            Some(PropertyValue::String("-1.0".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S046",
+            Some(PropertyValue::String("1e0".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S047",
+            Some(PropertyValue::String("0x10".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S048",
+            Some(PropertyValue::String("0b10".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S049",
+            Some(PropertyValue::String("1,000".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S050",
+            Some(PropertyValue::String("true".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S051",
+            Some(PropertyValue::String("false".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S052",
+            Some(PropertyValue::String("nan".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S053",
+            Some(PropertyValue::String("inf".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S054",
+            Some(PropertyValue::String("[1]".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S055",
+            Some(PropertyValue::String("[]".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S056",
+            Some(PropertyValue::String("1x".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S057",
+            Some(PropertyValue::String("1\u{0000}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S058",
+            Some(PropertyValue::String("1\u{0000} ".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S059",
+            Some(PropertyValue::String("\u{0000}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S060",
+            Some(PropertyValue::String("1 ".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S061",
+            Some(PropertyValue::String(" 1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S062",
+            Some(PropertyValue::String("1 ".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S063",
+            Some(PropertyValue::String(" 1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S064",
+            Some(PropertyValue::String("1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S065",
+            Some(PropertyValue::String("1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S066",
+            Some(PropertyValue::String("١".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S067",
+            Some(PropertyValue::String("１".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S068",
+            Some(PropertyValue::String("²".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "S069",
+            Some(PropertyValue::String("−1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "I070",
+            Some(PropertyValue::Int(-2147483648)),
+            Ok(-2147483648),
+        ),
+        ("I071", Some(PropertyValue::Int(-2)), Ok(-2)),
+        ("I072", Some(PropertyValue::Int(-1)), Ok(-1)),
+        ("I073", Some(PropertyValue::Int(0)), Ok(0)),
+        ("I074", Some(PropertyValue::Int(1)), Ok(1)),
+        ("I075", Some(PropertyValue::Int(2)), Ok(2)),
+        ("I076", Some(PropertyValue::Int(2147483647)), Ok(2147483647)),
+        (
+            "B077",
+            Some(PropertyValue::Bool(false)),
+            Err(PropertyValueKind::Bool),
+        ),
+        (
+            "B078",
+            Some(PropertyValue::Bool(true)),
+            Err(PropertyValueKind::Bool),
+        ),
+        (
+            "D079",
+            Some(PropertyValue::Double(f64::NEG_INFINITY)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D080",
+            Some(PropertyValue::Double(-2147483648.0)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D081",
+            Some(PropertyValue::Double(-1.5)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D082",
+            Some(PropertyValue::Double(-1.0)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D083",
+            Some(PropertyValue::Double(-0.0)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D084",
+            Some(PropertyValue::Double(0.0)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D085",
+            Some(PropertyValue::Double(1.0)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D086",
+            Some(PropertyValue::Double(1.5)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D087",
+            Some(PropertyValue::Double(2147483647.0)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D088",
+            Some(PropertyValue::Double(f64::INFINITY)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "D089",
+            Some(PropertyValue::Double(f64::NAN)),
+            Err(PropertyValueKind::Double),
+        ),
+        (
+            "AL000",
+            Some(PropertyValue::String("\u{0000}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT000",
+            Some(PropertyValue::String("1\u{0000}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL001",
+            Some(PropertyValue::String("\u{0001}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT001",
+            Some(PropertyValue::String("1\u{0001}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL002",
+            Some(PropertyValue::String("\u{0002}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT002",
+            Some(PropertyValue::String("1\u{0002}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL003",
+            Some(PropertyValue::String("\u{0003}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT003",
+            Some(PropertyValue::String("1\u{0003}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL004",
+            Some(PropertyValue::String("\u{0004}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT004",
+            Some(PropertyValue::String("1\u{0004}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL005",
+            Some(PropertyValue::String("\u{0005}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT005",
+            Some(PropertyValue::String("1\u{0005}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL006",
+            Some(PropertyValue::String("\u{0006}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT006",
+            Some(PropertyValue::String("1\u{0006}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL007",
+            Some(PropertyValue::String("\u{0007}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT007",
+            Some(PropertyValue::String("1\u{0007}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL008",
+            Some(PropertyValue::String("\u{0008}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT008",
+            Some(PropertyValue::String("1\u{0008}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL009",
+            Some(PropertyValue::String("\t1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT009",
+            Some(PropertyValue::String("1\t".to_owned())),
+            Ok(1),
+        ),
+        (
+            "AL010",
+            Some(PropertyValue::String("\n1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT010",
+            Some(PropertyValue::String("1\n".to_owned())),
+            Ok(1),
+        ),
+        (
+            "AL011",
+            Some(PropertyValue::String("\u{000b}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT011",
+            Some(PropertyValue::String("1\u{000b}".to_owned())),
+            Ok(1),
+        ),
+        (
+            "AL012",
+            Some(PropertyValue::String("\u{000c}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT012",
+            Some(PropertyValue::String("1\u{000c}".to_owned())),
+            Ok(1),
+        ),
+        (
+            "AL013",
+            Some(PropertyValue::String("\r1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT013",
+            Some(PropertyValue::String("1\r".to_owned())),
+            Ok(1),
+        ),
+        (
+            "AL014",
+            Some(PropertyValue::String("\u{000e}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT014",
+            Some(PropertyValue::String("1\u{000e}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL015",
+            Some(PropertyValue::String("\u{000f}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT015",
+            Some(PropertyValue::String("1\u{000f}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL016",
+            Some(PropertyValue::String("\u{0010}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT016",
+            Some(PropertyValue::String("1\u{0010}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL017",
+            Some(PropertyValue::String("\u{0011}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT017",
+            Some(PropertyValue::String("1\u{0011}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL018",
+            Some(PropertyValue::String("\u{0012}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT018",
+            Some(PropertyValue::String("1\u{0012}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL019",
+            Some(PropertyValue::String("\u{0013}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT019",
+            Some(PropertyValue::String("1\u{0013}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL020",
+            Some(PropertyValue::String("\u{0014}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT020",
+            Some(PropertyValue::String("1\u{0014}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL021",
+            Some(PropertyValue::String("\u{0015}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT021",
+            Some(PropertyValue::String("1\u{0015}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL022",
+            Some(PropertyValue::String("\u{0016}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT022",
+            Some(PropertyValue::String("1\u{0016}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL023",
+            Some(PropertyValue::String("\u{0017}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT023",
+            Some(PropertyValue::String("1\u{0017}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL024",
+            Some(PropertyValue::String("\u{0018}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT024",
+            Some(PropertyValue::String("1\u{0018}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL025",
+            Some(PropertyValue::String("\u{0019}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT025",
+            Some(PropertyValue::String("1\u{0019}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL026",
+            Some(PropertyValue::String("\u{001a}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT026",
+            Some(PropertyValue::String("1\u{001a}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL027",
+            Some(PropertyValue::String("\u{001b}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT027",
+            Some(PropertyValue::String("1\u{001b}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL028",
+            Some(PropertyValue::String("\u{001c}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT028",
+            Some(PropertyValue::String("1\u{001c}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL029",
+            Some(PropertyValue::String("\u{001d}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT029",
+            Some(PropertyValue::String("1\u{001d}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL030",
+            Some(PropertyValue::String("\u{001e}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT030",
+            Some(PropertyValue::String("1\u{001e}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL031",
+            Some(PropertyValue::String("\u{001f}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT031",
+            Some(PropertyValue::String("1\u{001f}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL032",
+            Some(PropertyValue::String(" 1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        ("AT032", Some(PropertyValue::String("1 ".to_owned())), Ok(1)),
+        (
+            "AL033",
+            Some(PropertyValue::String("!1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT033",
+            Some(PropertyValue::String("1!".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL034",
+            Some(PropertyValue::String("\"1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT034",
+            Some(PropertyValue::String("1\"".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL035",
+            Some(PropertyValue::String("#1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT035",
+            Some(PropertyValue::String("1#".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL036",
+            Some(PropertyValue::String("$1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT036",
+            Some(PropertyValue::String("1$".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL037",
+            Some(PropertyValue::String("%1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT037",
+            Some(PropertyValue::String("1%".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL038",
+            Some(PropertyValue::String("&1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT038",
+            Some(PropertyValue::String("1&".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL039",
+            Some(PropertyValue::String("'1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT039",
+            Some(PropertyValue::String("1'".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL040",
+            Some(PropertyValue::String("(1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT040",
+            Some(PropertyValue::String("1(".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL041",
+            Some(PropertyValue::String(")1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT041",
+            Some(PropertyValue::String("1)".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL042",
+            Some(PropertyValue::String("*1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT042",
+            Some(PropertyValue::String("1*".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        ("AL043", Some(PropertyValue::String("+1".to_owned())), Ok(1)),
+        (
+            "AT043",
+            Some(PropertyValue::String("1+".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL044",
+            Some(PropertyValue::String(",1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT044",
+            Some(PropertyValue::String("1,".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL045",
+            Some(PropertyValue::String("-1".to_owned())),
+            Ok(-1),
+        ),
+        (
+            "AT045",
+            Some(PropertyValue::String("1-".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL046",
+            Some(PropertyValue::String(".1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT046",
+            Some(PropertyValue::String("1.".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL047",
+            Some(PropertyValue::String("/1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT047",
+            Some(PropertyValue::String("1/".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        ("AL048", Some(PropertyValue::String("01".to_owned())), Ok(1)),
+        (
+            "AT048",
+            Some(PropertyValue::String("10".to_owned())),
+            Ok(10),
+        ),
+        (
+            "AL049",
+            Some(PropertyValue::String("11".to_owned())),
+            Ok(11),
+        ),
+        (
+            "AT049",
+            Some(PropertyValue::String("11".to_owned())),
+            Ok(11),
+        ),
+        (
+            "AL050",
+            Some(PropertyValue::String("21".to_owned())),
+            Ok(21),
+        ),
+        (
+            "AT050",
+            Some(PropertyValue::String("12".to_owned())),
+            Ok(12),
+        ),
+        (
+            "AL051",
+            Some(PropertyValue::String("31".to_owned())),
+            Ok(31),
+        ),
+        (
+            "AT051",
+            Some(PropertyValue::String("13".to_owned())),
+            Ok(13),
+        ),
+        (
+            "AL052",
+            Some(PropertyValue::String("41".to_owned())),
+            Ok(41),
+        ),
+        (
+            "AT052",
+            Some(PropertyValue::String("14".to_owned())),
+            Ok(14),
+        ),
+        (
+            "AL053",
+            Some(PropertyValue::String("51".to_owned())),
+            Ok(51),
+        ),
+        (
+            "AT053",
+            Some(PropertyValue::String("15".to_owned())),
+            Ok(15),
+        ),
+        (
+            "AL054",
+            Some(PropertyValue::String("61".to_owned())),
+            Ok(61),
+        ),
+        (
+            "AT054",
+            Some(PropertyValue::String("16".to_owned())),
+            Ok(16),
+        ),
+        (
+            "AL055",
+            Some(PropertyValue::String("71".to_owned())),
+            Ok(71),
+        ),
+        (
+            "AT055",
+            Some(PropertyValue::String("17".to_owned())),
+            Ok(17),
+        ),
+        (
+            "AL056",
+            Some(PropertyValue::String("81".to_owned())),
+            Ok(81),
+        ),
+        (
+            "AT056",
+            Some(PropertyValue::String("18".to_owned())),
+            Ok(18),
+        ),
+        (
+            "AL057",
+            Some(PropertyValue::String("91".to_owned())),
+            Ok(91),
+        ),
+        (
+            "AT057",
+            Some(PropertyValue::String("19".to_owned())),
+            Ok(19),
+        ),
+        (
+            "AL058",
+            Some(PropertyValue::String(":1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT058",
+            Some(PropertyValue::String("1:".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL059",
+            Some(PropertyValue::String(";1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT059",
+            Some(PropertyValue::String("1;".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL060",
+            Some(PropertyValue::String("<1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT060",
+            Some(PropertyValue::String("1<".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL061",
+            Some(PropertyValue::String("=1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT061",
+            Some(PropertyValue::String("1=".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL062",
+            Some(PropertyValue::String(">1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT062",
+            Some(PropertyValue::String("1>".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL063",
+            Some(PropertyValue::String("?1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT063",
+            Some(PropertyValue::String("1?".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL064",
+            Some(PropertyValue::String("@1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT064",
+            Some(PropertyValue::String("1@".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL065",
+            Some(PropertyValue::String("A1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT065",
+            Some(PropertyValue::String("1A".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL066",
+            Some(PropertyValue::String("B1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT066",
+            Some(PropertyValue::String("1B".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL067",
+            Some(PropertyValue::String("C1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT067",
+            Some(PropertyValue::String("1C".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL068",
+            Some(PropertyValue::String("D1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT068",
+            Some(PropertyValue::String("1D".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL069",
+            Some(PropertyValue::String("E1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT069",
+            Some(PropertyValue::String("1E".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL070",
+            Some(PropertyValue::String("F1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT070",
+            Some(PropertyValue::String("1F".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL071",
+            Some(PropertyValue::String("G1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT071",
+            Some(PropertyValue::String("1G".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL072",
+            Some(PropertyValue::String("H1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT072",
+            Some(PropertyValue::String("1H".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL073",
+            Some(PropertyValue::String("I1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT073",
+            Some(PropertyValue::String("1I".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL074",
+            Some(PropertyValue::String("J1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT074",
+            Some(PropertyValue::String("1J".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL075",
+            Some(PropertyValue::String("K1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT075",
+            Some(PropertyValue::String("1K".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL076",
+            Some(PropertyValue::String("L1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT076",
+            Some(PropertyValue::String("1L".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL077",
+            Some(PropertyValue::String("M1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT077",
+            Some(PropertyValue::String("1M".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL078",
+            Some(PropertyValue::String("N1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT078",
+            Some(PropertyValue::String("1N".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL079",
+            Some(PropertyValue::String("O1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT079",
+            Some(PropertyValue::String("1O".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL080",
+            Some(PropertyValue::String("P1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT080",
+            Some(PropertyValue::String("1P".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL081",
+            Some(PropertyValue::String("Q1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT081",
+            Some(PropertyValue::String("1Q".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL082",
+            Some(PropertyValue::String("R1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT082",
+            Some(PropertyValue::String("1R".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL083",
+            Some(PropertyValue::String("S1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT083",
+            Some(PropertyValue::String("1S".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL084",
+            Some(PropertyValue::String("T1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT084",
+            Some(PropertyValue::String("1T".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL085",
+            Some(PropertyValue::String("U1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT085",
+            Some(PropertyValue::String("1U".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL086",
+            Some(PropertyValue::String("V1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT086",
+            Some(PropertyValue::String("1V".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL087",
+            Some(PropertyValue::String("W1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT087",
+            Some(PropertyValue::String("1W".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL088",
+            Some(PropertyValue::String("X1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT088",
+            Some(PropertyValue::String("1X".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL089",
+            Some(PropertyValue::String("Y1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT089",
+            Some(PropertyValue::String("1Y".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL090",
+            Some(PropertyValue::String("Z1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT090",
+            Some(PropertyValue::String("1Z".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL091",
+            Some(PropertyValue::String("[1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT091",
+            Some(PropertyValue::String("1[".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL092",
+            Some(PropertyValue::String("\\1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT092",
+            Some(PropertyValue::String("1\\".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL093",
+            Some(PropertyValue::String("]1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT093",
+            Some(PropertyValue::String("1]".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL094",
+            Some(PropertyValue::String("^1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT094",
+            Some(PropertyValue::String("1^".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL095",
+            Some(PropertyValue::String("_1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT095",
+            Some(PropertyValue::String("1_".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL096",
+            Some(PropertyValue::String("`1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT096",
+            Some(PropertyValue::String("1`".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL097",
+            Some(PropertyValue::String("a1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT097",
+            Some(PropertyValue::String("1a".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL098",
+            Some(PropertyValue::String("b1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT098",
+            Some(PropertyValue::String("1b".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL099",
+            Some(PropertyValue::String("c1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT099",
+            Some(PropertyValue::String("1c".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL100",
+            Some(PropertyValue::String("d1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT100",
+            Some(PropertyValue::String("1d".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL101",
+            Some(PropertyValue::String("e1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT101",
+            Some(PropertyValue::String("1e".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL102",
+            Some(PropertyValue::String("f1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT102",
+            Some(PropertyValue::String("1f".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL103",
+            Some(PropertyValue::String("g1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT103",
+            Some(PropertyValue::String("1g".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL104",
+            Some(PropertyValue::String("h1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT104",
+            Some(PropertyValue::String("1h".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL105",
+            Some(PropertyValue::String("i1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT105",
+            Some(PropertyValue::String("1i".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL106",
+            Some(PropertyValue::String("j1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT106",
+            Some(PropertyValue::String("1j".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL107",
+            Some(PropertyValue::String("k1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT107",
+            Some(PropertyValue::String("1k".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL108",
+            Some(PropertyValue::String("l1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT108",
+            Some(PropertyValue::String("1l".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL109",
+            Some(PropertyValue::String("m1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT109",
+            Some(PropertyValue::String("1m".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL110",
+            Some(PropertyValue::String("n1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT110",
+            Some(PropertyValue::String("1n".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL111",
+            Some(PropertyValue::String("o1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT111",
+            Some(PropertyValue::String("1o".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL112",
+            Some(PropertyValue::String("p1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT112",
+            Some(PropertyValue::String("1p".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL113",
+            Some(PropertyValue::String("q1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT113",
+            Some(PropertyValue::String("1q".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL114",
+            Some(PropertyValue::String("r1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT114",
+            Some(PropertyValue::String("1r".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL115",
+            Some(PropertyValue::String("s1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT115",
+            Some(PropertyValue::String("1s".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL116",
+            Some(PropertyValue::String("t1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT116",
+            Some(PropertyValue::String("1t".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL117",
+            Some(PropertyValue::String("u1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT117",
+            Some(PropertyValue::String("1u".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL118",
+            Some(PropertyValue::String("v1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT118",
+            Some(PropertyValue::String("1v".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL119",
+            Some(PropertyValue::String("w1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT119",
+            Some(PropertyValue::String("1w".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL120",
+            Some(PropertyValue::String("x1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT120",
+            Some(PropertyValue::String("1x".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL121",
+            Some(PropertyValue::String("y1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT121",
+            Some(PropertyValue::String("1y".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL122",
+            Some(PropertyValue::String("z1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT122",
+            Some(PropertyValue::String("1z".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL123",
+            Some(PropertyValue::String("{1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT123",
+            Some(PropertyValue::String("1{".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL124",
+            Some(PropertyValue::String("|1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT124",
+            Some(PropertyValue::String("1|".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL125",
+            Some(PropertyValue::String("}1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT125",
+            Some(PropertyValue::String("1}".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL126",
+            Some(PropertyValue::String("~1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT126",
+            Some(PropertyValue::String("1~".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AL127",
+            Some(PropertyValue::String("1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "AT127",
+            Some(PropertyValue::String("1".to_owned())),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "LZERO",
+            Some(PropertyValue::String(format!("{}1", "0".repeat(65_536)))),
+            Ok(1),
+        ),
+        (
+            "LOVF",
+            Some(PropertyValue::String("9".repeat(65_536))),
+            Err(PropertyValueKind::String),
+        ),
+        (
+            "VEMPTY",
+            Some(PropertyValue::IntVector(vec![])),
+            Err(PropertyValueKind::IntVector),
+        ),
+        (
+            "VSINGLE",
+            Some(PropertyValue::IntVector(vec![1])),
+            Err(PropertyValueKind::IntVector),
+        ),
+        (
+            "VORDER",
+            Some(PropertyValue::IntVector(vec![1, -2, 1])),
+            Err(PropertyValueKind::IntVector),
+        ),
+        (
+            "VBOUNDS",
+            Some(PropertyValue::IntVector(vec![-2147483648, 2147483647])),
+            Err(PropertyValueKind::IntVector),
+        ),
+        ("MISSING", None, Ok(0)),
+    ]
+}
+
+#[test]
+fn q01_b1_scalar_rank_casts_cover_full_source_integer_domain() {
+    use cosmolkit_core::{CanonicalRankError, CanonicalRankParams, rank_mol_atoms_with_params};
+    let mut params = CanonicalRankParams::default();
+    params.break_ties = false;
+    params.use_non_stereo_ranks = true;
+    for (label, value, integer) in q01_b1_scalar_rank_source_cases() {
+        for side in 0..2 {
+            let mut graph = topology(
+                vec![
+                    atom(0, AtomSpec::new(Element::C)),
+                    atom(1, AtomSpec::new(Element::C)),
+                ],
+                vec![],
+            );
+            graph.atoms[0]
+                .set_computed_prop("q01_unrelated", vec![1_i32, -2, 1])
+                .unwrap();
+            if let Some(value) = &value {
+                graph.atoms[side]
+                    .set_computed_prop("_CanonicalRankingNumber", value.clone())
+                    .unwrap();
+            }
+            match integer {
+                Ok(number) => {
+                    // The other atom receives the independently frozen exact integer;
+                    // equal source classes prove the entire value, not merely its sign.
+                    graph.atoms[1 - side]
+                        .set_prop("_CanonicalRankingNumber", number)
+                        .unwrap();
+                    let before = graph.clone();
+                    assert_eq!(
+                        rank_mol_atoms_with_params(&graph, &params),
+                        Ok(vec![0, 0]),
+                        "{label}, side{side}"
+                    );
+                    assert_eq!(graph, before, "{label} input/computed metadata");
+                    if let Some(lower) = number.checked_sub(1) {
+                        graph.atoms[1 - side]
+                            .set_prop("_CanonicalRankingNumber", lower)
+                            .unwrap();
+                        let before = graph.clone();
+                        let expected = if side == 0 { vec![1, 0] } else { vec![0, 1] };
+                        assert_eq!(
+                            rank_mol_atoms_with_params(&graph, &params),
+                            Ok(expected),
+                            "{label} lower, side{side}"
+                        );
+                        assert_eq!(graph, before);
+                    }
+                    if let Some(upper) = number.checked_add(1) {
+                        graph.atoms[1 - side]
+                            .set_prop("_CanonicalRankingNumber", upper)
+                            .unwrap();
+                        let before = graph.clone();
+                        let expected = if side == 0 { vec![0, 1] } else { vec![1, 0] };
+                        assert_eq!(
+                            rank_mol_atoms_with_params(&graph, &params),
+                            Ok(expected),
+                            "{label} upper, side{side}"
+                        );
+                        assert_eq!(graph, before);
+                    }
+                }
+                Err(kind) => {
+                    let before = graph.clone();
+                    assert_eq!(
+                        rank_mol_atoms_with_params(&graph, &params),
+                        Err(CanonicalRankError::InvalidPropertyKind {
+                            atom_index: side,
+                            property: "_CanonicalRankingNumber",
+                            kind
+                        }),
+                        "{label}, side{side}"
+                    );
+                    assert_eq!(graph, before, "{label} failed input/computed metadata");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn q01_b1_scalar_rank_error_order_follows_left_then_right_getters() {
+    use cosmolkit_core::{CanonicalRankError, CanonicalRankParams, rank_mol_atoms_with_params};
+    use cosmolkit_model::PropertyValueKind;
+    let mut params = CanonicalRankParams::default();
+    params.use_non_stereo_ranks = true;
+    for (left, right, index, kind) in [
+        (
+            Some(PropertyValue::String("not-an-int".to_owned())),
+            Some(PropertyValue::Double(1.0)),
+            0,
+            PropertyValueKind::String,
+        ),
+        (
+            Some(PropertyValue::Int(i32::MAX)),
+            Some(PropertyValue::Double(1.0)),
+            1,
+            PropertyValueKind::Double,
+        ),
+        (
+            None,
+            Some(PropertyValue::String("2147483648".to_owned())),
+            1,
+            PropertyValueKind::String,
+        ),
+        (
+            Some(PropertyValue::Bool(false)),
+            Some(PropertyValue::IntVector(vec![])),
+            0,
+            PropertyValueKind::Bool,
+        ),
+        (
+            Some(PropertyValue::String("7 	".to_owned())),
+            Some(PropertyValue::IntVector(vec![1])),
+            1,
+            PropertyValueKind::IntVector,
+        ),
+    ] {
+        let mut graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![],
+        );
+        for (index, value) in [left, right].into_iter().enumerate() {
+            if let Some(value) = value {
+                graph.atoms[index]
+                    .set_prop("_CanonicalRankingNumber", value)
+                    .unwrap();
+            }
+        }
+        let before = graph.clone();
+        assert_eq!(
+            rank_mol_atoms_with_params(&graph, &params),
+            Err(CanonicalRankError::InvalidPropertyKind {
+                atom_index: index,
+                property: "_CanonicalRankingNumber",
+                kind
+            })
+        );
+        assert_eq!(graph, before);
+    }
+}
+
+#[test]
+fn q01_b1_scalar_rank_no_read_guards_preserve_all_invalid_kinds() {
+    use cosmolkit_core::{
+        CanonicalRankError, CanonicalRankParams, ValenceParams, assign_valence,
+        rank_fragment_atoms_with_params, rank_fragment_atoms_with_prepared_state,
+        rank_mol_atoms_with_params,
+    };
+    let mut disabled = CanonicalRankParams::default();
+    disabled.break_ties = false;
+    let mut enabled = disabled;
+    enabled.use_non_stereo_ranks = true;
+    assert_eq!(
+        rank_mol_atoms_with_params(&TopologyBlock::default(), &enabled),
+        Ok(vec![])
+    );
+    for (label, value, integer) in q01_b1_scalar_rank_source_cases() {
+        if integer.is_ok() {
+            continue;
+        }
+        let value = value.unwrap();
+        let mut graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![],
+        );
+        graph.atoms[0]
+            .set_computed_prop("_CanonicalRankingNumber", value.clone())
+            .unwrap();
+        graph.atoms[1]
+            .set_prop("_CanonicalRankingNumber", value.clone())
+            .unwrap();
+        let before = graph.clone();
+        assert_eq!(
+            rank_mol_atoms_with_params(&graph, &disabled),
+            Ok(vec![0, 0]),
+            "{label} flagoff"
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(&graph, &[true, true], &[], None, None, &enabled),
+            Ok(vec![0, 0]),
+            "{label} fragment flag"
+        );
+        let valence = assign_valence(&graph, &ValenceParams::default()).unwrap();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &graph,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &enabled
+            ),
+            Ok(vec![0, 0]),
+            "{label} preparedfragment flag"
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(&graph, &[true], &[], None, None, &enabled),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 2,
+                actual: 1
+            }),
+            "{label} masks beforeprops"
+        );
+        let mut invalid_valence = valence.clone();
+        invalid_valence.implicit_hydrogens.pop();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &graph,
+                &invalid_valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &enabled
+            ),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 2,
+                implicit_len: 1
+            }),
+            "{label} preparedvalidation beforeprops"
+        );
+        assert_eq!(graph, before);
+        let mut single = topology(vec![atom(0, AtomSpec::new(Element::C))], vec![]);
+        single.atoms[0]
+            .set_prop("_CanonicalRankingNumber", value)
+            .unwrap();
+        let before = single.clone();
+        assert_eq!(
+            rank_mol_atoms_with_params(&single, &enabled),
+            Ok(vec![0]),
+            "{label} singleton"
+        );
+        assert_eq!(single, before);
+    }
+}
+
+#[test]
+fn proposed_uint_rank_values_and_positive_overflow_remain_lazy() {
+    use cosmolkit_core::{CanonicalRankError, CanonicalRankParams, rank_mol_atoms_with_params};
+    let mut params = CanonicalRankParams::default();
+    params.break_ties = false;
+    params.use_non_stereo_ranks = true;
+    for number in [
+        0_u32,
+        1,
+        i32::MAX as u32 - 1,
+        i32::MAX as u32,
+        i32::MAX as u32 + 1,
+        u32::MAX,
+    ] {
+        for side in 0..2 {
+            let mut graph = topology(
+                vec![
+                    atom(0, AtomSpec::new(Element::C)),
+                    atom(1, AtomSpec::new(Element::C)),
+                ],
+                vec![],
+            );
+            graph.atoms[side]
+                .set_computed_prop("_CanonicalRankingNumber", PropertyValue::UInt(number))
+                .unwrap();
+            if let Ok(value) = i32::try_from(number) {
+                graph.atoms[1 - side]
+                    .set_prop("_CanonicalRankingNumber", value)
+                    .unwrap();
+            }
+            let before = graph.clone();
+            if number <= i32::MAX as u32 {
+                assert_eq!(rank_mol_atoms_with_params(&graph, &params), Ok(vec![0, 0]));
+            } else {
+                assert_eq!(
+                    rank_mol_atoms_with_params(&graph, &params),
+                    Err(CanonicalRankError::UnsignedRankOverflow {
+                        atom_index: side,
+                        property: "_CanonicalRankingNumber",
+                        value: number
+                    })
+                );
+                let mut disabled = params;
+                disabled.use_non_stereo_ranks = false;
+                assert_eq!(
+                    rank_mol_atoms_with_params(&graph, &disabled),
+                    Ok(vec![0, 0])
+                );
+            }
+            assert_eq!(graph, before);
+        }
+    }
+}
+#[test]
+fn proposed_uint_public_singleton_fragment_prepared_mask_and_flag_guards() {
+    use cosmolkit_core::{
+        CanonicalRankError, CanonicalRankParams, ValenceParams, assign_valence,
+        rank_fragment_atoms_with_params, rank_fragment_atoms_with_prepared_state,
+        rank_mol_atoms_with_params,
+    };
+    let mut disabled = CanonicalRankParams::default();
+    disabled.break_ties = false;
+    let mut enabled = disabled;
+    enabled.use_non_stereo_ranks = true;
+    assert_eq!(
+        rank_mol_atoms_with_params(&TopologyBlock::default(), &enabled),
+        Ok(vec![])
+    );
+    for number in [0_u32, 1, 2147483646, 2147483647, 2147483648, 4294967295] {
+        let label = number;
+        let value = PropertyValue::UInt(number);
+        let mut graph = topology(
+            vec![
+                atom(0, AtomSpec::new(Element::C)),
+                atom(1, AtomSpec::new(Element::C)),
+            ],
+            vec![],
+        );
+        graph.atoms[0]
+            .set_computed_prop("_CanonicalRankingNumber", value.clone())
+            .unwrap();
+        graph.atoms[1]
+            .set_prop("_CanonicalRankingNumber", value.clone())
+            .unwrap();
+        let before = graph.clone();
+        assert_eq!(
+            rank_mol_atoms_with_params(&graph, &disabled),
+            Ok(vec![0, 0]),
+            "{label} flagoff"
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(&graph, &[true, true], &[], None, None, &enabled),
+            Ok(vec![0, 0]),
+            "{label} fragment flag"
+        );
+        let valence = assign_valence(&graph, &ValenceParams::default()).unwrap();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &graph,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &enabled
+            ),
+            Ok(vec![0, 0]),
+            "{label} preparedfragment flag"
+        );
+        assert_eq!(
+            rank_fragment_atoms_with_params(&graph, &[true], &[], None, None, &enabled),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 2,
+                actual: 1
+            }),
+            "{label} masks beforeprops"
+        );
+        let mut invalid_valence = valence.clone();
+        invalid_valence.implicit_hydrogens.pop();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &graph,
+                &invalid_valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &enabled
+            ),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 2,
+                implicit_len: 1
+            }),
+            "{label} preparedvalidation beforeprops"
+        );
+        assert_eq!(graph, before);
+        let mut single = topology(vec![atom(0, AtomSpec::new(Element::C))], vec![]);
+        single.atoms[0]
+            .set_prop("_CanonicalRankingNumber", value)
+            .unwrap();
+        let before = single.clone();
+        assert_eq!(
+            rank_mol_atoms_with_params(&single, &enabled),
+            Ok(vec![0]),
+            "{label} singleton"
+        );
+        assert_eq!(single, before);
+    }
+}

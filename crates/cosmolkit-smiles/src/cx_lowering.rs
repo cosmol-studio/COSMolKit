@@ -18,7 +18,23 @@ fn model_failure(error: impl std::fmt::Display) -> SmilesParseError {
     SmilesParseError::Model(error.to_string())
 }
 
-fn bond_with_smiles_index(topology: &TopologyBlock, index: usize) -> Option<BondId> {
+fn bond_with_smiles_index(
+    topology: &TopologyBlock,
+    index: usize,
+) -> Result<Option<BondId>, SmilesParseError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return v.value.u;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+
     // BEGIN RDKIT CPP FUNCTION get_bond_with_smiles_idx
     // RDKit✔️✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
     // RDKit✔️✔️:   for (auto bnd : mol.bonds()) {
@@ -31,19 +47,27 @@ fn bond_with_smiles_index(topology: &TopologyBlock, index: usize) -> Option<Bond
     // RDKit✔️✔️:   return nullptr;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION get_bond_with_smiles_idx
-    topology
-        .bonds
-        .iter()
-        .find(|bond| {
-            bond.prop(CXSMILES_BOND_IDX_PROP)
-                .and_then(|value| match value {
-                    PropertyValue::Int(value) => usize::try_from(*value).ok(),
-                    PropertyValue::String(value) => value.parse::<usize>().ok(),
-                    PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
-                })
-                == Some(index)
-        })
-        .map(|bond| bond.id())
+    // Read only visited rows; a first match prevents all later property reads.
+    for bond in &topology.bonds {
+        let Some(value) = bond.prop(CXSMILES_BOND_IDX_PROP) else {
+            continue;
+        };
+        let source_index = match value {
+            PropertyValue::Int(value) => usize::try_from(*value).ok(),
+            PropertyValue::UInt(value) => usize::try_from(*value).ok(),
+            PropertyValue::String(value) => value.parse::<usize>().ok(),
+            PropertyValue::IntVector(_) => {
+                return Err(SmilesParseError::Cx(
+                    "bad_any_cast reading _cxsmilesBondIdx as unsigned int".to_owned(),
+                ));
+            }
+            PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
+        };
+        if source_index == Some(index) {
+            return Ok(Some(bond.id()));
+        }
+    }
+    Ok(None)
 }
 
 fn atom_neighbors(topology: &TopologyBlock, atom: AtomId) -> &[cosmolkit_model::NeighborRef] {
@@ -555,7 +579,7 @@ fn apply_cx_to_smiles_record_in_place(
                     if atom.index() >= atom_count || reference.bond >= record.topology.bonds.len() {
                         continue;
                     }
-                    let bond_id = bond_with_smiles_index(&record.topology, reference.bond)
+                    let bond_id = bond_with_smiles_index(&record.topology, reference.bond)?
                         .ok_or_else(cx_failure)?;
                     let (begin, end) = record
                         .topology
@@ -588,7 +612,7 @@ fn apply_cx_to_smiles_record_in_place(
                         continue;
                     }
                     let bond_id =
-                        bond_with_smiles_index(&record.topology, *index).ok_or_else(cx_failure)?;
+                        bond_with_smiles_index(&record.topology, *index)?.ok_or_else(cx_failure)?;
                     record.topology.bonds[bond_id.index()].set_order(BondOrder::Zero);
                 }
             }
@@ -644,7 +668,7 @@ fn apply_cx_to_smiles_record_in_place(
                     if wedge.atom >= atom_count || wedge.bond >= record.topology.bonds.len() {
                         continue;
                     }
-                    let bond_id = bond_with_smiles_index(&record.topology, wedge.bond)
+                    let bond_id = bond_with_smiles_index(&record.topology, wedge.bond)?
                         .ok_or_else(cx_failure)?;
                     let (begin, end, order, has_cfg) = record
                         .topology
@@ -708,7 +732,7 @@ fn apply_cx_to_smiles_record_in_place(
                         continue;
                     }
                     let bond_id =
-                        bond_with_smiles_index(&record.topology, *index).ok_or_else(cx_failure)?;
+                        bond_with_smiles_index(&record.topology, *index)?.ok_or_else(cx_failure)?;
                     set_double_bond_stereo(record, bond_id, value)?;
                 }
             }
@@ -1003,4 +1027,114 @@ fn apply_cx_to_smiles_record_in_place(
         .validate()
         .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    fn graph(props: Vec<cosmolkit_model::PropertyValue>) -> cosmolkit_model::TopologyBlock {
+        let atoms = (0..props.len() + 1)
+            .map(|i| {
+                cosmolkit_model::Atom::from_spec(
+                    cosmolkit_model::AtomId::new(i),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_types::Element::C),
+                )
+            })
+            .collect();
+        let bonds = props
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                cosmolkit_model::Bond::from_spec(
+                    cosmolkit_model::BondId::new(i),
+                    cosmolkit_model::BondSpec::new(
+                        cosmolkit_model::AtomId::new(i),
+                        cosmolkit_model::AtomId::new(i + 1),
+                        cosmolkit_types::BondOrder::Single,
+                    )
+                    .with_prop("_cxsmilesBondIdx", v)
+                    .unwrap(),
+                )
+            })
+            .collect();
+        cosmolkit_model::TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXlower_0
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxlower_0_cx_lowering() {
+        let g = graph(vec![cosmolkit_model::PropertyValue::UInt(0_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            bond_with_smiles_index(&g, 0_usize),
+            Ok(Some(BondId::new(0)))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXlower_1
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxlower_1_cx_lowering() {
+        let g = graph(vec![cosmolkit_model::PropertyValue::UInt(1_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            bond_with_smiles_index(&g, 1_usize),
+            Ok(Some(BondId::new(0)))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXlower_2147483646
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxlower_2147483646_cx_lowering() {
+        let g = graph(vec![cosmolkit_model::PropertyValue::UInt(2147483646_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            bond_with_smiles_index(&g, 2147483646_usize),
+            Ok(Some(BondId::new(0)))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXlower_2147483647
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxlower_2147483647_cx_lowering() {
+        let g = graph(vec![cosmolkit_model::PropertyValue::UInt(2147483647_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            bond_with_smiles_index(&g, 2147483647_usize),
+            Ok(Some(BondId::new(0)))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXlower_2147483648
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxlower_2147483648_cx_lowering() {
+        let g = graph(vec![cosmolkit_model::PropertyValue::UInt(2147483648_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            bond_with_smiles_index(&g, 2147483648_usize),
+            Ok(Some(BondId::new(0)))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXlower_4294967295
+    #[test]
+    fn uint_cell_unsigned_consumer_smiles_cxlower_4294967295_cx_lowering() {
+        let g = graph(vec![cosmolkit_model::PropertyValue::UInt(4294967295_u32)]);
+        let before = g.clone();
+        assert_eq!(
+            bond_with_smiles_index(&g, 4294967295_usize),
+            Ok(Some(BondId::new(0)))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: CX_FIRST_MATCH
+    #[test]
+    fn uint_cell_cx_first_match_cx_lowering() {
+        let g = graph(vec![
+            cosmolkit_model::PropertyValue::UInt(0),
+            cosmolkit_model::PropertyValue::IntVector(vec![]),
+        ]);
+        let before = g.clone();
+        assert_eq!(bond_with_smiles_index(&g, 0), Ok(Some(BondId::new(0))));
+        assert_eq!(g, before);
+    }
 }

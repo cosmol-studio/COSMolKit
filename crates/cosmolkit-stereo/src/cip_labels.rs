@@ -1822,31 +1822,58 @@ impl<'a> CipSp2Bond<'a> {
 
         let mut ranks = vec![0_u32; molecule.atoms.len()];
         if bond.stereo_atoms().is_none() {
-            for focus in [start_atom, end_atom] {
-                let skip = if focus == start_atom {
-                    end_atom
-                } else {
-                    start_atom
-                };
+            // RDKit❗✔️: const Atom *startStereoAtom =
+            // RDKit❗✔️:     findHighestCIPNeighbor(bond->getBeginAtom(), bond->getEndAtom());
+            // RDKit❗✔️: const Atom *endStereoAtom =
+            // RDKit❗✔️:     findHighestCIPNeighbor(bond->getEndAtom(), bond->getBeginAtom());
+            // Both source calls finish before combined null checking; missing
+            // rank stops only its focus, while a throwing vector cast aborts.
+            // This is two source-order adjacency scans, without eager preflight.
+            let mut read_focus = |focus: usize, skip: usize| -> Result<bool, CipLabelerError> {
+                // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+                // RDKit❗✔️: template <>
+                // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
+                // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+                // RDKit❗✔️:     return v.value.u;
+                // RDKit❗✔️:   }
+                // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+                // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
+                // RDKit❗✔️:   }
+                // RDKit❗✔️:   throw std::bad_any_cast();
+                // RDKit❗✔️: }
+                // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
                 for neighbor in molecule.adjacency.neighbors_of(focus) {
                     if neighbor.atom_index == skip {
                         continue;
                     }
-                    let rank = molecule.atoms[neighbor.atom_index]
-                        .prop("_CIPRank")
-                        .and_then(|value| match value {
-                            cosmolkit_model::PropertyValue::Int(value) => {
-                                u32::try_from(*value).ok()
-                            }
-                            cosmolkit_model::PropertyValue::String(value) => {
-                                value.parse::<u32>().ok()
-                            }
-                            cosmolkit_model::PropertyValue::Double(_)
-                            | cosmolkit_model::PropertyValue::Bool(_) => None,
-                        })
-                        .ok_or(CipLabelerError::IncorrectNumberOfStereoAtoms)?;
+                    let Some(value) = molecule.atoms[neighbor.atom_index].prop("_CIPRank") else {
+                        return Ok(false);
+                    };
+                    let rank = match value {
+                        cosmolkit_model::PropertyValue::Int(value) => u32::try_from(*value).ok(),
+                        cosmolkit_model::PropertyValue::UInt(value) => Some(*value),
+                        cosmolkit_model::PropertyValue::String(value) => value.parse::<u32>().ok(),
+                        cosmolkit_model::PropertyValue::IntVector(_) => {
+                            return Err(CipLabelerError::InvalidPropertyKind {
+                                atom: neighbor.atom_index,
+                                property: "_CIPRank",
+                                kind: value.kind(),
+                            });
+                        }
+                        cosmolkit_model::PropertyValue::Double(_)
+                        | cosmolkit_model::PropertyValue::Bool(_) => None,
+                    };
+                    let Some(rank) = rank else {
+                        return Ok(false);
+                    };
                     ranks[neighbor.atom_index] = rank;
                 }
+                Ok(true)
+            };
+            let begin_present = read_focus(start_atom, end_atom)?;
+            let end_present = read_focus(end_atom, start_atom)?;
+            if !begin_present || !end_present {
+                return Err(CipLabelerError::IncorrectNumberOfStereoAtoms);
             }
         }
         let stereo_atoms = find_double_bond_stereo_atoms(molecule, BondId::new(bond_idx), &ranks)?
@@ -2635,5 +2662,143 @@ impl<'a> CipAtropisomerBond<'a> {
         } else {
             Ok(Descriptor::Unknown)
         }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec, PropertyValue};
+    use cosmolkit_types::Element;
+    fn graph_single_focus(v: u32) -> TopologyBlock {
+        let mut g = graph(vec![
+            None,
+            None,
+            Some(PropertyValue::UInt(v)),
+            Some(PropertyValue::UInt(0)),
+            Some(PropertyValue::UInt(v)),
+        ]);
+        g.bonds.remove(2);
+        for (i, bond) in g.bonds.iter_mut().enumerate() {
+            bond.set_id_for_construction(BondId::new(i));
+        }
+        TopologyBlock::try_from_parts(g.atoms, g.bonds, vec![], vec![]).unwrap()
+    }
+    fn graph(ranks: Vec<Option<PropertyValue>>) -> TopologyBlock {
+        let atoms = ranks
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let mut a = Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C));
+                if let Some(v) = v {
+                    a.set_prop("_CIPRank", v).unwrap();
+                }
+                a
+            })
+            .collect();
+        let bonds = [
+            (0, 1, BondOrder::Double),
+            (0, 2, BondOrder::Single),
+            (0, 3, BondOrder::Single),
+            (1, 4, BondOrder::Single),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, (a, b, o))| {
+            Bond::from_spec(
+                BondId::new(i),
+                BondSpec::new(AtomId::new(a), AtomId::new(b), o).with_stereo(if i == 0 {
+                    BondStereo::E
+                } else {
+                    BondStereo::None
+                }),
+            )
+        })
+        .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_stereo/CIPlabelFocus_0
+    #[test]
+    fn uint_cell_unsigned_consumer_stereo_ciplabelfocus_0_cip_labels() {
+        let g = graph_single_focus(0_u32);
+        let before = g.clone();
+        let cfg = CipSp2Bond::new(&g, 0, 0, 1, BondStereo::Trans).unwrap();
+        assert_eq!(cfg.get_carriers(), &[Some(2), Some(4)]);
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_stereo/CIPlabelFocus_1
+    #[test]
+    fn uint_cell_unsigned_consumer_stereo_ciplabelfocus_1_cip_labels() {
+        let g = graph_single_focus(1_u32);
+        let before = g.clone();
+        let cfg = CipSp2Bond::new(&g, 0, 0, 1, BondStereo::Trans).unwrap();
+        assert_eq!(cfg.get_carriers(), &[Some(2), Some(4)]);
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_stereo/CIPlabelFocus_2147483646
+    #[test]
+    fn uint_cell_unsigned_consumer_stereo_ciplabelfocus_2147483646_cip_labels() {
+        let g = graph_single_focus(2147483646_u32);
+        let before = g.clone();
+        let cfg = CipSp2Bond::new(&g, 0, 0, 1, BondStereo::Trans).unwrap();
+        assert_eq!(cfg.get_carriers(), &[Some(2), Some(4)]);
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_stereo/CIPlabelFocus_2147483647
+    #[test]
+    fn uint_cell_unsigned_consumer_stereo_ciplabelfocus_2147483647_cip_labels() {
+        let g = graph_single_focus(2147483647_u32);
+        let before = g.clone();
+        let cfg = CipSp2Bond::new(&g, 0, 0, 1, BondStereo::Trans).unwrap();
+        assert_eq!(cfg.get_carriers(), &[Some(2), Some(4)]);
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_stereo/CIPlabelFocus_2147483648
+    #[test]
+    fn uint_cell_unsigned_consumer_stereo_ciplabelfocus_2147483648_cip_labels() {
+        let g = graph_single_focus(2147483648_u32);
+        let before = g.clone();
+        let cfg = CipSp2Bond::new(&g, 0, 0, 1, BondStereo::Trans).unwrap();
+        assert_eq!(cfg.get_carriers(), &[Some(2), Some(4)]);
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_stereo/CIPlabelFocus_4294967295
+    #[test]
+    fn uint_cell_unsigned_consumer_stereo_ciplabelfocus_4294967295_cip_labels() {
+        let g = graph_single_focus(4294967295_u32);
+        let before = g.clone();
+        let cfg = CipSp2Bond::new(&g, 0, 0, 1, BondStereo::Trans).unwrap();
+        assert_eq!(cfg.get_carriers(), &[Some(2), Some(4)]);
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: CIP_FOCUS_ORDER
+    #[test]
+    fn uint_cell_cip_focus_order_cip_labels() {
+        let g = graph(vec![
+            None,
+            None,
+            None,
+            Some(PropertyValue::UInt(4294967295)),
+            Some(PropertyValue::UInt(4294967295)),
+        ]);
+        let before = g.clone();
+        assert!(matches!(
+            CipSp2Bond::new(&g, 0, 0, 1, BondStereo::Trans),
+            Err(CipLabelerError::IncorrectNumberOfStereoAtoms)
+        ));
+        assert_eq!(g, before);
+        let mut poison = g.clone();
+        poison.atoms[4]
+            .set_prop("_CIPRank", PropertyValue::IntVector(vec![]))
+            .unwrap();
+        assert!(matches!(
+            CipSp2Bond::new(&poison, 0, 0, 1, BondStereo::Trans),
+            Err(CipLabelerError::InvalidPropertyKind {
+                atom: 4,
+                property: "_CIPRank",
+                kind: cosmolkit_model::PropertyValueKind::IntVector
+            })
+        ));
     }
 }

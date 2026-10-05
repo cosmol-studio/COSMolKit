@@ -122,8 +122,16 @@ pub fn check(
                     continue;
                 }
                 let text = unhex(fields[7]);
+                // Pinned RDValue-taggedunion.h native tags and complete POD constructors.
+                // Keep the native fixture's tag and decimal value as separate inputs.
+                // RDKit❗✔️: const short IntTag = 1;
+                // RDKit❗✔️: const short UnsignedIntTag = 6;
+                // RDKit❗✔️:   inline RDValue(int v) : value(v), type(RDTypeTag::IntTag) {}
+                // RDKit❗✔️:   inline RDValue(unsigned v) : value(v), type(RDTypeTag::UnsignedIntTag) {}
+                // Tag dispatch is O(1); decimal parsing and existing allocations are unchanged.
                 let value = match fields[5] {
-                    "1" | "6" => PropertyValue::Int(text.parse().unwrap()),
+                    "1" => PropertyValue::Int(text.parse().unwrap()),
+                    "6" => PropertyValue::UInt(text.parse().unwrap()),
                     "3" => PropertyValue::String(text),
                     other => panic!("unmodeled fixed native tag {other}"),
                 };

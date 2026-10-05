@@ -360,6 +360,7 @@ dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
  "cosmolkit-model",
+ "cosmolkit-smiles",
  "cosmolkit-types",
  "serde_json",
  "thiserror",

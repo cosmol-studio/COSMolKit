@@ -719,3 +719,92 @@ fn conformer_geometry_marks_linear_unknown_and_assigns_nonlinear_directions() {
     assert!(has_stereo_bond_direction(bent_result.bonds[0].direction()));
     assert!(has_stereo_bond_direction(bent_result.bonds[2].direction()));
 }
+
+fn q01_b1_double_fixture() -> TopologyBlock {
+    topology_with_atoms(
+        (0..4).map(atom).collect(),
+        vec![
+            bond(0, 0, 1, BondOrder::Double),
+            directed_bond(1, 0, 2, BondOrder::Single, BondDirection::EndDownRight),
+            directed_bond(2, 1, 3, BondOrder::Single, BondDirection::EndDownRight),
+        ],
+    )
+}
+
+#[test]
+fn q01_b1_double_info_vector_error_follows_squiggle_and_endpoint_order() {
+    use cosmolkit_model::PropertyValueKind;
+    let mut t = q01_b1_double_fixture();
+    t.atoms[0].set_prop("_UnknownStereo", vec![1_i32]).unwrap();
+    let before = t.clone();
+    assert_eq!(
+        double_bond_stereo_info(&t, BondId::new(0)),
+        Err(DoubleBondStereoError::InvalidPropertyKind {
+            atom: Some(AtomId::new(0)),
+            bond: None,
+            property: "_UnknownStereo",
+            kind: PropertyValueKind::IntVector
+        })
+    );
+    assert_eq!(t, before);
+    t.bonds[1].set_direction(BondDirection::Unknown);
+    assert_eq!(
+        double_bond_stereo_info(&t, BondId::new(0))
+            .unwrap()
+            .specified,
+        DoubleBondStereoSpecified::Unknown
+    );
+    t.bonds[1].set_direction(BondDirection::None);
+    t.atoms[0].set_prop("_UnknownStereo", 1_i32).unwrap();
+    t.atoms[1].set_prop("_UnknownStereo", vec![-1_i32]).unwrap();
+    assert_eq!(
+        double_bond_stereo_info(&t, BondId::new(0))
+            .unwrap()
+            .specified,
+        DoubleBondStereoSpecified::Unknown
+    );
+    t.atoms[0].set_prop("_UnknownStereo", 0_i32).unwrap();
+    assert!(
+        matches!(double_bond_stereo_info(&t,BondId::new(0)),Err(DoubleBondStereoError::InvalidPropertyKind { atom:Some(a), ..}) if a==AtomId::new(1))
+    );
+}
+
+#[test]
+fn q01_b1_directional_assignment_vector_error_propagates() {
+    let mut t = q01_b1_double_fixture();
+    let rings = fast_find_rings(&t).unwrap();
+    let ranks = [0, 1, 2, 3];
+    let control = assign_directional_double_bond_stereo(t.clone(), &ranks, &rings).unwrap();
+    assert!(control.assigned_any);
+    t.atoms[0].set_prop("_UnknownStereo", vec![1_i32]).unwrap();
+    let before = t.clone();
+    assert!(
+        matches!(assign_directional_double_bond_stereo(t.clone(),&ranks,&rings),Err(DoubleBondStereoError::InvalidPropertyKind {atom:Some(a), ..}) if a==AtomId::new(0))
+    );
+    assert_eq!(t, before);
+    t.atoms[0].clear_prop("_UnknownStereo");
+    t.bonds[1].set_prop("_UnknownStereo", vec![1_i32]).unwrap();
+    assert!(
+        matches!(assign_directional_double_bond_stereo(t.clone(),&ranks,&rings),Err(DoubleBondStereoError::InvalidPropertyKind {bond:Some(b), ..}) if b==BondId::new(1))
+    );
+    t.atoms[0].set_unknown_stereo(true);
+    assert!(assign_directional_double_bond_stereo(t, &ranks, &rings).is_ok());
+}
+
+#[test]
+fn q01_b1_neighbor_directions_vector_error_keeps_source_guard() {
+    let mut t = q01_b1_double_fixture();
+    let rings = fast_find_rings(&t).unwrap();
+    t.bonds[1].set_direction(BondDirection::Unknown);
+    t.bonds[1].set_prop("_UnknownStereo", vec![1_i32]).unwrap();
+    let before = t.clone();
+    assert!(
+        matches!(set_double_bond_neighbor_directions(t.clone(),&rings,None),Err(DoubleBondStereoError::InvalidPropertyKind {bond:Some(b), ..}) if b==BondId::new(1))
+    );
+    assert_eq!(t, before);
+    t.bonds[1].set_prop("_UnknownStereo", 0_i32).unwrap();
+    assert!(set_double_bond_neighbor_directions(t.clone(), &rings, None).is_ok());
+    t.bonds[1].set_prop("_UnknownStereo", vec![1_i32]).unwrap();
+    t.bonds[0].set_stereo(BondStereo::Any).unwrap();
+    assert!(set_double_bond_neighbor_directions(t, &rings, None).is_ok());
+}

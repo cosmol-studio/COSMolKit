@@ -172,6 +172,161 @@ binding_contract! {
             state: read_only, operation: none,
             signature: fn(crate::Element) -> crate::ElementInfo,
         },
+        {
+            semantic_id: "types.QueryGraph", item: type, owner: type_,
+            rust: crate::QueryGraph, python: "QueryGraph", javascript: "QueryGraph",
+            feature: "metadata", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.SmartsParseParams", item: type, owner: type_,
+            rust: crate::SmartsParseParams, python: "SmartsParseParams", javascript: "SmartsParseParams",
+            feature: "cap-search", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.SmartsParseError", item: type, owner: type_,
+            rust: crate::SmartsParseError, python: "SmartsParseError", javascript: "SmartsParseError",
+            feature: "cap-search", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.SubstructMatchParams", item: type, owner: type_,
+            rust: crate::SubstructMatchParams, python: "SubstructMatchParams", javascript: "SubstructMatchParams",
+            feature: "cap-search", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.SubstructMatchError", item: type, owner: type_,
+            rust: crate::SubstructMatchError, python: "SubstructMatchError", javascript: "SubstructMatchError",
+            feature: "cap-search", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.MatchResult", item: type, owner: type_,
+            rust: crate::MatchResult, python: "MatchResult", javascript: "MatchResult",
+            feature: "cap-search", status: experimental, role: result,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.CompiledQuery", item: type, owner: type_,
+            rust: crate::CompiledQuery, python: "CompiledQuery", javascript: "CompiledQuery",
+            feature: "cap-search", status: experimental, role: value,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.QueryCompileError", item: type, owner: type_,
+            rust: crate::QueryCompileError, python: "QueryCompileError", javascript: "QueryCompileError",
+            feature: "cap-search", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.MatchError", item: type, owner: type_,
+            rust: crate::MatchError, python: "MatchError", javascript: "MatchError",
+            feature: "cap-search", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.SmartsWriteParams", item: type, owner: type_,
+            rust: crate::SmartsWriteParams, python: "SmartsWriteParams", javascript: "SmartsWriteParams",
+            feature: "cap-search", status: experimental, role: parameter,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "types.SmartsWriteError", item: type, owner: type_,
+            rust: crate::SmartsWriteError, python: "SmartsWriteError", javascript: "SmartsWriteError",
+            feature: "cap-search", status: experimental, role: error,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "search.parse_smarts", item: callable, owner: module,
+            rust: crate::search::parse_smarts, python: "parse_smarts", javascript: "parseSmarts",
+            feature: "cap-search", status: experimental, kind: module,
+            parameters: [{ name: text, type: &str, default: required }], output: crate::QueryGraph, error: crate::SmartsParseError,
+            state: value_returning, operation: none,
+            signature: for<'a> fn(&'a str) -> Result<crate::QueryGraph, crate::SmartsParseError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "search.parse_smarts_with_params", item: callable, owner: module,
+            rust: crate::search::parse_smarts_with_params, python: "parse_smarts_with_params", javascript: "parseSmartsWithParams",
+            feature: "cap-search", status: experimental, kind: module,
+            parameters: [{ name: text, type: &str, default: required }, { name: params, type: &crate::SmartsParseParams, default: required }], output: crate::QueryGraph, error: crate::SmartsParseError,
+            state: value_returning, operation: none,
+            signature: for<'a, 'b> fn(&'a str, &'b crate::SmartsParseParams) -> Result<crate::QueryGraph, crate::SmartsParseError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "search.compile_query", item: callable, owner: module,
+            rust: crate::search::compile_query, python: "compile_query", javascript: "compileQuery",
+            feature: "cap-search", status: experimental, kind: module,
+            parameters: [{ name: query, type: &crate::QueryGraph, default: required }], output: crate::CompiledQuery, error: crate::QueryCompileError,
+            state: value_returning, operation: none,
+            signature: for<'a> fn(&'a crate::QueryGraph) -> Result<crate::CompiledQuery, crate::QueryCompileError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "search.write_smarts", item: callable, owner: module,
+            rust: crate::search::write_smarts, python: "write_smarts", javascript: "writeSmarts",
+            feature: "cap-search", status: experimental, kind: module,
+            parameters: [{ name: query, type: &crate::QueryGraph, default: required }, { name: params, type: &crate::SmartsWriteParams, default: required }], output: String, error: crate::SmartsWriteError,
+            state: value_returning, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::QueryGraph, &'b crate::SmartsWriteParams) -> Result<String, crate::SmartsWriteError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "search.write_cx_smarts", item: callable, owner: module,
+            rust: crate::search::write_cx_smarts, python: "write_cx_smarts", javascript: "writeCxSmarts",
+            feature: "cap-search", status: experimental, kind: module,
+            parameters: [{ name: query, type: &crate::QueryGraph, default: required }, { name: params, type: &crate::SmartsWriteParams, default: required }], output: String, error: crate::SmartsWriteError,
+            state: value_returning, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::QueryGraph, &'b crate::SmartsWriteParams) -> Result<String, crate::SmartsWriteError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "Molecule.substruct_match", item: callable, owner: molecule,
+            rust: crate::Molecule::substruct_match, python: "substruct_match", javascript: "substructMatch",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [{ name: query, type: &crate::QueryGraph, default: required }], output: Option<crate::MatchResult>, error: crate::SubstructMatchError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::QueryGraph) -> Result<Option<crate::MatchResult>, crate::SubstructMatchError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "Molecule.substruct_matches", item: callable, owner: molecule,
+            rust: crate::Molecule::substruct_matches, python: "substruct_matches", javascript: "substructMatches",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [{ name: query, type: &crate::QueryGraph, default: required }], output: Vec<crate::MatchResult>, error: crate::SubstructMatchError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::QueryGraph) -> Result<Vec<crate::MatchResult>, crate::SubstructMatchError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "Molecule.has_substruct_match", item: callable, owner: molecule,
+            rust: crate::Molecule::has_substruct_match, python: "has_substruct_match", javascript: "hasSubstructMatch",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [{ name: query, type: &crate::QueryGraph, default: required }], output: bool, error: crate::SubstructMatchError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::QueryGraph) -> Result<bool, crate::SubstructMatchError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "Molecule.substruct_matches_with_params", item: callable, owner: molecule,
+            rust: crate::Molecule::substruct_matches_with_params, python: "substruct_matches_with_params", javascript: "substructMatchesWithParams",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [{ name: query, type: &crate::QueryGraph, default: required }, { name: params, type: &crate::SubstructMatchParams, default: required }], output: Vec<crate::MatchResult>, error: crate::SubstructMatchError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b, 'c> fn(&'a crate::Molecule, &'b crate::QueryGraph, &'c crate::SubstructMatchParams) -> Result<Vec<crate::MatchResult>, crate::SubstructMatchError>,
+        },
+        #[cfg(feature = "cap-search")]
+        {
+            semantic_id: "Molecule.substruct_matches_compiled", item: callable, owner: molecule,
+            rust: crate::Molecule::substruct_matches_compiled, python: "substruct_matches_compiled", javascript: "substructMatchesCompiled",
+            feature: "cap-search", status: experimental, kind: instance,
+            parameters: [{ name: query, type: &crate::CompiledQuery, default: required }], output: Vec<crate::MatchResult>, error: crate::MatchError,
+            state: read_only, operation: none,
+            signature: for<'a, 'b> fn(&'a crate::Molecule, &'b crate::CompiledQuery) -> Result<Vec<crate::MatchResult>, crate::MatchError>,
+        },
         #[cfg(feature = "cap-smiles")]
         {
             semantic_id: "types.SmilesWriteParams", item: type, owner: type_,
@@ -2640,6 +2795,40 @@ binding_contract! {
             state: read_only,
             operation: none,
             signature: fn(&crate::PropertyValue) -> Result<i32, crate::PropertyValueError>,
+        },
+        {
+            semantic_id: "PropertyValue.as_uint",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValue::as_uint,
+            python: "as_uint",
+            javascript: "asUint",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: u32,
+            error: crate::PropertyValueError,
+            state: read_only,
+            operation: none,
+            signature: fn(&crate::PropertyValue) -> Result<u32, crate::PropertyValueError>,
+        },
+        {
+            semantic_id: "PropertyValue.as_int_vector",
+            item: callable,
+            owner: type_,
+            rust: crate::PropertyValue::as_int_vector,
+            python: "as_int_vector",
+            javascript: "asIntVector",
+            feature: "runtime", status: experimental,
+            kind: instance,
+            parameters: [],
+            output: &[i32],
+            error: crate::PropertyValueError,
+            state: read_only,
+            operation: none,
+            signature: for<'a> fn(
+                &'a crate::PropertyValue,
+            ) -> Result<&'a [i32], crate::PropertyValueError>,
         },
         {
             semantic_id: "PropertyValue.as_double",

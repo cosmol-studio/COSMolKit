@@ -56,7 +56,7 @@ fn raw_large_ring_cis(with_stale_properties: bool) -> TopologyBlock {
                     .unwrap()
                     .with_prop("_ringStereochemCand", "1")
                     .unwrap()
-                    .with_prop("_ringStereoAtoms", "4,7")
+                    .with_prop("_ringStereoAtoms", vec![4_i32, 7])
                     .unwrap()
                     .with_prop("user_marker", "keep")
                     .unwrap();
@@ -388,7 +388,7 @@ fn cx_legacy_clean_flag_controls_stereo_property_cleanup() {
     );
     assert_eq!(
         clean_false.atoms[0].prop("_ringStereoAtoms"),
-        Some(&PropertyValue::String("4,7".to_owned()))
+        Some(&PropertyValue::IntVector(vec![4_i32, 7]))
     );
     assert_eq!(
         clean_false.bonds[5].prop("_CIPCode"),

@@ -203,7 +203,197 @@ impl PropertyStringError {
 
 /// Convert a canonical detached property value using the pinned source's
 /// modeled `RDValue` string-conversion behavior.
+/// Project a signed integer vector using the source C-locale spelling.
+pub fn int_vector_to_string(value: &[i32]) -> String {
+    // RDKit✔️✔️: std::string vectToString(RDValue val) {
+    // RDKit✔️✔️:   const std::vector<T> &tv = rdvalue_cast<std::vector<T> &>(val);
+    // RDKit✔️✔️:   std::ostringstream sstr;
+    // RDKit✔️✔️:   sstr.imbue(std::locale("C"));
+    // RDKit✔️✔️:   sstr << std::setprecision(17);
+    // RDKit✔️✔️:   sstr << "[";
+    // RDKit✔️✔️:   if (!tv.empty()) {
+    // RDKit✔️✔️:     std::copy(tv.begin(), tv.end() - 1, std::ostream_iterator<T>(sstr, ","));
+    // RDKit✔️✔️:     sstr << tv.back();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   sstr << "]";
+    // RDKit✔️✔️:   return sstr.str();
+    // RDKit✔️✔️: }
+    // Behavior: signed decimal elements, brackets, comma separators, no sorting.
+    // Complexity: one linear pass and one growing output buffer, as the stream.
+    let mut result = String::from("[");
+    for (index, value) in value.iter().enumerate() {
+        if index != 0 {
+            result.push(',');
+        }
+        write!(&mut result, "{value}").expect("writing to String cannot fail");
+    }
+    result.push(']');
+    result
+}
+
 pub fn property_value_to_string(value: &PropertyValue) -> Result<String, PropertyStringError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:192-266
+    // RDKit❗✔️: inline bool rdvalue_tostring(RDValue_cast_t val, std::string &res) {
+    // RDKit❗✔️:   switch (val.getTag()) {
+    // RDKit❗✔️:     case RDTypeTag::StringTag:
+    // RDKit❗✔️:       res = rdvalue_cast<std::string>(val);
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     case RDTypeTag::IntTag:
+    // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<int>(val));
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     case RDTypeTag::DoubleTag: {
+    // RDKit❗✔️:       Utils::LocaleSwitcher ls;  // for lexical cast...
+    // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<double>(val));
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     case RDTypeTag::UnsignedIntTag:
+    // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<unsigned int>(val));
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️: #ifdef RDVALUE_HASBOOL
+    // RDKit❗✔️:     case RDTypeTag::BoolTag:
+    // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️: #endif
+    // RDKit❌❌:     case RDTypeTag::FloatTag: {
+    // RDKit❌❌:       Utils::LocaleSwitcher ls;  // for lexical cast...
+    // RDKit❌❌:       res = boost::lexical_cast<std::string>(rdvalue_cast<float>(val));
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     }
+    // RDKit❌❌:     case RDTypeTag::VecDoubleTag: {
+    // RDKit❌❌:       // vectToString uses std::imbue for locale
+    // RDKit❌❌:       res = vectToString<double>(val);
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     }
+    // RDKit❌❌:     case RDTypeTag::VecFloatTag: {
+    // RDKit❌❌:       // vectToString uses std::imbue for locale
+    // RDKit❌❌:       res = vectToString<float>(val);
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     }
+    // RDKit❗✔️:     case RDTypeTag::VecIntTag:
+    // RDKit❗✔️:       res = vectToString<int>(val);
+    // RDKit❗✔️:       break;
+    // RDKit❌❌:     case RDTypeTag::VecUnsignedIntTag:
+    // RDKit❌❌:       res = vectToString<unsigned int>(val);
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     case RDTypeTag::VecStringTag:
+    // RDKit❌❌:       res = vectToString<std::string>(val);
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     case RDTypeTag::AnyTag: {
+    // RDKit❌❌:       Utils::LocaleSwitcher ls;  // for lexical cast...
+    // RDKit❌❌:       try {
+    // RDKit❌❌:         res = std::any_cast<std::string>(rdvalue_cast<std::any &>(val));
+    // RDKit❌❌:       } catch (const std::bad_any_cast &) {
+    // RDKit❌❌:         auto &rdtype = rdvalue_cast<std::any &>(val).type();
+    // RDKit❌❌:         if (rdtype == typeid(long)) {
+    // RDKit❌❌:           res = boost::lexical_cast<std::string>(
+    // RDKit❌❌:               std::any_cast<long>(rdvalue_cast<std::any &>(val)));
+    // RDKit❌❌:         } else if (rdtype == typeid(int64_t)) {
+    // RDKit❌❌:           res = boost::lexical_cast<std::string>(
+    // RDKit❌❌:               std::any_cast<int64_t>(rdvalue_cast<std::any &>(val)));
+    // RDKit❌❌:         } else if (rdtype == typeid(uint64_t)) {
+    // RDKit❌❌:           res = boost::lexical_cast<std::string>(
+    // RDKit❌❌:               std::any_cast<uint64_t>(rdvalue_cast<std::any &>(val)));
+    // RDKit❌❌:         } else if (rdtype == typeid(unsigned long)) {
+    // RDKit❌❌:           res = boost::lexical_cast<std::string>(
+    // RDKit❌❌:               std::any_cast<unsigned long>(rdvalue_cast<std::any &>(val)));
+    // RDKit❌❌:         } else {
+    // RDKit❌❌:           throw;
+    // RDKit❌❌:           return false;
+    // RDKit❌❌:         }
+    // RDKit❌❌:       }
+    // RDKit❌❌:       break;
+    // RDKit❌❌:     }
+    // RDKit❗✔️:     default:
+    // RDKit❗✔️:       res = "";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:192-266
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/lcast_unsigned_converters.hpp:71-153
+    // Boost❗✔️:         template <class Traits, class T, class CharT>
+    // Boost❗✔️:         class lcast_put_unsigned: boost::noncopyable {
+    // Boost❗✔️:             typedef BOOST_DEDUCED_TYPENAME Traits::int_type int_type;
+    // Boost❗✔️:             BOOST_DEDUCED_TYPENAME boost::conditional<
+    // Boost❗✔️:                     (sizeof(unsigned) > sizeof(T))
+    // Boost❗✔️:                     , unsigned
+    // Boost❗✔️:                     , T
+    // Boost❗✔️:             >::type         m_value;
+    // Boost❗✔️:             CharT*          m_finish;
+    // Boost❗✔️:             CharT    const  m_czero;
+    // Boost❗✔️:             int_type const  m_zero;
+    // Boost❗✔️:
+    // Boost❗✔️:         public:
+    // Boost❗✔️:             lcast_put_unsigned(const T n_param, CharT* finish) BOOST_NOEXCEPT
+    // Boost❗✔️:                 : m_value(n_param), m_finish(finish)
+    // Boost❗✔️:                 , m_czero(lcast_char_constants<CharT>::zero), m_zero(Traits::to_int_type(m_czero))
+    // Boost❗✔️:             {
+    // Boost❗✔️: #ifndef BOOST_NO_LIMITS_COMPILE_TIME_CONSTANTS
+    // Boost❗✔️:                 BOOST_STATIC_ASSERT(!std::numeric_limits<T>::is_signed);
+    // Boost❗✔️: #endif
+    // Boost❗✔️:             }
+    // Boost❗✔️:
+    // Boost❗✔️:             CharT* convert() {
+    // Boost❗✔️: #ifndef BOOST_LEXICAL_CAST_ASSUME_C_LOCALE
+    // Boost❗✔️:                 std::locale loc;
+    // Boost❗✔️:                 if (loc == std::locale::classic()) {
+    // Boost❗✔️:                     return main_convert_loop();
+    // Boost❗✔️:                 }
+    // Boost❗✔️:
+    // Boost❌❌:                 typedef std::numpunct<CharT> numpunct;
+    // Boost❌❌:                 numpunct const& np = BOOST_USE_FACET(numpunct, loc);
+    // Boost❌❌:                 std::string const grouping = np.grouping();
+    // Boost❌❌:                 std::string::size_type const grouping_size = grouping.size();
+    // Boost❌❌:
+    // Boost❌❌:                 if (!grouping_size || grouping[0] <= 0) {
+    // Boost❌❌:                     return main_convert_loop();
+    // Boost❌❌:                 }
+    // Boost❌❌:
+    // Boost❌❌: #ifndef BOOST_NO_LIMITS_COMPILE_TIME_CONSTANTS
+    // Boost❌❌:                 // Check that ulimited group is unreachable:
+    // Boost❌❌:                 BOOST_STATIC_ASSERT(std::numeric_limits<T>::digits10 < CHAR_MAX);
+    // Boost❌❌: #endif
+    // Boost❌❌:                 CharT const thousands_sep = np.thousands_sep();
+    // Boost❌❌:                 std::string::size_type group = 0; // current group number
+    // Boost❌❌:                 char last_grp_size = grouping[0];
+    // Boost❌❌:                 char left = last_grp_size;
+    // Boost❌❌:
+    // Boost❌❌:                 do {
+    // Boost❌❌:                     if (left == 0) {
+    // Boost❌❌:                         ++group;
+    // Boost❌❌:                         if (group < grouping_size) {
+    // Boost❌❌:                             char const grp_size = grouping[group];
+    // Boost❌❌:                             last_grp_size = (grp_size <= 0 ? static_cast<char>(CHAR_MAX) : grp_size);
+    // Boost❌❌:                         }
+    // Boost❌❌:
+    // Boost❌❌:                         left = last_grp_size;
+    // Boost❌❌:                         --m_finish;
+    // Boost❌❌:                         Traits::assign(*m_finish, thousands_sep);
+    // Boost❌❌:                     }
+    // Boost❌❌:
+    // Boost❌❌:                     --left;
+    // Boost❌❌:                 } while (main_convert_iteration());
+    // Boost❌❌:
+    // Boost❌❌:                 return m_finish;
+    // Boost❗✔️: #else
+    // Boost❗✔️:                 return main_convert_loop();
+    // Boost❗✔️: #endif
+    // Boost❗✔️:             }
+    // Boost❗✔️:
+    // Boost❗✔️:         private:
+    // Boost❗✔️:             inline bool main_convert_iteration() BOOST_NOEXCEPT {
+    // Boost❗✔️:                 --m_finish;
+    // Boost❗✔️:                 int_type const digit = static_cast<int_type>(m_value % 10U);
+    // Boost❗✔️:                 Traits::assign(*m_finish, Traits::to_char_type(m_zero + digit));
+    // Boost❗✔️:                 m_value /= 10;
+    // Boost❗✔️:                 return !!m_value; // suppressing warnings
+    // Boost❗✔️:             }
+    // Boost❗✔️:
+    // Boost❗✔️:             inline CharT* main_convert_loop() BOOST_NOEXCEPT {
+    // Boost❗✔️:                 while (main_convert_iteration());
+    // Boost❗✔️:                 return m_finish;
+    // Boost❗✔️:             }
+    // Boost❗✔️:         };
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/lcast_unsigned_converters.hpp:71-153
     // BEGIN RDKIT CPP FUNCTION rdvalue_tostring
     // RDKit✔️✔️: switch (val.getTag()) {
     // RDKit✔️✔️:   case RDTypeTag::StringTag:
@@ -234,6 +424,8 @@ pub fn property_value_to_string(value: &PropertyValue) -> Result<String, Propert
     match value {
         PropertyValue::String(value) => Ok(value.clone()),
         PropertyValue::Int(value) => Ok(value.to_string()),
+        PropertyValue::UInt(value) => Ok(value.to_string()),
+        PropertyValue::IntVector(value) => Ok(int_vector_to_string(value)),
         PropertyValue::Double(value) => Ok(format_boost_double(*value)),
         PropertyValue::Bool(value) => Ok(if *value { "1" } else { "0" }.to_owned()),
     }
@@ -383,5 +575,94 @@ mod tests {
         let bool_as_double = PropertyValue::Bool(true).as_double().unwrap_err();
         assert_eq!(bool_as_double.expected(), PropertyValueKind::Double);
         assert_eq!(bool_as_double.actual(), PropertyValueKind::Bool);
+    }
+}
+
+#[cfg(test)]
+mod q01_b1_tests {
+    use super::*;
+    #[test]
+    fn q01_b1_vec_int_tag_exact_source_projection() {
+        for (v, text) in [
+            (vec![], "[]"),
+            (vec![1], "[1]"),
+            (vec![1, -2, 1], "[1,-2,1]"),
+            (vec![i32::MIN, i32::MAX], "[-2147483648,2147483647]"),
+        ] {
+            let value = PropertyValue::from(v.clone());
+            let before = value.clone();
+            assert_eq!(int_vector_to_string(&v), text);
+            assert_eq!(property_value_to_string(&value).unwrap(), text);
+            assert_eq!(value, before);
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_text_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_full_width_classic_decimal_source_spellings() {
+        for (number, text) in [
+            (0_u32, "0"),
+            (1, "1"),
+            (2147483646, "2147483646"),
+            (2147483647, "2147483647"),
+            (2147483648, "2147483648"),
+            (4294967295, "4294967295"),
+        ] {
+            assert_eq!(
+                property_value_to_string(&PropertyValue::UInt(number)),
+                Ok(text.into())
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+
+    // FROZEN UINT CONDITION: TEXT_0
+    #[test]
+    fn uint_cell_text_0() {
+        let v = PropertyValue::UInt(0_u32);
+        assert_eq!(property_value_to_string(&v).unwrap(), "0");
+        assert_eq!(v, PropertyValue::UInt(0_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_1
+    #[test]
+    fn uint_cell_text_1() {
+        let v = PropertyValue::UInt(1_u32);
+        assert_eq!(property_value_to_string(&v).unwrap(), "1");
+        assert_eq!(v, PropertyValue::UInt(1_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_2147483646
+    #[test]
+    fn uint_cell_text_2147483646() {
+        let v = PropertyValue::UInt(2147483646_u32);
+        assert_eq!(property_value_to_string(&v).unwrap(), "2147483646");
+        assert_eq!(v, PropertyValue::UInt(2147483646_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_2147483647
+    #[test]
+    fn uint_cell_text_2147483647() {
+        let v = PropertyValue::UInt(2147483647_u32);
+        assert_eq!(property_value_to_string(&v).unwrap(), "2147483647");
+        assert_eq!(v, PropertyValue::UInt(2147483647_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_2147483648
+    #[test]
+    fn uint_cell_text_2147483648() {
+        let v = PropertyValue::UInt(2147483648_u32);
+        assert_eq!(property_value_to_string(&v).unwrap(), "2147483648");
+        assert_eq!(v, PropertyValue::UInt(2147483648_u32));
+    }
+    // FROZEN UINT CONDITION: TEXT_4294967295
+    #[test]
+    fn uint_cell_text_4294967295() {
+        let v = PropertyValue::UInt(4294967295_u32);
+        assert_eq!(property_value_to_string(&v).unwrap(), "4294967295");
+        assert_eq!(v, PropertyValue::UInt(4294967295_u32));
     }
 }

@@ -1160,7 +1160,9 @@ fn nonzero_degree(topology: &TopologyBlock, center: AtomId) -> Result<usize, Ste
     Ok(degree)
 }
 
-fn nontetrahedral_enabled() -> bool {
+/// Read the pinned source non-tetrahedral stereo environment policy.
+#[doc(hidden)]
+pub fn nontetrahedral_enabled() -> bool {
     // BEGIN RDKIT CPP FUNCTION getValFromEnvironment/getAllowNontetrahedralChirality
     // RDKit✔️❌: constexpr auto nonTetrahedralStereoEnvVar = "RDK_ENABLE_NONTETRAHEDRAL_STEREO";
     // RDKit✔️❌: constexpr bool nonTetrahedralStereoDefaultVal =

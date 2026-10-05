@@ -783,6 +783,85 @@ impl TopologyBatchEdit {
         // The source find/erase and endpoint remap are linear in the list;
         // this keeps the same per-deletion scan and allocates one value vector
         // and serialized property only for each parenthesized surviving bond.
+        // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:192-266
+        // RDKit❗✔️: inline bool rdvalue_tostring(RDValue_cast_t val, std::string &res) {
+        // RDKit❗✔️:   switch (val.getTag()) {
+        // RDKit❗✔️:     case RDTypeTag::StringTag:
+        // RDKit❗✔️:       res = rdvalue_cast<std::string>(val);
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     case RDTypeTag::IntTag:
+        // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<int>(val));
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     case RDTypeTag::DoubleTag: {
+        // RDKit❗✔️:       Utils::LocaleSwitcher ls;  // for lexical cast...
+        // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<double>(val));
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     case RDTypeTag::UnsignedIntTag:
+        // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<unsigned int>(val));
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️: #ifdef RDVALUE_HASBOOL
+        // RDKit❗✔️:     case RDTypeTag::BoolTag:
+        // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️: #endif
+        // RDKit❗✔️:     case RDTypeTag::FloatTag: {
+        // RDKit❗✔️:       Utils::LocaleSwitcher ls;  // for lexical cast...
+        // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<float>(val));
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     case RDTypeTag::VecDoubleTag: {
+        // RDKit❗✔️:       // vectToString uses std::imbue for locale
+        // RDKit❗✔️:       res = vectToString<double>(val);
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     case RDTypeTag::VecFloatTag: {
+        // RDKit❗✔️:       // vectToString uses std::imbue for locale
+        // RDKit❗✔️:       res = vectToString<float>(val);
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     case RDTypeTag::VecIntTag:
+        // RDKit❗✔️:       res = vectToString<int>(val);
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     case RDTypeTag::VecUnsignedIntTag:
+        // RDKit❗✔️:       res = vectToString<unsigned int>(val);
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     case RDTypeTag::VecStringTag:
+        // RDKit❗✔️:       res = vectToString<std::string>(val);
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     case RDTypeTag::AnyTag: {
+        // RDKit❗✔️:       Utils::LocaleSwitcher ls;  // for lexical cast...
+        // RDKit❗✔️:       try {
+        // RDKit❗✔️:         res = std::any_cast<std::string>(rdvalue_cast<std::any &>(val));
+        // RDKit❗✔️:       } catch (const std::bad_any_cast &) {
+        // RDKit❗✔️:         auto &rdtype = rdvalue_cast<std::any &>(val).type();
+        // RDKit❗✔️:         if (rdtype == typeid(long)) {
+        // RDKit❗✔️:           res = boost::lexical_cast<std::string>(
+        // RDKit❗✔️:               std::any_cast<long>(rdvalue_cast<std::any &>(val)));
+        // RDKit❗✔️:         } else if (rdtype == typeid(int64_t)) {
+        // RDKit❗✔️:           res = boost::lexical_cast<std::string>(
+        // RDKit❗✔️:               std::any_cast<int64_t>(rdvalue_cast<std::any &>(val)));
+        // RDKit❗✔️:         } else if (rdtype == typeid(uint64_t)) {
+        // RDKit❗✔️:           res = boost::lexical_cast<std::string>(
+        // RDKit❗✔️:               std::any_cast<uint64_t>(rdvalue_cast<std::any &>(val)));
+        // RDKit❗✔️:         } else if (rdtype == typeid(unsigned long)) {
+        // RDKit❗✔️:           res = boost::lexical_cast<std::string>(
+        // RDKit❗✔️:               std::any_cast<unsigned long>(rdvalue_cast<std::any &>(val)));
+        // RDKit❗✔️:         } else {
+        // RDKit❗✔️:           throw;
+        // RDKit❗✔️:           return false;
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     default:
+        // RDKit❗✔️:       res = "";
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return true;
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:192-266
+        // UInt formats as unsigned decimal without parentheses. Preserve the
+        // source no-read ENDPTS guard without allocating its unused text.
         for removed_atom_index in (0..self.remove_atoms.len()).rev() {
             if !self.remove_atoms[removed_atom_index] {
                 continue;
@@ -799,12 +878,14 @@ impl TopologyBatchEdit {
                     crate::PropertyValue::String(value) => value.clone(),
                     // RDKit✔️✔️: rdvalue_tostring(i.val, res);
                     // RDKit✔️✔️: if ('(' == sprop.front() && ')' == sprop.back()) {
-                    // Dict::getValIfPresent(string&) projects Int/Double/Bool
+                    // Dict::getValIfPresent(string&) projects Int/UInt/Double/Bool
                     // through lexical_cast. None of those scalar spellings
                     // begins with '(' (including signed zero, Inf and NaN),
                     // so the source skips this branch. Avoid that unobserved
                     // allocation without moving formatting into the model.
-                    crate::PropertyValue::Int(_)
+                    crate::PropertyValue::IntVector(_)
+                    | crate::PropertyValue::Int(_)
+                    | crate::PropertyValue::UInt(_)
                     | crate::PropertyValue::Double(_)
                     | crate::PropertyValue::Bool(_) => continue,
                 };

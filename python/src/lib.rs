@@ -6,6 +6,7 @@
 mod canonical_descriptor_binding;
 mod canonical_element_metadata;
 mod canonical_fingerprint_values;
+mod canonical_search;
 mod canonical_values;
 mod drawing_binding;
 

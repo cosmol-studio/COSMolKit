@@ -25,6 +25,7 @@ pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[SpecialRegression {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Operation {
+    SubstructureMatch,
     FuzzyAnd,
     FuzzyOr,
     Molecular(molecule_plan::TaskId),
@@ -37,6 +38,7 @@ pub enum Operation {
 impl Operation {
     pub fn name(self) -> &'static str {
         match self {
+            Self::SubstructureMatch => "substructure_match",
             Self::FuzzyAnd => "fuzzy_and",
             Self::FuzzyOr => "fuzzy_or",
             Self::Molecular(id) => id.name(),
@@ -397,6 +399,11 @@ pub const TASKS: &[Task] = &[
         corpus_type: CorpusType::Smiles,
         generator: "generate_chi_n_n",
     },
+    Task {
+        operation: Operation::SubstructureMatch,
+        corpus_type: CorpusType::Smiles,
+        generator: "generate_substructure_match",
+    },
 ];
 
 pub const RDKIT_VERSION: &str = "2026.03.1";
@@ -442,6 +449,7 @@ pub struct SmilesCase {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input {
+    Search(crate::search::SearchInput),
     Uff(crate::uff::UffInput),
     Fingerprint(FingerprintInput),
     Molecular {
@@ -530,6 +538,7 @@ impl BioPdbOutputProfile {
 impl Input {
     pub fn task_name(&self) -> &'static str {
         match self {
+            Self::Search(_) => "substructure_match",
             Self::Uff(row) => match row.profile {
                 crate::uff::Profile::Coverage { .. } => "uff_has_all_molecule_params",
                 crate::uff::Profile::Optimization { .. } => "uff_optimize",
@@ -603,6 +612,7 @@ impl Input {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
+    Search(crate::search::Outcome),
     Uff(crate::uff::Observation),
     Fingerprint(FingerprintValue),
     Molecular(crate::molecular::Outcome),
@@ -679,6 +689,11 @@ impl Task {
             return Err("reference task/input mismatch".into());
         }
         match (recipe, prepared, output) {
+            (Input::Search(recipe), Input::Search(prepared), Value::Search(output))
+                if recipe == prepared =>
+            {
+                crate::search::validate_output(recipe, output)
+            }
             (Input::Uff(recipe), Input::Uff(prepared), Value::Uff(output)) => {
                 crate::uff::validate_reference(recipe, prepared, output)
             }
@@ -708,6 +723,7 @@ impl Task {
     }
     pub fn count(&self, cases: &Corpus) -> usize {
         match self.operation {
+            Operation::SubstructureMatch => cases.molecules.len() * crate::search::profiles().len(),
             Operation::UffCoverage
             | Operation::UffOptimization
             | Operation::UffConformerOptimization => {
@@ -760,6 +776,20 @@ pub fn validate(corpus: &Corpus, tasks: &[&Task]) -> Result<(), String> {
 }
 
 pub fn expand(cases: &Corpus, task: &Task) -> Vec<Input> {
+    if task.operation == Operation::SubstructureMatch {
+        return cases
+            .molecules
+            .iter()
+            .flat_map(|case| {
+                crate::search::profiles().into_iter().map(move |profile| {
+                    Input::Search(crate::search::SearchInput {
+                        case: case.clone(),
+                        profile,
+                    })
+                })
+            })
+            .collect();
+    }
     if task.operation == Operation::BioPdbOutput {
         return cases
             .bio_cases

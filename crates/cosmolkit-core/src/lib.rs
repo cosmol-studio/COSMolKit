@@ -211,7 +211,7 @@ pub use potential_stereo::{
 pub use polymer_sgroup::{
     PolymerSGroupError, finalize_polymer_sgroup, setup_unmarked_polymer_sgroup,
 };
-pub use property_string::{PropertyStringError, property_value_to_string};
+pub use property_string::{PropertyStringError, int_vector_to_string, property_value_to_string};
 
 pub use radicals::{RadicalAssignment, RadicalDiagnostic, RadicalError, assign_radicals};
 
@@ -251,6 +251,7 @@ pub use stereo_order::{
 
 pub use structure_tags::{
     StereoError, StructureTagAssignment, StructureTagParams, assign_chiral_tags_from_structure,
+    nontetrahedral_enabled,
 };
 
 pub use transforms::{

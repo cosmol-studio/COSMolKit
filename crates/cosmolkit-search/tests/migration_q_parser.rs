@@ -2986,3 +2986,243 @@ fn q07b_isotope_targets_keep_i32_value_and_u16_carrier_projection() {
         );
     }
 }
+
+// Q01-A fixed source regressions. Expectations follow pinned smarts.yy
+// numBondsParsed actions and CXSmilesOps.cpp property lookup, independently
+// of final QueryGraph bond rows. Existing 44 owner cases are retained.
+fn q01_a_retained(smarts: &str) -> QueryGraph {
+    parse_smarts(
+        smarts,
+        &SmartsParseParams {
+            skip_cleanup: true,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+}
+
+fn q01_a_indexes(graph: &QueryGraph) -> Vec<u32> {
+    graph
+        .bonds()
+        .iter()
+        .map(|bond| {
+            bond.bond()
+                .prop("_cxsmilesBondIdx")
+                .unwrap()
+                .as_uint()
+                .unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn q01_a_source_indexes_cover_ordinary_branches_disconnected_and_dative() {
+    for (text, indexes) in [("C(N)O", vec![0, 1]), ("C.C-C", vec![0]), ("N<-C", vec![0])] {
+        assert_eq!(q01_a_indexes(&q01_a_retained(text)), indexes, "{text}");
+    }
+    assert_eq!(q01_a_retained("N<-C").bond(0).unwrap().endpoints(), (1, 0));
+}
+
+#[test]
+fn q01_a_ring_indexes_follow_token_order_not_final_rows() {
+    for (text, indexes) in [
+        ("C1CC1O", vec![0, 1, 3, 2]),
+        ("C-1CC-1O", vec![1, 2, 4, 3]),
+        ("C-1CC1O", vec![1, 2, 4, 3]),
+        ("C1CC-1O", vec![0, 1, 3, 2]),
+        ("C2C1CC2CC1", vec![0, 1, 2, 4, 5, 6, 3]),
+        ("C1CC1.C1CC1", vec![0, 1, 3, 4, 2, 5]),
+    ] {
+        assert_eq!(q01_a_indexes(&q01_a_retained(text)), indexes, "{text}");
+    }
+}
+
+#[test]
+fn q01_a_recursive_queries_share_source_bond_counter() {
+    for (text, atom_index, indexes) in [("[$(C-C)]-C", 0, vec![1]), ("C-[$(N-N)]-O", 1, vec![1, 2])]
+    {
+        let graph = q01_a_retained(text);
+        assert_eq!(q01_a_indexes(&graph), indexes, "{text}");
+        let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) =
+            graph.atom(atom_index).unwrap().predicate()
+        else {
+            panic!("source recursive query")
+        };
+        assert_eq!(q01_a_indexes(recursive.query_graph().unwrap()), [0]);
+    }
+}
+
+#[test]
+fn q01_a_coordinate_consumers_resolve_ring_source_indexes() {
+    for (record, order) in [("C:0.2", BondOrder::Dative), ("H:0.2", BondOrder::Hydrogen)] {
+        let graph = q01_a_retained(&format!("C1CC1O |{record}|"));
+        assert_eq!(graph.bond(3).unwrap().bond().order(), order);
+        assert_eq!(graph.bond(3).unwrap().endpoints(), (0, 2));
+        assert_eq!(graph.bond(2).unwrap().bond().order(), BondOrder::Single);
+        assert_eq!(graph.bond(2).unwrap().endpoints(), (2, 3));
+        assert_eq!(q01_a_indexes(&graph), [0, 1, 3, 2]);
+    }
+}
+
+#[test]
+fn q01_a_zero_consumers_resolve_ring_source_indexes() {
+    let graph = q01_a_retained("C1CC1O |Z:2|");
+    assert_eq!(graph.bond(3).unwrap().bond().order(), BondOrder::Zero);
+    assert_eq!(graph.bond(2).unwrap().bond().order(), BondOrder::Single);
+    assert_eq!(q01_a_indexes(&graph), [0, 1, 3, 2]);
+}
+
+#[test]
+fn q01_a_wedge_consumers_resolve_ring_source_indexes() {
+    for (record, direction) in [
+        ("w:0.2", BondDirection::Unknown),
+        ("wU:0.2", BondDirection::BeginWedge),
+        ("wD:0.2", BondDirection::BeginDash),
+    ] {
+        let graph = q01_a_retained(&format!("C1CC1O |{record}|"));
+        assert_eq!(graph.bond(3).unwrap().endpoints(), (0, 2));
+        assert_eq!(graph.bond(3).unwrap().bond().direction(), direction);
+        assert_eq!(
+            graph.bond(2).unwrap().bond().direction(),
+            BondDirection::None
+        );
+        assert!(
+            graph
+                .bond(3)
+                .unwrap()
+                .bond()
+                .prop("_MolFileBondCfg")
+                .is_some()
+        );
+        assert_eq!(graph.bond(2).unwrap().bond().prop("_MolFileBondCfg"), None);
+    }
+}
+
+#[test]
+fn q01_a_double_stereo_consumers_resolve_ring_source_indexes() {
+    for (record, stereo) in [
+        ("c:2", BondStereo::Cis),
+        ("t:2", BondStereo::Trans),
+        ("ctu:2", BondStereo::Any),
+    ] {
+        let graph = q01_a_retained(&format!("C1CC=1O |{record}|"));
+        assert_eq!(graph.bond(3).unwrap().bond().order(), BondOrder::Double);
+        assert_eq!(graph.bond(3).unwrap().bond().stereo(), stereo);
+        assert_eq!(
+            graph.bond(3).unwrap().bond().stereo_atoms(),
+            Some([AtomId::new(1), AtomId::new(1)])
+        );
+        assert_eq!(graph.bond(2).unwrap().bond().stereo(), BondStereo::None);
+    }
+}
+
+#[test]
+fn q01_a_missing_valid_index_errors_and_out_of_window_skips() {
+    for record in [
+        "Z:0", "C:0.0", "H:0.0", "w:0.0", "wU:0.0", "wD:0.0", "c:0", "t:0", "ctu:0",
+    ] {
+        assert!(
+            matches!(
+                parse_smarts(&format!("C-1CC-1O |{record}|"), &Default::default()),
+                Err(SmartsParseError::CxSmiles(_))
+            ),
+            "valid source index hole: {record}"
+        );
+    }
+    for record in [
+        "Z:4", "C:0.4", "H:0.4", "w:0.4", "wU:0.4", "wD:0.4", "c:4", "t:4", "ctu:4",
+    ] {
+        let graph = q01_a_retained(&format!("C-1CC-1O |{record}|"));
+        assert!(
+            graph
+                .bonds()
+                .iter()
+                .all(|bond| bond.bond().order() == BondOrder::Single)
+        );
+        assert!(
+            graph
+                .bonds()
+                .iter()
+                .all(|bond| bond.bond().direction() == BondDirection::None
+                    && bond.bond().stereo() == BondStereo::None)
+        );
+        assert_eq!(q01_a_indexes(&graph), [1, 2, 4, 3]);
+    }
+}
+
+#[test]
+fn q01_a_lenient_records_keep_prefix_commits_and_cursor() {
+    let params = SmartsParseParams {
+        strict_cxsmiles: false,
+        skip_cleanup: true,
+        ..Default::default()
+    };
+    for record in [
+        "Z:1,0",
+        "C:0.3,0.0",
+        "H:0.3,0.0",
+        "wU:0.3,0.0",
+        "wD:0.3,0.0",
+        "w:0.3,0.0",
+        "c:1,0",
+        "t:1,0",
+        "ctu:1,0",
+    ] {
+        let text = format!("C-1CC-1O |$kept$ {record}| suppressed");
+        let graph = parse_smarts(&text, &params).unwrap();
+        assert_eq!(
+            graph.atom(0).unwrap().prop("atomLabel"),
+            Some(&PropertyValue::String("kept".to_owned()))
+        );
+        assert_eq!(graph.name(), None);
+        assert_eq!(
+            graph.prop("_CXSMILES_Data"),
+            Some(format!("|$kept$ {record}").as_str())
+        );
+        match record {
+            "Z:1,0" => assert_eq!(graph.bond(0).unwrap().bond().order(), BondOrder::Zero),
+            "C:0.3,0.0" => assert_eq!(graph.bond(3).unwrap().bond().order(), BondOrder::Dative),
+            "H:0.3,0.0" => assert_eq!(graph.bond(3).unwrap().bond().order(), BondOrder::Hydrogen),
+            "wU:0.3,0.0" => assert_eq!(
+                graph.bond(3).unwrap().bond().direction(),
+                BondDirection::BeginWedge
+            ),
+            "wD:0.3,0.0" => assert_eq!(
+                graph.bond(3).unwrap().bond().direction(),
+                BondDirection::BeginDash
+            ),
+            "w:0.3,0.0" => assert_eq!(
+                graph.bond(3).unwrap().bond().direction(),
+                BondDirection::Unknown
+            ),
+            _ => assert!(graph.bond(0).unwrap().bond().stereo() != BondStereo::None),
+        }
+        assert!(
+            matches!(
+                parse_smarts(&text, &Default::default()),
+                Err(SmartsParseError::CxSmiles(_))
+            ),
+            "{record}"
+        );
+    }
+}
+
+#[test]
+fn q01_a_detached_cx_lowerer_uses_same_source_lookup() {
+    for record in [
+        "Z:2", "C:0.2", "H:0.2", "w:0.2", "wU:0.2", "wD:0.2", "c:2", "t:2", "ctu:2",
+    ] {
+        let mut detached = q01_a_retained("C1CC1O");
+        let parsed = cosmolkit_cx::parse_cx_extensions(&format!("|{record}|")).unwrap();
+        cosmolkit_search::apply_cx_to_query_graph(&mut detached, &parsed).unwrap();
+        let streaming = q01_a_retained(&format!("C1CC1O |{record}|"));
+        assert_eq!(detached.bonds(), streaming.bonds(), "{record}");
+    }
+    let mut missing = parse_source_case("C-C");
+    let parsed = cosmolkit_cx::parse_cx_extensions("|Z:0|").unwrap();
+    assert!(matches!(
+        cosmolkit_search::apply_cx_to_query_graph(&mut missing, &parsed),
+        Err(cosmolkit_search::CxQueryLoweringError::BondIndex { index: 0 })
+    ));
+    assert_eq!(missing.bond(0).unwrap().bond().order(), BondOrder::Single);
+}

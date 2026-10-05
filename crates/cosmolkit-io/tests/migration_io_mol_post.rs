@@ -872,12 +872,12 @@ fn mol_post_legacy_closure_retains_source_ring_special_cases_for_concrete_and_qu
                     ChiralTag::TetrahedralCw
                 );
                 assert_eq!(
-                    string_property(record.query.atoms()[1].prop("_ringStereoAtoms")),
-                    Some("5")
+                    record.query.atoms()[1].prop("_ringStereoAtoms"),
+                    Some(&PropertyValue::IntVector(vec![5_i32]))
                 );
                 assert_eq!(
-                    string_property(record.query.atoms()[4].prop("_ringStereoAtoms")),
-                    Some("2")
+                    record.query.atoms()[4].prop("_ringStereoAtoms"),
+                    Some(&PropertyValue::IntVector(vec![2_i32]))
                 );
                 continue;
             }
@@ -885,12 +885,12 @@ fn mol_post_legacy_closure_retains_source_ring_special_cases_for_concrete_and_qu
         assert_eq!(atoms[1].chiral_tag(), ChiralTag::TetrahedralCw);
         assert_eq!(atoms[4].chiral_tag(), ChiralTag::TetrahedralCw);
         assert_eq!(
-            string_property(atoms[1].prop("_ringStereoAtoms")),
-            Some("5")
+            atoms[1].prop("_ringStereoAtoms"),
+            Some(&PropertyValue::IntVector(vec![5_i32]))
         );
         assert_eq!(
-            string_property(atoms[4].prop("_ringStereoAtoms")),
-            Some("2")
+            atoms[4].prop("_ringStereoAtoms"),
+            Some(&PropertyValue::IntVector(vec![2_i32]))
         );
     }
 }

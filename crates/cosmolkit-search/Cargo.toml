@@ -12,6 +12,7 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
+cosmolkit-smiles = { version = "0.5.0-rc.9", path = "../cosmolkit-smiles" }
 cosmolkit-cx = { version = "0.5.0-rc.9", path = "../cosmolkit-cx" }
 cosmolkit-core = { version = "0.5.0-rc.9", path = "../cosmolkit-core" }
 cosmolkit-model = { version = "0.5.0-rc.9", path = "../cosmolkit-model" }

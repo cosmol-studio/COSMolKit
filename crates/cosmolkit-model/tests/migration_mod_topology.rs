@@ -915,3 +915,24 @@ fn no_bond_and_empty_batch_regressions_remain_valid() {
     mapping.validate_for_counts(0, 0, 0, 0).unwrap();
     assert_eq!(result.adjacency.neighbors_of(0), &[] as &[NeighborRef]);
 }
+
+#[test]
+fn q01_b1_endpoint_remap_preserves_non_endpoint_vector() {
+    use cosmolkit_model::PropertyValue;
+    let mut source = topology(4, &[(0, 1), (1, 2), (2, 3)]);
+    source.bonds[1]
+        .set_computed_prop("_MolFileBondEndPts", vec![1_i32, -2, 1])
+        .unwrap();
+    let before = source.clone();
+    let mut batch = source.begin_batch_edit().unwrap();
+    batch.remove_atom(atom_id(0)).unwrap();
+    let (result, _mapping) = batch.finish().unwrap();
+    assert_eq!(source, before);
+    assert_eq!(
+        result.bonds[0].prop("_MolFileBondEndPts"),
+        Some(&PropertyValue::IntVector(vec![1, -2, 1]))
+    );
+    assert!(result.bonds[0].is_prop_computed("_MolFileBondEndPts"));
+    assert_eq!(result.bonds[0].begin(), atom_id(0));
+    assert_eq!(result.bonds[0].end(), atom_id(1));
+}

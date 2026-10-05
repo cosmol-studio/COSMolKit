@@ -2,6 +2,9 @@ use super::registry::{FingerprintValue, Input, Operation, Record, Value, Width};
 use cosmolkit::{SparseCountFingerprint, SparseCountFingerprint32};
 
 pub fn run(input: &Input) -> Result<Record, String> {
+    if let Input::Search(row) = input {
+        return crate::search::run(row);
+    }
     if matches!(input, Input::Uff(_)) {
         return crate::uff::run(input);
     }
@@ -83,7 +86,8 @@ pub fn run(input: &Input) -> Result<Record, String> {
                 Operation::BioPdbOutput => {
                     return Err("bio_pdb_output in fingerprint input".into());
                 }
-                Operation::Molecular(_)
+                Operation::SubstructureMatch
+                | Operation::Molecular(_)
                 | Operation::UffCoverage
                 | Operation::UffOptimization
                 | Operation::UffConformerOptimization => {

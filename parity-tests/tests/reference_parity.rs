@@ -71,6 +71,7 @@ tests!(
     chi_4_n_smiles,
     chi_n_v_smiles,
     chi_n_n_smiles,
+    substructure_match_smiles,
 );
 
 // Preserve the existing BIO smoke checks alongside the corpus reference entrypoints.

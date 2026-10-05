@@ -7419,3 +7419,214 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomId, AtomSpec, PropertyValue};
+    use cosmolkit_model::{Element, Hybridization};
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_forcefields/UFFdummyLabel_0
+    #[test]
+    fn uint_cell_text_consumer_forcefields_uffdummylabel_0_atom_typer() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(0).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "0_"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(6).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "C_"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_forcefields/UFFdummyLabel_1
+    #[test]
+    fn uint_cell_text_consumer_forcefields_uffdummylabel_1_atom_typer() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(0).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "1_"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(6).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "C_"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_forcefields/UFFdummyLabel_2147483646
+    #[test]
+    fn uint_cell_text_consumer_forcefields_uffdummylabel_2147483646_atom_typer() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(0).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "2147483646"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(6).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "C_"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_forcefields/UFFdummyLabel_2147483647
+    #[test]
+    fn uint_cell_text_consumer_forcefields_uffdummylabel_2147483647_atom_typer() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(0).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "2147483647"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(6).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "C_"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_forcefields/UFFdummyLabel_2147483648
+    #[test]
+    fn uint_cell_text_consumer_forcefields_uffdummylabel_2147483648_atom_typer() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(0).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "2147483648"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(6).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "C_"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_forcefields/UFFdummyLabel_4294967295
+    #[test]
+    fn uint_cell_text_consumer_forcefields_uffdummylabel_4294967295_atom_typer() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(0).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "4294967295"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::from_atomic_number(6).unwrap())
+                .with_hybridization(Hybridization::S)
+                .with_prop("dummyLabel", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        let mut diagnostics = vec![];
+        assert_eq!(
+            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
+            "C_"
+        );
+        assert_eq!(diagnostics, vec![]);
+        assert_eq!(a, before);
+    }
+}

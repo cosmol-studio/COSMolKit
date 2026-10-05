@@ -9,7 +9,7 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer3D, CoordinateBlock,
-    CoordinateDimension, MoleculeProperties, TopologyBlock,
+    CoordinateDimension, MoleculeProperties, PropertyValue, TopologyBlock,
 };
 use cosmolkit_types::{BondOrder, Element};
 
@@ -29,11 +29,23 @@ pub enum Mol2ReadError {
     MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
 }
 
-fn tripos_atom_type(atom: &Atom) -> Result<&str, Mol2ReadError> {
-    atom.prop("_TriposAtomType")
-        .ok_or_else(|| Mol2ReadError::Parse("Missing _TriposAtomType".to_owned()))?
-        .as_string()
-        .map_err(|_| Mol2ReadError::Parse("Invalid _TriposAtomType value kind".to_owned()))
+fn tripos_atom_type(atom: &Atom) -> Result<std::borrow::Cow<'_, str>, Mol2ReadError> {
+    // RDKit❗✔️: auto tATT = at->getProp<std::string>(common_properties::_TriposAtomType);
+    // Vector string projection shares the core owner; existing scalar debt retained.
+    // Borrow strings, allocate only the source vector string result, O(elements).
+    let value = atom
+        .prop("_TriposAtomType")
+        .ok_or_else(|| Mol2ReadError::Parse("Missing _TriposAtomType".to_owned()))?;
+    match value {
+        PropertyValue::String(value) => Ok(std::borrow::Cow::Borrowed(value)),
+        PropertyValue::UInt(value) => Ok(std::borrow::Cow::Owned(value.to_string())),
+        PropertyValue::IntVector(value) => Ok(std::borrow::Cow::Owned(
+            cosmolkit_core::int_vector_to_string(value),
+        )),
+        _ => Err(Mol2ReadError::Parse(
+            "Invalid _TriposAtomType value kind".to_owned(),
+        )),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -1738,5 +1750,88 @@ mod tests {
         assert_eq!(cleaned.topology.atoms[12].formal_charge(), 0);
         assert_eq!(matching_bond(&raw), BondOrder::Double);
         assert_eq!(raw.topology.atoms[12].formal_charge(), 1);
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_0
+    #[test]
+    fn uint_cell_text_consumer_io_mol2text_0_mol2() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("_TriposAtomType", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(tripos_atom_type(&a).unwrap(), "0");
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_1
+    #[test]
+    fn uint_cell_text_consumer_io_mol2text_1_mol2() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("_TriposAtomType", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(tripos_atom_type(&a).unwrap(), "1");
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_2147483646
+    #[test]
+    fn uint_cell_text_consumer_io_mol2text_2147483646_mol2() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("_TriposAtomType", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(tripos_atom_type(&a).unwrap(), "2147483646");
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_2147483647
+    #[test]
+    fn uint_cell_text_consumer_io_mol2text_2147483647_mol2() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("_TriposAtomType", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(tripos_atom_type(&a).unwrap(), "2147483647");
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_2147483648
+    #[test]
+    fn uint_cell_text_consumer_io_mol2text_2147483648_mol2() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("_TriposAtomType", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(tripos_atom_type(&a).unwrap(), "2147483648");
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_4294967295
+    #[test]
+    fn uint_cell_text_consumer_io_mol2text_4294967295_mol2() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("_TriposAtomType", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(tripos_atom_type(&a).unwrap(), "4294967295");
+        assert_eq!(a, before);
     }
 }

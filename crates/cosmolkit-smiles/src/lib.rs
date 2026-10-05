@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cosmolkit_cx::parse_cx_extensions;
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondDirection, BondId, BondSpec, CoordinateBlock,
-    MoleculeProperties, TopologyBlock,
+    MoleculeProperties, PropertyValue, QueryAtom, QueryBond, QueryGraph, TopologyBlock,
 };
 use cosmolkit_types::{BondOrder, ChiralTag, Element};
 
@@ -714,7 +714,7 @@ struct PendingRingClosure {
     ring: u32,
     opening: RingPartial,
     closing: RingPartial,
-    cx_bond_index: usize,
+    cx_bond_index: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -723,15 +723,18 @@ struct RingClosureRecord {
     bond: Option<BondId>,
 }
 
-fn push_smiles_bond(bonds: &mut Vec<Bond>, spec: BondSpec, cx_bond_index: usize) {
+fn push_smiles_bond(bonds: &mut Vec<Bond>, spec: BondSpec, cx_bond_index: u32) {
     // BEGIN RDKIT CPP GRAMMAR ACTION smiles.yy _cxsmilesBondIdx assignment
-    // RDKit✔️✔️: res->setProp("_cxsmilesBondIdx", numBondsParsed++);
+    // RDKit❗✔️: res->setProp("_cxsmilesBondIdx", numBondsParsed++);
     // END RDKIT CPP GRAMMAR ACTION smiles.yy _cxsmilesBondIdx assignment
     let index = bonds.len();
     bonds.push(Bond::from_spec(
         BondId::new(index),
-        spec.with_prop(CXSMILES_BOND_IDX_PROP, cx_bond_index.to_string())
-            .expect("the internal CXSMILES bond-index property key is non-empty"),
+        spec.with_prop(
+            CXSMILES_BOND_IDX_PROP,
+            cosmolkit_model::PropertyValue::UInt(cx_bond_index),
+        )
+        .expect("the internal CXSMILES bond-index property key is non-empty"),
     ));
 }
 
@@ -1018,11 +1021,86 @@ fn close_ring_closures(
     Ok(())
 }
 
-fn get_bond_ordering(
+trait ParserAtom {
+    fn chiral_tag(&self) -> ChiralTag;
+    fn explicit_hydrogens(&self) -> u8;
+    fn chiral_permutation(&self) -> Option<u32>;
+    fn atomic_number(&self) -> u8;
+    fn prop(&self, key: &str) -> Option<&PropertyValue>;
+    fn clear_prop(&mut self, key: &str);
+    fn set_attachment_point(&mut self, value: i32);
+    fn set_chiral_tag(&mut self, value: ChiralTag);
+    fn set_chiral_permutation(&mut self, value: Option<u32>);
+}
+macro_rules! parser_atom_access {
+    ($ty:ty) => {
+        impl ParserAtom for $ty {
+            fn chiral_tag(&self) -> ChiralTag {
+                <$ty>::chiral_tag(self)
+            }
+            fn explicit_hydrogens(&self) -> u8 {
+                <$ty>::explicit_hydrogens(self)
+            }
+            fn chiral_permutation(&self) -> Option<u32> {
+                <$ty>::chiral_permutation(self)
+            }
+            fn atomic_number(&self) -> u8 {
+                <$ty>::atomic_number(self)
+            }
+            fn prop(&self, key: &str) -> Option<&PropertyValue> {
+                <$ty>::prop(self, key)
+            }
+            fn clear_prop(&mut self, key: &str) {
+                <$ty>::clear_prop(self, key);
+            }
+            fn set_attachment_point(&mut self, value: i32) {
+                <$ty>::set_prop(self, "_fromAttachPoint", value)
+                    .expect("the internal attachment-point property key is non-empty");
+            }
+            fn set_chiral_tag(&mut self, value: ChiralTag) {
+                <$ty>::set_chiral_tag(self, value);
+            }
+            fn set_chiral_permutation(&mut self, value: Option<u32>) {
+                <$ty>::set_chiral_permutation(self, value);
+            }
+        }
+    };
+}
+parser_atom_access!(Atom);
+parser_atom_access!(QueryAtom);
+trait ParserBond {
+    fn begin(&self) -> AtomId;
+    fn end(&self) -> AtomId;
+    fn order(&self) -> BondOrder;
+}
+impl ParserBond for Bond {
+    fn begin(&self) -> AtomId {
+        Bond::begin(self)
+    }
+    fn end(&self) -> AtomId {
+        Bond::end(self)
+    }
+    fn order(&self) -> BondOrder {
+        Bond::order(self)
+    }
+}
+impl ParserBond for QueryBond {
+    fn begin(&self) -> AtomId {
+        self.bond().begin()
+    }
+    fn end(&self) -> AtomId {
+        self.bond().end()
+    }
+    fn order(&self) -> BondOrder {
+        self.bond().order()
+    }
+}
+
+fn get_bond_ordering<B: ParserBond>(
     atom: AtomId,
-    bonds: &[Bond],
-    adjacency: &AdjacencyList,
-    ring_records: &[RingClosureRecord],
+    bonds: &[B],
+    incident: impl Iterator<Item = (usize, BondId)>,
+    ring_closures: &[BondId],
 ) -> Result<(Vec<BondId>, usize), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION GetBondOrdering
     // RDKit✔️✔️: unsigned int GetBondOrdering(INT_LIST &bondOrdering, const RDKit::RWMol *mol,
@@ -1056,21 +1134,10 @@ fn get_bond_ordering(
     // RDKit✔️✔️:   return ringClosures.size();
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION GetBondOrdering
-    let ring_closures = ring_records
-        .iter()
-        .map(|record| {
-            record.bond.ok_or_else(|| {
-                SmilesParseError::Model(format!(
-                    "ring closure {} remained unresolved during chirality adjustment",
-                    record.ring
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     let mut neighbors = vec![(atom.index(), None)];
-    for neighbor in adjacency.neighbors_of(atom.index()) {
-        if !ring_closures.contains(&neighbor.bond) {
-            neighbors.push((neighbor.atom_index, Some(neighbor.bond)));
+    for (neighbor, bond) in incident {
+        if !ring_closures.contains(&bond) {
+            neighbors.push((neighbor, Some(bond)));
         }
     }
     neighbors.sort_by_key(|(neighbor, _)| *neighbor);
@@ -1080,7 +1147,7 @@ fn get_bond_ordering(
         .ok_or_else(|| {
             SmilesParseError::Model("SMILES atom is absent from bond ordering".into())
         })?;
-    let mut ordering = Vec::with_capacity(adjacency.neighbors_of(atom.index()).len());
+    let mut ordering = Vec::with_capacity(neighbors.len().saturating_sub(1) + ring_closures.len());
     for (position, (_, bond)) in neighbors.into_iter().enumerate() {
         if position == self_position {
             ordering.extend(ring_closures.iter().copied());
@@ -1101,13 +1168,17 @@ fn get_bond_ordering(
     Ok((ordering, ring_closures.len()))
 }
 
-fn adjust_atom_chirality_flags(
-    atoms: &mut [Atom],
-    bonds: &[Bond],
-    adjacency: &AdjacencyList,
-    ring_closures_by_atom: &[Vec<RingClosureRecord>],
+fn parser_chirality_assignments<
+    A: ParserAtom,
+    B: ParserBond,
+    I: Iterator<Item = (usize, BondId)>,
+>(
+    atoms: &[A],
+    bonds: &[B],
+    neighbors: impl Fn(usize) -> I,
+    ring_closures_by_atom: &[Vec<BondId>],
     smiles_start_atoms: &[bool],
-) -> Result<(), SmilesParseError> {
+) -> Result<Vec<(ChiralTag, Option<u32>)>, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION AdjustAtomChiralityFlags
     // RDKit✔️✔️: void AdjustAtomChiralityFlags(RWMol *mol) {
     // RDKit✔️✔️:   for (auto atom : mol->atoms()) {
@@ -1159,13 +1230,11 @@ fn adjust_atom_chirality_flags(
                 let (ordering, num_closures) = get_bond_ordering(
                     atom_id,
                     bonds,
-                    adjacency,
+                    neighbors(atom_index),
                     &ring_closures_by_atom[atom_index],
                 )?;
-                let storage_order = adjacency
-                    .neighbors_of(atom_index)
-                    .iter()
-                    .map(|neighbor| neighbor.bond)
+                let storage_order = neighbors(atom_index)
+                    .map(|(_, bond)| bond)
                     .collect::<Vec<_>>();
                 let mut swaps = stereo::count_swaps_to_interconvert(&ordering, storage_order)
                     .ok_or_else(|| {
@@ -1173,11 +1242,11 @@ fn adjust_atom_chirality_flags(
                             "SMILES and storage bond orderings are not permutations".into(),
                         )
                     })?;
-                let unsaturated = adjacency.neighbors_of(atom_index).iter().any(|neighbor| {
-                    stereo::bond_order_as_double(bonds[neighbor.bond.index()].order()) > 1.0
+                let unsaturated = neighbors(atom_index).any(|(_, bond)| {
+                    stereo::bond_order_as_double(bonds[bond.index()].order()) > 1.0
                 });
                 if stereo::chiral_atom_needs_tag_inversion(
-                    adjacency.neighbors_of(atom_index).len(),
+                    neighbors(atom_index).count(),
                     atom.explicit_hydrogens(),
                     smiles_start_atoms[atom_index],
                     stereo::atom_has_fourth_valence(atom.explicit_hydrogens(), false),
@@ -1192,7 +1261,7 @@ fn adjust_atom_chirality_flags(
                 let (ordering, _) = get_bond_ordering(
                     atom_id,
                     bonds,
-                    adjacency,
+                    neighbors(atom_index),
                     &ring_closures_by_atom[atom_index],
                 )?;
                 let mut probe = ordering.into_iter().map(Some).collect::<Vec<_>>();
@@ -1201,10 +1270,8 @@ fn adjust_atom_chirality_flags(
                     atom.chiral_tag(),
                     smiles_start_atoms[atom_index],
                 );
-                let incident = adjacency
-                    .neighbors_of(atom_index)
-                    .iter()
-                    .map(|neighbor| neighbor.bond)
+                let incident = neighbors(atom_index)
+                    .map(|(_, bond)| bond)
                     .collect::<Vec<_>>();
                 nontetrahedral_permutations[atom_index] = Some(
                     stereo::nontetrahedral_chiral_permutation(
@@ -1221,45 +1288,157 @@ fn adjust_atom_chirality_flags(
             _ => {}
         }
     }
-    for ((atom, invert), permutation) in atoms
-        .iter_mut()
+    Ok(atoms
+        .iter()
         .zip(invert)
         .zip(nontetrahedral_permutations)
-    {
-        if invert {
-            atom.set_chiral_tag(stereo::invert_tetrahedral_tag(atom.chiral_tag()));
-        }
-        if let Some(permutation) = permutation {
-            atom.set_chiral_permutation(Some(permutation));
-        }
+        .map(|((atom, invert), permutation)| {
+            let tag = if invert {
+                stereo::invert_tetrahedral_tag(atom.chiral_tag())
+            } else {
+                atom.chiral_tag()
+            };
+            (tag, permutation.or(atom.chiral_permutation()))
+        })
+        .collect())
+}
+
+fn adjust_atom_chirality_flags(
+    atoms: &mut [Atom],
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    ring_closures_by_atom: &[Vec<RingClosureRecord>],
+    smiles_start_atoms: &[bool],
+) -> Result<(), SmilesParseError> {
+    let rings = ring_closures_by_atom
+        .iter()
+        .map(|records| {
+            records
+                .iter()
+                .map(|record| {
+                    record.bond.ok_or_else(|| {
+                        SmilesParseError::Model(format!(
+                            "ring closure {} remained unresolved during chirality adjustment",
+                            record.ring
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let assignments = parser_chirality_assignments(
+        atoms,
+        bonds,
+        |index| {
+            adjacency
+                .neighbors_of(index)
+                .iter()
+                .map(|neighbor| (neighbor.atom_index, neighbor.bond))
+        },
+        &rings,
+        smiles_start_atoms,
+    )?;
+    for (atom, (tag, permutation)) in atoms.iter_mut().zip(assignments) {
+        atom.set_chiral_tag(tag);
+        atom.set_chiral_permutation(permutation);
     }
     Ok(())
 }
 
-fn cleanup_after_parsing(record: &mut SmilesRecord) {
-    // BEGIN RDKIT CPP FUNCTION CleanupAfterParsing
-    // RDKit✔️✔️: for (auto atom : mol->atoms()) {
-    // RDKit✔️✔️:   atom->clearProp(common_properties::_RingClosures);
-    // RDKit✔️✔️:   atom->clearProp(common_properties::_SmilesStart);
-    // RDKit✔️✔️:   std::string label;
-    // RDKit✔️✔️:   if (atom->getAtomicNum() == 0 &&
-    // RDKit✔️✔️:       atom->getPropIfPresent(common_properties::atomLabel, label)) {
-    // RDKit✔️✔️:     if (label == "_AP1") {
-    // RDKit✔️✔️:       atom->setProp(common_properties::_fromAttachPoint, 1);
-    // RDKit✔️✔️:     } else if (label == "_AP2") {
-    // RDKit✔️✔️:       atom->setProp(common_properties::_fromAttachPoint, 2);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: for (auto bond : mol->bonds()) {
-    // RDKit✔️✔️:   bond->clearProp(common_properties::_unspecifiedOrder);
-    // RDKit✔️✔️:   bond->clearProp("_cxsmilesBondIdx");
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: for (auto sg : RDKit::getSubstanceGroups(*mol)) {
-    // RDKit✔️✔️:   sg.clearProp("_cxsmilesindex");
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION CleanupAfterParsing
-    for atom in &mut record.topology.atoms {
+/// Apply shared source parser chirality finalization to detached query carriers.
+/// Syntax flags and source-order ring bond IDs must already be materialized.
+#[doc(hidden)]
+pub fn finalize_query_parser_chirality(graph: &mut QueryGraph) -> Result<(), SmilesParseError> {
+    let rings = graph
+        .atoms()
+        .iter()
+        .map(|atom| match atom.prop("_RingClosures") {
+            None => Ok(Vec::new()),
+            Some(PropertyValue::IntVector(ids)) => {
+                ids.iter()
+                    .map(|&id| {
+                        usize::try_from(id).map(BondId::new).map_err(|_| {
+                            SmilesParseError::Model(
+                "query ring closure remained unresolved during chirality adjustment".into())
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            }
+            Some(_) => Err(SmilesParseError::Model(
+                "query ring closure property has the wrong type".into(),
+            )),
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let starts = graph
+        .atoms()
+        .iter()
+        .map(|atom| atom.prop("_SmilesStart").is_some())
+        .collect::<Vec<_>>();
+    let assignments = parser_chirality_assignments(
+        graph.atoms(),
+        graph.bonds(),
+        |index| {
+            graph.adjacency()[index]
+                .iter()
+                .map(|&(atom, bond)| (atom, BondId::new(bond)))
+        },
+        &rings,
+        &starts,
+    )?;
+    for (atom, (tag, permutation)) in graph.atoms_mut().iter_mut().zip(assignments) {
+        atom.set_chiral_tag(tag);
+        atom.set_chiral_permutation(permutation);
+    }
+    Ok(())
+}
+
+fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) {
+    // RDKit❗✔️: void CleanupAfterParsing(RWMol *mol) {
+    // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
+    // RDKit❗✔️:   for (auto atom : mol->atoms()) {
+    // RDKit❗✔️:     atom->clearProp(common_properties::_RingClosures);
+    // RDKit❗✔️:     atom->clearProp(common_properties::_SmilesStart);
+    // RDKit❗✔️:     std::string label;
+    // RDKit❗✔️:     if (atom->getAtomicNum() == 0 &&
+    // RDKit❗✔️:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
+    // RDKit❗✔️:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
+    // RDKit❗✔️:       // aren't part of the MOL file spec so we don't treat them as attachment
+    // RDKit❗✔️:       // points
+    // RDKit❗✔️:       if (label == "_AP1") {
+    // RDKit❗✔️:         atom->setProp(common_properties::_fromAttachPoint, 1);
+    // RDKit❗✔️:       } else if (label == "_AP2") {
+    // RDKit❗✔️:         atom->setProp(common_properties::_fromAttachPoint, 2);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto bond : mol->bonds()) {
+    // RDKit❗✔️:     bond->clearProp(common_properties::_unspecifiedOrder);
+    // RDKit❗✔️:     bond->clearProp("_cxsmilesBondIdx");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
+    // RDKit❗✔️:     sg.clearProp("_cxsmilesindex");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!Chirality::getAllowNontetrahedralChirality()) {
+    // RDKit❗✔️:     bool needWarn = false;
+    // RDKit❗✔️:     for (auto atom : mol->atoms()) {
+    // RDKit❗✔️:       if (atom->hasProp(common_properties::_chiralPermutation)) {
+    // RDKit❗✔️:         needWarn = true;
+    // RDKit❗✔️:         atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (atom->getChiralTag() > Atom::ChiralType::CHI_OTHER) {
+    // RDKit❗✔️:         needWarn = true;
+    // RDKit❗✔️:         atom->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (needWarn) {
+    // RDKit❗✔️:       BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:           << "ignoring non-tetrahedral stereo specification since setAllowNontetrahedralChirality() is false."
+    // RDKit❗✔️:           << std::endl;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // Linear carrier passes and constant-sized property keys preserve source cost.
+    for atom in atoms.iter_mut() {
         atom.clear_prop("_RingClosures");
         atom.clear_prop("_SmilesStart");
         if atom.atomic_number() == 0 {
@@ -1267,16 +1446,30 @@ fn cleanup_after_parsing(record: &mut SmilesRecord) {
                 .prop("atomLabel")
                 .and_then(|value| value.as_string().ok())
             {
-                Some("_AP1") => atom
-                    .set_prop("_fromAttachPoint", 1_i32)
-                    .expect("the internal attachment-point property key is non-empty"),
-                Some("_AP2") => atom
-                    .set_prop("_fromAttachPoint", 2_i32)
-                    .expect("the internal attachment-point property key is non-empty"),
+                Some("_AP1") => atom.set_attachment_point(1),
+                Some("_AP2") => atom.set_attachment_point(2),
                 _ => {}
             }
         }
     }
+    if !cosmolkit_core::nontetrahedral_enabled() {
+        for atom in atoms.iter_mut() {
+            atom.set_chiral_permutation(None);
+            if matches!(
+                atom.chiral_tag(),
+                ChiralTag::Tetrahedral
+                    | ChiralTag::Allene
+                    | ChiralTag::SquarePlanar
+                    | ChiralTag::TrigonalBipyramidal
+                    | ChiralTag::Octahedral
+            ) {
+                atom.set_chiral_tag(ChiralTag::Unspecified);
+            }
+        }
+    }
+}
+fn cleanup_after_parsing(record: &mut SmilesRecord) {
+    cleanup_parser_atoms(&mut record.topology.atoms);
     for bond in &mut record.topology.bonds {
         bond.clear_prop("_unspecifiedOrder");
         bond.clear_prop(CXSMILES_BOND_IDX_PROP);
@@ -1284,6 +1477,23 @@ fn cleanup_after_parsing(record: &mut SmilesRecord) {
     for group in &mut record.topology.substance_groups {
         group.clear_prop("_cxsmilesindex");
     }
+}
+
+/// Cleanup source parser state on the canonical detached query value.
+#[doc(hidden)]
+pub fn cleanup_query_parser_state(graph: &mut QueryGraph) {
+    cleanup_parser_atoms(graph.atoms_mut());
+    for bond in graph.bonds_mut() {
+        bond.bond_mut().clear_prop("_unspecifiedOrder");
+        bond.bond_mut().clear_prop(CXSMILES_BOND_IDX_PROP);
+    }
+    // RDKit iterates detached substance-group values; preserve model metadata.
+    let mut groups = cosmolkit_model::query_substance_groups(graph).to_vec();
+    for group in &mut groups {
+        group.clear_prop("_cxsmilesindex");
+    }
+    cosmolkit_model::replace_query_substance_groups(graph, groups)
+        .expect("clearing parser properties cannot change substance-group row invariants");
 }
 
 /// Parse SMILES into detached topology, coordinate, and property blocks.
@@ -1313,7 +1523,7 @@ pub fn parse_smiles(
     let mut current = None::<AtomId>;
     let mut pending = None;
     let mut pending_direction = BondDirection::None;
-    let mut next_cx_bond_index = 0;
+    let mut next_cx_bond_index = 0_u32;
     let mut index = 0;
     while index < bytes.len() {
         // BEGIN RDKIT CPP LEXER RULES smiles.ll dative bonds
@@ -1383,9 +1593,8 @@ pub fn parse_smiles(
                         ring,
                         opening,
                         closing: partial,
-                        cx_bond_index: next_cx_bond_index,
+                        cx_bond_index: take_smiles_bond_source_index(&mut next_cx_bond_index),
                     });
-                    next_cx_bond_index += 1;
                 } else {
                     rings.insert(ring, partial);
                 }
@@ -1410,10 +1619,13 @@ pub fn parse_smiles(
                 if let Some(previous) = current {
                     let spec =
                         resolved_bond_spec(pending, &atoms, previous, atom, pending_direction);
-                    push_smiles_bond(&mut bonds, spec, next_cx_bond_index);
+                    push_smiles_bond(
+                        &mut bonds,
+                        spec,
+                        take_smiles_bond_source_index(&mut next_cx_bond_index),
+                    );
                     degrees[previous.index()] += 1;
                     degrees[atom.index()] += 1;
-                    next_cx_bond_index += 1;
                 }
                 current = Some(atom);
                 pending = None;
@@ -1432,10 +1644,13 @@ pub fn parse_smiles(
                 if let Some(previous) = current {
                     let spec =
                         resolved_bond_spec(pending, &atoms, previous, atom, pending_direction);
-                    push_smiles_bond(&mut bonds, spec, next_cx_bond_index);
+                    push_smiles_bond(
+                        &mut bonds,
+                        spec,
+                        take_smiles_bond_source_index(&mut next_cx_bond_index),
+                    );
                     degrees[previous.index()] += 1;
                     degrees[atom.index()] += 1;
-                    next_cx_bond_index += 1;
                 }
                 current = Some(atom);
                 pending = None;
@@ -2104,6 +2319,132 @@ mod tests {
                 .substance_groups
                 .iter()
                 .all(|group| { group.props().get("_cxsmilesindex").is_none() })
+        );
+    }
+}
+
+fn take_smiles_bond_source_index(counter: &mut u32) -> u32 {
+    // BEGIN RDKIT CPP GRAMMAR ACTION: smiles.yy:209
+    // RDKit❗✔️:   mp->getBondBetweenAtoms(atomIdx1,atomIdx2)->setProp("_cxsmilesBondIdx",numBondsParsed++);
+    // END RDKIT CPP GRAMMAR ACTION: smiles.yy:209
+    // Language rule: the unsigned32 postincrement returns the preincrement
+    // value and wraps modulo2^32. This helper is used by each real SMILES
+    // grammar reservation site; push_smiles_bond stores that same UInt value.
+    // Complexity: constant-time copy/increment, no allocation. UNRUN proposal.
+    let previous = *counter;
+    *counter = counter.wrapping_add(1);
+    previous
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    // FROZEN UINT CONDITION: COUNTER_0
+    #[test]
+    fn uint_cell_counter_0_lib() {
+        let mut counter = 0_u32;
+        let previous = take_smiles_bond_source_index(&mut counter);
+        assert_eq!(previous, 0_u32);
+        assert_eq!(counter, 1_u32);
+        let mut bonds = vec![];
+        push_smiles_bond(
+            &mut bonds,
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            previous,
+        );
+        assert_eq!(
+            bonds[0].prop("_cxsmilesBondIdx"),
+            Some(&cosmolkit_model::PropertyValue::UInt(0_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: COUNTER_1
+    #[test]
+    fn uint_cell_counter_1_lib() {
+        let mut counter = 1_u32;
+        let previous = take_smiles_bond_source_index(&mut counter);
+        assert_eq!(previous, 1_u32);
+        assert_eq!(counter, 2_u32);
+        let mut bonds = vec![];
+        push_smiles_bond(
+            &mut bonds,
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            previous,
+        );
+        assert_eq!(
+            bonds[0].prop("_cxsmilesBondIdx"),
+            Some(&cosmolkit_model::PropertyValue::UInt(1_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: COUNTER_2147483646
+    #[test]
+    fn uint_cell_counter_2147483646_lib() {
+        let mut counter = 2147483646_u32;
+        let previous = take_smiles_bond_source_index(&mut counter);
+        assert_eq!(previous, 2147483646_u32);
+        assert_eq!(counter, 2147483647_u32);
+        let mut bonds = vec![];
+        push_smiles_bond(
+            &mut bonds,
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            previous,
+        );
+        assert_eq!(
+            bonds[0].prop("_cxsmilesBondIdx"),
+            Some(&cosmolkit_model::PropertyValue::UInt(2147483646_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: COUNTER_2147483647
+    #[test]
+    fn uint_cell_counter_2147483647_lib() {
+        let mut counter = 2147483647_u32;
+        let previous = take_smiles_bond_source_index(&mut counter);
+        assert_eq!(previous, 2147483647_u32);
+        assert_eq!(counter, 2147483648_u32);
+        let mut bonds = vec![];
+        push_smiles_bond(
+            &mut bonds,
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            previous,
+        );
+        assert_eq!(
+            bonds[0].prop("_cxsmilesBondIdx"),
+            Some(&cosmolkit_model::PropertyValue::UInt(2147483647_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: COUNTER_2147483648
+    #[test]
+    fn uint_cell_counter_2147483648_lib() {
+        let mut counter = 2147483648_u32;
+        let previous = take_smiles_bond_source_index(&mut counter);
+        assert_eq!(previous, 2147483648_u32);
+        assert_eq!(counter, 2147483649_u32);
+        let mut bonds = vec![];
+        push_smiles_bond(
+            &mut bonds,
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            previous,
+        );
+        assert_eq!(
+            bonds[0].prop("_cxsmilesBondIdx"),
+            Some(&cosmolkit_model::PropertyValue::UInt(2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: COUNTER_4294967295
+    #[test]
+    fn uint_cell_counter_4294967295_lib() {
+        let mut counter = 4294967295_u32;
+        let previous = take_smiles_bond_source_index(&mut counter);
+        assert_eq!(previous, 4294967295_u32);
+        assert_eq!(counter, 0_u32);
+        let mut bonds = vec![];
+        push_smiles_bond(
+            &mut bonds,
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            previous,
+        );
+        assert_eq!(
+            bonds[0].prop("_cxsmilesBondIdx"),
+            Some(&cosmolkit_model::PropertyValue::UInt(4294967295_u32))
         );
     }
 }

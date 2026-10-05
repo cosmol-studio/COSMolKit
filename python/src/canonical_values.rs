@@ -18,7 +18,7 @@ pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'st
     error
 }
 
-fn annotate(
+pub(crate) fn annotate(
     py: Python<'_>,
     error: PyErr,
     domain: &str,

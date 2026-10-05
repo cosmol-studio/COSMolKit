@@ -67,11 +67,11 @@ fn smarts_builder_returns_canonical_graph_with_stable_row_identity() {
     );
     assert_eq!(
         graph.bond(0).unwrap().bond().prop("_cxsmilesBondIdx"),
-        Some(&PropertyValue::String("0".to_owned()))
+        Some(&PropertyValue::UInt(0))
     );
     assert_eq!(
         graph.bond(1).unwrap().bond().prop("_cxsmilesBondIdx"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::UInt(1))
     );
     assert_eq!(
         graph.adjacency(),

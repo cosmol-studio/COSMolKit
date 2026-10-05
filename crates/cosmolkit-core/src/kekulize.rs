@@ -18,6 +18,20 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag};
 
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum CanonicalRankError {
+    #[error(
+        "atom {atom_index} property {property} unsigned value {value} causes positive_overflow converting UInt to signed int"
+    )]
+    UnsignedRankOverflow {
+        atom_index: usize,
+        property: &'static str,
+        value: u32,
+    },
+    #[error("atom {atom_index} property {property} has invalid kind {kind:?}")]
+    InvalidPropertyKind {
+        atom_index: usize,
+        property: &'static str,
+        kind: cosmolkit_model::PropertyValueKind,
+    },
     #[error("component atom index {atom_index} is outside topology atom count {atom_count}")]
     ComponentAtomOutOfRange {
         atom_index: usize,
@@ -3182,7 +3196,7 @@ struct CanonAtom<'a> {
     atomic_number: u8,
     isotope: u16,
     atom_map: u32,
-    canonical_ranking_number: i32,
+    source_atom: &'a Atom,
     formal_charge: i8,
     chiral_tag: ChiralTag,
     total_num_hs: usize,
@@ -3324,7 +3338,7 @@ fn count_swaps_to_interconvert<T: Copy + Eq>(reference: &[T], mut probe: Vec<T>)
     swaps
 }
 
-fn empty_canon_atom_from_source_atom(atom: &Atom) -> CanonAtom<'static> {
+fn empty_canon_atom_from_source_atom<'a>(atom: &'a Atom) -> CanonAtom<'a> {
     CanonAtom {
         index: i32::try_from(atom.id().index()).unwrap_or(i32::MAX),
         is_in_play: true,
@@ -3332,15 +3346,9 @@ fn empty_canon_atom_from_source_atom(atom: &Atom) -> CanonAtom<'static> {
         atomic_number: atom.atomic_number(),
         isotope: atom.isotope().unwrap_or(0),
         atom_map: atom.atom_map().unwrap_or(0),
-        canonical_ranking_number: atom
-            .prop("_CanonicalRankingNumber")
-            .and_then(|value| match value {
-                cosmolkit_model::PropertyValue::Int(value) => Some(*value),
-                cosmolkit_model::PropertyValue::String(value) => value.parse::<i32>().ok(),
-                cosmolkit_model::PropertyValue::Double(_)
-                | cosmolkit_model::PropertyValue::Bool(_) => None,
-            })
-            .unwrap_or(0),
+        // Like source canon_atom::atom, borrow without reading rank metadata.
+        // Property lookup and conversion belong to the guarded comparator.
+        source_atom: atom,
         formal_charge: atom.formal_charge(),
         chiral_tag: atom.chiral_tag(),
         total_num_hs: 0,
@@ -3358,12 +3366,12 @@ fn empty_canon_atom_from_source_atom(atom: &Atom) -> CanonAtom<'static> {
     }
 }
 
-fn init_canon_atoms(
-    view: &CanonRankReadView<'_>,
+fn init_canon_atoms<'a>(
+    view: &CanonRankReadView<'a>,
     topology: &TopologyBlock,
     include_chirality: bool,
     include_stereo_groups: bool,
-) -> Result<Vec<CanonAtom<'static>>, CanonicalRankError> {
+) -> Result<Vec<CanonAtom<'a>>, CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/new_canon.cpp :: initCanonAtoms
     // RDKit✔️✔️: void initCanonAtoms(const ROMol &mol, std::vector<Canon::canon_atom> &atoms,
     // RDKit✔️✔️:                     bool includeChirality, bool includeStereoGroups) {
@@ -3412,7 +3420,7 @@ fn init_canon_atoms(
 }
 
 fn init_fragment_canon_atoms<'a>(
-    view: &CanonRankReadView<'_>,
+    view: &CanonRankReadView<'a>,
     atoms_in_play: &[bool],
     bonds_in_play: &[bool],
     include_chirality: bool,
@@ -3784,7 +3792,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
         &mut next,
         &mut changed,
         &mut touched,
-    );
+    )?;
     // RDKit✔️✔️:   bool ties = false;
     // RDKit✔️✔️:   for (unsigned i = 0; i < nAts; ++i) {
     // RDKit✔️✔️:     if (!count[i]) {
@@ -3820,7 +3828,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut next,
             &mut changed,
             &mut touched,
-        );
+        )?;
     }
     // RDKit✔️✔️:   ties = false;
     // RDKit✔️✔️:   unsigned symRingAtoms = 0;
@@ -3859,7 +3867,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut next,
             &mut changed,
             &mut touched,
-        );
+        )?;
     }
     // RDKit✔️✔️:   if (breakTies) {
     // RDKit✔️✔️:     BreakTies(mol, atoms, ftor, true, order, count, activeset, next, changed,
@@ -3878,7 +3886,7 @@ fn rank_with_atom_compare_functor_for_kekulize(
             &mut next,
             &mut changed,
             &mut touched,
-        );
+        )?;
     }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION detail::rankWithFunctor
@@ -3979,7 +3987,7 @@ fn refine_partitions_for_kekulize(
     next: &mut [isize],
     changed: &mut [bool],
     touched_partitions: &mut [bool],
-) {
+) -> Result<(), CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION RefinePartitions
     // RDKit✔️✔️: template <typename CompareFunc>
     // RDKit✔️✔️: void RefinePartitions(const ROMol &mol, canon_atom *atoms, CompareFunc compar,
@@ -4011,7 +4019,7 @@ fn refine_partitions_for_kekulize(
             atoms,
             compare_mode,
             flags,
-        );
+        )?;
         // RDKit✔️✔️:     for (int k = 0; k < len; ++k) {
         // RDKit✔️✔️:       changed[start[k]] = 0;
         // RDKit✔️✔️:     }
@@ -4090,6 +4098,7 @@ fn refine_partitions_for_kekulize(
     }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION RefinePartitions
+    Ok(())
 }
 
 fn break_ties_for_kekulize(
@@ -4104,7 +4113,7 @@ fn break_ties_for_kekulize(
     next: &mut [isize],
     changed: &mut [bool],
     touched_partitions: &mut [bool],
-) {
+) -> Result<(), CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION BreakTies
     // RDKit✔️✔️: template <typename CompareFunc>
     // RDKit✔️✔️: void BreakTies(const ROMol &mol, canon_atom *atoms, CompareFunc compar,
@@ -4187,7 +4196,7 @@ fn break_ties_for_kekulize(
                 next,
                 changed,
                 touched_partitions,
-            );
+            )?;
         }
         // RDKit✔️✔️:     if (atoms[partition].index != oldPart) {
         // RDKit✔️✔️:       i -= 1;
@@ -4202,6 +4211,7 @@ fn break_ties_for_kekulize(
     }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION BreakTies
+    Ok(())
 }
 
 fn hanoi_sort_order_for_kekulize(
@@ -4213,7 +4223,7 @@ fn hanoi_sort_order_for_kekulize(
     atoms: &mut [CanonAtom<'_>],
     compare_mode: CanonCompareMode,
     flags: CanonRankFlags,
-) {
+) -> Result<(), CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION hanoisort
     // RDKit✔️✔️: template <typename CompareFunc>
     // RDKit✔️✔️: void hanoisort(std::span<int> &base, std::vector<int> &count,
@@ -4230,13 +4240,14 @@ fn hanoi_sort_order_for_kekulize(
         atoms,
         compare_mode,
         flags,
-    ) {
+    )? {
         // RDKit✔️✔️:     std::copy(tempVec.begin(), tempVec.end(), base.begin());
         order[offset..offset + len].copy_from_slice(&temp);
     }
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION hanoisort
+    Ok(())
 }
 
 fn hanoi_order_for_kekulize(
@@ -4247,7 +4258,7 @@ fn hanoi_order_for_kekulize(
     atoms: &mut [CanonAtom<'_>],
     compare_mode: CanonCompareMode,
     flags: CanonRankFlags,
-) -> bool {
+) -> Result<bool, CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION detail::hanoi
     // RDKit✔️✔️: template <typename CompareFunc>
     // RDKit✔️✔️: bool hanoi(int *base, int nel, int *temp, int *count, int *changed,
@@ -4271,7 +4282,7 @@ fn hanoi_order_for_kekulize(
     // RDKit✔️✔️:   } else if (nel == 2) {
     if nel == 1 {
         count[base[0]] = 1;
-        return false;
+        return Ok(false);
     } else if nel == 2 {
         // RDKit✔️✔️:     n1 = base[0];
         // RDKit✔️✔️:     n2 = base[1];
@@ -4280,7 +4291,7 @@ fn hanoi_order_for_kekulize(
         // RDKit✔️✔️:     int stat =
         // RDKit✔️✔️:         (/*!changed || */ changed[n1] || changed[n2]) ? compar(n1, n2) : 0;
         let stat = if changed[n1] || changed[n2] {
-            compare_canon_atoms_for_kekulize(atoms, n1, n2, compare_mode, flags)
+            compare_canon_atoms_for_kekulize(atoms, n1, n2, compare_mode, flags)?
         } else {
             Ordering::Equal
         };
@@ -4315,7 +4326,7 @@ fn hanoi_order_for_kekulize(
                 base[1] = n1;
             }
         }
-        return false;
+        return Ok(false);
     }
 
     // RDKit✔️✔️:   n1 = nel / 2;
@@ -4339,7 +4350,7 @@ fn hanoi_order_for_kekulize(
             atoms,
             compare_mode,
             flags,
-        );
+        )?;
         // RDKit✔️✔️:     if (hanoi(b2, n2, t2, count, changed, compar)) {
         let right_in_temp = hanoi_order_for_kekulize(
             base_right,
@@ -4349,7 +4360,7 @@ fn hanoi_order_for_kekulize(
             atoms,
             compare_mode,
             flags,
-        );
+        )?;
         (left_in_temp, right_in_temp)
     };
     // RDKit✔️✔️:     s1 = t1;
@@ -4393,7 +4404,7 @@ fn hanoi_order_for_kekulize(
         // RDKit✔️✔️:     int stat =
         // RDKit✔️✔️:         (/*!changed || */ changed[*s1] || changed[*s2]) ? compar(*s1, *s2) : 0;
         let stat = if changed[left_atom] || changed[right_atom] {
-            compare_canon_atoms_for_kekulize(atoms, left_atom, right_atom, compare_mode, flags)
+            compare_canon_atoms_for_kekulize(atoms, left_atom, right_atom, compare_mode, flags)?
         } else {
             Ordering::Equal
         };
@@ -4437,7 +4448,7 @@ fn hanoi_order_for_kekulize(
                         remaining_right,
                     );
                 }
-                return result;
+                return Ok(result);
             }
             // RDKit✔️✔️:       s1 += len1;
             left_pos += class_left;
@@ -4465,7 +4476,7 @@ fn hanoi_order_for_kekulize(
                         remaining_left,
                     );
                 }
-                return result;
+                return Ok(result);
             }
             // RDKit✔️✔️:       s2 += len2;
             right_pos += class_right;
@@ -4497,7 +4508,7 @@ fn hanoi_order_for_kekulize(
                         remaining_right,
                     );
                 }
-                return result;
+                return Ok(result);
             }
             // RDKit✔️✔️:       s1 += len1;
             left_pos += class_left;
@@ -4527,7 +4538,7 @@ fn hanoi_order_for_kekulize(
                         remaining_left,
                     );
                 }
-                return result;
+                return Ok(result);
             }
             // RDKit✔️✔️:       s2 += len2;
             right_pos += class_right;
@@ -4547,23 +4558,27 @@ fn compare_canon_atoms_for_kekulize(
     right: usize,
     mode: CanonCompareMode,
     flags: CanonRankFlags,
-) -> Ordering {
+) -> Result<Ordering, CanonicalRankError> {
     if matches!(mode, CanonCompareMode::SpecialSymmetry) {
-        return compare_special_symmetry_atoms_for_kekulize(atoms, left, right);
+        return Ok(compare_special_symmetry_atoms_for_kekulize(
+            atoms, left, right,
+        ));
     }
     if matches!(mode, CanonCompareMode::SpecialChirality) {
-        return compare_special_chirality_atoms_for_kekulize(atoms, left, right);
+        return Ok(compare_special_chirality_atoms_for_kekulize(
+            atoms, left, right,
+        ));
     }
     if !atom_pair_has_any_in_play_for_kekulize(atoms, left, right) {
-        return Ordering::Equal;
+        return Ok(Ordering::Equal);
     }
     // RDKit✔️✔️:     int v = basecomp(i, j);
     // RDKit✔️✔️:     if (v) {
     // RDKit✔️✔️:       return v;
     // RDKit✔️✔️:     }
-    let base_cmp = compare_canon_atom_base_for_kekulize(atoms, left, right, flags);
+    let base_cmp = compare_canon_atom_base_for_kekulize(atoms, left, right, flags)?;
     if base_cmp != Ordering::Equal {
-        return base_cmp;
+        return Ok(base_cmp);
     }
     // RDKit✔️✔️:     if (df_useNbrs) {
     // RDKit✔️✔️:       if (!dp_atomsInPlay || (*dp_atomsInPlay)[i]) {
@@ -4590,7 +4605,7 @@ fn compare_canon_atoms_for_kekulize(
         let cmp =
             compare_canon_bond_holder(&atoms[left].bonds[idx], &atoms[right].bonds[idx], &ranks);
         if cmp != Ordering::Equal {
-            return cmp;
+            return Ok(cmp);
         }
     }
     // RDKit✔️✔️:       if (dp_atoms[i].bonds.size() < dp_atoms[j].bonds.size()) {
@@ -4600,7 +4615,7 @@ fn compare_canon_atoms_for_kekulize(
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:     return 0;
-    atoms[left].bonds.len().cmp(&atoms[right].bonds.len())
+    Ok(atoms[left].bonds.len().cmp(&atoms[right].bonds.len()))
 }
 
 fn compare_special_chirality_atoms_for_kekulize(
@@ -4758,12 +4773,794 @@ fn compare_special_symmetry_atoms_for_kekulize(
     atoms[left].bonds.len().cmp(&atoms[right].bonds.len())
 }
 
+fn canonical_rank_property_to_int(
+    atom: &Atom,
+    atom_index: usize,
+) -> Result<i32, CanonicalRankError> {
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:348-363
+    // Boost❗✔️:   template<class Traits,class OverflowHandler>
+    // Boost❗✔️:   struct GetRC_Int2Int
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef GetRC_Sig2Sig_or_Unsig2Unsig<Traits,OverflowHandler> Sig2SigQ     ;
+    // Boost❗✔️:     typedef GetRC_Sig2Unsig             <Traits,OverflowHandler> Sig2UnsigQ   ;
+    // Boost❗✔️:     typedef GetRC_Unsig2Sig             <Traits,OverflowHandler> Unsig2SigQ   ;
+    // Boost❗✔️:     typedef Sig2SigQ                                             Unsig2UnsigQ ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename Traits::sign_mixture sign_mixture ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename
+    // Boost❗✔️:       for_sign_mixture<sign_mixture,Sig2SigQ,Sig2UnsigQ,Unsig2SigQ,Unsig2UnsigQ>::type
+    // Boost❗✔️:         selector ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename selector::type type ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:348-363
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:406-419
+    // Boost❗✔️:   template<class Traits, class OverflowHandler, class Float2IntRounder>
+    // Boost❗✔️:   struct GetRC_BuiltIn2BuiltIn
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef GetRC_Int2Int<Traits,OverflowHandler>                    Int2IntQ ;
+    // Boost❗✔️:     typedef GetRC_Int2Float<Traits>                                  Int2FloatQ ;
+    // Boost❗✔️:     typedef GetRC_Float2Int<Traits,OverflowHandler,Float2IntRounder> Float2IntQ ;
+    // Boost❗✔️:     typedef GetRC_Float2Float<Traits,OverflowHandler>                Float2FloatQ ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename Traits::int_float_mixture int_float_mixture ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename for_int_float_mixture<int_float_mixture, Int2IntQ, Int2FloatQ, Float2IntQ, Float2FloatQ>::type selector ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename selector::type type ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:406-419
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:421-435
+    // Boost❗✔️:   template<class Traits, class OverflowHandler, class Float2IntRounder>
+    // Boost❗✔️:   struct GetRC
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef GetRC_BuiltIn2BuiltIn<Traits,OverflowHandler,Float2IntRounder> BuiltIn2BuiltInQ ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef dummy_range_checker<Traits> Dummy ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef mpl::identity<Dummy> DummyQ ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename Traits::udt_builtin_mixture udt_builtin_mixture ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename for_udt_builtin_mixture<udt_builtin_mixture,BuiltIn2BuiltInQ,DummyQ,DummyQ,DummyQ>::type selector ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename selector::type type ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:421-435
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:528-554
+    // Boost❗✔️:   template<class Traits,class OverflowHandler,class Float2IntRounder,class RawConverter, class UserRangeChecker>
+    // Boost❗✔️:   struct get_non_trivial_converter
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef GetRC<Traits,OverflowHandler,Float2IntRounder> InternalRangeCheckerQ ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef is_same<UserRangeChecker,UseInternalRangeChecker> use_internal_RC ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef mpl::identity<UserRangeChecker> UserRangeCheckerQ ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename
+    // Boost❗✔️:       mpl::eval_if<use_internal_RC,InternalRangeCheckerQ,UserRangeCheckerQ>::type
+    // Boost❗✔️:         RangeChecker ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef non_rounding_converter<Traits,RangeChecker,RawConverter>              NonRounding ;
+    // Boost❗✔️:     typedef rounding_converter<Traits,RangeChecker,RawConverter,Float2IntRounder> Rounding ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef mpl::identity<NonRounding> NonRoundingQ ;
+    // Boost❗✔️:     typedef mpl::identity<Rounding>    RoundingQ    ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename Traits::int_float_mixture int_float_mixture ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename
+    // Boost❗✔️:       for_int_float_mixture<int_float_mixture, NonRoundingQ, NonRoundingQ, RoundingQ, NonRoundingQ>::type
+    // Boost❗✔️:         selector ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename selector::type type ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:528-554
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:556-587
+    // Boost❗✔️:   template< class Traits
+    // Boost❗✔️:            ,class OverflowHandler
+    // Boost❗✔️:            ,class Float2IntRounder
+    // Boost❗✔️:            ,class RawConverter
+    // Boost❗✔️:            ,class UserRangeChecker
+    // Boost❗✔️:           >
+    // Boost❗✔️:   struct get_converter_impl
+    // Boost❗✔️:   {
+    // Boost❗✔️: #if BOOST_WORKAROUND(BOOST_BORLANDC, BOOST_TESTED_AT( 0x0561 ) )
+    // Boost❗✔️:     // bcc55 prefers sometimes template parameters to be explicit local types.
+    // Boost❗✔️:     // (notice that is is illegal to reuse the names like this)
+    // Boost❗✔️:     typedef Traits           Traits ;
+    // Boost❗✔️:     typedef OverflowHandler  OverflowHandler ;
+    // Boost❗✔️:     typedef Float2IntRounder Float2IntRounder ;
+    // Boost❗✔️:     typedef RawConverter     RawConverter ;
+    // Boost❗✔️:     typedef UserRangeChecker UserRangeChecker ;
+    // Boost❗✔️: #endif
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef trivial_converter_impl<Traits> Trivial ;
+    // Boost❗✔️:     typedef mpl::identity        <Trivial> TrivialQ ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef get_non_trivial_converter< Traits
+    // Boost❗✔️:                                       ,OverflowHandler
+    // Boost❗✔️:                                       ,Float2IntRounder
+    // Boost❗✔️:                                       ,RawConverter
+    // Boost❗✔️:                                       ,UserRangeChecker
+    // Boost❗✔️:                                      > NonTrivialQ ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename Traits::trivial trivial ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename mpl::eval_if<trivial,TrivialQ,NonTrivialQ>::type type ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:556-587
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/converter_policies.hpp:181-188
+    // Boost❗✔️: template<class Traits>
+    // Boost❗✔️: struct raw_converter
+    // Boost❗✔️: {
+    // Boost❗✔️:   typedef typename Traits::result_type   result_type   ;
+    // Boost❗✔️:   typedef typename Traits::argument_type argument_type ;
+    // Boost❗✔️:
+    // Boost❗✔️:   static result_type low_level_convert ( argument_type s ) { return static_cast<result_type>(s) ; }
+    // Boost❗✔️: } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/converter_policies.hpp:181-188
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/conversion_traits.hpp:30-49
+    // Boost❗✔️:   template<class T,class S>
+    // Boost❗✔️:   struct non_trivial_traits_impl
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef typename get_int_float_mixture   <T,S>::type int_float_mixture ;
+    // Boost❗✔️:     typedef typename get_sign_mixture        <T,S>::type sign_mixture ;
+    // Boost❗✔️:     typedef typename get_udt_builtin_mixture <T,S>::type udt_builtin_mixture ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename get_is_subranged<T,S>::type subranged ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef mpl::false_ trivial ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef T target_type ;
+    // Boost❗✔️:     typedef S source_type ;
+    // Boost❗✔️:     typedef T result_type ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename mpl::if_< is_arithmetic<S>, S, S const&>::type argument_type ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename mpl::if_<subranged,S,T>::type supertype ;
+    // Boost❗✔️:     typedef typename mpl::if_<subranged,T,S>::type subtype   ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/conversion_traits.hpp:30-49
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/conversion_traits.hpp:79-91
+    // Boost❗✔️:   template<class T, class S>
+    // Boost❗✔️:   struct get_conversion_traits
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef typename remove_cv<T>::type target_type ;
+    // Boost❗✔️:     typedef typename remove_cv<S>::type source_type ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename is_same<target_type,source_type>::type is_trivial ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef trivial_traits_impl    <target_type>             trivial_imp ;
+    // Boost❗✔️:     typedef non_trivial_traits_impl<target_type,source_type> non_trivial_imp ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename mpl::if_<is_trivial,trivial_imp,non_trivial_imp>::type type ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/conversion_traits.hpp:79-91
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/bounds.hpp:43-52
+    // Boost❗✔️:   template<class N>
+    // Boost❗✔️:   struct get_impl
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef mpl::bool_< ::std::numeric_limits<N>::is_integer > is_int ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef Integral<N> impl_int   ;
+    // Boost❗✔️:     typedef Float   <N> impl_float ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename mpl::if_<is_int,impl_int,impl_float>::type type ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/bounds.hpp:43-52
+
+    // Proposed domain: UInt/Int/String/Double/Bool/IntVector and absent property,
+    // with the default classical C++ locale ratified by ROOT. The Uint tag
+    // is proposed below; custom global C++ locale facets remain unmodeled.
+    // UInt source bounds and getter order were validated by the actual strict release cases;
+    // implementation and overflow projection require approval and tests.
+    // Behavior: missing initializes0, exact Int returns unchanged; String
+    // right-trims only six C spaces before a complete signed decimal parse;
+    // every reached invalid cast remains a structured source bad_any_cast.
+    // Cost: a borrowed BTreeMap lookup is O(log properties), versus source
+    // Dict's linear search; no property clone or eager initialization parse.
+    // String conversion is O(bytes) with constant extra storage, avoiding
+    // the source String copy and LocaleSwitcher allocation under this fixed
+    // locale. These savings justify the improved cost markers below.
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDProps.h:126-129
+    // RDKit✔️🔝:   template <typename T>
+    // RDKit✔️🔝:   bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️🔝:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️🔝:   }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDProps.h:126-129
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/Dict.h:255-264
+    // RDKit✔️🔝:   template <typename T>
+    // RDKit✔️🔝:   bool getValIfPresent(const std::string_view what, T &res) const {
+    // RDKit✔️🔝:     for (const auto &data : _data) {
+    // RDKit✔️🔝:       if (data.key == what) {
+    // RDKit✔️🔝:         res = from_rdvalue<T>(data.val);
+    // RDKit✔️🔝:         return true;
+    // RDKit✔️🔝:       }
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:     return false;
+    // RDKit✔️🔝:   }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/Dict.h:255-264
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:268-292
+    // RDKit✔️🔝: // from_rdvalue -> converts string values to appropriate types
+    // RDKit✔️🔝: template <class T>
+    // RDKit✔️🔝: typename boost::enable_if<boost::is_arithmetic<T>, T>::type from_rdvalue(
+    // RDKit✔️🔝:     RDValue_cast_t arg) {
+    // RDKit✔️🔝:   T res;
+    // RDKit✔️🔝:   if (arg.getTag() == RDTypeTag::StringTag) {
+    // RDKit✔️🔝:     Utils::LocaleSwitcher ls;
+    // RDKit✔️🔝:     try {
+    // RDKit✔️🔝:       res = rdvalue_cast<T>(arg);
+    // RDKit✔️🔝:     } catch (const std::bad_any_cast &exc) {
+    // RDKit✔️🔝:       try {
+    // RDKit✔️🔝: 	std::string val = rdvalue_cast<std::string>(arg);
+    // RDKit✔️🔝: 	// trim only the right characters, this mimics how SD values
+    // RDKit✔️🔝: 	//  work on read, they will be trimmed by the MolFile parser
+    // RDKit✔️🔝: 	boost::trim_right(val);
+    // RDKit✔️🔝:         res = boost::lexical_cast<T>(val);
+    // RDKit✔️🔝:       } catch (...) {
+    // RDKit✔️🔝:         throw exc;
+    // RDKit✔️🔝:       }
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:   } else {
+    // RDKit✔️🔝:     res = rdvalue_cast<T>(arg);
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   return res;
+    // RDKit✔️🔝: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:268-292
+    // Int tag extraction is O(1). The UInt conversion checks the
+    // signed upper bound and preserves typed positive_overflow; actual cases cover all six boundaries.
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // RDKit✔️✔️: template <>
+    // RDKit✔️✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit✔️✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit✔️✔️:     return v.value.i;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit✔️✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   throw std::bad_any_cast();
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast.hpp:36-46
+    // Boost✔️✔️:     template <typename Target, typename Source>
+    // Boost✔️✔️:     inline Target lexical_cast(const Source &arg)
+    // Boost✔️✔️:     {
+    // Boost✔️✔️:         Target result = Target();
+    // Boost✔️✔️:
+    // Boost✔️✔️:         if (!boost::conversion::detail::try_lexical_convert(arg, result)) {
+    // Boost✔️✔️:             boost::conversion::detail::throw_bad_cast<Source, Target>();
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         return result;
+    // Boost✔️✔️:     }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast.hpp:36-46
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/try_lexical_convert.hpp:164-202
+    // Boost✔️✔️:         template <typename Target, typename Source>
+    // Boost✔️✔️:         inline bool try_lexical_convert(const Source& arg, Target& result)
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             typedef BOOST_DEDUCED_TYPENAME boost::detail::array_to_pointer_decay<Source>::type src;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             typedef boost::integral_constant<
+    // Boost✔️✔️:                 bool,
+    // Boost✔️✔️:                 boost::detail::is_xchar_to_xchar<Target, src >::value ||
+    // Boost✔️✔️:                 boost::detail::is_char_array_to_stdstring<Target, src >::value ||
+    // Boost✔️✔️:                 boost::detail::is_char_array_to_booststring<Target, src >::value ||
+    // Boost✔️✔️:                 (
+    // Boost✔️✔️:                      boost::is_same<Target, src >::value &&
+    // Boost✔️✔️:                      (boost::detail::is_stdstring<Target >::value || boost::detail::is_booststring<Target >::value)
+    // Boost✔️✔️:                 ) ||
+    // Boost✔️✔️:                 (
+    // Boost✔️✔️:                      boost::is_same<Target, src >::value &&
+    // Boost✔️✔️:                      boost::detail::is_character<Target >::value
+    // Boost✔️✔️:                 )
+    // Boost✔️✔️:             > shall_we_copy_t;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             typedef boost::detail::is_arithmetic_and_not_xchars<Target, src >
+    // Boost✔️✔️:                 shall_we_copy_with_dynamic_check_t;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // We do evaluate second `if_` lazily to avoid unnecessary instantiations
+    // Boost✔️✔️:             // of `shall_we_copy_with_dynamic_check_t` and improve compilation times.
+    // Boost✔️✔️:             typedef BOOST_DEDUCED_TYPENAME boost::conditional<
+    // Boost✔️✔️:                 shall_we_copy_t::value,
+    // Boost✔️✔️:                 boost::type_identity<boost::detail::copy_converter_impl<Target, src > >,
+    // Boost✔️✔️:                 boost::conditional<
+    // Boost✔️✔️:                      shall_we_copy_with_dynamic_check_t::value,
+    // Boost✔️✔️:                      boost::detail::dynamic_num_converter_impl<Target, src >,
+    // Boost✔️✔️:                      boost::detail::lexical_converter_impl<Target, src >
+    // Boost✔️✔️:                 >
+    // Boost✔️✔️:             >::type caster_type_lazy;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             typedef BOOST_DEDUCED_TYPENAME caster_type_lazy::type caster_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             return caster_type::try_convert(arg, result);
+    // Boost✔️✔️:         }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/try_lexical_convert.hpp:164-202
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical.hpp:458-490
+    // Boost✔️✔️:         template<typename Target, typename Source>
+    // Boost✔️✔️:         struct lexical_converter_impl
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             typedef lexical_cast_stream_traits<Source, Target>  stream_trait;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             typedef detail::lexical_istream_limited_src<
+    // Boost✔️✔️:                 BOOST_DEDUCED_TYPENAME stream_trait::char_type,
+    // Boost✔️✔️:                 BOOST_DEDUCED_TYPENAME stream_trait::traits,
+    // Boost✔️✔️:                 stream_trait::requires_stringbuf,
+    // Boost✔️✔️:                 stream_trait::len_t::value + 1
+    // Boost✔️✔️:             > i_interpreter_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             typedef detail::lexical_ostream_limited_src<
+    // Boost✔️✔️:                 BOOST_DEDUCED_TYPENAME stream_trait::char_type,
+    // Boost✔️✔️:                 BOOST_DEDUCED_TYPENAME stream_trait::traits
+    // Boost✔️✔️:             > o_interpreter_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             static inline bool try_convert(const Source& arg, Target& result) {
+    // Boost✔️✔️:                 i_interpreter_type i_interpreter;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // Disabling ADL, by directly specifying operators.
+    // Boost✔️✔️:                 if (!(i_interpreter.operator <<(arg)))
+    // Boost✔️✔️:                     return false;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 o_interpreter_type out(i_interpreter.cbegin(), i_interpreter.cend());
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // Disabling ADL, by directly specifying operators.
+    // Boost✔️✔️:                 if(!(out.operator >>(result)))
+    // Boost✔️✔️:                     return false;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return true;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:         };
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical.hpp:458-490
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:356-361
+    // Boost✔️✔️:             template<class Alloc>
+    // Boost✔️✔️:             bool operator<<(std::basic_string<CharT,Traits,Alloc> const& str) BOOST_NOEXCEPT {
+    // Boost✔️✔️:                 start = str.data();
+    // Boost✔️✔️:                 finish = start + str.length();
+    // Boost✔️✔️:                 return true;
+    // Boost✔️✔️:             }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:356-361
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:536-561
+    // Boost✔️✔️:             template <typename Type>
+    // Boost✔️✔️:             bool shr_signed(Type& output) {
+    // Boost✔️✔️:                 if (start == finish) return false;
+    // Boost✔️✔️:                 CharT const minus = lcast_char_constants<CharT>::minus;
+    // Boost✔️✔️:                 CharT const plus = lcast_char_constants<CharT>::plus;
+    // Boost✔️✔️:                 typedef BOOST_DEDUCED_TYPENAME make_unsigned<Type>::type utype;
+    // Boost✔️✔️:                 utype out_tmp = 0;
+    // Boost✔️✔️:                 bool const has_minus = Traits::eq(minus, *start);
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 /* We won`t use `start' any more, so no need in decrementing it after */
+    // Boost✔️✔️:                 if (has_minus || Traits::eq(plus, *start)) {
+    // Boost✔️✔️:                     ++start;
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 bool succeed = lcast_ret_unsigned<Traits, utype, CharT>(out_tmp, start, finish).convert();
+    // Boost✔️✔️:                 if (has_minus) {
+    // Boost✔️✔️:                     utype const comp_val = (static_cast<utype>(1) << std::numeric_limits<Type>::digits);
+    // Boost✔️✔️:                     succeed = succeed && out_tmp<=comp_val;
+    // Boost✔️✔️:                     output = static_cast<Type>(0u - out_tmp);
+    // Boost✔️✔️:                 } else {
+    // Boost✔️✔️:                     utype const comp_val = static_cast<utype>((std::numeric_limits<Type>::max)());
+    // Boost✔️✔️:                     succeed = succeed && out_tmp<=comp_val;
+    // Boost✔️✔️:                     output = static_cast<Type>(out_tmp);
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:                 return succeed;
+    // Boost✔️✔️:             }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:536-561
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/lcast_unsigned_converters.hpp:158-289
+    // Boost✔️✔️:         template <class Traits, class T, class CharT>
+    // Boost✔️✔️:         class lcast_ret_unsigned: boost::noncopyable {
+    // Boost✔️✔️:             bool m_multiplier_overflowed;
+    // Boost✔️✔️:             T m_multiplier;
+    // Boost✔️✔️:             T& m_value;
+    // Boost✔️✔️:             const CharT* const m_begin;
+    // Boost✔️✔️:             const CharT* m_end;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         public:
+    // Boost✔️✔️:             lcast_ret_unsigned(T& value, const CharT* const begin, const CharT* end) BOOST_NOEXCEPT
+    // Boost✔️✔️:                 : m_multiplier_overflowed(false), m_multiplier(1), m_value(value), m_begin(begin), m_end(end)
+    // Boost✔️✔️:             {
+    // Boost✔️✔️: #ifndef BOOST_NO_LIMITS_COMPILE_TIME_CONSTANTS
+    // Boost✔️✔️:                 BOOST_STATIC_ASSERT(!std::numeric_limits<T>::is_signed);
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // GCC when used with flag -std=c++0x may not have std::numeric_limits
+    // Boost✔️✔️:                 // specializations for __int128 and unsigned __int128 types.
+    // Boost✔️✔️:                 // Try compilation with -std=gnu++0x or -std=gnu++11.
+    // Boost✔️✔️:                 //
+    // Boost✔️✔️:                 // http://gcc.gnu.org/bugzilla/show_bug.cgi?id=40856
+    // Boost✔️✔️:                 BOOST_STATIC_ASSERT_MSG(std::numeric_limits<T>::is_specialized,
+    // Boost✔️✔️:                     "std::numeric_limits are not specialized for integral type passed to boost::lexical_cast"
+    // Boost✔️✔️:                 );
+    // Boost✔️✔️: #endif
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:             inline bool convert() {
+    // Boost✔️✔️:                 CharT const czero = lcast_char_constants<CharT>::zero;
+    // Boost✔️✔️:                 --m_end;
+    // Boost✔️✔️:                 m_value = static_cast<T>(0);
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 if (m_begin > m_end || *m_end < czero || *m_end >= czero + 10)
+    // Boost✔️✔️:                     return false;
+    // Boost✔️✔️:                 m_value = static_cast<T>(*m_end - czero);
+    // Boost✔️✔️:                 --m_end;
+    // Boost✔️✔️:
+    // Boost✔️✔️: #ifdef BOOST_LEXICAL_CAST_ASSUME_C_LOCALE
+    // Boost✔️✔️:                 return main_convert_loop();
+    // Boost✔️✔️: #else
+    // Boost✔️✔️:                 std::locale loc;
+    // Boost✔️✔️:                 if (loc == std::locale::classic()) {
+    // Boost✔️✔️:                     return main_convert_loop();
+    // Boost✔️✔️:                 }
+    // Boost❌❌:
+    // Boost❌❌:                 typedef std::numpunct<CharT> numpunct;
+    // Boost❌❌:                 numpunct const& np = BOOST_USE_FACET(numpunct, loc);
+    // Boost❌❌:                 std::string const& grouping = np.grouping();
+    // Boost❌❌:                 std::string::size_type const grouping_size = grouping.size();
+    // Boost❌❌:
+    // Boost❌❌:                 /* According to Programming languages - C++
+    // Boost❌❌:                  * we MUST check for correct grouping
+    // Boost❌❌:                  */
+    // Boost❌❌:                 if (!grouping_size || grouping[0] <= 0) {
+    // Boost❌❌:                     return main_convert_loop();
+    // Boost❌❌:                 }
+    // Boost❌❌:
+    // Boost❌❌:                 unsigned char current_grouping = 0;
+    // Boost❌❌:                 CharT const thousands_sep = np.thousands_sep();
+    // Boost❌❌:                 char remained = static_cast<char>(grouping[current_grouping] - 1);
+    // Boost❌❌:
+    // Boost❌❌:                 for (;m_end >= m_begin; --m_end)
+    // Boost❌❌:                 {
+    // Boost❌❌:                     if (remained) {
+    // Boost❌❌:                         if (!main_convert_iteration()) {
+    // Boost❌❌:                             return false;
+    // Boost❌❌:                         }
+    // Boost❌❌:                         --remained;
+    // Boost❌❌:                     } else {
+    // Boost❌❌:                         if ( !Traits::eq(*m_end, thousands_sep) ) //|| begin == end ) return false;
+    // Boost❌❌:                         {
+    // Boost❌❌:                             /*
+    // Boost❌❌:                              * According to Programming languages - C++
+    // Boost❌❌:                              * Digit grouping is checked. That is, the positions of discarded
+    // Boost❌❌:                              * separators is examined for consistency with
+    // Boost❌❌:                              * use_facet<numpunct<charT> >(loc ).grouping()
+    // Boost❌❌:                              *
+    // Boost❌❌:                              * BUT what if there is no separators at all and grouping()
+    // Boost❌❌:                              * is not empty? Well, we have no extraced separators, so we
+    // Boost❌❌:                              * won`t check them for consistency. This will allow us to
+    // Boost❌❌:                              * work with "C" locale from other locales
+    // Boost❌❌:                              */
+    // Boost❌❌:                             return main_convert_loop();
+    // Boost❌❌:                         } else {
+    // Boost❌❌:                             if (m_begin == m_end) return false;
+    // Boost❌❌:                             if (current_grouping < grouping_size - 1) ++current_grouping;
+    // Boost❌❌:                             remained = grouping[current_grouping];
+    // Boost❌❌:                         }
+    // Boost❌❌:                     }
+    // Boost❌❌:                 } /*for*/
+    // Boost❌❌:
+    // Boost❌❌:                 return true;
+    // Boost✔️✔️: #endif
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         private:
+    // Boost✔️✔️:             // Iteration that does not care about grouping/separators and assumes that all
+    // Boost✔️✔️:             // input characters are digits
+    // Boost✔️✔️:             inline bool main_convert_iteration() BOOST_NOEXCEPT {
+    // Boost✔️✔️:                 CharT const czero = lcast_char_constants<CharT>::zero;
+    // Boost✔️✔️:                 T const maxv = (std::numeric_limits<T>::max)();
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 m_multiplier_overflowed = m_multiplier_overflowed || (maxv/10 < m_multiplier);
+    // Boost✔️✔️:                 m_multiplier = static_cast<T>(m_multiplier * 10);
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 T const dig_value = static_cast<T>(*m_end - czero);
+    // Boost✔️✔️:                 T const new_sub_value = static_cast<T>(m_multiplier * dig_value);
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // We must correctly handle situations like `000000000000000000000000000001`.
+    // Boost✔️✔️:                 // So we take care of overflow only if `dig_value` is not '0'.
+    // Boost✔️✔️:                 if (*m_end < czero || *m_end >= czero + 10  // checking for correct digit
+    // Boost✔️✔️:                     || (dig_value && (                      // checking for overflow of ...
+    // Boost✔️✔️:                         m_multiplier_overflowed                             // ... multiplier
+    // Boost✔️✔️:                         || static_cast<T>(maxv / dig_value) < m_multiplier  // ... subvalue
+    // Boost✔️✔️:                         || static_cast<T>(maxv - new_sub_value) < m_value   // ... whole expression
+    // Boost✔️✔️:                     ))
+    // Boost✔️✔️:                 ) return false;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 m_value = static_cast<T>(m_value + new_sub_value);
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return true;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:             bool main_convert_loop() BOOST_NOEXCEPT {
+    // Boost✔️✔️:                 for ( ; m_end >= m_begin; --m_end) {
+    // Boost✔️✔️:                     if (!main_convert_iteration()) {
+    // Boost✔️✔️:                         return false;
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return true;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:         };
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/lcast_unsigned_converters.hpp:158-289
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/trim.hpp:233-243
+    // Boost✔️✔️:         template<typename SequenceT, typename PredicateT>
+    // Boost✔️✔️:         inline void trim_right_if(SequenceT& Input, PredicateT IsSpace)
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             Input.erase(
+    //                 ::boost::algorithm::detail::trim_end(  // Boost✔️✔️:
+    //                     ::boost::begin(Input),  // Boost✔️✔️:
+    //                     ::boost::end(Input),  // Boost✔️✔️:
+    // Boost✔️✔️:                     IsSpace ),
+    // Boost✔️✔️:                 ::boost::end(Input)
+    // Boost✔️✔️:                 );
+    // Boost✔️✔️:         }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/trim.hpp:233-243
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/trim.hpp:254-260
+    // Boost✔️✔️:         template<typename SequenceT>
+    // Boost✔️✔️:         inline void trim_right(SequenceT& Input, const std::locale& Loc=std::locale())
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             ::boost::algorithm::trim_right_if(
+    //                 Input,  // Boost✔️✔️:
+    // Boost✔️✔️:                 is_space(Loc) );
+    // Boost✔️✔️:         }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/trim.hpp:254-260
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/detail/trim.hpp:44-58
+    // Boost✔️✔️:             template< typename ForwardIteratorT, typename PredicateT >
+    //             inline ForwardIteratorT trim_end_iter_select(  // Boost✔️✔️:
+    //                 ForwardIteratorT InBegin,  // Boost✔️✔️:
+    //                 ForwardIteratorT InEnd,  // Boost✔️✔️:
+    // Boost✔️✔️:                 PredicateT IsSpace,
+    // Boost✔️✔️:                 std::bidirectional_iterator_tag )
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 for( ForwardIteratorT It=InEnd; It!=InBegin;  )
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     if ( !IsSpace(*(--It)) )
+    // Boost✔️✔️:                         return ++It;
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return InBegin;
+    // Boost✔️✔️:             }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/detail/trim.hpp:44-58
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/detail/classification.hpp:41-42
+    // Boost✔️✔️:                 is_classifiedF(std::ctype_base::mask Type, std::locale const & Loc = std::locale()) :
+    // Boost✔️✔️:                     m_Type(Type), m_Locale(Loc) {}
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/detail/classification.hpp:41-42
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/detail/classification.hpp:44-48
+    // Boost✔️✔️:                 template<typename CharT>
+    // Boost✔️✔️:                 bool operator()( CharT Ch ) const
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     return std::use_facet< std::ctype<CharT> >(m_Locale).is( m_Type, Ch );
+    // Boost✔️✔️:                 }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/detail/classification.hpp:44-48
+    // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:47-53
+    // RDKit✔️🔝: template <>
+    // RDKit✔️🔝: inline std::string rdvalue_cast<std::string>(RDValue_cast_t v) {
+    // RDKit✔️🔝:   if (rdvalue_is<std::string>(v)) {
+    // RDKit✔️🔝:     return *v.ptrCast<std::string>();
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   throw std::bad_any_cast();
+    // RDKit✔️🔝: }
+    // END RDKIT CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:47-53
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/classification.hpp:56-60
+    //         inline detail::is_classifiedF  // Boost✔️✔️:
+    // Boost✔️✔️:         is_space(const std::locale& Loc=std::locale())
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             return detail::is_classifiedF(std::ctype_base::space, Loc);
+    // Boost✔️✔️:         }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/classification.hpp:56-60
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/detail/trim.hpp:77-87
+    // Boost✔️✔️:             template< typename ForwardIteratorT, typename PredicateT >
+    //             inline ForwardIteratorT trim_end(  // Boost✔️✔️:
+    //                 ForwardIteratorT InBegin,  // Boost✔️✔️:
+    //                 ForwardIteratorT InEnd,  // Boost✔️✔️:
+    // Boost✔️✔️:                 PredicateT IsSpace )
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 typedef BOOST_STRING_TYPENAME
+    // Boost✔️✔️:                     std::iterator_traits<ForwardIteratorT>::iterator_category category;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return ::boost::algorithm::detail::trim_end_iter_select( InBegin, InEnd, IsSpace, category() );
+    // Boost✔️✔️:             }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/algorithm/string/detail/trim.hpp:77-87
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/lcast_char_constants.hpp:30-40
+    // Boost✔️✔️:         template < typename Char >
+    // Boost✔️✔️:         struct lcast_char_constants {
+    // Boost✔️✔️:             // We check in tests assumption that static casted character is
+    // Boost✔️✔️:             // equal to correctly written C++ literal: U'0' == static_cast<char32_t>('0')
+    // Boost✔️✔️:             BOOST_STATIC_CONSTANT(Char, zero  = static_cast<Char>('0'));
+    // Boost✔️✔️:             BOOST_STATIC_CONSTANT(Char, minus = static_cast<Char>('-'));
+    // Boost✔️✔️:             BOOST_STATIC_CONSTANT(Char, plus = static_cast<Char>('+'));
+    // Boost✔️✔️:             BOOST_STATIC_CONSTANT(Char, lowercase_e = static_cast<Char>('e'));
+    // Boost✔️✔️:             BOOST_STATIC_CONSTANT(Char, capital_e = static_cast<Char>('E'));
+    // Boost✔️✔️:             BOOST_STATIC_CONSTANT(Char, c_decimal_separator = static_cast<Char>('.'));
+    // Boost✔️✔️:         };
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/lcast_char_constants.hpp:30-40
+    // The called String/int specialization borrows the exact input range;
+    // these complete accessors/constructor/dispatcher close its source path.
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:169-171
+    // Boost✔️✔️:             const CharT* cbegin() const BOOST_NOEXCEPT {
+    // Boost✔️✔️:                 return start;
+    // Boost✔️✔️:             }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:169-171
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:173-175
+    // Boost✔️✔️:             const CharT* cend() const BOOST_NOEXCEPT {
+    // Boost✔️✔️:                 return finish;
+    // Boost✔️✔️:             }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:173-175
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:507-511
+    // Boost✔️✔️:         public:
+    // Boost✔️✔️:             lexical_ostream_limited_src(const CharT* begin, const CharT* end) BOOST_NOEXCEPT
+    // Boost✔️✔️:               : start(begin)
+    // Boost✔️✔️:               , finish(end)
+    // Boost✔️✔️:             {}
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:507-511
+    // BEGIN BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:643-643
+    // Boost✔️✔️:             bool operator>>(int& output)                        { return shr_signed(output); }
+    // END BOOST CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/converter_lexical_streams.hpp:643-643
+    // Reviewed UInt source closure: numeric bounds are checked before
+    // the low-level cast. O(1), no allocation; errors retain input context.
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/cast.hpp:38-54
+    //     template <typename Target, typename Source>  // Boost❗✔️:
+    // Boost❗✔️:     inline Target numeric_cast( Source arg )
+    // Boost❗✔️:     {
+    // Boost❗✔️:         typedef numeric::conversion_traits<Target, Source>   conv_traits;
+    // Boost❗✔️:         typedef numeric::numeric_cast_traits<Target, Source> cast_traits;
+    // Boost❗✔️:         typedef boost::numeric::converter
+    // Boost❗✔️:             <
+    // Boost❗✔️:                 Target,
+    //                 Source,  // Boost❗✔️:
+    // Boost❗✔️:                 conv_traits,
+    //                 typename cast_traits::overflow_policy,  // Boost❗✔️:
+    //                 typename cast_traits::rounding_policy,  // Boost❗✔️:
+    // Boost❗✔️:                 boost::numeric::raw_converter< conv_traits >,
+    // Boost❗✔️:                 typename cast_traits::range_checking_policy
+    // Boost❗✔️:             > converter;
+    // Boost❗✔️:         return converter::convert(arg);
+    // Boost❗✔️:     }
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/cast.hpp:38-54
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:340-346
+    // Boost❗✔️:   template<class Traits, class OverflowHandler>
+    // Boost❗✔️:   struct GetRC_Unsig2Sig
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef GT_HiT<Traits> Pred1 ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef generic_range_checker<Traits,non_applicable,Pred1,OverflowHandler> type ;
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:340-346
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:157-169
+    // Boost❗✔️:     template<class Traits>
+    // Boost❗✔️:     struct GT_HiT : applicable
+    // Boost❗✔️:     {
+    // Boost❗✔️:       typedef typename Traits::target_type T ;
+    // Boost❗✔️:       typedef typename Traits::source_type S ;
+    // Boost❗✔️:       typedef typename Traits::argument_type argument_type ;
+    // Boost❗✔️:
+    // Boost❗✔️:       static range_check_result apply ( argument_type s )
+    // Boost❗✔️:       {
+    // Boost❗✔️:         return s > static_cast<S>(bounds<T>::highest())
+    // Boost❗✔️:                  ? cPosOverflow : cInRange ;
+    // Boost❗✔️:       }
+    // Boost❗✔️:     } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:157-169
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:279-295
+    // Boost❗✔️:   template<class Traits, class IsNegOverflow, class IsPosOverflow, class OverflowHandler>
+    // Boost❗✔️:   struct generic_range_checker
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef OverflowHandler overflow_handler ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename Traits::argument_type argument_type ;
+    // Boost❗✔️:
+    // Boost❗✔️:     static range_check_result out_of_range ( argument_type s )
+    // Boost❗✔️:     {
+    // Boost❗✔️:       typedef typename combine<IsNegOverflow,IsPosOverflow>::type Predicate ;
+    // Boost❗✔️:
+    // Boost❗✔️:       return Predicate::apply(s);
+    // Boost❗✔️:     }
+    // Boost❗✔️:
+    // Boost❗✔️:     static void validate_range ( argument_type s )
+    // Boost❗✔️:       { OverflowHandler()( out_of_range(s) ) ; }
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:279-295
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:497-517
+    // Boost❗✔️:   template<class Traits,class RangeChecker,class RawConverter>
+    // Boost❗✔️:   struct non_rounding_converter : public RangeChecker
+    // Boost❗✔️:                                  ,public RawConverter
+    // Boost❗✔️:   {
+    // Boost❗✔️:     typedef RangeChecker RangeCheckerBase ;
+    // Boost❗✔️:     typedef RawConverter RawConverterBase ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef Traits traits ;
+    // Boost❗✔️:
+    // Boost❗✔️:     typedef typename Traits::source_type   source_type   ;
+    // Boost❗✔️:     typedef typename Traits::argument_type argument_type ;
+    // Boost❗✔️:     typedef typename Traits::result_type   result_type   ;
+    // Boost❗✔️:
+    // Boost❗✔️:     static source_type nearbyint ( argument_type s ) { return s ; }
+    // Boost❗✔️:
+    // Boost❗✔️:     static result_type convert ( argument_type s )
+    // Boost❗✔️:     {
+    // Boost❗✔️:       RangeCheckerBase::validate_range(s);
+    // Boost❗✔️:       return RawConverterBase::low_level_convert(s);
+    // Boost❗✔️:     }
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/converter.hpp:497-517
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/converter_policies.hpp:150-156
+    // Boost❗✔️: class positive_overflow : public bad_numeric_cast
+    // Boost❗✔️: {
+    // Boost❗✔️:   public:
+    // Boost❗✔️:
+    // Boost❗✔️:     const char * what() const BOOST_NOEXCEPT_OR_NOTHROW BOOST_OVERRIDE
+    // Boost❗✔️:       { return "bad numeric conversion: positive overflow"; }
+    // Boost❗✔️: };
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/converter_policies.hpp:150-156
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/converter_policies.hpp:158-174
+    // Boost❗✔️: struct def_overflow_handler
+    // Boost❗✔️: {
+    // Boost❗✔️:   void operator() ( range_check_result r ) // throw(negative_overflow,positive_overflow)
+    // Boost❗✔️:   {
+    // Boost❗✔️: #ifndef BOOST_NO_EXCEPTIONS
+    // Boost❗✔️:     if ( r == cNegOverflow )
+    // Boost❗✔️:       throw negative_overflow() ;
+    // Boost❗✔️:     else if ( r == cPosOverflow )
+    // Boost❗✔️:            throw positive_overflow() ;
+    // Boost❗✔️: #else
+    // Boost❗✔️:     if ( r == cNegOverflow )
+    // Boost❗✔️:       ::boost::throw_exception(negative_overflow()) ;
+    // Boost❗✔️:     else if ( r == cPosOverflow )
+    // Boost❗✔️:            ::boost::throw_exception(positive_overflow()) ;
+    // Boost❗✔️: #endif
+    // Boost❗✔️:   }
+    // Boost❗✔️: } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/converter_policies.hpp:158-174
+    // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/bounds.hpp:19-29
+    // Boost❗✔️:   template<class N>
+    // Boost❗✔️:   class Integral
+    // Boost❗✔️:   {
+    // Boost❗✔️:       typedef std::numeric_limits<N> limits ;
+    // Boost❗✔️:
+    // Boost❗✔️:     public :
+    //      // Boost❗✔️:
+    // Boost❗✔️:       static N lowest  () { return limits::min BOOST_PREVENT_MACRO_SUBSTITUTION (); }
+    // Boost❗✔️:       static N highest () { return limits::max BOOST_PREVENT_MACRO_SUBSTITUTION (); }
+    // Boost❗✔️:       static N smallest() { return static_cast<N>(1); }
+    // Boost❗✔️:   } ;
+    // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/bounds.hpp:19-29
+    use cosmolkit_model::{PropertyValue, PropertyValueKind};
+    let property = "_CanonicalRankingNumber";
+    let Some(value) = atom.prop(property) else {
+        return Ok(0);
+    };
+    let invalid_cast = |kind| CanonicalRankError::InvalidPropertyKind {
+        atom_index,
+        property,
+        kind,
+    };
+    match value {
+        PropertyValue::Int(value) => Ok(*value),
+        PropertyValue::UInt(value) => {
+            i32::try_from(*value).map_err(|_| CanonicalRankError::UnsignedRankOverflow {
+                atom_index,
+                property,
+                value: *value,
+            })
+        }
+        PropertyValue::String(value) => value
+            .trim_end_matches(|character| {
+                matches!(character, ' ' | '\t' | '\n' | '\r' | '\u{b}' | '\u{c}')
+            })
+            .parse::<i32>()
+            .map_err(|_| invalid_cast(PropertyValueKind::String)),
+        PropertyValue::Double(_) => Err(invalid_cast(PropertyValueKind::Double)),
+        PropertyValue::Bool(_) => Err(invalid_cast(PropertyValueKind::Bool)),
+        PropertyValue::IntVector(_) => Err(invalid_cast(PropertyValueKind::IntVector)),
+    }
+}
+
 fn compare_canon_atom_base_for_kekulize(
     atoms: &[CanonAtom<'_>],
     left: usize,
     right: usize,
     flags: CanonRankFlags,
-) -> Ordering {
+) -> Result<Ordering, CanonicalRankError> {
     // BEGIN RDKIT CPP FUNCTION AtomCompareFunctor::basecomp
     // RDKit✔️✔️:   ivi = dp_atoms[i].index;
     // RDKit✔️✔️:   ivj = dp_atoms[j].index;
@@ -4829,15 +5626,26 @@ fn compare_canon_atom_base_for_kekulize(
     let right_atom = &atoms[right];
     let mut cmp = left_atom.index.cmp(&right_atom.index);
     if cmp != Ordering::Equal {
-        return cmp;
+        return Ok(cmp);
     }
 
     if flags.use_non_stereo_ranks {
-        cmp = left_atom
-            .canonical_ranking_number
-            .cmp(&right_atom.canonical_ranking_number);
+        // Same source guards and getter order, with O(log P) borrowed map
+        // lookups instead of O(P) Dict scans. String conversion keeps O(B)
+        // time and avoids the source String copy and locale object; tagged
+        // Int extraction remains O(1). The fixed classical locale preserves
+        // every modeled cast result while reducing getter storage/work.
+        // RDKit✔️🔝: dp_atoms[i].atom->getPropIfPresent(
+        // RDKit✔️🔝:     common_properties::_CanonicalRankingNumber, rankingNumber_i);
+        // RDKit✔️🔝: dp_atoms[j].atom->getPropIfPresent(
+        // RDKit✔️🔝:     common_properties::_CanonicalRankingNumber, rankingNumber_j);
+        // Current class and source flag precede both lookups. The left getter
+        // can throw before the right; numeric comparison follows both getters.
+        let left_rank = canonical_rank_property_to_int(left_atom.source_atom, left)?;
+        let right_rank = canonical_rank_property_to_int(right_atom.source_atom, right)?;
+        cmp = left_rank.cmp(&right_rank);
         if cmp != Ordering::Equal {
-            return cmp;
+            return Ok(cmp);
         }
     }
 
@@ -4858,34 +5666,34 @@ fn compare_canon_atom_base_for_kekulize(
         };
         cmp = left_map.cmp(&right_map);
         if cmp != Ordering::Equal {
-            return cmp;
+            return Ok(cmp);
         }
     }
 
     cmp = left_atom.degree.cmp(&right_atom.degree);
     if cmp != Ordering::Equal {
-        return cmp;
+        return Ok(cmp);
     }
 
     if let (Some(left_symbol), Some(right_symbol)) = (left_atom.p_symbol, right_atom.p_symbol) {
-        return left_symbol.cmp(right_symbol);
+        return Ok(left_symbol.cmp(right_symbol));
     }
 
     cmp = left_atom.atomic_number.cmp(&right_atom.atomic_number);
     if cmp != Ordering::Equal {
-        return cmp;
+        return Ok(cmp);
     }
 
     if flags.use_isotopes {
         cmp = left_atom.isotope.cmp(&right_atom.isotope);
         if cmp != Ordering::Equal {
-            return cmp;
+            return Ok(cmp);
         }
     }
 
     cmp = left_atom.total_num_hs.cmp(&right_atom.total_num_hs);
     if cmp != Ordering::Equal {
-        return cmp;
+        return Ok(cmp);
     }
 
     // RDKit basecomp stores comparison temporaries as unsigned int.
@@ -4895,14 +5703,14 @@ fn compare_canon_atom_base_for_kekulize(
     let right_charge = right_atom.formal_charge as i32 as u32;
     cmp = left_charge.cmp(&right_charge);
     if cmp != Ordering::Equal {
-        return cmp;
+        return Ok(cmp);
     }
 
     if flags.use_chiral_presence {
         cmp = chiral_presence_for_kekulize(left_atom.chiral_tag)
             .cmp(&chiral_presence_for_kekulize(right_atom.chiral_tag));
         if cmp != Ordering::Equal {
-            return cmp;
+            return Ok(cmp);
         }
     }
     if flags.use_chirality {
@@ -4910,7 +5718,7 @@ fn compare_canon_atom_base_for_kekulize(
         // RDKit✔️✔️:     ivj = dp_atoms[j].whichStereoGroup;
         cmp = compare_stereo_group_state_for_kekulize(atoms, left, right);
         if cmp != Ordering::Equal {
-            return cmp;
+            return Ok(cmp);
         }
     }
     if flags.use_chirality_rings {
@@ -4919,10 +5727,10 @@ fn compare_canon_atom_base_for_kekulize(
         cmp = get_atom_ring_nbr_code_for_kekulize(atoms, left)
             .cmp(&get_atom_ring_nbr_code_for_kekulize(atoms, right));
         if cmp != Ordering::Equal {
-            return cmp;
+            return Ok(cmp);
         }
     }
-    Ordering::Equal
+    Ok(Ordering::Equal)
 }
 
 fn atom_pair_has_any_in_play_for_kekulize(
@@ -10304,5 +11112,4231 @@ mod tests {
         assert!(result.succeeded);
         assert_eq!(result.topology.bonds[0].order(), BondOrder::Double);
         assert_eq!(result.topology.bonds[1].order(), BondOrder::Single);
+    }
+}
+
+#[cfg(test)]
+mod q01_b1_scalar_rank_dependency_tests {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, PropertyValue, PropertyValueKind};
+    use cosmolkit_types::Element;
+
+    fn source_atom(index: usize, value: Option<PropertyValue>) -> Atom {
+        let mut atom = Atom::from_spec(AtomId::new(index), AtomSpec::new(Element::C));
+        if let Some(value) = value {
+            atom.set_prop("_CanonicalRankingNumber", value).unwrap();
+        }
+        atom
+    }
+    fn flags(enabled: bool) -> CanonRankFlags {
+        let mut params = CanonicalRankParams::default();
+        params.use_non_stereo_ranks = enabled;
+        CanonRankFlags::from_fragment_options(params)
+    }
+    fn cast_error(index: usize, kind: PropertyValueKind) -> CanonicalRankError {
+        CanonicalRankError::InvalidPropertyKind {
+            atom_index: index,
+            property: "_CanonicalRankingNumber",
+            kind,
+        }
+    }
+
+    #[test]
+    fn q01_b1_rank_class_and_flag_guards_precede_integer_getters() {
+        let source = [
+            source_atom(0, Some(PropertyValue::String("bad".to_owned()))),
+            source_atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        atoms[0].index = 0;
+        atoms[1].index = 1;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Ok(Ordering::Greater)
+        );
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(false)),
+            Ok(Ordering::Equal)
+        );
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(cast_error(0, PropertyValueKind::String))
+        );
+    }
+
+    #[test]
+    fn q01_b1_rank_getter_order_uses_actual_comparator_side() {
+        let source = [
+            source_atom(0, Some(PropertyValue::String("bad".to_owned()))),
+            source_atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        atoms[0].index = 0;
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(cast_error(0, PropertyValueKind::String))
+        );
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(cast_error(1, PropertyValueKind::Double))
+        );
+        let source = [
+            source_atom(0, Some(PropertyValue::Int(i32::MAX))),
+            source_atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        atoms[0].index = 0;
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(cast_error(1, PropertyValueKind::Bool))
+        );
+    }
+
+    #[test]
+    fn q01_b1_rank_modes_and_in_play_masks_preserve_source_no_read() {
+        let source = [
+            source_atom(0, Some(PropertyValue::String("bad".to_owned()))),
+            source_atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        atoms[0].index = 0;
+        atoms[1].index = 0;
+        for mode in [
+            CanonCompareMode::SpecialChirality,
+            CanonCompareMode::SpecialSymmetry,
+        ] {
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, mode, flags(true)),
+                Ok(Ordering::Equal)
+            );
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = false;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+        atoms[1].is_in_play = true;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Err(cast_error(0, PropertyValueKind::String))
+        );
+    }
+
+    #[test]
+    fn q01_b1_rank_hanoi_guard_and_recursive_error_order_are_source_exact() {
+        let source = [
+            source_atom(0, Some(PropertyValue::String("bad".to_owned()))),
+            source_atom(1, Some(PropertyValue::Int(1))),
+            source_atom(2, Some(PropertyValue::Bool(true))),
+            source_atom(3, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        let mut counts = [0; 4];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0],
+                &mut [0],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts[0], 1);
+        counts.fill(0);
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 2],
+                &mut [0; 2],
+                &mut counts,
+                &[false; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0, 0, 0]);
+        counts.fill(0);
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 2],
+                &mut [0; 2],
+                &mut counts,
+                &[true, false, false, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(cast_error(0, PropertyValueKind::String))
+        );
+        counts.fill(0);
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [2, 3, 0, 1],
+                &mut [0; 4],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(cast_error(2, PropertyValueKind::Bool))
+        );
+        counts.fill(0);
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1, 2, 3],
+                &mut [0; 4],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(cast_error(0, PropertyValueKind::String))
+        );
+    }
+}
+
+#[cfg(test)]
+mod uint_source_comparator_proposed_tests {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, PropertyValue, PropertyValueKind};
+    use cosmolkit_types::Element;
+    fn atom(index: usize, value: PropertyValue) -> Atom {
+        Atom::from_spec(
+            AtomId::new(index),
+            AtomSpec::new(Element::C)
+                .with_computed_prop("_CanonicalRankingNumber", value)
+                .unwrap(),
+        )
+    }
+    fn flags(on: bool) -> CanonRankFlags {
+        let mut p = CanonicalRankParams::default();
+        p.use_non_stereo_ranks = on;
+        CanonRankFlags::from_fragment_options(p)
+    }
+    fn overflow(index: usize, value: u32) -> CanonicalRankError {
+        CanonicalRankError::UnsignedRankOverflow {
+            atom_index: index,
+            property: "_CanonicalRankingNumber",
+            value,
+        }
+    }
+    #[test]
+    fn proposed_uint_source_int_limits_and_decimal_projection() {
+        // Independent Boost GT_HiT / numeric_limits<int>::max conditions.
+        for (value, expected) in [
+            (0_u32, Some(0)),
+            (1, Some(1)),
+            (2147483646, Some(2147483646)),
+            (2147483647, Some(2147483647)),
+            (2147483648, None),
+            (4294967295, None),
+        ] {
+            let source = atom(7, PropertyValue::UInt(value));
+            let before = source.clone();
+            assert_eq!(
+                canonical_rank_property_to_int(&source, 7),
+                expected.ok_or_else(|| overflow(7, value))
+            );
+            assert_eq!(source, before);
+        }
+    }
+    #[test]
+    fn proposed_uint_competing_getter_errors_follow_actual_left_side() {
+        for value in [2147483648_u32, 4294967295] {
+            let source = [
+                atom(0, PropertyValue::UInt(value)),
+                atom(1, PropertyValue::String("bad".into())),
+            ];
+            let mut atoms = source
+                .iter()
+                .map(empty_canon_atom_from_source_atom)
+                .collect::<Vec<_>>();
+            for atom in &mut atoms {
+                atom.index = 0;
+            }
+            assert_eq!(
+                compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+                Err(overflow(0, value))
+            );
+            assert_eq!(
+                compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+                Err(CanonicalRankError::InvalidPropertyKind {
+                    atom_index: 1,
+                    property: "_CanonicalRankingNumber",
+                    kind: PropertyValueKind::String
+                })
+            );
+            let source = [
+                atom(0, PropertyValue::Int(0)),
+                atom(1, PropertyValue::UInt(value)),
+            ];
+            let mut atoms = source
+                .iter()
+                .map(empty_canon_atom_from_source_atom)
+                .collect::<Vec<_>>();
+            for atom in &mut atoms {
+                atom.index = 0;
+            }
+            assert_eq!(
+                compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+                Err(overflow(1, value))
+            );
+        }
+    }
+    #[test]
+    fn proposed_uint_class_flag_modes_masks_hanoi_and_recursion() {
+        for value in [0_u32, 1, 2147483646, 2147483647, 2147483648, 4294967295] {
+            let source = [
+                atom(0, PropertyValue::UInt(value)),
+                atom(1, PropertyValue::UInt(value)),
+            ];
+            let mut atoms = source
+                .iter()
+                .map(empty_canon_atom_from_source_atom)
+                .collect::<Vec<_>>();
+            atoms[1].index = 1;
+            assert_eq!(
+                compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+                Ok(Ordering::Less)
+            );
+            assert_eq!(
+                compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+                Ok(Ordering::Greater)
+            );
+            atoms[1].index = 0;
+            assert_eq!(
+                compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(false)),
+                Ok(Ordering::Equal)
+            );
+            for mode in [
+                CanonCompareMode::SpecialChirality,
+                CanonCompareMode::SpecialSymmetry,
+            ] {
+                assert_eq!(
+                    compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, mode, flags(true)),
+                    Ok(Ordering::Equal)
+                );
+            }
+            atoms[0].is_in_play = false;
+            atoms[1].is_in_play = false;
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(
+                    &mut atoms,
+                    0,
+                    1,
+                    CanonCompareMode::Atom,
+                    flags(true)
+                ),
+                Ok(Ordering::Equal)
+            );
+            let mut counts = [0; 2];
+            assert_eq!(
+                hanoi_order_for_kekulize(
+                    &mut [0],
+                    &mut [0],
+                    &mut counts,
+                    &[true; 2],
+                    &mut atoms,
+                    CanonCompareMode::Atom,
+                    flags(true)
+                ),
+                Ok(false)
+            );
+            counts.fill(0);
+            assert_eq!(
+                hanoi_order_for_kekulize(
+                    &mut [0, 1],
+                    &mut [0; 2],
+                    &mut counts,
+                    &[false; 2],
+                    &mut atoms,
+                    CanonCompareMode::Atom,
+                    flags(true)
+                ),
+                Ok(false)
+            );
+            atoms[1].is_in_play = true;
+            let reached = if value <= 2147483647 {
+                Ok(Ordering::Equal)
+            } else {
+                Err(overflow(0, value))
+            };
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(
+                    &mut atoms,
+                    0,
+                    1,
+                    CanonCompareMode::Atom,
+                    flags(true)
+                ),
+                reached
+            );
+        }
+        let source = [
+            atom(0, PropertyValue::String("bad".into())),
+            atom(1, PropertyValue::Int(1)),
+            atom(2, PropertyValue::UInt(4294967295)),
+            atom(3, PropertyValue::UInt(2147483648)),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [2, 3, 0, 1],
+                &mut [0; 4],
+                &mut [0; 4],
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(overflow(2, 4294967295))
+        );
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, PropertyValue, PropertyValueKind};
+    use cosmolkit_types::Element;
+    fn atom(i: usize, p: Option<PropertyValue>) -> Atom {
+        let mut a = Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C));
+        if let Some(p) = p {
+            a.set_computed_prop("_CanonicalRankingNumber", p).unwrap();
+        }
+        a
+    }
+    fn flags(b: bool) -> CanonRankFlags {
+        let mut p = CanonicalRankParams::default();
+        p.use_non_stereo_ranks = b;
+        CanonRankFlags::from_fragment_options(p)
+    }
+    fn graph(v: Vec<Atom>) -> TopologyBlock {
+        TopologyBlock::try_from_parts(v, vec![], vec![], vec![]).unwrap()
+    }
+    fn overflow(i: usize, v: u32) -> CanonicalRankError {
+        CanonicalRankError::UnsignedRankOverflow {
+            atom_index: i,
+            property: "_CanonicalRankingNumber",
+            value: v,
+        }
+    }
+    fn bad(i: usize, k: PropertyValueKind) -> CanonicalRankError {
+        CanonicalRankError::InvalidPropertyKind {
+            atom_index: i,
+            property: "_CanonicalRankingNumber",
+            kind: k,
+        }
+    }
+
+    // FROZEN UINT CONDITION: RANK_SIGNED_0_SIDE0
+    #[test]
+    fn uint_cell_rank_signed_0_side0() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::Int(0))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_0_SIDE1
+    #[test]
+    fn uint_cell_rank_signed_0_side1() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::Int(0))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_1_SIDE0
+    #[test]
+    fn uint_cell_rank_signed_1_side0() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::Int(1))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_1_SIDE1
+    #[test]
+    fn uint_cell_rank_signed_1_side1() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::Int(1))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_2147483646_SIDE0
+    #[test]
+    fn uint_cell_rank_signed_2147483646_side0() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::Int(2147483646))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_2147483646_SIDE1
+    #[test]
+    fn uint_cell_rank_signed_2147483646_side1() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::Int(2147483646))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_2147483647_SIDE0
+    #[test]
+    fn uint_cell_rank_signed_2147483647_side0() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::Int(2147483647))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_2147483647_SIDE1
+    #[test]
+    fn uint_cell_rank_signed_2147483647_side1() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::Int(2147483647))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_2147483648_SIDE0
+    #[test]
+    fn uint_cell_rank_signed_2147483648_side0() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::Int(0))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(
+            rank_mol_atoms_with_params(&g, &p),
+            Err(overflow(0, 2147483648_u32))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_2147483648_SIDE1
+    #[test]
+    fn uint_cell_rank_signed_2147483648_side1() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::Int(0))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(
+            rank_mol_atoms_with_params(&g, &p),
+            Err(overflow(1, 2147483648_u32))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_4294967295_SIDE0
+    #[test]
+    fn uint_cell_rank_signed_4294967295_side0() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::Int(0))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(
+            rank_mol_atoms_with_params(&g, &p),
+            Err(overflow(0, 4294967295_u32))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: RANK_SIGNED_4294967295_SIDE1
+    #[test]
+    fn uint_cell_rank_signed_4294967295_side1() {
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::Int(0))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ]);
+        let before = g.clone();
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        assert_eq!(
+            rank_mol_atoms_with_params(&g, &p),
+            Err(overflow(1, 4294967295_u32))
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_LT_0
+    #[test]
+    fn uint_cell_uint_guard_class_lt_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 0;
+        atoms[1].index = 1;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_GT_0
+    #[test]
+    fn uint_cell_uint_guard_class_gt_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 1;
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_FLAG_FALSE_0
+    #[test]
+    fn uint_cell_uint_guard_flag_false_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(false)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_LEFT_FIRST_0
+    #[test]
+    fn uint_cell_uint_guard_left_first_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_RIGHT_AFTER_LEFT_0
+    #[test]
+    fn uint_cell_uint_guard_right_after_left_0() {
+        let source = [
+            atom(0, Some(PropertyValue::Int(2147483647))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MISSING_LEFT_0
+    #[test]
+    fn uint_cell_uint_guard_missing_left_0() {
+        let source = [atom(0, None), atom(1, Some(PropertyValue::UInt(0_u32)))];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_NONE_0
+    #[test]
+    fn uint_cell_uint_guard_mask_none_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = false;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_ONE_0
+    #[test]
+    fn uint_cell_uint_guard_mask_one_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = true;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_SPECIAL_MODES_0
+    #[test]
+    fn uint_cell_uint_guard_special_modes_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        for mode in [
+            CanonCompareMode::SpecialChirality,
+            CanonCompareMode::SpecialSymmetry,
+        ] {
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, mode, flags(true)),
+                Ok(Ordering::Equal)
+            );
+        }
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_ONE_0
+    #[test]
+    fn uint_cell_uint_guard_hanoi_one_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0],
+                &mut [0; 1],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [1, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_UNCHANGED_0
+    #[test]
+    fn uint_cell_uint_guard_hanoi_unchanged_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[false, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_CHANGED_0
+    #[test]
+    fn uint_cell_uint_guard_hanoi_changed_0() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_RECURSION_0
+    #[test]
+    fn uint_cell_uint_guard_hanoi_recursion_0() {
+        let source = [
+            atom(0, Some(PropertyValue::String("bad".into()))),
+            atom(1, Some(PropertyValue::Int(1))),
+            atom(2, Some(PropertyValue::UInt(0_u32))),
+            atom(3, Some(PropertyValue::UInt(0_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 4];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [2, 3, 0, 1],
+                &mut [0; 4],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(bad(0, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_SINGLETON_0
+    #[test]
+    fn uint_cell_uint_guard_public_singleton_0() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![atom(0, Some(PropertyValue::UInt(0_u32)))]);
+        let before = g.clone();
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FLAG_FALSE_0
+    #[test]
+    fn uint_cell_uint_guard_public_flag_false_0() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ]);
+        let before = g.clone();
+        p.use_non_stereo_ranks = false;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FRAGMENT_0
+    #[test]
+    fn uint_cell_uint_guard_public_fragment_0() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true, true], &[], None, None, &p),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_FRAGMENT_0
+    #[test]
+    fn uint_cell_uint_guard_prepared_fragment_0() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_EMPTY_WHOLE_0
+    #[test]
+    fn uint_cell_uint_guard_empty_whole_0() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![]);
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![]));
+        let populated = graph(vec![atom(0, Some(PropertyValue::UInt(0_u32)))]);
+        assert_eq!(
+            populated.atoms[0].prop("_CanonicalRankingNumber"),
+            Some(&PropertyValue::UInt(0_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_VALIDATION_0
+    #[test]
+    fn uint_cell_uint_guard_mask_validation_0() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true], &[], None, None, &p),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 2,
+                actual: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_VALIDATION_0
+    #[test]
+    fn uint_cell_uint_guard_prepared_validation_0() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::UInt(0_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        valence.implicit_hydrogens.pop();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 2,
+                implicit_len: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_0_0_String("bad")
+    #[test]
+    fn uint_cell_getter_order_0_0_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_0_0_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_0_0_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_0_0_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_0_0_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_0_0_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_0_0_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_0_1_String("bad")
+    #[test]
+    fn uint_cell_getter_order_0_1_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_0_1_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_0_1_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_0_1_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_0_1_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_0_1_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_0_1_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(0_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_LT_1
+    #[test]
+    fn uint_cell_uint_guard_class_lt_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 0;
+        atoms[1].index = 1;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_GT_1
+    #[test]
+    fn uint_cell_uint_guard_class_gt_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 1;
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_FLAG_FALSE_1
+    #[test]
+    fn uint_cell_uint_guard_flag_false_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(false)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_LEFT_FIRST_1
+    #[test]
+    fn uint_cell_uint_guard_left_first_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_RIGHT_AFTER_LEFT_1
+    #[test]
+    fn uint_cell_uint_guard_right_after_left_1() {
+        let source = [
+            atom(0, Some(PropertyValue::Int(2147483647))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MISSING_LEFT_1
+    #[test]
+    fn uint_cell_uint_guard_missing_left_1() {
+        let source = [atom(0, None), atom(1, Some(PropertyValue::UInt(1_u32)))];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_NONE_1
+    #[test]
+    fn uint_cell_uint_guard_mask_none_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = false;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_ONE_1
+    #[test]
+    fn uint_cell_uint_guard_mask_one_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = true;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_SPECIAL_MODES_1
+    #[test]
+    fn uint_cell_uint_guard_special_modes_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        for mode in [
+            CanonCompareMode::SpecialChirality,
+            CanonCompareMode::SpecialSymmetry,
+        ] {
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, mode, flags(true)),
+                Ok(Ordering::Equal)
+            );
+        }
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_ONE_1
+    #[test]
+    fn uint_cell_uint_guard_hanoi_one_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0],
+                &mut [0; 1],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [1, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_UNCHANGED_1
+    #[test]
+    fn uint_cell_uint_guard_hanoi_unchanged_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[false, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_CHANGED_1
+    #[test]
+    fn uint_cell_uint_guard_hanoi_changed_1() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_RECURSION_1
+    #[test]
+    fn uint_cell_uint_guard_hanoi_recursion_1() {
+        let source = [
+            atom(0, Some(PropertyValue::String("bad".into()))),
+            atom(1, Some(PropertyValue::Int(1))),
+            atom(2, Some(PropertyValue::UInt(1_u32))),
+            atom(3, Some(PropertyValue::UInt(1_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 4];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [2, 3, 0, 1],
+                &mut [0; 4],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(bad(0, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_SINGLETON_1
+    #[test]
+    fn uint_cell_uint_guard_public_singleton_1() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![atom(0, Some(PropertyValue::UInt(1_u32)))]);
+        let before = g.clone();
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FLAG_FALSE_1
+    #[test]
+    fn uint_cell_uint_guard_public_flag_false_1() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ]);
+        let before = g.clone();
+        p.use_non_stereo_ranks = false;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FRAGMENT_1
+    #[test]
+    fn uint_cell_uint_guard_public_fragment_1() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true, true], &[], None, None, &p),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_FRAGMENT_1
+    #[test]
+    fn uint_cell_uint_guard_prepared_fragment_1() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_EMPTY_WHOLE_1
+    #[test]
+    fn uint_cell_uint_guard_empty_whole_1() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![]);
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![]));
+        let populated = graph(vec![atom(0, Some(PropertyValue::UInt(1_u32)))]);
+        assert_eq!(
+            populated.atoms[0].prop("_CanonicalRankingNumber"),
+            Some(&PropertyValue::UInt(1_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_VALIDATION_1
+    #[test]
+    fn uint_cell_uint_guard_mask_validation_1() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true], &[], None, None, &p),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 2,
+                actual: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_VALIDATION_1
+    #[test]
+    fn uint_cell_uint_guard_prepared_validation_1() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::UInt(1_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        valence.implicit_hydrogens.pop();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 2,
+                implicit_len: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_1_0_String("bad")
+    #[test]
+    fn uint_cell_getter_order_1_0_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_1_0_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_1_0_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_1_0_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_1_0_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_1_0_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_1_0_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_1_1_String("bad")
+    #[test]
+    fn uint_cell_getter_order_1_1_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_1_1_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_1_1_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_1_1_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_1_1_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_1_1_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_1_1_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(1_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_LT_2147483646
+    #[test]
+    fn uint_cell_uint_guard_class_lt_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 0;
+        atoms[1].index = 1;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_GT_2147483646
+    #[test]
+    fn uint_cell_uint_guard_class_gt_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 1;
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_FLAG_FALSE_2147483646
+    #[test]
+    fn uint_cell_uint_guard_flag_false_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(false)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_LEFT_FIRST_2147483646
+    #[test]
+    fn uint_cell_uint_guard_left_first_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_RIGHT_AFTER_LEFT_2147483646
+    #[test]
+    fn uint_cell_uint_guard_right_after_left_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::Int(2147483647))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MISSING_LEFT_2147483646
+    #[test]
+    fn uint_cell_uint_guard_missing_left_2147483646() {
+        let source = [
+            atom(0, None),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_NONE_2147483646
+    #[test]
+    fn uint_cell_uint_guard_mask_none_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = false;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_ONE_2147483646
+    #[test]
+    fn uint_cell_uint_guard_mask_one_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = true;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_SPECIAL_MODES_2147483646
+    #[test]
+    fn uint_cell_uint_guard_special_modes_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        for mode in [
+            CanonCompareMode::SpecialChirality,
+            CanonCompareMode::SpecialSymmetry,
+        ] {
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, mode, flags(true)),
+                Ok(Ordering::Equal)
+            );
+        }
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_ONE_2147483646
+    #[test]
+    fn uint_cell_uint_guard_hanoi_one_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0],
+                &mut [0; 1],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [1, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_UNCHANGED_2147483646
+    #[test]
+    fn uint_cell_uint_guard_hanoi_unchanged_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[false, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_CHANGED_2147483646
+    #[test]
+    fn uint_cell_uint_guard_hanoi_changed_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_RECURSION_2147483646
+    #[test]
+    fn uint_cell_uint_guard_hanoi_recursion_2147483646() {
+        let source = [
+            atom(0, Some(PropertyValue::String("bad".into()))),
+            atom(1, Some(PropertyValue::Int(1))),
+            atom(2, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(3, Some(PropertyValue::UInt(2147483646_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 4];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [2, 3, 0, 1],
+                &mut [0; 4],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(bad(0, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_SINGLETON_2147483646
+    #[test]
+    fn uint_cell_uint_guard_public_singleton_2147483646() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![atom(0, Some(PropertyValue::UInt(2147483646_u32)))]);
+        let before = g.clone();
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FLAG_FALSE_2147483646
+    #[test]
+    fn uint_cell_uint_guard_public_flag_false_2147483646() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ]);
+        let before = g.clone();
+        p.use_non_stereo_ranks = false;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FRAGMENT_2147483646
+    #[test]
+    fn uint_cell_uint_guard_public_fragment_2147483646() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true, true], &[], None, None, &p),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_FRAGMENT_2147483646
+    #[test]
+    fn uint_cell_uint_guard_prepared_fragment_2147483646() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_EMPTY_WHOLE_2147483646
+    #[test]
+    fn uint_cell_uint_guard_empty_whole_2147483646() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![]);
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![]));
+        let populated = graph(vec![atom(0, Some(PropertyValue::UInt(2147483646_u32)))]);
+        assert_eq!(
+            populated.atoms[0].prop("_CanonicalRankingNumber"),
+            Some(&PropertyValue::UInt(2147483646_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_VALIDATION_2147483646
+    #[test]
+    fn uint_cell_uint_guard_mask_validation_2147483646() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true], &[], None, None, &p),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 2,
+                actual: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_VALIDATION_2147483646
+    #[test]
+    fn uint_cell_uint_guard_prepared_validation_2147483646() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483646_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        valence.implicit_hydrogens.pop();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 2,
+                implicit_len: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483646_0_String("bad")
+    #[test]
+    fn uint_cell_getter_order_2147483646_0_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483646_0_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_2147483646_0_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483646_0_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_2147483646_0_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483646_0_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_2147483646_0_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483646_1_String("bad")
+    #[test]
+    fn uint_cell_getter_order_2147483646_1_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483646_1_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_2147483646_1_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483646_1_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_2147483646_1_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483646_1_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_2147483646_1_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483646_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_LT_2147483647
+    #[test]
+    fn uint_cell_uint_guard_class_lt_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 0;
+        atoms[1].index = 1;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_GT_2147483647
+    #[test]
+    fn uint_cell_uint_guard_class_gt_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 1;
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_FLAG_FALSE_2147483647
+    #[test]
+    fn uint_cell_uint_guard_flag_false_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(false)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_LEFT_FIRST_2147483647
+    #[test]
+    fn uint_cell_uint_guard_left_first_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_RIGHT_AFTER_LEFT_2147483647
+    #[test]
+    fn uint_cell_uint_guard_right_after_left_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::Int(2147483647))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MISSING_LEFT_2147483647
+    #[test]
+    fn uint_cell_uint_guard_missing_left_2147483647() {
+        let source = [
+            atom(0, None),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_NONE_2147483647
+    #[test]
+    fn uint_cell_uint_guard_mask_none_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = false;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_ONE_2147483647
+    #[test]
+    fn uint_cell_uint_guard_mask_one_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = true;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_SPECIAL_MODES_2147483647
+    #[test]
+    fn uint_cell_uint_guard_special_modes_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        for mode in [
+            CanonCompareMode::SpecialChirality,
+            CanonCompareMode::SpecialSymmetry,
+        ] {
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, mode, flags(true)),
+                Ok(Ordering::Equal)
+            );
+        }
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_ONE_2147483647
+    #[test]
+    fn uint_cell_uint_guard_hanoi_one_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0],
+                &mut [0; 1],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [1, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_UNCHANGED_2147483647
+    #[test]
+    fn uint_cell_uint_guard_hanoi_unchanged_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[false, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_CHANGED_2147483647
+    #[test]
+    fn uint_cell_uint_guard_hanoi_changed_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_RECURSION_2147483647
+    #[test]
+    fn uint_cell_uint_guard_hanoi_recursion_2147483647() {
+        let source = [
+            atom(0, Some(PropertyValue::String("bad".into()))),
+            atom(1, Some(PropertyValue::Int(1))),
+            atom(2, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(3, Some(PropertyValue::UInt(2147483647_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 4];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [2, 3, 0, 1],
+                &mut [0; 4],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(bad(0, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_SINGLETON_2147483647
+    #[test]
+    fn uint_cell_uint_guard_public_singleton_2147483647() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![atom(0, Some(PropertyValue::UInt(2147483647_u32)))]);
+        let before = g.clone();
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FLAG_FALSE_2147483647
+    #[test]
+    fn uint_cell_uint_guard_public_flag_false_2147483647() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ]);
+        let before = g.clone();
+        p.use_non_stereo_ranks = false;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FRAGMENT_2147483647
+    #[test]
+    fn uint_cell_uint_guard_public_fragment_2147483647() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true, true], &[], None, None, &p),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_FRAGMENT_2147483647
+    #[test]
+    fn uint_cell_uint_guard_prepared_fragment_2147483647() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_EMPTY_WHOLE_2147483647
+    #[test]
+    fn uint_cell_uint_guard_empty_whole_2147483647() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![]);
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![]));
+        let populated = graph(vec![atom(0, Some(PropertyValue::UInt(2147483647_u32)))]);
+        assert_eq!(
+            populated.atoms[0].prop("_CanonicalRankingNumber"),
+            Some(&PropertyValue::UInt(2147483647_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_VALIDATION_2147483647
+    #[test]
+    fn uint_cell_uint_guard_mask_validation_2147483647() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true], &[], None, None, &p),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 2,
+                actual: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_VALIDATION_2147483647
+    #[test]
+    fn uint_cell_uint_guard_prepared_validation_2147483647() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483647_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        valence.implicit_hydrogens.pop();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 2,
+                implicit_len: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483647_0_String("bad")
+    #[test]
+    fn uint_cell_getter_order_2147483647_0_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483647_0_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_2147483647_0_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483647_0_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_2147483647_0_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483647_0_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_2147483647_0_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483647_1_String("bad")
+    #[test]
+    fn uint_cell_getter_order_2147483647_1_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483647_1_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_2147483647_1_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483647_1_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_2147483647_1_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483647_1_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_2147483647_1_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483647_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_LT_2147483648
+    #[test]
+    fn uint_cell_uint_guard_class_lt_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 0;
+        atoms[1].index = 1;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_GT_2147483648
+    #[test]
+    fn uint_cell_uint_guard_class_gt_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 1;
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_FLAG_FALSE_2147483648
+    #[test]
+    fn uint_cell_uint_guard_flag_false_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(false)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_LEFT_FIRST_2147483648
+    #[test]
+    fn uint_cell_uint_guard_left_first_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_RIGHT_AFTER_LEFT_2147483648
+    #[test]
+    fn uint_cell_uint_guard_right_after_left_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::Int(2147483647))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(1, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MISSING_LEFT_2147483648
+    #[test]
+    fn uint_cell_uint_guard_missing_left_2147483648() {
+        let source = [
+            atom(0, None),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(1, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_NONE_2147483648
+    #[test]
+    fn uint_cell_uint_guard_mask_none_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = false;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_ONE_2147483648
+    #[test]
+    fn uint_cell_uint_guard_mask_one_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = true;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Err(overflow(0, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_SPECIAL_MODES_2147483648
+    #[test]
+    fn uint_cell_uint_guard_special_modes_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        for mode in [
+            CanonCompareMode::SpecialChirality,
+            CanonCompareMode::SpecialSymmetry,
+        ] {
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, mode, flags(true)),
+                Ok(Ordering::Equal)
+            );
+        }
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_ONE_2147483648
+    #[test]
+    fn uint_cell_uint_guard_hanoi_one_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0],
+                &mut [0; 1],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [1, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_UNCHANGED_2147483648
+    #[test]
+    fn uint_cell_uint_guard_hanoi_unchanged_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[false, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_CHANGED_2147483648
+    #[test]
+    fn uint_cell_uint_guard_hanoi_changed_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(overflow(0, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_RECURSION_2147483648
+    #[test]
+    fn uint_cell_uint_guard_hanoi_recursion_2147483648() {
+        let source = [
+            atom(0, Some(PropertyValue::String("bad".into()))),
+            atom(1, Some(PropertyValue::Int(1))),
+            atom(2, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(3, Some(PropertyValue::UInt(2147483648_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 4];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [2, 3, 0, 1],
+                &mut [0; 4],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(overflow(2, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_SINGLETON_2147483648
+    #[test]
+    fn uint_cell_uint_guard_public_singleton_2147483648() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![atom(0, Some(PropertyValue::UInt(2147483648_u32)))]);
+        let before = g.clone();
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FLAG_FALSE_2147483648
+    #[test]
+    fn uint_cell_uint_guard_public_flag_false_2147483648() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ]);
+        let before = g.clone();
+        p.use_non_stereo_ranks = false;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FRAGMENT_2147483648
+    #[test]
+    fn uint_cell_uint_guard_public_fragment_2147483648() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true, true], &[], None, None, &p),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_FRAGMENT_2147483648
+    #[test]
+    fn uint_cell_uint_guard_prepared_fragment_2147483648() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_EMPTY_WHOLE_2147483648
+    #[test]
+    fn uint_cell_uint_guard_empty_whole_2147483648() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![]);
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![]));
+        let populated = graph(vec![atom(0, Some(PropertyValue::UInt(2147483648_u32)))]);
+        assert_eq!(
+            populated.atoms[0].prop("_CanonicalRankingNumber"),
+            Some(&PropertyValue::UInt(2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_VALIDATION_2147483648
+    #[test]
+    fn uint_cell_uint_guard_mask_validation_2147483648() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true], &[], None, None, &p),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 2,
+                actual: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_VALIDATION_2147483648
+    #[test]
+    fn uint_cell_uint_guard_prepared_validation_2147483648() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::UInt(2147483648_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        valence.implicit_hydrogens.pop();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 2,
+                implicit_len: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483648_0_String("bad")
+    #[test]
+    fn uint_cell_getter_order_2147483648_0_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483648_0_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_2147483648_0_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483648_0_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_2147483648_0_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483648_0_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_2147483648_0_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 2147483648_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483648_1_String("bad")
+    #[test]
+    fn uint_cell_getter_order_2147483648_1_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483648_1_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_2147483648_1_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483648_1_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_2147483648_1_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_2147483648_1_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_2147483648_1_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(2147483648_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_LT_4294967295
+    #[test]
+    fn uint_cell_uint_guard_class_lt_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 0;
+        atoms[1].index = 1;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Less)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_CLASS_GT_4294967295
+    #[test]
+    fn uint_cell_uint_guard_class_gt_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].index = 1;
+        atoms[1].index = 0;
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Ok(Ordering::Greater)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_FLAG_FALSE_4294967295
+    #[test]
+    fn uint_cell_uint_guard_flag_false_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(false)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_LEFT_FIRST_4294967295
+    #[test]
+    fn uint_cell_uint_guard_left_first_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_RIGHT_AFTER_LEFT_4294967295
+    #[test]
+    fn uint_cell_uint_guard_right_after_left_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::Int(2147483647))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(1, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MISSING_LEFT_4294967295
+    #[test]
+    fn uint_cell_uint_guard_missing_left_4294967295() {
+        let source = [
+            atom(0, None),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(1, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_NONE_4294967295
+    #[test]
+    fn uint_cell_uint_guard_mask_none_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = false;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Ok(Ordering::Equal)
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_ONE_4294967295
+    #[test]
+    fn uint_cell_uint_guard_mask_one_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        atoms[0].is_in_play = false;
+        atoms[1].is_in_play = true;
+        assert_eq!(
+            compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, CanonCompareMode::Atom, flags(true)),
+            Err(overflow(0, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_SPECIAL_MODES_4294967295
+    #[test]
+    fn uint_cell_uint_guard_special_modes_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        for mode in [
+            CanonCompareMode::SpecialChirality,
+            CanonCompareMode::SpecialSymmetry,
+        ] {
+            assert_eq!(
+                compare_canon_atoms_for_kekulize(&mut atoms, 0, 1, mode, flags(true)),
+                Ok(Ordering::Equal)
+            );
+        }
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_ONE_4294967295
+    #[test]
+    fn uint_cell_uint_guard_hanoi_one_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0],
+                &mut [0; 1],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [1, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_UNCHANGED_4294967295
+    #[test]
+    fn uint_cell_uint_guard_hanoi_unchanged_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[false, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Ok(false)
+        );
+        assert_eq!(counts, [2, 0]);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_CHANGED_4294967295
+    #[test]
+    fn uint_cell_uint_guard_hanoi_changed_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 2];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [0, 1],
+                &mut [0; 2],
+                &mut counts,
+                &[true, false],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(overflow(0, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_HANOI_RECURSION_4294967295
+    #[test]
+    fn uint_cell_uint_guard_hanoi_recursion_4294967295() {
+        let source = [
+            atom(0, Some(PropertyValue::String("bad".into()))),
+            atom(1, Some(PropertyValue::Int(1))),
+            atom(2, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(3, Some(PropertyValue::UInt(4294967295_u32))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        for a in &mut atoms {
+            a.index = 0;
+        }
+        let mut counts = [0; 4];
+        assert_eq!(
+            hanoi_order_for_kekulize(
+                &mut [2, 3, 0, 1],
+                &mut [0; 4],
+                &mut counts,
+                &[true; 4],
+                &mut atoms,
+                CanonCompareMode::Atom,
+                flags(true)
+            ),
+            Err(overflow(2, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_SINGLETON_4294967295
+    #[test]
+    fn uint_cell_uint_guard_public_singleton_4294967295() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![atom(0, Some(PropertyValue::UInt(4294967295_u32)))]);
+        let before = g.clone();
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FLAG_FALSE_4294967295
+    #[test]
+    fn uint_cell_uint_guard_public_flag_false_4294967295() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ]);
+        let before = g.clone();
+        p.use_non_stereo_ranks = false;
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![0, 0]));
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PUBLIC_FRAGMENT_4294967295
+    #[test]
+    fn uint_cell_uint_guard_public_fragment_4294967295() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true, true], &[], None, None, &p),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_FRAGMENT_4294967295
+    #[test]
+    fn uint_cell_uint_guard_prepared_fragment_4294967295() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Ok(vec![0, 0])
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_EMPTY_WHOLE_4294967295
+    #[test]
+    fn uint_cell_uint_guard_empty_whole_4294967295() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![]);
+        assert_eq!(rank_mol_atoms_with_params(&g, &p), Ok(vec![]));
+        let populated = graph(vec![atom(0, Some(PropertyValue::UInt(4294967295_u32)))]);
+        assert_eq!(
+            populated.atoms[0].prop("_CanonicalRankingNumber"),
+            Some(&PropertyValue::UInt(4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_MASK_VALIDATION_4294967295
+    #[test]
+    fn uint_cell_uint_guard_mask_validation_4294967295() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ]);
+        let before = g.clone();
+        assert_eq!(
+            rank_fragment_atoms_with_params(&g, &[true], &[], None, None, &p),
+            Err(CanonicalRankError::AtomMaskLength {
+                expected: 2,
+                actual: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: UINT_GUARD_PREPARED_VALIDATION_4294967295
+    #[test]
+    fn uint_cell_uint_guard_prepared_validation_4294967295() {
+        let mut p = CanonicalRankParams::default();
+        p.break_ties = false;
+        p.use_non_stereo_ranks = true;
+        let g = graph(vec![
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::UInt(4294967295_u32))),
+        ]);
+        let before = g.clone();
+        let mut valence = crate::assign_valence(&g, &crate::ValenceParams::default()).unwrap();
+        valence.implicit_hydrogens.pop();
+        assert_eq!(
+            rank_fragment_atoms_with_prepared_state(
+                &g,
+                &valence,
+                None,
+                &[true, true],
+                &[],
+                None,
+                None,
+                &p
+            ),
+            Err(CanonicalRankError::PreparedValenceLength {
+                atom_count: 2,
+                explicit_len: 2,
+                implicit_len: 1
+            })
+        );
+        assert_eq!(g, before);
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_4294967295_0_String("bad")
+    #[test]
+    fn uint_cell_getter_order_4294967295_0_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_4294967295_0_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_4294967295_0_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_4294967295_0_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_4294967295_0_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_4294967295_0_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_4294967295_0_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 0, 1, flags(true)),
+            Err(overflow(0, 4294967295_u32))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_4294967295_1_String("bad")
+    #[test]
+    fn uint_cell_getter_order_4294967295_1_string__bad__() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::String("bad".into()))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::String))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_4294967295_1_Bool(false)
+    #[test]
+    fn uint_cell_getter_order_4294967295_1_bool_false_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::Bool(false))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Bool))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_4294967295_1_Double(1.0)
+    #[test]
+    fn uint_cell_getter_order_4294967295_1_double_1_0_() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::Double(1.0))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::Double))
+        );
+    }
+    // FROZEN UINT CONDITION: GETTER_ORDER_4294967295_1_IntVector([])
+    #[test]
+    fn uint_cell_getter_order_4294967295_1_intvector____() {
+        let source = [
+            atom(0, Some(PropertyValue::UInt(4294967295_u32))),
+            atom(1, Some(PropertyValue::IntVector(vec![]))),
+        ];
+        let mut atoms = source
+            .iter()
+            .map(empty_canon_atom_from_source_atom)
+            .collect::<Vec<_>>();
+        // Frozen input uses the same current class on both sides.
+        for atom in &mut atoms {
+            atom.index = 0;
+        }
+        assert_eq!(
+            compare_canon_atom_base_for_kekulize(&atoms, 1, 0, flags(true)),
+            Err(bad(1, PropertyValueKind::IntVector))
+        );
     }
 }

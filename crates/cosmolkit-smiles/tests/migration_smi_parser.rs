@@ -367,7 +367,7 @@ fn cleanup_debug_and_post_parse_chemistry_flags_keep_their_layer_boundaries() {
     .expect("uncleaned");
     assert_eq!(
         retained.topology.bonds[0].prop("_cxsmilesBondIdx"),
-        Some(&PropertyValue::String("0".to_owned()))
+        Some(&PropertyValue::UInt(0))
     );
 
     let baseline = parse_smiles(

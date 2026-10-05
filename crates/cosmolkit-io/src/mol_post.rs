@@ -47,6 +47,20 @@ impl Default for MolPostParams {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MolPostError {
+    #[error(
+        "atom {atom} property {property} unsigned value {value} causes positive_overflow converting UInt to signed int"
+    )]
+    UnsignedPropertyOverflow {
+        atom: AtomId,
+        property: &'static str,
+        value: u32,
+    },
+    #[error("atom {atom} property {property} has invalid kind {kind:?}")]
+    InvalidPropertyKind {
+        atom: AtomId,
+        property: &'static str,
+        kind: cosmolkit_model::PropertyValueKind,
+    },
     #[error("invalid attachment value on atom {atom}: {value:?}")]
     AttachmentValue { atom: AtomId, value: String },
     #[error("attachment-point expansion failed: {0}")]
@@ -62,14 +76,55 @@ pub enum MolPostError {
 fn parse_int_property(value: &PropertyValue) -> Result<i32, ()> {
     match value {
         PropertyValue::Int(value) => Ok(*value),
+        PropertyValue::UInt(value) => i32::try_from(*value).map_err(|_| ()),
         PropertyValue::String(value) => parse_rdkit_int(value),
-        PropertyValue::Double(_) | PropertyValue::Bool(_) => Err(()),
+        PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => Err(()),
+    }
+}
+
+fn source_int_property_or_zero(
+    atom: &cosmolkit_model::Atom,
+    key: &'static str,
+) -> Result<i32, MolPostError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return v.value.i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+
+    // RDKit❗✔️: if (atom->getPropIfPresent(common_properties::molSubstCount, ival) &&
+    // Vector cast errors are lazy, source-key-specific and cannot become zero.
+    // Other scalar conditions are retained; no allocation or full-map preflight.
+    match atom.prop(key) {
+        Some(PropertyValue::UInt(value)) => {
+            i32::try_from(*value).map_err(|_| MolPostError::UnsignedPropertyOverflow {
+                atom: atom.id(),
+                property: key,
+                value: *value,
+            })
+        }
+        Some(value @ PropertyValue::IntVector(_)) => Err(MolPostError::InvalidPropertyKind {
+            atom: atom.id(),
+            property: key,
+            kind: value.kind(),
+        }),
+        value => Ok(value
+            .and_then(|value| parse_int_property(value).ok())
+            .unwrap_or(0)),
     }
 }
 
 fn property_diagnostic(value: &PropertyValue) -> String {
     match value {
         PropertyValue::String(value) => value.clone(),
+        PropertyValue::UInt(value) => value.to_string(),
         _ => format!("<{:?}>", value.kind()),
     }
 }
@@ -300,10 +355,7 @@ fn process_atom_properties(
     // Complexity review: one atom pass with O(1) predicate construction and
     // one valence calculation per atom matches the source traversal shape.
     for index in 0..topology.atoms.len() {
-        let substitution = topology.atoms[index]
-            .prop("molSubstCount")
-            .and_then(|value| parse_int_property(value).ok())
-            .unwrap_or(0);
+        let substitution = source_int_property_or_zero(&topology.atoms[index], "molSubstCount")?;
         if substitution != 0 {
             let atoms = query_atoms
                 .as_deref_mut()
@@ -341,10 +393,7 @@ fn process_atom_properties(
                 .set_prop("_MolFileAtomQuery", "1")
                 .map_err(|error| MolPostError::Processing(error.to_string()))?;
         }
-        let value = topology.atoms[index]
-            .prop("molTotValence")
-            .and_then(|value| parse_int_property(value).ok())
-            .unwrap_or(0);
+        let value = source_int_property_or_zero(&topology.atoms[index], "molTotValence")?;
         if value != 0 && topology.atoms[index].prop("_ZBO_H").is_none() {
             let explicit =
                 calculate_explicit_valence_for_topology(topology, AtomId::new(index), false, false)
@@ -715,25 +764,26 @@ fn synchronize_query_bond(mut source: QueryBond, carrier: cosmolkit_model::Bond)
     }
 }
 
-fn record_requires_query(record: &MolBlockRecord) -> bool {
+fn record_requires_query(record: &MolBlockRecord) -> Result<bool, MolPostError> {
     match record {
         MolBlockRecord::Concrete { topology, .. } => {
-            topology.atoms.iter().any(|atom| {
-                atom.prop("molSubstCount")
-                    .and_then(|value| parse_int_property(value).ok())
-                    .is_some_and(|value| value != 0)
-            }) || topology.substance_groups.iter().any(|group| {
+            for atom in &topology.atoms {
+                if source_int_property_or_zero(atom, "molSubstCount")? != 0 {
+                    return Ok(true);
+                }
+            }
+            Ok(topology.substance_groups.iter().any(|group| {
                 group.data().is_some_and(|data| {
                     matches!(data.query_type.as_deref(), Some("SMARTSQ" | "SQ"))
                 })
-            })
+            }))
         }
-        MolBlockRecord::Query(_) => false,
+        MolBlockRecord::Query(_) => Ok(false),
     }
 }
 
 fn promote_record_to_query(record: &mut MolBlockRecord) -> Result<(), MolPostError> {
-    if record_requires_query(record) {
+    if record_requires_query(record)? {
         let old = std::mem::replace(
             record,
             MolBlockRecord::Concrete {
@@ -808,12 +858,34 @@ fn process_smarts_groups(record: &mut MolBlockRecord) -> Result<(), MolPostError
 }
 
 fn attachment_values(topology: &TopologyBlock) -> Result<Vec<Option<i32>>, MolPostError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return v.value.i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
+
     topology
         .atoms
         .iter()
         .map(|atom| {
             atom.prop("molAttachPoint")
                 .map(|value| {
+                    if let PropertyValue::UInt(number) = value {
+                        return i32::try_from(*number).map_err(|_| {
+                            MolPostError::UnsignedPropertyOverflow {
+                                atom: atom.id(),
+                                property: "molAttachPoint",
+                                value: *number,
+                            }
+                        });
+                    }
                     parse_int_property(value).map_err(|()| MolPostError::AttachmentValue {
                         atom: atom.id(),
                         value: property_diagnostic(value),
@@ -1130,5 +1202,352 @@ pub fn finish_mol_block_record(
             }
             Ok(MolBlockRecord::Query(query_record))
         }
+    }
+}
+
+#[cfg(test)]
+mod uint_post_proposed_tests {
+    use super::*;
+    #[test]
+    fn proposed_uint_signed_post_keys_and_attachment_overflow_category() {
+        for (value, expected) in [
+            (0_u32, Some(0)),
+            (1, Some(1)),
+            (2147483646, Some(2147483646)),
+            (2147483647, Some(2147483647)),
+            (2147483648, None),
+            (4294967295, None),
+        ] {
+            for key in ["molSubstCount", "molTotValence", "molAttachPoint"] {
+                let atom = cosmolkit_model::Atom::from_spec(
+                    AtomId::new(0),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_types::Element::C)
+                        .with_prop(key, PropertyValue::UInt(value))
+                        .unwrap(),
+                );
+                let wanted = expected.ok_or(MolPostError::UnsignedPropertyOverflow {
+                    atom: AtomId::new(0),
+                    property: key,
+                    value,
+                });
+                assert_eq!(source_int_property_or_zero(&atom, key), wanted);
+                if key == "molAttachPoint" {
+                    let graph =
+                        TopologyBlock::try_from_parts(vec![atom], vec![], vec![], vec![]).unwrap();
+                    assert_eq!(
+                        attachment_values(&graph),
+                        expected.map(|x| vec![Some(x)]).ok_or(
+                            MolPostError::UnsignedPropertyOverflow {
+                                atom: AtomId::new(0),
+                                property: key,
+                                value
+                            }
+                        )
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec};
+    use cosmolkit_types::Element;
+
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molSubstCount_0
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molsubstcount_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molSubstCount", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(source_int_property_or_zero(&a, "molSubstCount"), Ok(0));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molTotValence_0
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_moltotvalence_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molTotValence", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(source_int_property_or_zero(&a, "molTotValence"), Ok(0));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molAttachPoint_0
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molattachpoint_0() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(0_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(source_int_property_or_zero(&a, "molAttachPoint"), Ok(0));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molSubstCount_1
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molsubstcount_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molSubstCount", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(source_int_property_or_zero(&a, "molSubstCount"), Ok(1));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molTotValence_1
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_moltotvalence_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molTotValence", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(source_int_property_or_zero(&a, "molTotValence"), Ok(1));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molAttachPoint_1
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molattachpoint_1() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(1_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(source_int_property_or_zero(&a, "molAttachPoint"), Ok(1));
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molSubstCount_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molsubstcount_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molSubstCount", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molSubstCount"),
+            Ok(2147483646)
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molTotValence_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_moltotvalence_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molTotValence", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molTotValence"),
+            Ok(2147483646)
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molAttachPoint_2147483646
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molattachpoint_2147483646() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(2147483646_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molAttachPoint"),
+            Ok(2147483646)
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molSubstCount_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molsubstcount_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molSubstCount", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molSubstCount"),
+            Ok(2147483647)
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molTotValence_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_moltotvalence_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molTotValence", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molTotValence"),
+            Ok(2147483647)
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molAttachPoint_2147483647
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molattachpoint_2147483647() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(2147483647_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molAttachPoint"),
+            Ok(2147483647)
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molSubstCount_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molsubstcount_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molSubstCount", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molSubstCount"),
+            Err(MolPostError::UnsignedPropertyOverflow {
+                atom: AtomId::new(0),
+                property: "molSubstCount",
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molTotValence_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_moltotvalence_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molTotValence", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molTotValence"),
+            Err(MolPostError::UnsignedPropertyOverflow {
+                atom: AtomId::new(0),
+                property: "molTotValence",
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molAttachPoint_2147483648
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molattachpoint_2147483648() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(2147483648_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molAttachPoint"),
+            Err(MolPostError::UnsignedPropertyOverflow {
+                atom: AtomId::new(0),
+                property: "molAttachPoint",
+                value: 2147483648_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molSubstCount_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molsubstcount_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molSubstCount", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molSubstCount"),
+            Err(MolPostError::UnsignedPropertyOverflow {
+                atom: AtomId::new(0),
+                property: "molSubstCount",
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molTotValence_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_moltotvalence_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molTotValence", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molTotValence"),
+            Err(MolPostError::UnsignedPropertyOverflow {
+                atom: AtomId::new(0),
+                property: "molTotValence",
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(a, before);
+    }
+    // FROZEN UINT CONDITION: SIGNED_CONSUMER_io/mol_post_molAttachPoint_4294967295
+    #[test]
+    fn uint_cell_signed_consumer_io_mol_post_molattachpoint_4294967295() {
+        let a = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_prop("molAttachPoint", PropertyValue::UInt(4294967295_u32))
+                .unwrap(),
+        );
+        let before = a.clone();
+        assert_eq!(
+            source_int_property_or_zero(&a, "molAttachPoint"),
+            Err(MolPostError::UnsignedPropertyOverflow {
+                atom: AtomId::new(0),
+                property: "molAttachPoint",
+                value: 4294967295_u32
+            })
+        );
+        assert_eq!(a, before);
     }
 }

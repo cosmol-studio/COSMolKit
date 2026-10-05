@@ -59,6 +59,12 @@ impl std::ops::BitOrAssign for QueryBoolFeatures {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmartsWriteError {
+    #[error("bond {bond} property {property} has invalid kind {kind:?}")]
+    InvalidPropertyKind {
+        bond: BondId,
+        property: &'static str,
+        kind: cosmolkit_model::PropertyValueKind,
+    },
     #[error("SMARTS property string conversion failed: {0}")]
     Property(#[from] cosmolkit_core::PropertyStringError),
     #[error("query graph is invalid: {0}")]
@@ -748,7 +754,19 @@ fn write_query_cx_bond_config(
     atom_order: &[AtomId],
     bond_order: &[BondId],
     coordinates_included: bool,
-) -> String {
+) -> Result<String, SmartsWriteError> {
+    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return v.value.u;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
     // RDKit✔️✔️: if (!canHaveDirection(*bond)) {
     // RDKit✔️✔️:   continue;
     // RDKit✔️✔️: }
@@ -775,9 +793,24 @@ fn write_query_cx_bond_config(
             _ => BondDirection::None,
         };
         if direction == BondDirection::None {
+            // Read only under source order/direction guards; no preflight.
+            if let Some(value @ cosmolkit_model::PropertyValue::IntVector(_)) =
+                bond.prop("_MolFileBondCfg")
+            {
+                return Err(SmartsWriteError::InvalidPropertyKind {
+                    bond: bond.id(),
+                    property: "_MolFileBondCfg",
+                    kind: value.kind(),
+                });
+            }
             direction = match bond.prop("_MolFileBondCfg").and_then(|value| match value {
-                cosmolkit_model::PropertyValue::Int(value) => u8::try_from(*value).ok(),
-                cosmolkit_model::PropertyValue::String(value) => value.parse::<u8>().ok(),
+                cosmolkit_model::PropertyValue::Int(value) => {
+                    u8::try_from(*value).ok().map(u32::from)
+                }
+                cosmolkit_model::PropertyValue::UInt(value) => Some(*value),
+                cosmolkit_model::PropertyValue::String(value) => {
+                    value.parse::<u8>().ok().map(u32::from)
+                }
                 _ => None,
             }) {
                 Some(1) => BondDirection::BeginWedge,
@@ -800,11 +833,11 @@ fn write_query_cx_bond_config(
             .or_default()
             .push(format!("{begin}.{bond_position}"));
     }
-    parts
+    Ok(parts
         .into_iter()
         .map(|(kind, entries)| format!("{kind}:{}", entries.join(",")))
         .collect::<Vec<_>>()
-        .join(",")
+        .join(","))
 }
 
 fn write_query_cx_typed_bonds(
@@ -1419,7 +1452,7 @@ fn write_query_cx_extensions(
         &mut result,
     );
     append_query_cx_extension(
-        write_query_cx_bond_config(query, atom_order, bond_order, coordinates.is_some()),
+        write_query_cx_bond_config(query, atom_order, bond_order, coordinates.is_some())?,
         &mut result,
     );
     append_query_cx_extension(
@@ -2957,4 +2990,275 @@ pub fn bond_to_smarts(graph: &QueryGraph, bond_id: BondId) -> Result<String, Sma
                 bond: bond_id.index(),
             })?;
     query_bond_to_smarts(bond, &SmartsWriteParams::default(), None)
+}
+
+#[cfg(test)]
+mod uint_complete_source_condition_cells {
+    use super::*;
+    fn query_graph(props: Vec<cosmolkit_model::PropertyValue>) -> cosmolkit_model::QueryGraph {
+        let atoms = (0..props.len() + 1)
+            .map(|i| {
+                cosmolkit_model::QueryAtom::new(
+                    cosmolkit_model::AtomId::new(i),
+                    cosmolkit_model::AtomSpec::new(cosmolkit_types::Element::C),
+                )
+            })
+            .collect();
+        let bonds = props
+            .into_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                cosmolkit_model::QueryBond::new(
+                    cosmolkit_model::BondId::new(i),
+                    cosmolkit_model::BondSpec::new(
+                        cosmolkit_model::AtomId::new(i),
+                        cosmolkit_model::AtomId::new(i + 1),
+                        cosmolkit_types::BondOrder::Single,
+                    )
+                    .with_prop("_cxsmilesBondIdx", v)
+                    .unwrap(),
+                )
+            })
+            .collect();
+        cosmolkit_model::QueryGraph::from_parts(
+            atoms,
+            bonds,
+            Default::default(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_0
+    #[test]
+    fn uint_cell_unsigned_cfg_0_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(0_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_1
+    #[test]
+    fn uint_cell_unsigned_cfg_1_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(1_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("wU:0.0".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_2
+    #[test]
+    fn uint_cell_unsigned_cfg_2_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(2_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("w:0.0".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_3
+    #[test]
+    fn uint_cell_unsigned_cfg_3_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(3_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("wD:0.0".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_4
+    #[test]
+    fn uint_cell_unsigned_cfg_4_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(4_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_255
+    #[test]
+    fn uint_cell_unsigned_cfg_255_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(255_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_256
+    #[test]
+    fn uint_cell_unsigned_cfg_256_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(256_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_2147483647
+    #[test]
+    fn uint_cell_unsigned_cfg_2147483647_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(2147483647_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_2147483648
+    #[test]
+    fn uint_cell_unsigned_cfg_2147483648_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(2147483648_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("".into())
+        );
+        assert_eq!(q, before);
+    }
+    // FROZEN UINT CONDITION: UNSIGNED_CFG_4294967295
+    #[test]
+    fn uint_cell_unsigned_cfg_4294967295_smarts_write() {
+        let mut q = query_graph(vec![cosmolkit_model::PropertyValue::UInt(0)]);
+        q.bonds_mut()[0]
+            .bond_mut()
+            .set_prop(
+                "_MolFileBondCfg",
+                cosmolkit_model::PropertyValue::UInt(4294967295_u32),
+            )
+            .unwrap();
+        let before = q.clone();
+        assert_eq!(
+            write_query_cx_bond_config(
+                &q,
+                &[AtomId::new(0), AtomId::new(1)],
+                &[BondId::new(0)],
+                true
+            ),
+            Ok("".into())
+        );
+        assert_eq!(q, before);
+    }
 }
