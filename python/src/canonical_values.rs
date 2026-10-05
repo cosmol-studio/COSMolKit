@@ -14,6 +14,7 @@ pyo3::create_exception!(cosmolkit, FingerprintPreparationError, PyValueError);
 pyo3::create_exception!(cosmolkit, AtomPairReadError, PyValueError);
 pyo3::create_exception!(cosmolkit, TopologicalTorsionReadError, PyValueError);
 pyo3::create_exception!(cosmolkit, FingerprintError, PyValueError);
+pyo3::create_exception!(cosmolkit, FingerprintJsonError, PyValueError);
 
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
     if let Some(preparation) = source.downcast_ref::<ck::FingerprintPreparationError>() {
@@ -78,6 +79,21 @@ pub(crate) fn smiles_write_pyerr(py: Python<'_>, source: ck::SmilesWriteError) -
         py,
         SmilesWriteError::new_err(source.to_string()),
         "smiles",
+        kind,
+        &source,
+    )
+}
+
+pub(crate) fn fingerprint_json_pyerr(py: Python<'_>, source: ck::FingerprintJsonError) -> PyErr {
+    let kind = match &source {
+        ck::FingerprintJsonError::Parse(_) => "Parse",
+        ck::FingerprintJsonError::Invalid(_) => "Invalid",
+        ck::FingerprintJsonError::UnsupportedComponent { .. } => "UnsupportedComponent",
+    };
+    annotate(
+        py,
+        FingerprintJsonError::new_err(source.to_string()),
+        "fingerprints",
         kind,
         &source,
     )
@@ -568,6 +584,10 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add(
         "TopologicalTorsionReadError",
         module.py().get_type::<TopologicalTorsionReadError>(),
+    )?;
+    module.add(
+        "FingerprintJsonError",
+        module.py().get_type::<FingerprintJsonError>(),
     )?;
     module.add("MorganReadError", module.py().get_type::<MorganReadError>())?;
     module.add(

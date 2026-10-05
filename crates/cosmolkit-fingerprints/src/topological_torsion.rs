@@ -5,8 +5,8 @@ use crate::generator::{
     project_sparse_fingerprint, with_fingerprint_environment_inputs_and_output,
 };
 use crate::metadata::{
-    FingerprintJsonError, common_arguments_from_json, common_arguments_json,
-    common_arguments_string, json_value_as_bool, json_value_as_u32, parse_object,
+    FingerprintJsonError, bool_or, common_arguments_from_json, common_arguments_json,
+    common_arguments_string, parse_object, u32_or,
 };
 use crate::{
     AtomPairAtomInvariantsGenerator, AtomPairError, AtomPairPreparedInput, Fingerprint,
@@ -196,7 +196,10 @@ impl TopologicalTorsionParams {
             self.include_chirality,
         )
     }
-    fn from_json_value(&mut self, value: &Value) -> Result<(), FingerprintJsonError> {
+    pub(crate) fn from_json_value(
+        &mut self,
+        value: &crate::metadata::SourceNode,
+    ) -> Result<(), FingerprintJsonError> {
         // RDKit source: TopologicalTorsionGenerator.cpp lines 59-65
         // RDKit❗✔️: void TopologicalTorsionArguments::fromJSON(
         // RDKit❗✔️:     const boost::property_tree::ptree &pt) {
@@ -205,15 +208,8 @@ impl TopologicalTorsionParams {
         // RDKit❗✔️:       pt.get<bool>("onlyShortestPaths", df_onlyShortestPaths);
         // RDKit❗✔️:   FingerprintArguments::fromJSON(pt);
         // RDKit❗✔️: }
-        let object = value
-            .as_object()
-            .ok_or_else(|| FingerprintJsonError::Invalid("expected JSON object".to_string()))?;
-        if let Some(field) = object.get("torsionAtomCount") {
-            self.torsion_atom_count = json_value_as_u32("torsionAtomCount", field)?;
-        }
-        if let Some(field) = object.get("onlyShortestPaths") {
-            self.only_shortest_paths = json_value_as_bool("onlyShortestPaths", field)?;
-        }
+        self.torsion_atom_count = u32_or(value, "torsionAtomCount", self.torsion_atom_count);
+        self.only_shortest_paths = bool_or(value, "onlyShortestPaths", self.only_shortest_paths);
         common_arguments_from_json(
             value,
             &mut self.count_simulation,
@@ -1479,22 +1475,27 @@ mod argument_tests {
             arguments.from_json("{"),
             Err(FingerprintJsonError::Parse(_))
         ));
-        assert!(matches!(
-            arguments.from_json("[]"),
-            Err(FingerprintJsonError::Invalid(_))
-        ));
-        assert!(matches!(
-            arguments.from_json(r#"{"torsionAtomCount":-1}"#),
-            Err(FingerprintJsonError::Invalid(_))
-        ));
-        assert!(matches!(
-            arguments.from_json(r#"{"onlyShortestPaths":"unknown"}"#),
-            Err(FingerprintJsonError::Invalid(_))
-        ));
-        assert!(matches!(
-            arguments.from_json(r#"{"countBounds":{}}"#),
-            Err(FingerprintJsonError::Invalid(_))
-        ));
+        arguments.from_json("[]").unwrap();
+        assert_eq!(arguments.torsion_atom_count, 4);
+        assert!(arguments.count_bounds.is_empty());
+        arguments.from_json(r#"{"torsionAtomCount":-1}"#).unwrap();
+        assert_eq!(arguments.torsion_atom_count, u32::MAX);
+        arguments
+            .from_json(r#"{"onlyShortestPaths":"unknown"}"#)
+            .unwrap();
+        assert!(!arguments.only_shortest_paths);
+        arguments.from_json(r#"{"countBounds":{}}"#).unwrap();
+        assert!(arguments.count_bounds.is_empty());
+        for json in [
+            r#"{"countBounds":[{}]}"#,
+            r#"{"countBounds":["invalid"]}"#,
+            r#"{"countBounds":[4294967296]}"#,
+        ] {
+            assert!(matches!(
+                arguments.from_json(json),
+                Err(FingerprintJsonError::Invalid(_))
+            ));
+        }
     }
 
     #[test]

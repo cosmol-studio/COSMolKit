@@ -5241,14 +5241,17 @@ impl<'a> SmartsParser<'a> {
                 let open_atom_idx = open.atom_idx;
                 let close_atom_idx = close.atom_idx;
                 if open_atom_idx == close_atom_idx {
-                    return Err(SmartsParseError::Parse(format!(
-                        "duplicated ring closure {number} bonds atom {open_atom_idx} to itself"
-                    )));
+                    return Err(SmartsParseError::SelfRingClosure {
+                        ring: number,
+                        atom: open_atom_idx,
+                    });
                 }
                 if graph.has_bond_between(open_atom_idx, close_atom_idx) {
-                    return Err(SmartsParseError::Parse(format!(
-                        "ring closure {number} duplicates bond between atom {open_atom_idx} and atom {close_atom_idx}"
-                    )));
+                    return Err(SmartsParseError::DuplicateRingBond {
+                        ring: number,
+                        begin_atom: open_atom_idx,
+                        end_atom: close_atom_idx,
+                    });
                 }
 
                 // RDKit✔️✔️: if (bond2->hasProp("_cxsmilesBondIdx")) {

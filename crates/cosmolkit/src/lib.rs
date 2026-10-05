@@ -19,8 +19,8 @@ mod forcefields;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{
     AtomPairAtomInvariantsGenerator, AtomPairParams, Fingerprint, FingerprintAdditionalOutput,
-    FingerprintError, MorganParams, SparseBitFingerprint, SparseCountFingerprint,
-    SparseCountFingerprint32, TopologicalTorsionParams,
+    FingerprintError, FingerprintJsonError, MorganParams, SparseBitFingerprint,
+    SparseCountFingerprint, SparseCountFingerprint32, TopologicalTorsionParams,
 };
 #[cfg(feature = "cap-forcefields")]
 pub use forcefields::{
@@ -59,6 +59,13 @@ mod molecule;
 mod molecule_builder;
 #[cfg(feature = "cap-fingerprints")]
 mod morgan;
+#[cfg(feature = "cap-fingerprints")]
+mod morgan_reusable;
+#[cfg(feature = "cap-fingerprints")]
+pub use morgan_reusable::{
+    MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator, MorganCallParams,
+    MorganFingerprintGenerator, MorganSettings,
+};
 #[doc(hidden)]
 pub mod ops;
 #[cfg(feature = "cap-io")]

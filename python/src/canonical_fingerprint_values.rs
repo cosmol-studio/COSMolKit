@@ -88,6 +88,18 @@ impl MorganParams {
     fn bits_per_feature(&self) -> u32 {
         self.inner.bits_per_feature
     }
+    fn info_string(&self) -> String {
+        self.inner.info_string()
+    }
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+    fn with_json(&self, py: Python<'_>, json: &str) -> PyResult<Self> {
+        self.inner
+            .with_json(json)
+            .map(|inner| Self { inner })
+            .map_err(|error| crate::canonical_values::fingerprint_json_pyerr(py, error))
+    }
 }
 
 /// Detached invariant selection, interpreted by the canonical Rust owner.
@@ -323,6 +335,18 @@ impl AtomPairParams {
     fn count_bounds(&self) -> Vec<u32> {
         self.inner.count_bounds.clone()
     }
+    fn info_string(&self) -> String {
+        self.inner.info_string()
+    }
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+    fn with_json(&self, py: Python<'_>, json: &str) -> PyResult<Self> {
+        self.inner
+            .with_json(json)
+            .map(|inner| Self { inner })
+            .map_err(|error| crate::canonical_values::fingerprint_json_pyerr(py, error))
+    }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
@@ -495,6 +519,18 @@ impl TopologicalTorsionParams {
     fn count_bounds(&self) -> Vec<u32> {
         self.inner.count_bounds.clone()
     }
+    fn info_string(&self) -> String {
+        self.inner.info_string()
+    }
+    fn to_json(&self) -> String {
+        self.inner.to_json()
+    }
+    fn with_json(&self, py: Python<'_>, json: &str) -> PyResult<Self> {
+        self.inner
+            .with_json(json)
+            .map(|inner| Self { inner })
+            .map_err(|error| crate::canonical_values::fingerprint_json_pyerr(py, error))
+    }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
@@ -585,6 +621,11 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<AtomPairFingerprintParams>()?;
     module.add_class::<AtomPairAtomInvariantsGenerator>()?;
     module.add_class::<MorganParams>()?;
+    module.add_class::<MorganAtomInvariantsGenerator>()?;
+    module.add_class::<MorganBondInvariantsGenerator>()?;
+    module.add_class::<MorganFingerprintGenerator>()?;
+    module.add_class::<MorganSettings>()?;
+    module.add_class::<MorganCallParams>()?;
     module.add_class::<MorganInvariants>()?;
     module.add_class::<MorganFingerprintParams>()?;
     module.add_class::<FingerprintAdditionalOutput>()?;
@@ -1051,5 +1092,415 @@ impl AtomCodeExplanation {
     #[getter]
     fn chirality(&self) -> Option<&'static str> {
         self.inner.chirality()
+    }
+}
+
+// Registered persistent Morgan projections. All computation delegates to ck.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct MorganAtomInvariantsGenerator {
+    pub(crate) inner: ck::MorganAtomInvariantsGenerator,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MorganAtomInvariantsGenerator {
+    #[staticmethod]
+    #[pyo3(signature=(include_ring_membership=true))]
+    fn connectivity(include_ring_membership: bool) -> Self {
+        Self {
+            inner: ck::MorganAtomInvariantsGenerator::connectivity(include_ring_membership),
+        }
+    }
+    #[staticmethod]
+    #[pyo3(signature=(patterns=None))]
+    fn features(
+        py: Python<'_>,
+        patterns: Option<Vec<Py<crate::canonical_search::QueryGraph>>>,
+    ) -> PyResult<Self> {
+        let patterns = patterns
+            .map(|patterns| {
+                patterns
+                    .iter()
+                    .map(|query| {
+                        query
+                            .try_borrow(py)
+                            .map(|q| q.inner.clone())
+                            .map_err(PyErr::from)
+                    })
+                    .collect::<PyResult<Vec<_>>>()
+            })
+            .transpose()?;
+        Ok(Self {
+            inner: ck::MorganAtomInvariantsGenerator::features(patterns),
+        })
+    }
+    #[staticmethod]
+    fn atom_pair(generator: &AtomPairAtomInvariantsGenerator) -> Self {
+        Self {
+            inner: ck::MorganAtomInvariantsGenerator::atom_pair(generator.inner),
+        }
+    }
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct MorganBondInvariantsGenerator {
+    pub(crate) inner: ck::MorganBondInvariantsGenerator,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MorganBondInvariantsGenerator {
+    #[new]
+    #[pyo3(signature=(*,use_bond_types=true,include_chirality=false))]
+    fn new(use_bond_types: bool, include_chirality: bool) -> Self {
+        Self {
+            inner: ck::MorganBondInvariantsGenerator::new(use_bond_types, include_chirality),
+        }
+    }
+    #[getter]
+    fn use_bond_types(&self) -> bool {
+        self.inner.use_bond_types()
+    }
+    #[getter]
+    fn include_chirality(&self) -> bool {
+        self.inner.include_chirality()
+    }
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct MorganCallParams {
+    pub(crate) inner: ck::MorganCallParams,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MorganCallParams {
+    #[new]
+    #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=-1))]
+    fn new(
+        from_atoms: Option<Vec<u32>>,
+        ignore_atoms: Option<Vec<u32>>,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        conformer_id: i32,
+    ) -> Self {
+        Self {
+            inner: ck::MorganCallParams::new(
+                from_atoms,
+                ignore_atoms,
+                custom_atom_invariants,
+                custom_bond_invariants,
+                conformer_id,
+            ),
+        }
+    }
+    #[getter]
+    fn from_atoms(&self) -> Option<Vec<u32>> {
+        self.inner.from_atoms.clone()
+    }
+    #[getter]
+    fn ignore_atoms(&self) -> Option<Vec<u32>> {
+        self.inner.ignore_atoms.clone()
+    }
+    #[getter]
+    fn custom_atom_invariants(&self) -> Option<Vec<u32>> {
+        self.inner.custom_atom_invariants.clone()
+    }
+    #[getter]
+    fn custom_bond_invariants(&self) -> Option<Vec<u32>> {
+        self.inner.custom_bond_invariants.clone()
+    }
+    #[getter]
+    fn conformer_id(&self) -> i32 {
+        self.inner.conformer_id
+    }
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct MorganFingerprintGenerator {
+    pub(crate) inner: ck::MorganFingerprintGenerator,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MorganFingerprintGenerator {
+    #[new]
+    #[pyo3(signature=(*,params=None,atom_invariants=None,bond_invariants=None))]
+    fn new(
+        py: Python<'_>,
+        params: Option<&MorganParams>,
+        atom_invariants: Option<&MorganAtomInvariantsGenerator>,
+        bond_invariants: Option<&MorganBondInvariantsGenerator>,
+    ) -> PyResult<Self> {
+        ck::MorganFingerprintGenerator::new(
+            params.map(|p| &p.inner),
+            atom_invariants.map(|p| &p.inner),
+            bond_invariants.map(|p| &p.inner),
+        )
+        .map(|inner| Self { inner })
+        .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn from_json(py: Python<'_>, json: &str) -> PyResult<Self> {
+        ck::MorganFingerprintGenerator::from_json(json)
+            .map(|inner| Self { inner })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    fn settings(&self) -> MorganSettings {
+        MorganSettings {
+            inner: self.inner.settings(),
+        }
+    }
+    fn info_string(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .info_string()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    fn to_json(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_json()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        Ok(format!(
+            "MorganFingerprintGenerator({})",
+            self.info_string(py)?
+        ))
+    }
+    #[pyo3(signature=(molecules,*,num_threads=1))]
+    fn fingerprints(
+        &self,
+        py: Python<'_>,
+        molecules: Vec<Option<Py<crate::drawing_binding::Molecule>>>,
+        num_threads: i32,
+    ) -> PyResult<Vec<Option<crate::canonical_values::Fingerprint>>> {
+        let borrowed = molecules
+            .iter()
+            .map(|m| m.as_ref().map(|m| m.try_borrow(py)).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = borrowed
+            .iter()
+            .map(|m| m.as_ref().map(|m| &m.inner))
+            .collect::<Vec<_>>();
+        // RDKit❗✔️:   {
+        // RDKit❗✔️:     NOGIL gil;
+        // RDKit❗✔️:     fps = std::move(func(tmols, numThreads));
+        // RDKit❗✔️:   }
+        // Borrow guards live until all source workers join; detach invokes only
+        // Rust facade types and keeps every None slot in its original position.
+        py.detach(|| self.inner.fingerprints(&rows, num_threads))
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| crate::canonical_values::Fingerprint { inner }))
+                    .collect()
+            })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[pyo3(signature=(molecules,*,num_threads=1))]
+    fn counts(
+        &self,
+        py: Python<'_>,
+        molecules: Vec<Option<Py<crate::drawing_binding::Molecule>>>,
+        num_threads: i32,
+    ) -> PyResult<Vec<Option<crate::canonical_values::SparseCountFingerprint32>>> {
+        let borrowed = molecules
+            .iter()
+            .map(|m| m.as_ref().map(|m| m.try_borrow(py)).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = borrowed
+            .iter()
+            .map(|m| m.as_ref().map(|m| &m.inner))
+            .collect::<Vec<_>>();
+        // RDKit❗✔️:   {
+        // RDKit❗✔️:     NOGIL gil;
+        // RDKit❗✔️:     fps = std::move(func(tmols, numThreads));
+        // RDKit❗✔️:   }
+        // Borrow guards live until all source workers join; detach invokes only
+        // Rust facade types and keeps every None slot in its original position.
+        py.detach(|| self.inner.counts(&rows, num_threads))
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| {
+                        value.map(|inner| crate::canonical_values::SparseCountFingerprint32 {
+                            inner,
+                        })
+                    })
+                    .collect()
+            })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[pyo3(signature=(molecules,*,num_threads=1))]
+    fn sparse_fingerprints(
+        &self,
+        py: Python<'_>,
+        molecules: Vec<Option<Py<crate::drawing_binding::Molecule>>>,
+        num_threads: i32,
+    ) -> PyResult<Vec<Option<crate::canonical_values::SparseBitFingerprint>>> {
+        let borrowed = molecules
+            .iter()
+            .map(|m| m.as_ref().map(|m| m.try_borrow(py)).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = borrowed
+            .iter()
+            .map(|m| m.as_ref().map(|m| &m.inner))
+            .collect::<Vec<_>>();
+        // RDKit❗✔️:   {
+        // RDKit❗✔️:     NOGIL gil;
+        // RDKit❗✔️:     fps = std::move(func(tmols, numThreads));
+        // RDKit❗✔️:   }
+        // Borrow guards live until all source workers join; detach invokes only
+        // Rust facade types and keeps every None slot in its original position.
+        py.detach(|| self.inner.sparse_fingerprints(&rows, num_threads))
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| {
+                        value.map(|inner| crate::canonical_values::SparseBitFingerprint { inner })
+                    })
+                    .collect()
+            })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[pyo3(signature=(molecules,*,num_threads=1))]
+    fn sparse_counts(
+        &self,
+        py: Python<'_>,
+        molecules: Vec<Option<Py<crate::drawing_binding::Molecule>>>,
+        num_threads: i32,
+    ) -> PyResult<Vec<Option<crate::canonical_values::SparseCountFingerprint>>> {
+        let borrowed = molecules
+            .iter()
+            .map(|m| m.as_ref().map(|m| m.try_borrow(py)).transpose())
+            .collect::<Result<Vec<_>, _>>()?;
+        let rows = borrowed
+            .iter()
+            .map(|m| m.as_ref().map(|m| &m.inner))
+            .collect::<Vec<_>>();
+        // RDKit❗✔️:   {
+        // RDKit❗✔️:     NOGIL gil;
+        // RDKit❗✔️:     fps = std::move(func(tmols, numThreads));
+        // RDKit❗✔️:   }
+        // Borrow guards live until all source workers join; detach invokes only
+        // Rust facade types and keeps every None slot in its original position.
+        py.detach(|| self.inner.sparse_counts(&rows, num_threads))
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| {
+                        value.map(|inner| crate::canonical_values::SparseCountFingerprint { inner })
+                    })
+                    .collect()
+            })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit")]
+pub(crate) struct MorganSettings {
+    inner: ck::MorganSettings,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl MorganSettings {
+    #[getter]
+    fn radius(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .radius()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[setter]
+    fn set_radius(&mut self, value: u32) -> PyResult<()> {
+        self.inner
+            .set_radius(value)
+            .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
+    }
+    #[getter]
+    fn only_nonzero_invariants(&self, py: Python<'_>) -> PyResult<bool> {
+        self.inner
+            .only_nonzero_invariants()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[setter]
+    fn set_only_nonzero_invariants(&mut self, value: bool) -> PyResult<()> {
+        self.inner
+            .set_only_nonzero_invariants(value)
+            .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
+    }
+    #[getter]
+    fn include_redundant_environments(&self, py: Python<'_>) -> PyResult<bool> {
+        self.inner
+            .include_redundant_environments()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[setter]
+    fn set_include_redundant_environments(&mut self, value: bool) -> PyResult<()> {
+        self.inner
+            .set_include_redundant_environments(value)
+            .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
+    }
+    #[getter]
+    fn include_chirality(&self, py: Python<'_>) -> PyResult<bool> {
+        self.inner
+            .include_chirality()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[setter]
+    fn set_include_chirality(&mut self, value: bool) -> PyResult<()> {
+        self.inner
+            .set_include_chirality(value)
+            .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
+    }
+    #[getter]
+    fn count_simulation(&self, py: Python<'_>) -> PyResult<bool> {
+        self.inner
+            .count_simulation()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[setter]
+    fn set_count_simulation(&mut self, value: bool) -> PyResult<()> {
+        self.inner
+            .set_count_simulation(value)
+            .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
+    }
+    #[getter]
+    fn fp_size(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .fp_size()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[setter]
+    fn set_fp_size(&mut self, value: u32) -> PyResult<()> {
+        self.inner
+            .set_fp_size(value)
+            .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
+    }
+    #[getter]
+    fn bits_per_feature(&self, py: Python<'_>) -> PyResult<u32> {
+        self.inner
+            .bits_per_feature()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[setter]
+    fn set_bits_per_feature(&mut self, value: u32) -> PyResult<()> {
+        self.inner
+            .set_bits_per_feature(value)
+            .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
+    }
+    #[getter]
+    fn count_bounds(&self, py: Python<'_>) -> PyResult<Vec<u32>> {
+        self.inner
+            .count_bounds()
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[setter]
+    fn set_count_bounds(&mut self, value: Vec<u32>) -> PyResult<()> {
+        self.inner
+            .set_count_bounds(value)
+            .map_err(|e| Python::attach(|py| crate::canonical_values::morgan_pyerr(py, e)))
+    }
+    fn params(&self, py: Python<'_>) -> PyResult<MorganParams> {
+        self.inner
+            .params()
+            .map(|inner| MorganParams { inner })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
     }
 }

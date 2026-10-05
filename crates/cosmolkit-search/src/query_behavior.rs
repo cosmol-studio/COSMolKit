@@ -3696,6 +3696,18 @@ pub enum SmartsParseError {
     UnclosedParenthesis(usize),
     #[error("unbalanced ring closure number: {0}")]
     UnbalancedRingClosure(u32),
+    /// The source ring-closing parser rejects a bond from an atom to itself.
+    #[error("SMARTS parse error: duplicated ring closure {ring} bonds atom {atom} to itself")]
+    SelfRingClosure { ring: u32, atom: usize },
+    /// The source ring-closing parser rejects an already existing atom pair.
+    #[error(
+        "SMARTS parse error: ring closure {ring} duplicates bond between atom {begin_atom} and atom {end_atom}"
+    )]
+    DuplicateRingBond {
+        ring: u32,
+        begin_atom: usize,
+        end_atom: usize,
+    },
     #[error("CXSMARTS parse error: {0}")]
     CxSmiles(String),
     #[error("SMARTS parse error: {0}")]

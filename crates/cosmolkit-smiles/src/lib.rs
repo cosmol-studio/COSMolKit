@@ -369,7 +369,10 @@ fn parse_bracket_element(
         let Some(token) = text.get(*cursor..*cursor + width) else {
             continue;
         };
-        let aromatic = matches!(token, "b" | "c" | "n" | "o" | "p" | "s" | "as" | "se");
+        let aromatic = matches!(
+            token,
+            "b" | "c" | "n" | "o" | "p" | "s" | "as" | "se" | "te"
+        );
         let element = match token {
             "b" => Some(Element::B),
             "c" => Some(Element::C),
@@ -379,6 +382,14 @@ fn parse_bracket_element(
             "s" => Some(Element::S),
             "as" => Some(Element::AS),
             "se" => Some(Element::SE),
+            // RDKit✔️✔️: <IN_ATOM_STATE>te   {	yylval->atom = new Atom( 52 );
+            // RDKit✔️✔️: 			yylval->atom->setIsAromatic(true);
+            // RDKit✔️✔️: 				return AROMATIC_ATOM_TOKEN;
+            // RDKit✔️✔️: 			}
+            // Behavior: this token is legal only inside brackets, matching
+            // IN_ATOM_STATE; parse_simple_atom keeps the bare token invalid.
+            // Complexity: one fixed token arm, no allocation or graph scan.
+            "te" => Some(Element::TE),
             _ => Element::from_symbol(token),
         };
         if let Some(element) = element {
@@ -1679,6 +1690,43 @@ mod tests {
             (cx.topology.bonds[4].begin(), cx.topology.bonds[4].end()),
             (AtomId::new(2), AtomId::new(0))
         );
+    }
+
+    #[test]
+    fn bracket_aromatic_tellurium_preserves_source_atom_state() {
+        let record = parse_smiles("c1cc[te]c1", &Default::default()).unwrap();
+        assert_eq!(record.topology.atoms.len(), 5);
+        assert_eq!(record.topology.bonds.len(), 5);
+        let tellurium = &record.topology.atoms[3];
+        assert_eq!(tellurium.element(), Element::TE);
+        assert_eq!(tellurium.atomic_number(), 52);
+        assert!(tellurium.is_aromatic());
+        assert!(tellurium.no_implicit());
+        assert_eq!(tellurium.explicit_hydrogens(), 0);
+        assert!(
+            record
+                .topology
+                .bonds
+                .iter()
+                .all(|bond| bond.order() == BondOrder::Aromatic)
+        );
+
+        let decorated = parse_smiles("[125teH+:7]", &Default::default()).unwrap();
+        let atom = &decorated.topology.atoms[0];
+        assert_eq!(atom.element(), Element::TE);
+        assert!(atom.is_aromatic());
+        assert_eq!(atom.isotope(), Some(125));
+        assert_eq!(atom.explicit_hydrogens(), 1);
+        assert_eq!(atom.formal_charge(), 1);
+        assert_eq!(atom.atom_map(), Some(7));
+        assert!(
+            !parse_smiles("[Te]", &Default::default())
+                .unwrap()
+                .topology
+                .atoms[0]
+                .is_aromatic()
+        );
+        assert!(parse_smiles("c1cctec1", &Default::default()).is_err());
     }
 
     #[test]

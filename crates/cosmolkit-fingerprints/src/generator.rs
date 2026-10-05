@@ -285,7 +285,13 @@ where
         arguments,
         additional_output,
         || atom_invariant_provider(topology, properties, valence, rings, generator),
-        || Ok(generator.bond_invariants.get_bond_invariants(topology)),
+        || {
+            Ok(generator
+                .bond_invariants
+                .as_ref()
+                .map(|owner| owner.get_bond_invariants(topology))
+                .unwrap_or_default())
+        },
         consume_environments,
     )
 }
@@ -406,9 +412,10 @@ fn source_default_atom_invariants(
     rings: &RingInfo,
     generator: &MorganGenerator,
 ) -> Result<Vec<u32>, MorganError> {
-    generator
-        .atom_invariants
-        .get_atom_invariants(topology, valence, rings)
+    match &generator.atom_invariants {
+        Some(owner) => owner.get_atom_invariants(topology, valence, rings),
+        None => Ok(Vec::new()),
+    }
 }
 
 /// Source entry for `FingerprintGenerator::getSparseCountFingerprint`.

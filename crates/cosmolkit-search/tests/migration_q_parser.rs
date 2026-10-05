@@ -456,22 +456,32 @@ fn q15_ring_closures_follow_bookmark_order_priority_and_source_errors() {
     for (smarts, expected) in [
         (
             "C11",
-            SmartsParseError::Parse("duplicated ring closure 1 bonds atom 0 to itself".to_owned()),
+            SmartsParseError::SelfRingClosure { ring: 1, atom: 0 },
         ),
         (
             "C1C1",
-            SmartsParseError::Parse(
-                "ring closure 1 duplicates bond between atom 0 and atom 1".to_owned(),
-            ),
+            SmartsParseError::DuplicateRingBond {
+                ring: 1,
+                begin_atom: 0,
+                end_atom: 1,
+            },
         ),
         ("C1CC", SmartsParseError::Parse("unclosed ring".to_owned())),
     ] {
-        assert_eq!(
-            parse_smarts(smarts, &SmartsParseParams::default())
-                .expect_err("pinned ring closure failure"),
-            expected,
-            "{smarts}"
-        );
+        let actual = parse_smarts(smarts, &SmartsParseParams::default())
+            .expect_err("pinned ring closure failure");
+        assert_eq!(actual, expected, "{smarts}");
+        // Preserve the source diagnostic while representing the two source
+        // syntax branches separately from unrelated structural Parse errors.
+        let diagnostic = match smarts {
+            "C11" => "SMARTS parse error: duplicated ring closure 1 bonds atom 0 to itself",
+            "C1C1" => {
+                "SMARTS parse error: ring closure 1 duplicates bond between atom 0 and atom 1"
+            }
+            "C1CC" => "SMARTS parse error: unclosed ring",
+            _ => unreachable!(),
+        };
+        assert_eq!(actual.to_string(), diagnostic, "{smarts}");
     }
 }
 

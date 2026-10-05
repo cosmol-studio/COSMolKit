@@ -225,6 +225,11 @@ impl std::error::Error for FingerprintError {}
 #[derive(Debug)]
 pub enum MorganError {
     Fingerprint(FingerprintError),
+    Json(FingerprintJsonError),
+    SmartsWrite(cosmolkit_search::SmartsWriteError),
+    AtomPair(Box<AtomPairError>),
+    Worker(FingerprintWorkerError),
+    StatePoisoned,
     Matrix(MatrixError),
     Valence(ValenceError),
     PeriodicTable(PeriodicTableError),
@@ -240,6 +245,11 @@ impl fmt::Display for MorganError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Fingerprint(source) => write!(f, "Morgan fingerprint error: {source}"),
+            Self::Json(source) => source.fmt(f),
+            Self::SmartsWrite(source) => source.fmt(f),
+            Self::AtomPair(source) => source.fmt(f),
+            Self::Worker(source) => source.fmt(f),
+            Self::StatePoisoned => f.write_str("Morgan generator state lock was poisoned"),
             Self::Matrix(source) => write!(f, "Morgan matrix error: {source}"),
             Self::Valence(source) => write!(f, "Morgan valence preparation error: {source}"),
             Self::PeriodicTable(source) => {
@@ -266,6 +276,11 @@ impl fmt::Display for MorganError {
 impl std::error::Error for MorganError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::Json(source) => Some(source),
+            Self::SmartsWrite(source) => Some(source),
+            Self::AtomPair(source) => Some(source.as_ref()),
+            Self::Worker(source) => Some(source),
+            Self::StatePoisoned => None,
             Self::Fingerprint(source) => Some(source),
             Self::Matrix(source) => Some(source),
             Self::Valence(source) => Some(source),
@@ -373,3 +388,29 @@ pub use topological_torsion::topological_torsion_ids;
 mod atom_code_explanation;
 pub use atom_code_explanation::{AtomCodeExplanation, AtomCodeExplanationError};
 pub use molecule_hash::{MoleculeHashError, molecule_hash, molecule_hash_with_ranks};
+
+mod argument_metadata;
+
+mod fingerprint_bulk;
+pub use fingerprint_bulk::FingerprintWorkerError;
+pub use morgan::{MorganAtomProvider, MorganBondProvider, MorganOperator, MorganSettings};
+impl From<FingerprintJsonError> for MorganError {
+    fn from(e: FingerprintJsonError) -> Self {
+        Self::Json(e)
+    }
+}
+impl From<cosmolkit_search::SmartsWriteError> for MorganError {
+    fn from(e: cosmolkit_search::SmartsWriteError) -> Self {
+        Self::SmartsWrite(e)
+    }
+}
+impl From<AtomPairError> for MorganError {
+    fn from(e: AtomPairError) -> Self {
+        Self::AtomPair(Box::new(e))
+    }
+}
+impl From<FingerprintWorkerError> for MorganError {
+    fn from(e: FingerprintWorkerError) -> Self {
+        Self::Worker(e)
+    }
+}

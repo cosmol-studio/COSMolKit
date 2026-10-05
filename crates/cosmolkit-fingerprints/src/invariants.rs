@@ -266,6 +266,9 @@ pub(crate) struct MorganAtomInvGenerator {
 }
 
 impl MorganAtomInvGenerator {
+    pub(crate) fn include_ring_membership(&self) -> bool {
+        self.include_ring_membership
+    }
     pub(crate) const fn new(include_ring_membership: bool) -> Self {
         // BEGIN RDKIT CPP FUNCTION MorganAtomInvGenerator::MorganAtomInvGenerator
         // RDKit❗🔝: MorganAtomInvGenerator::MorganAtomInvGenerator(const bool includeRingMembership)
@@ -339,6 +342,9 @@ pub(crate) struct MorganBondInvGenerator {
 }
 
 impl MorganBondInvGenerator {
+    pub(crate) fn configuration(&self) -> (bool, bool) {
+        (self.use_bond_types, self.include_chirality)
+    }
     pub(crate) const fn new(use_bond_types: bool, include_chirality: bool) -> Self {
         // BEGIN RDKIT CPP FUNCTION MorganBondInvGenerator::MorganBondInvGenerator
         // RDKit❗✔️: MorganBondInvGenerator::MorganBondInvGenerator(const bool useBondTypes,
@@ -458,6 +464,20 @@ pub(crate) struct MorganFeatureAtomInvGenerator {
 }
 
 impl MorganFeatureAtomInvGenerator {
+    pub(crate) fn from_owned_patterns(patterns: Option<Vec<QueryGraph>>) -> Self {
+        // RDKit❗✔️:       ROMol *patternMol = SmartsToMol(smarts);
+        // RDKit❗✔️:       if (patternMol) {
+        // RDKit❗✔️:         dp_patterns->push_back(patternMol);
+        // RDKit❗✔️:       }
+        // JSON owns its newly parsed query values; move them into the source
+        // provider instead of making another deep copy. Input-factory new()
+        // retains its separate source-defined independent query copy.
+        Self { patterns }
+    }
+
+    pub(crate) fn patterns(&self) -> Option<&[QueryGraph]> {
+        self.patterns.as_deref()
+    }
     pub(crate) fn new(patterns: Option<&[QueryGraph]>) -> Self {
         // BEGIN RDKIT CPP FUNCTION MorganFeatureAtomInvGenerator constructor
         // RDKit❗✔️: MorganFeatureAtomInvGenerator::MorganFeatureAtomInvGenerator(
@@ -849,13 +869,14 @@ mod tests {
                         fp_size: 2048,
                         bits_per_feature: 1,
                     },
-                    atom_invariants: MorganAtomInvGenerator {
+                    atom_invariants: Some(MorganAtomInvGenerator {
                         include_ring_membership,
-                    },
-                    bond_invariants: MorganBondInvGenerator {
+                    }),
+                    atom_provider_present: true,
+                    bond_invariants: Some(MorganBondInvGenerator {
                         use_bond_types,
                         include_chirality,
-                    },
+                    }),
                 };
                 let options = [
                     count_simulation,

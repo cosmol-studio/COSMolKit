@@ -1491,6 +1491,80 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "AtomCodeExplanation.chirality",
         ]);
     }
+    if cfg!(feature = "cap-fingerprints") {
+        let position = expected
+            .iter()
+            .position(|id| *id == "types.MorganParams")
+            .expect("the existing types.MorganParams fixture is present");
+        expected.splice(
+            position..position,
+            [
+                "types.FingerprintJsonError",
+                "MorganParams.info_string",
+                "MorganParams.to_json",
+                "MorganParams.with_json",
+                "AtomPairParams.info_string",
+                "AtomPairParams.to_json",
+                "AtomPairParams.with_json",
+                "TopologicalTorsionParams.info_string",
+                "TopologicalTorsionParams.to_json",
+                "TopologicalTorsionParams.with_json",
+            ],
+        );
+    }
+    if cfg!(feature = "cap-fingerprints") {
+        let position = expected
+            .iter()
+            .position(|id| *id == "types.FingerprintPreparationError")
+            .expect("the existing fingerprint preparation error fixture is present");
+        expected.splice(
+            position..position,
+            [
+                "types.MorganAtomInvariantsGenerator",
+                "types.MorganBondInvariantsGenerator",
+                "types.MorganFingerprintGenerator",
+                "types.MorganSettings",
+                "types.MorganCallParams",
+                "MorganAtomInvariantsGenerator.connectivity",
+                "MorganAtomInvariantsGenerator.features",
+                "MorganAtomInvariantsGenerator.atom_pair",
+                "MorganBondInvariantsGenerator.new",
+                "MorganBondInvariantsGenerator.use_bond_types",
+                "MorganBondInvariantsGenerator.include_chirality",
+                "MorganCallParams.new",
+                "MorganFingerprintGenerator.new",
+                "MorganFingerprintGenerator.from_json",
+                "MorganFingerprintGenerator.settings",
+                "MorganFingerprintGenerator.info_string",
+                "MorganFingerprintGenerator.to_json",
+                "MorganFingerprintGenerator.fingerprints",
+                "Molecule.morgan_fingerprint_with_generator",
+                "MorganFingerprintGenerator.counts",
+                "Molecule.morgan_count_fingerprint_with_generator",
+                "MorganFingerprintGenerator.sparse_fingerprints",
+                "Molecule.morgan_sparse_fingerprint_with_generator",
+                "MorganFingerprintGenerator.sparse_counts",
+                "Molecule.morgan_sparse_count_fingerprint_with_generator",
+                "MorganSettings.radius",
+                "MorganSettings.set_radius",
+                "MorganSettings.only_nonzero_invariants",
+                "MorganSettings.set_only_nonzero_invariants",
+                "MorganSettings.include_redundant_environments",
+                "MorganSettings.set_include_redundant_environments",
+                "MorganSettings.include_chirality",
+                "MorganSettings.set_include_chirality",
+                "MorganSettings.count_simulation",
+                "MorganSettings.set_count_simulation",
+                "MorganSettings.fp_size",
+                "MorganSettings.set_fp_size",
+                "MorganSettings.bits_per_feature",
+                "MorganSettings.set_bits_per_feature",
+                "MorganSettings.count_bounds",
+                "MorganSettings.set_count_bounds",
+                "MorganSettings.params",
+            ],
+        );
+    }
     if cfg!(feature = "cap-serialization") {
         expected.extend([
             "types.PickleError",

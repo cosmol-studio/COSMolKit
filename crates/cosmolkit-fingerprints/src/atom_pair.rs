@@ -173,23 +173,24 @@ impl AtomPairAtomInvariantsGenerator {
         if json.trim().is_empty() {
             return Ok(());
         }
-        let value = crate::metadata::parse_object(json)?;
-        let object = value.as_object().ok_or_else(|| {
-            crate::metadata::FingerprintJsonError::Invalid("expected JSON object".to_string())
-        })?;
+        self.from_json_value(&crate::metadata::parse_object(json)?)
+    }
+    pub(crate) fn from_json_value(
+        &mut self,
+        value: &crate::metadata::SourceNode,
+    ) -> Result<(), crate::metadata::FingerprintJsonError> {
         // RDKit source: AtomPairGenerator.cpp lines 56-61
         // RDKit✔️✔️: void AtomPairAtomInvGenerator::fromJSON(const boost::property_tree::ptree &pt) {
         // RDKit✔️✔️:   df_includeChirality = pt.get<bool>("includeChirality", df_includeChirality);
-        if let Some(field) = object.get("includeChirality") {
-            self.include_chirality =
-                crate::metadata::json_value_as_bool("includeChirality", field)?;
-        }
+        self.include_chirality =
+            crate::metadata::bool_or(&value, "includeChirality", self.include_chirality);
         // RDKit✔️✔️:   df_topologicalTorsionCorrection = pt.get<bool>(
         // RDKit✔️✔️:       "topologicalTorsionCorrection", df_topologicalTorsionCorrection);
-        if let Some(field) = object.get("topologicalTorsionCorrection") {
-            self.topological_torsion_correction =
-                crate::metadata::json_value_as_bool("topologicalTorsionCorrection", field)?;
-        }
+        self.topological_torsion_correction = crate::metadata::bool_or(
+            &value,
+            "topologicalTorsionCorrection",
+            self.topological_torsion_correction,
+        );
         // RDKit✔️✔️:   AtomInvariantsGenerator::fromJSON(pt);
         // RDKit✔️✔️: }
         Ok(())

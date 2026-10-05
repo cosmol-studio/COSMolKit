@@ -155,7 +155,7 @@ class TestMorganParams:
 
     def test_stub(self):
         methods = stub_methods("MorganParams")
-        assert set(methods) == {"__new__", *DEFAULTS}
+        assert set(methods) == {"__new__", *DEFAULTS, "info_string", "to_json", "with_json"}
         constructor = methods["__new__"]
         assert [arg.arg for arg in constructor.args.args] == ["cls"]
         assert [arg.arg for arg in constructor.args.kwonlyargs] == list(DEFAULTS)

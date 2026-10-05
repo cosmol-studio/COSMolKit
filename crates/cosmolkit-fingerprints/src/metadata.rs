@@ -1,5 +1,4 @@
 //! Shared source property-tree fingerprint metadata transport.
-use serde_json::Value;
 use std::fmt;
 #[derive(Debug)]
 pub enum FingerprintJsonError {
@@ -33,12 +32,127 @@ impl std::error::Error for FingerprintJsonError {
         }
     }
 }
-pub(crate) fn parse_object(json: &str) -> Result<Value, FingerprintJsonError> {
-    let value: Value = serde_json::from_str(json).map_err(FingerprintJsonError::Parse)?;
-    if !value.is_object() {
-        return Err(FingerprintJsonError::Invalid("expected JSON object".into()));
+/// Source property_tree nodes retain ordered, duplicate children and text leaves.
+#[derive(Debug)]
+pub(crate) struct SourceNode {
+    data: String,
+    children: Vec<(String, SourceNode)>,
+    object: bool,
+    array: bool,
+    first: std::collections::BTreeMap<String, usize>,
+}
+impl SourceNode {
+    pub(crate) fn get(&self, key: &str) -> Option<&Self> {
+        // Boost1.88❗✔️: const_assoc_iterator el = find(fragment);
+        // Boost1.88❗✔️: if(el == not_found()) {
+        // Boost1.88❗✔️:     return 0;
+        // Behavior: find the first equivalent key, never serde's last duplicate.
+        // Complexity: source indexed lookup, O(log children).
+        self.first.get(key).map(|&index| &self.children[index].1)
     }
-    Ok(value)
+    pub(crate) fn is_object(&self) -> bool {
+        self.object
+    }
+    pub(crate) fn as_str(&self) -> Option<&str> {
+        Some(&self.data)
+    }
+    pub(crate) fn children(&self) -> impl Iterator<Item = &Self> {
+        self.children.iter().map(|(_, child)| child)
+    }
+}
+pub(crate) fn parse_object(json: &str) -> Result<SourceNode, FingerprintJsonError> {
+    // Boost1.88❗❌: void on_number(Range code_units) {
+    // Boost1.88❗❌:     new_value().assign(code_units.begin(), code_units.end());
+    // Boost1.88❗❌: }
+    // Boost1.88❗❌: void on_null() {
+    // Boost1.88❗❌:     new_value() = constants::null_value<char_type>();
+    // Boost1.88❗❌: }
+    // Boost1.88❗❌: void on_boolean(bool b) {
+    // Boost1.88❗❌:     new_value() = b ? constants::true_value<char_type>()
+    // Boost1.88❗❌:                     : constants::false_value<char_type>();
+    // Boost1.88❗❌: }
+    // Behavior: source callbacks retain the original numeric spelling, decoded
+    // strings, object duplicates and insertion order; root need not be object.
+    // Complexity: O(JSON) plus indexed children. The independent RawValue
+    // validation pass and duplicated index keys add costs versus source's one
+    // parser/indexed nodes; do not claim complexity/performance equivalence.
+    let _: &serde_json::value::RawValue =
+        serde_json::from_str(json).map_err(FingerprintJsonError::Parse)?;
+    // RawValue validates all syntax without materializing or normalizing numbers.
+    // This cursor only reads the validated token stream, once, monotonically.
+    fn ws(bytes: &[u8], pos: &mut usize) {
+        while bytes.get(*pos).is_some_and(u8::is_ascii_whitespace) {
+            *pos += 1;
+        }
+    }
+    fn text(json: &str, pos: &mut usize) -> String {
+        let start = *pos;
+        *pos += 1;
+        while json.as_bytes()[*pos] != b'"' {
+            if json.as_bytes()[*pos] == b'\\' {
+                *pos += 1;
+            }
+            *pos += 1;
+        }
+        *pos += 1;
+        serde_json::from_str(&json[start..*pos]).expect("validated JSON string")
+    }
+    fn node(json: &str, pos: &mut usize) -> SourceNode {
+        let bytes = json.as_bytes();
+        ws(bytes, pos);
+        let token = bytes[*pos];
+        let mut value = SourceNode {
+            data: String::new(),
+            children: Vec::new(),
+            object: token == b'{',
+            array: token == b'[',
+            first: Default::default(),
+        };
+        if value.object || value.array {
+            let end = if value.object { b'}' } else { b']' };
+            *pos += 1;
+            ws(bytes, pos);
+            while bytes[*pos] != end {
+                let key = if value.object {
+                    let key = text(json, pos);
+                    ws(bytes, pos);
+                    *pos += 1;
+                    key
+                } else {
+                    String::new()
+                };
+                let child = node(json, pos);
+                if value.object {
+                    value
+                        .first
+                        .entry(key.clone())
+                        .or_insert(value.children.len());
+                }
+                value.children.push((key, child));
+                ws(bytes, pos);
+                if bytes[*pos] == b',' {
+                    *pos += 1;
+                    ws(bytes, pos);
+                } else {
+                    break;
+                }
+            }
+            *pos += 1;
+        } else if token == b'"' {
+            value.data = text(json, pos);
+        } else {
+            let start = *pos;
+            while bytes
+                .get(*pos)
+                .is_some_and(|b| !b.is_ascii_whitespace() && !b",]}".contains(b))
+            {
+                *pos += 1;
+            }
+            value.data = json[start..*pos].into();
+        }
+        value
+    }
+    Ok(node(json, &mut 0))
 }
 pub(crate) fn common_arguments_string(
     count_simulation: bool,
@@ -104,7 +218,7 @@ pub(crate) fn common_arguments_json(
 }
 
 pub(crate) fn common_arguments_from_json(
-    value: &Value,
+    value: &SourceNode,
     count_simulation: &mut bool,
     fp_size: &mut u32,
     bits_per_feature: &mut u32,
@@ -127,79 +241,122 @@ pub(crate) fn common_arguments_from_json(
     // RDKit❗✔️:     }
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
-    let object = value
-        .as_object()
-        .ok_or_else(|| FingerprintJsonError::Invalid("expected JSON object".to_string()))?;
-
-    if let Some(field) = object.get("countSimulation") {
-        *count_simulation = json_value_as_bool("countSimulation", field)?;
-    }
-    if let Some(field) = object.get("fpSize") {
-        *fp_size = json_value_as_u32("fpSize", field)?;
-    }
-    if let Some(field) = object.get("numBitsPerFeature") {
-        *bits_per_feature = json_value_as_u32("numBitsPerFeature", field)?;
-    }
-    if let Some(field) = object.get("includeChirality") {
-        *include_chirality = json_value_as_bool("includeChirality", field)?;
-    }
-
+    *count_simulation = bool_or(value, "countSimulation", *count_simulation);
+    *fp_size = u32_or(value, "fpSize", *fp_size);
+    *bits_per_feature = u32_or(value, "numBitsPerFeature", *bits_per_feature);
+    *include_chirality = bool_or(value, "includeChirality", *include_chirality);
     count_bounds.clear();
-    if let Some(field) = object.get("countBounds") {
-        if field.as_str() == Some("") {
-            return Ok(());
-        }
-        let bounds = field.as_array().ok_or_else(|| {
-            FingerprintJsonError::Invalid("countBounds must be an array".to_string())
-        })?;
-        for bound in bounds {
+    if let Some(field) = value.get("countBounds") {
+        for bound in field.children() {
+            // No default overload: a bad child remains a typed conversion error.
             count_bounds.push(json_value_as_u32("countBounds entry", bound)?);
         }
     }
     Ok(())
 }
-pub(crate) fn json_value_as_bool(name: &str, value: &Value) -> Result<bool, FingerprintJsonError> {
-    if let Some(flag) = value.as_bool() {
-        return Ok(flag);
+pub(crate) fn bool_or(node: &SourceNode, key: &str, current: bool) -> bool {
+    // Boost1.88❗✔️: return get_optional<Type>(path, tr).get_value_or(default_value);
+    // Source-defined fallback applies to absent AND untranslatable scalar nodes.
+    node.get(key)
+        .and_then(|v| json_value_as_bool(key, v).ok())
+        .unwrap_or(current)
+}
+pub(crate) fn u32_or(node: &SourceNode, key: &str, current: u32) -> u32 {
+    // Boost1.88❗✔️: return get_optional<Type>(path, tr).get_value_or(default_value);
+    // Source-defined fallback; countBounds get_value without default stays strict.
+    node.get(key)
+        .and_then(|v| json_value_as_u32(key, v).ok())
+        .unwrap_or(current)
+}
+
+pub(crate) fn json_value_as_bool(
+    name: &str,
+    value: &SourceNode,
+) -> Result<bool, FingerprintJsonError> {
+    // Boost1.88❗✔️: s >> e;
+    // Boost1.88❗✔️: if(s.fail()) {
+    // Boost1.88❗✔️:     // Try again in word form.
+    // Boost1.88❗✔️:     s.clear();
+    // Boost1.88❗✔️:     s.setf(std::ios_base::boolalpha);
+    // Boost1.88❗✔️:     s >> e;
+    // Boost1.88❗✔️: }
+    // Boost1.88❗✔️: if(iss.fail() || iss.bad() || iss.get() != Traits::eof()) {
+    // Boost1.88❗✔️:     return boost::optional<E>();
+    // Boost1.88❗✔️: }
+    // Behavior: numeric bool extraction accepts signed 0/1, then lower-case
+    // words; complete consumption with classic locale whitespace required.
+    // Complexity: linear in one scalar text, no graph/old configuration copies.
+    let text = value.data.trim_matches(|c: char| c.is_ascii_whitespace());
+    // Numeric extraction consumes a sign/digit prefix before setting failbit.
+    // boolalpha retries from that CURRENT stream position, without seekg(0).
+    // Thus "2true" and "+true" succeed, while "1true" fails the final EOF check.
+    let bytes = text.as_bytes();
+    let mut consumed = usize::from(bytes.first().is_some_and(|b| *b == b'+' || *b == b'-'));
+    let digits_start = consumed;
+    while bytes.get(consumed).is_some_and(u8::is_ascii_digit) {
+        consumed += 1;
     }
-    if let Some(number) = value.as_u64() {
-        return match number {
-            0 => Ok(false),
-            1 => Ok(true),
-            _ => Err(FingerprintJsonError::Invalid(format!(
-                "{name} must be a boolean"
-            ))),
-        };
-    }
-    if let Some(text) = value.as_str() {
-        if let Ok(flag) = text.parse::<bool>() {
-            return Ok(flag);
-        }
-        if let Ok(number) = text.parse::<u64>() {
-            return match number {
-                0 => Ok(false),
-                1 => Ok(true),
-                _ => Err(FingerprintJsonError::Invalid(format!(
+    if consumed > digits_start {
+        if let Some(number) = signed_decimal(&text[..consumed]) {
+            if number == 0 || number == 1 {
+                if consumed == text.len() {
+                    return Ok(number == 1);
+                }
+                return Err(FingerprintJsonError::Invalid(format!(
                     "{name} must be a boolean"
-                ))),
-            };
+                )));
+            }
         }
+    }
+    let retry = text[consumed..].trim_matches(|c: char| c.is_ascii_whitespace());
+    if retry == "true" {
+        return Ok(true);
+    }
+    if retry == "false" {
+        return Ok(false);
     }
     Err(FingerprintJsonError::Invalid(format!(
         "{name} must be a boolean"
     )))
 }
-
-pub(crate) fn json_value_as_u32(name: &str, value: &Value) -> Result<u32, FingerprintJsonError> {
-    if let Some(number) = value.as_u64() {
-        return u32::try_from(number).map_err(|_| {
-            FingerprintJsonError::Invalid(format!("{name} must be a 32-bit integer"))
-        });
+fn signed_decimal(text: &str) -> Option<i64> {
+    // Full decimal extraction, optional sign; stream decimal has no 0x shortcut.
+    let digits = text
+        .strip_prefix('+')
+        .or_else(|| text.strip_prefix('-'))
+        .unwrap_or(text);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
     }
-    if let Some(text) = value.as_str() {
-        return text.parse::<u32>().map_err(|_| {
-            FingerprintJsonError::Invalid(format!("{name} must be a 32-bit integer"))
-        });
+    text.parse().ok()
+}
+pub(crate) fn json_value_as_u32(
+    name: &str,
+    value: &SourceNode,
+) -> Result<u32, FingerprintJsonError> {
+    // Boost1.88❗✔️: s >> e;
+    // Boost1.88❗✔️: if(!s.eof()) {
+    // Boost1.88❗✔️:     s >> std::ws;
+    // Boost1.88❗✔️: }
+    // Boost1.88❗✔️: if(iss.fail() || iss.bad() || iss.get() != Traits::eof()) {
+    // Boost1.88❗✔️:     return boost::optional<E>();
+    // Boost1.88❗✔️: }
+    // Behavior: unsigned C++ decimal extraction accepts sign and wraps negative
+    // magnitudes within UINT32_MAX; larger magnitudes fail, including negative.
+    // Complexity: one scalar scan, fixed-size arithmetic; source-defined cast.
+    let text = value.data.trim_matches(|c: char| c.is_ascii_whitespace());
+    let digits = text
+        .strip_prefix('+')
+        .or_else(|| text.strip_prefix('-'))
+        .unwrap_or(text);
+    if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) {
+        if let Ok(magnitude) = digits.parse::<u32>() {
+            return Ok(if text.starts_with('-') {
+                magnitude.wrapping_neg()
+            } else {
+                magnitude
+            });
+        }
     }
     Err(FingerprintJsonError::Invalid(format!(
         "{name} must be a 32-bit integer"

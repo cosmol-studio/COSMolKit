@@ -21,6 +21,8 @@ pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr
         E::InvalidAtomPrimitive { .. } => "InvalidAtomPrimitive",
         E::UnclosedParenthesis(_) => "UnclosedParenthesis",
         E::UnbalancedRingClosure(_) => "UnbalancedRingClosure",
+        E::SelfRingClosure { .. } => "SelfRingClosure",
+        E::DuplicateRingBond { .. } => "DuplicateRingBond",
         E::CxSmiles(_) => "CxSmiles",
         E::Parse(_) => "Parse",
         E::UnsupportedFeature(_) => "UnsupportedFeature",
@@ -53,6 +55,19 @@ pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr
                 value.setattr("detail", detail)?;
             }
             E::UnbalancedRingClosure(number) => value.setattr("ring", number)?,
+            E::SelfRingClosure { ring, atom } => {
+                value.setattr("ring", ring)?;
+                value.setattr("atom", atom)?;
+            }
+            E::DuplicateRingBond {
+                ring,
+                begin_atom,
+                end_atom,
+            } => {
+                value.setattr("ring", ring)?;
+                value.setattr("begin_atom", begin_atom)?;
+                value.setattr("end_atom", end_atom)?;
+            }
             E::UnsupportedFeature(feature) => value.setattr("feature", feature)?,
             E::TemplateAttachmentRemap { carrier, .. } => value.setattr("carrier", carrier)?,
             _ => (),

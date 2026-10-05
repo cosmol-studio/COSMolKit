@@ -885,13 +885,17 @@ pub(super) fn generate_morgan_environments<'a, OutputType: MorganOutput>(
     // row handoff remains O(A·B/64) per radius. Contiguous environment values
     // avoid source's separate allocation per emitted environment.
     let atom_count = topology.atoms.len();
-    if atom_invariants.len() < atom_count {
+    if (!generator.atom_provider_present && arguments.custom_atom_invariants.is_none())
+        || atom_invariants.len() < atom_count
+    {
         return Err(FingerprintError::PreconditionViolation {
             what: "bad atom invariants size",
         }
         .into());
     }
-    if bond_invariants.len() < topology.bonds.len() {
+    if (generator.bond_invariants.is_none() && arguments.custom_bond_invariants.is_none())
+        || bond_invariants.len() < topology.bonds.len()
+    {
         return Err(FingerprintError::PreconditionViolation {
             what: "bad bond invariants size",
         }
@@ -1413,8 +1417,9 @@ pub(crate) struct MorganGenerator {
     pub(crate) only_nonzero_invariants: bool,
     pub(crate) include_redundant_environments: bool,
     pub(crate) fingerprint_arguments: FingerprintArguments,
-    pub(crate) atom_invariants: MorganAtomInvGenerator,
-    pub(crate) bond_invariants: MorganBondInvGenerator,
+    pub(crate) atom_invariants: Option<MorganAtomInvGenerator>,
+    pub(crate) atom_provider_present: bool,
+    pub(crate) bond_invariants: Option<MorganBondInvGenerator>,
 }
 
 /// Construct the Morgan generator configuration and its default invariant
@@ -1462,11 +1467,12 @@ pub(crate) fn get_morgan_generator(params: &MorganParams) -> Result<MorganGenera
         only_nonzero_invariants: params.only_nonzero_invariants,
         include_redundant_environments: params.include_redundant_environments,
         fingerprint_arguments,
-        atom_invariants: MorganAtomInvGenerator::new(params.include_ring_membership),
-        bond_invariants: MorganBondInvGenerator::new(
+        atom_invariants: Some(MorganAtomInvGenerator::new(params.include_ring_membership)),
+        atom_provider_present: true,
+        bond_invariants: Some(MorganBondInvGenerator::new(
             params.use_bond_types,
             params.include_chirality,
-        ),
+        )),
     })
 }
 
@@ -1496,9 +1502,10 @@ fn selected_atom_invariants(
     // provided assignments without recalculation, and matching is delegated
     // to the one existing Search owner.
     match selection {
-        MorganAtomInvariants::Connectivity => generator
-            .atom_invariants
-            .get_atom_invariants(topology, valence, rings),
+        MorganAtomInvariants::Connectivity => match &generator.atom_invariants {
+            Some(owner) => owner.get_atom_invariants(topology, valence, rings),
+            None => Ok(Vec::new()),
+        },
         MorganAtomInvariants::Features | MorganAtomInvariants::FeaturePatterns(_) => {
             let patterns = match selection {
                 MorganAtomInvariants::Connectivity => unreachable!(),
@@ -5082,10 +5089,14 @@ mod tests {
                 .expect("source-default Morgan arguments are valid");
             let atom_invariants = generator
                 .atom_invariants
+                .as_ref()
+                .expect("factory supplies default atom provider")
                 .get_atom_invariants(&record.topology, &prepared_valence, &rings)
                 .expect("fixed prepared topology yields default Morgan atom invariants");
             let bond_invariants = generator
                 .bond_invariants
+                .as_ref()
+                .expect("factory supplies default bond provider")
                 .get_bond_invariants(&record.topology);
 
             for radius in RADII {
@@ -5530,3 +5541,7 @@ mod uint_complete_source_condition_cells {
         assert_eq!(g, before);
     }
 }
+
+#[path = "morgan_operator.rs"]
+mod operator;
+pub use operator::{MorganAtomProvider, MorganBondProvider, MorganOperator, MorganSettings};

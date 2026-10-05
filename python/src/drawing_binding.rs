@@ -408,6 +408,82 @@ impl Molecule {
             .map_err(|error| operation_pyerr(py, error))
     }
     #[pyo3(signature=(generator,*,params=None,output=None))]
+    fn morgan_fingerprint_with_generator(
+        &self,
+        py: Python<'_>,
+        generator: &crate::canonical_fingerprint_values::MorganFingerprintGenerator,
+        params: Option<&crate::canonical_fingerprint_values::MorganCallParams>,
+        mut output: Option<
+            PyRefMut<'_, crate::canonical_fingerprint_values::FingerprintAdditionalOutput>,
+        >,
+    ) -> PyResult<crate::canonical_values::Fingerprint> {
+        self.inner
+            .morgan_fingerprint_with_generator(
+                &generator.inner,
+                params.map(|p| &p.inner),
+                output.as_deref_mut().map(|o| &mut o.inner),
+            )
+            .map(|inner| crate::canonical_values::Fingerprint { inner })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[pyo3(signature=(generator,*,params=None,output=None))]
+    fn morgan_count_fingerprint_with_generator(
+        &self,
+        py: Python<'_>,
+        generator: &crate::canonical_fingerprint_values::MorganFingerprintGenerator,
+        params: Option<&crate::canonical_fingerprint_values::MorganCallParams>,
+        mut output: Option<
+            PyRefMut<'_, crate::canonical_fingerprint_values::FingerprintAdditionalOutput>,
+        >,
+    ) -> PyResult<crate::canonical_values::SparseCountFingerprint32> {
+        self.inner
+            .morgan_count_fingerprint_with_generator(
+                &generator.inner,
+                params.map(|p| &p.inner),
+                output.as_deref_mut().map(|o| &mut o.inner),
+            )
+            .map(|inner| crate::canonical_values::SparseCountFingerprint32 { inner })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[pyo3(signature=(generator,*,params=None,output=None))]
+    fn morgan_sparse_fingerprint_with_generator(
+        &self,
+        py: Python<'_>,
+        generator: &crate::canonical_fingerprint_values::MorganFingerprintGenerator,
+        params: Option<&crate::canonical_fingerprint_values::MorganCallParams>,
+        mut output: Option<
+            PyRefMut<'_, crate::canonical_fingerprint_values::FingerprintAdditionalOutput>,
+        >,
+    ) -> PyResult<crate::canonical_values::SparseBitFingerprint> {
+        self.inner
+            .morgan_sparse_fingerprint_with_generator(
+                &generator.inner,
+                params.map(|p| &p.inner),
+                output.as_deref_mut().map(|o| &mut o.inner),
+            )
+            .map(|inner| crate::canonical_values::SparseBitFingerprint { inner })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[pyo3(signature=(generator,*,params=None,output=None))]
+    fn morgan_sparse_count_fingerprint_with_generator(
+        &self,
+        py: Python<'_>,
+        generator: &crate::canonical_fingerprint_values::MorganFingerprintGenerator,
+        params: Option<&crate::canonical_fingerprint_values::MorganCallParams>,
+        mut output: Option<
+            PyRefMut<'_, crate::canonical_fingerprint_values::FingerprintAdditionalOutput>,
+        >,
+    ) -> PyResult<crate::canonical_values::SparseCountFingerprint> {
+        self.inner
+            .morgan_sparse_count_fingerprint_with_generator(
+                &generator.inner,
+                params.map(|p| &p.inner),
+                output.as_deref_mut().map(|o| &mut o.inner),
+            )
+            .map(|inner| crate::canonical_values::SparseCountFingerprint { inner })
+            .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+    }
+    #[pyo3(signature=(generator,*,params=None,output=None))]
     fn topological_torsion_fingerprint_with_generator(
         &self,
         py: Python<'_>,

@@ -271,16 +271,20 @@ impl TopologicalTorsionGenerator {
         // RDKit❗✔️: }
         // RDKit❗✔️:
         let value = parse_object(json)?;
-        let child = |field: &str, category: &str| -> Result<&Value, TopologicalTorsionError> {
+        let child = |field: &str,
+                     category: &str|
+         -> Result<&crate::metadata::SourceNode, TopologicalTorsionError> {
             value.get(field).filter(|v| v.is_object()).ok_or_else(|| {
                 FingerprintJsonError::Invalid(format!("missing {category} node in JSON")).into()
             })
         };
         let args = child("fingerprintArguments", "FingerprintArguments")?;
         let env = child("atomEnvironmentGenerator", "AtomEnvironmentGenerator")?;
-        let typ = |node: &Value, category: &str| -> Result<String, TopologicalTorsionError> {
+        let typ = |node: &crate::metadata::SourceNode,
+                   category: &str|
+         -> Result<String, TopologicalTorsionError> {
             node.get("type")
-                .and_then(Value::as_str)
+                .and_then(crate::metadata::SourceNode::as_str)
                 .map(str::to_owned)
                 .ok_or_else(|| {
                     FingerprintJsonError::Invalid(format!("{category} type not specified in JSON"))
@@ -303,7 +307,7 @@ impl TopologicalTorsionGenerator {
             .into());
         }
         let mut params = TopologicalTorsionParams::default();
-        params.from_json(&args.to_string())?;
+        params.from_json_value(args)?;
         let atom_invariants = if let Some(node) = value.get("atomInvariantsGenerator") {
             let inv_type = typ(node, "AtomInvariantsGenerator")?;
             if inv_type != "AtomPairAtomInvGenerator" {
@@ -314,7 +318,7 @@ impl TopologicalTorsionGenerator {
                 .into());
             }
             let mut inv = AtomPairAtomInvariantsGenerator::default();
-            inv.from_json(&node.to_string())?;
+            inv.from_json_value(node)?;
             Some(inv)
         } else {
             None
@@ -764,134 +768,20 @@ where
         ) -> Result<T, TopologicalTorsionError>
         + Sync,
 {
-    // RDKit❗✔️: template <typename ReturnType, typename FuncType>
-    // RDKit❗✔️: std::vector<std::unique_ptr<ReturnType>> mtgetFingerprints(
-    // RDKit❗✔️:     FuncType func, const std::vector<const ROMol *> &mols, int numThreads) {
-    // RDKit❗✔️:   std::vector<std::uint32_t> *fromAtoms = nullptr;
-    // RDKit❗✔️:   std::vector<std::uint32_t> *ignoreAtoms = nullptr;
-    // RDKit❗✔️:   std::vector<std::uint32_t> *customAtomInvariants = nullptr;
-    // RDKit❗✔️:   std::vector<std::uint32_t> *customBondInvariants = nullptr;
-    // RDKit❗✔️:   int confId = -1;
-    // RDKit❗✔️:   AdditionalOutput *additionalOutput = nullptr;
-    // RDKit❗✔️:   FingerprintFuncArguments args(fromAtoms, ignoreAtoms, confId,
-    // RDKit❗✔️:                                 additionalOutput, customAtomInvariants,
-    // RDKit❗✔️:                                 customBondInvariants);
-    // RDKit❗✔️:
-    // RDKit❗✔️:   std::vector<std::unique_ptr<ReturnType>> result;
-    // RDKit❗✔️:   auto numThreadsToUse = getNumThreadsToUse(numThreads);
-    // RDKit❗✔️:   unsigned int nmols = mols.size();
-    // RDKit❗✔️:   result.reserve(nmols);
-    // RDKit❗✔️:   if (numThreadsToUse == 1) {
-    // RDKit❗✔️:     for (auto i = 0u; i < nmols; ++i) {
-    // RDKit❗✔️:       if (!mols[i]) {
-    // RDKit❗✔️:         result.emplace_back(std::unique_ptr<ReturnType>());
-    // RDKit❗✔️:       } else {
-    // RDKit❗✔️:         result.emplace_back(std::move(func(*mols[i], args)));
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: #ifdef RDK_BUILD_THREADSAFE_SSS
-    // RDKit❗✔️:   else {
-    // RDKit❗✔️:     std::vector<std::vector<std::unique_ptr<ReturnType>>> accum(
-    // RDKit❗✔️:         numThreadsToUse);
-    // RDKit❗✔️:     std::vector<std::thread> tg;
-    // RDKit❗✔️:     for (auto ti = 0u; ti < numThreadsToUse; ++ti) {
-    // RDKit❗✔️:       auto lfunc = [&](unsigned int tidx) {
-    // RDKit❗✔️:         for (auto midx = tidx; midx < mols.size(); midx += numThreadsToUse) {
-    // RDKit❗✔️:           if (!mols[midx]) {
-    // RDKit❗✔️:             accum[tidx].emplace_back(std::unique_ptr<ReturnType>());
-    // RDKit❗✔️:           } else {
-    // RDKit❗✔️:             accum[tidx].emplace_back(std::move(func(*mols[midx], args)));
-    // RDKit❗✔️:           }
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:       };
-    // RDKit❗✔️:       tg.emplace_back(std::thread(lfunc, ti));
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     for (auto &thread : tg) {
-    // RDKit❗✔️:       if (thread.joinable()) {
-    // RDKit❗✔️:         thread.join();
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     for (auto midx = 0u; midx < mols.size(); ++midx) {
-    // RDKit❗✔️:       auto tidx = midx % numThreadsToUse;
-    // RDKit❗✔️:       auto jidx = midx / numThreadsToUse;
-    // RDKit❗✔️:       result.emplace_back(std::move(accum[tidx][jidx]));
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: #endif
-    // RDKit❗✔️:   return result;
-    // RDKit❗✔️: }
-    // Behavior: source ti/midx strides, every None slot, and output order
-    // are retained. Caller already holds the sole state read lock. Each
-    // worker uses the same configured generator/default call without
-    // reconstructing/revalidating it. Errors stay structured; all launched
-    // workers are joined before a spawn/calculation/panic error is returned.
-    // Source C++ uncaught worker exceptions terminate its process; structured
-    // worker errors are a separately reported canonical safety boundary.
-    // Complexity: O(N) output movement and O(W) thread/iterator bookkeeping;
-    // no Molecule/domain-state cloning or second algorithm path. Source-like
-    // local contiguous vectors retain per-thread strided accumulation.
-    let n = workers.get();
     let call = TopologicalTorsionCall::default();
-    if n == 1 {
-        return inputs
-            .iter()
-            .map(|input| {
-                input
-                    .as_ref()
-                    .map(|input| action(state, input, &call))
-                    .transpose()
-            })
-            .collect();
-    }
-    std::thread::scope(|scope| {
-        let mut handles = Vec::with_capacity(n);
-        let mut launch_error = None;
-        for ti in 0..n {
-            let action = &action;
-            let call = &call;
-            match std::thread::Builder::new().spawn_scoped(scope, move || {
-                (ti..inputs.len())
-                    .step_by(n)
-                    .map(|midx| {
-                        inputs[midx]
-                            .as_ref()
-                            .map(|input| action(state, input, call))
-                            .transpose()
-                    })
-                    .collect::<Vec<_>>()
-            }) {
-                Ok(handle) => handles.push(handle),
-                Err(error) => {
-                    launch_error = Some(TopologicalTorsionError::ThreadSpawn(error));
-                    break;
-                }
-            }
-        }
-        let mut accum = Vec::with_capacity(handles.len());
-        let mut panic_error = false;
-        for handle in handles {
-            match handle.join() {
-                Ok(rows) => accum.push(rows.into_iter()),
-                Err(_) => panic_error = true,
-            }
-        }
-        if let Some(error) = launch_error {
-            return Err(error);
-        }
-        if panic_error {
-            return Err(TopologicalTorsionError::WorkerPanic);
-        }
-        let mut result = Vec::with_capacity(inputs.len());
-        for midx in 0..inputs.len() {
-            let value = accum[midx % n]
-                .next()
-                .ok_or(TopologicalTorsionError::WorkerProtocol)?;
-            result.push(value?);
-        }
-        Ok(result)
-    })
+    crate::fingerprint_bulk::ordered_bulk(inputs, workers, |input| action(state, input, &call))
 }
+impl From<crate::FingerprintWorkerError> for TopologicalTorsionError {
+    fn from(e: crate::FingerprintWorkerError) -> Self {
+        match e {
+            crate::FingerprintWorkerError::ThreadCount(e) => Self::ThreadCount(e),
+            crate::FingerprintWorkerError::ThreadSpawn(e) => Self::ThreadSpawn(e),
+            crate::FingerprintWorkerError::Panic => Self::WorkerPanic,
+            crate::FingerprintWorkerError::Protocol => Self::WorkerProtocol,
+        }
+    }
+}
+
 impl TopologicalTorsionGenerator {
     pub fn sparse_counts(
         &self,
