@@ -93,10 +93,17 @@ _binding_profile: builtins.str
         "UffOptimizationError",
         "UffParameterQueryError",
         "StereoReadError",
+        "AlignmentError",
     ] {
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
+    // Alignment publishes one create_exception! type. Context attributes match
+    // alignment_binding::alignment_pyerr and exist only on applicable variants.
+    text = text.replace(
+        "class AlignmentError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n",
+        "class AlignmentError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    id: builtins.int\n    index: builtins.int\n    atom_count: builtins.int\n    map_len: builtins.int\n    weight_len: builtins.int\n    message: builtins.str\n",
+    );
     text = text.replace("class PickleError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class PickleError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    version: builtins.int\n    major: builtins.int\n    minor: builtins.int\n    section: builtins.int\n    expected: builtins.int\n    actual: builtins.int\n    value: builtins.int\n    type_name: builtins.str\n    count: builtins.int\n    message: builtins.str\n");
     text = text.replace("class MoleculeHashError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class MoleculeHashError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    actual: builtins.int\n    atom_count: builtins.int\n");
     text = text.replace("class CipRankError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class CipRankError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    field: builtins.str\n    actual: builtins.int\n    atom_count: builtins.int\n    atom: builtins.int\n    value: builtins.int\n    map_number: builtins.int\n    degree: builtins.int\n    maximum_supported: builtins.int\n    bond: builtins.int\n    order: builtins.int\n");

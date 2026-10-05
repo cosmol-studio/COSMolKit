@@ -14,6 +14,8 @@ mod cip_labels;
 mod cow_tests;
 #[cfg(all(test, feature = "cap-aromaticity"))]
 pub(crate) use cow_tests::ring_aromaticity_probe;
+#[cfg(feature = "cap-alignment")]
+mod alignment;
 #[cfg(feature = "cap-depict")]
 mod depict;
 mod error;
@@ -118,3 +120,6 @@ mod tautomer;
 pub(crate) use runtime::registry::{
     CanonicalTautomerWithParamsAccess, EnumerateTautomersWithParamsAccess,
 };
+
+#[cfg(feature = "cap-alignment")]
+pub(crate) use runtime::registry::{WithAlignedConformersAccess, WithAlignmentToAccess};

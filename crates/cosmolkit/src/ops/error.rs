@@ -15,6 +15,8 @@ use super::{
 /// Structured failure used while a capability is not yet implemented.
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationError {
+    #[cfg(feature = "cap-alignment")]
+    Alignment(crate::AlignmentError),
     UnsupportedFeature {
         operation: &'static MoleculeOpSpec,
         source: UnsupportedFeatureError,
@@ -158,6 +160,8 @@ pub enum OperationError {
 impl fmt::Display for OperationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "cap-alignment")]
+            Self::Alignment(error) => error.fmt(formatter),
             Self::UnsupportedFeature { operation, source } => write!(
                 formatter,
                 "operation `{}` cannot run because feature `{}` is unsupported: {}",
@@ -340,6 +344,8 @@ impl fmt::Display for OperationError {
 impl std::error::Error for OperationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            #[cfg(feature = "cap-alignment")]
+            Self::Alignment(error) => Some(error),
             #[cfg(feature = "cap-tautomer")]
             Self::Tautomer(error) => Some(error),
             #[cfg(any(feature = "cap-valence", feature = "cap-stereo"))]

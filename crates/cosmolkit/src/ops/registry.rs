@@ -109,7 +109,48 @@ pub(crate) const TAUTOMER_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Source-backed ordered tautomer enumeration and canonical selection.",
 };
 
+#[cfg(feature = "cap-alignment")]
+pub(crate) const ALIGNMENT_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cap-alignment",
+    category: "coordinates",
+    docs: "Source-backed molecular and conformer alignment over detached values.",
+};
+
 molecule_ops! {
+    #[cfg(feature = "cap-alignment")]
+    op with_alignment_to(reference: &crate::Molecule, params: &crate::AlignmentParameters) {
+        method: with_alignment_to_with_params,
+        impl_fn: crate::ops::alignment::with_alignment_to_impl,
+        report_type: crate::AlignmentResult,
+        domain: coordinate, kind: weak, topology_edit: none,
+        access: { read: [topology, properties], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, coordinates, fingerprint], invalidate: [drawing], operation_defined: [] },
+        cip_state: preserve, requires_mapping: none,
+        feature: crate::ops::runtime::registry::ALIGNMENT_FEATURE,
+        parity: required_now, parity_profile: "with_alignment_to_rdkit",
+        io_roundtrip: false, invariant_profile: "coordinate_alignment_source_ordered_report",
+        default_method: with_alignment_to, default_args: [&crate::AlignmentParameters::default()],
+        inplace: true, inplace_method: align_to_with_params_, default_inplace_method: align_to_,
+    }
+
+    #[cfg(feature = "cap-alignment")]
+    op with_aligned_conformers(params: &crate::ConformerAlignmentParameters) {
+        method: with_aligned_conformers_with_params,
+        impl_fn: crate::ops::alignment::with_aligned_conformers_impl,
+        report_type: crate::ConformerAlignmentReport,
+        domain: coordinate, kind: weak, topology_edit: none,
+        access: { read: [topology, properties], write: [coordinates, derived_cache] },
+        may_mutate: [coordinates, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [rings, ring_families, valence, aromaticity, stereo, coordinates, fingerprint], invalidate: [drawing], operation_defined: [] },
+        cip_state: preserve, requires_mapping: none,
+        feature: crate::ops::runtime::registry::ALIGNMENT_FEATURE,
+        parity: required_now, parity_profile: "with_aligned_conformers_rdkit",
+        io_roundtrip: false, invariant_profile: "coordinate_alignment_source_ordered_report",
+        default_method: with_aligned_conformers, default_args: [&crate::ConformerAlignmentParameters::default()],
+        inplace: true, inplace_method: align_conformers_with_params_, default_inplace_method: align_conformers_,
+    }
+
     #[cfg(feature = "cap-tautomer")]
     op enumerate_tautomers_with_params(params: &crate::TautomerParams) {
         method: enumerate_tautomers_with_params,

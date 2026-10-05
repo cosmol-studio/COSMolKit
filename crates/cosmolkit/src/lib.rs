@@ -53,6 +53,8 @@ pub use cosmolkit_descriptors::{
 pub use descriptors::DescriptorReadError;
 #[cfg(feature = "cap-depict")]
 pub use drawing::DrawingWriteError;
+#[cfg(feature = "cap-alignment")]
+mod alignment;
 #[cfg(feature = "cap-matrices")]
 mod matrices;
 mod molecule;
@@ -336,5 +338,14 @@ pub use cosmolkit_fingerprints::MoleculeHashError;
 
 #[cfg(feature = "cap-fingerprints")]
 mod topological_torsion_path;
+#[cfg(feature = "cap-alignment")]
+pub use cosmolkit_alignment::{
+    AlignmentAtomMap, AlignmentError, AlignmentParameters, AlignmentResult, AlignmentTransform,
+    AllConformerRmsdParameters, BestAlignmentParameters, ConformerAlignmentParameters,
+    ConformerAlignmentReport, ConformerRmsd, CoordinateRmsdParameters,
+};
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{TopologicalTorsionPathScoreError, explain_path_score};
+
+#[cfg(feature = "cap-alignment")]
+pub(crate) use ops::{WithAlignedConformersAccess, WithAlignmentToAccess};

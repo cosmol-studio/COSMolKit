@@ -28,4 +28,5 @@ mod tautomer_binding;
 mod canonical_property_values;
 mod uff_binding;
 
+mod alignment_binding;
 mod canonical_path_score;

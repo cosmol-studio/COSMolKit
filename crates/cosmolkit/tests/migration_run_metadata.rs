@@ -15,6 +15,9 @@ fn binding_entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry 
 
 fn expected_feature_names() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-alignment") {
+        expected.push("cap-alignment");
+    }
     if cfg!(feature = "cap-tautomer") {
         expected.push("cap-tautomer");
     }
@@ -59,6 +62,12 @@ fn expected_feature_names() -> Vec<&'static str> {
 
 fn expected_operation_methods() -> Vec<&'static str> {
     let mut expected = Vec::new();
+    if cfg!(feature = "cap-alignment") {
+        expected.extend([
+            "with_alignment_to_with_params",
+            "with_aligned_conformers_with_params",
+        ]);
+    }
     if cfg!(feature = "cap-tautomer") {
         expected.extend([
             "enumerate_tautomers_with_params",

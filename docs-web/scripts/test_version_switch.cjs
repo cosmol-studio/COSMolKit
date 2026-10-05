@@ -8,7 +8,7 @@ const root = path.join(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "assets/version-switch.js"), "utf8");
 const catalog = JSON.parse(fs.readFileSync(path.join(root, "versions.json"), "utf8"));
 
-async function run(origin, response = catalog, fail = false) {
+async function run(origin, response = catalog, fail = false, ok = true, invalidJson = false) {
     class Link {
         constructor(entry = {}) {
             this.dataset = {docsVersion: entry.version};
@@ -25,24 +25,23 @@ async function run(origin, response = catalog, fail = false) {
     };
     const current = {textContent: "latest"};
     const requests = [];
-    let timers = 0;
     const context = vm.createContext({
-        URL, AbortController, location: {origin},
+        URL, location: {origin},
         document: {
             getElementById: id => ({"docs-version-options": options, "docs-version-current": current})[id],
             createElement: tag => { assert.equal(tag, "a"); return new Link(); },
         },
-        setTimeout: () => { timers++; return 1; },
-        clearTimeout: () => { timers--; },
         fetch: async (url, init) => {
             requests.push({url, init});
             if (fail) throw new Error("offline");
-            return {ok: true, json: async () => response};
+            return {ok, json: async () => {
+                if (invalidJson) throw new SyntaxError("invalid JSON");
+                return response;
+            }};
         },
     });
     // Wait for the module's real startup call, not a duplicate invocation.
     await vm.runInContext(source, context);
-    assert.equal(timers, 0);
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "https://kit.cosmol.org/versions.json");
     assert.equal(requests[0].init.credentials, "omit");
@@ -74,6 +73,13 @@ async function run(origin, response = catalog, fail = false) {
     const offline = await run("https://c6862989.cosmolkit-docs-web.pages.dev", null, true);
     assert.equal(offline.current.textContent, "0.3.0");
     assert.equal(offline.options.links.length, 2);
+    for (const result of [
+        await run("https://c6862989.cosmolkit-docs-web.pages.dev", catalog, false, false),
+        await run("https://c6862989.cosmolkit-docs-web.pages.dev", null, false, true, true),
+    ]) {
+        assert.equal(result.current.textContent, "0.3.0");
+        assert.equal(result.options.links.length, 2);
+    }
     for (const bad of [null, {}, {schema_version: 1, versions: []},
         {...catalog, versions: [...catalog.versions, {version: "evil", url: "javascript:alert(1)"}]},
         {...catalog, versions: [...catalog.versions, catalog.versions[1]]},

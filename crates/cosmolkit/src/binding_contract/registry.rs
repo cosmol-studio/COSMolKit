@@ -92,6 +92,43 @@ binding_contract! {
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "AtomPairsParameters.atom_types", item: callable, owner: type_, rust: crate::AtomPairsParameters::atom_types, python: "atom_types", javascript: "atomTypes", feature: "cap-fingerprints", status: experimental, kind: static_, parameters: [], output: Vec<u32>, error: none, state: read_only, operation: none, signature: fn()->Vec<u32>, },
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         #[cfg(feature="cap-fingerprints")]
         {semantic_id:"types.MorganAtomInvariantsGenerator",item:type,owner:type_,rust:crate::MorganAtomInvariantsGenerator,python:"MorganAtomInvariantsGenerator",javascript:"MorganAtomInvariantsGenerator",feature:"cap-fingerprints",status:experimental,role:parameter,},
         #[cfg(feature="cap-fingerprints")]
@@ -9422,5 +9459,96 @@ binding_contract! {
         { semantic_id: "Molecule.perceive_stereochemistry", item: callable, owner: molecule, rust: crate::Molecule::perceive_stereochemistry, python: "perceive_stereochemistry", javascript: "perceiveStereochemistry", feature: "cap-stereo", status: native, kind: instance, parameters: [], output: (), error: crate::StereoReadError, state: read_only, operation: none, signature: fn(&crate::Molecule) -> Result<(), crate::StereoReadError>, },
         #[cfg(feature = "cap-stereo")]
         { semantic_id: "Molecule.find_chiral_centers", item: callable, owner: molecule, rust: crate::Molecule::find_chiral_centers, python: "find_chiral_centers", javascript: "findChiralCenters", feature: "cap-stereo", status: native, kind: instance, parameters: [{name: include_unassigned, type: bool, default: true}], output: Vec<(usize, String)>, error: none, state: read_only, operation: none, signature: fn(&crate::Molecule, bool) -> Vec<(usize, String)>, },
+
+
+
+
+
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.AlignmentAtomMap",item:type,owner:type_,rust:crate::AlignmentAtomMap,python:"AlignmentAtomMap",javascript:"AlignmentAtomMap",feature:"cap-alignment",status:experimental,role:value,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.AlignmentParameters",item:type,owner:type_,rust:crate::AlignmentParameters,python:"AlignmentParameters",javascript:"AlignmentParameters",feature:"cap-alignment",status:experimental,role:parameter,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.BestAlignmentParameters",item:type,owner:type_,rust:crate::BestAlignmentParameters,python:"BestAlignmentParameters",javascript:"BestAlignmentParameters",feature:"cap-alignment",status:experimental,role:parameter,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.CoordinateRmsdParameters",item:type,owner:type_,rust:crate::CoordinateRmsdParameters,python:"CoordinateRmsdParameters",javascript:"CoordinateRmsdParameters",feature:"cap-alignment",status:experimental,role:parameter,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.AllConformerRmsdParameters",item:type,owner:type_,rust:crate::AllConformerRmsdParameters,python:"AllConformerRmsdParameters",javascript:"AllConformerRmsdParameters",feature:"cap-alignment",status:experimental,role:parameter,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.ConformerAlignmentParameters",item:type,owner:type_,rust:crate::ConformerAlignmentParameters,python:"ConformerAlignmentParameters",javascript:"ConformerAlignmentParameters",feature:"cap-alignment",status:experimental,role:parameter,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.AlignmentResult",item:type,owner:type_,rust:crate::AlignmentResult,python:"AlignmentResult",javascript:"AlignmentResult",feature:"cap-alignment",status:experimental,role:result,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.AlignmentTransform",item:type,owner:type_,rust:crate::AlignmentTransform,python:"AlignmentTransform",javascript:"AlignmentTransform",feature:"cap-alignment",status:experimental,role:result,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.ConformerRmsd",item:type,owner:type_,rust:crate::ConformerRmsd,python:"ConformerRmsd",javascript:"ConformerRmsd",feature:"cap-alignment",status:experimental,role:result,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.ConformerAlignmentReport",item:type,owner:type_,rust:crate::ConformerAlignmentReport,python:"ConformerAlignmentReport",javascript:"ConformerAlignmentReport",feature:"cap-alignment",status:experimental,role:result,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"types.AlignmentError",item:type,owner:type_,rust:crate::AlignmentError,python:"AlignmentError",javascript:"AlignmentError",feature:"cap-alignment",status:experimental,role:error,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.alignment_transform_to",item:callable,owner:molecule,rust:crate::Molecule::alignment_transform_to,python:"alignment_transform_to",javascript:"alignmentTransformTo",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required}],output:crate::AlignmentResult,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::Molecule)->Result<crate::AlignmentResult,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.alignment_transform_to_with_params",item:callable,owner:molecule,rust:crate::Molecule::alignment_transform_to_with_params,python:"alignment_transform_to_with_params",javascript:"alignmentTransformToWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::AlignmentParameters,default:required}],output:crate::AlignmentResult,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::Molecule,&crate::AlignmentParameters)->Result<crate::AlignmentResult,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.best_alignment_to",item:callable,owner:molecule,rust:crate::Molecule::best_alignment_to,python:"best_alignment_to",javascript:"bestAlignmentTo",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required}],output:crate::AlignmentResult,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::Molecule)->Result<crate::AlignmentResult,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.best_alignment_to_with_params",item:callable,owner:molecule,rust:crate::Molecule::best_alignment_to_with_params,python:"best_alignment_to_with_params",javascript:"bestAlignmentToWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::BestAlignmentParameters,default:required}],output:crate::AlignmentResult,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::Molecule,&crate::BestAlignmentParameters)->Result<crate::AlignmentResult,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.best_rmsd_to",item:callable,owner:molecule,rust:crate::Molecule::best_rmsd_to,python:"best_rmsd_to",javascript:"bestRmsdTo",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required}],output:f64,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::Molecule)->Result<f64,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.best_rmsd_to_with_params",item:callable,owner:molecule,rust:crate::Molecule::best_rmsd_to_with_params,python:"best_rmsd_to_with_params",javascript:"bestRmsdToWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::BestAlignmentParameters,default:required}],output:f64,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::Molecule,&crate::BestAlignmentParameters)->Result<f64,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.coordinate_rmsd_to",item:callable,owner:molecule,rust:crate::Molecule::coordinate_rmsd_to,python:"coordinate_rmsd_to",javascript:"coordinateRmsdTo",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required}],output:f64,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::Molecule)->Result<f64,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.coordinate_rmsd_to_with_params",item:callable,owner:molecule,rust:crate::Molecule::coordinate_rmsd_to_with_params,python:"coordinate_rmsd_to_with_params",javascript:"coordinateRmsdToWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::CoordinateRmsdParameters,default:required}],output:f64,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::Molecule,&crate::CoordinateRmsdParameters)->Result<f64,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.all_conformer_best_rmsds",item:callable,owner:molecule,rust:crate::Molecule::all_conformer_best_rmsds,python:"all_conformer_best_rmsds",javascript:"allConformerBestRmsds",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[],output:Vec<crate::ConformerRmsd>,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule)->Result<Vec<crate::ConformerRmsd>,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.all_conformer_best_rmsds_with_params",item:callable,owner:molecule,rust:crate::Molecule::all_conformer_best_rmsds_with_params,python:"all_conformer_best_rmsds_with_params",javascript:"allConformerBestRmsdsWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:params,type:&crate::AllConformerRmsdParameters,default:required}],output:Vec<crate::ConformerRmsd>,error:crate::AlignmentError,state:read_only,operation:none,signature:fn(&crate::Molecule,&crate::AllConformerRmsdParameters)->Result<Vec<crate::ConformerRmsd>,crate::AlignmentError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.with_alignment_to",item:callable,owner:molecule,rust:crate::Molecule::with_alignment_to,python:"with_alignment_to",javascript:"withAlignmentTo",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required}],output:(crate::Molecule,crate::AlignmentResult),error:crate::OperationError,state:value_returning,operation:"with_alignment_to",signature:fn(&crate::Molecule,&crate::Molecule)->Result<(crate::Molecule,crate::AlignmentResult),crate::OperationError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.with_alignment_to_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_alignment_to_with_params,python:"with_alignment_to_with_params",javascript:"withAlignmentToWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::AlignmentParameters,default:required}],output:(crate::Molecule,crate::AlignmentResult),error:crate::OperationError,state:value_returning,operation:"with_alignment_to_with_params",signature:fn(&crate::Molecule,&crate::Molecule,&crate::AlignmentParameters)->Result<(crate::Molecule,crate::AlignmentResult),crate::OperationError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.align_to_",item:callable,owner:molecule,rust:crate::Molecule::align_to_,python:"align_to_",javascript:"alignTo",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:reference,type:&crate::Molecule,default:required}],output:crate::AlignmentResult,error:crate::OperationError,state:in_place,operation:"align_to_",signature:fn(&mut crate::Molecule,&crate::Molecule)->Result<crate::AlignmentResult,crate::OperationError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.align_to_with_params_",item:callable,owner:molecule,rust:crate::Molecule::align_to_with_params_,python:"align_to_with_params_",javascript:"alignToWithParams",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:reference,type:&crate::Molecule,default:required},{name:params,type:&crate::AlignmentParameters,default:required}],output:crate::AlignmentResult,error:crate::OperationError,state:in_place,operation:"align_to_with_params_",signature:fn(&mut crate::Molecule,&crate::Molecule,&crate::AlignmentParameters)->Result<crate::AlignmentResult,crate::OperationError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.with_aligned_conformers",item:callable,owner:molecule,rust:crate::Molecule::with_aligned_conformers,python:"with_aligned_conformers",javascript:"withAlignedConformers",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[],output:(crate::Molecule,crate::ConformerAlignmentReport),error:crate::OperationError,state:value_returning,operation:"with_aligned_conformers",signature:fn(&crate::Molecule)->Result<(crate::Molecule,crate::ConformerAlignmentReport),crate::OperationError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.with_aligned_conformers_with_params",item:callable,owner:molecule,rust:crate::Molecule::with_aligned_conformers_with_params,python:"with_aligned_conformers_with_params",javascript:"withAlignedConformersWithParams",feature:"cap-alignment",kind:instance,receiver:shared,parameters:[{name:params,type:&crate::ConformerAlignmentParameters,default:required}],output:(crate::Molecule,crate::ConformerAlignmentReport),error:crate::OperationError,state:value_returning,operation:"with_aligned_conformers_with_params",signature:fn(&crate::Molecule,&crate::ConformerAlignmentParameters)->Result<(crate::Molecule,crate::ConformerAlignmentReport),crate::OperationError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.align_conformers_",item:callable,owner:molecule,rust:crate::Molecule::align_conformers_,python:"align_conformers_",javascript:"alignConformers",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[],output:crate::ConformerAlignmentReport,error:crate::OperationError,state:in_place,operation:"align_conformers_",signature:fn(&mut crate::Molecule)->Result<crate::ConformerAlignmentReport,crate::OperationError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"Molecule.align_conformers_with_params_",item:callable,owner:molecule,rust:crate::Molecule::align_conformers_with_params_,python:"align_conformers_with_params_",javascript:"alignConformersWithParams",feature:"cap-alignment",kind:instance,receiver:mutable,parameters:[{name:params,type:&crate::ConformerAlignmentParameters,default:required}],output:crate::ConformerAlignmentReport,error:crate::OperationError,state:in_place,operation:"align_conformers_with_params_",signature:fn(&mut crate::Molecule,&crate::ConformerAlignmentParameters)->Result<crate::ConformerAlignmentReport,crate::OperationError>,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"AlignmentResult.rmsd",item:callable,owner:type_,rust:crate::AlignmentResult::rmsd,python:"rmsd",javascript:"rmsd",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::AlignmentResult)->f64,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"AlignmentResult.transform",item:callable,owner:type_,rust:crate::AlignmentResult::transform,python:"transform",javascript:"transform",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a crate::AlignmentTransform,error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentResult)->&'a crate::AlignmentTransform,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"AlignmentResult.atom_map",item:callable,owner:type_,rust:crate::AlignmentResult::atom_map,python:"atom_map",javascript:"atomMap",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [crate::AlignmentAtomMap],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentResult)->&'a [crate::AlignmentAtomMap],},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"AlignmentTransform.matrix",item:callable,owner:type_,rust:crate::AlignmentTransform::matrix,python:"matrix",javascript:"matrix",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [[f64;4];4],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::AlignmentTransform)->&'a [[f64;4];4],},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"ConformerRmsd.rmsd",item:callable,owner:type_,rust:crate::ConformerRmsd::rmsd,python:"rmsd",javascript:"rmsd",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:f64,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->f64,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"ConformerRmsd.probe_conformer_id",item:callable,owner:type_,rust:crate::ConformerRmsd::probe_conformer_id,python:"probe_conformer_id",javascript:"probeConformerId",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->usize,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"ConformerRmsd.reference_conformer_id",item:callable,owner:type_,rust:crate::ConformerRmsd::reference_conformer_id,python:"reference_conformer_id",javascript:"referenceConformerId",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:usize,error:none,state:read_only,operation:none,signature:fn(&crate::ConformerRmsd)->usize,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"ConformerAlignmentReport.rmsds",item:callable,owner:type_,rust:crate::ConformerAlignmentReport::rmsds,python:"rmsds",javascript:"rmsds",feature:"cap-alignment",status:experimental,kind:instance,parameters:[],output:&'a [f64],error:none,state:read_only,operation:none,signature:for<'a> fn(&'a crate::ConformerAlignmentReport)->&'a [f64],},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"AlignmentAtomMap.new",item:callable,owner:type_,rust:crate::AlignmentAtomMap::new,python:"new",javascript:"new",feature:"cap-alignment",status:experimental,kind:static_,parameters:[{name:probe_atom,type: usize,default:required},{name:reference_atom,type: usize,default:required}],output:crate::AlignmentAtomMap,error:none,state:value_returning,operation:none,signature:fn( usize, usize)->crate::AlignmentAtomMap,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"AlignmentParameters.new",item:callable,owner:type_,rust:crate::AlignmentParameters::new,python:"new",javascript:"new",feature:"cap-alignment",status:experimental,kind:static_,parameters:[{name:probe_conformer_id,type:i32,default:integer(-1)},{name:reference_conformer_id,type:i32,default:integer(-1)},{name:atom_map,type:Option<Vec<crate::AlignmentAtomMap>>,default:none},{name:weights,type:Option<Vec<f64>>,default:none},{name:reflect,type:bool,default:boolean(false)},{name:max_iterations,type:u32,default:integer(50)}],output:crate::AlignmentParameters,error:none,state:value_returning,operation:none,signature:fn(i32,i32,Option<Vec<crate::AlignmentAtomMap>>,Option<Vec<f64>>,bool,u32)->crate::AlignmentParameters,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"BestAlignmentParameters.new",item:callable,owner:type_,rust:crate::BestAlignmentParameters::new,python:"new",javascript:"new",feature:"cap-alignment",status:experimental,kind:static_,parameters:[{name:probe_conformer_id,type:i32,default:integer(-1)},{name:reference_conformer_id,type:i32,default:integer(-1)},{name:atom_maps,type:Vec<Vec<crate::AlignmentAtomMap>>,default:"[]"},{name:weights,type:Option<Vec<f64>>,default:none},{name:reflect,type:bool,default:boolean(false)},{name:max_iterations,type:u32,default:integer(50)},{name:max_matches,type:i32,default:integer(1000000)},{name:symmetrize_conjugated_terminal_groups,type:bool,default:boolean(true)},{name:ignore_hydrogens,type:bool,default:boolean(true)},{name:num_threads,type:i32,default:integer(1)}],output:crate::BestAlignmentParameters,error:none,state:value_returning,operation:none,signature:fn(i32,i32,Vec<Vec<crate::AlignmentAtomMap>>,Option<Vec<f64>>,bool,u32,i32,bool,bool,i32)->crate::BestAlignmentParameters,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"CoordinateRmsdParameters.new",item:callable,owner:type_,rust:crate::CoordinateRmsdParameters::new,python:"new",javascript:"new",feature:"cap-alignment",status:experimental,kind:static_,parameters:[{name:probe_conformer_id,type:i32,default:integer(-1)},{name:reference_conformer_id,type:i32,default:integer(-1)},{name:atom_maps,type:Vec<Vec<crate::AlignmentAtomMap>>,default:"[]"},{name:weights,type:Option<Vec<f64>>,default:none},{name:max_matches,type:i32,default:integer(1000000)},{name:symmetrize_conjugated_terminal_groups,type:bool,default:boolean(true)}],output:crate::CoordinateRmsdParameters,error:none,state:value_returning,operation:none,signature:fn(i32,i32,Vec<Vec<crate::AlignmentAtomMap>>,Option<Vec<f64>>,i32,bool)->crate::CoordinateRmsdParameters,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"AllConformerRmsdParameters.new",item:callable,owner:type_,rust:crate::AllConformerRmsdParameters::new,python:"new",javascript:"new",feature:"cap-alignment",status:experimental,kind:static_,parameters:[{name:atom_maps,type:Vec<Vec<crate::AlignmentAtomMap>>,default:"[]"},{name:weights,type:Option<Vec<f64>>,default:none},{name:max_matches,type:i32,default:integer(1000000)},{name:symmetrize_conjugated_terminal_groups,type:bool,default:boolean(true)},{name:ignore_hydrogens,type:bool,default:boolean(true)},{name:num_threads,type:i32,default:integer(1)}],output:crate::AllConformerRmsdParameters,error:none,state:value_returning,operation:none,signature:fn(Vec<Vec<crate::AlignmentAtomMap>>,Option<Vec<f64>>,i32,bool,bool,i32)->crate::AllConformerRmsdParameters,},
+#[cfg(feature="cap-alignment")]
+{semantic_id:"ConformerAlignmentParameters.new",item:callable,owner:type_,rust:crate::ConformerAlignmentParameters::new,python:"new",javascript:"new",feature:"cap-alignment",status:experimental,kind:static_,parameters:[{name:atom_indices,type:Option<Vec<usize>>,default:none},{name:conformer_ids,type:Option<Vec<usize>>,default:none},{name:weights,type:Option<Vec<f64>>,default:none},{name:reflect,type:bool,default:boolean(false)},{name:max_iterations,type:u32,default:integer(50)}],output:crate::ConformerAlignmentParameters,error:none,state:value_returning,operation:none,signature:fn(Option<Vec<usize>>,Option<Vec<usize>>,Option<Vec<f64>>,bool,u32)->crate::ConformerAlignmentParameters,},
     ];
 }

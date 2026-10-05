@@ -16,6 +16,12 @@ pub struct Transform3D {
 }
 
 impl Transform3D {
+    /// Construct a detached row-major transform without applying chemistry policy.
+    #[must_use]
+    pub const fn from_values(values: [f64; 16]) -> Self {
+        Self { values }
+    }
+
     #[must_use]
     pub const fn identity() -> Self {
         // RDKit✔️✔️: Transform3D() : RDNumeric::SquareMatrix<double>(DIM_3D, 0.0) {

@@ -1629,6 +1629,53 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.find_chiral_centers",
         ]);
     }
+    if cfg!(feature = "cap-alignment") {
+        expected.extend([
+            "types.AlignmentAtomMap",
+            "types.AlignmentParameters",
+            "types.BestAlignmentParameters",
+            "types.CoordinateRmsdParameters",
+            "types.AllConformerRmsdParameters",
+            "types.ConformerAlignmentParameters",
+            "types.AlignmentResult",
+            "types.AlignmentTransform",
+            "types.ConformerRmsd",
+            "types.ConformerAlignmentReport",
+            "types.AlignmentError",
+            "Molecule.alignment_transform_to",
+            "Molecule.alignment_transform_to_with_params",
+            "Molecule.best_alignment_to",
+            "Molecule.best_alignment_to_with_params",
+            "Molecule.best_rmsd_to",
+            "Molecule.best_rmsd_to_with_params",
+            "Molecule.coordinate_rmsd_to",
+            "Molecule.coordinate_rmsd_to_with_params",
+            "Molecule.all_conformer_best_rmsds",
+            "Molecule.all_conformer_best_rmsds_with_params",
+            "Molecule.with_alignment_to",
+            "Molecule.with_alignment_to_with_params",
+            "Molecule.align_to_",
+            "Molecule.align_to_with_params_",
+            "Molecule.with_aligned_conformers",
+            "Molecule.with_aligned_conformers_with_params",
+            "Molecule.align_conformers_",
+            "Molecule.align_conformers_with_params_",
+            "AlignmentResult.rmsd",
+            "AlignmentResult.transform",
+            "AlignmentResult.atom_map",
+            "AlignmentTransform.matrix",
+            "ConformerRmsd.rmsd",
+            "ConformerRmsd.probe_conformer_id",
+            "ConformerRmsd.reference_conformer_id",
+            "ConformerAlignmentReport.rmsds",
+            "AlignmentAtomMap.new",
+            "AlignmentParameters.new",
+            "BestAlignmentParameters.new",
+            "CoordinateRmsdParameters.new",
+            "AllConformerRmsdParameters.new",
+            "ConformerAlignmentParameters.new",
+        ]);
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()

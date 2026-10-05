@@ -1,5 +1,6 @@
 //! One canonical Molecule class, retaining the delivered drawing projections.
 
+use crate::alignment_binding::*;
 use crate::canonical_fingerprint_values::{
     AtomPairFingerprintParams, FingerprintAdditionalOutput, LegacyTopologicalTorsionParams,
     MorganFingerprintParams, TopologicalTorsionCallParams, TopologicalTorsionFingerprintGenerator,
@@ -19,7 +20,7 @@ pyo3::create_exception!(cosmolkit, OperationError, PyValueError);
 pyo3::create_exception!(cosmolkit, DrawingWriteError, pyo3::exceptions::PyOSError);
 
 // Transport actual source messages only; Python cannot retain Rust downcast identity.
-fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
+pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
     let error = PyValueError::new_err(source.to_string());
     error.set_cause(py, source.source().map(|cause| source_pyerr(py, cause)));
     error
@@ -84,6 +85,7 @@ fn drawing_pyerr(py: Python<'_>, source: ck::DrawingError) -> PyErr {
 pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyErr {
     use ck::OperationError as E;
     let kind = match &source {
+        E::Alignment(..) => "Alignment",
         E::UnsupportedFeature { .. } => "UnsupportedFeature",
         E::Unsupported { .. } => "Unsupported",
         E::OutputMismatch { .. } => "OutputMismatch",
@@ -139,6 +141,9 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
             E::UffOptimization(cause) => Some(crate::uff_binding::optimization_pyerr(py, cause)),
             E::MmffOptimization(cause) => Some(crate::mmff_binding::optimization_pyerr(py, cause)),
             E::Tautomer(cause) => Some(crate::tautomer_binding::run_pyerr(py, cause)),
+            E::Alignment(cause) => {
+                Some(crate::alignment_binding::alignment_pyerr(py, cause.clone()))
+            }
             E::PotentialStereo(cause) => {
                 Some(crate::canonical_potential_stereo::error_pyerr(py, cause))
             }
@@ -2258,6 +2263,248 @@ impl Molecule {
             .chi_n_n_with_params(order, force)
             .map_err(|error| crate::canonical_descriptor_binding::descriptor_pyerr(py, error))
     }
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = r#"
+Compute the transform aligning this molecule to ``reference`` without mutation.
+
+The returned result contains the RMSD, 4x4 transform, and selected atom map.
+Use ``with_alignment_to()`` or ``align_to_()`` to apply the transform.
+"#]
+    fn alignment_transform_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyAlignmentParameters>,
+    ) -> PyResult<PyAlignmentResult> {
+        let params = params
+            .map(|params| params.wrapper_parameters(self.inner.num_atoms()))
+            .transpose()
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))?
+            .unwrap_or_default();
+        self.inner
+            .alignment_transform_to_with_params(&reference.inner, &params)
+            .map(Into::into)
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = "Return the best source-compatible alignment result without mutating either molecule."]
+    fn best_alignment_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyBestAlignmentParameters>,
+    ) -> PyResult<PyAlignmentResult> {
+        let params = params
+            .map(PyBestAlignmentParameters::wrapper_parameters)
+            .transpose()
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))?
+            .unwrap_or_default();
+        self.inner
+            .best_alignment_to_with_params(&reference.inner, &params)
+            .map(Into::into)
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = "Return the best aligned RMSD without changing either molecule's coordinates."]
+    fn best_rmsd_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyBestAlignmentParameters>,
+    ) -> PyResult<f64> {
+        let params = params
+            .map(PyBestAlignmentParameters::wrapper_parameters)
+            .transpose()
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))?
+            .unwrap_or_default();
+        self.inner
+            .best_rmsd_to_with_params(&reference.inner, &params)
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = r#"
+Measure RMSD in the existing coordinate frame without alignment or mutation.
+
+This method corresponds to RDKit ``CalcRMS`` semantics, including map
+enumeration and optional terminal-group symmetrization.
+"#]
+    fn coordinate_rmsd_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyCoordinateRmsdParameters>,
+    ) -> PyResult<f64> {
+        let params = params
+            .map(PyCoordinateRmsdParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .coordinate_rmsd_to_with_params(&reference.inner, &params)
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = "Return best RMSD values for every ordered triangular conformer pair without mutation."]
+    fn all_conformer_best_rmsds(
+        &self,
+        params: Option<&PyAllConformerRmsdParameters>,
+    ) -> PyResult<Vec<PyConformerRmsd>> {
+        let params = params
+            .map(PyAllConformerRmsdParameters::wrapper_parameters)
+            .transpose()
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))?
+            .unwrap_or_default();
+        self.inner
+            .all_conformer_best_rmsds_with_params(&params)
+            .map(|values| values.into_iter().map(Into::into).collect())
+            .map_err(|err| Python::attach(|py| crate::alignment_binding::alignment_pyerr(py, err)))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = r#"
+Return a new molecule aligned to ``reference`` together with its alignment result.
+
+The source and reference molecules remain unchanged.
+"#]
+    fn with_alignment_to(
+        &self,
+        reference: &Molecule,
+        params: Option<&PyAlignmentParameters>,
+    ) -> PyResult<(Molecule, PyAlignmentResult)> {
+        let params = params
+            .map(|params| params.wrapper_parameters(self.inner.num_atoms()))
+            .transpose()
+            .map_err(|err| {
+                Python::attach(|py| {
+                    operation_pyerr(py, ::cosmolkit::OperationError::Alignment(err))
+                })
+            })?
+            .unwrap_or_default();
+        self.inner
+            .with_alignment_to_with_params(&reference.inner, &params)
+            .map(|(molecule, result)| (Molecule { inner: molecule }, result.into()))
+            .map_err(|err| Python::attach(|py| operation_pyerr(py, err)))
+    }
+
+    #[pyo3(signature = (reference, params=None))]
+    #[doc = "Align this molecule to ``reference`` in place and return the applied result."]
+    fn align_to_<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        #[gen_stub(override_type(type_repr = "Molecule"))] reference: &Bound<'py, PyAny>,
+        params: Option<&PyAlignmentParameters>,
+    ) -> PyResult<PyAlignmentResult> {
+        let params = params
+            .map(|params| params.wrapper_parameters(slf.inner.num_atoms()))
+            .transpose()
+            .map_err(|err| {
+                Python::attach(|py| {
+                    operation_pyerr(py, ::cosmolkit::OperationError::Alignment(err))
+                })
+            })?
+            .unwrap_or_default();
+        let reference_inner = if slf.as_ptr() == reference.as_ptr() {
+            slf.inner.clone()
+        } else {
+            reference.extract::<PyRef<'_, Molecule>>()?.inner.clone()
+        };
+        slf.inner
+            .align_to_with_params_(&reference_inner, &params)
+            .map(Into::into)
+            .map_err(|err| Python::attach(|py| operation_pyerr(py, err)))
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = "Return a molecule with aligned conformers and the ordered source RMS report."]
+    fn with_aligned_conformers(
+        &self,
+        params: Option<&PyConformerAlignmentParameters>,
+    ) -> PyResult<(Molecule, PyConformerAlignmentReport)> {
+        let params = params
+            .map(PyConformerAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .with_aligned_conformers_with_params(&params)
+            .map(|(molecule, report)| (Molecule { inner: molecule }, report.into()))
+            .map_err(|err| Python::attach(|py| operation_pyerr(py, err)))
+    }
+
+    #[pyo3(signature = (params=None))]
+    #[doc = "Align selected or all conformers in place and return the ordered source RMS report."]
+    fn align_conformers_(
+        &mut self,
+        params: Option<&PyConformerAlignmentParameters>,
+    ) -> PyResult<PyConformerAlignmentReport> {
+        let params = params
+            .map(PyConformerAlignmentParameters::core_parameters)
+            .unwrap_or_default();
+        self.inner
+            .align_conformers_with_params_(&params)
+            .map(Into::into)
+            .map_err(|err| Python::attach(|py| operation_pyerr(py, err)))
+    }
+    fn alignment_transform_to_with_params(
+        &self,
+        reference: &Molecule,
+        params: &PyAlignmentParameters,
+    ) -> PyResult<PyAlignmentResult> {
+        self.alignment_transform_to(reference, Some(params))
+    }
+
+    fn best_alignment_to_with_params(
+        &self,
+        reference: &Molecule,
+        params: &PyBestAlignmentParameters,
+    ) -> PyResult<PyAlignmentResult> {
+        self.best_alignment_to(reference, Some(params))
+    }
+
+    fn best_rmsd_to_with_params(
+        &self,
+        reference: &Molecule,
+        params: &PyBestAlignmentParameters,
+    ) -> PyResult<f64> {
+        self.best_rmsd_to(reference, Some(params))
+    }
+
+    fn coordinate_rmsd_to_with_params(
+        &self,
+        reference: &Molecule,
+        params: &PyCoordinateRmsdParameters,
+    ) -> PyResult<f64> {
+        self.coordinate_rmsd_to(reference, Some(params))
+    }
+
+    fn with_alignment_to_with_params(
+        &self,
+        reference: &Molecule,
+        params: &PyAlignmentParameters,
+    ) -> PyResult<(Molecule, PyAlignmentResult)> {
+        self.with_alignment_to(reference, Some(params))
+    }
+
+    fn all_conformer_best_rmsds_with_params(
+        &self,
+        params: &PyAllConformerRmsdParameters,
+    ) -> PyResult<Vec<PyConformerRmsd>> {
+        self.all_conformer_best_rmsds(Some(params))
+    }
+    fn with_aligned_conformers_with_params(
+        &self,
+        params: &PyConformerAlignmentParameters,
+    ) -> PyResult<(Molecule, PyConformerAlignmentReport)> {
+        self.with_aligned_conformers(Some(params))
+    }
+    fn align_conformers_with_params_(
+        &mut self,
+        params: &PyConformerAlignmentParameters,
+    ) -> PyResult<PyConformerAlignmentReport> {
+        self.align_conformers_(Some(params))
+    }
+    fn align_to_with_params_<'py>(
+        slf: PyRefMut<'py, Self>,
+        #[gen_stub(override_type(type_repr = "Molecule"))] reference: &Bound<'py, PyAny>,
+        params: &PyAlignmentParameters,
+    ) -> PyResult<PyAlignmentResult> {
+        Self::align_to_(slf, reference, Some(params))
+    }
 }
 
 #[pymodule]
@@ -2288,6 +2535,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_element_metadata::register(module)?;
     crate::mmff_binding::register(module)?;
     crate::uff_binding::register(module)?;
+    crate::alignment_binding::register(module)?;
     crate::canonical_search::register(module)?;
     crate::canonical_atom_bond::register(module)?;
     crate::canonical_potential_stereo::register(module)?;

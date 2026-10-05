@@ -195,8 +195,11 @@ dependencies = [
 name = "cosmolkit-alignment"
 version = "0.5.0-rc.10"
 dependencies = [
- "cosmolkit-conformer",
+ "cosmolkit-core",
  "cosmolkit-model",
+ "cosmolkit-search",
+ "cosmolkit-types",
+ "thiserror",
 ]
 
 [[package]]

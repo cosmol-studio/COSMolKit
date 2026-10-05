@@ -4,6 +4,7 @@
 //! owned values from `cosmolkit-model` and never accepts a live `Molecule`, an
 //! operation context, or runtime cache state.
 
+mod alignment;
 mod aromaticity;
 mod atropisomer;
 mod attachment_points;
@@ -295,3 +296,6 @@ pub use wedge::{
     determine_bond_wedge_state, get_molfile_bond_stereo_info, pick_bonds_to_wedge,
     pick_bonds_to_wedge_with_existing_ring_info, pick_bonds_to_wedge_with_ring_info,
 };
+
+/// Foundational quaternion alignment over detached point rows.
+pub use alignment::{align_points, alignment_transform_point};
