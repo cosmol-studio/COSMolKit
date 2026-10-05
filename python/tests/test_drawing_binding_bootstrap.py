@@ -9,7 +9,7 @@ import pytest
 
 
 def test_current_selected_extension_is_imported():
-    assert cosmolkit._binding_profile == "drawing-bindings"
+    assert cosmolkit._binding_profile in {"drawing-bindings", "canonical-bootstrap"}
     assert cosmolkit.__version__ == "0.5.0-rc.9"
     assert cosmolkit.Molecule.__module__ == "cosmolkit"
 

@@ -857,6 +857,10 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             ],
         );
     }
+    if cfg!(feature = "cap-valence") {
+        expected.insert(0, "module.element_info");
+    }
+    expected.splice(0..0, ["types.Element", "types.ElementInfo"]);
     assert_eq!(
         BINDING_CONTRACT
             .iter()

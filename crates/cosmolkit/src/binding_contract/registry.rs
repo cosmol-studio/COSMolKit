@@ -4,6 +4,26 @@ use cosmolkit_macros::binding_contract;
 
 binding_contract! {
     pub static BINDING_CONTRACT = [
+        {
+            semantic_id: "types.Element", item: type, owner: type_,
+            rust: crate::Element, python: "Element", javascript: "Element",
+            feature: "metadata", status: experimental, role: value,
+        },
+        {
+            semantic_id: "types.ElementInfo", item: type, owner: type_,
+            rust: crate::ElementInfo, python: "ElementInfo", javascript: "ElementInfo",
+            feature: "metadata", status: experimental, role: result,
+        },
+        #[cfg(feature = "cap-valence")]
+        {
+            semantic_id: "module.element_info", item: callable, owner: module,
+            rust: crate::element_info, python: "element_info", javascript: "elementInfo",
+            feature: "cap-valence", status: experimental, kind: module,
+            parameters: [{ name: element, type: crate::Element, default: required }],
+            output: crate::ElementInfo, error: none,
+            state: read_only, operation: none,
+            signature: fn(crate::Element) -> crate::ElementInfo,
+        },
         #[cfg(feature = "cap-smiles")]
         {
             semantic_id: "types.SmilesWriteParams", item: type, owner: type_,

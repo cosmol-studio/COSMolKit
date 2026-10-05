@@ -188,6 +188,50 @@ pub use smiles::{
     FragmentCxSmilesWriteParams, FragmentSmilesWriteParams, SmilesError, SmilesWriteError,
 };
 
+/// Returns RDKit periodic-table metadata for an element, including the dummy (`*`).
+///
+/// All elements with atomic numbers `0..=118` are supported. The record contains
+/// the canonical symbol, period, outer electron count, complete ordered valence
+/// list, `Rb0` bond radius in angstroms, and atomic weight. Source-defined zeros
+/// and the unrestricted-valence sentinel `-1` are preserved.
+///
+/// The returned symbol and valence slice borrow immutable shared table data.
+/// This query has no options or errors and does not change any molecule.
+#[cfg(feature = "cap-valence")]
+#[must_use]
+pub fn element_info(element: Element) -> ElementInfo {
+    // Source: RDKit 2026.03.1, Code/GraphMol/{PeriodicTable,atomic_data}.h.
+    // These field-access anchors describe the delegated core table lookup;
+    // Element's checked identity satisfies the numeric source preconditions.
+    // RDKit✔️✔️: std::string getElementSymbol(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   return byanum[atomicNumber].Symbol();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: double getAtomicWeight(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   double mass = byanum[atomicNumber].Mass();
+    // RDKit✔️✔️:   return mass;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: double getRb0(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   return byanum[atomicNumber].Rb0();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: const INT_VECT &getValenceList(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   return byanum[atomicNumber].ValenceList();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: int getNouterElecs(UINT atomicNumber) const {
+    // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+    // RDKit✔️✔️:   return byanum[atomicNumber].NumOuterShellElec();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: int AtomicNum() const { return anum; }
+    // RDKit✔️✔️: unsigned int Row() const { return row; }
+    // Warm lookup is O(1), returns a Copy record and borrows the existing
+    // static valence slice without allocation. Cold initialization remains
+    // the single core-owned table initialization.
+    cosmolkit_core::element_info(element)
+}
+
 /// Returns the crate version at compile time.
 #[must_use]
 pub fn version() -> &'static str {

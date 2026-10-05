@@ -674,6 +674,15 @@ fn format_svg_font_size_px(value: f64) -> String {
 }
 
 fn xml_escape(text: &str) -> String {
+    // BEGIN RDKIT CPP FUNCTION escape_xhtml (DrawTextSVG.cpp:43-50)
+    // RDKit✔️✔️: boost::algorithm::replace_all(data, "&", "&amp;");
+    // RDKit✔️✔️: boost::algorithm::replace_all(data, "\"", "&quot;");
+    // RDKit✔️✔️: boost::algorithm::replace_all(data, "\'", "&apos;");
+    // RDKit✔️✔️: boost::algorithm::replace_all(data, "<", "&lt;");
+    // RDKit✔️✔️: boost::algorithm::replace_all(data, ">", "&gt;");
+    // END RDKIT CPP FUNCTION escape_xhtml
+    // The replacements after ampersand do not overlap. Five linear passes have
+    // the source's linear complexity; each emitted glyph has bounded size.
     text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -1045,63 +1054,68 @@ fn select_scale_factor(ch: char, draw_type: TextDrawType) -> f64 {
     }
 }
 
-/// RDKit❗✔️: parse a markup string into characters and draw modes.
-/// Supports `<sup>...</sup>` and `<sub>...</sub>` markup.
+/// Parse the four drawing script tags; other text remains literal.
 fn parse_draw_chars(text: &str) -> (Vec<char>, Vec<TextDrawType>) {
+    // BEGIN RDKIT CPP FUNCTION setStringDrawMode (DrawText.cpp:465-492)
+    // RDKit✔️✔️: std::string bit1 = instring.substr(i, 5);
+    // RDKit✔️✔️: std::string bit2 = instring.substr(i, 6);
+    // RDKit✔️✔️: if (std::string("<sub>") == bit1) {
+    // RDKit✔️✔️:   draw_mode = TextDrawType::TextDrawSubscript;
+    // RDKit✔️✔️:   i += 4;
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: } else if (std::string("<sup>") == bit1) {
+    // RDKit✔️✔️:   draw_mode = TextDrawType::TextDrawSuperscript;
+    // RDKit✔️✔️:   i += 4;
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: } else if (std::string("</sub>") == bit2) {
+    // RDKit✔️✔️:   draw_mode = TextDrawType::TextDrawNormal;
+    // RDKit✔️✔️:   i += 5;
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: } else if (std::string("</sup>") == bit2) {
+    // RDKit✔️✔️:   draw_mode = TextDrawType::TextDrawNormal;
+    // RDKit✔️✔️:   i += 5;
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: return false;
+    // END RDKIT CPP FUNCTION setStringDrawMode
+    // BEGIN RDKIT CPP FUNCTION DrawTextSVG::getStringRects (character scan)
+    // RDKit✔️✔️: TextDrawType draw_mode = TextDrawType::TextDrawNormal;
+    // RDKit✔️✔️: for (size_t i = 0; i < text.length(); ++i) {
+    // RDKit✔️✔️:   if ('<' == text[i] && setStringDrawMode(text, draw_mode, i)) {
+    // RDKit✔️✔️:     continue;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   draw_modes.push_back(draw_mode);
+    // RDKit✔️✔️:   draw_chars.push_back(text[i]);
+    // END RDKIT CPP FUNCTION DrawTextSVG::getStringRects (character scan)
+    // ASCII matches the source byte scan. Retain existing UTF-8 scalar handling
+    // without claiming parity with upstream's byte-indexed character metrics.
+    // Both scans are linear, with two amortized-linear output vectors and no
+    // intermediate strings. Bounded prefix checks replace source substr copies.
+    // Literal-wrapper removal belongs to atom_label_to_pieces; XML escaping
+    // belongs to SVG output. Neither is a character-scan operation.
     let mut chars = Vec::new();
     let mut modes = Vec::new();
     let mut i = 0;
-    let bytes = text.as_bytes();
     let mut current_mode = TextDrawType::Normal;
 
     while i < text.len() {
-        if bytes[i] == b'<' {
-            if text[i..].starts_with("<sup>") {
+        let rest = &text[i..];
+        if rest.starts_with('<') {
+            if rest.starts_with("<sup>") {
                 current_mode = TextDrawType::Superscript;
                 i += 5;
                 continue;
-            } else if text[i..].starts_with("</sup>") {
-                current_mode = TextDrawType::Normal;
-                i += 6;
-                continue;
-            } else if text[i..].starts_with("<sub>") {
+            } else if rest.starts_with("<sub>") {
                 current_mode = TextDrawType::Subscript;
                 i += 5;
                 continue;
-            } else if text[i..].starts_with("</sub>") {
+            } else if rest.starts_with("</sup>") || rest.starts_with("</sub>") {
                 current_mode = TextDrawType::Normal;
                 i += 6;
                 continue;
-            } else if text[i..].starts_with("<lit>") {
-                // <lit>...</lit> is rendered as-is, treat content as normal
-                i += 5;
-                continue;
-            } else if text[i..].starts_with("</lit>") {
-                i += 6;
-                continue;
-            }
-            // pass through bare < as normal char
-        }
-        if bytes[i] == b'&' {
-            // skip &amp; &lt; &gt; &quot; &apos; in drawing text
-            if text[i..].starts_with("&amp;") {
-                chars.push('&');
-                modes.push(current_mode);
-                i += 5;
-                continue;
-            } else if text[i..].starts_with("&lt;") {
-                chars.push('<');
-                modes.push(current_mode);
-                i += 4;
-                continue;
-            } else if text[i..].starts_with("&gt;") {
-                chars.push('>');
-                modes.push(current_mode);
-                i += 4;
-                continue;
             }
         }
-        let ch = text[i..].chars().next().unwrap();
+        let ch = rest.chars().next().unwrap();
         chars.push(ch);
         modes.push(current_mode);
         i += ch.len_utf8();
@@ -8272,3 +8286,7 @@ mod drawing_helpers_legacy_tests {
         assert!(self_rect.does_it_intersect(&other_rect, 0.0));
     }
 }
+
+#[cfg(test)]
+#[path = "drawing_text_tests.rs"]
+mod drawing_text_tests;

@@ -1,5 +1,6 @@
-//! Experimental drawing projections; all chemistry stays in the public facade.
+//! One canonical Molecule class, retaining the delivered drawing projections.
 
+use crate::canonical_values::*;
 use ::cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
@@ -251,10 +252,28 @@ struct Molecule {
 #[pymethods]
 impl Molecule {
     #[staticmethod]
-    fn from_smiles(smiles: &str) -> PyResult<Self> {
+    fn new() -> Self {
+        Self {
+            inner: ck::Molecule::new(),
+        }
+    }
+
+    #[staticmethod]
+    fn from_smiles(py: Python<'_>, smiles: &str) -> PyResult<Self> {
         ck::Molecule::from_smiles(smiles)
             .map(|inner| Self { inner })
-            .map_err(|error| PyValueError::new_err(error.to_string()))
+            .map_err(|error| smiles_pyerr(py, error))
+    }
+
+    #[staticmethod]
+    fn from_smiles_with_params(
+        py: Python<'_>,
+        input: &str,
+        params: &SmilesParseParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::from_smiles_with_params(input, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| smiles_pyerr(py, e))
     }
 
     fn num_atoms(&self) -> usize {
@@ -265,10 +284,48 @@ impl Molecule {
         self.inner.num_bonds()
     }
 
-    fn to_smiles(&self) -> PyResult<String> {
+    fn to_smiles(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_smiles()
-            .map_err(|error| PyValueError::new_err(error.to_string()))
+            .map_err(|error| smiles_write_pyerr(py, error))
+    }
+
+    fn to_smiles_with_params(
+        &self,
+        py: Python<'_>,
+        params: &SmilesWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_smiles_with_params(&params.inner)
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
+
+    fn morgan_fingerprint(&self, py: Python<'_>) -> PyResult<Fingerprint> {
+        self.inner
+            .morgan_fingerprint()
+            .map(|inner| Fingerprint { inner })
+            .map_err(|e| morgan_pyerr(py, e))
+    }
+
+    fn morgan_sparse_fingerprint(&self, py: Python<'_>) -> PyResult<SparseBitFingerprint> {
+        self.inner
+            .morgan_sparse_fingerprint()
+            .map(|inner| SparseBitFingerprint { inner })
+            .map_err(|e| morgan_pyerr(py, e))
+    }
+
+    fn morgan_sparse_count_fingerprint(&self, py: Python<'_>) -> PyResult<SparseCountFingerprint> {
+        self.inner
+            .morgan_sparse_count_fingerprint()
+            .map(|inner| SparseCountFingerprint { inner })
+            .map_err(|e| morgan_pyerr(py, e))
+    }
+
+    fn morgan_count_fingerprint(&self, py: Python<'_>) -> PyResult<SparseCountFingerprint32> {
+        self.inner
+            .morgan_count_fingerprint()
+            .map(|inner| SparseCountFingerprint32 { inner })
+            .map_err(|e| morgan_pyerr(py, e))
     }
 
     fn coordinates_2d(&self) -> Option<Vec<[f64; 2]>> {
@@ -334,10 +391,18 @@ impl Molecule {
 #[pymodule]
 fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("__version__", ck::version())?;
-    module.add("_binding_profile", "drawing-bindings")?;
+    module.add(
+        "_binding_profile",
+        if cfg!(feature = "drawing-bindings") {
+            "drawing-bindings"
+        } else {
+            "canonical-bootstrap"
+        },
+    )?;
     module.add("DrawingError", module.py().get_type::<DrawingError>())?;
     module.add("OperationError", module.py().get_type::<OperationError>())?;
     module.add_class::<Molecule>()?;
     module.add_class::<Coordinate2DParams>()?;
+    crate::canonical_values::register(module)?;
     Ok(())
 }

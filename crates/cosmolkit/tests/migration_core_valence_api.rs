@@ -103,8 +103,9 @@ fn canonical_public_signatures_and_defaults_compile() {
 }
 
 #[test]
-fn binding_contract_exposes_the_frozen_eight_entries() {
+fn binding_contract_exposes_the_frozen_nine_entries() {
     let expected = [
+        "module.element_info",
         "types.ValenceModel",
         "types.ValenceParams",
         "types.ValenceError",
@@ -122,22 +123,27 @@ fn binding_contract_exposes_the_frozen_eight_entries() {
         rows.iter().map(|row| row.semantic_id).collect::<Vec<_>>(),
         expected
     );
-    for row in &rows[..3] {
+    assert_eq!(rows[0].item, BindingItem::Callable);
+    assert_eq!(rows[0].owner, BindingOwner::Module);
+    assert_eq!(rows[0].status, FunctionStatus::Experimental);
+    assert_eq!(rows[0].callable.unwrap().state_model, StateModel::ReadOnly);
+    assert_eq!(rows[0].callable.unwrap().operation_semantic_id, None);
+    for row in &rows[1..4] {
         assert_eq!(row.item, BindingItem::Type);
         assert_eq!(row.owner, BindingOwner::Type);
         assert_eq!(row.status, FunctionStatus::Experimental);
     }
-    for row in &rows[3..] {
+    for row in &rows[4..] {
         assert_eq!(row.item, BindingItem::Callable);
         assert_eq!(row.owner, BindingOwner::Molecule);
         assert_eq!(row.status, FunctionStatus::Experimental);
     }
     assert_eq!(
-        rows[3].callable.unwrap().state_model,
+        rows[4].callable.unwrap().state_model,
         StateModel::ValueReturning
     );
-    assert_eq!(rows[5].callable.unwrap().state_model, StateModel::InPlace);
-    assert_eq!(rows[7].callable.unwrap().state_model, StateModel::ReadOnly);
+    assert_eq!(rows[6].callable.unwrap().state_model, StateModel::InPlace);
+    assert_eq!(rows[8].callable.unwrap().state_model, StateModel::ReadOnly);
 }
 
 #[test]

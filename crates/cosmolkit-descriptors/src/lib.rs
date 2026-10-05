@@ -1,12 +1,16 @@
 //! Detached molecular mass, formula, and topology descriptor primitives.
 //!
-//! The descriptor boundary accepts only a validated [`TopologyBlock`]. It
-//! cannot observe or mutate a live runtime molecule or derived-cache state.
+//! Descriptor boundaries borrow detached model values and explicit prepared
+//! assignments. They cannot observe or mutate a live runtime molecule or its
+//! derived-cache state.
 
+mod chi;
+mod connectivity;
 pub mod counts;
 mod crippen;
 mod labute;
 pub mod lipinski;
+mod mqn;
 pub(crate) mod patterns;
 pub mod rings;
 pub mod rotatable;
@@ -14,11 +18,22 @@ pub mod stereo;
 mod tpsa;
 mod vsa;
 
+pub use chi::{
+    CHI_0_N_VERSION, CHI_0_V_VERSION, CHI_1_N_VERSION, CHI_1_V_VERSION, CHI_2_N_VERSION,
+    CHI_2_V_VERSION, CHI_3_N_VERSION, CHI_3_V_VERSION, CHI_4_N_VERSION, CHI_4_V_VERSION,
+    CHI_N_N_VERSION, CHI_N_V_VERSION, chi_0_n, chi_0_v, chi_1_n, chi_1_v, chi_2_n, chi_2_v,
+    chi_3_n, chi_3_v, chi_4_n, chi_4_v, chi_n_n, chi_n_v,
+};
+pub use connectivity::{
+    HALL_KIER_ALPHA_VERSION, KAPPA_1_VERSION, KAPPA_2_VERSION, KAPPA_3_VERSION, PHI_VERSION,
+    hall_kier_alpha, kappa_1, kappa_2, kappa_3, phi,
+};
 pub use crippen::{CrippenContributions, crippen_contributions};
 pub use crippen::{CrippenParamRow, default_crippen_params};
 pub use crippen::{CrippenTotals, crippen_totals};
 pub use crippen::{crippen_clogp, crippen_mr};
 pub use labute::{LabuteContributions, labute_asa, labute_contributions};
+pub use mqn::{MQN_VERSION, mqns};
 pub use tpsa::{DescriptorComputedState, tpsa_contributions};
 pub use vsa::{assign_contribs_to_bins, slogp_vsa, smr_vsa};
 
@@ -3144,6 +3159,34 @@ pub enum DescriptorSearchCause {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum DescriptorError {
+    /// A sole path-owner result violates the source TEST_ASSERT invariant.
+    #[error(
+        "descriptor `{function}`: connectivity path has {actual_rows:?} atom rows; expected {expected_rows}"
+    )]
+    InvalidConnectivityPath {
+        function: &'static str,
+        expected_rows: usize,
+        actual_rows: Option<usize>,
+    },
+    /// A detached descriptor input violates local topology invariants.
+    #[error("descriptor `{function}`: invalid topology: {source}")]
+    InvalidTopology {
+        function: &'static str,
+        #[source]
+        source: cosmolkit_model::TopologyValidationError,
+    },
+    /// The existing core path owner failed; its cause remains structural.
+    #[error("descriptor `{function}`: path source error: {source}")]
+    Path {
+        function: &'static str,
+        #[source]
+        source: cosmolkit_core::PathError,
+    },
+    /// The optional Hall–Kier output sink violates the source PRECONDITION.
+    #[error(
+        "descriptor `hall_kier_alpha`: contribution sink has {actual} rows; requires at least {minimum}"
+    )]
+    InvalidHallKierContributionRows { actual: usize, minimum: usize },
     #[error(
         "descriptor `{function}`: cached TPSA contributions exist but the scalar total is missing (include_sulfur_phosphorus={include_sulfur_phosphorus})"
     )]

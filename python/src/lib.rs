@@ -1,13 +1,11 @@
-//! Selected Python projections of the public COSMolKit facade.
+//! Canonical Python projections of the public COSMolKit facade.
 //!
-//! The explicit drawing selection is usable independently of the still
-//! unmigrated historical default surface. It does not duplicate chemistry.
+//! Default and explicit drawing selections share one live Molecule class.
+//! Historical adapters remain as source evidence, outside module compilation.
 
-#[cfg(feature = "drawing-bindings")]
+mod canonical_fingerprint_values;
+mod canonical_values;
 mod drawing_binding;
 
-#[cfg(all(feature = "drawing-bindings", feature = "stubgen"))]
+#[cfg(feature = "stubgen")]
 pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
-
-#[cfg(not(feature = "drawing-bindings"))]
-include!("unmigrated_bindings.rs");
