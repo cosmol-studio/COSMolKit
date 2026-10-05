@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 pyo3::create_exception!(cosmolkit, SmilesError, PyValueError);
 pyo3::create_exception!(cosmolkit, SmilesWriteError, PyValueError);
 pyo3::create_exception!(cosmolkit, MorganReadError, PyValueError);
+pyo3::create_exception!(cosmolkit, AtomPairReadError, PyValueError);
+pyo3::create_exception!(cosmolkit, TopologicalTorsionReadError, PyValueError);
 pyo3::create_exception!(cosmolkit, FingerprintError, PyValueError);
 
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
@@ -76,6 +78,37 @@ pub(crate) fn morgan_pyerr(py: Python<'_>, source: ck::MorganReadError) -> PyErr
     annotate(
         py,
         MorganReadError::new_err(source.to_string()),
+        "fingerprints",
+        kind,
+        &source,
+    )
+}
+
+pub(crate) fn atom_pair_pyerr(py: Python<'_>, source: ck::AtomPairReadError) -> PyErr {
+    let kind = match &source {
+        ck::AtomPairReadError::Preparation(_) => "Preparation",
+        ck::AtomPairReadError::Generator(_) => "Generator",
+    };
+    annotate(
+        py,
+        AtomPairReadError::new_err(source.to_string()),
+        "fingerprints",
+        kind,
+        &source,
+    )
+}
+
+pub(crate) fn topological_torsion_pyerr(
+    py: Python<'_>,
+    source: ck::TopologicalTorsionReadError,
+) -> PyErr {
+    let kind = match &source {
+        ck::TopologicalTorsionReadError::Preparation(_) => "Preparation",
+        ck::TopologicalTorsionReadError::Generator(_) => "Generator",
+    };
+    annotate(
+        py,
+        TopologicalTorsionReadError::new_err(source.to_string()),
         "fingerprints",
         kind,
         &source,
@@ -503,7 +536,6 @@ fn version() -> &'static str {
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_fingerprint_values::register(module)?;
-    crate::canonical_element_metadata::register(module)?;
     module.add_function(wrap_pyfunction!(version, module)?)?;
     module.add_class::<SmilesParseParams>()?;
     module.add_class::<SmilesWriteParams>()?;
@@ -515,6 +547,14 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add(
         "SmilesWriteError",
         module.py().get_type::<SmilesWriteError>(),
+    )?;
+    module.add(
+        "AtomPairReadError",
+        module.py().get_type::<AtomPairReadError>(),
+    )?;
+    module.add(
+        "TopologicalTorsionReadError",
+        module.py().get_type::<TopologicalTorsionReadError>(),
     )?;
     module.add("MorganReadError", module.py().get_type::<MorganReadError>())?;
     module.add(

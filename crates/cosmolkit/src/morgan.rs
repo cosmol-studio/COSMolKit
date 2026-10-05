@@ -53,14 +53,14 @@ enum MorganReadRings<'a> {
     Temporary(RingInfo),
 }
 
-struct MorganReadPreparation<'a> {
+pub(super) struct MorganReadPreparation<'a> {
     molecule: &'a Molecule,
     valence: &'a ValenceAssignment,
     rings: MorganReadRings<'a>,
 }
 
 impl MorganReadPreparation<'_> {
-    fn owner_input(&self) -> MorganPreparedInput<'_> {
+    pub(super) fn owner_input(&self) -> MorganPreparedInput<'_> {
         let rings = match &self.rings {
             MorganReadRings::Cached(rings) => *rings,
             MorganReadRings::Temporary(rings) => rings,
@@ -75,7 +75,7 @@ impl MorganReadPreparation<'_> {
     }
 }
 
-fn prepare_morgan_read_input(
+pub(super) fn prepare_morgan_read_input(
     molecule: &Molecule,
 ) -> Result<MorganReadPreparation<'_>, MorganReadError> {
     let cache = molecule.derived_cache_runtime();

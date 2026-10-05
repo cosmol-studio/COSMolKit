@@ -70,6 +70,8 @@
 //! ```
 
 mod additional_output;
+mod atom_code;
+mod atom_pair;
 pub mod folding;
 mod generator;
 pub mod hash;
@@ -81,6 +83,7 @@ mod rng;
 pub mod similarity;
 mod sparse_bits;
 mod sparse_counts;
+mod topological_torsion;
 mod values;
 
 use std::fmt;
@@ -91,6 +94,12 @@ use cosmolkit_core::{
 use cosmolkit_model::{MoleculePropertyError, TopologyBlock};
 
 pub use additional_output::AdditionalOutput;
+pub use atom_code::{AtomCodeAssignment, AtomCodeError, AtomCodeInput, AtomCodeOptions, atom_code};
+pub use atom_pair::{
+    AtomPairAtomInvariantsGenerator, AtomPairCall, AtomPairError, AtomPairParams,
+    AtomPairPreparedInput, atom_pair_bits, atom_pair_count, atom_pair_sparse_bits,
+    atom_pair_sparse_count,
+};
 pub use cosmolkit_search::QueryGraph;
 pub use morgan::{
     MorganAtomInvariants, MorganCall, MorganParams, morgan_bits, morgan_count, morgan_sparse_bits,
@@ -338,3 +347,20 @@ pub fn morgan(topology: &TopologyBlock) -> Result<Fingerprint, FingerprintError>
 pub fn pattern(topology: &TopologyBlock) -> Result<Fingerprint, FingerprintError> {
     morgan(topology)
 }
+
+pub use topological_torsion::{
+    TopologicalTorsionCall, TopologicalTorsionError, TopologicalTorsionParams,
+    topological_torsion_bits, topological_torsion_count, topological_torsion_sparse_bits,
+    topological_torsion_sparse_count,
+};
+
+#[cfg(test)]
+mod test_support;
+
+mod metadata;
+pub use metadata::FingerprintJsonError;
+
+pub use topological_torsion::{
+    LegacyTopologicalTorsionParams, legacy_topological_torsion_bits,
+    legacy_topological_torsion_count, legacy_topological_torsion_sparse_count,
+};

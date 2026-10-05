@@ -1,5 +1,9 @@
 //! One canonical Molecule class, retaining the delivered drawing projections.
 
+use crate::canonical_fingerprint_values::{
+    AdditionalOutput, AtomPairFingerprintParams, MorganFingerprintParams,
+    TopologicalTorsionFingerprintParams,
+};
 use crate::canonical_values::*;
 use ::cosmolkit as ck;
 use pyo3::exceptions::PyValueError;
@@ -944,6 +948,178 @@ impl Molecule {
             .map_err(|e| smiles_write_pyerr(py, e))
     }
 
+    fn atom_pair_fingerprint(&self, py: Python<'_>) -> PyResult<Fingerprint> {
+        self.inner
+            .atom_pair_fingerprint()
+            .map(|inner| Fingerprint { inner })
+            .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn atom_pair_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &AtomPairFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<Fingerprint> {
+        self.inner
+            .atom_pair_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| Fingerprint { inner })
+            .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn atom_pair_sparse_fingerprint(&self, py: Python<'_>) -> PyResult<SparseBitFingerprint> {
+        self.inner
+            .atom_pair_sparse_fingerprint()
+            .map(|inner| SparseBitFingerprint { inner })
+            .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn atom_pair_sparse_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &AtomPairFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseBitFingerprint> {
+        self.inner
+            .atom_pair_sparse_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseBitFingerprint { inner })
+            .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn atom_pair_count_fingerprint(&self, py: Python<'_>) -> PyResult<SparseCountFingerprint32> {
+        self.inner
+            .atom_pair_count_fingerprint()
+            .map(|inner| SparseCountFingerprint32 { inner })
+            .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn atom_pair_count_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &AtomPairFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseCountFingerprint32> {
+        self.inner
+            .atom_pair_count_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseCountFingerprint32 { inner })
+            .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn atom_pair_sparse_count_fingerprint(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<SparseCountFingerprint> {
+        self.inner
+            .atom_pair_sparse_count_fingerprint()
+            .map(|inner| SparseCountFingerprint { inner })
+            .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn atom_pair_sparse_count_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &AtomPairFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseCountFingerprint> {
+        self.inner
+            .atom_pair_sparse_count_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseCountFingerprint { inner })
+            .map_err(|error| atom_pair_pyerr(py, error))
+    }
+    fn topological_torsion_fingerprint(&self, py: Python<'_>) -> PyResult<Fingerprint> {
+        self.inner
+            .topological_torsion_fingerprint()
+            .map(|inner| Fingerprint { inner })
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
+    fn topological_torsion_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &TopologicalTorsionFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<Fingerprint> {
+        self.inner
+            .topological_torsion_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| Fingerprint { inner })
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
+    fn topological_torsion_sparse_fingerprint(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<SparseBitFingerprint> {
+        self.inner
+            .topological_torsion_sparse_fingerprint()
+            .map(|inner| SparseBitFingerprint { inner })
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
+    fn topological_torsion_sparse_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &TopologicalTorsionFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseBitFingerprint> {
+        self.inner
+            .topological_torsion_sparse_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseBitFingerprint { inner })
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
+    fn topological_torsion_count_fingerprint(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<SparseCountFingerprint32> {
+        self.inner
+            .topological_torsion_count_fingerprint()
+            .map(|inner| SparseCountFingerprint32 { inner })
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
+    fn topological_torsion_count_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &TopologicalTorsionFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseCountFingerprint32> {
+        self.inner
+            .topological_torsion_count_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseCountFingerprint32 { inner })
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
+    fn topological_torsion_sparse_count_fingerprint(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<SparseCountFingerprint> {
+        self.inner
+            .topological_torsion_sparse_count_fingerprint()
+            .map(|inner| SparseCountFingerprint { inner })
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
+    fn topological_torsion_sparse_count_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &TopologicalTorsionFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseCountFingerprint> {
+        self.inner
+            .topological_torsion_sparse_count_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseCountFingerprint { inner })
+            .map_err(|error| topological_torsion_pyerr(py, error))
+    }
     fn morgan_fingerprint(&self, py: Python<'_>) -> PyResult<Fingerprint> {
         self.inner
             .morgan_fingerprint()
@@ -970,6 +1146,66 @@ impl Molecule {
             .morgan_count_fingerprint()
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(|e| morgan_pyerr(py, e))
+    }
+
+    fn morgan_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &MorganFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<Fingerprint> {
+        self.inner
+            .morgan_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| Fingerprint { inner })
+            .map_err(|error| morgan_pyerr(py, error))
+    }
+
+    fn morgan_sparse_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &MorganFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseBitFingerprint> {
+        self.inner
+            .morgan_sparse_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseBitFingerprint { inner })
+            .map_err(|error| morgan_pyerr(py, error))
+    }
+
+    fn morgan_count_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &MorganFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseCountFingerprint32> {
+        self.inner
+            .morgan_count_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseCountFingerprint32 { inner })
+            .map_err(|error| morgan_pyerr(py, error))
+    }
+
+    fn morgan_sparse_count_fingerprint_with_params(
+        &self,
+        py: Python<'_>,
+        params: &MorganFingerprintParams,
+        mut additional_output: Option<PyRefMut<'_, AdditionalOutput>>,
+    ) -> PyResult<SparseCountFingerprint> {
+        self.inner
+            .morgan_sparse_count_fingerprint_with_params(
+                &params.inner,
+                additional_output.as_mut().map(|output| &mut output.inner),
+            )
+            .map(|inner| SparseCountFingerprint { inner })
+            .map_err(|error| morgan_pyerr(py, error))
     }
 
     fn coordinates_2d(&self) -> Option<Vec<[f64; 2]>> {

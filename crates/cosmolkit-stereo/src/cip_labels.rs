@@ -84,66 +84,66 @@ impl CipLabelAssignment {
     }
 }
 
-// BEGIN RDKIT CPP FUNCTION findConfigs (CIPLabeler.cpp)
-// RDKit✔️✔️: std::vector<std::unique_ptr<Configuration>> findConfigs(
-// RDKit✔️✔️:     CIPMol &mol, const boost::dynamic_bitset<> &atoms,
-// RDKit✔️✔️:     const boost::dynamic_bitset<> &bonds) {
-// RDKit✔️✔️:   std::vector<std::unique_ptr<Configuration>> configs;
-// RDKit✔️✔️:
-// RDKit✔️✔️:   for (auto index = atoms.find_first(); index != boost::dynamic_bitset<>::npos;
-// RDKit✔️✔️:        index = atoms.find_next(index)) {
-// RDKit✔️✔️:     auto atom = mol.getAtom(index);
-// RDKit✔️✔️:     auto chiraltag = atom->getChiralTag();
-// RDKit✔️✔️:     if (chiraltag == Atom::CHI_TETRAHEDRAL_CW ||
-// RDKit✔️✔️:         chiraltag == Atom::CHI_TETRAHEDRAL_CCW) {
-// RDKit✔️✔️:       std::unique_ptr<Tetrahedral> cfg{new Tetrahedral(mol, atom)};
-// RDKit✔️✔️:       configs.push_back(std::move(cfg));
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:
-// RDKit✔️✔️:   for (auto index = bonds.find_first(); index != boost::dynamic_bitset<>::npos;
-// RDKit✔️✔️:        index = bonds.find_next(index)) {
-// RDKit✔️✔️:     auto bond = mol.getBond(index);
-// RDKit✔️✔️:
-// RDKit✔️✔️:     auto bond_cfg = bond->getStereo();
-// RDKit✔️✔️:     switch (bond_cfg) {
-// RDKit✔️✔️:       case Bond::STEREOE:
-// RDKit✔️✔️:         bond_cfg = Bond::STEREOTRANS;
-// RDKit✔️✔️:         break;
-// RDKit✔️✔️:       case Bond::STEREOZ:
-// RDKit✔️✔️:         bond_cfg = Bond::STEREOCIS;
-// RDKit✔️✔️:         break;
-// RDKit✔️✔️:       default:
-// RDKit✔️✔️:         break;
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:     switch (bond_cfg) {
-// RDKit✔️✔️:       case Bond::STEREOTRANS:
-// RDKit✔️✔️:       case Bond::STEREOCIS: {
-// RDKit✔️✔️:         std::unique_ptr<Sp2Bond> cfg(new Sp2Bond(
-// RDKit✔️✔️:             mol, bond, bond->getBeginAtom(), bond->getEndAtom(), bond_cfg));
-// RDKit✔️✔️:         configs.push_back(std::move(cfg));
-// RDKit✔️✔️:       } break;
-// RDKit✔️✔️:
-// RDKit✔️✔️:       case Bond::STEREOATROPCCW:
-// RDKit✔️✔️:       case Bond::STEREOATROPCW: {
-// RDKit✔️✔️:         std::unique_ptr<AtropisomerBond> cfgAtrop(new AtropisomerBond(
-// RDKit✔️✔️:             mol, bond, bond->getBeginAtom(), bond->getEndAtom(), bond_cfg));
-// RDKit✔️✔️:         configs.push_back(std::move(cfgAtrop));
-// RDKit✔️✔️:       } break;
-// RDKit✔️✔️:
-// RDKit✔️✔️:       default:
-// RDKit✔️✔️:         break;
-// RDKit✔️✔️:     }
-// RDKit✔️✔️:   }
-// RDKit✔️✔️:
-// RDKit✔️✔️:   return configs;
-// RDKit✔️✔️: }
-// END RDKIT CPP FUNCTION findConfigs
 fn cip_find_configs<'a>(
     molecule: &'a TopologyBlock,
     atom_mask: &[bool],
     bond_mask: &[bool],
 ) -> Result<Vec<CipConfig<'a>>, CipLabelerError> {
+    // BEGIN RDKIT CPP FUNCTION findConfigs (CIPLabeler.cpp)
+    // RDKit✔️✔️: std::vector<std::unique_ptr<Configuration>> findConfigs(
+    // RDKit✔️✔️:     CIPMol &mol, const boost::dynamic_bitset<> &atoms,
+    // RDKit✔️✔️:     const boost::dynamic_bitset<> &bonds) {
+    // RDKit✔️✔️:   std::vector<std::unique_ptr<Configuration>> configs;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (auto index = atoms.find_first(); index != boost::dynamic_bitset<>::npos;
+    // RDKit✔️✔️:        index = atoms.find_next(index)) {
+    // RDKit✔️✔️:     auto atom = mol.getAtom(index);
+    // RDKit✔️✔️:     auto chiraltag = atom->getChiralTag();
+    // RDKit✔️✔️:     if (chiraltag == Atom::CHI_TETRAHEDRAL_CW ||
+    // RDKit✔️✔️:         chiraltag == Atom::CHI_TETRAHEDRAL_CCW) {
+    // RDKit✔️✔️:       std::unique_ptr<Tetrahedral> cfg{new Tetrahedral(mol, atom)};
+    // RDKit✔️✔️:       configs.push_back(std::move(cfg));
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (auto index = bonds.find_first(); index != boost::dynamic_bitset<>::npos;
+    // RDKit✔️✔️:        index = bonds.find_next(index)) {
+    // RDKit✔️✔️:     auto bond = mol.getBond(index);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     auto bond_cfg = bond->getStereo();
+    // RDKit✔️✔️:     switch (bond_cfg) {
+    // RDKit✔️✔️:       case Bond::STEREOE:
+    // RDKit✔️✔️:         bond_cfg = Bond::STEREOTRANS;
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       case Bond::STEREOZ:
+    // RDKit✔️✔️:         bond_cfg = Bond::STEREOCIS;
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       default:
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     switch (bond_cfg) {
+    // RDKit✔️✔️:       case Bond::STEREOTRANS:
+    // RDKit✔️✔️:       case Bond::STEREOCIS: {
+    // RDKit✔️✔️:         std::unique_ptr<Sp2Bond> cfg(new Sp2Bond(
+    // RDKit✔️✔️:             mol, bond, bond->getBeginAtom(), bond->getEndAtom(), bond_cfg));
+    // RDKit✔️✔️:         configs.push_back(std::move(cfg));
+    // RDKit✔️✔️:       } break;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       case Bond::STEREOATROPCCW:
+    // RDKit✔️✔️:       case Bond::STEREOATROPCW: {
+    // RDKit✔️✔️:         std::unique_ptr<AtropisomerBond> cfgAtrop(new AtropisomerBond(
+    // RDKit✔️✔️:             mol, bond, bond->getBeginAtom(), bond->getEndAtom(), bond_cfg));
+    // RDKit✔️✔️:         configs.push_back(std::move(cfgAtrop));
+    // RDKit✔️✔️:       } break;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       default:
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return configs;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION findConfigs
     let mut configs = Vec::new();
 
     for (index, selected) in atom_mask.iter().copied().enumerate() {
@@ -163,17 +163,7 @@ fn cip_find_configs<'a>(
                     molecule, index,
                 )?));
             }
-            ChiralTag::Tetrahedral
-            | ChiralTag::Allene
-            | ChiralTag::SquarePlanar
-            | ChiralTag::TrigonalBipyramidal
-            | ChiralTag::Octahedral => {
-                return Err(CipLabelerError::UnsupportedConfiguration {
-                    atom: index,
-                    tag: atom.chiral_tag(),
-                });
-            }
-            ChiralTag::Unspecified | ChiralTag::Other => {}
+            _ => {}
         }
     }
 

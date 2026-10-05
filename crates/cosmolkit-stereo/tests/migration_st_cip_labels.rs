@@ -337,35 +337,46 @@ fn atropisomer_assignment_uses_core_carrier_order_and_preserves_axis_stereo() {
 }
 
 #[test]
-fn unsupported_non_tetrahedral_configuration_is_structured_and_does_not_guess() {
-    let input = topology(
-        vec![
-            AtomSpec::new(Element::PT).with_chiral_tag(ChiralTag::SquarePlanar),
-            AtomSpec::new(Element::F),
-            AtomSpec::new(Element::CL),
-            AtomSpec::new(Element::BR),
-            AtomSpec::new(Element::I),
-        ],
-        vec![
-            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
-            BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single),
-            BondSpec::new(AtomId::new(0), AtomId::new(3), BondOrder::Single),
-            BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
-        ],
-    );
-    let error = assign_cip_labels(
-        input,
-        MoleculeProperties::default(),
-        &CipLabelOptions::default(),
-    )
-    .unwrap_err();
-    assert_eq!(
-        error,
-        CipLabelerError::UnsupportedConfiguration {
-            atom: 0,
-            tag: ChiralTag::SquarePlanar,
+fn source_skipped_configurations_preserve_topology_properties_and_complete() {
+    for tag in [
+        ChiralTag::Unspecified,
+        ChiralTag::Tetrahedral,
+        ChiralTag::Allene,
+        ChiralTag::SquarePlanar,
+        ChiralTag::TrigonalBipyramidal,
+        ChiralTag::Octahedral,
+        ChiralTag::Other,
+    ] {
+        let mut input = topology(
+            vec![
+                AtomSpec::new(Element::PT).with_chiral_tag(tag),
+                AtomSpec::new(Element::F),
+                AtomSpec::new(Element::CL),
+                AtomSpec::new(Element::BR),
+                AtomSpec::new(Element::I),
+            ],
+            vec![
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+                BondSpec::new(AtomId::new(0), AtomId::new(2), BondOrder::Single),
+                BondSpec::new(AtomId::new(0), AtomId::new(3), BondOrder::Single),
+                BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
+            ],
+        );
+        input.atoms[0].set_prop("_CIPCode", "preserved").unwrap();
+        let before = input.clone();
+        let mut properties = MoleculeProperties::default();
+        properties.set_prop("sentry", "retained").unwrap();
+        for options in [
+            CipLabelOptions::default(),
+            CipLabelOptions::default().with_atoms(vec![AtomId::new(0)]),
+        ] {
+            let result = assign_cip_labels(input.clone(), properties.clone(), &options).unwrap();
+            assert_eq!(result.topology(), &before, "{tag:?}");
+            assert_eq!(result.properties().prop("sentry"), Some("retained"));
+            assert_eq!(result.properties().prop("_CIPComputed"), Some("true"));
+            assert!(result.properties().is_prop_computed("_CIPComputed"));
         }
-    );
+    }
 }
 
 #[test]

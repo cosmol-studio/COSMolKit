@@ -256,7 +256,7 @@ pub(super) fn with_morgan_environment_inputs_and_output_with_atom_invariants<
     rings: &RingInfo,
     generator: &MorganGenerator,
     arguments: &FingerprintFuncArguments<'_>,
-    mut additional_output: Option<&'output mut AdditionalOutput>,
+    additional_output: Option<&'output mut AdditionalOutput>,
     atom_invariant_provider: AtomInvariantProvider,
     consume_environments: Consumer,
 ) -> Result<Output, MorganError>
@@ -275,6 +275,52 @@ where
         &'stage [u32],
         Option<&'output mut AdditionalOutput>,
     ) -> Result<Output, MorganError>,
+{
+    with_fingerprint_environment_inputs_and_output(
+        topology,
+        properties,
+        valence,
+        rings,
+        &generator.fingerprint_arguments,
+        arguments,
+        additional_output,
+        || atom_invariant_provider(topology, properties, valence, rings, generator),
+        || Ok(generator.bond_invariants.get_bond_invariants(topology)),
+        consume_environments,
+    )
+}
+
+/// One source preparation/reset/custom-invariant composition shared by families.
+pub(super) fn with_fingerprint_environment_inputs_and_output<
+    'output,
+    Output,
+    Error,
+    AtomInvariantProvider,
+    BondInvariantProvider,
+    Consumer,
+>(
+    topology: &TopologyBlock,
+    properties: &MoleculeProperties,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    common: &FingerprintArguments,
+    arguments: &FingerprintFuncArguments<'_>,
+    mut additional_output: Option<&'output mut AdditionalOutput>,
+    atom_invariant_provider: AtomInvariantProvider,
+    bond_invariant_provider: BondInvariantProvider,
+    consume_environments: Consumer,
+) -> Result<Output, Error>
+where
+    Error: From<MorganError>,
+    AtomInvariantProvider: FnOnce() -> Result<Vec<u32>, Error>,
+    BondInvariantProvider: FnOnce() -> Result<Vec<u32>, Error>,
+    Consumer: for<'stage> FnOnce(
+        &'stage TopologyBlock,
+        &'stage MoleculeProperties,
+        &'stage [u32],
+        &'stage [u32],
+        Option<&'output mut AdditionalOutput>,
+    ) -> Result<Output, Error>,
 {
     // BEGIN RDKIT CPP FUNCTION FingerprintGenerator::getFingerprintHelper original/prepared composition
     // RDKit❗✔️:   const ROMol *lmol = &mol;
@@ -312,8 +358,8 @@ where
     // copies or default invariant generation. Each absent vector is generated
     // from the ORIGINAL topology and caller-owned valence/rings. Only the
     // prepared topology/properties and complete vectors reach environment
-    // generation. The typed Morgan generator retains atom-then-bond length
-    // precondition order and its fixed legacy profile; no modern CIP path,
+    // generation. Each typed family consumer retains atom-then-bond length
+    // precondition order and its fixed legacy profile; no additional chemistry path,
     // cache recomputation, zero-vector fallback, or original-input mutation
     // is introduced. Higher-ranked topology borrows keep a result from
     // outliving the temporary prepared copy.
@@ -327,8 +373,9 @@ where
         properties,
         valence,
         rings,
-        generator.fingerprint_arguments.include_chirality,
-    )?;
+        common.include_chirality,
+    )
+    .map_err(Error::from)?;
 
     if let Some(output) = additional_output.as_deref_mut() {
         output.reinitialize(topology.atoms.len());
@@ -336,11 +383,11 @@ where
 
     let atom_invariants = match arguments.custom_atom_invariants {
         Some(custom) => custom.to_vec(),
-        None => atom_invariant_provider(topology, properties, valence, rings, generator)?,
+        None => atom_invariant_provider()?,
     };
     let bond_invariants = match arguments.custom_bond_invariants {
         Some(custom) => custom.to_vec(),
-        None => generator.bond_invariants.get_bond_invariants(topology),
+        None => bond_invariant_provider()?,
     };
 
     consume_environments(
@@ -497,6 +544,228 @@ where
         &MorganGenerator,
     ) -> Result<Vec<u32>, MorganError>,
 {
+    let arguments_copy = *arguments;
+    project_sparse_fingerprint(
+        &generator.fingerprint_arguments,
+        u64::MAX,
+        topology.atoms.len(),
+        output,
+        |fp_size, helper_output| {
+            with_morgan_environment_inputs_and_output_with_atom_invariants(
+                topology,
+                properties,
+                valence,
+                rings,
+                generator,
+                &arguments_copy,
+                helper_output,
+                atom_invariant_provider,
+                |prepared_topology,
+                 _prepared_properties,
+                 atom_invariants,
+                 bond_invariants,
+                 output| {
+                    let environments = generate_morgan_environments::<u64>(
+                        prepared_topology,
+                        generator,
+                        &arguments_copy,
+                        atom_invariants,
+                        bond_invariants,
+                    )?;
+                    accumulate_morgan_sparse_counts(
+                        environments,
+                        &generator.fingerprint_arguments,
+                        atom_invariants,
+                        bond_invariants,
+                        fp_size,
+                        output,
+                    )
+                },
+            )
+        },
+    )
+}
+
+/// Source entry for `FingerprintGenerator::getCountFingerprint`.
+/// Unlike the sparse-count variant, this hashes at the configured `fp_size`
+/// and returns the source's 32-bit sparse-count value.
+pub(crate) fn get_count_fingerprint(
+    topology: &TopologyBlock,
+    properties: &MoleculeProperties,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    generator: &MorganGenerator,
+    arguments: &FingerprintFuncArguments<'_>,
+    output: Option<&mut AdditionalOutput>,
+) -> Result<SparseCountFingerprint32, MorganError> {
+    get_count_fingerprint_with_atom_invariants(
+        topology,
+        properties,
+        valence,
+        rings,
+        generator,
+        arguments,
+        output,
+        source_default_atom_invariants,
+    )
+}
+
+pub(super) fn get_count_fingerprint_with_atom_invariants<AtomInvariantProvider>(
+    topology: &TopologyBlock,
+    properties: &MoleculeProperties,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    generator: &MorganGenerator,
+    arguments: &FingerprintFuncArguments<'_>,
+    output: Option<&mut AdditionalOutput>,
+    atom_invariant_provider: AtomInvariantProvider,
+) -> Result<SparseCountFingerprint32, MorganError>
+where
+    AtomInvariantProvider: FnOnce(
+        &TopologyBlock,
+        &MoleculeProperties,
+        &ValenceAssignment,
+        &RingInfo,
+        &MorganGenerator,
+    ) -> Result<Vec<u32>, MorganError>,
+{
+    let arguments_copy = *arguments;
+    project_count_fingerprint(
+        &generator.fingerprint_arguments,
+        topology.atoms.len(),
+        output,
+        |fp_size, helper_output| {
+            with_morgan_environment_inputs_and_output_with_atom_invariants(
+                topology,
+                properties,
+                valence,
+                rings,
+                generator,
+                &arguments_copy,
+                helper_output,
+                atom_invariant_provider,
+                |prepared_topology,
+                 _prepared_properties,
+                 atom_invariants,
+                 bond_invariants,
+                 output| {
+                    let environments = generate_morgan_environments::<u64>(
+                        prepared_topology,
+                        generator,
+                        &arguments_copy,
+                        atom_invariants,
+                        bond_invariants,
+                    )?;
+                    accumulate_morgan_sparse_counts(
+                        environments,
+                        &generator.fingerprint_arguments,
+                        atom_invariants,
+                        bond_invariants,
+                        fp_size,
+                        output,
+                    )
+                },
+            )
+        },
+    )
+}
+
+/// Source entry for `FingerprintGenerator::getFingerprint`.
+/// The configured size is the dense result length and, when count simulation
+/// is enabled, also determines the environment-folding size.
+pub(crate) fn get_fingerprint(
+    topology: &TopologyBlock,
+    properties: &MoleculeProperties,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    generator: &MorganGenerator,
+    arguments: &FingerprintFuncArguments<'_>,
+    output: Option<&mut AdditionalOutput>,
+) -> Result<Fingerprint, MorganError> {
+    get_fingerprint_with_atom_invariants(
+        topology,
+        properties,
+        valence,
+        rings,
+        generator,
+        arguments,
+        output,
+        source_default_atom_invariants,
+    )
+}
+
+pub(super) fn get_fingerprint_with_atom_invariants<AtomInvariantProvider>(
+    topology: &TopologyBlock,
+    properties: &MoleculeProperties,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    generator: &MorganGenerator,
+    arguments: &FingerprintFuncArguments<'_>,
+    output: Option<&mut AdditionalOutput>,
+    atom_invariant_provider: AtomInvariantProvider,
+) -> Result<Fingerprint, MorganError>
+where
+    AtomInvariantProvider: FnOnce(
+        &TopologyBlock,
+        &MoleculeProperties,
+        &ValenceAssignment,
+        &RingInfo,
+        &MorganGenerator,
+    ) -> Result<Vec<u32>, MorganError>,
+{
+    let arguments_copy = *arguments;
+    project_fingerprint(
+        &generator.fingerprint_arguments,
+        topology.atoms.len(),
+        output,
+        |fp_size, helper_output| {
+            with_morgan_environment_inputs_and_output_with_atom_invariants(
+                topology,
+                properties,
+                valence,
+                rings,
+                generator,
+                &arguments_copy,
+                helper_output,
+                atom_invariant_provider,
+                |prepared_topology,
+                 _prepared_properties,
+                 atom_invariants,
+                 bond_invariants,
+                 output| {
+                    let environments = generate_morgan_environments::<u64>(
+                        prepared_topology,
+                        generator,
+                        &arguments_copy,
+                        atom_invariants,
+                        bond_invariants,
+                    )?;
+                    accumulate_morgan_sparse_counts(
+                        environments,
+                        &generator.fingerprint_arguments,
+                        atom_invariants,
+                        bond_invariants,
+                        fp_size,
+                        output,
+                    )
+                },
+            )
+        },
+    )
+}
+
+/// Shared source projection; chemistry is supplied by the family owner.
+pub(super) fn project_sparse_fingerprint<Error, Consumer>(
+    fingerprint_arguments: &FingerprintArguments,
+    result_size: u64,
+    atom_count: usize,
+    output: Option<&mut AdditionalOutput>,
+    consumer: Consumer,
+) -> Result<SparseBitFingerprint, Error>
+where
+    Error: From<FingerprintError>,
+    Consumer: FnOnce(u64, Option<&mut AdditionalOutput>) -> Result<SparseCountFingerprint, Error>,
+{
     // BEGIN RDKIT CPP FUNCTION FingerprintGenerator::getSparseFingerprint
     // RDKit❗✔️: template <typename OutputType>
     // RDKit❗✔️: std::unique_ptr<SparseBitVect>
@@ -563,9 +832,9 @@ where
     // lookup/copy only for present source keys. Temporary AO allocation and
     // reset remain conditional on count simulation and a present output;
     // existing tree-backed maps and set retain source lookup complexity.
-    let count_simulation = generator.fingerprint_arguments.count_simulation;
-    let count_bounds = &generator.fingerprint_arguments.count_bounds;
-    let result_size = u32::MAX;
+    let count_simulation = fingerprint_arguments.count_simulation;
+    let count_bounds = &fingerprint_arguments.count_bounds;
+    let result_size = result_size.min(u64::from(u32::MAX)) as u32;
     let effective_size = if count_simulation {
         (result_size as usize / count_bounds.len()) as u32
     } else {
@@ -576,7 +845,7 @@ where
     let mut count_simulation_output = if count_simulation {
         original_output
             .as_deref_mut()
-            .map(|original| original.setup_count_simulation_output(topology.atoms.len()))
+            .map(|original| original.setup_count_simulation_output(atom_count))
     } else {
         None
     };
@@ -585,34 +854,7 @@ where
         None => original_output.as_deref_mut(),
     };
 
-    let arguments_copy = *arguments;
-    let sparse_counts = with_morgan_environment_inputs_and_output_with_atom_invariants(
-        topology,
-        properties,
-        valence,
-        rings,
-        generator,
-        &arguments_copy,
-        helper_output,
-        atom_invariant_provider,
-        |prepared_topology, _prepared_properties, atom_invariants, bond_invariants, output| {
-            let environments = generate_morgan_environments::<u64>(
-                prepared_topology,
-                generator,
-                &arguments_copy,
-                atom_invariants,
-                bond_invariants,
-            )?;
-            accumulate_morgan_sparse_counts(
-                environments,
-                &generator.fingerprint_arguments,
-                atom_invariants,
-                bond_invariants,
-                u64::from(effective_size),
-                output,
-            )
-        },
-    )?;
+    let sparse_counts = consumer(u64::from(effective_size), helper_output)?;
 
     let mut result = SparseBitFingerprint::new(result_size);
     for (&base_bit_id, &count) in sparse_counts.nonzero_elements() {
@@ -653,48 +895,17 @@ where
     Ok(result)
 }
 
-/// Source entry for `FingerprintGenerator::getCountFingerprint`.
-/// Unlike the sparse-count variant, this hashes at the configured `fp_size`
-/// and returns the source's 32-bit sparse-count value.
-pub(crate) fn get_count_fingerprint(
-    topology: &TopologyBlock,
-    properties: &MoleculeProperties,
-    valence: &ValenceAssignment,
-    rings: &RingInfo,
-    generator: &MorganGenerator,
-    arguments: &FingerprintFuncArguments<'_>,
-    output: Option<&mut AdditionalOutput>,
-) -> Result<SparseCountFingerprint32, MorganError> {
-    get_count_fingerprint_with_atom_invariants(
-        topology,
-        properties,
-        valence,
-        rings,
-        generator,
-        arguments,
-        output,
-        source_default_atom_invariants,
-    )
-}
+/// Shared source projection; chemistry is supplied by the family owner.
+pub(super) fn project_count_fingerprint<Error, Consumer>(
+    fingerprint_arguments: &FingerprintArguments,
 
-pub(super) fn get_count_fingerprint_with_atom_invariants<AtomInvariantProvider>(
-    topology: &TopologyBlock,
-    properties: &MoleculeProperties,
-    valence: &ValenceAssignment,
-    rings: &RingInfo,
-    generator: &MorganGenerator,
-    arguments: &FingerprintFuncArguments<'_>,
+    atom_count: usize,
     output: Option<&mut AdditionalOutput>,
-    atom_invariant_provider: AtomInvariantProvider,
-) -> Result<SparseCountFingerprint32, MorganError>
+    consumer: Consumer,
+) -> Result<SparseCountFingerprint32, Error>
 where
-    AtomInvariantProvider: FnOnce(
-        &TopologyBlock,
-        &MoleculeProperties,
-        &ValenceAssignment,
-        &RingInfo,
-        &MorganGenerator,
-    ) -> Result<Vec<u32>, MorganError>,
+    Error: From<FingerprintError>,
+    Consumer: FnOnce(u64, Option<&mut AdditionalOutput>) -> Result<SparseCountFingerprint, Error>,
 {
     // BEGIN RDKIT CPP FUNCTION FingerprintGenerator::getCountFingerprint
     // RDKit❗🔝: template <typename OutputType>
@@ -725,37 +936,10 @@ where
     // K log K), with source-shaped O(K log K) projection and no dense buffer.
     // Existing contiguous environments and inline RNG state remove the
     // source's per-environment and conditional RNG wrapper allocations.
-    let fp_size = u64::from(generator.fingerprint_arguments.fp_size);
-    let arguments_copy = *arguments;
-    let sparse_counts = with_morgan_environment_inputs_and_output_with_atom_invariants(
-        topology,
-        properties,
-        valence,
-        rings,
-        generator,
-        &arguments_copy,
-        output,
-        atom_invariant_provider,
-        |prepared_topology, _prepared_properties, atom_invariants, bond_invariants, output| {
-            let environments = generate_morgan_environments::<u64>(
-                prepared_topology,
-                generator,
-                &arguments_copy,
-                atom_invariants,
-                bond_invariants,
-            )?;
-            accumulate_morgan_sparse_counts(
-                environments,
-                &generator.fingerprint_arguments,
-                atom_invariants,
-                bond_invariants,
-                fp_size,
-                output,
-            )
-        },
-    )?;
+    let fp_size = u64::from(fingerprint_arguments.fp_size);
+    let sparse_counts = consumer(fp_size, output)?;
 
-    let mut result = SparseCountFingerprint32::new(generator.fingerprint_arguments.fp_size);
+    let mut result = SparseCountFingerprint32::new(fingerprint_arguments.fp_size);
     for (&source_index, &count) in sparse_counts.nonzero_elements() {
         result.set_value(source_index as u32, count)?;
     }
@@ -763,48 +947,17 @@ where
     Ok(result)
 }
 
-/// Source entry for `FingerprintGenerator::getFingerprint`.
-/// The configured size is the dense result length and, when count simulation
-/// is enabled, also determines the environment-folding size.
-pub(crate) fn get_fingerprint(
-    topology: &TopologyBlock,
-    properties: &MoleculeProperties,
-    valence: &ValenceAssignment,
-    rings: &RingInfo,
-    generator: &MorganGenerator,
-    arguments: &FingerprintFuncArguments<'_>,
-    output: Option<&mut AdditionalOutput>,
-) -> Result<Fingerprint, MorganError> {
-    get_fingerprint_with_atom_invariants(
-        topology,
-        properties,
-        valence,
-        rings,
-        generator,
-        arguments,
-        output,
-        source_default_atom_invariants,
-    )
-}
+/// Shared source projection; chemistry is supplied by the family owner.
+pub(super) fn project_fingerprint<Error, Consumer>(
+    fingerprint_arguments: &FingerprintArguments,
 
-pub(super) fn get_fingerprint_with_atom_invariants<AtomInvariantProvider>(
-    topology: &TopologyBlock,
-    properties: &MoleculeProperties,
-    valence: &ValenceAssignment,
-    rings: &RingInfo,
-    generator: &MorganGenerator,
-    arguments: &FingerprintFuncArguments<'_>,
+    atom_count: usize,
     output: Option<&mut AdditionalOutput>,
-    atom_invariant_provider: AtomInvariantProvider,
-) -> Result<Fingerprint, MorganError>
+    consumer: Consumer,
+) -> Result<Fingerprint, Error>
 where
-    AtomInvariantProvider: FnOnce(
-        &TopologyBlock,
-        &MoleculeProperties,
-        &ValenceAssignment,
-        &RingInfo,
-        &MorganGenerator,
-    ) -> Result<Vec<u32>, MorganError>,
+    Error: From<FingerprintError>,
+    Consumer: FnOnce(u64, Option<&mut AdditionalOutput>) -> Result<SparseCountFingerprint, Error>,
 {
     // BEGIN RDKIT CPP FUNCTION FingerprintGenerator::getFingerprint
     // RDKit❗🔝: template <typename OutputType>
@@ -876,7 +1029,6 @@ where
     // AO duplication cost. The dense value is allocated once at configured
     // length and bits are set during that same projection pass, with no
     // intermediate list of on-bit IDs or second scan.
-    let fingerprint_arguments = &generator.fingerprint_arguments;
     let count_simulation = fingerprint_arguments.count_simulation;
     let count_bounds = &fingerprint_arguments.count_bounds;
     let mut effective_size = fingerprint_arguments.fp_size;
@@ -901,7 +1053,7 @@ where
     let mut count_simulation_output = if count_simulation {
         original_output
             .as_deref_mut()
-            .map(|original| original.setup_count_simulation_output(topology.atoms.len()))
+            .map(|original| original.setup_count_simulation_output(atom_count))
     } else {
         None
     };
@@ -910,34 +1062,7 @@ where
         None => original_output.as_deref_mut(),
     };
 
-    let arguments_copy = *arguments;
-    let sparse_counts = with_morgan_environment_inputs_and_output_with_atom_invariants(
-        topology,
-        properties,
-        valence,
-        rings,
-        generator,
-        &arguments_copy,
-        helper_output,
-        atom_invariant_provider,
-        |prepared_topology, _prepared_properties, atom_invariants, bond_invariants, output| {
-            let environments = generate_morgan_environments::<u64>(
-                prepared_topology,
-                generator,
-                &arguments_copy,
-                atom_invariants,
-                bond_invariants,
-            )?;
-            accumulate_morgan_sparse_counts(
-                environments,
-                fingerprint_arguments,
-                atom_invariants,
-                bond_invariants,
-                u64::from(effective_size),
-                output,
-            )
-        },
-    )?;
+    let sparse_counts = consumer(u64::from(effective_size), helper_output)?;
 
     let mut result = Fingerprint::new(fingerprint_arguments.fp_size);
     for (&base_bit_id, &count) in sparse_counts.nonzero_elements() {
@@ -1014,6 +1139,59 @@ pub(super) fn accumulate_morgan_sparse_counts<'a>(
 /// One sparse-count accumulation loop shared by both source index widths.
 /// The legacy wrapper's u32 specialization writes directly into its final
 /// index domain instead of copying a complete u64 map after generation.
+pub(super) trait FingerprintEnvironment<Error> {
+    type Output: MorganOutput;
+    type State: Default;
+    fn bit_id(
+        &self,
+        arguments: &FingerprintArguments,
+        atom_invariants: &[u32],
+        bond_invariants: &[u32],
+        output: Option<&mut AdditionalOutput>,
+        hash_results: bool,
+        fp_size: u64,
+    ) -> Result<Self::Output, Error>;
+    fn update_output(
+        &self,
+        output: &mut AdditionalOutput,
+        bit_id: u64,
+        state: &mut Self::State,
+    ) -> Result<(), Error>;
+}
+
+impl<'a, Output: MorganOutput> FingerprintEnvironment<MorganError>
+    for MorganAtomEnvironment<'a, Output>
+{
+    type Output = Output;
+    type State = MorganDistanceMatrixCache<'a>;
+    fn bit_id(
+        &self,
+        arguments: &FingerprintArguments,
+        atom_invariants: &[u32],
+        bond_invariants: &[u32],
+        output: Option<&mut AdditionalOutput>,
+        hash_results: bool,
+        fp_size: u64,
+    ) -> Result<Output, MorganError> {
+        Ok(self.get_bit_id(
+            Some(arguments),
+            Some(atom_invariants),
+            Some(bond_invariants),
+            output,
+            hash_results,
+            fp_size,
+        ))
+    }
+    fn update_output(
+        &self,
+        output: &mut AdditionalOutput,
+        bit_id: u64,
+        state: &mut Self::State,
+    ) -> Result<(), MorganError> {
+        Ok(self.update_additional_output(output, bit_id, state)?)
+    }
+}
+
 pub(super) fn accumulate_morgan_sparse_counts_into<'a, OutputType, Store>(
     environments: Vec<MorganAtomEnvironment<'a, OutputType>>,
     fingerprint_arguments: &FingerprintArguments,
@@ -1025,7 +1203,33 @@ pub(super) fn accumulate_morgan_sparse_counts_into<'a, OutputType, Store>(
 ) -> Result<(), MorganError>
 where
     OutputType: MorganOutput,
-    Store: MorganSparseCountStore,
+    Store: MorganSparseCountStore<MorganError>,
+{
+    accumulate_sparse_counts_into(
+        environments,
+        fingerprint_arguments,
+        atom_invariants,
+        bond_invariants,
+        fp_size,
+        output,
+        result,
+    )
+}
+
+/// One source accumulation loop for all families and both source widths.
+pub(super) fn accumulate_sparse_counts_into<Environment, Store, Error>(
+    environments: Vec<Environment>,
+    fingerprint_arguments: &FingerprintArguments,
+    atom_invariants: &[u32],
+    bond_invariants: &[u32],
+    fp_size: u64,
+    mut output: Option<&mut AdditionalOutput>,
+    result: &mut Store,
+) -> Result<(), Error>
+where
+    Error: From<FingerprintError>,
+    Environment: FingerprintEnvironment<Error>,
+    Store: MorganSparseCountStore<Error>,
 {
     // BEGIN RDKIT CPP FUNCTION FingerprintGenerator::getFingerprintHelper sparse accumulation
     // RDKit❗✔️:   // define a mersenne twister with customized parameters.
@@ -1093,53 +1297,6 @@ where
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION FingerprintGenerator::getFingerprintHelper sparse accumulation
 
-    // BEGIN RDKIT CPP FUNCTION MorganAtomEnv<OutputType>::getBitId
-    // RDKit❗✔️: template <typename OutputType>
-    // RDKit❗✔️: OutputType MorganAtomEnv<OutputType>::getBitId(
-    // RDKit❗✔️:     FingerprintArguments *,              // arguments
-    // RDKit❗✔️:     const std::vector<std::uint32_t> *,  // atomInvariants
-    // RDKit❗✔️:     const std::vector<std::uint32_t> *,  // bondInvariants
-    // RDKit❗✔️:     AdditionalOutput *,                  // additional Output
-    // RDKit❗✔️:     const bool,                          // hashResults
-    // RDKit❗✔️:     const std::uint64_t                  // fpSize
-    // RDKit❗✔️: ) const {
-    // RDKit❗✔️:   return d_code;
-    // RDKit❗✔️: }  // namespace MorganFingerprint
-    // END RDKIT CPP FUNCTION MorganAtomEnv<OutputType>::getBitId
-
-    // BEGIN RDKIT CPP FUNCTION MorganAtomEnv<OutputType>::updateAdditionalOutput
-    // RDKit❗✔️: template <typename OutputType>
-    // RDKit❗✔️: void MorganAtomEnv<OutputType>::updateAdditionalOutput(
-    // RDKit❗✔️:     AdditionalOutput *additionalOutput, size_t bitId) const {
-    // RDKit❗✔️:   PRECONDITION(additionalOutput, "bad output pointer");
-    // RDKit❗✔️:   PRECONDITION(d_mol, "bad mol pointer");
-    // RDKit❗✔️:   if (additionalOutput->bitInfoMap) {
-    // RDKit❗✔️:     (*additionalOutput->bitInfoMap)[bitId].emplace_back(d_atomId, d_layer);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (additionalOutput->atomCounts) {
-    // RDKit❗✔️:     (*additionalOutput->atomCounts)[d_atomId]++;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (additionalOutput->atomToBits) {
-    // RDKit❗✔️:     (*additionalOutput->atomToBits)[d_atomId].push_back(bitId);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (additionalOutput->atomsPerBit) {
-    // RDKit❗✔️:     std::vector<int> atomsInvolved;
-    // RDKit❗✔️:     atomsInvolved.push_back(d_atomId);
-    // RDKit❗✔️:     if (d_layer > 0) {
-    // RDKit❗✔️:       const auto dm = MolOps::getDistanceMat(*d_mol);
-    // RDKit❗✔️:       for (unsigned int i = 0; i < d_mol->getNumAtoms(); ++i) {
-    // RDKit❗✔️:         if (static_cast<unsigned int>(dm[d_atomId * d_mol->getNumAtoms() + i] +
-    // RDKit❗✔️:                                       .1) <= d_layer &&
-    // RDKit❗✔️:             i != d_atomId) {
-    // RDKit❗✔️:           atomsInvolved.push_back(i);
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     (*additionalOutput->atomsPerBit)[bitId].push_back(std::move(atomsInvolved));
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION MorganAtomEnv<OutputType>::updateAdditionalOutput
-
     // Behavior review: source getBitId returns the environment's source-width
     // code unchanged. The base ID is folded only when fpSize is nonzero; its
     // count is written before optional AdditionalOutput. For extra bits, the
@@ -1162,27 +1319,23 @@ where
             BoostUniformIntDistribution::rdkit_additional_bit(),
         )
     });
-    let mut distance_matrix_cache = MorganDistanceMatrixCache::default();
+    let mut environment_state = Environment::State::default();
 
     for environment in environments {
-        let seed_output = environment.get_bit_id(
-            Some(fingerprint_arguments),
-            Some(atom_invariants),
-            Some(bond_invariants),
+        let seed_output = environment.bit_id(
+            fingerprint_arguments,
+            atom_invariants,
+            bond_invariants,
             output.as_deref_mut(),
             hash_results,
             fp_size,
-        );
+        )?;
         let seed = seed_output.into_u64();
 
         let mut bit_id = if fp_size != 0 { seed % fp_size } else { seed };
         increment_morgan_sparse_count(result, bit_id)?;
         if let Some(additional_output) = output.as_deref_mut() {
-            environment.update_additional_output(
-                additional_output,
-                bit_id,
-                &mut distance_matrix_cache,
-            )?;
+            environment.update_output(additional_output, bit_id, &mut environment_state)?;
         }
 
         if fingerprint_arguments.bits_per_feature > 1 {
@@ -1198,11 +1351,7 @@ where
                 }
                 increment_morgan_sparse_count(result, bit_id)?;
                 if let Some(additional_output) = output.as_deref_mut() {
-                    environment.update_additional_output(
-                        additional_output,
-                        bit_id,
-                        &mut distance_matrix_cache,
-                    )?;
+                    environment.update_output(additional_output, bit_id, &mut environment_state)?;
                 }
             }
         }
@@ -1210,44 +1359,48 @@ where
     Ok(())
 }
 
-pub(super) trait MorganSparseCountStore {
-    fn value_at(&self, bit_id: u64) -> Result<i32, MorganError>;
-    fn set_at(&mut self, bit_id: u64, value: i32) -> Result<(), MorganError>;
+pub(super) trait MorganSparseCountStore<Error> {
+    fn value_at(&self, bit_id: u64) -> Result<i32, Error>;
+    fn set_at(&mut self, bit_id: u64, value: i32) -> Result<(), Error>;
 }
 
-impl MorganSparseCountStore for SparseCountFingerprint {
-    fn value_at(&self, bit_id: u64) -> Result<i32, MorganError> {
+impl<Error: From<FingerprintError>> MorganSparseCountStore<Error> for SparseCountFingerprint {
+    fn value_at(&self, bit_id: u64) -> Result<i32, Error> {
         Ok(self.value(bit_id)?)
     }
 
-    fn set_at(&mut self, bit_id: u64, value: i32) -> Result<(), MorganError> {
+    fn set_at(&mut self, bit_id: u64, value: i32) -> Result<(), Error> {
         Ok(self.set_value(bit_id, value)?)
     }
 }
 
-impl MorganSparseCountStore for SparseCountFingerprint32 {
-    fn value_at(&self, bit_id: u64) -> Result<i32, MorganError> {
+impl<Error: From<FingerprintError>> MorganSparseCountStore<Error> for SparseCountFingerprint32 {
+    fn value_at(&self, bit_id: u64) -> Result<i32, Error> {
         Ok(self.value(bit_id as u32)?)
     }
 
-    fn set_at(&mut self, bit_id: u64, value: i32) -> Result<(), MorganError> {
+    fn set_at(&mut self, bit_id: u64, value: i32) -> Result<(), Error> {
         Ok(self.set_value(bit_id as u32, value)?)
     }
 }
 
-fn increment_morgan_sparse_count<Store: MorganSparseCountStore>(
+fn increment_morgan_sparse_count<
+    Store: MorganSparseCountStore<Error>,
+    Error: From<FingerprintError>,
+>(
     result: &mut Store,
     bit_id: u64,
-) -> Result<(), MorganError> {
+) -> Result<(), Error> {
     // BEGIN RDKIT CPP FUNCTION FingerprintGenerator::getFingerprintHelper count increment
     // RDKit❗✔️: res->setVal(bitId, res->getVal(bitId) + 1);
     // END RDKIT CPP FUNCTION FingerprintGenerator::getFingerprintHelper count increment
     let current = result.value_at(bit_id)?;
-    let incremented = current.checked_add(1).ok_or(MorganError::Fingerprint(
+    let incremented = current.checked_add(1).ok_or(
         FingerprintError::UndefinedArithmetic {
             site: "FingerprintGenerator::getFingerprintHelper count increment",
-        },
-    ))?;
+        }
+        .into(),
+    )?;
     result.set_at(bit_id, incremented)?;
     Ok(())
 }

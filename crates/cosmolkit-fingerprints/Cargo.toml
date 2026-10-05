@@ -16,5 +16,9 @@ cosmolkit-core = { version = "0.5.0-rc.9", path = "../cosmolkit-core" }
 cosmolkit-model = { version = "0.5.0-rc.9", path = "../cosmolkit-model" }
 cosmolkit-search = { version = "0.5.0-rc.9", path = "../cosmolkit-search" }
 
+cosmolkit-stereo = { version = "0.5.0-rc.9", path = "../cosmolkit-stereo" }
+
+serde_json = "1"
+
 [dev-dependencies]
 cosmolkit-smiles = { version = "0.5.0-rc.9", path = "../cosmolkit-smiles" }

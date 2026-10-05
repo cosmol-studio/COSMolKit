@@ -256,6 +256,8 @@ dependencies = [
  "cosmolkit-model",
  "cosmolkit-search",
  "cosmolkit-smiles",
+ "cosmolkit-stereo",
+ "serde_json",
 ]
 
 [[package]]

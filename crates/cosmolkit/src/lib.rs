@@ -18,8 +18,9 @@ pub mod binding_contract;
 mod forcefields;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{
-    AdditionalOutput, Fingerprint, FingerprintError, MorganParams, SparseBitFingerprint,
-    SparseCountFingerprint, SparseCountFingerprint32,
+    AdditionalOutput, AtomPairAtomInvariantsGenerator, AtomPairParams, Fingerprint,
+    FingerprintError, MorganParams, SparseBitFingerprint, SparseCountFingerprint,
+    SparseCountFingerprint32, TopologicalTorsionParams,
 };
 #[cfg(feature = "cap-forcefields")]
 pub use forcefields::{
@@ -149,6 +150,12 @@ pub use molecule::Molecule;
 pub use molecule_builder::MoleculeBuilder;
 #[cfg(feature = "cap-fingerprints")]
 pub use morgan::{MorganFingerprintParams, MorganInvariants, MorganReadError};
+#[cfg(feature = "cap-fingerprints")]
+mod atom_pair;
+#[cfg(feature = "cap-fingerprints")]
+pub use atom_pair::{AtomPairFingerprintParams, AtomPairReadError};
+#[cfg(feature = "cap-fingerprints")]
+mod topological_torsion;
 pub(crate) use ops::DerivedState;
 #[cfg(feature = "cap-stereo")]
 pub(crate) use ops::PotentialStereoAccess;
@@ -201,6 +208,8 @@ pub use sdf::{SdfCoordinateMode, SdfError, SdfGraph, SdfReadParams, SdfRecord};
 pub use smiles::{
     FragmentCxSmilesWriteParams, FragmentSmilesWriteParams, SmilesError, SmilesWriteError,
 };
+#[cfg(feature = "cap-fingerprints")]
+pub use topological_torsion::{TopologicalTorsionFingerprintParams, TopologicalTorsionReadError};
 
 /// Returns RDKit periodic-table metadata for an element, including the dummy (`*`).
 ///
