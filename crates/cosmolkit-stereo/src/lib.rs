@@ -8,6 +8,8 @@ pub use tetrahedral::{
 };
 
 pub use cip_graph::CipLabelerError;
+#[doc(hidden)]
+pub use cip_labels::assign_cip_labels_cow;
 pub use cip_labels::{CipLabelAssignment, CipLabelOptions, assign_cip_labels};
 use cosmolkit_core::ValenceError;
 use cosmolkit_model::{Conformer3D, TopologyBlock};

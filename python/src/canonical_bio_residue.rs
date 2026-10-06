@@ -1,5 +1,10 @@
 //! Residue vocabulary and immutable result projections of the public BIO owner.
 
+pyo3::create_exception!(
+    cosmolkit,
+    ResidueCodeParseError,
+    pyo3::exceptions::PyValueError
+);
 use ::cosmolkit as ck;
 use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
@@ -279,6 +284,10 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     let kinds = int_enum.call1(("ResidueInfoKind", members))?;
     kinds.setattr("__module__", "cosmolkit")?;
+    crate::canonical_error_accessors::attach(&kinds, &[("name", "_name_")])?;
+    let error = py.get_type::<ResidueCodeParseError>();
+    crate::canonical_error_accessors::residue_error(error.as_any())?;
+    module.add("ResidueCodeParseError", error)?;
     let kind_map = PyDict::new(py);
     for code in 0..12 {
         let name = kind_from_code(code)?.name();

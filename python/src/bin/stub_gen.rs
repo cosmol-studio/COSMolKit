@@ -19,6 +19,17 @@ fn main() -> pyo3_stub_gen::Result<()> {
         "ValenceModel",
         "AromaticityModel",
         "SanitizeStage",
+        "ParityPolicy",
+        "CoordinateDimension",
+        "SdfCoordinateMode",
+        "BioConnectionKind",
+        "BioAsu",
+        "BioHelixClass",
+        "BioSoftwareClassification",
+        "BioAssemblySpecialKind",
+        "BioPdbReadStage",
+        "BioMmcifReadStage",
+        "UffParameterErrorKind",
     ] {
         let prefix = format!("class {name}(enum.Enum):\n");
         assert_eq!(
@@ -112,11 +123,16 @@ _binding_profile: builtins.str
         "MatrixError",
         "ChemistryProblemError",
         "KekulizeError",
+        "SdfError",
     ] {
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
     for (name, fields) in [
+        (
+            "SdfError",
+            "    # WrongGraphKind retains the exact expected and actual payload tags.\n    expected: builtins.str\n    actual: builtins.str\n",
+        ),
         (
             "SanitizeError",
             "    bits: builtins.int\n    unknown_bits: builtins.int\n    stage: SanitizeStage\n",
@@ -164,14 +180,15 @@ _binding_profile: builtins.str
         "class TopologicalTorsionPathScoreError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n",
         "class TopologicalTorsionPathScoreError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Context fields exist only on applicable Rust variants.\n    actual: builtins.int\n    required: builtins.int\n    index: builtins.int\n    atom_count: builtins.int\n    code: builtins.int\n    subtract: builtins.int\n",
     );
+    text = text.replace("class PropertyValueError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class PropertyValueError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    def expected(self) -> PropertyValueKind: ...\n    def actual(self) -> PropertyValueKind: ...\n");
     // Forcefield exceptions are published through create_exception!, so they
     // have no pyclass stub metadata. Project only attributes set by the thin
     // native converters; parameter causes expose kind without domain.
     text = text.replace(
         "class UffOptimizationError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n",
-        "class UffOptimizationError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    requested: typing.Optional[builtins.int]\n",
+        "class UffOptimizationError(builtins.ValueError):\n    domain: builtins.str\n    def kind(self) -> UffOptimizationErrorKind: ...\n    requested: typing.Optional[builtins.int]\n",
     );
-    text.push_str("\nclass UffParameterError(builtins.ValueError):\n    kind: builtins.str\n");
+    text.push_str("\nclass UffParameterError(builtins.ValueError):\n    def kind(self) -> UffParameterErrorKind: ...\n");
     text = text.replace("__all__ = [\n", "__all__ = [\n    \"UffParameterError\",\n");
     text=text.replace("class CoordinateInputError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class CoordinateInputError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    # Fields exist only on applicable Rust variants.\n    dimension: builtins.str\n    expected: builtins.int\n    actual: builtins.int\n    row: builtins.int\n    columns: builtins.int\n    expected_columns: builtins.str\n    column: builtins.int\n    value: builtins.float | builtins.str\n    z: builtins.float\n    conformer_id: builtins.int\n    count: builtins.int\n    max_id: builtins.int\n    conformer: builtins.int\n    axis: builtins.str\n");
     text=text.replace("class Coordinate3DReadError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n", "class Coordinate3DReadError(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n    conformer_id: builtins.int\n    count: builtins.int\n");
@@ -405,6 +422,7 @@ fn expose_bio_types(mut text: String) -> String {
     ] {
         definitions.push_str(&format!("    {} = {}\n", kind.name(), kind as u8));
     }
+    definitions.push_str("    def name(self) -> builtins.str: ...\n");
     definitions.push_str("\nclass BioCoordinateFormat(enum.IntEnum):\n");
     for format in [
         ::cosmolkit::BioCoordinateFormat::Unknown,
@@ -433,9 +451,17 @@ fn expose_bio_types(mut text: String) -> String {
         definitions.push_str(&format!(
             "\nclass {name}({base}):\n    domain: builtins.str\n    kind: builtins.str\n"
         ));
+        if name == "BioPdbReadError" {
+            definitions.push_str("    def stage(self) -> BioPdbReadStage: ...\n    def line_number(self) -> typing.Optional[builtins.int]: ...\n    def record_tag(self) -> typing.Optional[builtins.bytes]: ...\n");
+        }
+        if name == "BioMmcifReadError" {
+            definitions.push_str("    def stage(self) -> BioMmcifReadStage: ...\n");
+        }
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
+    definitions.push_str("\nclass ResidueCodeParseError(builtins.ValueError):\n    def __init__(self, input: builtins.str) -> None: ...\n    def input(self) -> builtins.str: ...\n");
     for name in [
+        "ResidueCodeParseError",
         "ResidueCode",
         "ResidueInfoKind",
         "BioCoordinateFormat",

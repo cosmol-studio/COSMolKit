@@ -19,6 +19,45 @@ use crate::{OpParts, OperationError};
 
 use super::runtime::registry::{PreserveCacheNoneProbeAccess, PreserveCacheReadProbeAccess};
 
+#[cfg(cosmolkit_runtime_privacy_case = "cip_cow_allowed")]
+fn cip_cow_allowed(
+    parts: &mut OpParts<'_, crate::WithCipLabelsAccess>,
+) -> Result<(), OperationError> {
+    let _ = parts.stage_topology_properties_cow(|topology, properties, cache| {
+        let _ = cache.valid_states();
+        Ok(((), Some((topology, properties))))
+    })?;
+    let _ = parts.stage_topology_properties_cow(|topology, mut properties, _cache| {
+        properties.to_mut();
+        Ok(((), Some((topology, properties))))
+    })?;
+    Ok(())
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "cip_cow_missing_writes")]
+fn cip_cow_missing_writes(parts: &mut OpParts<'_, PreserveCacheReadProbeAccess>) {
+    let _ = parts.stage_topology_properties_cow(|topology, properties, _cache| {
+        Ok(((), Some((topology, properties))))
+    });
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "cip_cow_runtime_private")]
+fn cip_cow_runtime_private(parts: &mut OpParts<'_, crate::WithCipLabelsAccess>) {
+    let _ = parts.stage_topology_properties_cow_runtime(|topology, properties, _cache| {
+        Ok(((), Some((topology, properties))))
+    });
+}
+
+#[cfg(cosmolkit_runtime_privacy_case = "cip_cow_borrow_escape")]
+fn cip_cow_borrow_escape(parts: &mut OpParts<'_, crate::WithCipLabelsAccess>) {
+    let _ = parts.stage_topology_properties_cow(|topology, properties, _cache| {
+        let std::borrow::Cow::Borrowed(value) = topology else {
+            unreachable!()
+        };
+        Ok((value, Some((std::borrow::Cow::Borrowed(value), properties))))
+    });
+}
+
 #[cfg(cosmolkit_runtime_privacy_case = "atom_code_cow_allowed")]
 fn atom_code_cow_allowed(
     parts: &mut OpParts<'_, crate::WithAtomPairAtomCodeAccess>,

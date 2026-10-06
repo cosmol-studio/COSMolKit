@@ -1,42 +1,50 @@
 use std::env;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
-use cosmolkit::io::sdf::SdfReader;
+use cosmolkit::SdfRecord;
 
 // Usage:
 //   cargo run -p cosmolkit --example sdf_to_smiles -- path/to/input.sdf
-fn main() {
-    let path = env::args_os().nth(1).map(PathBuf::from).unwrap_or_else(|| {
-        panic!("usage: cargo run -p cosmolkit --example sdf_to_smiles -- <file.sdf>")
-    });
+fn print_record(text: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let record = SdfRecord::from_sdf(text)?;
+    let molecule = record.molecule()?;
+    let smiles = molecule.to_smiles()?;
+    match molecule.properties().name().filter(|name| !name.is_empty()) {
+        Some(name) => println!("{name}\t{smiles}"),
+        None => println!("{smiles}"),
+    }
+    Ok(())
+}
 
-    let file =
-        File::open(&path).unwrap_or_else(|err| panic!("failed to open {}: {err}", path.display()));
-    let reader = BufReader::new(file);
-    let mut sdf = SdfReader::new(reader);
-
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let path = env::args_os()
+        .nth(1)
+        .map(PathBuf::from)
+        .ok_or("usage: cargo run -p cosmolkit --example sdf_to_smiles -- <file.sdf>")?;
+    let mut reader = BufReader::new(File::open(path)?);
+    let mut text = String::new();
+    let mut line = String::new();
     let mut found_any = false;
-    while let Some(record) = sdf
-        .next_record()
-        .unwrap_or_else(|err| panic!("failed to read {}: {err}", path.display()))
-    {
-        found_any = true;
-        let smiles = record
-            .molecule
-            .to_smiles(true)
-            .unwrap_or_else(|err| panic!("failed to write SMILES for record: {err}"));
-        if let Some(name) = record.molecule.properties().name() {
-            if !name.is_empty() {
-                println!("{name}\t{smiles}");
-                continue;
-            }
+    loop {
+        line.clear();
+        if reader.read_line(&mut line)? == 0 {
+            break;
         }
-        println!("{smiles}");
+        text.push_str(&line);
+        if line.trim_end_matches(['\r', '\n']) == "$$$$" {
+            print_record(&text)?;
+            found_any = true;
+            text.clear();
+        }
     }
-
+    if !text.is_empty() {
+        print_record(&text)?;
+        found_any = true;
+    }
     if !found_any {
-        panic!("no SDF records found in {}", path.display());
+        return Err("no SDF records found".into());
     }
+    Ok(())
 }

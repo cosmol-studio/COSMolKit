@@ -357,6 +357,34 @@ impl<'a, Access> OpParts<'a, Access> {
             OperationError,
         >,
     ) -> Result<(R, bool), OperationError> {
+        self.stage_topology_properties_cow_runtime(|topology, properties, cache| {
+            evaluate(topology, properties, cache).map(|(result, pair)| {
+                (
+                    result,
+                    pair.map(|(topology, properties)| {
+                        (Cow::Owned(topology), Cow::Owned(properties))
+                    }),
+                )
+            })
+        })
+    }
+
+    /// Retain source allocations only for unchanged borrows returned by the
+    /// detached owner. Owned candidates use the same validated staging path.
+    pub(super) fn stage_topology_properties_cow_runtime<R>(
+        &mut self,
+        evaluate: impl for<'value> FnOnce(
+            Cow<'value, TopologyBlock>,
+            Cow<'value, MoleculeProperties>,
+            &'value DerivedCacheBlock,
+        ) -> Result<
+            (
+                R,
+                Option<(Cow<'value, TopologyBlock>, Cow<'value, MoleculeProperties>)>,
+            ),
+            OperationError,
+        >,
+    ) -> Result<(R, bool), OperationError> {
         self.ensure_unsealed_runtime()?;
         self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
         self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
@@ -389,8 +417,30 @@ impl<'a, Access> OpParts<'a, Access> {
             topology
                 .validate()
                 .map_err(OperationError::InvalidTopology)?;
-            self.topology = WorkingBlock::Installed(topology);
-            self.properties = WorkingBlock::Installed(properties);
+            // A borrow must be the supplied source block, not an unrelated
+            // detached value. Check both before installing either candidate.
+            if let Cow::Borrowed(value) = &topology
+                && !std::ptr::eq(*value, self.source.topology())
+            {
+                return Err(OperationError::IncompleteCommit {
+                    operation: self.spec.method,
+                    block: "foreign borrowed topology candidate",
+                });
+            }
+            if let Cow::Borrowed(value) = &properties
+                && !std::ptr::eq(*value, self.source.properties())
+            {
+                return Err(OperationError::IncompleteCommit {
+                    operation: self.spec.method,
+                    block: "foreign borrowed properties candidate",
+                });
+            }
+            if let Cow::Owned(topology) = topology {
+                self.topology = WorkingBlock::Installed(topology);
+            }
+            if let Cow::Owned(properties) = properties {
+                self.properties = WorkingBlock::Installed(properties);
+            }
         }
         Ok((result, changed))
     }

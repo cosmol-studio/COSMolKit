@@ -14,6 +14,10 @@ pub(crate) struct AtomSpec {
 #[pymethods]
 impl AtomSpec {
     #[new]
+    fn py_new(element: &crate::canonical_element_metadata::Element) -> Self {
+        Self::new(element)
+    }
+    #[staticmethod]
     fn new(element: &crate::canonical_element_metadata::Element) -> Self {
         Self {
             inner: ck::AtomSpec::new(element.inner),
@@ -57,6 +61,10 @@ pub(crate) struct BondSpec {
 #[pymethods]
 impl BondSpec {
     #[new]
+    fn py_new(begin: usize, end: usize, order: i64) -> PyResult<Self> {
+        Self::new(begin, end, order)
+    }
+    #[staticmethod]
     fn new(begin: usize, end: usize, order: i64) -> PyResult<Self> {
         let order = ck::BondOrder::from_rdkit_code(order)
             .ok_or_else(|| PyValueError::new_err(format!("invalid BondOrder code: {order}")))?;
@@ -81,6 +89,39 @@ pub(crate) struct MoleculeBuilder {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MoleculeBuilder {
+    #[staticmethod]
+    fn from_parts(
+        topology: &crate::canonical_detached_blocks::TopologyBlock,
+        coordinates: &crate::canonical_detached_blocks::CoordinateBlock,
+        properties: &crate::canonical_property_values::MoleculeProperties,
+    ) -> Self {
+        Self {
+            inner: ck::MoleculeBuilder::from_parts(
+                topology.inner.clone(),
+                coordinates.inner.clone(),
+                properties.inner.clone(),
+            ),
+        }
+    }
+    fn atoms(&self, py: Python<'_>) -> PyResult<Vec<crate::canonical_atom_bond::Atom>> {
+        self.inner
+            .atoms()
+            .iter()
+            .map(|atom| {
+                self.inner
+                    .degree(atom.id())
+                    .map(|degree| {
+                        crate::canonical_atom_bond::Atom::from_detached(atom.clone(), degree)
+                    })
+                    .map_err(|error| crate::drawing_binding::operation_pyerr(py, error))
+            })
+            .collect()
+    }
+    fn coordinates(&self) -> crate::canonical_detached_blocks::CoordinateBlock {
+        crate::canonical_detached_blocks::CoordinateBlock {
+            inner: self.inner.coordinates().clone(),
+        }
+    }
     fn bonds(&self) -> Vec<crate::canonical_atom_bond::Bond> {
         self.inner
             .bonds()

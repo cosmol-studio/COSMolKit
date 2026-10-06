@@ -312,6 +312,18 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
                 self.stage_topology_properties_runtime(evaluate)
             }
         });
+        methods.push(quote! {
+            pub(crate) fn stage_topology_properties_cow<R>(
+                &mut self,
+                evaluate: impl for<'value> FnOnce(
+                    std::borrow::Cow<'value, cosmolkit_model::TopologyBlock>,
+                    std::borrow::Cow<'value, cosmolkit_model::MoleculeProperties>,
+                    &'value crate::molecule::DerivedCacheBlock,
+                ) -> Result<(R, Option<(std::borrow::Cow<'value, cosmolkit_model::TopologyBlock>, std::borrow::Cow<'value, cosmolkit_model::MoleculeProperties>)>), crate::OperationError>,
+            ) -> Result<(R, bool), crate::OperationError> {
+                self.stage_topology_properties_cow_runtime(evaluate)
+            }
+        });
     }
 
     for block in &operation.fields.access.read {

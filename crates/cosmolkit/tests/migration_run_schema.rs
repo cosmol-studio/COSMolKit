@@ -206,6 +206,10 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     let mut expected = vec![
         "types.Molecule",
         "types.MoleculeBuilder",
+        "types.TopologyBlock",
+        "types.CoordinateBlock",
+        "types.Conformer2D",
+        "types.Conformer3D",
         "Molecule.new",
         "Molecule.from_parts",
         "Molecule.to_builder",
@@ -645,6 +649,23 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "BioStructure.find_entity_of_subchain",
             "BioStructure.find_atom",
             "BioStructure.atom_by_altloc",
+            "types.BioStrand",
+            "types.BioSoftwareItem",
+            "types.BioReflectionsInfo",
+            "types.BioBasicRefinementInfo",
+            "types.BioRefinementRestraint",
+            "types.BioExperimentInfo",
+            "types.BioDiffractionInfo",
+            "types.BioExperimentalCrystalInfo",
+            "types.BioTlsSelection",
+            "types.BioTlsGroup",
+            "types.BioRefinementInfo",
+            "types.BioConnectionKind",
+            "types.BioAsu",
+            "types.BioHelixClass",
+            "types.BioSoftwareClassification",
+            "types.AtomAddress",
+            "types.ResidueAddress",
             "types.BioConnection",
             "types.BioCisPep",
             "types.BioModRes",
@@ -704,6 +725,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "ProteinAtomRef.position",
         ]);
     }
+    expected.push("types.CoordinateDimension");
     if cfg!(feature = "cap-io") {
         expected.extend([
             "types.SdfRecord",

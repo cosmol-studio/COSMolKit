@@ -211,6 +211,10 @@ pub(crate) struct FingerprintAdditionalOutput {
 #[pymethods]
 impl FingerprintAdditionalOutput {
     #[new]
+    fn py_new() -> Self {
+        Self::new()
+    }
+    #[staticmethod]
     fn new() -> Self {
         Self {
             inner: ck::FingerprintAdditionalOutput::new(),
@@ -697,6 +701,15 @@ pub(crate) struct TopologicalTorsionFingerprintGenerator {
 impl TopologicalTorsionFingerprintGenerator {
     #[new]
     #[pyo3(signature=(*,params=None,atom_invariants_generator=None))]
+    fn py_new(
+        py: Python<'_>,
+        params: Option<&TopologicalTorsionParams>,
+        atom_invariants_generator: Option<&AtomPairAtomInvariantsGenerator>,
+    ) -> PyResult<Self> {
+        Self::new(py, params, atom_invariants_generator)
+    }
+    #[staticmethod]
+    #[pyo3(signature=(*,params=None,atom_invariants_generator=None))]
     fn new(
         py: Python<'_>,
         params: Option<&TopologicalTorsionParams>,
@@ -998,6 +1011,27 @@ pub(crate) struct LegacyTopologicalTorsionParams {
 impl LegacyTopologicalTorsionParams {
     #[new]
     #[pyo3(signature = (*, torsion_atom_count=4, include_chirality=false, fp_size=2048, bits_per_entry=4, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None))]
+    fn py_new(
+        torsion_atom_count: u32,
+        include_chirality: bool,
+        fp_size: u32,
+        bits_per_entry: u32,
+        from_atoms: Option<Vec<u32>>,
+        ignore_atoms: Option<Vec<u32>>,
+        custom_atom_invariants: Option<Vec<u32>>,
+    ) -> Self {
+        Self::new(
+            torsion_atom_count,
+            include_chirality,
+            fp_size,
+            bits_per_entry,
+            from_atoms,
+            ignore_atoms,
+            custom_atom_invariants,
+        )
+    }
+    #[staticmethod]
+    #[pyo3(signature = (*, torsion_atom_count=4, include_chirality=false, fp_size=2048, bits_per_entry=4, from_atoms=None, ignore_atoms=None, custom_atom_invariants=None))]
     fn new(
         torsion_atom_count: u32,
         include_chirality: bool,
@@ -1106,19 +1140,15 @@ impl AtomCodeExplanation {
                 exception
             })
     }
-    #[getter]
     fn symbol(&self) -> &'static str {
         self.inner.symbol()
     }
-    #[getter]
     fn branch_count(&self) -> u32 {
         self.inner.branch_count()
     }
-    #[getter]
     fn pi_electrons(&self) -> u32 {
         self.inner.pi_electrons()
     }
-    #[getter]
     fn chirality(&self) -> Option<&'static str> {
         self.inner.chirality()
     }
@@ -1180,16 +1210,19 @@ pub(crate) struct MorganBondInvariantsGenerator {
 impl MorganBondInvariantsGenerator {
     #[new]
     #[pyo3(signature=(*,use_bond_types=true,include_chirality=false))]
+    fn py_new(use_bond_types: bool, include_chirality: bool) -> Self {
+        Self::new(use_bond_types, include_chirality)
+    }
+    #[staticmethod]
+    #[pyo3(signature=(*,use_bond_types=true,include_chirality=false))]
     fn new(use_bond_types: bool, include_chirality: bool) -> Self {
         Self {
             inner: ck::MorganBondInvariantsGenerator::new(use_bond_types, include_chirality),
         }
     }
-    #[getter]
     fn use_bond_types(&self) -> bool {
         self.inner.use_bond_types()
     }
-    #[getter]
     fn include_chirality(&self) -> bool {
         self.inner.include_chirality()
     }
@@ -1203,6 +1236,23 @@ pub(crate) struct MorganCallParams {
 #[pymethods]
 impl MorganCallParams {
     #[new]
+    #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=-1))]
+    fn py_new(
+        from_atoms: Option<Vec<u32>>,
+        ignore_atoms: Option<Vec<u32>>,
+        custom_atom_invariants: Option<Vec<u32>>,
+        custom_bond_invariants: Option<Vec<u32>>,
+        conformer_id: i32,
+    ) -> Self {
+        Self::new(
+            from_atoms,
+            ignore_atoms,
+            custom_atom_invariants,
+            custom_bond_invariants,
+            conformer_id,
+        )
+    }
+    #[staticmethod]
     #[pyo3(signature=(*,from_atoms=None,ignore_atoms=None,custom_atom_invariants=None,custom_bond_invariants=None,conformer_id=-1))]
     fn new(
         from_atoms: Option<Vec<u32>>,
@@ -1251,6 +1301,16 @@ pub(crate) struct MorganFingerprintGenerator {
 #[pymethods]
 impl MorganFingerprintGenerator {
     #[new]
+    #[pyo3(signature=(*,params=None,atom_invariants=None,bond_invariants=None))]
+    fn py_new(
+        py: Python<'_>,
+        params: Option<&MorganParams>,
+        atom_invariants: Option<&MorganAtomInvariantsGenerator>,
+        bond_invariants: Option<&MorganBondInvariantsGenerator>,
+    ) -> PyResult<Self> {
+        Self::new(py, params, atom_invariants, bond_invariants)
+    }
+    #[staticmethod]
     #[pyo3(signature=(*,params=None,atom_invariants=None,bond_invariants=None))]
     fn new(
         py: Python<'_>,
@@ -1572,43 +1632,43 @@ pub(crate) struct AtomPairsParameters;
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AtomPairsParameters {
-    #[classattr]
+    #[staticmethod]
     fn version() -> &'static str {
         ck::AtomPairsParameters::version()
     }
-    #[classattr]
+    #[staticmethod]
     fn num_type_bits() -> u32 {
         ck::AtomPairsParameters::num_type_bits()
     }
-    #[classattr]
+    #[staticmethod]
     fn num_pi_bits() -> u32 {
         ck::AtomPairsParameters::num_pi_bits()
     }
-    #[classattr]
+    #[staticmethod]
     fn num_branch_bits() -> u32 {
         ck::AtomPairsParameters::num_branch_bits()
     }
-    #[classattr]
+    #[staticmethod]
     fn num_chiral_bits() -> u32 {
         ck::AtomPairsParameters::num_chiral_bits()
     }
-    #[classattr]
+    #[staticmethod]
     fn code_size() -> u32 {
         ck::AtomPairsParameters::code_size()
     }
-    #[classattr]
+    #[staticmethod]
     fn num_path_bits() -> u32 {
         ck::AtomPairsParameters::num_path_bits()
     }
-    #[classattr]
+    #[staticmethod]
     fn max_path_length() -> u32 {
         ck::AtomPairsParameters::max_path_length()
     }
-    #[classattr]
+    #[staticmethod]
     fn num_atom_pair_fingerprint_bits() -> u32 {
         ck::AtomPairsParameters::num_atom_pair_fingerprint_bits()
     }
-    #[classattr]
+    #[staticmethod]
     fn atom_types() -> Vec<u32> {
         ck::AtomPairsParameters::atom_types()
     }

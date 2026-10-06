@@ -1,9 +1,9 @@
-use cosmolkit::{BatchRecord, Molecule, MoleculeBatch, PatternFingerprintParams};
+use cosmolkit::{Molecule, PatternFingerprintParams};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let molecule = Molecule::from_smiles("c1ccccc1O")?;
-    let ordinary = molecule.pattern_fingerprint(&PatternFingerprintParams::default())?;
-    let tautomeric = molecule.pattern_fingerprint(&PatternFingerprintParams {
+    let ordinary = molecule.pattern_fingerprint()?;
+    let tautomeric = molecule.pattern_fingerprint_with_params(&PatternFingerprintParams {
         n_bits: 2048,
         tautomeric: true,
     })?;
@@ -11,17 +11,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("ordinary Pattern bits: {:?}", ordinary.on_bits());
     println!("tautomeric Pattern bits: {:?}", tautomeric.on_bits());
 
-    let batch = MoleculeBatch::new(vec![
-        BatchRecord::Molecule(molecule),
-        BatchRecord::Molecule(Molecule::from_smiles("CCO")?),
-    ]);
-    let fingerprints = batch.pattern_fingerprint_list_with_options(
-        &PatternFingerprintParams::default(),
-        Some(2),
-        Some(false),
-    )?;
-    for (index, fingerprint) in fingerprints.into_iter().enumerate() {
-        println!("batch {index}: {:?}", fingerprint.map(|fp| fp.on_bits()));
+    let inputs = [molecule, Molecule::from_smiles("CCO")?];
+    for (index, input) in inputs.iter().enumerate() {
+        println!(
+            "input {index}: {:?}",
+            input.pattern_fingerprint()?.on_bits()
+        );
     }
 
     Ok(())

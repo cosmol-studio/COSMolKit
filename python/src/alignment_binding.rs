@@ -111,6 +111,10 @@ impl From<&PyAlignmentAtomMap> for ck::AlignmentAtomMap {
 #[pymethods]
 impl PyAlignmentAtomMap {
     #[new]
+    fn py_new(probe_atom: usize, reference_atom: usize) -> Self {
+        Self::new(probe_atom, reference_atom)
+    }
+    #[staticmethod]
     fn new(probe_atom: usize, reference_atom: usize) -> Self {
         Self {
             probe_atom,
@@ -230,6 +234,25 @@ impl PyAlignmentParameters {
 impl PyAlignmentParameters {
     #[new]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_map=None, weights=None, reflect=false, max_iterations=50))]
+    fn py_new(
+        probe_conformer_id: i32,
+        reference_conformer_id: i32,
+        atom_map: Option<Vec<PyAlignmentAtomMap>>,
+        weights: Option<Vec<f64>>,
+        reflect: bool,
+        max_iterations: u32,
+    ) -> Self {
+        Self::new(
+            probe_conformer_id,
+            reference_conformer_id,
+            atom_map,
+            weights,
+            reflect,
+            max_iterations,
+        )
+    }
+    #[staticmethod]
+    #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_map=None, weights=None, reflect=false, max_iterations=50))]
     fn new(
         probe_conformer_id: i32,
         reference_conformer_id: i32,
@@ -330,6 +353,34 @@ impl PyBestAlignmentParameters {
 #[pymethods]
 impl PyBestAlignmentParameters {
     #[new]
+    #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, reflect=false, max_iterations=50, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
+    #[allow(clippy::too_many_arguments)]
+    fn py_new(
+        probe_conformer_id: i32,
+        reference_conformer_id: i32,
+        atom_maps: Option<Vec<Vec<PyAlignmentAtomMap>>>,
+        weights: Option<Vec<f64>>,
+        reflect: bool,
+        max_iterations: u32,
+        max_matches: i32,
+        symmetrize_conjugated_terminal_groups: bool,
+        ignore_hydrogens: bool,
+        num_threads: i32,
+    ) -> Self {
+        Self::new(
+            probe_conformer_id,
+            reference_conformer_id,
+            atom_maps,
+            weights,
+            reflect,
+            max_iterations,
+            max_matches,
+            symmetrize_conjugated_terminal_groups,
+            ignore_hydrogens,
+            num_threads,
+        )
+    }
+    #[staticmethod]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, reflect=false, max_iterations=50, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -433,6 +484,25 @@ impl PyAllConformerRmsdParameters {
 impl PyAllConformerRmsdParameters {
     #[new]
     #[pyo3(signature = (atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
+    fn py_new(
+        atom_maps: Option<Vec<Vec<PyAlignmentAtomMap>>>,
+        weights: Option<Vec<f64>>,
+        max_matches: i32,
+        symmetrize_conjugated_terminal_groups: bool,
+        ignore_hydrogens: bool,
+        num_threads: i32,
+    ) -> Self {
+        Self::new(
+            atom_maps,
+            weights,
+            max_matches,
+            symmetrize_conjugated_terminal_groups,
+            ignore_hydrogens,
+            num_threads,
+        )
+    }
+    #[staticmethod]
+    #[pyo3(signature = (atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true, ignore_hydrogens=true, num_threads=1))]
     fn new(
         atom_maps: Option<Vec<Vec<PyAlignmentAtomMap>>>,
         weights: Option<Vec<f64>>,
@@ -494,6 +564,25 @@ impl PyCoordinateRmsdParameters {
 impl PyCoordinateRmsdParameters {
     #[new]
     #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true))]
+    fn py_new(
+        probe_conformer_id: i32,
+        reference_conformer_id: i32,
+        atom_maps: Option<Vec<Vec<PyAlignmentAtomMap>>>,
+        weights: Option<Vec<f64>>,
+        max_matches: i32,
+        symmetrize_conjugated_terminal_groups: bool,
+    ) -> Self {
+        Self::new(
+            probe_conformer_id,
+            reference_conformer_id,
+            atom_maps,
+            weights,
+            max_matches,
+            symmetrize_conjugated_terminal_groups,
+        )
+    }
+    #[staticmethod]
+    #[pyo3(signature = (probe_conformer_id=-1, reference_conformer_id=-1, atom_maps=None, weights=None, max_matches=1_000_000, symmetrize_conjugated_terminal_groups=true))]
     fn new(
         probe_conformer_id: i32,
         reference_conformer_id: i32,
@@ -548,6 +637,23 @@ impl PyConformerAlignmentParameters {
 #[pymethods]
 impl PyConformerAlignmentParameters {
     #[new]
+    #[pyo3(signature = (atom_indices=None, conformer_ids=None, weights=None, reflect=false, max_iterations=50))]
+    fn py_new(
+        atom_indices: Option<Vec<usize>>,
+        conformer_ids: Option<Vec<usize>>,
+        weights: Option<Vec<f64>>,
+        reflect: bool,
+        max_iterations: u32,
+    ) -> Self {
+        Self::new(
+            atom_indices,
+            conformer_ids,
+            weights,
+            reflect,
+            max_iterations,
+        )
+    }
+    #[staticmethod]
     #[pyo3(signature = (atom_indices=None, conformer_ids=None, weights=None, reflect=false, max_iterations=50))]
     fn new(
         atom_indices: Option<Vec<usize>>,

@@ -3,6 +3,7 @@
 use cosmolkit_core::{atropisomer_carriers, find_double_bond_stereo_atoms};
 use cosmolkit_model::{AtomId, BondId, MoleculeProperties, TopologyBlock};
 use cosmolkit_types::{BondOrder, BondStereo, ChiralTag};
+use std::borrow::Cow;
 
 use crate::cip_graph::{
     CipDigraph, CipEdgeId, CipLabelerContext, CipLabelerError, CipNode, CipNodeId, CipRules,
@@ -468,17 +469,26 @@ fn cip_neighbor_order_value(indices: &[u32]) -> String {
     format!("[{body}]")
 }
 
-fn cip_clear_selected_labels(molecule: &mut TopologyBlock, atom_mask: &[bool], bond_mask: &[bool]) {
+fn cip_clear_selected_labels(
+    molecule: &mut Cow<'_, TopologyBlock>,
+    atom_mask: &[bool],
+    bond_mask: &[bool],
+) {
+    // RDKit✔️❌: getFocus()->clearProp(common_properties::_CIPCode);
+    // RDKit✔️❌: dp_bond->clearProp(common_properties::_CIPCode);
+    // Only actual configuration reset writes detach topology. A first write
+    // clones the detached block, unlike upstream's local property mutation;
+    // no-configuration inputs retain the exact borrowed source allocation.
     for (idx, selected) in atom_mask.iter().copied().enumerate() {
         if !selected {
             continue;
         }
-        if let Some(atom) = molecule.atoms.get_mut(idx) {
+        if let Some(atom) = molecule.atoms.get(idx) {
             if matches!(
                 atom.chiral_tag(),
                 ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
             ) {
-                atom.clear_prop("_CIPCode");
+                molecule.to_mut().atoms[idx].clear_prop("_CIPCode");
             }
         }
     }
@@ -486,7 +496,7 @@ fn cip_clear_selected_labels(molecule: &mut TopologyBlock, atom_mask: &[bool], b
         if !selected {
             continue;
         }
-        if let Some(bond) = molecule.bonds.get_mut(idx) {
+        if let Some(bond) = molecule.bonds.get(idx) {
             if matches!(
                 bond.stereo(),
                 BondStereo::E
@@ -496,7 +506,7 @@ fn cip_clear_selected_labels(molecule: &mut TopologyBlock, atom_mask: &[bool], b
                     | BondStereo::AtropCcw
                     | BondStereo::AtropCw
             ) {
-                bond.clear_prop("_CIPCode");
+                molecule.to_mut().bonds[idx].clear_prop("_CIPCode");
             }
         }
     }
@@ -614,13 +624,13 @@ fn cip_apply_primary_labels(
 // RDKit✔️✔️:   mol.setProp(common_properties::_CIPComputed, true, computed);
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION assignCIPLabels selected overload
-fn assign_cip_labels_for_masks(
-    mut topology: TopologyBlock,
-    mut properties: MoleculeProperties,
+fn assign_cip_labels_for_masks<'a>(
+    mut topology: Cow<'a, TopologyBlock>,
+    mut properties: Cow<'a, MoleculeProperties>,
     atom_mask: &[bool],
     bond_mask: &[bool],
     max_recursive_iterations: u32,
-) -> Result<CipLabelAssignment, CipLabelerError> {
+) -> Result<(Cow<'a, TopologyBlock>, Cow<'a, MoleculeProperties>), CipLabelerError> {
     // BEGIN RDKIT CPP FUNCTION assignCIPLabels selected overload (CIPLabeler.cpp)
     // RDKit✔️✔️: void assignCIPLabels(ROMol &mol, const boost::dynamic_bitset<> &atoms,
     // RDKit✔️✔️:                      const boost::dynamic_bitset<> &bonds,
@@ -646,7 +656,7 @@ fn assign_cip_labels_for_masks(
     // RDKit✔️✔️:   mol.setProp(common_properties::_CIPComputed, true, computed);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION assignCIPLabels selected overload
-    properties.clear_prop("_CIPComputed");
+    properties.to_mut().clear_prop("_CIPComputed");
     cip_clear_selected_labels(&mut topology, atom_mask, bond_mask);
 
     let mut configs = cip_find_configs(&topology, atom_mask, bond_mask)?;
@@ -657,7 +667,9 @@ fn assign_cip_labels_for_masks(
         .collect::<Vec<_>>();
     drop(configs);
 
-    cip_apply_primary_labels(&mut topology, labels)?;
+    if !labels.is_empty() {
+        cip_apply_primary_labels(topology.to_mut(), labels)?;
+    }
     topology.validate()?;
     // RDKit❗✔️: const bool computed = true;
     // RDKit❗✔️: mol.setProp(common_properties::_CIPComputed, true, computed);
@@ -668,11 +680,8 @@ fn assign_cip_labels_for_masks(
     // core property formatter. MoleculeProperties currently stores strings;
     // preserve that source projection, rather than Rust bool Display spelling.
     // One constant string allocation is equivalent to source scalar formatting.
-    properties.set_computed_prop("_CIPComputed", "1")?;
-    Ok(CipLabelAssignment {
-        topology,
-        properties,
-    })
+    properties.to_mut().set_computed_prop("_CIPComputed", "1")?;
+    Ok((topology, properties))
 }
 
 // BEGIN RDKIT CPP FUNCTION assignCIPLabels all-molecule overload (CIPLabeler.cpp)
@@ -689,6 +698,32 @@ pub fn assign_cip_labels(
     properties: MoleculeProperties,
     options: &CipLabelOptions,
 ) -> Result<CipLabelAssignment, CipLabelerError> {
+    let (topology, properties) =
+        assign_cip_labels_cow(Cow::Owned(topology), Cow::Owned(properties), options)?;
+    Ok(CipLabelAssignment {
+        topology: topology.into_owned(),
+        properties: properties.into_owned(),
+    })
+}
+
+/// Internal detached transport preserving blocks that receive no source writes.
+/// Both owned and borrowed callers execute the same mask/label implementation.
+#[doc(hidden)]
+pub fn assign_cip_labels_cow<'a>(
+    topology: Cow<'a, TopologyBlock>,
+    properties: Cow<'a, MoleculeProperties>,
+    options: &CipLabelOptions,
+) -> Result<(Cow<'a, TopologyBlock>, Cow<'a, MoleculeProperties>), CipLabelerError> {
+    // RDKit❗❌: void assignCIPLabels(ROMol &mol, unsigned int maxRecursiveIterations) {
+    // RDKit❗❌:   boost::dynamic_bitset<> atoms(mol.getNumAtoms());
+    // RDKit❗❌:   boost::dynamic_bitset<> bonds(mol.getNumBonds());
+    // RDKit❗❌:   atoms.set();
+    // RDKit❗❌:   bonds.set();
+    // RDKit❗❌:   assignCIPLabels(mol, atoms, bonds, maxRecursiveIterations);
+    // RDKit❗❌: }
+    // Existing explicit selection/error adapters feed the same mask owner.
+    // Full detached validation scans the graph, unlike upstream's direct
+    // molecule access. Keep that known cost separate from lazy block copying.
     topology.validate()?;
     if topology.atoms.len() > u32::MAX as usize {
         return Err(CipLabelerError::SourceIndexWidthExceeded {

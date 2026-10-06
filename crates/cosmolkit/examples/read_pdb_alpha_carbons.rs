@@ -1,6 +1,6 @@
 use std::{env, fs};
 
-use cosmolkit::{BioStructure, ResidueKind};
+use cosmolkit::{BioStructure, ResidueKind, ResidueName};
 
 const DEMO_PDB: &str = "\
 ATOM      1  N   MET A   1      11.104  13.207   9.900  1.00 20.00           N
@@ -17,14 +17,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(path) => fs::read_to_string(path)?,
         None => DEMO_PDB.to_string(),
     };
-    let structure = BioStructure::from_pdb_str(&pdb)?;
+    let structure = BioStructure::from_pdb(&pdb)?;
     let mmcif = structure.to_mmcif()?;
-    let roundtrip = BioStructure::from_mmcif_str(&mmcif, "converted.cif")?;
+    let roundtrip = BioStructure::from_mmcif(&mmcif)?;
 
     for alpha_carbon in alpha_carbons(&roundtrip) {
         println!(
             "{} {} {:.3} {:.3} {:.3}",
-            alpha_carbon.residue_name,
+            alpha_carbon.residue_name.as_str(),
             alpha_carbon.residue_index,
             alpha_carbon.position[0],
             alpha_carbon.position[1],
@@ -35,31 +35,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-struct AlphaCarbon<'a> {
+struct AlphaCarbon {
     residue_index: usize,
-    residue_name: &'a str,
+    residue_name: ResidueName,
     position: [f64; 3],
 }
 
-fn alpha_carbons(structure: &BioStructure) -> impl Iterator<Item = AlphaCarbon<'_>> {
+fn alpha_carbons(structure: &BioStructure) -> impl Iterator<Item = AlphaCarbon> + '_ {
     structure
         .residues()
         .iter()
         .enumerate()
-        .filter(|(_, residue)| residue.kind == ResidueKind::AminoAcid)
+        .filter(|(_, residue)| residue.kind() == ResidueKind::AminoAcid)
         .filter_map(|(residue_index, residue)| {
-            let start = residue.atom_span.start as usize;
-            let end = residue.atom_span.end() as usize;
+            let start = residue.atom_span().start() as usize;
+            let end = residue.atom_span().end() as usize;
             (start..end)
                 .find(|&atom_index| {
                     matches!(
-                        structure.atoms()[atom_index].name.0,
-                        [b' ', b'C', b'A', b' '] | [b'C', b'A', b' ', b' ']
+                        structure.atoms()[atom_index].name().as_bytes(),
+                        b"CA" | b" CA " | b"CA  "
                     )
                 })
                 .map(|atom_index| AlphaCarbon {
                     residue_index,
-                    residue_name: residue.name.as_str(),
+                    residue_name: residue.name(),
                     position: structure.coordinates().positions()[atom_index],
                 })
         })

@@ -7,17 +7,11 @@ use crate::{CipLabelOptions, DerivedState, PreservationProof, TopologyEditKind};
 
 #[mol_op_body(with_cip_labels, parts)]
 pub(crate) fn assign_cip_labels_impl(options: &CipLabelOptions) -> Result<(), OperationError> {
-    let topology = parts.checkout_topology()?;
-    let properties = parts.checkout_properties()?;
-    let assignment = cosmolkit_stereo::assign_cip_labels(topology, properties, options)
-        .map_err(OperationError::CipLabeler)?;
-    let (topology, properties) = assignment.into_parts();
-
-    topology
-        .validate()
-        .map_err(OperationError::InvalidTopology)?;
-    parts.install_topology(topology)?;
-    parts.install_properties(properties)?;
+    parts.stage_topology_properties_cow(|topology, properties, _cache| {
+        cosmolkit_stereo::assign_cip_labels_cow(topology, properties, options)
+            .map(|pair| ((), Some(pair)))
+            .map_err(OperationError::CipLabeler)
+    })?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
     parts.clear_cache(
         DerivedState::STEREO

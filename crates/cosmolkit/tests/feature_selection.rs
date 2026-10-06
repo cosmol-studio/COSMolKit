@@ -171,7 +171,7 @@ impl Probe {
     }
 
     fn metadata(&self) -> serde_json::Value {
-        let output = self.cargo(&["metadata", "--offline", "--format-version", "1"]);
+        let output = self.cargo(&["metadata", "--format-version", "1"]);
         assert!(
             output.status.success(),
             "{}",
@@ -181,7 +181,7 @@ impl Probe {
     }
 
     fn resolved_caps(&self) -> (BTreeSet<String>, Output) {
-        let output = self.cargo(&["metadata", "--offline", "--format-version", "1"]);
+        let output = self.cargo(&["metadata", "--format-version", "1"]);
         assert!(
             output.status.success(),
             "Cargo metadata failed: {}\n{}",
@@ -256,7 +256,7 @@ impl Probe {
         let evidence = serde_json::json!({
             "features": caps,
             "program": std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()),
-            "args": ["metadata", "--offline", "--format-version", "1"],
+            "args": ["metadata", "--format-version", "1"],
             "cwd": self.0.display().to_string(),
             "target_dir": root.join("target/feature-selection-compile")
                 .join(self.0.file_name().expect("named probe directory"))
@@ -338,7 +338,7 @@ impl Probe {
     fn check_source(&self, source: &str) -> Output {
         std::fs::write(self.0.join("src/lib.rs"), source).unwrap();
         let _ = self.resolved_caps();
-        self.cargo(&["check", "--offline", "--release", "--quiet", "--lib"])
+        self.cargo(&["check", "--release", "--quiet", "--lib"])
     }
 }
 
@@ -408,7 +408,7 @@ fn cargo_resolves_exact_bundle_and_individual_capability_sets() {
                 "default-features={defaults}, features={selected:?}\n{}",
                 probe.failure_context(&metadata_output)
             );
-            let compiled = probe.cargo(&["check", "--offline", "--release", "--quiet", "--lib"]);
+            let compiled = probe.cargo(&["check", "--release", "--quiet", "--lib"]);
             assert!(
                 compiled.status.success(),
                 "default-features={defaults}, features={selected:?}: {}\n{}",
@@ -600,7 +600,7 @@ fn bio_only_runtime_control() {
 }
 "#;
         std::fs::write(probe.0.join("src/lib.rs"), source).unwrap();
-        let output = probe.cargo(&["test", "--offline", "--release", "--quiet", "--lib"]);
+        let output = probe.cargo(&["test", "--release", "--quiet", "--lib"]);
         assert!(
             output.status.success(),
             "{}",
@@ -1101,7 +1101,7 @@ fn feature_probe_evidence_panic_drop_retains_exact_payloads() {
     );
     assert_eq!(caps_bytes, serde_json::to_vec_pretty(&caps_json).unwrap());
 
-    let check_output = probe.cargo(&["check", "--offline", "--release", "--quiet", "--lib"]);
+    let check_output = probe.cargo(&["check", "--release", "--quiet", "--lib"]);
     assert!(
         check_output.status.success(),
         "{}",
@@ -1130,7 +1130,7 @@ fn feature_probe_evidence_panic_drop_retains_exact_payloads() {
     let command_json: serde_json::Value = serde_json::from_slice(&payload_bytes[0]).unwrap();
     let expected_command = serde_json::json!({
         "program": std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()),
-        "args": ["check", "--offline", "--release", "--quiet", "--lib"],
+        "args": ["check", "--release", "--quiet", "--lib"],
         "cwd": root.display().to_string(),
         "target_dir": workspace_root.join("target/feature-selection-compile").join(root.file_name().unwrap()).display().to_string(),
         "profile": "release",

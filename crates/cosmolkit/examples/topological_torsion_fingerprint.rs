@@ -1,63 +1,38 @@
-use cosmolkit::{
-    BatchRecord, Molecule, MoleculeBatch, TopologicalTorsionFingerprintOutputRequest,
-    TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintValue,
-    TopologicalTorsionFingerprintVector, TopologicalTorsionLegacyKind,
-    TopologicalTorsionLegacyParams, topological_torsion_count_fingerprint,
-    topological_torsion_fingerprint, topological_torsion_fingerprint_with_output,
-    topological_torsion_legacy_fingerprint, topological_torsion_sparse_count_fingerprint,
-    topological_torsion_sparse_fingerprint,
-};
+use cosmolkit::{FingerprintAdditionalOutput, Molecule, TopologicalTorsionFingerprintParams};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let molecule = Molecule::from_smiles("CCCCO")?;
     let params = TopologicalTorsionFingerprintParams::default();
 
-    let sparse_count = topological_torsion_sparse_count_fingerprint(&molecule, &params)?;
-    let sparse_bit = topological_torsion_sparse_fingerprint(&molecule, &params)?;
-    let count = topological_torsion_count_fingerprint(&molecule, &params)?;
-    let bit = topological_torsion_fingerprint(&molecule, &params)?;
+    let sparse_count =
+        molecule.topological_torsion_sparse_count_fingerprint_with_params(&params, None)?;
+    let sparse_bit = molecule.topological_torsion_sparse_fingerprint_with_params(&params, None)?;
+    let count = molecule.topological_torsion_count_fingerprint_with_params(&params, None)?;
+    let bit = molecule.topological_torsion_fingerprint_with_params(&params, None)?;
     println!("sparse count: {:?}", sparse_count.nonzero_elements());
     println!("sparse bit: {:?}", sparse_bit.on_bits());
     println!("folded count: {:?}", count.nonzero_elements());
     println!("explicit bit: {:?}", bit.on_bits());
 
-    let with_output = topological_torsion_fingerprint_with_output(
-        &molecule,
-        &params,
-        TopologicalTorsionFingerprintOutputRequest {
-            vector: TopologicalTorsionFingerprintVector::Count,
-            atom_to_bits: true,
-            atom_counts: true,
-            bit_paths: true,
-            atoms_per_bit: true,
-        },
-    )?;
-    let TopologicalTorsionFingerprintValue::Count(with_output_count) = with_output.fingerprint
-    else {
-        unreachable!("the requested vector variant is preserved")
-    };
+    let mut output = FingerprintAdditionalOutput::default();
+    output.allocate_atom_to_bits();
+    output.allocate_atom_counts();
+    output.allocate_bit_paths();
+    output.allocate_atoms_per_bit();
+    let with_output_count =
+        molecule.topological_torsion_count_fingerprint_with_params(&params, Some(&mut output))?;
+    assert_eq!(with_output_count, count);
     println!(
         "count with output: {:?}",
         with_output_count.nonzero_elements()
     );
-    println!("provenance: {:?}", with_output.additional_output);
+    println!("provenance: {output:?}");
 
-    let legacy = topological_torsion_legacy_fingerprint(
-        &molecule,
-        &TopologicalTorsionLegacyParams {
-            kind: TopologicalTorsionLegacyKind::HashedBit,
-            ..Default::default()
-        },
-    )?;
-    println!("legacy hashed bit: {legacy:?}");
-
-    let batch = MoleculeBatch::new(vec![
-        BatchRecord::Molecule(molecule.clone()),
-        BatchRecord::Molecule(Molecule::from_smiles("CCCCC")?),
-    ]);
-    let batch_bits =
-        batch.topological_torsion_fingerprint_list_with_options(&params, Some(2), Some(false))?;
-    assert_eq!(batch_bits[0], Some(bit));
-
+    let inputs = [molecule.clone(), Molecule::from_smiles("CCCCC")?];
+    let fingerprints = inputs
+        .iter()
+        .map(|input| input.topological_torsion_fingerprint_with_params(&params, None))
+        .collect::<Result<Vec<_>, _>>()?;
+    assert_eq!(fingerprints[0], bit);
     Ok(())
 }

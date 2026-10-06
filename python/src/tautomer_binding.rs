@@ -101,6 +101,10 @@ pub(crate) struct TautomerScoreTerm {
 #[pymethods]
 impl TautomerScoreTerm {
     #[new]
+    fn py_new(name: String, smarts: String, score: i32) -> Self {
+        Self::new(name, smarts, score)
+    }
+    #[staticmethod]
     fn new(name: String, smarts: String, score: i32) -> Self {
         Self {
             inner: ck::TautomerScoreTerm::new(name, smarts, score),

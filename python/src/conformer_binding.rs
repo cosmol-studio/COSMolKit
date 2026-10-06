@@ -21,7 +21,7 @@ impl EmbedParams {
     #[pyo3(
         text_signature = "(*, max_iterations=0, num_threads=1, random_seed=-1, clear_confs=True, use_random_coords=False, box_size_mult=2.0, rand_neg_eig=True, num_zero_fail=1, coord_map=None, optimizer_force_tol=1e-3, ignore_smoothing_failures=False, enforce_chirality=True, use_exp_torsion_angle_prefs=False, use_basic_knowledge=False, verbose=False, basin_thresh=5.0, prune_rms_thresh=-1.0, only_heavy_atoms_for_rms=True, et_version=2, embed_fragments_separately=True, use_small_ring_torsions=False, use_macrocycle_torsions=False, use_macrocycle14config=False, timeout=0, cpci=None, force_trans_amides=True, use_symmetry_for_pruning=True, bounds_mat_force_scaling=1.0, track_failures=False, enable_sequential_random_seeds=False, symmetrize_conjugated_terminal_groups_for_pruning=True)"
     )]
-    fn new(
+    fn py_new(
         max_iterations: u32,
         num_threads: i32,
         random_seed: i32,
@@ -92,6 +92,12 @@ impl EmbedParams {
         Self { inner }
     }
     #[staticmethod]
+    fn new() -> Self {
+        Self {
+            inner: ck::EmbedParams::new(),
+        }
+    }
+    #[staticmethod]
     fn dg() -> Self {
         Self {
             inner: ck::EmbedParams::dg(),
@@ -139,131 +145,99 @@ impl EmbedParams {
             inner: ck::EmbedParams::sr_etkdg_v3(),
         }
     }
-    #[getter]
     fn max_iterations(&self) -> u32 {
         self.inner.max_iterations.clone()
     }
-    #[getter]
     fn num_threads(&self) -> i32 {
         self.inner.num_threads.clone()
     }
-    #[getter]
     fn random_seed(&self) -> i32 {
         self.inner.random_seed.clone()
     }
-    #[getter]
     fn clear_confs(&self) -> bool {
         self.inner.clear_confs.clone()
     }
-    #[getter]
     fn use_random_coords(&self) -> bool {
         self.inner.use_random_coords.clone()
     }
-    #[getter]
     fn box_size_mult(&self) -> f64 {
         self.inner.box_size_mult.clone()
     }
-    #[getter]
     fn rand_neg_eig(&self) -> bool {
         self.inner.rand_neg_eig.clone()
     }
-    #[getter]
     fn num_zero_fail(&self) -> u32 {
         self.inner.num_zero_fail.clone()
     }
-    #[getter]
     fn coord_map(&self) -> Option<BTreeMap<i32, [f64; 3]>> {
         self.inner.coord_map.clone()
     }
-    #[getter]
     fn optimizer_force_tol(&self) -> f64 {
         self.inner.optimizer_force_tol.clone()
     }
-    #[getter]
     fn ignore_smoothing_failures(&self) -> bool {
         self.inner.ignore_smoothing_failures.clone()
     }
-    #[getter]
     fn enforce_chirality(&self) -> bool {
         self.inner.enforce_chirality.clone()
     }
-    #[getter]
     fn use_exp_torsion_angle_prefs(&self) -> bool {
         self.inner.use_exp_torsion_angle_prefs.clone()
     }
-    #[getter]
     fn use_basic_knowledge(&self) -> bool {
         self.inner.use_basic_knowledge.clone()
     }
-    #[getter]
     fn verbose(&self) -> bool {
         self.inner.verbose.clone()
     }
-    #[getter]
     fn basin_thresh(&self) -> f64 {
         self.inner.basin_thresh.clone()
     }
-    #[getter]
     fn prune_rms_thresh(&self) -> f64 {
         self.inner.prune_rms_thresh.clone()
     }
-    #[getter]
     fn only_heavy_atoms_for_rms(&self) -> bool {
         self.inner.only_heavy_atoms_for_rms.clone()
     }
-    #[getter]
     fn et_version(&self) -> u32 {
         self.inner.et_version.clone()
     }
-    #[getter]
     fn embed_fragments_separately(&self) -> bool {
         self.inner.embed_fragments_separately.clone()
     }
-    #[getter]
     fn use_small_ring_torsions(&self) -> bool {
         self.inner.use_small_ring_torsions.clone()
     }
-    #[getter]
     fn use_macrocycle_torsions(&self) -> bool {
         self.inner.use_macrocycle_torsions.clone()
     }
-    #[getter]
     fn use_macrocycle14config(&self) -> bool {
         self.inner.use_macrocycle14config.clone()
     }
-    #[getter]
     fn timeout(&self) -> u32 {
         self.inner.timeout.clone()
     }
-    #[getter]
     fn cpci(&self) -> Option<BTreeMap<(u32, u32), f64>> {
         self.inner.cpci.clone()
     }
-    #[getter]
     fn force_trans_amides(&self) -> bool {
         self.inner.force_trans_amides.clone()
     }
-    #[getter]
     fn use_symmetry_for_pruning(&self) -> bool {
         self.inner.use_symmetry_for_pruning.clone()
     }
-    #[getter]
     fn bounds_mat_force_scaling(&self) -> f64 {
         self.inner.bounds_mat_force_scaling.clone()
     }
-    #[getter]
     fn track_failures(&self) -> bool {
         self.inner.track_failures.clone()
     }
-    #[getter]
     fn failures(&self) -> Vec<u32> {
         self.inner.failures.clone()
     }
-    #[getter]
     fn enable_sequential_random_seeds(&self) -> bool {
         self.inner.enable_sequential_random_seeds.clone()
     }
-    #[getter]
     fn symmetrize_conjugated_terminal_groups_for_pruning(&self) -> bool {
         self.inner
             .symmetrize_conjugated_terminal_groups_for_pruning

@@ -18,7 +18,7 @@ fn cause_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> Py
 }
 pub(crate) fn optimization_pyerr(py: Python<'_>, source: &ck::UffOptimizationError) -> PyErr {
     let error = UffOptimizationError::new_err(source.to_string());
-    let (kind, requested) = match source.kind() {
+    let (_, requested) = match source.kind() {
         ck::UffOptimizationErrorKind::MissingConformer { requested } => {
             ("MissingConformer", requested)
         }
@@ -27,10 +27,19 @@ pub(crate) fn optimization_pyerr(py: Python<'_>, source: &ck::UffOptimizationErr
         ck::UffOptimizationErrorKind::Optimization => ("Optimization", None),
         ck::UffOptimizationErrorKind::ConformerOptimization => ("ConformerOptimization", None),
     };
+    let kind = match Py::new(
+        py,
+        crate::canonical_error_values::UffOptimizationErrorKind {
+            inner: source.kind(),
+        },
+    ) {
+        Ok(kind) => kind,
+        Err(e) => return e,
+    };
     if let Err(e) = error
         .value(py)
         .setattr("domain", "uff_optimization")
-        .and_then(|()| error.value(py).setattr("kind", kind))
+        .and_then(|()| error.value(py).setattr("_kind", kind))
         .and_then(|()| error.value(py).setattr("requested", requested))
     {
         return e;
@@ -47,10 +56,14 @@ pub(crate) fn parameter_query_pyerr(py: Python<'_>, source: ck::UffParameterQuer
         ck::UffParameterQueryError::Cache(cause) => ("Cache", operation_pyerr(py, cause.clone())),
         ck::UffParameterQueryError::Parameters(cause) => {
             let error = UffParameterError::new_err(cause.to_string());
-            if let Err(e) = error
-                .value(py)
-                .setattr("kind", format!("{:?}", cause.kind()))
-            {
+            let kind = match Py::new(
+                py,
+                crate::canonical_error_values::UffParameterErrorKind::from(cause.kind()),
+            ) {
+                Ok(kind) => kind,
+                Err(e) => return e,
+            };
+            if let Err(e) = error.value(py).setattr("_kind", kind) {
                 return e;
             }
             error.set_cause(
@@ -260,6 +273,16 @@ impl UffConformerOptimizationResult {
     }
 }
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<crate::canonical_error_values::UffParameterErrorKind>()?;
+    module.add_class::<crate::canonical_error_values::UffOptimizationErrorKind>()?;
+    crate::canonical_error_accessors::attach(
+        module.py().get_type::<UffParameterError>().as_any(),
+        &[("kind", "_kind")],
+    )?;
+    crate::canonical_error_accessors::attach(
+        module.py().get_type::<UffOptimizationError>().as_any(),
+        &[("kind", "_kind")],
+    )?;
     module.add_class::<UffEvaluationParams>()?;
     module.add_class::<UffEnergyGradient>()?;
     module.add_class::<UffOptimizationParams>()?;

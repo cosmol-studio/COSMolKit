@@ -38,6 +38,42 @@ fn cargo_check(case: &str, strict: bool) -> Output {
 }
 
 #[test]
+fn cip_cow_staging_preserves_marker_authority_and_scoped_borrows() {
+    for strict in [false, true] {
+        let allowed = cargo_check("cip_cow_allowed", strict);
+        assert!(
+            allowed.status.success(),
+            "{}",
+            String::from_utf8_lossy(&allowed.stderr)
+        );
+
+        let missing_writes = cargo_check("cip_cow_missing_writes", strict);
+        assert!(!missing_writes.status.success());
+        let errors = String::from_utf8_lossy(&missing_writes.stderr);
+        assert!(
+            errors.contains("E0599") && errors.contains("stage_topology_properties_cow"),
+            "{errors}"
+        );
+
+        let private = cargo_check("cip_cow_runtime_private", strict);
+        assert!(!private.status.success());
+        let errors = String::from_utf8_lossy(&private.stderr);
+        assert!(
+            errors.contains("private") && errors.contains("stage_topology_properties_cow_runtime"),
+            "{errors}"
+        );
+
+        let escaped = cargo_check("cip_cow_borrow_escape", strict);
+        assert!(!escaped.status.success());
+        let errors = String::from_utf8_lossy(&escaped.stderr);
+        assert!(
+            errors.contains("lifetime may not live long enough"),
+            "{errors}"
+        );
+    }
+}
+
+#[test]
 fn preserve_only_capabilities_separate_borrows_proofs_and_mutation() {
     for strict in [false, true] {
         let allowed = cargo_check("preserve_allowed", strict);

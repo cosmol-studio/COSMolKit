@@ -281,7 +281,7 @@ fn value_forms_assign_tetrahedral_state_preserve_props_and_keep_weak_mapping() {
         Some(&cosmolkit_model::PropertyValue::from("kept"))
     );
     assert_eq!(source.property("_CIPComputed"), None);
-    assert_eq!(short.property("_CIPComputed"), Some("true"));
+    assert_eq!(short.property("_CIPComputed"), Some("1"));
     assert!(short.properties().is_prop_computed("_CIPComputed"));
     assert_eq!(source.property("source"), Some("preserved"));
     assert_eq!(short.property("source"), Some("preserved"));
@@ -333,7 +333,7 @@ fn selection_and_repeated_assignment_preserve_unselected_state_exactly() {
             .prop("_CIPNeighborOrder"),
         Some(&cosmolkit_model::PropertyValue::from("[0]"))
     );
-    assert_eq!(none_selected.property("_CIPComputed"), Some("true"));
+    assert_eq!(none_selected.property("_CIPComputed"), Some("1"));
 
     let selected = none_selected
         .with_cip_labels_with_options(
@@ -456,15 +456,52 @@ fn typed_failures_are_atomic_for_value_and_inplace_entrypoints() {
             BondSpec::new(AtomId::new(0), AtomId::new(4), BondOrder::Single),
         ],
     ));
+    // RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8 CIPLabeler.cpp findConfigs:
+    // if (chiraltag == Atom::CHI_TETRAHEDRAL_CW ||
+    //     chiraltag == Atom::CHI_TETRAHEDRAL_CCW) {
+    //   std::unique_ptr<Tetrahedral> cfg{new Tetrahedral(mol, atom)};
+    //   configs.push_back(std::move(cfg));
+    // }
+    // SquarePlanar creates no configuration; assignCIPLabels still sets computed.
+    // const bool computed = true;
+    // mol.setProp(common_properties::_CIPComputed, true, computed);
+    let unsupported_observer = unsupported.clone();
+    let labeled = unsupported.with_cip_labels().unwrap();
+    assert_eq!(unsupported, unsupported_observer);
+    assert!(std::ptr::eq(
+        unsupported.topology(),
+        unsupported_observer.topology()
+    ));
+    assert!(std::ptr::eq(
+        unsupported.properties(),
+        unsupported_observer.properties()
+    ));
+    coordinate_views::assert_shared_coordinates(&unsupported, &unsupported_observer);
+    assert_eq!(labeled.topology(), unsupported.topology());
     assert_eq!(
-        unsupported.with_cip_labels(),
-        Err(OperationError::CipLabeler(
-            CipLabelerError::UnsupportedConfiguration {
-                atom: 0,
-                tag: ChiralTag::SquarePlanar,
-            }
-        ))
+        labeled.atom(AtomId::new(0)).unwrap().chiral_tag(),
+        ChiralTag::SquarePlanar
     );
+    assert_eq!(
+        labeled.atom(AtomId::new(0)).unwrap().cip_descriptor(),
+        Ok(None)
+    );
+    coordinate_views::assert_shared_coordinates(&unsupported, &labeled);
+    let mut expected_properties = unsupported.properties().clone();
+    expected_properties
+        .set_computed_prop("_CIPComputed", "1")
+        .unwrap();
+    assert_eq!(labeled.properties(), &expected_properties);
+    assert_eq!(unsupported.property("_CIPComputed"), None);
+    assert_eq!(labeled.property("_CIPComputed"), Some("1"));
+    assert!(labeled.properties().is_prop_computed("_CIPComputed"));
+    let mut inplace = unsupported.clone();
+    inplace.assign_cip_labels_().unwrap();
+    assert_eq!(inplace, labeled);
+    coordinate_views::assert_shared_coordinates(&unsupported, &inplace);
+    // The unchanged topology is also subject to the project sharing invariant.
+    assert!(std::ptr::eq(unsupported.topology(), labeled.topology()));
+    assert!(std::ptr::eq(unsupported.topology(), inplace.topology()));
 }
 
 #[test]

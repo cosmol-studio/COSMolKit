@@ -351,6 +351,24 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    #[staticmethod]
+    fn from_sdf(py: Python<'_>, input: &str) -> PyResult<Self> {
+        ck::Molecule::from_sdf(input)
+            .map(Self::from_inner)
+            .map_err(|error| crate::canonical_sdf::sdf_pyerr(py, error))
+    }
+
+    #[staticmethod]
+    fn from_sdf_with_params(
+        py: Python<'_>,
+        input: &str,
+        params: &crate::canonical_sdf::SdfReadParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::from_sdf_with_params(input, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|error| crate::canonical_sdf::sdf_pyerr(py, error))
+    }
+
     fn pattern_fingerprint(
         &self,
         py: Python<'_>,
@@ -2304,6 +2322,28 @@ impl Molecule {
     }
 
     #[staticmethod]
+    fn from_parts(
+        py: Python<'_>,
+        topology: &crate::canonical_detached_blocks::TopologyBlock,
+        coordinates: &crate::canonical_detached_blocks::CoordinateBlock,
+        properties: &crate::canonical_property_values::MoleculeProperties,
+    ) -> PyResult<Self> {
+        ck::Molecule::from_parts(
+            topology.inner.clone(),
+            coordinates.inner.clone(),
+            properties.inner.clone(),
+        )
+        .map(Self::from_inner)
+        .map_err(|error| operation_pyerr(py, error))
+    }
+
+    fn topology(&self) -> crate::canonical_detached_blocks::TopologyBlock {
+        crate::canonical_detached_blocks::TopologyBlock {
+            inner: self.inner.topology().clone(),
+        }
+    }
+
+    #[staticmethod]
     fn from_smiles(py: Python<'_>, smiles: &str) -> PyResult<Self> {
         ck::Molecule::from_smiles(smiles)
             .map(|inner| Self { inner })
@@ -3631,15 +3671,18 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_pattern::register(module)?;
     crate::canonical_topological::register(module)?;
     crate::canonical_element_metadata::register(module)?;
+    crate::canonical_operation_metadata::register(module)?;
     crate::mmff_binding::register(module)?;
     crate::uff_binding::register(module)?;
     crate::alignment_binding::register(module)?;
     crate::canonical_search::register(module)?;
+    crate::canonical_sdf::register(module)?;
     crate::canonical_atom_bond::register(module)?;
     crate::canonical_potential_stereo::register(module)?;
     crate::canonical_binary::register(module)?;
     crate::canonical_molecular_hash::register(module)?;
     crate::canonical_builder::register(module)?;
+    crate::canonical_detached_blocks::register(module)?;
     crate::canonical_group_values::register(module)?;
     crate::canonical_coordinate_input::register(module)?;
     crate::canonical_stereo_queries::register(module)?;

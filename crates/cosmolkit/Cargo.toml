@@ -113,6 +113,60 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.11"
 
+# Registered examples use the same capability gates as their public API calls.
+# confseq_decode_backends and read_xyz remain unregistered until their APIs compile.
+[[example]]
+name = "ciplabeler"
+required-features = ["cap-smiles", "cap-stereo"]
+
+[[example]]
+name = "conformer_generation"
+required-features = ["cap-smiles", "cap-hydrogens", "cap-sanitize", "cap-conformer", "cap-forcefields"]
+
+[[example]]
+name = "draw_png"
+required-features = ["cap-smiles", "cap-depict"]
+
+[[example]]
+name = "draw_svg"
+required-features = ["cap-smiles", "cap-depict"]
+
+[[example]]
+name = "forcefield_optimization"
+required-features = ["cap-smiles", "cap-hydrogens", "cap-sanitize", "cap-transforms", "cap-forcefields"]
+
+[[example]]
+name = "layered_fingerprint"
+required-features = ["cap-smiles", "cap-fingerprints"]
+
+[[example]]
+name = "molalign_rmsd"
+required-features = ["cap-smiles", "cap-transforms", "cap-alignment"]
+
+[[example]]
+name = "pattern_fingerprint"
+required-features = ["cap-smiles", "cap-fingerprints"]
+
+[[example]]
+name = "protein_from_pdb"
+required-features = ["cap-bio"]
+
+[[example]]
+name = "read_pdb_alpha_carbons"
+required-features = ["cap-bio"]
+
+[[example]]
+name = "sdf_to_smiles"
+required-features = ["cap-io", "cap-smiles"]
+
+[[example]]
+name = "smiles_write_options"
+required-features = ["cap-smiles"]
+
+[[example]]
+name = "topological_torsion_fingerprint"
+required-features = ["cap-smiles", "cap-fingerprints"]
+
 [[test]]
 name = "residue_code_serde"
 required-features = ["cap-bio"]

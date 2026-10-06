@@ -171,15 +171,17 @@ fn pdb_error(py: Python<'_>, source: ck::BioPdbReadError) -> PyErr {
     let fields = || -> PyResult<()> {
         error
             .value(py)
-            .setattr("line_number", source.line_number())?;
-        error
-            .value(py)
-            .setattr("stage", format!("{:?}", source.stage()))?;
+            .setattr("_line_number", source.line_number())?;
         error.value(py).setattr(
-            "record_tag",
-            source
-                .record_tag()
-                .map(|x| String::from_utf8_lossy(&x).into_owned()),
+            "_stage",
+            Py::new(
+                py,
+                crate::canonical_error_values::BioPdbReadStage::from(source.stage()),
+            )?,
+        )?;
+        error.value(py).setattr(
+            "_record_tag",
+            source.record_tag().map(|x| PyBytes::new(py, &x)),
         )
     };
     match fields() {
@@ -194,10 +196,16 @@ fn mmcif_error(py: Python<'_>, source: ck::BioMmcifReadError) -> PyErr {
         "Mmcif",
         &source,
     );
-    match error
-        .value(py)
-        .setattr("stage", format!("{:?}", source.stage()))
-    {
+    let fields = || -> PyResult<()> {
+        error.value(py).setattr(
+            "_stage",
+            Py::new(
+                py,
+                crate::canonical_error_values::BioMmcifReadStage::from(source.stage()),
+            )?,
+        )
+    };
+    match fields() {
         Ok(()) => error,
         Err(e) => e,
     }
@@ -943,7 +951,7 @@ impl AltLocRequest {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct BioTransform {
-    inner: ck::BioTransform,
+    pub(crate) inner: ck::BioTransform,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -967,6 +975,14 @@ impl BioCoordinateBlock {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BioTransform {
+    #[getter]
+    fn matrix(&self) -> [[f64; 3]; 3] {
+        *self.inner.matrix()
+    }
+    #[getter]
+    fn translation(&self) -> [f64; 3] {
+        *self.inner.translation()
+    }
     fn approx(&self, other: &Self, epsilon: f64) -> bool {
         self.inner.approx(&other.inner, epsilon)
     }
@@ -995,10 +1011,116 @@ impl BioCrystalInfo {
 pub(crate) struct BioStructure {
     inner: Arc<ck::BioStructure>,
 }
+
+/// Complete detached construction payload. This value retains every BIO block;
+/// roundtripping never rebuilds a hierarchy from selected Python fields.
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct BioStructureParts {
+    inner: ck::BioStructureParts,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl BioStructureParts {
+    #[getter]
+    fn input_format<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        enum_member(py, "BioCoordinateFormat", self.inner.input_format as i64)
+    }
+    fn __repr__(&self) -> String {
+        format!("BioStructureParts({:?})", self.inner)
+    }
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioStructure {
+    fn connections(&self) -> Vec<crate::canonical_bio_metadata::BioConnection> {
+        self.inner
+            .connections()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_bio_metadata::BioConnection { inner })
+            .collect()
+    }
+    fn cispeps(&self) -> Vec<crate::canonical_bio_metadata::BioCisPep> {
+        self.inner
+            .cispeps()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_bio_metadata::BioCisPep { inner })
+            .collect()
+    }
+    fn mod_residues(&self) -> Vec<crate::canonical_bio_metadata::BioModRes> {
+        self.inner
+            .mod_residues()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_bio_metadata::BioModRes { inner })
+            .collect()
+    }
+    fn helices(&self) -> Vec<crate::canonical_bio_metadata::BioHelix> {
+        self.inner
+            .helices()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_bio_metadata::BioHelix { inner })
+            .collect()
+    }
+    fn sheets(&self) -> Vec<crate::canonical_bio_metadata::BioSheet> {
+        self.inner
+            .sheets()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_bio_metadata::BioSheet { inner })
+            .collect()
+    }
+    fn ncs_operators(&self) -> Vec<crate::canonical_bio_metadata::BioNcsOperator> {
+        self.inner
+            .ncs_operators()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_bio_metadata::BioNcsOperator { inner })
+            .collect()
+    }
+    fn assemblies(&self) -> Vec<crate::canonical_bio_metadata::BioAssembly> {
+        self.inner
+            .assemblies()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_bio_metadata::BioAssembly { inner })
+            .collect()
+    }
+    fn metadata(&self) -> crate::canonical_bio_metadata::BioMetadata {
+        crate::canonical_bio_metadata::BioMetadata {
+            inner: self.inner.metadata().clone(),
+        }
+    }
+    fn source_state(&self) -> crate::canonical_bio_metadata::BioStructureSourceState {
+        crate::canonical_bio_metadata::BioStructureSourceState {
+            inner: self.inner.source_state().clone(),
+        }
+    }
+    #[staticmethod]
+    fn from_parts(py: Python<'_>, parts: &BioStructureParts) -> PyResult<Self> {
+        ck::BioStructure::from_parts(parts.inner.clone())
+            .map(|inner| Self {
+                inner: Arc::new(inner),
+            })
+            .map_err(|error| structure_error(py, &error))
+    }
+    #[staticmethod]
+    fn validate_parts(py: Python<'_>, parts: &BioStructureParts) -> PyResult<()> {
+        ck::BioStructure::validate_parts(&parts.inner).map_err(|error| structure_error(py, &error))
+    }
+    fn into_parts(&self) -> BioStructureParts {
+        // Rust consumes an owned value; Python retains its receiver and passes
+        // a public clone to that same facade method, preserving every block.
+        BioStructureParts {
+            inner: self.inner.as_ref().clone().into_parts(),
+        }
+    }
     #[pyo3(signature = (residue_id, name, request, element))]
     fn find_atom(
         &self,
@@ -1668,7 +1790,7 @@ impl EntitySourceIds {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct PdbSeqId {
-    inner: ck::PdbSeqId,
+    pub(crate) inner: ck::PdbSeqId,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
@@ -2201,6 +2323,21 @@ fn molecule_error(py: Python<'_>, source: ck::BioMoleculeError) -> PyErr {
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    crate::canonical_bio_metadata::register(module)?;
+    module.add_class::<crate::canonical_error_values::BioPdbReadStage>()?;
+    module.add_class::<crate::canonical_error_values::BioMmcifReadStage>()?;
+    crate::canonical_error_accessors::attach(
+        module.py().get_type::<BioPdbReadError>().as_any(),
+        &[
+            ("stage", "_stage"),
+            ("line_number", "_line_number"),
+            ("record_tag", "_record_tag"),
+        ],
+    )?;
+    crate::canonical_error_accessors::attach(
+        module.py().get_type::<BioMmcifReadError>().as_any(),
+        &[("stage", "_stage")],
+    )?;
     let py = module.py();
     let members = PyDict::new(py);
     for (name, code) in [
@@ -2249,6 +2386,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<BioTransform>()?;
     module.add_class::<BioCrystalInfo>()?;
     module.add_class::<BioStructure>()?;
+    module.add_class::<BioStructureParts>()?;
     module.add_class::<Protein>()?;
     module.add_class::<ProteinSelectionSummary>()?;
     module.add_class::<BioModelRow>()?;

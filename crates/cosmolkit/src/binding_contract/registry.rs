@@ -2299,6 +2299,26 @@ binding_contract! {
             role: value,
         },
         {
+            semantic_id: "types.TopologyBlock", item: type, owner: type_,
+            rust: crate::TopologyBlock, python: "TopologyBlock", javascript: "TopologyBlock",
+            feature: "runtime", status: experimental, role: value,
+        },
+        {
+            semantic_id: "types.CoordinateBlock", item: type, owner: type_,
+            rust: crate::CoordinateBlock, python: "CoordinateBlock", javascript: "CoordinateBlock",
+            feature: "runtime", status: experimental, role: value,
+        },
+        {
+            semantic_id: "types.Conformer2D", item: type, owner: type_,
+            rust: crate::Conformer2D, python: "Conformer2D", javascript: "Conformer2D",
+            feature: "runtime", status: experimental, role: value,
+        },
+        {
+            semantic_id: "types.Conformer3D", item: type, owner: type_,
+            rust: crate::Conformer3D, python: "Conformer3D", javascript: "Conformer3D",
+            feature: "runtime", status: experimental, role: value,
+        },
+        {
             semantic_id: "Molecule.new",
             item: callable,
             owner: molecule,
@@ -7566,6 +7586,40 @@ binding_contract! {
             signature: for<'a> fn(&'a crate::BioStructure, crate::BioResidueId, crate::AtomName, Option<crate::AltLocLabel>) -> Result<(crate::BioAtomId, &'a crate::BioAtomRow), crate::BioStructureError>,
         },
         #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioStrand", item: type, owner: type_, rust: crate::BioStrand, python: "BioStrand", javascript: "BioStrand", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioSoftwareItem", item: type, owner: type_, rust: crate::BioSoftwareItem, python: "BioSoftwareItem", javascript: "BioSoftwareItem", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioReflectionsInfo", item: type, owner: type_, rust: crate::BioReflectionsInfo, python: "BioReflectionsInfo", javascript: "BioReflectionsInfo", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioBasicRefinementInfo", item: type, owner: type_, rust: crate::BioBasicRefinementInfo, python: "BioBasicRefinementInfo", javascript: "BioBasicRefinementInfo", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioRefinementRestraint", item: type, owner: type_, rust: crate::BioRefinementRestraint, python: "BioRefinementRestraint", javascript: "BioRefinementRestraint", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioExperimentInfo", item: type, owner: type_, rust: crate::BioExperimentInfo, python: "BioExperimentInfo", javascript: "BioExperimentInfo", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioDiffractionInfo", item: type, owner: type_, rust: crate::BioDiffractionInfo, python: "BioDiffractionInfo", javascript: "BioDiffractionInfo", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioExperimentalCrystalInfo", item: type, owner: type_, rust: crate::BioExperimentalCrystalInfo, python: "BioExperimentalCrystalInfo", javascript: "BioExperimentalCrystalInfo", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioTlsSelection", item: type, owner: type_, rust: crate::BioTlsSelection, python: "BioTlsSelection", javascript: "BioTlsSelection", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioTlsGroup", item: type, owner: type_, rust: crate::BioTlsGroup, python: "BioTlsGroup", javascript: "BioTlsGroup", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioRefinementInfo", item: type, owner: type_, rust: crate::BioRefinementInfo, python: "BioRefinementInfo", javascript: "BioRefinementInfo", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioConnectionKind", item: type, owner: type_, rust: crate::BioConnectionKind, python: "BioConnectionKind", javascript: "BioConnectionKind", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioAsu", item: type, owner: type_, rust: crate::BioAsu, python: "BioAsu", javascript: "BioAsu", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioHelixClass", item: type, owner: type_, rust: crate::BioHelixClass, python: "BioHelixClass", javascript: "BioHelixClass", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.BioSoftwareClassification", item: type, owner: type_, rust: crate::BioSoftwareClassification, python: "BioSoftwareClassification", javascript: "BioSoftwareClassification", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.AtomAddress", item: type, owner: type_, rust: crate::AtomAddress, python: "AtomAddress", javascript: "AtomAddress", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
+        { semantic_id: "types.ResidueAddress", item: type, owner: type_, rust: crate::ResidueAddress, python: "ResidueAddress", javascript: "ResidueAddress", feature: "cap-bio", status: experimental, role: value, },
+        #[cfg(feature = "cap-bio")]
         {
             semantic_id: "types.BioConnection", item: type, owner: type_, rust: crate::BioConnection,
             python: "BioConnection", javascript: "BioConnection", feature: "cap-bio", status: experimental, role: value,
@@ -8347,6 +8401,16 @@ binding_contract! {
         // The SDF readers below are implemented in the public Rust crate.
         // CK-COORD-001 is the approved terminal-coordinate exception to exact
         // RDKit parity; the remaining pinned source behavior is still required.
+        {
+            semantic_id: "types.CoordinateDimension",
+            item: type,
+            owner: type_,
+            rust: crate::CoordinateDimension,
+            python: "CoordinateDimension",
+            javascript: "CoordinateDimension",
+            feature: "runtime", status: experimental,
+            role: value,
+        },
         #[cfg(feature = "cap-io")]
         {
             semantic_id: "types.SdfRecord",

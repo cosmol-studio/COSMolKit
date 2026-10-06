@@ -1,30 +1,31 @@
-use cosmolkit::{
-    Molecule, mmff_has_all_molecule_params, mmff_optimize_molecule, uff_has_all_molecule_params,
-    uff_optimize_molecule,
-};
+use cosmolkit::{MmffOptimizationParams, Molecule, UffOptimizationParams};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let molecule = Molecule::from_smiles("CCO")?.with_hydrogens()?.sanitize()?;
 
-    let mut builder = molecule.to_builder();
-    builder.add_3d_conformer(vec![
-        [0.000, 0.000, 0.000],
-        [1.540, 0.000, 0.000],
-        [2.100, 1.200, 0.000],
-        [-0.600, 0.900, 0.000],
-        [-0.600, -0.900, 0.000],
-        [0.000, 0.000, 1.000],
-        [1.900, -0.900, 0.000],
-        [1.700, 0.000, 1.000],
-        [2.900, 1.200, 0.000],
+    let molecule = molecule.with_added_3d_conformer(vec![
+        vec![0.000, 0.000, 0.000],
+        vec![1.540, 0.000, 0.000],
+        vec![2.100, 1.200, 0.000],
+        vec![-0.600, 0.900, 0.000],
+        vec![-0.600, -0.900, 0.000],
+        vec![0.000, 0.000, 1.000],
+        vec![1.900, -0.900, 0.000],
+        vec![1.700, 0.000, 1.000],
+        vec![2.900, 1.200, 0.000],
     ])?;
-    let molecule = builder.build()?;
 
-    if uff_has_all_molecule_params(&molecule)? {
-        let result = uff_optimize_molecule(&molecule, 200, 10.0, -1, true)?;
+    if molecule.uff_has_all_molecule_params()? {
+        let result = molecule.with_uff_optimized_with_params(&UffOptimizationParams {
+            max_iterations: 200,
+            vdw_threshold: 10.0,
+            conformer_id: None,
+            ignore_interfragment_interactions: true,
+        })?;
         println!(
             "UFF needs_more={} energy={:.6}",
-            result.needs_more, result.energy
+            result.status > 0,
+            result.energy
         );
         println!(
             "optimized first atom: {:?}",
@@ -32,9 +33,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    if mmff_has_all_molecule_params(&molecule)? {
-        let result = mmff_optimize_molecule(&molecule, "MMFF94", 200, 100.0, -1, true)?;
-        println!("MMFF94 needs_more={}", result.needs_more);
+    if molecule.mmff_has_all_molecule_params()? {
+        let result = molecule.with_mmff_optimized_with_params(&MmffOptimizationParams {
+            mmff_variant: "MMFF94".into(),
+            max_iterations: 200,
+            non_bonded_threshold: 100.0,
+            conformer_id: None,
+            ignore_interfragment_interactions: true,
+        })?;
+        println!("MMFF94 needs_more={}", result.needs_more());
         println!(
             "optimized first atom: {:?}",
             result.molecule.conformers_3d()[0].coordinates()[0]

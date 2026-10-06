@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut selected = Molecule::from_smiles("C[C@H](F)Cl")?;
     selected.assign_cip_labels_with_options_(
-        CipLabelOptions::default().with_atoms([1].into_iter().map(cosmolkit::AtomId::new)),
+        &CipLabelOptions::default().with_atoms([1].into_iter().map(cosmolkit::AtomId::new)),
     )?;
     println!(
         "selected descriptor: {:?}",

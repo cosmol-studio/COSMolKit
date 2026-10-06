@@ -32,14 +32,23 @@ pub(crate) fn property_pyerr(py: Python<'_>, source: ck::PropertyValueError) -> 
         "KindMismatch",
         &source,
     );
-    if let Err(error) = e
-        .value(py)
-        .setattr("expected", format!("{:?}", source.expected()))
-        .and_then(|()| {
-            e.value(py)
-                .setattr("actual", format!("{:?}", source.actual()))
-        })
-    {
+    let fields = || -> PyResult<()> {
+        e.value(py).setattr(
+            "_expected",
+            Py::new(
+                py,
+                crate::canonical_property_values::PropertyValueKind::from(source.expected()),
+            )?,
+        )?;
+        e.value(py).setattr(
+            "_actual",
+            Py::new(
+                py,
+                crate::canonical_property_values::PropertyValueKind::from(source.actual()),
+            )?,
+        )
+    };
+    if let Err(error) = fields() {
         return error;
     }
     e
@@ -227,6 +236,20 @@ pub(crate) struct Atom {
     pub(crate) degree: usize,
     // An actual owner error is retained; raw atom fields remain readable.
     pub(crate) metadata: Result<ck::AtomMetadata, ck::ValenceError>,
+}
+
+impl Atom {
+    /// Detached Atom values have no runtime valence assignment. Preserve that
+    /// absence explicitly; reading raw construction state must not run chemistry.
+    pub(crate) fn from_detached(inner: ck::Atom, degree: usize) -> Self {
+        let metadata =
+            Err(ck::ValenceError::ExplicitValenceCacheNotInitialized { atom: inner.id() });
+        Self {
+            inner,
+            degree,
+            metadata,
+        }
+    }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
@@ -470,6 +493,10 @@ impl CipLabelOptions {
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    crate::canonical_error_accessors::attach(
+        module.py().get_type::<PropertyValueError>().as_any(),
+        &[("expected", "_expected"), ("actual", "_actual")],
+    )?;
     module.add_class::<Atom>()?;
     module.add_class::<Bond>()?;
     module.add_class::<AtomMetadata>()?;

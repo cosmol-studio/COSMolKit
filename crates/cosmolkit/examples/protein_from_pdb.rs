@@ -13,7 +13,7 @@ HETATM    7  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Usage:
     // cargo run -p cosmolkit --example protein_from_pdb
-    let protein = Protein::from_pdb_str(DEMO_PDB)?;
+    let protein = Protein::from_pdb(DEMO_PDB)?;
     println!(
         "protein chains={} residues={} atoms={}",
         protein.num_chains(),
@@ -23,8 +23,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for chain in protein.chains() {
         for residue in chain.residues() {
-            let atom_names: Vec<_> = residue.atoms().map(|atom| atom.row().name.0).collect();
-            println!("{} {:?}", residue.name(), atom_names);
+            let atom_names: Vec<_> = residue
+                .atoms()
+                .map(|atom| atom.row().name().as_bytes().to_vec())
+                .collect();
+            println!("{} {:?}", residue.name().as_str(), atom_names);
         }
     }
 
