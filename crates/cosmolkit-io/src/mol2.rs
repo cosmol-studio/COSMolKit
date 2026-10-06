@@ -30,7 +30,7 @@ pub enum Mol2ReadError {
 }
 
 fn tripos_atom_type(atom: &Atom) -> Result<std::borrow::Cow<'_, str>, Mol2ReadError> {
-    // RDKit❗✔️: auto tATT = at->getProp<std::string>(common_properties::_TriposAtomType);
+    // RDKit❗✔️:       auto tATT = at->getProp<std::string>(common_properties::_TriposAtomType);
     // Vector string projection shares the core owner; existing scalar debt retained.
     // Borrow strings, allocate only the source vector string result, O(elements).
     let value = atom
@@ -82,6 +82,13 @@ pub struct Mol2Record {
     pub topology: TopologyBlock,
     pub coordinates: CoordinateBlock,
     pub properties: MoleculeProperties,
+    pub(crate) post_state: crate::MolPostDerivedState,
+}
+impl Mol2Record {
+    /// Move the final detached parser state to the checked live constructor.
+    pub fn take_post_state(&mut self) -> crate::MolPostDerivedState {
+        std::mem::take(&mut self.post_state)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -195,6 +202,7 @@ impl DetachedBuilder {
             topology,
             coordinates,
             properties: self.properties,
+            post_state: crate::MolPostDerivedState::default(),
         })
     }
 }
@@ -465,7 +473,7 @@ fn parse_atom_line(line: &str) -> Result<Option<ParsedAtom>, Mol2ReadError> {
         .ok_or_else(|| Mol2ReadError::Parse("premature end of mol2 atom line".to_owned()))?;
     // RDKit✔️✔️:   tAT = *itemIt;
     // RDKit✔️✔️:   std::string symb = (*itemIt).substr(0, (*itemIt).find('.'));
-    // RDKit✔️✔️:   res->setProp("_TriposAtomName", tAN);
+    // RDKit✔️✔️:   res->setProp("_TriposAtomName", tAN);  // maybe remove that since it's
     // RDKit✔️✔️:   res->setProp(common_properties::_TriposAtomType, tAT);
     // RDKit✔️✔️:   // no implicit hydrogens for mol2 files
     // RDKit✔️✔️:   res->setNoImplicit(true);
@@ -588,7 +596,7 @@ fn parse_bond_line(
     // RDKit✔️✔️:   } else if (tBType == "ar") {
     // RDKit✔️✔️:     type = Bond::AROMATIC;
     // RDKit✔️✔️:   } else if (tBType == "du" || tBType == "un") {
-    // RDKit✔️✔️:     type = Bond::UNSPECIFIED;
+    // RDKit✔️✔️:       type = Bond::UNSPECIFIED;
     // RDKit✔️✔️:   } else {
     // RDKit✔️✔️:     return nullptr;
     // RDKit✔️✔️:   }
@@ -700,7 +708,7 @@ fn read_unity_atom_attributes(
                     Mol2ReadError::Parse("Cannot process mol2 formal charge.".to_owned())
                 })?;
                 // RDKit✔️✔️:         if ((*itemIt).find("=") == std::string::npos) {
-                // RDKit✔️✔️:           formCharge = boost::lexical_cast<int>(*itemIt);
+                // RDKit✔️✔️:             formCharge = boost::lexical_cast<int>(*itemIt);
                 // RDKit✔️✔️:           // assign the charge
                 // RDKit✔️✔️:           res->getAtomWithIdx(atomIdx - 1)->setFormalCharge(formCharge);
                 if !charge.contains('=') {
@@ -796,7 +804,7 @@ fn guess_formal_charges(builder: &mut DetachedBuilder) -> Result<(), Mol2ReadErr
             continue;
         }
         // RDKit✔️✔️:       int noAromBonds = 0;
-        // RDKit✔️✔️:       double accum = 0;
+        // RDKit✔️✔️:   double accum = 0;
         // RDKit✔️✔️:       for (const auto bnd : res->atomBonds(at)) {
         // RDKit✔️✔️:         accum += bnd->getValenceContrib(at);
         // RDKit✔️✔️:         if (bnd->getBondType() == Bond::AROMATIC) {
@@ -872,7 +880,7 @@ fn guess_formal_charges(builder: &mut DetachedBuilder) -> Result<(), Mol2ReadErr
         if charge != 0 {
             // RDKit✔️✔️:         if (at->getIsAromatic() && abs(assignChg) > 1) {
             // RDKit✔️✔️:           at->setFormalCharge((assignChg > 0) -
-            // RDKit✔️✔️:                               (assignChg < 0));
+            // RDKit✔️✔️:                               (assignChg < 0));  // this results in -1 or +1
             // RDKit✔️✔️:         } else {
             // RDKit✔️✔️:           at->setFormalCharge(assignChg);
             // RDKit✔️✔️:         }
@@ -946,247 +954,251 @@ fn check_no_h_neighbors_n_oxide(
 }
 
 fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2ReadError> {
+    // Complexity review: Vec<bool> stores bytes rather than the source bitset;
+    // temporary neighbor vectors allocate, and each ambiguous amidine recomputes
+    // SSSR instead of reusing the source RingInfo cache. These known extra costs
+    // remain on the negative performance axis; chemistry and conditions stay.
     // RDKit source: Mol2FileParser.cpp lines 289-523
-    // RDKit✔️✔️: bool cleanUpMol2Substructures(RWMol *res) {
-    // RDKit✔️✔️:   // NOTE: check the nitro fix in guess formal charges!
-    // RDKit✔️✔️:   boost::dynamic_bitset<> isFixed(res->getNumAtoms());
-    // RDKit✔️✔️:   for (auto at : res->atoms()) {
-    // RDKit✔️✔️:     unsigned int idx = at->getIdx();
-    // RDKit✔️✔️:     // make sure we haven't finished this atom already
-    // RDKit✔️✔️:     if (isFixed[idx]) {
-    // RDKit✔️✔️:       continue;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     auto tAT = at->getProp<std::string>(common_properties::_TriposAtomType);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     if (tAT == "N.4") {
-    // RDKit✔️✔️:       at->setFormalCharge(1);
-    // RDKit✔️✔️:     } else if (tAT == "O.co2") {
-    // RDKit✔️✔️:       // negatively charged carboxylates with O.co2
-    // RDKit✔️✔️:       // according to Tripos, those should only appear in carboxylates and
-    // RDKit✔️✔️:       // phosphates,
-    // RDKit✔️✔️:       if (at->getDegree() != 1) {
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
-    // RDKit✔️✔️:             << "Warning - O.co2 with degree >1." << std::endl;
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       auto nbrs = res->atomNeighbors(at);
-    // RDKit✔️✔️:       // this should return only the C.2
-    // RDKit✔️✔️:       auto nbr = *nbrs.begin();
-    // RDKit✔️✔️:       auto tATT = nbr->getProp<std::string>(common_properties::_TriposAtomType);
-    // RDKit✔️✔️:       if (tATT == "P.3") {
-    // RDKit✔️✔️:         // special case for phosphates
-    // RDKit✔️✔️:         // we keep the first bond to O.co2 as double and make the rest single
-    // RDKit✔️✔️:         Bond *b = res->getBondBetweenAtoms(idx, nbr->getIdx());
-    // RDKit✔️✔️:         b->setBondType(Bond::DOUBLE);
-    // RDKit✔️✔️:         b->setIsAromatic(false);
-    // RDKit✔️✔️:         at->setIsAromatic(false);
-    // RDKit✔️✔️:         isFixed[idx] = 1;
-    // RDKit✔️✔️:         for (auto onbr : res->atomNeighbors(nbr)) {
-    // RDKit✔️✔️:           if (onbr->getAtomicNum() == 8 && !isFixed[onbr->getIdx()] &&
-    // RDKit✔️✔️:               onbr->getProp<std::string>(common_properties::_TriposAtomType) ==
-    // RDKit✔️✔️:                   "O.co2") {
-    // RDKit✔️✔️:             Bond *ob = res->getBondBetweenAtoms(nbr->getIdx(), onbr->getIdx());
-    // RDKit✔️✔️:             ob->setBondType(Bond::SINGLE);
-    // RDKit✔️✔️:             ob->setIsAromatic(false);
-    // RDKit✔️✔️:             onbr->setFormalCharge(-1);
-    // RDKit✔️✔️:             onbr->setIsAromatic(false);
-    // RDKit✔️✔️:             isFixed[onbr->getIdx()] = 1;
-    // RDKit✔️✔️:           }
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         nbr->setIsAromatic(false);
-    // RDKit✔️✔️:         isFixed[nbr->getIdx()] = 1;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       } else if (tATT == "C.2" || tATT == "S.o2") {
-    // RDKit✔️✔️:         // carboxylates and sulfonates
-    // RDKit✔️✔️:         // this should return only the bond between C.2 and O.co2
-    // RDKit✔️✔️:         Bond *b = res->getBondBetweenAtoms(idx, nbr->getIdx());
-    // RDKit✔️✔️:         if (!isFixed[nbr->getIdx()]) {
-    // RDKit✔️✔️:           // the first occurrence is negatively charged and has a single bond
-    // RDKit✔️✔️:           b->setBondType(Bond::SINGLE);
-    // RDKit✔️✔️:           b->setIsAromatic(false);
-    // RDKit✔️✔️:           at->setFormalCharge(-1);
-    // RDKit✔️✔️:           at->setIsAromatic(false);
-    // RDKit✔️✔️:           nbr->setIsAromatic(false);
-    // RDKit✔️✔️:           isFixed[idx] = 1;
-    // RDKit✔️✔️:           isFixed[nbr->getIdx()] = 1;
-    // RDKit✔️✔️:         } else {
-    // RDKit✔️✔️:           // the other occurrences are not charged and have a double bond
-    // RDKit✔️✔️:           b->setBondType(Bond::DOUBLE);
-    // RDKit✔️✔️:           b->setIsAromatic(false);
-    // RDKit✔️✔️:           at->setIsAromatic(false);
-    // RDKit✔️✔️:           isFixed[idx] = 1;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         std::string nm;
-    // RDKit✔️✔️:         res->getProp(common_properties::_Name, nm);
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
-    // RDKit✔️✔️:             << nm << ": warning - O.co2 with non C.2 or S.o2 neighbor."
-    // RDKit✔️✔️:             << std::endl;
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else if (tAT == "C.cat") {
-    // RDKit✔️✔️:       // positively charged guanidinium groups with C.cat
-    // RDKit✔️✔️:       // according to Tripos these should only appear in guanidinium groups
-    // RDKit✔️✔️:       // for the structural fix - the last nitrogen with the least number of
-    // RDKit✔️✔️:       // heavy atoms will get the double bond and the positive charge.
-    // RDKit✔️✔️:       // remember : this is not canonical!
-    // RDKit✔️✔️:       // first - set the C.cat as fixed
-    // RDKit✔️✔️:       isFixed[idx] = 1;
-    // RDKit✔️✔️:       ROMol::ADJ_ITER nbrIdxIt, endNbrsIdxIt, tmpIdxIt;
-    // RDKit✔️✔️:       unsigned int lowestDeg = 100;
-    // RDKit✔️✔️:       boost::tie(nbrIdxIt, endNbrsIdxIt) = res->getAtomNeighbors(at);
-    // RDKit✔️✔️:       // one problem of programs like Corina is, that they will create also
-    // RDKit✔️✔️:       // C.cat
-    // RDKit✔️✔️:       // for groups that are not guanidinium. We cannot fix all, but the charged
-    // RDKit✔️✔️:       // amidine
-    // RDKit✔️✔️:       // in a ring is taken care of too.
-    // RDKit✔️✔️:       tmpIdxIt = nbrIdxIt;
-    // RDKit✔️✔️:       // declare and initialise toModIdx
-    // RDKit✔️✔️:       int toModIdx = -1;
-    // RDKit✔️✔️:       unsigned int noNNeighbors = 0;
-    // RDKit✔️✔️:       while (tmpIdxIt != endNbrsIdxIt) {
-    // RDKit✔️✔️:         if (res->getAtomWithIdx(*tmpIdxIt)->getSymbol() == "N") {
-    // RDKit✔️✔️:           ++noNNeighbors;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         ++tmpIdxIt;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       if (noNNeighbors < 2 || noNNeighbors > 3) {
-    // RDKit✔️✔️:         std::string nm;
-    // RDKit✔️✔️:         res->getProp(common_properties::_Name, nm);
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
-    // RDKit✔️✔️:             << nm << ": Error - C.Cat with bad number of N neighbors."
-    // RDKit✔️✔️:             << std::endl;
-    // RDKit✔️✔️:         return false;
-    // RDKit✔️✔️:       } else if (noNNeighbors == 2) {
-    // RDKit✔️✔️:         // the idea is that we assign the positive charge according to the
-    // RDKit✔️✔️:         // following precedence:
-    // RDKit✔️✔️:         // 1. is part of N-oxide
-    // RDKit✔️✔️:         // 2. atom with highest number of hydrogen atoms
-    // RDKit✔️✔️:         // 3. atom in ring
-    // RDKit✔️✔️:         // 4. random
-    // RDKit✔️✔️:         // first we identify the N atoms
-    // RDKit✔️✔️:         ROMol::ADJ_ITER idxIt1 = nbrIdxIt, idxIt2 = nbrIdxIt;
-    // RDKit✔️✔️:         bool firstIdent = false;
-    // RDKit✔️✔️:         while (nbrIdxIt != endNbrsIdxIt) {
-    // RDKit✔️✔️:           if (res->getAtomWithIdx(*nbrIdxIt)->getSymbol() == "N") {
-    // RDKit✔️✔️:             // fix the bond to one - only the modified N will have a double bond
-    // RDKit✔️✔️:             // to C.cat
-    // RDKit✔️✔️:             res->getBondBetweenAtoms(idx, *nbrIdxIt)->setBondType(Bond::SINGLE);
-    // RDKit✔️✔️:             res->getBondBetweenAtoms(idx, *nbrIdxIt)->setIsAromatic(false);
-    // RDKit✔️✔️:             res->getAtomWithIdx(*nbrIdxIt)->setIsAromatic(false);
-    // RDKit✔️✔️:             // FIX: what is happening if we hit an atom that was fixed before -
-    // RDKit✔️✔️:             // probably nothing.
-    // RDKit✔️✔️:             // since I cannot think of a case where this is a problem - throw a
-    // RDKit✔️✔️:             // warning
-    // RDKit✔️✔️:             if (isFixed[*nbrIdxIt]) {
-    // RDKit✔️✔️:               std::string nm;
-    // RDKit✔️✔️:               res->getProp(common_properties::_Name, nm);
-    // RDKit✔️✔️:               BOOST_LOG(rdWarningLog)
-    // RDKit✔️✔️:                   << nm << ": warning - charged amidine and isFixed atom."
-    // RDKit✔️✔️:                   << std::endl;
-    // RDKit✔️✔️:             }
-    // RDKit✔️✔️:             isFixed[*nbrIdxIt] = 1;
-    // RDKit✔️✔️:             if (firstIdent) {
-    // RDKit✔️✔️:               idxIt2 = nbrIdxIt;
-    // RDKit✔️✔️:             } else {
-    // RDKit✔️✔️:               idxIt1 = nbrIdxIt;
-    // RDKit✔️✔️:               firstIdent = true;
-    // RDKit✔️✔️:             }
-    // RDKit✔️✔️:           }
-    // RDKit✔️✔️:           ++nbrIdxIt;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         // now that we know which are the relevant atoms we check the above
-    // RDKit✔️✔️:         // features
-    // RDKit✔️✔️:         // is part of N-oxide?
-    // RDKit✔️✔️:         // number of hydrogens on each neighbour
-    // RDKit✔️✔️:         unsigned int noHNbrs1 = chkNoHNeighbNOx(res, idxIt1, toModIdx);
-    // RDKit✔️✔️:         unsigned int noHNbrs2 = chkNoHNeighbNOx(res, idxIt2, toModIdx);
-    // RDKit✔️✔️:         if (toModIdx < 0) {
-    // RDKit✔️✔️:           // no N-oxide
-    // RDKit✔️✔️:           if (noHNbrs1 != noHNbrs2) {
-    // RDKit✔️✔️:             if (noHNbrs1 > noHNbrs2) {
-    // RDKit✔️✔️:               toModIdx = *idxIt1;
-    // RDKit✔️✔️:             } else {
-    // RDKit✔️✔️:               toModIdx = *idxIt2;  // this is random if both have the same
-    // RDKit✔️✔️:                                      // number of atoms
-    // RDKit✔️✔️:             }
-    // RDKit✔️✔️:           } else {
-    // RDKit✔️✔️:             // perceive the rings
-    // RDKit✔️✔️:             if (!res->getRingInfo()->isSssrOrBetter()) {
-    // RDKit✔️✔️:               MolOps::findSSSR(*res);
-    // RDKit✔️✔️:             }
-    // RDKit✔️✔️:             // then we check if both atoms are in a ring
-    // RDKit✔️✔️:             unsigned int rIdx1 = res->getRingInfo()->numAtomRings((*idxIt1));
-    // RDKit✔️✔️:             unsigned int rIdx2 = res->getRingInfo()->numAtomRings((*idxIt2));
-    // RDKit✔️✔️:             if (rIdx1 > rIdx2) {
-    // RDKit✔️✔️:               toModIdx = *idxIt1;
-    // RDKit✔️✔️:             } else {
-    // RDKit✔️✔️:               toModIdx = *idxIt2;
-    // RDKit✔️✔️:             }
-    // RDKit✔️✔️:           }
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         res->getBondBetweenAtoms(idx, toModIdx)->setBondType(Bond::DOUBLE);
-    // RDKit✔️✔️:         res->getBondBetweenAtoms(idx, toModIdx)->setIsAromatic(false);
-    // RDKit✔️✔️:         res->getAtomWithIdx(toModIdx)->setFormalCharge(1);
-    // RDKit✔️✔️:         at->setIsAromatic(false);
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         while (nbrIdxIt != endNbrsIdxIt) {
-    // RDKit✔️✔️:           if (!isFixed[*nbrIdxIt]) {
-    // RDKit✔️✔️:             // we get in here if this N.pl3 was not seen / fixed before
-    // RDKit✔️✔️:             Atom *nbr = res->getAtomWithIdx(*nbrIdxIt);
-    // RDKit✔️✔️:             // get the number of heavy atoms connected to this atom
-    // RDKit✔️✔️:             ROMol::ADJ_ITER nbrNbrIdxIt, nbrEndNbrsIdxIt;
-    // RDKit✔️✔️:             unsigned int hvyAtDeg = 0;
-    // RDKit✔️✔️:             boost::tie(nbrNbrIdxIt, nbrEndNbrsIdxIt) =
-    // RDKit✔️✔️:                 res->getAtomNeighbors(nbr);
-    // RDKit✔️✔️:             while (nbrNbrIdxIt != nbrEndNbrsIdxIt) {
-    // RDKit✔️✔️:               if (res->getAtomWithIdx(*nbrNbrIdxIt)->getAtomicNum() > 1) {
-    // RDKit✔️✔️:                 std::string nbrAT;
-    // RDKit✔️✔️:                 res->getAtomWithIdx(*nbrNbrIdxIt)
-    // RDKit✔️✔️:                     ->getProp(common_properties::_TriposAtomType, nbrAT);
-    // RDKit✔️✔️:                 if (nbrAT == "C.cat") {
-    // RDKit✔️✔️:                   hvyAtDeg += 2;  // that way we reduce the risk of ionising the
-    // RDKit✔️✔️:                                   // N attached to another C.cat ...
-    // RDKit✔️✔️:                 } else {
-    // RDKit✔️✔️:                   ++hvyAtDeg;
-    // RDKit✔️✔️:                 }
-    // RDKit✔️✔️:               }
-    // RDKit✔️✔️:               ++nbrNbrIdxIt;
-    // RDKit✔️✔️:             }
-    // RDKit✔️✔️:             // now check for lowest heavy atom degree
-    // RDKit✔️✔️:             if (hvyAtDeg < lowestDeg) {
-    // RDKit✔️✔️:               toModIdx = *nbrIdxIt;
-    // RDKit✔️✔️:               lowestDeg = hvyAtDeg;
-    // RDKit✔️✔️:             }
-    // RDKit✔️✔️:             // modify the bond between C.Cat and the N.pl3
-    // RDKit✔️✔️:             Bond *b = res->getBondBetweenAtoms(idx, *nbrIdxIt);
-    // RDKit✔️✔️:             b->setBondType(Bond::SINGLE);
-    // RDKit✔️✔️:             b->setIsAromatic(false);
-    // RDKit✔️✔️:             nbr->setIsAromatic(false);
-    // RDKit✔️✔️:             // set N.pl3 as fixed
-    // RDKit✔️✔️:             isFixed[*nbrIdxIt] = 1;
-    // RDKit✔️✔️:           } else {
-    // RDKit✔️✔️:             // the N is already fixed - since we don't touch this atom make the
-    // RDKit✔️✔️:             // bond to single
-    // RDKit✔️✔️:             // FIX: check on 3-way symmetric guanidinium mol -
-    // RDKit✔️✔️:             //     this could produce a only single bonded C.cat for bad H mols
-    // RDKit✔️✔️:             res->getBondBetweenAtoms(idx, *nbrIdxIt)->setBondType(Bond::SINGLE);
-    // RDKit✔️✔️:             res->getBondBetweenAtoms(idx, *nbrIdxIt)->setIsAromatic(false);
-    // RDKit✔️✔️:           }
-    // RDKit✔️✔️:           ++nbrIdxIt;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         // now modify the respective N and the C.cat
-    // RDKit✔️✔️:         Bond *b = res->getBondBetweenAtoms(idx, toModIdx);
-    // RDKit✔️✔️:         b->setBondType(Bond::DOUBLE);
-    // RDKit✔️✔️:         b->setIsAromatic(false);
-    // RDKit✔️✔️:         res->getAtomWithIdx(toModIdx)->setFormalCharge(1);
-    // RDKit✔️✔️:         at->setIsAromatic(false);
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     idx++;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: }
+    // RDKit✔️❌: bool cleanUpMol2Substructures(RWMol *res) {
+    // RDKit✔️❌:   // NOTE: check the nitro fix in guess formal charges!
+    // RDKit✔️❌:   boost::dynamic_bitset<> isFixed(res->getNumAtoms());
+    // RDKit✔️❌:   for (auto at : res->atoms()) {
+    // RDKit✔️❌:     unsigned int idx = at->getIdx();
+    // RDKit✔️❌:     // make sure we haven't finished this atom already
+    // RDKit✔️❌:     if (isFixed[idx]) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     auto tAT = at->getProp<std::string>(common_properties::_TriposAtomType);
+    // RDKit✔️❌:
+    // RDKit✔️❌:     if (tAT == "N.4") {
+    // RDKit✔️❌:       at->setFormalCharge(1);
+    // RDKit✔️❌:     } else if (tAT == "O.co2") {
+    // RDKit✔️❌:       // negatively charged carboxylates with O.co2
+    // RDKit✔️❌:       // according to Tripos, those should only appear in carboxylates and
+    // RDKit✔️❌:       // phosphates,
+    // RDKit✔️❌:       if (at->getDegree() != 1) {
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << "Warning - O.co2 with degree >1." << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       auto nbrs = res->atomNeighbors(at);
+    // RDKit✔️❌:       // this should return only the C.2
+    // RDKit✔️❌:       auto nbr = *nbrs.begin();
+    // RDKit✔️❌:       auto tATT = nbr->getProp<std::string>(common_properties::_TriposAtomType);
+    // RDKit✔️❌:       if (tATT == "P.3") {
+    // RDKit✔️❌:         // special case for phosphates
+    // RDKit✔️❌:         // we keep the first bond to O.co2 as double and make the rest single
+    // RDKit✔️❌:         Bond *b = res->getBondBetweenAtoms(idx, nbr->getIdx());
+    // RDKit✔️❌:         b->setBondType(Bond::DOUBLE);
+    // RDKit✔️❌:         b->setIsAromatic(false);
+    // RDKit✔️❌:         at->setIsAromatic(false);
+    // RDKit✔️❌:         isFixed[idx] = 1;
+    // RDKit✔️❌:         for (auto onbr : res->atomNeighbors(nbr)) {
+    // RDKit✔️❌:           if (onbr->getAtomicNum() == 8 && !isFixed[onbr->getIdx()] &&
+    // RDKit✔️❌:               onbr->getProp<std::string>(common_properties::_TriposAtomType) ==
+    // RDKit✔️❌:                   "O.co2") {
+    // RDKit✔️❌:             Bond *ob = res->getBondBetweenAtoms(nbr->getIdx(), onbr->getIdx());
+    // RDKit✔️❌:             ob->setBondType(Bond::SINGLE);
+    // RDKit✔️❌:             ob->setIsAromatic(false);
+    // RDKit✔️❌:             onbr->setFormalCharge(-1);
+    // RDKit✔️❌:             onbr->setIsAromatic(false);
+    // RDKit✔️❌:             isFixed[onbr->getIdx()] = 1;
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         nbr->setIsAromatic(false);
+    // RDKit✔️❌:         isFixed[nbr->getIdx()] = 1;
+    // RDKit✔️❌:
+    // RDKit✔️❌:       } else if (tATT == "C.2" || tATT == "S.o2") {
+    // RDKit✔️❌:         // carboxylates and sulfonates
+    // RDKit✔️❌:         // this should return only the bond between C.2 and O.co2
+    // RDKit✔️❌:         Bond *b = res->getBondBetweenAtoms(idx, nbr->getIdx());
+    // RDKit✔️❌:         if (!isFixed[nbr->getIdx()]) {
+    // RDKit✔️❌:           // the first occurrence is negatively charged and has a single bond
+    // RDKit✔️❌:           b->setBondType(Bond::SINGLE);
+    // RDKit✔️❌:           b->setIsAromatic(false);
+    // RDKit✔️❌:           at->setFormalCharge(-1);
+    // RDKit✔️❌:           at->setIsAromatic(false);
+    // RDKit✔️❌:           nbr->setIsAromatic(false);
+    // RDKit✔️❌:           isFixed[idx] = 1;
+    // RDKit✔️❌:           isFixed[nbr->getIdx()] = 1;
+    // RDKit✔️❌:         } else {
+    // RDKit✔️❌:           // the other occurrences are not charged and have a double bond
+    // RDKit✔️❌:           b->setBondType(Bond::DOUBLE);
+    // RDKit✔️❌:           b->setIsAromatic(false);
+    // RDKit✔️❌:           at->setIsAromatic(false);
+    // RDKit✔️❌:           isFixed[idx] = 1;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         std::string nm;
+    // RDKit✔️❌:         res->getProp(common_properties::_Name, nm);
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << nm << ": warning - O.co2 with non C.2 or S.o2 neighbor."
+    // RDKit✔️❌:             << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else if (tAT == "C.cat") {
+    // RDKit✔️❌:       // positively charged guanidinium groups with C.cat
+    // RDKit✔️❌:       // according to Tripos these should only appear in guanidinium groups
+    // RDKit✔️❌:       // for the structural fix - the last nitrogen with the least number of
+    // RDKit✔️❌:       // heavy atoms will get the double bond and the positive charge.
+    // RDKit✔️❌:       // remember : this is not canonical!
+    // RDKit✔️❌:       // first - set the C.cat as fixed
+    // RDKit✔️❌:       isFixed[idx] = 1;
+    // RDKit✔️❌:       ROMol::ADJ_ITER nbrIdxIt, endNbrsIdxIt, tmpIdxIt;
+    // RDKit✔️❌:       unsigned int lowestDeg = 100;
+    // RDKit✔️❌:       boost::tie(nbrIdxIt, endNbrsIdxIt) = res->getAtomNeighbors(at);
+    // RDKit✔️❌:       // one problem of programs like Corina is, that they will create also
+    // RDKit✔️❌:       // C.cat
+    // RDKit✔️❌:       // for groups that are not guanidinium. We cannot fix all, but the charged
+    // RDKit✔️❌:       // amidine
+    // RDKit✔️❌:       // in a ring is taken care of too.
+    // RDKit✔️❌:       tmpIdxIt = nbrIdxIt;
+    // RDKit✔️❌:       // declare and initialise toModIdx
+    // RDKit✔️❌:       int toModIdx = -1;
+    // RDKit✔️❌:       unsigned int noNNeighbors = 0;
+    // RDKit✔️❌:       while (tmpIdxIt != endNbrsIdxIt) {
+    // RDKit✔️❌:         if (res->getAtomWithIdx(*tmpIdxIt)->getSymbol() == "N") {
+    // RDKit✔️❌:           ++noNNeighbors;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         ++tmpIdxIt;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if (noNNeighbors < 2 || noNNeighbors > 3) {
+    // RDKit✔️❌:         std::string nm;
+    // RDKit✔️❌:         res->getProp(common_properties::_Name, nm);
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << nm << ": Error - C.Cat with bad number of N neighbors."
+    // RDKit✔️❌:             << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       } else if (noNNeighbors == 2) {
+    // RDKit✔️❌:         // the idea is that we assign the positive charge according to the
+    // RDKit✔️❌:         // following precedence:
+    // RDKit✔️❌:         // 1. is part of N-oxide
+    // RDKit✔️❌:         // 2. atom with highest number of hydrogen atoms
+    // RDKit✔️❌:         // 3. atom in ring
+    // RDKit✔️❌:         // 4. random
+    // RDKit✔️❌:         // first we identify the N atoms
+    // RDKit✔️❌:         ROMol::ADJ_ITER idxIt1 = nbrIdxIt, idxIt2 = nbrIdxIt;
+    // RDKit✔️❌:         bool firstIdent = false;
+    // RDKit✔️❌:         while (nbrIdxIt != endNbrsIdxIt) {
+    // RDKit✔️❌:           if (res->getAtomWithIdx(*nbrIdxIt)->getSymbol() == "N") {
+    // RDKit✔️❌:             // fix the bond to one - only the modified N will have a double bond
+    // RDKit✔️❌:             // to C.cat
+    // RDKit✔️❌:             res->getBondBetweenAtoms(idx, *nbrIdxIt)->setBondType(Bond::SINGLE);
+    // RDKit✔️❌:             res->getBondBetweenAtoms(idx, *nbrIdxIt)->setIsAromatic(false);
+    // RDKit✔️❌:             res->getAtomWithIdx(*nbrIdxIt)->setIsAromatic(false);
+    // RDKit✔️❌:             // FIX: what is happening if we hit an atom that was fixed before -
+    // RDKit✔️❌:             // probably nothing.
+    // RDKit✔️❌:             // since I cannot think of a case where this is a problem - throw a
+    // RDKit✔️❌:             // warning
+    // RDKit✔️❌:             if (isFixed[*nbrIdxIt]) {
+    // RDKit✔️❌:               std::string nm;
+    // RDKit✔️❌:               res->getProp(common_properties::_Name, nm);
+    // RDKit✔️❌:               BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:                   << nm << ": warning - charged amidine and isFixed atom."
+    // RDKit✔️❌:                   << std::endl;
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:             isFixed[*nbrIdxIt] = 1;
+    // RDKit✔️❌:             if (firstIdent) {
+    // RDKit✔️❌:               idxIt2 = nbrIdxIt;
+    // RDKit✔️❌:             } else {
+    // RDKit✔️❌:               idxIt1 = nbrIdxIt;
+    // RDKit✔️❌:               firstIdent = true;
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           ++nbrIdxIt;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         // now that we know which are the relevant atoms we check the above
+    // RDKit✔️❌:         // features
+    // RDKit✔️❌:         // is part of N-oxide?
+    // RDKit✔️❌:         // number of hydrogens on each neighbour
+    // RDKit✔️❌:         unsigned int noHNbrs1 = chkNoHNeighbNOx(res, idxIt1, toModIdx);
+    // RDKit✔️❌:         unsigned int noHNbrs2 = chkNoHNeighbNOx(res, idxIt2, toModIdx);
+    // RDKit✔️❌:         if (toModIdx < 0) {
+    // RDKit✔️❌:           // no N-oxide
+    // RDKit✔️❌:           if (noHNbrs1 != noHNbrs2) {
+    // RDKit✔️❌:             if (noHNbrs1 > noHNbrs2) {
+    // RDKit✔️❌:               toModIdx = *idxIt1;
+    // RDKit✔️❌:             } else {
+    // RDKit✔️❌:               toModIdx = *idxIt2;  // this is random if both have the same
+    // RDKit✔️❌:                                    // number of atoms
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           } else {
+    // RDKit✔️❌:             // perceive the rings
+    // RDKit✔️❌:             if (!res->getRingInfo()->isSssrOrBetter()) {
+    // RDKit✔️❌:               MolOps::findSSSR(*res);
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:             // then we check if both atoms are in a ring
+    // RDKit✔️❌:             unsigned int rIdx1 = res->getRingInfo()->numAtomRings((*idxIt1));
+    // RDKit✔️❌:             unsigned int rIdx2 = res->getRingInfo()->numAtomRings((*idxIt2));
+    // RDKit✔️❌:             if (rIdx1 > rIdx2) {
+    // RDKit✔️❌:               toModIdx = *idxIt1;
+    // RDKit✔️❌:             } else {
+    // RDKit✔️❌:               toModIdx = *idxIt2;
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         res->getBondBetweenAtoms(idx, toModIdx)->setBondType(Bond::DOUBLE);
+    // RDKit✔️❌:         res->getBondBetweenAtoms(idx, toModIdx)->setIsAromatic(false);
+    // RDKit✔️❌:         res->getAtomWithIdx(toModIdx)->setFormalCharge(1);
+    // RDKit✔️❌:         at->setIsAromatic(false);
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         while (nbrIdxIt != endNbrsIdxIt) {
+    // RDKit✔️❌:           if (!isFixed[*nbrIdxIt]) {
+    // RDKit✔️❌:             // we get in here if this N.pl3 was not seen / fixed before
+    // RDKit✔️❌:             Atom *nbr = res->getAtomWithIdx(*nbrIdxIt);
+    // RDKit✔️❌:             // get the number of heavy atoms connected to this atom
+    // RDKit✔️❌:             ROMol::ADJ_ITER nbrNbrIdxIt, nbrEndNbrsIdxIt;
+    // RDKit✔️❌:             unsigned int hvyAtDeg = 0;
+    // RDKit✔️❌:             boost::tie(nbrNbrIdxIt, nbrEndNbrsIdxIt) =
+    // RDKit✔️❌:                 res->getAtomNeighbors(nbr);
+    // RDKit✔️❌:             while (nbrNbrIdxIt != nbrEndNbrsIdxIt) {
+    // RDKit✔️❌:               if (res->getAtomWithIdx(*nbrNbrIdxIt)->getAtomicNum() > 1) {
+    // RDKit✔️❌:                 std::string nbrAT;
+    // RDKit✔️❌:                 res->getAtomWithIdx(*nbrNbrIdxIt)
+    // RDKit✔️❌:                     ->getProp(common_properties::_TriposAtomType, nbrAT);
+    // RDKit✔️❌:                 if (nbrAT == "C.cat") {
+    // RDKit✔️❌:                   hvyAtDeg += 2;  // that way we reduce the risk of ionising the
+    // RDKit✔️❌:                                   // N attached to another C.cat ...
+    // RDKit✔️❌:                 } else {
+    // RDKit✔️❌:                   ++hvyAtDeg;
+    // RDKit✔️❌:                 }
+    // RDKit✔️❌:               }
+    // RDKit✔️❌:               ++nbrNbrIdxIt;
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:             // now check for lowest heavy atom degree
+    // RDKit✔️❌:             if (hvyAtDeg < lowestDeg) {
+    // RDKit✔️❌:               toModIdx = *nbrIdxIt;
+    // RDKit✔️❌:               lowestDeg = hvyAtDeg;
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:             // modify the bond between C.Cat and the N.pl3
+    // RDKit✔️❌:             Bond *b = res->getBondBetweenAtoms(idx, *nbrIdxIt);
+    // RDKit✔️❌:             b->setBondType(Bond::SINGLE);
+    // RDKit✔️❌:             b->setIsAromatic(false);
+    // RDKit✔️❌:             nbr->setIsAromatic(false);
+    // RDKit✔️❌:             // set N.pl3 as fixed
+    // RDKit✔️❌:             isFixed[*nbrIdxIt] = 1;
+    // RDKit✔️❌:           } else {
+    // RDKit✔️❌:             // the N is already fixed - since we don't touch this atom make the
+    // RDKit✔️❌:             // bond to single
+    // RDKit✔️❌:             // FIX: check on 3-way symmetric guanidinium mol -
+    // RDKit✔️❌:             //     this could produce a only single bonded C.cat for bad H mols
+    // RDKit✔️❌:             res->getBondBetweenAtoms(idx, *nbrIdxIt)->setBondType(Bond::SINGLE);
+    // RDKit✔️❌:             res->getBondBetweenAtoms(idx, *nbrIdxIt)->setIsAromatic(false);
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           ++nbrIdxIt;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         // now modify the respective N and the C.cat
+    // RDKit✔️❌:         Bond *b = res->getBondBetweenAtoms(idx, toModIdx);
+    // RDKit✔️❌:         b->setBondType(Bond::DOUBLE);
+    // RDKit✔️❌:         b->setIsAromatic(false);
+    // RDKit✔️❌:         res->getAtomWithIdx(toModIdx)->setFormalCharge(1);
+    // RDKit✔️❌:         at->setIsAromatic(false);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     idx++;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
     let mut fixed = vec![false; builder.atoms().len()];
     for index in 0..builder.atoms().len() {
         if fixed[index] {
@@ -1445,82 +1457,42 @@ mod tests {
 
     const BASIC: &str = "@<TRIPOS>MOLECULE\nexample   \n3 2\nSMALL\nNO_CHARGES\n@<TRIPOS>ATOM\n1 C1 0.0 0.0 0.0 C.2 1 MOL 0.25\n2 O1 1.2 0.0 0.0 O.2 1 MOL -0.25\n3 H1 -0.5 0.0 0.0 H 1 MOL 0.0\n@<TRIPOS>BOND\n1 1 2 2\n2 1 3 1\n";
 
-    fn rdkit_fixture(name: &str) -> &'static str {
-        match name {
-            "3505.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/3505.mol2"
+    fn rdkit_fixture(name: &str) -> String {
+        assert!(
+            matches!(
+                name,
+                "3505.mol2"
+                    | "Canion.mol2"
+                    | "EZ_mol2_issue114.mol2"
+                    | "Issue3399798.2.mol2"
+                    | "Issue3399798.mol2"
+                    | "Noxide.mol2"
+                    | "Sulfonate.mol2"
+                    | "badSubstPyridine.mol2"
+                    | "benzene.mol2"
+                    | "chargedAmidine.mol2"
+                    | "chargedAmidineEC.mol2"
+                    | "chargedAmidineRWH.mol2"
+                    | "dbtranslateCharged.mol2"
+                    | "dbtranslateUncharged.mol2"
+                    | "dbtranslateUnchargedRing.mol2"
+                    | "fusedRing.mol2"
+                    | "github438_1.mol2"
+                    | "github438_2.mol2"
+                    | "highlySymmetricGuanidine.mol2"
+                    | "lonePairMol.mol2"
+                    | "pyrazole_pyridine.mol2"
+                    | "pyridiniumPhenyl.mol2"
+                    | "sulfonAmide.mol2"
+                    | "symmetricGuanidine.mol2"
             ),
-            "Canion.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/Canion.mol2"
-            ),
-            "EZ_mol2_issue114.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/EZ_mol2_issue114.mol2"
-            ),
-            "Issue3399798.2.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/Issue3399798.2.mol2"
-            ),
-            "Issue3399798.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/Issue3399798.mol2"
-            ),
-            "Noxide.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/Noxide.mol2"
-            ),
-            "Sulfonate.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/Sulfonate.mol2"
-            ),
-            "badSubstPyridine.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/badSubstPyridine.mol2"
-            ),
-            "benzene.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/benzene.mol2"
-            ),
-            "chargedAmidine.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/chargedAmidine.mol2"
-            ),
-            "chargedAmidineEC.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/chargedAmidineEC.mol2"
-            ),
-            "chargedAmidineRWH.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/chargedAmidineRWH.mol2"
-            ),
-            "dbtranslateCharged.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/dbtranslateCharged.mol2"
-            ),
-            "dbtranslateUncharged.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/dbtranslateUncharged.mol2"
-            ),
-            "dbtranslateUnchargedRing.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/dbtranslateUnchargedRing.mol2"
-            ),
-            "fusedRing.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/fusedRing.mol2"
-            ),
-            "github438_1.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/github438_1.mol2"
-            ),
-            "github438_2.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/github438_2.mol2"
-            ),
-            "highlySymmetricGuanidine.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/highlySymmetricGuanidine.mol2"
-            ),
-            "lonePairMol.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/lonePairMol.mol2"
-            ),
-            "pyrazole_pyridine.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/pyrazole_pyridine.mol2"
-            ),
-            "pyridiniumPhenyl.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/pyridiniumPhenyl.mol2"
-            ),
-            "sulfonAmide.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/sulfonAmide.mol2"
-            ),
-            "symmetricGuanidine.mol2" => include_str!(
-                "../../../third_party/rdkit/Code/GraphMol/FileParsers/test_data/symmetricGuanidine.mol2"
-            ),
-            _ => panic!("unknown fixture {name}"),
-        }
+            "unknown fixture {name}"
+        );
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../third_party/rdkit/Code/GraphMol/FileParsers/test_data")
+            .join(name);
+        std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("required pinned fixture {}: {error}", path.display()))
     }
 
     #[test]
@@ -1560,7 +1532,7 @@ mod tests {
     #[test]
     fn skips_lone_pairs_and_bonds_to_them() {
         let input = "@<TRIPOS>MOLECULE\nlp\n3 2\nSMALL\nUSER_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.3\n2 LP1 1 0 0 LP\n3 O1 2 0 0 O.2\n@<TRIPOS>BOND\n1 1 2 1\n2 1 3 2\n@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nAtomExpr 0\n";
-        let record = read_mol2_detached(input).expect("MOL2").expect("record");
+        let record = read_mol2_detached(&input).expect("MOL2").expect("record");
         assert_eq!(record.topology.atoms.len(), 2);
         assert_eq!(record.topology.bonds.len(), 1);
         assert_eq!(record.topology.bonds[0].end(), AtomId::new(1));
@@ -1569,14 +1541,14 @@ mod tests {
     #[test]
     fn unity_atom_attributes_override_formal_charge_guessing() {
         let input = "@<TRIPOS>MOLECULE\ncharged\n1 0\nSMALL\nUSER_CHARGES\n@<TRIPOS>ATOM\n1 N1 0 0 0 N.4\n@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nAtomExpr -1\n";
-        let record = read_mol2_detached(input).expect("MOL2").expect("record");
+        let record = read_mol2_detached(&input).expect("MOL2").expect("record");
         assert_eq!(record.topology.atoms[0].formal_charge(), -1);
     }
 
     #[test]
     fn aromatic_bonds_mark_bond_and_atoms() {
         let input = "@<TRIPOS>MOLECULE\naromatic\n2 1\nSMALL\nUSER_CHARGES\n@<TRIPOS>ATOM\n1 C1 0 0 0 C.ar\n2 N1 1 0 0 N.ar\n@<TRIPOS>BOND\n1 1 2 ar\n@<TRIPOS>UNITY_ATOM_ATTR\n1 1\nAtomExpr 0\n";
-        let record = read_mol2_detached(input).expect("MOL2").expect("record");
+        let record = read_mol2_detached(&input).expect("MOL2").expect("record");
         assert!(record.topology.bonds[0].is_aromatic());
         assert!(record.topology.atoms[0].is_aromatic());
         assert!(record.topology.atoms[1].is_aromatic());
@@ -1636,10 +1608,10 @@ mod tests {
     #[test]
     fn rdkit_mol2_corpus_matches_unsanitized_graph_charge_and_aromatic_state() {
         // RDKit source: testMol2ToMol.cpp `testGeneral`, `testGithub438`
-        // RDKit✔️✔️: TEST_ASSERT(m->getAtomWithIdx(8)->getFormalCharge() == 1);
-        // RDKit✔️✔️: TEST_ASSERT(m->getAtomWithIdx(9)->getFormalCharge() == -1);
-        // RDKit✔️✔️: TEST_ASSERT(mol->getAtomWithIdx(0)->getFormalCharge() == 1);
-        // RDKit✔️✔️: TEST_ASSERT(mol->getAtomWithIdx(0)->getFormalCharge() == 2);
+        // RDKit✔️✔️:     TEST_ASSERT(m->getAtomWithIdx(8)->getFormalCharge() == 1);
+        // RDKit✔️✔️:     TEST_ASSERT(m->getAtomWithIdx(9)->getFormalCharge() == -1);
+        // RDKit✔️✔️:     TEST_ASSERT(mol->getAtomWithIdx(0)->getFormalCharge() == 1);
+        // RDKit✔️✔️:     TEST_ASSERT(mol->getAtomWithIdx(0)->getFormalCharge() == 2);
         // Expected values below were also checked against Python RDKit with
         // sanitize=false, removeHs=false, and cleanupSubstructures=true so
         // indices cover the detached parser's pre-finalization boundary.
@@ -1677,7 +1649,7 @@ mod tests {
             ("symmetricGuanidine.mol2", 28, 27, 0, 0, &[(1, 1), (8, 1)]),
         ];
         for &(name, atom_count, bond_count, aromatic_atoms, aromatic_bonds, charges) in cases {
-            let record = read_mol2_detached(rdkit_fixture(name))
+            let record = read_mol2_detached(&rdkit_fixture(name))
                 .unwrap_or_else(|error| panic!("{name}: {error}"))
                 .unwrap_or_else(|| panic!("{name}: rejected cleanup"));
             assert_eq!(record.topology.atoms.len(), atom_count, "{name}: atoms");
@@ -1718,16 +1690,16 @@ mod tests {
     #[test]
     fn cleanup_parameter_matches_rdkit_guanidinium_branch() {
         // RDKit source: testMol2ToMol.cpp `testDisableCleanup`
-        // RDKit✔️✔️: TEST_ASSERT(mol->getBondBetweenAtoms(3, 12)->getBondType() ==
-        // RDKit✔️✔️:             Bond::SINGLE);
-        // RDKit✔️✔️: TEST_ASSERT(mol->getAtomWithIdx(12)->getFormalCharge() == 0);
-        // RDKit✔️✔️: TEST_ASSERT(mol->getBondBetweenAtoms(3, 12)->getBondType() ==
+        // RDKit✔️✔️:       TEST_ASSERT(mol->getBondBetweenAtoms(3, 12)->getBondType() ==
+        // RDKit✔️✔️:                   Bond::SINGLE);
+        // RDKit✔️✔️:       TEST_ASSERT(mol->getAtomWithIdx(12)->getFormalCharge() == 0);
+        // RDKit✔️✔️:       TEST_ASSERT(mol->getBondBetweenAtoms(3, 12)->getBondType() ==
         // RDKit✔️✔️:             Bond::DOUBLE);
-        // RDKit✔️✔️: TEST_ASSERT(mol->getAtomWithIdx(12)->getFormalCharge() == 1);
+        // RDKit✔️✔️:       TEST_ASSERT(mol->getAtomWithIdx(12)->getFormalCharge() == 1);
         let input = rdkit_fixture("3505.mol2");
-        let cleaned = read_mol2_detached(input).unwrap().unwrap();
+        let cleaned = read_mol2_detached(&input).unwrap().unwrap();
         let raw = read_mol2_detached_with_params(
-            input,
+            &input,
             Mol2ReadParams {
                 cleanup_substructures: false,
                 ..Mol2ReadParams::default()

@@ -68,10 +68,25 @@ pub use morgan_reusable::{
     MorganAtomInvariantsGenerator, MorganBondInvariantsGenerator, MorganCallParams,
     MorganFingerprintGenerator, MorganSettings,
 };
+#[cfg(feature = "cap-batch")]
+mod batch;
 #[doc(hidden)]
 pub mod ops;
 #[cfg(feature = "cap-io")]
 mod sdf;
+#[cfg(feature = "cap-batch")]
+pub use batch::{
+    BatchError, BatchErrorMode, BatchParams, BatchQueryParams, BatchRecord, BatchValidationError,
+    MoleculeBatch,
+};
+#[cfg(all(feature = "cap-batch", feature = "cap-depict"))]
+pub use batch::{BatchImageError, BatchImageParams};
+#[cfg(feature = "cap-batch")]
+pub use cosmolkit_batch::BatchExportReport;
+#[cfg(all(feature = "cap-io", feature = "cap-batch"))]
+mod sdf_batch;
+#[cfg(all(feature = "cap-io", feature = "cap-batch"))]
+pub use sdf_batch::{BatchExportParams, SdfBatchIterator, SdfReaderBatchIterator};
 #[cfg(feature = "cap-search")]
 pub mod search;
 #[cfg(feature = "cap-search")]
@@ -419,4 +434,26 @@ pub use cosmolkit_fingerprints::{
 pub use topological_fingerprint::{
     topological_query_fingerprint_with_output_with_params,
     topological_query_fingerprint_with_params,
+};
+
+#[cfg(all(feature = "cap-batch", feature = "cap-fingerprints"))]
+pub use cosmolkit_fingerprints::{
+    BatchFingerprintAdditionalOutput, BatchFingerprintOutput, BatchFingerprintOutputError,
+};
+
+#[cfg(feature = "cap-io")]
+mod molecular_io;
+#[cfg(feature = "cap-io")]
+mod sdf_supplier;
+#[cfg(feature = "cap-io")]
+pub use cosmolkit_core::PropertyStringError;
+#[cfg(feature = "cap-io")]
+pub use molecular_io::{
+    Mol2PostError, Mol2ReadError, Mol2ReadParams, Mol2Type, MolBlockWriteParams,
+    MolCoordinateSelection, MolWriteError, MolecularIoError, SdfFormat, XyzReadError,
+    XyzWriteError, XyzWriteParams,
+};
+#[cfg(feature = "cap-io")]
+pub use sdf_supplier::{
+    SdfDataset, SdfDatasetIterator, SdfReader, SdfRecordMetadata, SdfRecordStream,
 };

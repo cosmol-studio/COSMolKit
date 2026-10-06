@@ -37,6 +37,7 @@ mod radicals;
 mod random;
 mod rings;
 mod sanitize;
+mod source_sort;
 mod stereo_order;
 mod structure_tags;
 mod transforms;
@@ -153,8 +154,8 @@ pub use paths::{
 };
 
 pub use periodic_table::{
-    PeriodicTableError, atomic_mass, element_info, isotope_abundance, isotope_mass,
-    most_common_isotope, most_common_isotope_mass,
+    PeriodicTableError, atomic_mass, element_info, is_rdkit_organic_subset, isotope_abundance,
+    isotope_mass, most_common_isotope, most_common_isotope_mass,
 };
 
 pub use potential_stereo::{

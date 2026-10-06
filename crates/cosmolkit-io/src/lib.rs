@@ -30,7 +30,20 @@ pub mod cif;
 #[cfg(feature = "molecule")]
 pub mod mol2;
 #[cfg(feature = "molecule")]
+mod mol2_post;
+#[cfg(feature = "molecule")]
 mod mol_post;
+#[cfg(feature = "molecule")]
+mod mol_write;
+#[cfg(feature = "molecule")]
+pub use mol_write::{
+    MolBlockWriteParams, MolCoordinateSelection, MolWriteError, MolWriteInput, QueryMolWriteInput,
+    SdfFormat, write_mol_block_with_params, write_query_mol_block_with_params,
+    write_query_sdf_with_params, write_sdf_2d_with_params, write_sdf_3d_with_params,
+    write_sdf_with_params,
+};
+#[cfg(feature = "molecule")]
+pub use mol2_post::{Mol2PostError, finish_mol2_record};
 #[cfg(feature = "molecule")]
 mod numeric;
 #[cfg(feature = "molecule")]
@@ -61,7 +74,9 @@ pub use bio_write::{
     write_bio_structure_mmcif_file,
 };
 #[cfg(feature = "molecule")]
-pub use mol_post::{MolPostError, MolPostParams, finish_mol_block_record};
+pub use mol_post::{
+    MolPostDerivedState, MolPostError, MolPostParams, MolProcessingError, finish_mol_block_record,
+};
 #[cfg(feature = "molecule")]
 pub use mol2::{
     Mol2ReadError, Mol2ReadParams, Mol2Record, Mol2Type, read_mol2_detached,
@@ -83,12 +98,13 @@ pub use sdf::{
     MolBlockReadParams, MolBlockRecord, QueryMolBlockRecord, SdfCoordinateMode, SdfDataReadParams,
     SdfGraphDataset, SdfGraphReader, SdfGraphRecord, SdfReadError, SdfRecord, SdfRecordMetadata,
     SdfRecordText, SdfWriteError, index_sdf_records, read_mol_block_detached,
-    read_mol_block_detached_with_params, read_sdf_graph_record_detached,
-    read_sdf_graph_record_detached_with_params, read_sdf_record_detached,
-    read_sdf_record_detached_with_params, read_sdf_record_text, read_sdf_records_detached,
-    read_sdf_records_detached_with_params, read_v2000_detached, read_v2000_detached_with_params,
-    read_v3000_detached, read_v3000_detached_with_params, write_sdf_record_detached,
-    write_v2000_detached, write_v3000_detached,
+    read_mol_block_detached_with_params, read_mol_graph_record_detached_with_params,
+    read_sdf_graph_record_detached, read_sdf_graph_record_detached_with_params,
+    read_sdf_record_detached, read_sdf_record_detached_with_params, read_sdf_record_text,
+    read_sdf_records_detached, read_sdf_records_detached_with_params, read_v2000_detached,
+    read_v2000_detached_with_params, read_v3000_detached, read_v3000_detached_with_params,
+    split_sdf_record_strings, write_sdf_record_detached, write_v2000_detached,
+    write_v3000_detached,
 };
 #[cfg(feature = "molecule")]
 pub use xyz::{

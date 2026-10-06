@@ -30,7 +30,8 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-forcefields",
         feature = "cap-tautomer",
         feature = "cap-hashing",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     valence: Option<cosmolkit_core::ValenceAssignment>,
     #[cfg(any(
@@ -46,14 +47,16 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-fingerprints",
         feature = "cap-tautomer",
         feature = "cap-hashing",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     rings: Option<cosmolkit_core::RingInfo>,
     #[cfg(any(
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     ring_families: Option<cosmolkit_core::RingInfo>,
 }
@@ -73,7 +76,8 @@ impl DerivedCacheBlock {
                     feature = "cap-forcefields",
                     feature = "cap-tautomer",
                     feature = "cap-hashing",
-                    feature = "cap-serialization"
+                    feature = "cap-serialization",
+                    feature = "cap-io"
                 ))]
                 {
                     self.valence.is_none()
@@ -89,7 +93,8 @@ impl DerivedCacheBlock {
                     feature = "cap-forcefields",
                     feature = "cap-tautomer",
                     feature = "cap-hashing",
-                    feature = "cap-serialization"
+                    feature = "cap-serialization",
+                    feature = "cap-io"
                 )))]
                 {
                     true
@@ -109,14 +114,16 @@ impl DerivedCacheBlock {
                     feature = "cap-fingerprints",
                     feature = "cap-tautomer",
                     feature = "cap-hashing",
-                    feature = "cap-serialization"
+                    feature = "cap-serialization",
+                    feature = "cap-io"
                 ))]
                 {
                     #[cfg(any(
                         feature = "cap-rings",
                         feature = "cap-stereo",
                         feature = "cap-fingerprints",
-                        feature = "cap-serialization"
+                        feature = "cap-serialization",
+                        feature = "cap-io"
                     ))]
                     {
                         self.rings.is_none() && self.ring_families.is_none()
@@ -125,7 +132,8 @@ impl DerivedCacheBlock {
                         feature = "cap-rings",
                         feature = "cap-stereo",
                         feature = "cap-fingerprints",
-                        feature = "cap-serialization"
+                        feature = "cap-serialization",
+                        feature = "cap-io"
                     )))]
                     {
                         self.rings.is_none()
@@ -144,7 +152,8 @@ impl DerivedCacheBlock {
                     feature = "cap-fingerprints",
                     feature = "cap-tautomer",
                     feature = "cap-hashing",
-                    feature = "cap-serialization"
+                    feature = "cap-serialization",
+                    feature = "cap-io"
                 )))]
                 {
                     true
@@ -173,7 +182,8 @@ impl DerivedCacheBlock {
             feature = "cap-forcefields",
             feature = "cap-tautomer",
             feature = "cap-hashing",
-            feature = "cap-serialization"
+            feature = "cap-serialization",
+            feature = "cap-io"
         ))]
         if states.intersects(DerivedState::VALENCE) {
             self.valence = None;
@@ -191,7 +201,8 @@ impl DerivedCacheBlock {
             feature = "cap-fingerprints",
             feature = "cap-tautomer",
             feature = "cap-hashing",
-            feature = "cap-serialization"
+            feature = "cap-serialization",
+            feature = "cap-io"
         ))]
         if states.intersects(DerivedState::RINGS) {
             self.rings = None;
@@ -200,7 +211,8 @@ impl DerivedCacheBlock {
             feature = "cap-rings",
             feature = "cap-stereo",
             feature = "cap-fingerprints",
-            feature = "cap-serialization"
+            feature = "cap-serialization",
+            feature = "cap-io"
         ))]
         if states.intersects(DerivedState::RING_FAMILIES) {
             self.ring_families = None;
@@ -218,7 +230,8 @@ impl DerivedCacheBlock {
         feature = "cap-forcefields",
         feature = "cap-tautomer",
         feature = "cap-hashing",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     pub(crate) fn install_valence_assignment(
         &mut self,
@@ -238,7 +251,8 @@ impl DerivedCacheBlock {
         feature = "cap-forcefields",
         feature = "cap-tautomer",
         feature = "cap-hashing",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     pub(crate) fn valence_assignment(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
         if self.valid.contains(DerivedState::VALENCE) {
@@ -261,7 +275,8 @@ impl DerivedCacheBlock {
         feature = "cap-fingerprints",
         feature = "cap-tautomer",
         feature = "cap-hashing",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     pub(crate) fn install_ring_info(&mut self, rings: cosmolkit_core::RingInfo) {
         self.rings = Some(rings);
@@ -280,7 +295,8 @@ impl DerivedCacheBlock {
         feature = "cap-fingerprints",
         feature = "cap-tautomer",
         feature = "cap-hashing",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     pub(crate) fn ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.rings.as_ref()
@@ -302,7 +318,8 @@ impl DerivedCacheBlock {
         feature = "cap-fingerprints",
         feature = "cap-tautomer",
         feature = "cap-hashing",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     pub(crate) fn valid_ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         if self.valid.contains(DerivedState::RINGS) {
@@ -316,7 +333,8 @@ impl DerivedCacheBlock {
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     pub(crate) fn install_ring_family_info(&mut self, families: cosmolkit_core::RingInfo) {
         self.ring_families = Some(families);
@@ -326,7 +344,8 @@ impl DerivedCacheBlock {
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
-        feature = "cap-serialization"
+        feature = "cap-serialization",
+        feature = "cap-io"
     ))]
     pub(crate) fn ring_family_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         self.ring_families.as_ref()
@@ -344,7 +363,8 @@ impl DerivedCacheBlock {
             feature = "cap-forcefields",
             feature = "cap-tautomer",
             feature = "cap-hashing",
-            feature = "cap-serialization"
+            feature = "cap-serialization",
+            feature = "cap-io"
         ))]
         {
             let valid = self.valid.contains(DerivedState::VALENCE);
@@ -405,7 +425,8 @@ impl DerivedCacheBlock {
             feature = "cap-fingerprints",
             feature = "cap-tautomer",
             feature = "cap-hashing",
-            feature = "cap-serialization"
+            feature = "cap-serialization",
+            feature = "cap-io"
         ))]
         {
             let valid = self.valid.contains(DerivedState::RINGS);
@@ -491,7 +512,8 @@ impl DerivedCacheBlock {
         #[cfg(any(
             feature = "cap-rings",
             feature = "cap-stereo",
-            feature = "cap-serialization"
+            feature = "cap-serialization",
+            feature = "cap-io"
         ))]
         {
             let valid = self.valid.contains(DerivedState::RING_FAMILIES);
@@ -843,8 +865,8 @@ impl Molecule {
 
     /// Constructor-only transport of final detached chemistry state. Cache
     /// authority remains here, not in the parser or algorithm owner.
-    #[cfg(feature = "cap-smiles")]
-    pub(super) fn from_smiles_parts_with_derived_state(
+    #[cfg(any(feature = "cap-smiles", feature = "cap-io"))]
+    pub(super) fn from_parsed_parts_with_derived_state(
         topology: TopologyBlock,
         coordinates: CoordinateBlock,
         properties: MoleculeProperties,
@@ -1069,7 +1091,7 @@ impl Molecule {
 /// never reset. Each entry records BOTH row-buffer addresses of the final
 /// carrier immediately before it is moved into the derived cache. The seam
 /// itself runs NO finder.
-#[cfg(all(test, feature = "cap-smiles"))]
+#[cfg(all(test, any(feature = "cap-smiles", feature = "cap-io")))]
 pub(crate) mod ring_install_probe {
     use std::cell::RefCell;
 
@@ -1490,7 +1512,7 @@ mod ring_live_lifecycle_tests {
     fn ring_live_lifecycle_failure_semantics() {
         // Value failure preserves the source molecule exactly.
         let base = Molecule::from_smiles("c1ccccc1").unwrap();
-        let molecule = Molecule::from_smiles_parts_with_derived_state(
+        let molecule = Molecule::from_parsed_parts_with_derived_state(
             base.topology().clone(),
             base.coordinate_block_runtime().clone(),
             base.properties().clone(),

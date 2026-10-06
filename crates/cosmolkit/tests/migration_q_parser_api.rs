@@ -269,7 +269,7 @@ mod enabled {
         assert_eq!(dative.bond(0).unwrap().bond().order(), BondOrder::Dative);
         assert_eq!(
             dative.bond(0).unwrap().predicate(),
-            &Q::Predicate(B::Order(BondOrder::DativeLeft))
+            &Q::Predicate(B::Order(BondOrder::Dative))
         );
         for (text, predicate) in [
             ("C~C", B::Any),

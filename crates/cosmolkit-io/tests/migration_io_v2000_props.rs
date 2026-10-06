@@ -162,8 +162,17 @@ fn new_and_old_atom_lists_preserve_source_element_negation_and_constraints() {
     let atom = &one_member.query.atoms()[0];
     assert_eq!(atom.element(), Some(Element::N));
     assert_eq!(string_property(atom.prop("_MolFileAtomQuery")), Some("1"));
-    assert!(query_contains(atom.predicate(), &|predicate| {
-        predicate == &AtomQueryPredicate::AtomicNumberNotIn(vec![7])
+    // ParseNewAtomList appends the inherited H-count constraint, then
+    // setNegation(true) negates the entire resulting query root.
+    let QueryNode::Not(inner) = atom.predicate() else {
+        panic!("constrained ALS negation must apply to the compound root");
+    };
+    assert!(matches!(inner.as_ref(), QueryNode::And(children) if children.len() == 2));
+    assert!(query_contains(inner, &|predicate| {
+        predicate == &AtomQueryPredicate::AtomicNumberIn(vec![7])
+    }));
+    assert!(query_contains(inner, &|predicate| {
+        predicate == &AtomQueryPredicate::ImplicitHydrogenCountLessEqual(1)
     }));
     assert!(query_contains(atom.predicate(), &|predicate| {
         predicate == &AtomQueryPredicate::ImplicitHydrogenCountLessEqual(1)
@@ -562,6 +571,10 @@ fn data_sgroup_line_limit_and_property_blank_recovery_match_pinned_policy() {
                 strict_parsing: false,
             }
         )
-        .is_err()
+        .is_ok()
     );
+    // Only the first properties line has the special strict blank check.
+    // A later empty string has a zero sentinel at operator[](size), matches
+    // no recognized property branch, and the loop reads the next M END.
+    assert!(read_mol_block_detached(&later_blank).is_ok());
 }

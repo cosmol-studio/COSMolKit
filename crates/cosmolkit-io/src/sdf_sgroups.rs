@@ -129,33 +129,226 @@ fn split_sgroup_line(
     line: &str,
     line_number: usize,
 ) -> Result<(&str, &str, &str, &str), SdfReadError> {
-    let bytes = line.as_bytes();
-    let mut position = 0_usize;
-    let mut next_field = || {
-        while bytes
-            .get(position)
-            .is_some_and(|byte| byte.is_ascii_whitespace())
-        {
-            position += 1;
-        }
-        let start = position;
-        while bytes
-            .get(position)
-            .is_some_and(|byte| !byte.is_ascii_whitespace())
-        {
-            position += 1;
-        }
-        &line[start..position]
-    };
-    let sequence = next_field();
-    let kind = next_field();
-    let external_id = next_field();
-    if sequence.is_empty() || kind.is_empty() || external_id.is_empty() {
+    // BEGIN RDKIT CPP FUNCTION ParseV3000SGroupsBlock
+    // RDKit❗✔️: std::string ParseV3000SGroupsBlock(std::istream *inStream, unsigned int &line,
+    // RDKit❗✔️:                                    unsigned int nSgroups, RWMol *mol,
+    // RDKit❗✔️:                                    bool strictParsing) {
+    // RDKit❗✔️:   PRECONDITION(inStream, "no stream");
+    // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
+    // RDKit❗✔️:   unsigned int defaultLineNum = 0;
+    // RDKit❗✔️:   std::string defaultString;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // SGroups may be written in unsorted ID order, according to spec, so we will
+    // RDKit❗✔️:   // temporarily store them in a map before adding them to the mol
+    // RDKit❗✔️:   IDX_TO_SGROUP_MAP sGroupMap;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::unordered_map<std::string, std::stringstream> defaultLabels;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   auto tempStr = FileParserUtils::getV3000Line(inStream, line);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // Store defaults
+    // RDKit❗✔️:   if (tempStr.substr(0, 7) == "DEFAULT" && tempStr.length() > 8) {
+    // RDKit❗✔️:     defaultString = tempStr.substr(7);
+    // RDKit❗✔️:     defaultLineNum = line;
+    // RDKit❗✔️:     boost::trim_right(defaultString);
+    // RDKit❗✔️:     tempStr = FileParserUtils::getV3000Line(inStream, line);
+    // RDKit❗✔️:     boost::trim_right(tempStr);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   for (unsigned int si = 0; si < nSgroups; ++si) {
+    // RDKit❗✔️:     unsigned int sequenceId;
+    // RDKit❗✔️:     unsigned int externalId;
+    // RDKit❗✔️:     std::string type;
+    // RDKit❗✔️:
+    // RDKit❗✔️:     std::stringstream lineStream(tempStr);
+    // RDKit❗✔️:     lineStream >> sequenceId;
+    // RDKit❗✔️:     lineStream >> type;
+    // RDKit❗✔️:     lineStream >> externalId;
+    // RDKit❗✔️:
+    // RDKit❗✔️:     std::set<std::string> parsedLabels;
+    // RDKit❗✔️:     if (strictParsing && !SubstanceGroupChecks::isValidType(type)) {
+    // RDKit❗✔️:       std::ostringstream errout;
+    // RDKit❗✔️:       errout << "Unsupported SGroup type '" << type << "' on line " << line;
+    // RDKit❗✔️:       throw MolFileUnhandledFeatureException(errout.str());
+    // RDKit❗✔️:     } else if (!strictParsing &&
+    // RDKit❗✔️:                nSgroups == std::numeric_limits<unsigned int>::max() &&
+    // RDKit❗✔️:                lineStream.fail()) {
+    // RDKit❗✔️:       // something went wrong and we didn't know how many SGroups to expect, and
+    // RDKit❗✔️:       // now we have seen something that doesn't look like an SGroup start.
+    // RDKit❗✔️:       // So we assume we're done.
+    // RDKit❗✔️:       nSgroups = 0;
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     SubstanceGroup sgroup(mol, type);
+    // RDKit❗✔️:     STR_VECT dataFields;
+    // RDKit❗✔️:
+    // RDKit❗✔️:     sgroup.setProp<unsigned int>("index", sequenceId);
+    // RDKit❗✔️:     if (externalId > 0) {
+    // RDKit❗✔️:       if (!SubstanceGroupChecks::isSubstanceGroupIdFree(*mol, externalId)) {
+    // RDKit❗✔️:         std::ostringstream errout;
+    // RDKit❗✔️:         errout << "Existing SGroup ID '" << externalId
+    // RDKit❗✔️:                << "' assigned to a second SGroup on line " << line;
+    // RDKit❗✔️:         if (strictParsing) {
+    // RDKit❗✔️:           throw FileParseException(errout.str());
+    // RDKit❗✔️:         } else {
+    // RDKit❗✔️:           BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:           sgroup.setIsValid(false);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:
+    // RDKit❗✔️:       sgroup.setProp<unsigned int>("ID", externalId);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     while (sgroup.getIsValid() && !lineStream.eof() && !lineStream.fail()) {
+    // RDKit❗✔️:       char spacer;
+    // RDKit❗✔️:       std::string label;
+    // RDKit❗✔️:
+    // RDKit❗✔️:       lineStream.get(spacer);
+    // RDKit❗✔️:       if (lineStream.gcount() == 0) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       } else if (spacer != ' ') {
+    // RDKit❗✔️:         std::ostringstream errout;
+    // RDKit❗✔️:         errout << "Found character '" << spacer
+    // RDKit❗✔️:                << "' when expecting a separator (space) on line " << line;
+    // RDKit❗✔️:         if (strictParsing) {
+    // RDKit❗✔️:           throw FileParseException(errout.str());
+    // RDKit❗✔️:         } else {
+    // RDKit❗✔️:           BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:           sgroup.setIsValid(false);
+    // RDKit❗✔️:           continue;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:
+    // RDKit❗✔️:       std::getline(lineStream, label, '=');
+    // RDKit❗✔️:       if (label.empty()) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       ParseV3000ParseLabel(label, lineStream, dataFields, line, sgroup,
+    // RDKit❗✔️:                            nSgroups, mol, strictParsing);
+    // RDKit❗✔️:       parsedLabels.insert(label);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // Process defaults
+    // RDKit❗✔️:     lineStream.clear();
+    // RDKit❗✔️:     lineStream.str(defaultString);
+    // RDKit❗✔️:     while (sgroup.getIsValid() && !lineStream.eof() && !lineStream.fail()) {
+    // RDKit❗✔️:       char spacer;
+    // RDKit❗✔️:       std::string label;
+    // RDKit❗✔️:
+    // RDKit❗✔️:       lineStream.get(spacer);
+    // RDKit❗✔️:       if (lineStream.gcount() == 0) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       } else if (spacer != ' ') {
+    // RDKit❗✔️:         std::ostringstream errout;
+    // RDKit❗✔️:         errout << "Found character '" << spacer
+    // RDKit❗✔️:                << "' when expecting a separator (space) in DEFAULTS on line "
+    // RDKit❗✔️:                << defaultLineNum;
+    // RDKit❗✔️:         if (strictParsing) {
+    // RDKit❗✔️:           throw FileParseException(errout.str());
+    // RDKit❗✔️:         } else {
+    // RDKit❗✔️:           BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:           sgroup.setIsValid(false);
+    // RDKit❗✔️:           continue;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:
+    // RDKit❗✔️:       std::getline(lineStream, label, '=');
+    // RDKit❗✔️:       if (label.empty()) {
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (std::find(parsedLabels.begin(), parsedLabels.end(), label) ==
+    // RDKit❗✔️:           parsedLabels.end()) {
+    // RDKit❗✔️:         ParseV3000ParseLabel(label, lineStream, dataFields, defaultLineNum,
+    // RDKit❗✔️:                              sgroup, nSgroups, mol, strictParsing);
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         spacer = lineStream.peek();
+    // RDKit❗✔️:         if (spacer == ' ') {
+    // RDKit❗✔️:           std::ostringstream errout;
+    // RDKit❗✔️:           errout << "Found unexpected whitespace at DEFAULT label " << label;
+    // RDKit❗✔️:           if (strictParsing) {
+    // RDKit❗✔️:             throw FileParseException(errout.str());
+    // RDKit❗✔️:           } else {
+    // RDKit❗✔️:             BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:             sgroup.setIsValid(false);
+    // RDKit❗✔️:             continue;
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         } else if (spacer == '(') {
+    // RDKit❗✔️:           std::getline(lineStream, label, ')');
+    // RDKit❗✔️:           lineStream.get(spacer);
+    // RDKit❗✔️:         } else if (spacer == '"') {
+    // RDKit❗✔️:           lineStream.get(spacer);
+    // RDKit❗✔️:           std::getline(lineStream, label, '"');
+    // RDKit❗✔️:         } else {
+    // RDKit❗✔️:           std::getline(lineStream, label, ' ');
+    // RDKit❗✔️:           lineStream.putback(' ');
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     sgroup.setProp("DATAFIELDS", dataFields);
+    // RDKit❗✔️:     sGroupMap.emplace(sequenceId, sgroup);
+    // RDKit❗✔️:
+    // RDKit❗✔️:     tempStr = FileParserUtils::getV3000Line(inStream, line);
+    // RDKit❗✔️:     boost::trim_right(tempStr);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (sGroupMap.size() != nSgroups) {
+    // RDKit❗✔️:     std::ostringstream errout;
+    // RDKit❗✔️:     errout << "Found " << sGroupMap.size() << " SGroups when " << nSgroups
+    // RDKit❗✔️:            << " were expected." << std::endl;
+    // RDKit❗✔️:     if (strictParsing) {
+    // RDKit❗✔️:       throw FileParseException(errout.str());
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // SGroups successfully parsed, now add them to the molecule
+    // RDKit❗✔️:   for (const auto &sg : sGroupMap) {
+    // RDKit❗✔️:     if (sg.second.getIsValid()) {
+    // RDKit❗✔️:       addSubstanceGroup(*mol, sg.second);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       BOOST_LOG(rdWarningLog) << "SGroup " << sg.first
+    // RDKit❗✔️:                               << " is invalid and will be ignored" << std::endl;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return tempStr;
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // END RDKIT CPP FUNCTION
+    // Three source formatted extractions consume only a numeric prefix for
+    // unsigned fields; type consumes a whitespace-delimited string. Keep the
+    // untouched suffix for the existing literal-space label parser. Reuse the
+    // sole cursor's sign/overflow handling; malformed/overflow source state
+    // remains a structural error, never a fabricated destination value.
+    // Cost: linear scans of the three consumed fields, borrowed slices, no
+    // line clone, new buffering or chemistry work. No all-input marker upgrade.
+    let mut cursor = SGroupLineCursor::new(line);
+    cursor.skip_c_locale_whitespace();
+    let sequence_start = cursor.position;
+    cursor.read_unsigned();
+    let sequence = &line[sequence_start..cursor.position];
+    parse_sgroup_header_unsigned(sequence, "sequence ID", line_number)?;
+    cursor.skip_c_locale_whitespace();
+    let kind_start = cursor.position;
+    while cursor
+        .peek()
+        .is_some_and(|byte| !byte.is_ascii_whitespace())
+    {
+        cursor.position += 1;
+    }
+    let kind = &line[kind_start..cursor.position];
+    cursor.skip_c_locale_whitespace();
+    let external_start = cursor.position;
+    cursor.read_unsigned();
+    let external_id = &line[external_start..cursor.position];
+    if kind.is_empty() || external_id.is_empty() {
         return Err(SdfReadError::Parse(format!(
             "SGroup line too short: '{line}' on line {line_number}"
         )));
     }
-    Ok((sequence, kind, external_id, &line[position..]))
+    parse_sgroup_header_unsigned(external_id, "external ID", line_number)?;
+    Ok((sequence, kind, external_id, &line[cursor.position..]))
 }
 
 fn parse_sgroup_header_unsigned(
@@ -164,14 +357,14 @@ fn parse_sgroup_header_unsigned(
     line_number: usize,
 ) -> Result<u32, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000SGroupsBlock (formatted header fields)
-    // RDKit❗✔️: unsigned int sequenceId;
-    // RDKit❗✔️: unsigned int externalId;
-    // RDKit❗✔️: std::string type;
+    // RDKit❗✔️:     unsigned int sequenceId;
+    // RDKit❗✔️:     unsigned int externalId;
+    // RDKit❗✔️:     std::string type;
     // RDKit❗✔️:
-    // RDKit❗✔️: std::stringstream lineStream(tempStr);
-    // RDKit❗✔️: lineStream >> sequenceId;
-    // RDKit❗✔️: lineStream >> type;
-    // RDKit❗✔️: lineStream >> externalId;
+    // RDKit❗✔️:     std::stringstream lineStream(tempStr);
+    // RDKit❗✔️:     lineStream >> sequenceId;
+    // RDKit❗✔️:     lineStream >> type;
+    // RDKit❗✔️:     lineStream >> externalId;
     let (negative, digits) = match text.as_bytes().first() {
         Some(b'+') => (false, &text[1..]),
         Some(b'-') => (true, &text[1..]),
@@ -446,28 +639,28 @@ fn parse_array<T: Copy>(
     mut parse: impl FnMut(&mut SGroupLineCursor<'_>) -> Option<T>,
 ) -> Result<Vec<T>, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000Array
-    // RDKit✔️✔️: auto paren = stream.get();  // discard parentheses
-    // RDKit✔️✔️: if (paren != '(') {
+    // RDKit✔️✔️:   auto paren = stream.get();  // discard parentheses
+    // RDKit✔️✔️:   if (paren != '(') {
     // RDKit✔️✔️:   BOOST_LOG(rdWarningLog)
-    // RDKit✔️✔️:       << "WARNING: first character of V3000 array is not '('" << std::endl;
+    // RDKit✔️✔️:         << "WARNING: first character of V3000 array is not '('" << std::endl;
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: unsigned int count = 0;
-    // RDKit✔️✔️: stream >> count;
-    // RDKit✔️✔️: std::vector<T> values;
-    // RDKit✔️✔️: if (maxV >= 0 && count > static_cast<unsigned int>(maxV)) {
-    // RDKit✔️✔️:   SGroupWarnOrThrow(strictParsing, "invalid count value");
+    // RDKit✔️✔️:   unsigned int count = 0;
+    // RDKit✔️✔️:   stream >> count;
+    // RDKit✔️✔️:   std::vector<T> values;
+    // RDKit✔️✔️:   if (maxV >= 0 && count > static_cast<unsigned int>(maxV)) {
+    // RDKit✔️✔️:     SGroupWarnOrThrow(strictParsing, "invalid count value");
     // RDKit✔️✔️:   return values;
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: values.reserve(count);
-    // RDKit✔️✔️: T value;
-    // RDKit✔️✔️: for (unsigned i = 0; i < count; ++i) {
-    // RDKit✔️✔️:   stream >> value;
-    // RDKit✔️✔️:   values.push_back(value);
+    // RDKit✔️✔️:   values.reserve(count);
+    // RDKit✔️✔️:     T value;
+    // RDKit✔️✔️:   for (unsigned i = 0; i < count; ++i) {
+    // RDKit✔️✔️:     stream >> value;
+    // RDKit✔️✔️:     values.push_back(value);
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: paren = stream.get();  // discard parentheses
-    // RDKit✔️✔️: if (paren != ')') {
+    // RDKit✔️✔️:   paren = stream.get();  // discard parentheses
+    // RDKit✔️✔️:   if (paren != ')') {
     // RDKit✔️✔️:   BOOST_LOG(rdWarningLog)
-    // RDKit✔️✔️:       << "WARNING: final character of V3000 array is not ')'" << std::endl;
+    // RDKit✔️✔️:         << "WARNING: final character of V3000 array is not ')'" << std::endl;
     // RDKit✔️✔️: }
     // Missing parentheses are warnings only. The cursor deliberately consumes
     // the same bytes as the source stream. Formatted extraction assigns zero
@@ -611,34 +804,34 @@ fn parse_cstate(
     bond_endpoints: &dyn Fn(BondId) -> Option<(AtomId, AtomId)>,
 ) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000CStateLabel
-    // RDKit✔️✔️: stream.get();  // discard parentheses
-    // RDKit✔️✔️: unsigned int count;
-    // RDKit✔️✔️: unsigned int bondMark;
-    // RDKit✔️✔️: stream >> count >> bondMark;
+    // RDKit✔️✔️:   stream.get();  // discard parentheses
+    // RDKit✔️✔️:   unsigned int count;
+    // RDKit✔️✔️:   unsigned int bondMark;
+    // RDKit✔️✔️:   stream >> count >> bondMark;
     // RDKit✔️✔️:
-    // RDKit✔️✔️: std::string type = sgroup.getProp<std::string>("TYPE");
-    // RDKit✔️✔️: if ((type != "SUP" && count != 1) || (type == "SUP" && count != 4)) {
+    // RDKit✔️✔️:   std::string type = sgroup.getProp<std::string>("TYPE");
+    // RDKit✔️✔️:   if ((type != "SUP" && count != 1) || (type == "SUP" && count != 4)) {
     // RDKit✔️✔️:   std::ostringstream errout;
-    // RDKit✔️✔️:   errout << "Unexpected number of fields for CSTATE field on line " << line;
-    // RDKit✔️✔️:   SGroupWarnOrThrow<>(strictParsing, errout.str());
-    // RDKit✔️✔️:   sgroup.setIsValid(false);
+    // RDKit✔️✔️:     errout << "Unexpected number of fields for CSTATE field on line " << line;
+    // RDKit✔️✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+    // RDKit✔️✔️:     sgroup.setIsValid(false);
     // RDKit✔️✔️:   return;
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: Bond *bond = mol->getUniqueBondWithBookmark(bondMark);
+    // RDKit✔️✔️:   Bond *bond = mol->getUniqueBondWithBookmark(bondMark);
     // RDKit✔️✔️:
-    // RDKit✔️✔️: RDGeom::Point3D vector;
-    // RDKit✔️✔️: if (type == "SUP") {
-    // RDKit✔️✔️:   stream >> vector.x >> vector.y >> vector.z;
+    // RDKit✔️✔️:     RDGeom::Point3D vector;
+    // RDKit✔️✔️:   if (type == "SUP") {
+    // RDKit✔️✔️:     stream >> vector.x >> vector.y >> vector.z;
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: try {
-    // RDKit✔️✔️:   sgroup.addCState(bond->getIdx(), vector);
-    // RDKit✔️✔️: } catch (const std::exception &e) {
-    // RDKit✔️✔️:   SGroupWarnOrThrow<>(strictParsing, e.what());
-    // RDKit✔️✔️:   sgroup.setIsValid(false);
+    // RDKit✔️✔️:     try {
+    // RDKit✔️✔️:     sgroup.addCState(bond->getIdx(), vector);
+    // RDKit✔️✔️:   } catch (const std::exception &e) {
+    // RDKit✔️✔️:       SGroupWarnOrThrow<>(strictParsing, e.what());
+    // RDKit✔️✔️:     sgroup.setIsValid(false);
     // RDKit✔️✔️:   return;
     // RDKit✔️✔️: }
     // RDKit✔️✔️:
-    // RDKit✔️✔️: stream.get();  // discard final parentheses
+    // RDKit✔️✔️:   stream.get();  // discard final parentheses
     // END RDKIT CPP FUNCTION
     // BEGIN RDKIT CPP FUNCTION SubstanceGroup::addCState
     // RDKit✔️✔️: void SubstanceGroup::addCState(unsigned int bondIdx,
@@ -755,30 +948,30 @@ fn parse_sap(
     atoms: &BTreeMap<u32, AtomId>,
 ) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000SAPLabel
-    // RDKit✔️✔️: stream.get();  // discard parentheses
-    // RDKit✔️✔️: unsigned int count = 0;
-    // RDKit✔️✔️: unsigned int aIdxMark = 0;
-    // RDKit✔️✔️: std::string lvIdxStr;  // In V3000 this may be a string
-    // RDKit✔️✔️: std::string sapIdStr;
-    // RDKit✔️✔️: stream >> count >> aIdxMark >> lvIdxStr >> sapIdStr;
-    // RDKit✔️✔️: sapIdStr.pop_back();
-    // RDKit✔️✔️: unsigned int aIdx = mol->getAtomWithBookmark(aIdxMark)->getIdx();
-    // RDKit✔️✔️: int lvIdx = -1;
+    // RDKit✔️✔️:   stream.get();  // discard parentheses
+    // RDKit✔️✔️:   unsigned int count = 0;
+    // RDKit✔️✔️:   unsigned int aIdxMark = 0;
+    // RDKit✔️✔️:   std::string lvIdxStr;  // In V3000 this may be a string
+    // RDKit✔️✔️:   std::string sapIdStr;
+    // RDKit✔️✔️:   stream >> count >> aIdxMark >> lvIdxStr >> sapIdStr;
+    // RDKit✔️✔️:   sapIdStr.pop_back();
+    // RDKit✔️✔️:     unsigned int aIdx = mol->getAtomWithBookmark(aIdxMark)->getIdx();
+    // RDKit✔️✔️:     int lvIdx = -1;
     // RDKit✔️✔️:
-    // RDKit✔️✔️: boost::to_upper(lvIdxStr);
-    // RDKit✔️✔️: if (lvIdxStr == "AIDX") {
-    // RDKit✔️✔️:   lvIdx = aIdx;
+    // RDKit✔️✔️:   boost::to_upper(lvIdxStr);
+    // RDKit✔️✔️:   if (lvIdxStr == "AIDX") {
+    // RDKit✔️✔️:     lvIdx = aIdx;
     // RDKit✔️✔️: } else {
-    // RDKit✔️✔️:   unsigned int lvIdxTmp = FileParserUtils::toInt(lvIdxStr);
-    // RDKit✔️✔️:   if (lvIdxTmp > 0) {
-    // RDKit✔️✔️:     lvIdx = mol->getAtomWithBookmark(lvIdxTmp)->getIdx();
+    // RDKit✔️✔️:     unsigned int lvIdxTmp = FileParserUtils::toInt(lvIdxStr);
+    // RDKit✔️✔️:     if (lvIdxTmp > 0) {
+    // RDKit✔️✔️:       lvIdx = mol->getAtomWithBookmark(lvIdxTmp)->getIdx();
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: try {
-    // RDKit✔️✔️:   sgroup.addAttachPoint(aIdx, lvIdx, sapIdStr);
-    // RDKit✔️✔️: } catch (const std::exception &e) {
-    // RDKit✔️✔️:   SGroupWarnOrThrow<>(strictParsing, e.what());
-    // RDKit✔️✔️:   sgroup.setIsValid(false);
+    // RDKit✔️✔️:     try {
+    // RDKit✔️✔️:     sgroup.addAttachPoint(aIdx, lvIdx, sapIdStr);
+    // RDKit✔️✔️:   } catch (const std::exception &e) {
+    // RDKit✔️✔️:       SGroupWarnOrThrow<>(strictParsing, e.what());
+    // RDKit✔️✔️:     sgroup.setIsValid(false);
     // RDKit✔️✔️:   return;
     // RDKit✔️✔️: }
     let _discarded_opening = cursor.get();
@@ -869,68 +1062,68 @@ fn parse_label(
     strict_parsing: bool,
 ) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000ParseLabel
-    // RDKit✔️✔️: if (label == "XBHEAD" || label == "XBCORR") {
-    // RDKit✔️✔️:   std::vector<unsigned int> bvect = ParseV3000Array<unsigned int>(
-    // RDKit✔️✔️:       lineStream, mol->getNumBonds(), strictParsing);
-    // RDKit✔️✔️:   std::transform(bvect.begin(), bvect.end(), bvect.begin(),
-    // RDKit✔️✔️:                  [](unsigned int v) -> unsigned int { return v - 1; });
-    // RDKit✔️✔️:   sgroup.setProp(label, bvect);
-    // RDKit✔️✔️: } else if (label == "ATOMS") {
-    // RDKit❗✔️:   for (auto atomIdx : ParseV3000Array<unsigned int>(
-    // RDKit❗✔️:            lineStream, mol->getNumAtoms(), strictParsing)) {
-    // RDKit❗✔️:     sgroup.addAtomWithBookmark(atomIdx);
+    // RDKit✔️✔️:     if (label == "XBHEAD" || label == "XBCORR") {
+    // RDKit✔️✔️:       std::vector<unsigned int> bvect = ParseV3000Array<unsigned int>(
+    // RDKit✔️✔️:           lineStream, mol->getNumBonds(), strictParsing);
+    // RDKit✔️✔️:       std::transform(bvect.begin(), bvect.end(), bvect.begin(),
+    // RDKit✔️✔️:                      [](unsigned int v) -> unsigned int { return v - 1; });
+    // RDKit✔️✔️:       sgroup.setProp(label, bvect);
+    // RDKit✔️✔️:     } else if (label == "ATOMS") {
+    // RDKit❗✔️:       for (auto atomIdx : ParseV3000Array<unsigned int>(
+    // RDKit❗✔️:                lineStream, mol->getNumAtoms(), strictParsing)) {
+    // RDKit❗✔️:         sgroup.addAtomWithBookmark(atomIdx);
     // RDKit❗✔️:   }
-    // RDKit❗✔️: } else if (label == "PATOMS") {
-    // RDKit❗✔️:   for (auto patomIdx : ParseV3000Array<unsigned int>(
-    // RDKit❗✔️:            lineStream, mol->getNumAtoms(), strictParsing)) {
-    // RDKit❗✔️:     sgroup.addParentAtomWithBookmark(patomIdx);
+    // RDKit❗✔️:     } else if (label == "PATOMS") {
+    // RDKit❗✔️:       for (auto patomIdx : ParseV3000Array<unsigned int>(
+    // RDKit❗✔️:                lineStream, mol->getNumAtoms(), strictParsing)) {
+    // RDKit❗✔️:         sgroup.addParentAtomWithBookmark(patomIdx);
     // RDKit❗✔️:   }
-    // RDKit❗✔️: } else if (label == "CBONDS" || label == "XBONDS") {
-    // RDKit❗✔️:   for (auto bondIdx : ParseV3000Array<unsigned int>(
-    // RDKit❗✔️:            lineStream, mol->getNumBonds(), strictParsing)) {
-    // RDKit❗✔️:     sgroup.addBondWithBookmark(bondIdx);
+    // RDKit❗✔️:     } else if (label == "CBONDS" || label == "XBONDS") {
+    // RDKit❗✔️:       for (auto bondIdx : ParseV3000Array<unsigned int>(
+    // RDKit❗✔️:                lineStream, mol->getNumBonds(), strictParsing)) {
+    // RDKit❗✔️:         sgroup.addBondWithBookmark(bondIdx);
     // RDKit❗✔️:   }
-    // RDKit✔️✔️: } else if (label == "BRKXYZ") {
-    // RDKit✔️✔️:   auto coords = ParseV3000Array<double>(lineStream, 9, strictParsing);
-    // RDKit✔️✔️:   if (coords.size() != 9) {
+    // RDKit✔️✔️:     } else if (label == "BRKXYZ") {
+    // RDKit✔️✔️:       auto coords = ParseV3000Array<double>(lineStream, 9, strictParsing);
+    // RDKit✔️✔️:       if (coords.size() != 9) {
     // RDKit✔️✔️:     std::ostringstream errout;
-    // RDKit✔️✔️:     errout << "Unexpected number of coordinates for BRKXYZ on line "
+    // RDKit✔️✔️:         errout << "Unexpected number of coordinates for BRKXYZ on line "
     // RDKit✔️✔️:            << line;
     // RDKit✔️✔️:     throw FileParseException(errout.str());
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:
     // RDKit✔️✔️:   SubstanceGroup::Bracket bracket;
     // RDKit✔️✔️:   for (unsigned int i = 0; i < 3; ++i) {
-    // RDKit✔️✔️:     bracket[i] = RDGeom::Point3D(*(coords.begin() + (3 * i)),
+    // RDKit✔️✔️:         bracket[i] = RDGeom::Point3D(*(coords.begin() + (3 * i)),
     // RDKit✔️✔️:                                      *(coords.begin() + (3 * i) + 1),
     // RDKit✔️✔️:                                      *(coords.begin() + (3 * i) + 2));
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   sgroup.addBracket(bracket);
-    // RDKit✔️✔️: } else if (label == "CSTATE") {
-    // RDKit❗✔️:   ParseV3000CStateLabel(mol, sgroup, lineStream, line, strictParsing);
-    // RDKit❗✔️: } else if (label == "SAP") {
-    // RDKit❗✔️:   ParseV3000SAPLabel(mol, sgroup, lineStream, strictParsing);
-    // RDKit❗✔️: } else if (label == "PARENT") {
-    // RDKit❗✔️:   lineStream >> parentIdx;
-    // RDKit❗✔️:   sgroup.setProp<unsigned int>("PARENT", parentIdx);
-    // RDKit❗✔️: } else if (label == "COMPNO") {
-    // RDKit❗✔️:   lineStream >> compno;
-    // RDKit❗✔️:   if (compno > 256u) {
+    // RDKit✔️✔️:     sgroup.addBracket(bracket);
+    // RDKit✔️✔️:     } else if (label == "CSTATE") {
+    // RDKit❗✔️:       ParseV3000CStateLabel(mol, sgroup, lineStream, line, strictParsing);
+    // RDKit❗✔️:     } else if (label == "SAP") {
+    // RDKit❗✔️:       ParseV3000SAPLabel(mol, sgroup, lineStream, strictParsing);
+    // RDKit❗✔️:     } else if (label == "PARENT") {
+    // RDKit❗✔️:       lineStream >> parentIdx;
+    // RDKit❗✔️:       sgroup.setProp<unsigned int>("PARENT", parentIdx);
+    // RDKit❗✔️:     } else if (label == "COMPNO") {
+    // RDKit❗✔️:       lineStream >> compno;
+    // RDKit❗✔️:     if (compno > 256u) {
     // RDKit❗✔️:     std::ostringstream errout;
-    // RDKit❗✔️:     errout << "SGroup SNC value over 256: '" << compno << "' on line "
+    // RDKit❗✔️:       errout << "SGroup SNC value over 256: '" << compno << "' on line "
     // RDKit❗✔️:            << line;
     // RDKit❗✔️:     throw FileParseException(errout.str());
     // RDKit❗✔️:   }
-    // RDKit❗✔️:   sgroup.setProp<unsigned int>("COMPNO", compno);
-    // RDKit❗✔️: } else if (label == "FIELDDATA") {
-    // RDKit❗✔️:   auto strValue = ParseV3000StringPropLabel(lineStream);
+    // RDKit❗✔️:       sgroup.setProp<unsigned int>("COMPNO", compno);
+    // RDKit❗✔️:     } else if (label == "FIELDDATA") {
+    // RDKit❗✔️:       auto strValue = ParseV3000StringPropLabel(lineStream);
     // RDKit❗✔️:   if (strictParsing) {
-    // RDKit❗✔️:     strValue = strValue.substr(0, 200);
+    // RDKit❗✔️:         strValue = strValue.substr(0, 200);
     // RDKit❗✔️:   }
-    // RDKit❗✔️:   dataFields.push_back(strValue);
+    // RDKit❗✔️:       dataFields.push_back(strValue);
     // RDKit❗✔️: } else {
-    // RDKit❗✔️:   auto strValue = ParseV3000StringPropLabel(lineStream);
-    // RDKit❗✔️:   sgroup.setProp(label, strValue);
+    // RDKit❗✔️:       auto strValue = ParseV3000StringPropLabel(lineStream);
+    // RDKit❗✔️:       sgroup.setProp(label, strValue);
     // RDKit❗✔️: }
     match label {
         "XBHEAD" | "XBCORR" => {
@@ -1091,21 +1284,21 @@ fn parse_non_array_label(
         }
         "PARENT" => {
             // BEGIN RDKIT CPP FUNCTION ParseV3000ParseLabel (PARENT)
-            // RDKit✔️✔️: } else if (label == "PARENT") {
-            // RDKit✔️✔️:   // Store relationship until all SGroups have been read
-            // RDKit✔️✔️:   unsigned int parentIdx;
-            // RDKit✔️✔️:   if (lineStream.eof()) {
+            // RDKit✔️✔️:     } else if (label == "PARENT") {
+            // RDKit✔️✔️:       // Store relationship until all SGroups have been read
+            // RDKit✔️✔️:       unsigned int parentIdx;
+            // RDKit✔️✔️:       if (lineStream.eof()) {
             // RDKit✔️✔️:     std::ostringstream errout;
-            // RDKit✔️✔️:     errout << "PARENT label not found on line " << line;
+            // RDKit✔️✔️:         errout << "PARENT label not found on line " << line;
             // RDKit✔️✔️:     throw FileParseException(errout.str());
             // RDKit✔️✔️:   }
-            // RDKit✔️✔️:   lineStream >> parentIdx;
-            // RDKit✔️✔️:   if (lineStream.fail()) {
+            // RDKit✔️✔️:       lineStream >> parentIdx;
+            // RDKit✔️✔️:       if (lineStream.fail()) {
             // RDKit✔️✔️:     std::ostringstream errout;
-            // RDKit✔️✔️:     errout << "Invalid PARENT label found on line " << line;
+            // RDKit✔️✔️:         errout << "Invalid PARENT label found on line " << line;
             // RDKit✔️✔️:     throw FileParseException(errout.str());
             // RDKit✔️✔️:   }
-            // RDKit✔️✔️:   sgroup.setProp<unsigned int>("PARENT", parentIdx);
+            // RDKit✔️✔️:       sgroup.setProp<unsigned int>("PARENT", parentIdx);
             if cursor.peek().is_none() {
                 return Err(SdfReadError::Parse(format!(
                     "PARENT label not found on line {line_number}"
@@ -1137,16 +1330,16 @@ fn parse_non_array_label(
         }
         "COMPNO" => {
             // BEGIN RDKIT CPP FUNCTION ParseV3000ParseLabel (COMPNO)
-            // RDKit✔️✔️: } else if (label == "COMPNO") {
+            // RDKit✔️✔️:     } else if (label == "COMPNO") {
             // RDKit✔️✔️:   unsigned int compno;
-            // RDKit✔️✔️:   lineStream >> compno;
-            // RDKit✔️✔️:   if (compno > 256u) {
+            // RDKit✔️✔️:       lineStream >> compno;
+            // RDKit✔️✔️:     if (compno > 256u) {
             // RDKit✔️✔️:     std::ostringstream errout;
-            // RDKit✔️✔️:     errout << "SGroup SNC value over 256: '" << compno << "' on line "
+            // RDKit✔️✔️:       errout << "SGroup SNC value over 256: '" << compno << "' on line "
             // RDKit✔️✔️:            << line;
             // RDKit✔️✔️:     throw FileParseException(errout.str());
             // RDKit✔️✔️:   }
-            // RDKit✔️✔️:   sgroup.setProp<unsigned int>("COMPNO", compno);
+            // RDKit✔️✔️:       sgroup.setProp<unsigned int>("COMPNO", compno);
             let number = cursor.read_unsigned().ok_or_else(|| {
                 SdfReadError::Parse(format!("Invalid COMPNO label found on line {line_number}"))
             })?;
@@ -1168,12 +1361,12 @@ fn parse_non_array_label(
         }
         "FIELDDATA" => {
             // BEGIN RDKIT CPP FUNCTION ParseV3000ParseLabel (DAT fields)
-            // RDKit❗✔️: } else if (label == "FIELDDATA") {
-            // RDKit❗✔️:   auto strValue = ParseV3000StringPropLabel(lineStream);
+            // RDKit❗✔️:     } else if (label == "FIELDDATA") {
+            // RDKit❗✔️:       auto strValue = ParseV3000StringPropLabel(lineStream);
             // RDKit❗✔️:   if (strictParsing) {
-            // RDKit❗✔️:     strValue = strValue.substr(0, 200);
+            // RDKit❗✔️:         strValue = strValue.substr(0, 200);
             // RDKit❗✔️:   }
-            // RDKit❗✔️:   dataFields.push_back(strValue);
+            // RDKit❗✔️:       dataFields.push_back(strValue);
             let parsed = parse_string_property(cursor);
             let parsed = if strict_parsing && parsed.len() > 200 {
                 parsed
@@ -1225,31 +1418,31 @@ fn parse_non_array_label(
         "LABEL" => group.set_label(parse_string_property(cursor)),
         // BEGIN RDKIT CPP FUNCTION ParseV3000ParseLabel (string-property tail)
         // RDKit✔️✔️: } else {
-        // RDKit✔️✔️:   // Parse string props
-        // RDKit✔️✔️:   auto strValue = ParseV3000StringPropLabel(lineStream);
+        // RDKit✔️✔️:       // Parse string props
+        // RDKit✔️✔️:       auto strValue = ParseV3000StringPropLabel(lineStream);
         // RDKit✔️✔️:
-        // RDKit✔️✔️:   if (label == "SUBTYPE" &&
-        // RDKit✔️✔️:       !SubstanceGroupChecks::isValidSubType(strValue)) {
+        // RDKit✔️✔️:       if (label == "SUBTYPE" &&
+        // RDKit✔️✔️:           !SubstanceGroupChecks::isValidSubType(strValue)) {
         // RDKit✔️✔️:     std::ostringstream errout;
-        // RDKit✔️✔️:     errout << "Unsupported SGroup subtype '" << strValue << "' on line "
+        // RDKit✔️✔️:         errout << "Unsupported SGroup subtype '" << strValue << "' on line "
         // RDKit✔️✔️:            << line;
         // RDKit✔️✔️:     throw FileParseException(errout.str());
-        // RDKit✔️✔️:   } else if (label == "CONNECT" &&
-        // RDKit✔️✔️:              !SubstanceGroupChecks::isValidConnectType(strValue)) {
+        // RDKit✔️✔️:       } else if (label == "CONNECT" &&
+        // RDKit✔️✔️:                  !SubstanceGroupChecks::isValidConnectType(strValue)) {
         // RDKit✔️✔️:     std::ostringstream errout;
-        // RDKit✔️✔️:     errout << "Unsupported SGroup connection type '" << strValue
-        // RDKit✔️✔️:            << "' on line " << line;
+        // RDKit✔️✔️:         errout << "Unsupported SGroup connection type '" << strValue
+        // RDKit✔️✔️:              << "' on line " << line;
         // RDKit✔️✔️:     throw FileParseException(errout.str());
-        // RDKit✔️✔️:   } else if (label == "CLASS" &&
-        // RDKit✔️✔️:              !SubstanceGroupChecks::isValidClass(strValue)) {
+        // RDKit✔️✔️:       } else if (label == "CLASS" &&
+        // RDKit✔️✔️:                  !SubstanceGroupChecks::isValidClass(strValue)) {
         // RDKit✔️✔️:     std::ostringstream errout;
-        // RDKit✔️✔️:     errout << "Unsupported SGroup template class '" << strValue
-        // RDKit✔️✔️:            << "' on line " << line;
+        // RDKit✔️✔️:         errout << "Unsupported SGroup template class '" << strValue
+        // RDKit✔️✔️:              << "' on line " << line;
         // RDKit✔️✔️:     throw FileParseException(errout.str());
         // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   // NATREPLACE is not validated nor used
+        // RDKit✔️✔️:       // NATREPLACE is not validated nor used
         // RDKit✔️✔️:
-        // RDKit✔️✔️:   sgroup.setProp(label, strValue);
+        // RDKit✔️✔️:       sgroup.setProp(label, strValue);
         // RDKit✔️✔️: }
         "FIELDNAME" => group.data_mut().field_name = Some(parse_string_property(cursor)),
         "FIELDTYPE" => group.data_mut().field_type = Some(parse_string_property(cursor)),
@@ -1283,26 +1476,26 @@ fn skip_overridden_default_value(
     line_number: usize,
 ) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000SGroupsBlock (overridden default)
-    // RDKit✔️✔️: spacer = lineStream.peek();
-    // RDKit✔️✔️: if (spacer == ' ') {
+    // RDKit✔️✔️:         spacer = lineStream.peek();
+    // RDKit✔️✔️:         if (spacer == ' ') {
     // RDKit✔️✔️:   std::ostringstream errout;
-    // RDKit✔️✔️:   errout << "Found unexpected whitespace at DEFAULT label " << label;
+    // RDKit✔️✔️:           errout << "Found unexpected whitespace at DEFAULT label " << label;
     // RDKit✔️✔️:   if (strictParsing) {
     // RDKit✔️✔️:     throw FileParseException(errout.str());
     // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
     // RDKit✔️✔️:     sgroup.setIsValid(false);
     // RDKit✔️✔️:     continue;
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️: } else if (spacer == '(') {
-    // RDKit✔️✔️:   std::getline(lineStream, label, ')');
-    // RDKit✔️✔️:   lineStream.get(spacer);
-    // RDKit✔️✔️: } else if (spacer == '"') {
-    // RDKit✔️✔️:   lineStream.get(spacer);
-    // RDKit✔️✔️:   std::getline(lineStream, label, '"');
+    // RDKit✔️✔️:         } else if (spacer == '(') {
+    // RDKit✔️✔️:           std::getline(lineStream, label, ')');
+    // RDKit✔️✔️:       lineStream.get(spacer);
+    // RDKit✔️✔️:         } else if (spacer == '"') {
+    // RDKit✔️✔️:       lineStream.get(spacer);
+    // RDKit✔️✔️:           std::getline(lineStream, label, '"');
     // RDKit✔️✔️: } else {
-    // RDKit✔️✔️:   std::getline(lineStream, label, ' ');
-    // RDKit✔️✔️:   lineStream.putback(' ');
+    // RDKit✔️✔️:           std::getline(lineStream, label, ' ');
+    // RDKit✔️✔️:           lineStream.putback(' ');
     // RDKit✔️✔️: }
     match cursor.peek() {
         Some(b' ') => {
@@ -1349,25 +1542,25 @@ fn apply_labels(
     strict_parsing: bool,
 ) -> Result<bool, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000SGroupsBlock (label loop)
-    // RDKit❗✔️: while (sgroup.getIsValid() && !lineStream.eof() && !lineStream.fail()) {
-    // RDKit❗✔️:   lineStream.get(spacer);
-    // RDKit❗✔️:   if (lineStream.gcount() == 0) {
+    // RDKit❗✔️:     while (sgroup.getIsValid() && !lineStream.eof() && !lineStream.fail()) {
+    // RDKit❗✔️:       lineStream.get(spacer);
+    // RDKit❗✔️:       if (lineStream.gcount() == 0) {
     // RDKit❗✔️:     continue;
-    // RDKit❗✔️:   } else if (spacer != ' ') {
+    // RDKit❗✔️:       } else if (spacer != ' ') {
     // RDKit❗✔️:     if (strictParsing) {
     // RDKit❗✔️:       throw FileParseException(errout.str());
     // RDKit❗✔️:     } else {
     // RDKit❗✔️:       BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
-    // RDKit❗✔️:       sgroup.setIsValid(false);
+    // RDKit❗✔️:     sgroup.setIsValid(false);
     // RDKit❗✔️:       continue;
     // RDKit❗✔️:     }
     // RDKit❗✔️:   }
-    // RDKit❗✔️:   ParseV3000ParseLabel(label, lineStream, dataFields, line, sgroup,
-    // RDKit❗✔️:                        nSgroups, mol, strictParsing);
+    // RDKit❗✔️:       ParseV3000ParseLabel(label, lineStream, dataFields, line, sgroup,
+    // RDKit❗✔️:                            nSgroups, mol, strictParsing);
     // RDKit❗✔️: }
-    // RDKit❗✔️: } catch (const std::exception &e) {
-    // RDKit❗✔️:   SGroupWarnOrThrow<>(strictParsing, e.what());
-    // RDKit❗✔️:   sgroup.setIsValid(false);
+    // RDKit❗✔️:   } catch (const std::exception &e) {
+    // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, e.what());
+    // RDKit❗✔️:     sgroup.setIsValid(false);
     // RDKit❗✔️:   return;
     // RDKit❗✔️: }
     let mut cursor = SGroupLineCursor::new(text);
@@ -1434,7 +1627,7 @@ fn apply_labels(
 }
 
 pub(super) fn parse_v3000_sgroup_block(
-    lines: &[&str],
+    lines: &crate::sdf::MolBlockLines<'_>,
     cursor: &mut usize,
     expected_count: usize,
     atoms: &BTreeMap<u32, AtomId>,
@@ -1443,53 +1636,53 @@ pub(super) fn parse_v3000_sgroup_block(
     strict_parsing: bool,
 ) -> Result<Vec<SubstanceGroup>, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseV3000SGroupsBlock
-    // RDKit❗✔️: // SGroups may be written in unsorted ID order, according to spec, so we will
-    // RDKit❗✔️: // temporarily store them in a map before adding them to the mol
-    // RDKit❗✔️: IDX_TO_SGROUP_MAP sGroupMap;
-    // RDKit❗✔️: auto tempStr = FileParserUtils::getV3000Line(inStream, line);
-    // RDKit❗✔️: if (tempStr.substr(0, 7) == "DEFAULT" && tempStr.length() > 8) {
-    // RDKit❗✔️:   defaultString = tempStr.substr(7);
-    // RDKit❗✔️:   tempStr = FileParserUtils::getV3000Line(inStream, line);
+    // RDKit❗✔️:   // SGroups may be written in unsorted ID order, according to spec, so we will
+    // RDKit❗✔️:   // temporarily store them in a map before adding them to the mol
+    // RDKit❗✔️:   IDX_TO_SGROUP_MAP sGroupMap;
+    // RDKit❗✔️:   auto tempStr = FileParserUtils::getV3000Line(inStream, line);
+    // RDKit❗✔️:   if (tempStr.substr(0, 7) == "DEFAULT" && tempStr.length() > 8) {
+    // RDKit❗✔️:     defaultString = tempStr.substr(7);
+    // RDKit❗✔️:     tempStr = FileParserUtils::getV3000Line(inStream, line);
     // RDKit❗✔️: }
-    // RDKit❗✔️: for (unsigned int si = 0; si < nSgroups; ++si) {
-    // RDKit❗✔️:   lineStream >> sequenceId;
-    // RDKit❗✔️:   lineStream >> type;
-    // RDKit❗✔️:   lineStream >> externalId;
-    // RDKit❗✔️:   if (strictParsing && !SubstanceGroupChecks::isValidType(type)) {
-    // RDKit❗✔️:     throw MolFileUnhandledFeatureException(errout.str());
+    // RDKit❗✔️:   for (unsigned int si = 0; si < nSgroups; ++si) {
+    // RDKit❗✔️:     lineStream >> sequenceId;
+    // RDKit❗✔️:     lineStream >> type;
+    // RDKit❗✔️:     lineStream >> externalId;
+    // RDKit❗✔️:     if (strictParsing && !SubstanceGroupChecks::isValidType(type)) {
+    // RDKit❗✔️:       throw MolFileUnhandledFeatureException(errout.str());
     // RDKit❗✔️:   }
-    // RDKit❗✔️:   SubstanceGroup sgroup(mol, type);
-    // RDKit❗✔️:   sgroup.setProp<unsigned int>("index", sequenceId);
-    // RDKit❗✔️:   if (externalId > 0) {
-    // RDKit❗✔️:     sgroup.setProp<unsigned int>("ID", externalId);
+    // RDKit❗✔️:     SubstanceGroup sgroup(mol, type);
+    // RDKit❗✔️:       sgroup.setProp<unsigned int>("index", sequenceId);
+    // RDKit❗✔️:     if (externalId > 0) {
+    // RDKit❗✔️:       sgroup.setProp<unsigned int>("ID", externalId);
     // RDKit❗✔️:   }
-    // RDKit❗✔️:   ParseV3000ParseLabel(label, lineStream, dataFields, line, sgroup,
-    // RDKit❗✔️:                        nSgroups, mol, strictParsing);
-    // RDKit❗✔️:   // Process defaults
-    // RDKit❗✔️:   if (std::find(parsedLabels.begin(), parsedLabels.end(), label) ==
-    // RDKit❗✔️:       parsedLabels.end()) {
-    // RDKit❗✔️:     ParseV3000ParseLabel(label, lineStream, dataFields, defaultLineNum,
-    // RDKit❗✔️:                          sgroup, nSgroups, mol, strictParsing);
+    // RDKit❗✔️:       ParseV3000ParseLabel(label, lineStream, dataFields, line, sgroup,
+    // RDKit❗✔️:                            nSgroups, mol, strictParsing);
+    // RDKit❗✔️:     // Process defaults
+    // RDKit❗✔️:       if (std::find(parsedLabels.begin(), parsedLabels.end(), label) ==
+    // RDKit❗✔️:           parsedLabels.end()) {
+    // RDKit❗✔️:         ParseV3000ParseLabel(label, lineStream, dataFields, defaultLineNum,
+    // RDKit❗✔️:                              sgroup, nSgroups, mol, strictParsing);
     // RDKit❗✔️:   }
-    // RDKit❗✔️:   sGroupMap.emplace(sequenceId, sgroup);
-    // RDKit❗✔️:   tempStr = FileParserUtils::getV3000Line(inStream, line);
+    // RDKit❗✔️:       sGroupMap.emplace(sequenceId, sgroup);
+    // RDKit❗✔️:     tempStr = FileParserUtils::getV3000Line(inStream, line);
     // RDKit❗✔️: }
-    // RDKit❗✔️: if (sGroupMap.size() != nSgroups) {
+    // RDKit❗✔️:   if (sGroupMap.size() != nSgroups) {
     // RDKit❗✔️:   std::ostringstream errout;
-    // RDKit❗✔️:   errout << "Found " << sGroupMap.size() << " SGroups when " << nSgroups
-    // RDKit❗✔️:          << " were expected." << std::endl;
+    // RDKit❗✔️:     errout << "Found " << sGroupMap.size() << " SGroups when " << nSgroups
+    // RDKit❗✔️:            << " were expected." << std::endl;
     // RDKit❗✔️:   if (strictParsing) {
     // RDKit❗✔️:     throw FileParseException(errout.str());
     // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
-    // RDKit❗✔️: for (const auto &sg : sGroupMap) {
-    // RDKit❗✔️:   if (sg.second.getIsValid()) {
-    // RDKit❗✔️:     addSubstanceGroup(*mol, sg.second);
+    // RDKit❗✔️:   for (const auto &sg : sGroupMap) {
+    // RDKit❗✔️:     if (sg.second.getIsValid()) {
+    // RDKit❗✔️:       addSubstanceGroup(*mol, sg.second);
     // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     BOOST_LOG(rdWarningLog) << "SGroup " << sg.first
-    // RDKit❗✔️:                             << " is invalid and will be ignored" << std::endl;
+    // RDKit❗✔️:       BOOST_LOG(rdWarningLog) << "SGroup " << sg.first
+    // RDKit❗✔️:                               << " is invalid and will be ignored" << std::endl;
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
     let (mut current, mut line_number) = get_v3000_line(lines, cursor)?;
@@ -1583,13 +1776,13 @@ pub(super) fn parse_v3000_sgroup_block(
     groups.retain(|sequence, _| !invalid_sequences.contains(sequence));
 
     // BEGIN RDKIT CPP FUNCTION ParseV3000SGroupsBlock (installation)
-    // RDKit❗✔️: // SGroups successfully parsed, now add them to the molecule
-    // RDKit❗✔️: for (const auto &sg : sGroupMap) {
-    // RDKit❗✔️:   if (sg.second.getIsValid()) {
-    // RDKit❗✔️:     addSubstanceGroup(*mol, sg.second);
+    // RDKit❗✔️:   // SGroups successfully parsed, now add them to the molecule
+    // RDKit❗✔️:   for (const auto &sg : sGroupMap) {
+    // RDKit❗✔️:     if (sg.second.getIsValid()) {
+    // RDKit❗✔️:       addSubstanceGroup(*mol, sg.second);
     // RDKit❗✔️:   } else {
-    // RDKit❗✔️:     BOOST_LOG(rdWarningLog) << "SGroup " << sg.first
-    // RDKit❗✔️:                             << " is invalid and will be ignored" << std::endl;
+    // RDKit❗✔️:       BOOST_LOG(rdWarningLog) << "SGroup " << sg.first
+    // RDKit❗✔️:                               << " is invalid and will be ignored" << std::endl;
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
     // RDKit stores PARENT as an unchecked unsigned property. The canonical
@@ -1675,8 +1868,8 @@ fn parse_stereo_collection_line(
     atom_count: usize,
 ) -> Result<Option<StereoGroup>, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION parseEnhancedStereo (line recognition)
-    // RDKit✔️✔️: const regex stereo_label(
-    // RDKit✔️✔️:     R"regex(MDLV30/STE(...)([0-9]*) +ATOMS=\(([0-9]+) +(.*)\) *)regex");
+    // RDKit✔️✔️:   const regex stereo_label(
+    // RDKit✔️✔️:       R"regex(MDLV30/STE(...)([0-9]*) +ATOMS=\(([0-9]+) +(.*)\) *)regex");
     // Recognition and the matched tag/index branches are reproduced below;
     // the caller owns duplicate-ABS strictness and collection installation.
     // Marker review: behavior verified by the closed collection regressions
@@ -1743,8 +1936,8 @@ fn parse_stereo_collection_line(
     // RDKit✔️✔️:         grouptype = RDKit::StereoGroupType::STEREO_AND;
     // RDKit✔️✔️:         groupid = FileParserUtils::toUnsigned(match[2], true);
     // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         errout << "Unrecognized stereogroup type : '" << tempStr
-    // RDKit✔️✔️:                << "' on line" << line;
+    // RDKit✔️✔️:         errout << "Unrecognized stereogroup type : '" << tempStr << "' on line"
+    // RDKit✔️✔️:                << line;
     // RDKit✔️✔️:         throw FileParseException(errout.str());
     // RDKit✔️✔️:       }
     let kind = match tag {
@@ -1852,8 +2045,8 @@ fn parse_stereo_collection_line(
             Ok(AtomId::new(row))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    // RDKit✔️✔️: groups.emplace_back(grouptype, std::move(atoms), std::move(newBonds),
-    // RDKit✔️✔️:                     groupid);
+    // RDKit✔️✔️:       groups.emplace_back(grouptype, std::move(atoms), std::move(newBonds),
+    // RDKit✔️✔️:                           groupid);
     // This constructor argument is the source/read ID; the independent
     // write ID remains zero until an explicit source forwarding operation.
     Ok(Some(
@@ -1862,7 +2055,7 @@ fn parse_stereo_collection_line(
 }
 
 pub(super) fn parse_v3000_collection_block(
-    lines: &[&str],
+    lines: &crate::sdf::MolBlockLines<'_>,
     cursor: &mut usize,
     atom_count: usize,
     strict_parsing: bool,
@@ -2020,11 +2213,11 @@ fn parse_v2000_int_field(
     is_counter: bool,
 ) -> Result<u32, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseSGroupIntField
-    // RDKit❗✔️: ++pos;  // Account for separation space
-    // RDKit❗✔️: size_t len = 3 - isFieldCounter;  // field counters are smaller
-    // RDKit❗✔️: fieldValue = FileParserUtils::toInt(text.substr(pos, len));
-    // RDKit❗✔️: pos += len;
-    // RDKit❗✔️: return fieldValue;
+    // RDKit❗✔️:   ++pos;  // Account for separation space
+    // RDKit❗✔️:   size_t len = 3 - isFieldCounter;  // field counters are smaller
+    // RDKit❗✔️:     fieldValue = FileParserUtils::toInt(text.substr(pos, len));
+    // RDKit❗✔️:   pos += len;
+    // RDKit❗✔️:   return fieldValue;
     *position += 1;
     let length = 3 - usize::from(is_counter);
     if *position >= line.len() {
@@ -2049,10 +2242,10 @@ fn parse_v2000_double_field(
     position: &mut usize,
 ) -> Result<f64, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseSGroupDoubleField
-    // RDKit❗✔️: size_t len = 10;
-    // RDKit❗✔️: fieldValue = FileParserUtils::toDouble(text.substr(pos, len));
-    // RDKit❗✔️: pos += len;
-    // RDKit❗✔️: return fieldValue;
+    // RDKit❗✔️:   size_t len = 10;
+    // RDKit❗✔️:     fieldValue = FileParserUtils::toDouble(text.substr(pos, len));
+    // RDKit❗✔️:   pos += len;
+    // RDKit❗✔️:   return fieldValue;
     let length = 10;
     if *position >= line.len() {
         return Err(SdfReadError::Parse(format!(
@@ -2073,11 +2266,11 @@ fn parse_v2000_double_field(
 impl V2000SgroupState {
     fn group_mut(&mut self, sequence: u32) -> Option<&mut SubstanceGroup> {
         // BEGIN RDKIT CPP FUNCTION FindSgIdx
-        // RDKit❗✔️: auto sgIt = sGroupMap.find(sgIdx);
-        // RDKit❗✔️: if (sgIt == sGroupMap.end()) {
+        // RDKit❗✔️:   auto sgIt = sGroupMap.find(sgIdx);
+        // RDKit❗✔️:   if (sgIt == sGroupMap.end()) {
         // RDKit❗✔️:   return nullptr;
         // RDKit❗✔️: }
-        // RDKit❗✔️: return &sgIt->second;
+        // RDKit❗✔️:   return &sgIt->second;
         self.groups.get_mut(&sequence)
         // END RDKIT CPP FUNCTION
     }
@@ -2088,9 +2281,9 @@ impl V2000SgroupState {
 
     fn recoverable<T>(&self, result: Result<T, SdfReadError>) -> Result<Option<T>, SdfReadError> {
         // BEGIN RDKIT CPP FUNCTION ParseSGroupIntField (policy overload)
-        // RDKit❗✔️: try {
-        // RDKit❗✔️:   res = ParseSGroupIntField(text, line, pos, isFieldCounter);
-        // RDKit❗✔️: } catch (const std::exception &e) {
+        // RDKit❗✔️:     try {
+        // RDKit❗✔️:     res = ParseSGroupIntField(text, line, pos, isFieldCounter);
+        // RDKit❗✔️:   } catch (const std::exception &e) {
         // RDKit❗✔️:   if (strictParsing) {
         // RDKit❗✔️:     throw;
         // RDKit❗✔️:   } else {
@@ -2112,8 +2305,8 @@ impl V2000SgroupState {
         error: SdfReadError,
     ) -> Result<(), SdfReadError> {
         // BEGIN RDKIT CPP FUNCTION SGroupWarnOrThrow
-        // RDKit❗✔️: if (strictParsing) {
-        // RDKit❗✔️:   throw Exc(msg);
+        // RDKit❗✔️:     if (strictParsing) {
+        // RDKit❗✔️:     throw Exc(msg);
         // RDKit❗✔️: } else {
         // RDKit❗✔️:   BOOST_LOG(rdWarningLog) << msg << std::endl;
         // RDKit❗✔️: }
@@ -2134,44 +2327,44 @@ impl V2000SgroupState {
         bond_endpoints: &[(AtomId, AtomId)],
     ) -> Result<(), SdfReadError> {
         // BEGIN RDKIT CPP FUNCTION ParseMolBlockProperties (SGroup dispatch)
-        // RDKit❗✔️: } else if (lineBeg == "M  STY") {
-        // RDKit❗✔️:   ParseSGroupV2000STYLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SST") {
-        // RDKit❗✔️:   ParseSGroupV2000SSTLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SLB") {
-        // RDKit❗✔️:   ParseSGroupV2000SLBLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SCN") {
-        // RDKit❗✔️:   ParseSGroupV2000SCNLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SDS") {
-        // RDKit❗✔️:   ParseSGroupV2000SDSLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SAL" || lineBeg == "M  SBL" ||
-        // RDKit❗✔️:            lineBeg == "M  SPA") {
-        // RDKit❗✔️:   ParseSGroupV2000VectorDataLine(sGroupMap, mol, tempStr, line,
-        // RDKit❗✔️:                                  strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SMT") {
-        // RDKit❗✔️:   ParseSGroupV2000SMTLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SDI") {
-        // RDKit❗✔️:   ParseSGroupV2000SDILine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SBV") {
-        // RDKit❗✔️:   ParseSGroupV2000SBVLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SDT") {
-        // RDKit❗✔️:   ParseSGroupV2000SDTLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SDD") {
-        // RDKit❗✔️:   ParseSGroupV2000SDDLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SCD" || lineBeg == "M  SED") {
-        // RDKit❗✔️:   ParseSGroupV2000SCDSEDLine(sGroupMap, dataFieldsMap, mol, tempStr, line,
-        // RDKit❗✔️:                              strictParsing, SCDcounter, lastDataSGroup,
-        // RDKit❗✔️:                              currentDataField);
-        // RDKit❗✔️: } else if (lineBeg == "M  SPL") {
-        // RDKit❗✔️:   ParseSGroupV2000SPLLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SNC") {
-        // RDKit❗✔️:   ParseSGroupV2000SNCLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SAP") {
-        // RDKit❗✔️:   ParseSGroupV2000SAPLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SCL") {
-        // RDKit❗✔️:   ParseSGroupV2000SCLLine(sGroupMap, mol, tempStr, line, strictParsing);
-        // RDKit❗✔️: } else if (lineBeg == "M  SBT") {
-        // RDKit❗✔️:   ParseSGroupV2000SBTLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  STY") {
+        // RDKit❗✔️:       ParseSGroupV2000STYLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SST") {
+        // RDKit❗✔️:       ParseSGroupV2000SSTLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SLB") {
+        // RDKit❗✔️:       ParseSGroupV2000SLBLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SCN") {
+        // RDKit❗✔️:       ParseSGroupV2000SCNLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SDS") {
+        // RDKit❗✔️:       ParseSGroupV2000SDSLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SAL" || lineBeg == "M  SBL" ||
+        // RDKit❗✔️:                lineBeg == "M  SPA") {
+        // RDKit❗✔️:       ParseSGroupV2000VectorDataLine(sGroupMap, mol, tempStr, line,
+        // RDKit❗✔️:                                      strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SMT") {
+        // RDKit❗✔️:       ParseSGroupV2000SMTLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SDI") {
+        // RDKit❗✔️:       ParseSGroupV2000SDILine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SBV") {
+        // RDKit❗✔️:       ParseSGroupV2000SBVLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SDT") {
+        // RDKit❗✔️:       ParseSGroupV2000SDTLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SDD") {
+        // RDKit❗✔️:       ParseSGroupV2000SDDLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SCD" || lineBeg == "M  SED") {
+        // RDKit❗✔️:       ParseSGroupV2000SCDSEDLine(sGroupMap, dataFieldsMap, mol, tempStr, line,
+        // RDKit❗✔️:                                  strictParsing, SCDcounter, lastDataSGroup,
+        // RDKit❗✔️:                                  currentDataField);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SPL") {
+        // RDKit❗✔️:       ParseSGroupV2000SPLLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SNC") {
+        // RDKit❗✔️:       ParseSGroupV2000SNCLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SAP") {
+        // RDKit❗✔️:       ParseSGroupV2000SAPLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SCL") {
+        // RDKit❗✔️:       ParseSGroupV2000SCLLine(sGroupMap, mol, tempStr, line, strictParsing);
+        // RDKit❗✔️:     } else if (lineBeg == "M  SBT") {
+        // RDKit❗✔️:       ParseSGroupV2000SBTLine(sGroupMap, mol, tempStr, line, strictParsing);
         match rdkit_substr(line, 0, 6) {
             "M  STY" => self.parse_sty(line, line_number),
             "M  SST" => self.parse_sst(line, line_number),
@@ -2201,16 +2394,16 @@ impl V2000SgroupState {
 
     fn parse_sty(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
         // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000STYLine
-        // RDKit❗✔️: unsigned int pos = 6;
-        // RDKit❗✔️: unsigned int nent =
-        // RDKit❗✔️:     ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
-        // RDKit❗✔️: unsigned int sequenceId =
-        // RDKit❗✔️:     ParseSGroupIntField(ok, strictParsing, text, line, pos);
-        // RDKit❗✔️: std::string typ = text.substr(pos + 1, 3);
-        // RDKit❗✔️: if (SubstanceGroupChecks::isValidType(typ)) {
-        // RDKit❗✔️:   auto sgroup = SubstanceGroup(mol, typ);
-        // RDKit❗✔️:   sgroup.setProp<unsigned int>("index", sequenceId);
-        // RDKit❗✔️:   sGroupMap.emplace(sequenceId, sgroup);
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:     unsigned int sequenceId =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     std::string typ = text.substr(pos + 1, 3);
+        // RDKit❗✔️:     if (SubstanceGroupChecks::isValidType(typ)) {
+        // RDKit❗✔️:       auto sgroup = SubstanceGroup(mol, typ);
+        // RDKit❗✔️:       sgroup.setProp<unsigned int>("index", sequenceId);
+        // RDKit❗✔️:       sGroupMap.emplace(sequenceId, sgroup);
         // RDKit❗✔️: }
         let mut position = 6;
         let Some(count) = self.recoverable(parse_v2000_int_field(
@@ -2266,6 +2459,63 @@ impl V2000SgroupState {
     }
 
     fn parse_sst(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SSTLine
+        // RDKit❗✔️: void ParseSGroupV2000SSTLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int &line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SST", "bad SST line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (unsigned int ie = 0; ie < nent; ++ie) {
+        // RDKit❗✔️:     if (text.size() < pos + 8) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "SGroup SST line too short: '" << text << "' on line " << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     unsigned int sgIdx =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:     if (!sgroup) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     };
+        // RDKit❗✔️:
+        // RDKit❗✔️:     std::string subType = text.substr(++pos, 3);
+        // RDKit❗✔️:
+        // RDKit❗✔️:     if (!SubstanceGroupChecks::isValidSubType(subType)) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "Unsupported SGroup subtype '" << subType << "' on line "
+        // RDKit❗✔️:              << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     sgroup->setProp("SUBTYPE", subType);
+        // RDKit❗✔️:     pos += 3;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let mut position = 6;
         let Some(count) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2317,6 +2567,66 @@ impl V2000SgroupState {
     }
 
     fn parse_slb(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SLBLine
+        // RDKit❗✔️: void ParseSGroupV2000SLBLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SLB", "bad SLB line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (unsigned int ie = 0; ie < nent; ++ie) {
+        // RDKit❗✔️:     if (text.size() < pos + 8) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "SGroup SLB line too short: '" << text << "' on line " << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     unsigned int sgIdx =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:     if (!sgroup) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     unsigned int id = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (id != 0 && !SubstanceGroupChecks::isSubstanceGroupIdFree(*mol, id)) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "SGroup ID '" << id
+        // RDKit❗✔️:              << "' is assigned to more than one SGroup, on line " << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     sgroup->setProp<unsigned int>("ID", id);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+        // This MolBlock-only owner starts with no committed SGroups; source
+        // isSubstanceGroupIdFree scans only mol groups, not sGroupMap staging.
+
         let mut position = 6;
         let Some(count) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2368,6 +2678,56 @@ impl V2000SgroupState {
     }
 
     fn parse_scn(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // RDKit✔️✔️: void ParseSGroupV2000SCNLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit✔️✔️:                              const std::string &text, unsigned int line,
+        // RDKit✔️✔️:                              bool strictParsing) {
+        // RDKit✔️✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit✔️✔️:   PRECONDITION(text.substr(0, 6) == "M  SCN", "bad SCN line");
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   unsigned int pos = 6;
+        // RDKit✔️✔️:   bool ok;
+        // RDKit✔️✔️:   unsigned int nent =
+        // RDKit✔️✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit✔️✔️:   if (!ok) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   for (unsigned int ie = 0; ie < nent; ++ie) {
+        // RDKit✔️✔️:     if (text.size() < pos + 7) {
+        // RDKit✔️✔️:       std::ostringstream errout;
+        // RDKit✔️✔️:       errout << "SGroup SCN line too short: '" << text << "' on line " << line;
+        // RDKit✔️✔️:       errout << "\n needed: " << pos + 7 << " found: " << text.size();
+        // RDKit✔️✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit✔️✔️:       return;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     unsigned int sgIdx =
+        // RDKit✔️✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit✔️✔️:     if (!ok) {
+        // RDKit✔️✔️:       return;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:     SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit✔️✔️:     if (!sgroup) {
+        // RDKit✔️✔️:       return;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     std::string connect = text.substr(++pos, 2);
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     if (!SubstanceGroupChecks::isValidConnectType(connect)) {
+        // RDKit✔️✔️:       std::ostringstream errout;
+        // RDKit✔️✔️:       errout << "Unsupported SGroup connection type '" << connect
+        // RDKit✔️✔️:              << "' on line " << line;
+        // RDKit✔️✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit✔️✔️:       sgroup->setIsValid(false);
+        // RDKit✔️✔️:       return;
+        // RDKit✔️✔️:     }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:     sgroup->setProp("CONNECT", connect);
+        // RDKit✔️✔️:     pos += 3;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
+        // Source cursor advances one separator plus the final three bytes
+        // for every pair; splitting multiple entries adds no allocations.
         let mut position = 6;
         let Some(count) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2401,7 +2761,8 @@ impl V2000SgroupState {
             if self.group_mut_if_present(sequence).is_none() {
                 return Ok(());
             }
-            let text = rdkit_substr(line, position + 1, 2);
+            position += 1;
+            let text = rdkit_substr(line, position, 2);
             let Some(connection) = sgroup_connection_from_rdkit(text) else {
                 return self.invalidate_or_throw(
                     sequence,
@@ -2419,6 +2780,50 @@ impl V2000SgroupState {
     }
 
     fn parse_sds(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SDSLine
+        // RDKit❗✔️: void ParseSGroupV2000SDSLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 10) == "M  SDS EXP", "bad SDS line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 10;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (unsigned int ie = 0; ie < nent; ++ie) {
+        // RDKit❗✔️:     if (text.size() < pos + 4) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "SGroup SDS line too short: '" << text << "' on line " << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     unsigned int sgIdx =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:     if (!sgroup) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     sgroup->setProp("ESTATE", "E");
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         if !line.starts_with("M  SDS EXP") {
             return Err(SdfReadError::Parse(format!(
                 "bad SDS line on line {line_number}"
@@ -2470,31 +2875,31 @@ impl V2000SgroupState {
         bond_count: usize,
     ) -> Result<(), SdfReadError> {
         // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000VectorDataLine
-        // RDKit❗✔️: if (typ == "SAL") {
-        // RDKit❗✔️:   sGroupAddIndexedElement = &SubstanceGroup::addAtomWithBookmark;
-        // RDKit❗✔️: } else if (typ == "SBL") {
-        // RDKit❗✔️:   sGroupAddIndexedElement = &SubstanceGroup::addBondWithBookmark;
-        // RDKit❗✔️: } else if (typ == "SPA") {
-        // RDKit❗✔️:   sGroupAddIndexedElement = &SubstanceGroup::addParentAtomWithBookmark;
+        // RDKit❗✔️:   if (typ == "SAL") {
+        // RDKit❗✔️:     sGroupAddIndexedElement = &SubstanceGroup::addAtomWithBookmark;
+        // RDKit❗✔️:   } else if (typ == "SBL") {
+        // RDKit❗✔️:     sGroupAddIndexedElement = &SubstanceGroup::addBondWithBookmark;
+        // RDKit❗✔️:   } else if (typ == "SPA") {
+        // RDKit❗✔️:     sGroupAddIndexedElement = &SubstanceGroup::addParentAtomWithBookmark;
         // RDKit❗✔️: }
-        // RDKit❗✔️: unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
-        // RDKit❗✔️: unsigned int nent =
-        // RDKit❗✔️:     ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
-        // RDKit❗✔️: if (!ok) {
-        // RDKit❗✔️:   sgroup->setIsValid(false);
+        // RDKit❗✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:       if (!ok) {
+        // RDKit❗✔️:     sgroup->setIsValid(false);
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: if (text.size() < pos + 4) {
-        // RDKit❗✔️:   SGroupWarnOrThrow<>(strictParsing, errout.str());
-        // RDKit❗✔️:   sgroup->setIsValid(false);
+        // RDKit❗✔️:     if (text.size() < pos + 4) {
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:     sgroup->setIsValid(false);
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: unsigned int nbr = ParseSGroupIntField(ok, strictParsing, text, line, pos);
-        // RDKit❗✔️: if (!ok) {
-        // RDKit❗✔️:   sgroup->setIsValid(false);
+        // RDKit❗✔️:     unsigned int nbr = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:       if (!ok) {
+        // RDKit❗✔️:     sgroup->setIsValid(false);
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: (sgroup->*sGroupAddIndexedElement)(nbr);
+        // RDKit❗✔️:       (sgroup->*sGroupAddIndexedElement)(nbr);
         let kind = rdkit_substr(line, 3, 3);
         let mut position = 6;
         let Some(sequence) = self.recoverable(parse_v2000_int_field(
@@ -2560,7 +2965,14 @@ impl V2000SgroupState {
             match kind {
                 "SAL" => group.push_atom(AtomId::new(index)),
                 "SBL" => group.push_bond(BondId::new(index)),
-                "SPA" => group.push_parent_atom(AtomId::new(index)),
+                "SPA" => {
+                    if !group.atoms().contains(&AtomId::new(index)) {
+                        return self.invalidate_or_throw(sequence, SdfReadError::Parse(format!(
+                            "Atom with bookmark {bookmark} is not a member of current SubstanceGroup on line {line_number}"
+                        )));
+                    }
+                    group.push_parent_atom(AtomId::new(index));
+                }
                 _ => unreachable!("dispatch limits V2000 vector tags"),
             }
         }
@@ -2569,6 +2981,52 @@ impl V2000SgroupState {
     }
 
     fn parse_smt(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SMTLine
+        // RDKit❗✔️: void ParseSGroupV2000SMTLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int &line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SMT", "bad SMT line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:   if (!sgroup) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   ++pos;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (pos >= text.length()) {
+        // RDKit❗✔️:     std::ostringstream errout;
+        // RDKit❗✔️:     errout << "SGroup line too short: '" << text << "' on line " << line;
+        // RDKit❗✔️:     SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:     sgroup->setIsValid(false);
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   std::string label = text.substr(pos, text.length() - pos);
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (sgroup->getProp<std::string>("TYPE") ==
+        // RDKit❗✔️:       "MUL") {  // Case of multiple groups
+        // RDKit❗✔️:     sgroup->setProp("MULT", label);
+        // RDKit❗✔️:
+        // RDKit❗✔️:   } else {  // Case of abbreviation groups, but we might not have seen a SCL
+        // RDKit❗✔️:             // line yet
+        // RDKit❗✔️:     sgroup->setProp("LABEL", label);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let mut position = 6;
         let Some(sequence) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2604,6 +3062,71 @@ impl V2000SgroupState {
     }
 
     fn parse_sdi(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SDILine
+        // RDKit❗✔️: void ParseSGroupV2000SDILine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SDI", "bad SDI line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:   if (!sgroup) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int nCoords =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     sgroup->setIsValid(false);
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   if (nCoords != 4) {
+        // RDKit❗✔️:     std::ostringstream errout;
+        // RDKit❗✔️:     errout << "Unexpected number of coordinates for SDI on line " << line;
+        // RDKit❗✔️:     SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:     sgroup->setIsValid(false);
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   SubstanceGroup::Bracket bracket;
+        // RDKit❗✔️:   for (unsigned int i = 0; i < 2; ++i) {
+        // RDKit❗✔️:     double x = ParseSGroupDoubleField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     double y = ParseSGroupDoubleField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     double z = 0.;
+        // RDKit❗✔️:     bracket[i] = RDGeom::Point3D(x, y, z);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   bracket[2] = RDGeom::Point3D(0., 0., 0.);
+        // RDKit❗✔️:   try {
+        // RDKit❗✔️:     sgroup->addBracket(bracket);
+        // RDKit❗✔️:   } catch (const std::exception &e) {
+        // RDKit❗✔️:     SGroupWarnOrThrow<>(strictParsing, e.what());
+        // RDKit❗✔️:     sgroup->setIsValid(false);
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let mut position = 6;
         let Some(sequence) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2666,37 +3189,37 @@ impl V2000SgroupState {
         bond_endpoints: &[(AtomId, AtomId)],
     ) -> Result<(), SdfReadError> {
         // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SBVLine
-        // RDKit❗✔️: unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
-        // RDKit❗✔️: if (!ok) {
+        // RDKit❗✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:       if (!ok) {
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
-        // RDKit❗✔️: if (!sgroup) {
+        // RDKit❗✔️:   SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:   if (!sgroup) {
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: unsigned int bondMark =
-        // RDKit❗✔️:     ParseSGroupIntField(ok, strictParsing, text, line, pos);
-        // RDKit❗✔️: if (!ok) {
-        // RDKit❗✔️:   sgroup->setIsValid(false);
+        // RDKit❗✔️:   unsigned int bondMark =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:       if (!ok) {
+        // RDKit❗✔️:     sgroup->setIsValid(false);
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: if (sgroup->getProp<std::string>("TYPE") == "SUP") {
-        // RDKit❗✔️:   vector.x = ParseSGroupDoubleField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:   if (sgroup->getProp<std::string>("TYPE") == "SUP") {
+        // RDKit❗✔️:     vector.x = ParseSGroupDoubleField(ok, strictParsing, text, line, pos);
         // RDKit❗✔️:   if (!ok) {
         // RDKit❗✔️:     sgroup->setIsValid(false);
         // RDKit❗✔️:     return;
         // RDKit❗✔️:   }
-        // RDKit❗✔️:   vector.y = ParseSGroupDoubleField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     vector.y = ParseSGroupDoubleField(ok, strictParsing, text, line, pos);
         // RDKit❗✔️:   if (!ok) {
         // RDKit❗✔️:     sgroup->setIsValid(false);
         // RDKit❗✔️:     return;
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
-        // RDKit❗✔️: try {
-        // RDKit❗✔️:   sgroup->addCState(bond->getIdx(), vector);
-        // RDKit❗✔️: } catch (const std::exception &e) {
-        // RDKit❗✔️:   SGroupWarnOrThrow<>(strictParsing, e.what());
-        // RDKit❗✔️:   sgroup->setIsValid(false);
+        // RDKit❗✔️:     try {
+        // RDKit❗✔️:     sgroup->addCState(bond->getIdx(), vector);
+        // RDKit❗✔️:   } catch (const std::exception &e) {
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, e.what());
+        // RDKit❗✔️:     sgroup->setIsValid(false);
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
         let mut position = 6;
@@ -2777,6 +3300,66 @@ impl V2000SgroupState {
     }
 
     fn parse_sdt(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // RDKit✔️✔️: void ParseSGroupV2000SDTLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit✔️✔️:                              const std::string &text, unsigned int line,
+        // RDKit✔️✔️:                              bool strictParsing) {
+        // RDKit✔️✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit✔️✔️:   PRECONDITION(text.substr(0, 6) == "M  SDT", "bad SDT line");
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   unsigned int pos = 6;
+        // RDKit✔️✔️:   bool ok;
+        // RDKit✔️✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit✔️✔️:   if (!ok) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit✔️✔️:   if (!sgroup) {
+        // RDKit✔️✔️:     return;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   std::string fieldName;
+        // RDKit✔️✔️:   std::string fieldType;
+        // RDKit✔️✔️:   std::string fieldInfo;
+        // RDKit✔️✔️:   std::string queryType;
+        // RDKit✔️✔️:   std::string queryOp;
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   try {
+        // RDKit✔️✔️:     fieldName = text.substr(++pos, 30);
+        // RDKit✔️✔️:     boost::trim_right(fieldName);
+        // RDKit✔️✔️:     pos += 30;
+        // RDKit✔️✔️:     fieldType = text.substr(pos, 2);
+        // RDKit✔️✔️:     boost::trim_right(fieldType);
+        // RDKit✔️✔️:     pos += 2;
+        // RDKit✔️✔️:     fieldInfo = text.substr(pos, 20);
+        // RDKit✔️✔️:     boost::trim_right(fieldInfo);
+        // RDKit✔️✔️:     pos += 20;
+        // RDKit✔️✔️:     queryType = text.substr(pos, 2);
+        // RDKit✔️✔️:     boost::trim_right(queryType);
+        // RDKit✔️✔️:     pos += 2;
+        // RDKit✔️✔️:     queryOp = text.substr(pos, text.length() - pos);
+        // RDKit✔️✔️:     boost::trim_right(queryOp);
+        // RDKit✔️✔️:   } catch (const std::out_of_range &) {
+        // RDKit✔️✔️:     // all kinds of wild things out there... this insulates us from them without
+        // RDKit✔️✔️:     // making the code super complicated
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:
+        // RDKit✔️✔️:   // only add entries for the remaining properties if they aren't blank
+        // RDKit✔️✔️:   if (!fieldName.empty()) {
+        // RDKit✔️✔️:     sgroup->setProp("FIELDNAME", fieldName);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (!fieldType.empty()) {
+        // RDKit✔️✔️:     sgroup->setProp("FIELDTYPE", fieldType);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (!fieldInfo.empty()) {
+        // RDKit✔️✔️:     sgroup->setProp("FIELDINFO", fieldInfo);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (!queryType.empty()) {
+        // RDKit✔️✔️:     sgroup->setProp("QUERYTYPE", queryType);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   if (!queryOp.empty()) {
+        // RDKit✔️✔️:     sgroup->setProp("QUERYOP", queryOp);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️: }
         let mut position = 6;
         let Some(sequence) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2806,15 +3389,58 @@ impl V2000SgroupState {
             .group_mut_if_present(sequence)
             .expect("presence checked before parsing SGroup data header")
             .data_mut();
-        data.field_name = (!field_name.is_empty()).then_some(field_name);
-        data.field_type = (!field_type.is_empty()).then_some(field_type);
-        data.field_info = (!field_info.is_empty()).then_some(field_info);
-        data.query_type = (!query_type.is_empty()).then_some(query_type);
-        data.query_op = (!query_op.is_empty()).then_some(query_op);
+        if !field_name.is_empty() {
+            data.field_name = Some(field_name);
+        }
+        if !field_type.is_empty() {
+            data.field_type = Some(field_type);
+        }
+        if !field_info.is_empty() {
+            data.field_info = Some(field_info);
+        }
+        if !query_type.is_empty() {
+            data.query_type = Some(query_type);
+        }
+        if !query_op.is_empty() {
+            data.query_op = Some(query_op);
+        }
         Ok(())
     }
 
     fn parse_sdd(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SDDLine
+        // RDKit❗✔️: void ParseSGroupV2000SDDLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SDD", "bad SDD line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:   if (!sgroup) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // Store the rest of the line as is.
+        // RDKit❗✔️:   ++pos;
+        // RDKit❗✔️:   if (pos < text.length()) {
+        // RDKit❗✔️:     sgroup->setProp("FIELDDISP", text.substr(pos, text.length() - pos));
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let mut position = 6;
         let Some(sequence) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2839,6 +3465,85 @@ impl V2000SgroupState {
     }
 
     fn parse_scd_sed(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SCDSEDLine
+        // RDKit❗✔️: void ParseSGroupV2000SCDSEDLine(IDX_TO_SGROUP_MAP &sGroupMap,
+        // RDKit❗✔️:                                 IDX_TO_STR_VECT_MAP &dataFieldsMap, RWMol *mol,
+        // RDKit❗✔️:                                 const std::string &text, unsigned int line,
+        // RDKit❗✔️:                                 bool strictParsing, unsigned int &counter,
+        // RDKit❗✔️:                                 unsigned int &lastDataSGroup,
+        // RDKit❗✔️:                                 std::ostringstream &currentDataField) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 3;
+        // RDKit❗✔️:   std::string type = text.substr(pos, 3);
+        // RDKit❗✔️:   pos += 3;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:   if (!sgroup) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (lastDataSGroup != 0 && lastDataSGroup != sgIdx) {
+        // RDKit❗✔️:     std::ostringstream errout;
+        // RDKit❗✔️:     errout << "Found a Data Field not matching the SGroup of the last Data "
+        // RDKit❗✔️:               "Field at line "
+        // RDKit❗✔️:            << line;
+        // RDKit❗✔️:     SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:     sgroup->setIsValid(false);
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   } else if (lastDataSGroup == 0 && type == "SCD") {
+        // RDKit❗✔️:     lastDataSGroup = sgIdx;
+        // RDKit❗✔️:   } else if (type == "SED") {
+        // RDKit❗✔️:     lastDataSGroup = 0;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // have we already seen an SDT line?
+        // RDKit❗✔️:   if (!sgroup->hasProp("FIELDNAME")) {
+        // RDKit❗✔️:     // one can read the docs and draw the conclusion that this is mandatory,
+        // RDKit❗✔️:     // but it's also possible to interpret them the other way, and we know
+        // RDKit❗✔️:     // that there are CTABs out there with empty fieldnames in SDT lines,
+        // RDKit❗✔️:     // so let's just issue a warning and accept it.
+        // RDKit❗✔️:     BOOST_LOG(rdWarningLog)
+        // RDKit❗✔️:         << "Found a SCD/SED line with missing/empty SDT specification at line "
+        // RDKit❗✔️:         << line << std::endl;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (strictParsing) {
+        // RDKit❗✔️:     if (type == "SCD" && counter > 2) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "Found too many consecutive SCD lines, (#" << (counter + 1)
+        // RDKit❗✔️:              << " at line " << line << ") for SGroup " << sgIdx;
+        // RDKit❗✔️:       throw FileParseException(errout.str());
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (pos + 1 < text.length()) {
+        // RDKit❗✔️:     currentDataField << text.substr(++pos, 69);
+        // RDKit❗✔️:
+        // RDKit❗✔️:     if (type == "SED") {
+        // RDKit❗✔️:       std::string trimmedData = boost::trim_right_copy(currentDataField.str());
+        // RDKit❗✔️:       dataFieldsMap[sgIdx].push_back(trimmedData.substr(0, 200));
+        // RDKit❗✔️:       currentDataField.str("");
+        // RDKit❗✔️:       counter = 0;
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       ++counter;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let kind = rdkit_substr(line, 3, 3);
         let mut position = 6;
         let Some(sequence) = self.recoverable(parse_v2000_int_field(
@@ -2891,6 +3596,52 @@ impl V2000SgroupState {
     }
 
     fn parse_spl(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SPLLine
+        // RDKit❗✔️: void ParseSGroupV2000SPLLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SPL", "bad SPL line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (unsigned int ie = 0; ie < nent; ++ie) {
+        // RDKit❗✔️:     if (text.size() < pos + 8) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "SGroup SPL line too short: '" << text << "' on line " << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     unsigned int sgIdx =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:     if (!sgroup) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     unsigned int parentIdx = ParseSGroupIntField(text, line, pos);
+        // RDKit❗✔️:
+        // RDKit❗✔️:     sgroup->setProp<unsigned int>("PARENT", parentIdx);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let mut position = 6;
         let Some(count) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2933,6 +3684,65 @@ impl V2000SgroupState {
     }
 
     fn parse_snc(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SNCLine
+        // RDKit❗✔️: void ParseSGroupV2000SNCLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SNC", "bad SNC line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (unsigned int ie = 0; ie < nent; ++ie) {
+        // RDKit❗✔️:     if (text.size() < pos + 8) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "SGroup SNC line too short: '" << text << "' on line " << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     unsigned int sgIdx =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:     if (!sgroup) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     unsigned int compno =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (compno > 256u) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "SGroup SNC value over 256: '" << compno << "' on line "
+        // RDKit❗✔️:              << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     sgroup->setProp<unsigned int>("COMPNO", compno);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let mut position = 6;
         let Some(count) = self.recoverable(parse_v2000_int_field(
             line,
@@ -2998,22 +3808,22 @@ impl V2000SgroupState {
         atom_count: usize,
     ) -> Result<(), SdfReadError> {
         // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SAPLine
-        // RDKit❗✔️: unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
-        // RDKit❗✔️: if (!ok) {
+        // RDKit❗✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:       if (!ok) {
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
-        // RDKit❗✔️: if (!sgroup) {
+        // RDKit❗✔️:   SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:   if (!sgroup) {
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: unsigned int nent =
-        // RDKit❗✔️:     ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
-        // RDKit❗✔️: if (!ok) {
-        // RDKit❗✔️:   sgroup->setIsValid(false);
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:       if (!ok) {
+        // RDKit❗✔️:     sgroup->setIsValid(false);
         // RDKit❗✔️:   return;
         // RDKit❗✔️: }
-        // RDKit❗✔️: int lvIdx = -1;
-        // RDKit❗✔️: if (text.size() < pos + 11) {
+        // RDKit❗✔️:     int lvIdx = -1;
+        // RDKit❗✔️:     if (text.size() < pos + 11) {
         // RDKit❗✔️:   if (strictParsing) {
         // RDKit❗✔️:     throw FileParseException(errout.str());
         // RDKit❗✔️:   } else {
@@ -3021,24 +3831,24 @@ impl V2000SgroupState {
         // RDKit❗✔️:       sgroup->setIsValid(false);
         // RDKit❗✔️:       return;
         // RDKit❗✔️:     }
-        // RDKit❗✔️:     lvIdx = mol->getNumAtoms();
+        // RDKit❗✔️:         lvIdx = mol->getNumAtoms();
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
-        // RDKit❗✔️: std::string id = "  ";
-        // RDKit❗✔️: unsigned int aIdxMark =
-        // RDKit❗✔️:     ParseSGroupIntField(ok, strictParsing, text, line, pos);
-        // RDKit❗✔️: if (lvIdx == -1) {
-        // RDKit❗✔️:   unsigned int lvIdxMark =
+        // RDKit❗✔️:     std::string id = "  ";
+        // RDKit❗✔️:     unsigned int aIdxMark =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (lvIdx == -1) {
+        // RDKit❗✔️:       unsigned int lvIdxMark =
         // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos);
-        // RDKit❗✔️:   if (lvIdxMark != 0) {
-        // RDKit❗✔️:     lvIdx = mol->getAtomWithBookmark(lvIdxMark)->getIdx();
+        // RDKit❗✔️:       if (lvIdxMark != 0) {
+        // RDKit❗✔️:         lvIdx = mol->getAtomWithBookmark(lvIdxMark)->getIdx();
         // RDKit❗✔️:   }
-        // RDKit❗✔️:   if (text.size() >= pos + 3) {
-        // RDKit❗✔️:     id = text.substr(pos + 1, 2);
+        // RDKit❗✔️:       if (text.size() >= pos + 3) {
+        // RDKit❗✔️:         id = text.substr(pos + 1, 2);
         // RDKit❗✔️:     pos += 3;
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
-        // RDKit❗✔️: sgroup->addAttachPoint(aIdx, lvIdx, id);
+        // RDKit❗✔️:       sgroup->addAttachPoint(aIdx, lvIdx, id);
         let mut position = 6;
         let Some(sequence) = self.recoverable(parse_v2000_int_field(
             line,
@@ -3136,6 +3946,43 @@ impl V2000SgroupState {
     }
 
     fn parse_scl(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SCLLine
+        // RDKit❗✔️: void ParseSGroupV2000SCLLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SCL", "bad SCL line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int sgIdx = ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:   if (!sgroup) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   if (pos + 1 >= text.length()) {
+        // RDKit❗✔️:     std::ostringstream errout;
+        // RDKit❗✔️:     errout << "SGroup SCL line too short: '" << text << "' on line " << line;
+        // RDKit❗✔️:     SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:     sgroup->setIsValid(false);
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   ++pos;
+        // RDKit❗✔️:   sgroup->setProp("CLASS", text.substr(pos, text.length() - pos));
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let mut position = 6;
         let Some(sequence) = self.recoverable(parse_v2000_int_field(
             line,
@@ -3165,6 +4012,66 @@ impl V2000SgroupState {
     }
 
     fn parse_sbt(&mut self, line: &str, line_number: usize) -> Result<(), SdfReadError> {
+        // BEGIN RDKIT CPP FUNCTION ParseSGroupV2000SBTLine
+        // RDKit❗✔️: void ParseSGroupV2000SBTLine(IDX_TO_SGROUP_MAP &sGroupMap, RWMol *mol,
+        // RDKit❗✔️:                              const std::string &text, unsigned int line,
+        // RDKit❗✔️:                              bool strictParsing) {
+        // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+        // RDKit❗✔️:   PRECONDITION(text.substr(0, 6) == "M  SBT", "bad SBT line");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   unsigned int pos = 6;
+        // RDKit❗✔️:   bool ok;
+        // RDKit❗✔️:   unsigned int nent =
+        // RDKit❗✔️:       ParseSGroupIntField(ok, strictParsing, text, line, pos, true);
+        // RDKit❗✔️:   if (!ok) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   for (unsigned int ie = 0; ie < nent; ++ie) {
+        // RDKit❗✔️:     if (text.size() < pos + 8) {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "SGroup SBT line too short: '" << text << "' on line " << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     unsigned int sgIdx =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     SubstanceGroup *sgroup = FindSgIdx(sGroupMap, sgIdx, line);
+        // RDKit❗✔️:     if (!sgroup) {
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     unsigned int bracketType =
+        // RDKit❗✔️:         ParseSGroupIntField(ok, strictParsing, text, line, pos);
+        // RDKit❗✔️:     if (!ok) {
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     if (bracketType == 0) {
+        // RDKit❗✔️:       sgroup->setProp("BRKTYP", "BRACKET");
+        // RDKit❗✔️:     } else if (bracketType == 1) {
+        // RDKit❗✔️:       sgroup->setProp("BRKTYP", "PAREN");
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       std::ostringstream errout;
+        // RDKit❗✔️:       errout << "Invalid SBT value '" << bracketType << "' on line " << line;
+        // RDKit❗✔️:       SGroupWarnOrThrow<>(strictParsing, errout.str());
+        // RDKit❗✔️:       sgroup->setIsValid(false);
+        // RDKit❗✔️:       return;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION
+        // Behavior review: retain source fixed fields, early exits and strict/
+        // non-strict invalidation in detached staging; diagnostics/warning text
+        // are not claimed as complete reproduction.
+        // Cost review: each entry performs bounded fixed-field work and O(log S)
+        // BTreeMap lookup like source std::map; owned label/data text remains
+        // linear in copied bytes, with no topology or predicate clone.
+
         let mut position = 6;
         let Some(count) = self.recoverable(parse_v2000_int_field(
             line,
@@ -3232,35 +4139,35 @@ impl V2000SgroupState {
         bond_endpoints: &[(AtomId, AtomId)],
     ) -> Result<Vec<SubstanceGroup>, SdfReadError> {
         // BEGIN RDKIT CPP FUNCTION ParseMolBlockProperties (SGroup finalization)
-        // RDKit❗✔️: for (auto &sgroup : sGroupMap) {
-        // RDKit❗✔️:   if (sgroup.second.getIsValid()) {
-        // RDKit❗✔️:     sgroup.second.setProp("DATAFIELDS", dataFieldsMap[sgroup.first]);
-        // RDKit❗✔️:     sgroup.second.setIsValid(checkAttachmentPointsAreValid(mol, sgroup));
+        // RDKit❗✔️:     for (auto &sgroup : sGroupMap) {
+        // RDKit❗✔️:       if (sgroup.second.getIsValid()) {
+        // RDKit❗✔️:         sgroup.second.setProp("DATAFIELDS", dataFieldsMap[sgroup.first]);
+        // RDKit❗✔️:         sgroup.second.setIsValid(checkAttachmentPointsAreValid(mol, sgroup));
         // RDKit❗✔️:   }
-        // RDKit❗✔️:   if (sgroup.second.getIsValid()) {
-        // RDKit❗✔️:     addSubstanceGroup(*mol, sgroup.second);
+        // RDKit❗✔️:       if (sgroup.second.getIsValid()) {
+        // RDKit❗✔️:         addSubstanceGroup(*mol, sgroup.second);
         // RDKit❗✔️:   } else {
         // RDKit❗✔️:     if (strictParsing) {
         // RDKit❗✔️:       throw FileParseException(errout.str());
         // RDKit❗✔️:     } else {
         // RDKit❗✔️:       BOOST_LOG(rdWarningLog)
-        // RDKit❗✔️:           << errout.str() << " and will be ignored" << std::endl;
+        // RDKit❗✔️:               << errout.str() << " and will be ignored" << std::endl;
         // RDKit❗✔️:     }
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
         // BEGIN RDKIT CPP FUNCTION checkAttachmentPointsAreValid
-        // RDKit❗✔️: for (auto &attachPoint : attachPoints) {
-        // RDKit❗✔️:   if (attachPoint.lvIdx == nAtoms) {
-        // RDKit❗✔️:     const std::vector<unsigned int> &bonds = sgroup.second.getBonds();
-        // RDKit❗✔️:     if (bonds.size() == 1) {
-        // RDKit❗✔️:       const auto bond = mol->getBondWithIdx(bonds.front());
-        // RDKit❗✔️:       if (bond->getBeginAtomIdx() == attachPoint.aIdx ||
-        // RDKit❗✔️:           bond->getEndAtomIdx() == attachPoint.aIdx) {
-        // RDKit❗✔️:         attachPoint.lvIdx = bond->getOtherAtomIdx(attachPoint.aIdx);
+        // RDKit❗✔️:   for (auto &attachPoint : attachPoints) {
+        // RDKit❗✔️:     if (attachPoint.lvIdx == nAtoms) {
+        // RDKit❗✔️:       const std::vector<unsigned int> &bonds = sgroup.second.getBonds();
+        // RDKit❗✔️:       if (bonds.size() == 1) {
+        // RDKit❗✔️:         const auto bond = mol->getBondWithIdx(bonds.front());
+        // RDKit❗✔️:         if (bond->getBeginAtomIdx() == attachPoint.aIdx ||
+        // RDKit❗✔️:             bond->getEndAtomIdx() == attachPoint.aIdx) {
+        // RDKit❗✔️:           attachPoint.lvIdx = bond->getOtherAtomIdx(attachPoint.aIdx);
         // RDKit❗✔️:       }
         // RDKit❗✔️:     }
         // RDKit❗✔️:   }
-        // RDKit❗✔️:   if (attachPoint.lvIdx == nAtoms) {
+        // RDKit❗✔️:     if (attachPoint.lvIdx == nAtoms) {
         // RDKit❗✔️:     res = false;
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
@@ -3360,13 +4267,13 @@ fn v3000_index_block<T>(
     index: impl Fn(T) -> usize,
 ) -> String {
     // BEGIN RDKIT CPP FUNCTION BuildV3000IdxVectorDataBlock
-    // RDKit✔️✔️: size_t size = dataVectorEnd - dataVectorBegin;
-    // RDKit✔️✔️: if (size) {
-    // RDKit✔️✔️:   ret << ' ' << key << "=(" << size;
-    // RDKit✔️✔️:   for (auto itr = dataVectorBegin; itr < dataVectorEnd; ++itr) {
-    // RDKit✔️✔️:     ret << ' ' << 1 + *itr;
+    // RDKit✔️✔️:   size_t size = dataVectorEnd - dataVectorBegin;
+    // RDKit✔️✔️:   if (size) {
+    // RDKit✔️✔️:     ret << ' ' << key << "=(" << size;
+    // RDKit✔️✔️:     for (auto itr = dataVectorBegin; itr < dataVectorEnd; ++itr) {
+    // RDKit✔️✔️:       ret << ' ' << 1 + *itr;
     // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   ret << ')';
+    // RDKit✔️✔️:     ret << ')';
     // RDKit✔️✔️: }
     let indices = values.into_iter().map(index).collect::<Vec<_>>();
     if indices.is_empty() {
@@ -3386,20 +4293,20 @@ fn v3000_string_block(name: &str, value: Option<&str>) -> String {
         return String::new();
     };
     // BEGIN RDKIT CPP FUNCTION FormatV3000StringPropertyBlock
-    // RDKit✔️✔️: bool needsQuotes = propValue.find(' ') != std::string::npos ||
-    // RDKit✔️✔️:                    propValue.find('"') != std::string::npos ||
-    // RDKit✔️✔️:                    propValue.find('(') != std::string::npos;
-    // RDKit✔️✔️: if (needsQuotes) {
-    // RDKit✔️✔️:   ret << "\"";
+    // RDKit✔️✔️:       bool needsQuotes = propValue.find(' ') != std::string::npos ||
+    // RDKit✔️✔️:                          propValue.find('"') != std::string::npos ||
+    // RDKit✔️✔️:                          propValue.find('(') != std::string::npos;
+    // RDKit✔️✔️:       if (needsQuotes) {
+    // RDKit✔️✔️:         ret << "\"";
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: for (auto chr : propValue) {
-    // RDKit✔️✔️:   ret << chr;
-    // RDKit✔️✔️:   if (chr == '"') {
-    // RDKit✔️✔️:     ret << chr;
+    // RDKit✔️✔️:       for (auto chr : propValue) {
+    // RDKit✔️✔️:         ret << chr;
+    // RDKit✔️✔️:         if (chr == '"') {
+    // RDKit✔️✔️:         ret << chr;
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: if (needsQuotes) {
-    // RDKit✔️✔️:   ret << "\"";
+    // RDKit✔️✔️:       if (needsQuotes) {
+    // RDKit✔️✔️:         ret << "\"";
     // RDKit✔️✔️: }
     let needs_quotes = value.contains([' ', '"', '(']);
     let escaped = value.replace('"', "\"\"");
@@ -3413,25 +4320,25 @@ fn v3000_string_block(name: &str, value: Option<&str>) -> String {
 
 fn add_v3000_block(block: &str, current: &mut String, output: &mut String) {
     // BEGIN RDKIT CPP FUNCTION addBlockToSGroupString
-    // RDKit❗✔️: if (block.empty()) {
+    // RDKit❗✔️:   if (block.empty()) {
     // RDKit❗✔️:   return;
     // RDKit❗✔️: }
-    // RDKit❗✔️: if (currentLine.length() + block.length() < 78) {
-    // RDKit❗✔️:   currentLine += block;
+    // RDKit❗✔️:   if (currentLine.length() + block.length() < 78) {
+    // RDKit❗✔️:     currentLine += block;
     // RDKit❗✔️: } else {
-    // RDKit❗✔️:   os << currentLine << " -\n";
-    // RDKit❗✔️:   unsigned int length = block.size();
+    // RDKit❗✔️:     os << currentLine << " -\n";
+    // RDKit❗✔️:     unsigned int length = block.size();
     // RDKit❗✔️:   unsigned int start = 0;
-    // RDKit❗✔️:   while (length - start >= 73) {
-    // RDKit❗✔️:     os << "M  V30";
-    // RDKit❗✔️:     if (start) {
-    // RDKit❗✔️:       os << ' ';
+    // RDKit❗✔️:     while (length - start >= 73) {
+    // RDKit❗✔️:       os << "M  V30";
+    // RDKit❗✔️:       if (start) {
+    // RDKit❗✔️:         os << ' ';
     // RDKit❗✔️:     }
-    // RDKit❗✔️:     os << block.substr(start, 72);
-    // RDKit❗✔️:     start += 72;
+    // RDKit❗✔️:       os << block.substr(start, 72);
+    // RDKit❗✔️:       start += 72;
     // RDKit❗✔️:     if (start < length) {
-    // RDKit❗✔️:       // need to write more, so add another "-"
-    // RDKit❗✔️:       os << "-\n";
+    // RDKit❗✔️:         // need to write more, so add another "-"
+    // RDKit❗✔️:         os << "-\n";
     // RDKit❗✔️:     }
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
@@ -3509,8 +4416,8 @@ fn assigned_stereo_group_ids(groups: &[StereoGroup]) -> Vec<Option<u32>> {
     // RDKit❗❗:     ids[groupId] = true;
     // RDKit❗❗:   }
     // RDKit❗❗: }
-    // RDKit❗❗: void assignMissingIds(const boost::dynamic_bitset<> &ids,
-    // RDKit❗❗:                       unsigned &nextId, StereoGroup &sg) {
+    // RDKit❗❗: void assignMissingIds(const boost::dynamic_bitset<> &ids, unsigned &nextId,
+    // RDKit❗❗:                       StereoGroup &sg) {
     // RDKit❗❗:   if (sg.getWriteId() == 0) {
     // RDKit❗❗:     ++nextId;
     // RDKit❗❗:     while (nextId < ids.size() && ids[nextId]) {
@@ -3582,12 +4489,62 @@ fn assigned_stereo_group_ids(groups: &[StereoGroup]) -> Vec<Option<u32>> {
     assigned
 }
 
-fn write_v3000_sgroup(sequence: usize, group: &SubstanceGroup) -> String {
+fn sgroup_bond_membership(
+    group: &SubstanceGroup,
+    bond: &cosmolkit_model::Bond,
+) -> Result<SGroupBondRole, SdfWriteError> {
+    // RDKit✔️✔️: SubstanceGroup::BondType SubstanceGroup::getBondType(
+    // RDKit✔️✔️:     unsigned int bondIdx) const {
+    // RDKit✔️✔️:   PRECONDITION(
+    // RDKit✔️✔️:       std::find(d_bonds.begin(), d_bonds.end(), bondIdx) != d_bonds.end(),
+    // RDKit✔️✔️:       "bond is not part of the SubstanceGroup")
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   auto bond = dp_mol->getBondWithIdx(bondIdx);
+    // RDKit✔️✔️:   bool begin_atom_in_sgroup =
+    // RDKit✔️✔️:       std::find(d_atoms.begin(), d_atoms.end(), bond->getBeginAtomIdx()) !=
+    // RDKit✔️✔️:       d_atoms.end();
+    // RDKit✔️✔️:   bool end_atom_in_sgroup = std::find(d_atoms.begin(), d_atoms.end(),
+    // RDKit✔️✔️:                                       bond->getEndAtomIdx()) != d_atoms.end();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (begin_atom_in_sgroup && end_atom_in_sgroup) {
+    // RDKit✔️✔️:     return SubstanceGroup::BondType::CBOND;
+    // RDKit✔️✔️:   } else if (begin_atom_in_sgroup || end_atom_in_sgroup) {
+    // RDKit✔️✔️:     return SubstanceGroup::BondType::XBOND;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     std::ostringstream errout;
+    // RDKit✔️✔️:     errout << "Neither beginning nor ending atoms of bond " << bond->getIdx()
+    // RDKit✔️✔️:            << " is in this SubstanceGroup.";
+    // RDKit✔️✔️:     throw SubstanceGroupException(errout.str());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Behavior review: callers visit the group's own validated bond rows;
+    // endpoint membership defines the live role regardless of input label.
+    // Neither endpoint in the group is a source error, not unsupported input.
+    // Complexity review: two membership scans match the pinned vector scans.
+    match (
+        group.atoms().contains(&bond.begin()),
+        group.atoms().contains(&bond.end()),
+    ) {
+        (true, true) => Ok(SGroupBondRole::Contained),
+        (true, false) | (false, true) => Ok(SGroupBondRole::Crossing),
+        (false, false) => Err(SdfWriteError::SGroupBondMembership {
+            group: group.id(),
+            bond: bond.id(),
+        }),
+    }
+}
+
+pub(super) fn write_v3000_sgroup(
+    sequence: usize,
+    group: &SubstanceGroup,
+    bonds: &[cosmolkit_model::Bond],
+) -> Result<String, SdfWriteError> {
     // BEGIN RDKIT CPP FUNCTION GetV3000MolFileSGroupLines
-    // RDKit❗✔️: std::string currLine = (boost::format("M  V30 %d %s %d") % idx %
-    // RDKit❗✔️:                         sgroup.getProp<std::string>("TYPE") % id).str();
-    // RDKit❗✔️: addBlockToSGroupString(
-    // RDKit❗✔️:     BuildV3000IdxVectorDataBlock("ATOMS", sgroup.getAtoms()), currLine, os);
+    // RDKit❗✔️:   std::string currLine = (boost::format("M  V30 %d %s %d") % idx %
+    // RDKit❗✔️:                           sgroup.getProp<std::string>("TYPE") % id)
+    // RDKit❗✔️:                              .str();
+    // RDKit❗✔️:   addBlockToSGroupString(
+    // RDKit❗✔️:       BuildV3000IdxVectorDataBlock("ATOMS", sgroup.getAtoms()), currLine, os);
     // RDKit✔️✔️: std::string BuildV3000BondsBlock(const SubstanceGroup &sgroup) {
     // RDKit✔️✔️:   std::ostringstream ret;
     // RDKit✔️✔️:
@@ -3612,23 +4569,24 @@ fn write_v3000_sgroup(sequence: usize, group: &SubstanceGroup) -> String {
     // RDKit✔️✔️:
     // RDKit✔️✔️:   return ret.str();
     // RDKit✔️✔️: }
-    // RDKit✔️✔️: addBlockToSGroupString(BuildV3000BondsBlock(sgroup), currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(
-    // RDKit❗✔️:     BuildV3000IdxVectorDataBlock("PATOMS", sgroup.getParentAtoms()), currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000StringPropertyBlock("SUBTYPE", sgroup),
-    // RDKit❗✔️:                        currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000StringPropertyBlock("CONNECT", sgroup),
-    // RDKit❗✔️:                        currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000ParentBlock(sgroup), currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000CompNoBlock(sgroup), currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000StringPropertyBlock("LABEL", sgroup),
-    // RDKit❗✔️:                        currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000BracketBlock(sgroup.getBrackets()),
-    // RDKit❗✔️:                        currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000CStateBlock(sgroup), currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000FieldDataBlock(sgroup), currLine, os);
-    // RDKit❗✔️: addBlockToSGroupString(FormatV3000AttachPointBlock(sgroup.getAttachPoints()),
-    // RDKit❗✔️:                        currLine, os);
+    // RDKit✔️✔️:   addBlockToSGroupString(BuildV3000BondsBlock(sgroup), currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(
+    // RDKit❗✔️:       BuildV3000IdxVectorDataBlock("PATOMS", sgroup.getParentAtoms()), currLine,
+    // RDKit❗✔️:       os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000StringPropertyBlock("SUBTYPE", sgroup),
+    // RDKit❗✔️:                          currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000StringPropertyBlock("CONNECT", sgroup),
+    // RDKit❗✔️:                          currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000ParentBlock(sgroup), currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000CompNoBlock(sgroup), currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000StringPropertyBlock("LABEL", sgroup),
+    // RDKit❗✔️:                          currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000BracketBlock(sgroup.getBrackets()),
+    // RDKit❗✔️:                          currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000CStateBlock(sgroup), currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000FieldDataBlock(sgroup), currLine, os);
+    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000AttachPointBlock(sgroup.getAttachPoints()),
+    // RDKit❗✔️:                          currLine, os);
     let mut output = String::new();
     let mut current = format!(
         "M  V30 {sequence} {} {}",
@@ -3640,22 +4598,25 @@ fn write_v3000_sgroup(sequence: usize, group: &SubstanceGroup) -> String {
         group.atoms().iter().copied(),
         AtomId::index,
     )];
+    // Stable classification preserves each category's input order, using the
+    // current topology even if group atom membership changed after parsing.
+    let mut crossing = Vec::new();
+    let mut contained = Vec::new();
+    for id in group.bonds() {
+        let bond = &bonds[id.index()];
+        match sgroup_bond_membership(group, bond)? {
+            SGroupBondRole::Crossing => crossing.push(*id),
+            SGroupBondRole::Contained => contained.push(*id),
+        }
+    }
     blocks.push(v3000_index_block(
         "XBONDS",
-        group
-            .bonds()
-            .iter()
-            .copied()
-            .filter(|bond| group.bond_role(*bond) == SGroupBondRole::Crossing),
+        crossing.into_iter(),
         BondId::index,
     ));
     blocks.push(v3000_index_block(
         "CBONDS",
-        group
-            .bonds()
-            .iter()
-            .copied()
-            .filter(|bond| group.bond_role(*bond) == SGroupBondRole::Contained),
+        contained.into_iter(),
         BondId::index,
     ));
     blocks.push(v3000_index_block(
@@ -3723,7 +4684,7 @@ fn write_v3000_sgroup(sequence: usize, group: &SubstanceGroup) -> String {
         blocks.push(v3000_string_block("QUERYTYPE", data.query_type.as_deref()));
         blocks.push(v3000_string_block("QUERYOP", data.query_op.as_deref()));
         for value in &data.values {
-            blocks.push(format!(" FIELDDATA=\"{}\"", value.replace('"', "\"\"")));
+            blocks.push(format!(" FIELDDATA=\"{value}\""));
         }
     }
     blocks.push(v3000_string_block("CLASS", group.class()));
@@ -3755,70 +4716,134 @@ fn write_v3000_sgroup(sequence: usize, group: &SubstanceGroup) -> String {
         output.truncate(output.len() - 3);
         output.push('\n');
     }
-    output
+    Ok(output)
     // END RDKIT CPP FUNCTION
 }
 
-pub(super) fn write_v3000_typed_blocks(topology: &TopologyBlock) -> String {
+pub(super) fn write_v3000_typed_blocks(topology: &TopologyBlock) -> Result<String, SdfWriteError> {
     let mut output = String::new();
     if !topology.substance_groups.is_empty() {
         // BEGIN RDKIT CPP FUNCTION getV3000CTAB (SGroup block)
-        // RDKit✔️✔️: if (nSGroups > 0) {
-        // RDKit✔️✔️:   res += "M  V30 BEGIN SGROUP\n";
+        // RDKit✔️✔️:   if (nSGroups > 0) {
+        // RDKit✔️✔️:     res += "M  V30 BEGIN SGROUP\n";
         // RDKit✔️✔️:   unsigned int idx = 0;
-        // RDKit✔️✔️:   for (const auto &sgroup : sgroups) {
-        // RDKit✔️✔️:     res += GetV3000MolFileSGroupLines(++idx, sgroup);
+        // RDKit✔️✔️:     for (const auto &sgroup : sgroups) {
+        // RDKit✔️✔️:       res += GetV3000MolFileSGroupLines(++idx, sgroup);
         // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   res += "M  V30 END SGROUP\n";
+        // RDKit✔️✔️:     res += "M  V30 END SGROUP\n";
         // RDKit✔️✔️: }
         output.push_str("M  V30 BEGIN SGROUP\n");
         for (index, group) in topology.substance_groups.iter().enumerate() {
-            output.push_str(&write_v3000_sgroup(index + 1, group));
+            output.push_str(&write_v3000_sgroup(index + 1, group, &topology.bonds)?);
         }
         output.push_str("M  V30 END SGROUP\n");
         // END RDKIT CPP FUNCTION
     }
-    if !topology.stereo_groups.is_empty() {
+    let atom_ids = topology
+        .stereo_groups
+        .iter()
+        .map(|group| group.atoms().to_vec())
+        .collect::<Vec<_>>();
+    output.push_str(&write_v3000_collection_rows(
+        &topology.stereo_groups,
+        &atom_ids,
+    ));
+    Ok(output)
+}
+
+pub(super) fn write_v3000_collection_rows(
+    groups: &[StereoGroup],
+    atom_ids: &[Vec<cosmolkit_model::AtomId>],
+) -> String {
+    // RDKit❗❌: void appendEnhancedStereoGroups(
+    // RDKit❗❌:     std::string &res, const RWMol &tmol,
+    // RDKit❗❌:     std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> &wedgeBonds) {
+    // RDKit❗❌:   if (!tmol.getStereoGroups().empty()) {
+    // RDKit❗❌:     auto stereo_groups = tmol.getStereoGroups();
+    // RDKit❗❌:     assignStereoGroupIds(stereo_groups);
+    // RDKit❗❌:     res += "M  V30 BEGIN COLLECTION\n";
+    // RDKit❗❌:     std::string tmp;
+    // RDKit❗❌:     tmp.reserve(80);
+    // RDKit❗❌:     for (auto &&group : stereo_groups) {
+    // RDKit❗❌:       tmp += "M  V30 MDLV30/";
+    // RDKit❗❌:       switch (group.getGroupType()) {
+    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_ABSOLUTE:
+    // RDKit❗❌:           tmp += "STEABS";
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_OR:
+    // RDKit❗❌:           tmp += "STEREL";
+    // RDKit❗❌:           tmp += std::to_string(group.getWriteId());
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_AND:
+    // RDKit❗❌:           tmp += "STERAC";
+    // RDKit❗❌:           tmp += std::to_string(group.getWriteId());
+    // RDKit❗❌:           break;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       tmp += " ATOMS=(";
+    // RDKit❗❌:
+    // RDKit❗❌:       std::vector<unsigned int> atomIds;
+    // RDKit❗❌:       Atropisomers::getAllAtomIdsForStereoGroup(tmol, group, atomIds,
+    // RDKit❗❌:                                                 wedgeBonds);
+    // RDKit❗❌:
+    // RDKit❗❌:       tmp += std::to_string(atomIds.size());
+    // RDKit❗❌:       for (auto &&atom : atomIds) {
+    // RDKit❗❌:         tmp += ' ';
+    // RDKit❗❌:         // atoms are 1 indexed in molfiles
+    // RDKit❗❌:         auto idxStr = std::to_string(atom + 1);
+    // RDKit❗❌:         if (tmp.size() + idxStr.size() >= 78) {
+    // RDKit❗❌:           res += tmp + "-\n";
+    // RDKit❗❌:           tmp = "M  V30 ";
+    // RDKit❗❌:         }
+    // RDKit❗❌:         tmp += idxStr;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res += tmp + ")\n";
+    // RDKit❗❌:       tmp.clear();
+    // RDKit❗❌:     }
+    // RDKit❗❌:     res += tmp + "M  V30 END COLLECTION\n";
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    let mut output = String::new();
+    if !groups.is_empty() {
         // BEGIN RDKIT CPP FUNCTION appendEnhancedStereoGroups
-        // RDKit❗✔️: auto stereo_groups = tmol.getStereoGroups();
-        // RDKit❗✔️: assignStereoGroupIds(stereo_groups);
-        // RDKit❗✔️: res += "M  V30 BEGIN COLLECTION\n";
-        // RDKit❗✔️: std::string tmp;
-        // RDKit❗✔️: tmp.reserve(80);
-        // RDKit❗✔️: for (auto &&group : stereo_groups) {
-        // RDKit❗✔️:   tmp += "M  V30 MDLV30/";
-        // RDKit❗✔️:   switch (group.getGroupType()) {
+        // RDKit❗✔️:     auto stereo_groups = tmol.getStereoGroups();
+        // RDKit❗✔️:     assignStereoGroupIds(stereo_groups);
+        // RDKit❗✔️:     res += "M  V30 BEGIN COLLECTION\n";
+        // RDKit❗✔️:       std::string tmp;
+        // RDKit❗✔️:     tmp.reserve(80);
+        // RDKit❗✔️:     for (auto &&group : stereo_groups) {
+        // RDKit❗✔️:       tmp += "M  V30 MDLV30/";
+        // RDKit❗✔️:     switch (group.getGroupType()) {
         // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_ABSOLUTE:
-        // RDKit❗✔️:       tmp += "STEABS";
+        // RDKit❗✔️:           tmp += "STEABS";
         // RDKit❗✔️:       break;
         // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_OR:
-        // RDKit❗✔️:       tmp += "STEREL";
-        // RDKit❗✔️:       tmp += std::to_string(group.getWriteId());
+        // RDKit❗✔️:           tmp += "STEREL";
+        // RDKit❗✔️:           tmp += std::to_string(group.getWriteId());
         // RDKit❗✔️:       break;
         // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_AND:
-        // RDKit❗✔️:       tmp += "STERAC";
-        // RDKit❗✔️:       tmp += std::to_string(group.getWriteId());
+        // RDKit❗✔️:           tmp += "STERAC";
+        // RDKit❗✔️:           tmp += std::to_string(group.getWriteId());
         // RDKit❗✔️:       break;
         // RDKit❗✔️:   }
-        // RDKit❗✔️:   tmp += " ATOMS=(";
-        // RDKit❗✔️:   tmp += std::to_string(atomIds.size());
-        // RDKit❗✔️:   for (auto &&atom : atomIds) {
-        // RDKit❗✔️:     tmp += ' ';
-        // RDKit❗✔️:     // atoms are 1 indexed in molfiles
-        // RDKit❗✔️:     auto idxStr = std::to_string(atom + 1);
-        // RDKit❗✔️:     if (tmp.size() + idxStr.size() >= 78) {
-        // RDKit❗✔️:       res += tmp + "-\n";
-        // RDKit❗✔️:       tmp = "M  V30 ";
+        // RDKit❗✔️:       tmp += " ATOMS=(";
+        // RDKit❗✔️:       tmp += std::to_string(atomIds.size());
+        // RDKit❗✔️:       for (auto &&atom : atomIds) {
+        // RDKit❗✔️:         tmp += ' ';
+        // RDKit❗✔️:         // atoms are 1 indexed in molfiles
+        // RDKit❗✔️:         auto idxStr = std::to_string(atom + 1);
+        // RDKit❗✔️:         if (tmp.size() + idxStr.size() >= 78) {
+        // RDKit❗✔️:           res += tmp + "-\n";
+        // RDKit❗✔️:           tmp = "M  V30 ";
         // RDKit❗✔️:     }
-        // RDKit❗✔️:     tmp += idxStr;
+        // RDKit❗✔️:         tmp += idxStr;
         // RDKit❗✔️:   }
-        // RDKit❗✔️:   res += tmp + ")\n";
+        // RDKit❗✔️:       res += tmp + ")\n";
         // RDKit❗✔️:   tmp.clear();
         // RDKit❗✔️: }
-        // RDKit❗✔️: res += tmp + "M  V30 END COLLECTION\n";
+        // RDKit❗✔️:     res += tmp + "M  V30 END COLLECTION\n";
         output.push_str("M  V30 BEGIN COLLECTION\n");
-        let group_ids = assigned_stereo_group_ids(&topology.stereo_groups);
-        for (group, assigned_id) in topology.stereo_groups.iter().zip(group_ids) {
+        let group_ids = assigned_stereo_group_ids(&groups);
+        for ((group, assigned_id), atoms) in groups.iter().zip(group_ids).zip(atom_ids) {
             let label = match group.kind() {
                 StereoGroupKind::Absolute => "STEABS".to_owned(),
                 StereoGroupKind::Or => format!("STEREL{}", assigned_id.expect("OR ID assigned")),
@@ -3826,8 +4851,8 @@ pub(super) fn write_v3000_typed_blocks(topology: &TopologyBlock) -> String {
                     format!("STERAC{}", assigned_id.expect("AND ID assigned"))
                 }
             };
-            let mut current = format!("M  V30 MDLV30/{label} ATOMS=({}", group.atoms().len());
-            for atom in group.atoms() {
+            let mut current = format!("M  V30 MDLV30/{label} ATOMS=({}", atoms.len());
+            for atom in atoms {
                 current.push(' ');
                 let index = (atom.index() + 1).to_string();
                 if current.len() + index.len() >= 78 {
@@ -3845,6 +4870,101 @@ pub(super) fn write_v3000_typed_blocks(topology: &TopologyBlock) -> String {
         // END RDKIT CPP FUNCTION
     }
     output
+}
+
+fn append_v2000_sdt(
+    output: &mut String,
+    index: usize,
+    data: &cosmolkit_model::SGroupData,
+) -> Result<(), SdfWriteError> {
+    // RDKit❗❌: std::string BuildV2000SDTLine(const int idx, const SubstanceGroup &sgroup) {
+    // RDKit❗❌:   std::ostringstream ret;
+    // RDKit❗❌:
+    // RDKit❗❌:   std::string sdtValue;
+    // RDKit❗❌:   if (sgroup.getPropIfPresent("FIELDNAME", sdtValue)) {
+    // RDKit❗❌:     ret << "M  SDT" << FormatV2000IntField(idx);
+    // RDKit❗❌:     ret << FormatV2000StringField(sdtValue, 30, true, true);
+    // RDKit❗❌:
+    // RDKit❗❌:     if (sgroup.getPropIfPresent("FIELDTYPE", sdtValue)) {
+    // RDKit❗❌:       ret << FormatV2000StringField(sdtValue, 2, true, false);
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       ret << " T";
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     if (sgroup.getPropIfPresent("FIELDINFO", sdtValue)) {
+    // RDKit❗❌:       ret << FormatV2000StringField(sdtValue, 20, true, false);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     if (sgroup.getPropIfPresent("QUERYTYPE", sdtValue)) {
+    // RDKit❗❌:       ret << FormatV2000StringField(sdtValue, 2, true, false);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (sgroup.getPropIfPresent("QUERYOP", sdtValue)) {
+    // RDKit❗❌:       ret << FormatV2000StringField(sdtValue, 15, true, false);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     ret << "\n";
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return ret.str();
+    // RDKit❗❌: }
+    if let Some(field_name) = &data.field_name {
+        output.push_str(&format!("M  SDT{}", v2000_int(index)));
+        output.push_str(&v2000_string_field(field_name, 30, true, true)?);
+        if let Some(field_type) = &data.field_type {
+            output.push_str(&v2000_string_field(field_type, 2, true, false)?);
+        } else {
+            output.push_str(" T");
+        }
+        if let Some(value) = &data.field_info {
+            output.push_str(&v2000_string_field(value, 20, true, false)?);
+        }
+        if let Some(value) = &data.query_type {
+            output.push_str(&v2000_string_field(value, 2, true, false)?);
+        }
+        if let Some(value) = &data.query_op {
+            output.push_str(&v2000_string_field(value, 15, true, false)?);
+        }
+        output.push('\n');
+    }
+    Ok(())
+}
+fn v2000_string_field(
+    value: &str,
+    size: usize,
+    pad: bool,
+    separator: bool,
+) -> Result<String, SdfWriteError> {
+    // RDKit❗❌: inline std::string FormatV2000StringField(const std::string &value,
+    // RDKit❗❌:                                           unsigned int fieldSize, bool pad,
+    // RDKit❗❌:                                           bool addSeparator) {
+    // RDKit❗❌:   std::ostringstream os;
+    // RDKit❗❌:   if (addSeparator) {
+    // RDKit❗❌:     os << ' ';
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (value.size() >= fieldSize) {
+    // RDKit❗❌:     os << value.substr(0, fieldSize);
+    // RDKit❗❌:   } else if (pad) {
+    // RDKit❗❌:     os << std::setw(fieldSize) << std::left << value;
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     os << value;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return os.str();
+    // RDKit❗❌: }
+    let mut out = String::new();
+    if separator {
+        out.push(' ');
+    }
+    if value.len() >= size {
+        let value = value.get(..size).ok_or_else(|| {
+            SdfWriteError::SubstanceGroup("V2000 field truncation splits UTF-8 bytes".into())
+        })?;
+        out.push_str(value);
+    } else {
+        out.push_str(value);
+        if pad {
+            out.extend(std::iter::repeat_n(' ', size - value.len()));
+        }
+    }
+    Ok(out)
 }
 
 fn v2000_int(value: usize) -> String {
@@ -3918,26 +5038,27 @@ pub(super) fn write_v2000_sgroups(topology: &TopologyBlock) -> Result<String, Sd
         return Ok(String::new());
     }
     // BEGIN RDKIT CPP FUNCTION GetMolFileSGroupInfo
-    // RDKit❗✔️: ret << BuildV2000STYLines(mol);
-    // RDKit❗✔️: ret << BuildV2000SLBLines(mol);
-    // RDKit❗✔️: ret << BuildV2000StringPropLines(8, mol, "SUBTYPE", "SST", 3);
-    // RDKit❗✔️: ret << BuildV2000StringPropLines(8, mol, "CONNECT", "SCN", 3);
-    // RDKit❗✔️: ret << BuildV2000SDSLines(mol);
-    // RDKit❗✔️: ret << BuildV2000SPLLines(mol);
-    // RDKit❗✔️: ret << BuildV2000SNCLines(mol);
-    // RDKit❗✔️: ret << BuildV2000SBTLines(mol);
-    // RDKit❗✔️: for (const auto &sgroup : getSubstanceGroups(mol)) {
-    // RDKit❗✔️:   ret << BuildV2000IdxVectorDataLines(15, idx, "SAL", sgroup.getAtoms());
-    // RDKit❗✔️:   ret << BuildV2000IdxVectorDataLines(15, idx, "SPA", sgroup.getParentAtoms());
-    // RDKit❗✔️:   ret << BuildV2000IdxVectorDataLines(15, idx, "SBL", sgroup.getBonds());
-    // RDKit❗✔️:   ret << BuildV2000SDILine(idx, sgroup);
-    // RDKit❗✔️:   ret << BuildV2000SMTLine(idx, sgroup);
-    // RDKit❗✔️:   ret << BuildV2000SBVLine(idx, sgroup);
-    // RDKit❗✔️:   ret << BuildV2000SDTLine(idx, sgroup);
-    // RDKit❗✔️:   ret << BuildV2000SDDLine(idx, sgroup);
-    // RDKit❗✔️:   ret << BuildV2000SCDSEDLines(idx, sgroup);
-    // RDKit❗✔️:   ret << BuildV2000SAPLines(idx, sgroup);
-    // RDKit❗✔️:   ret << BuildV2000SCLLine(idx, sgroup);
+    // RDKit❗✔️:   ret << BuildV2000STYLines(mol);
+    // RDKit❗✔️:   ret << BuildV2000SLBLines(mol);
+    // RDKit❗✔️:   ret << BuildV2000StringPropLines(8, mol, "SUBTYPE", "SST", 3);
+    // RDKit❗✔️:   ret << BuildV2000StringPropLines(8, mol, "CONNECT", "SCN", 3);
+    // RDKit❗✔️:   ret << BuildV2000SDSLines(mol);
+    // RDKit❗✔️:   ret << BuildV2000SPLLines(mol);
+    // RDKit❗✔️:   ret << BuildV2000SNCLines(mol);
+    // RDKit❗✔️:   ret << BuildV2000SBTLines(mol);
+    // RDKit❗✔️:   for (const auto &sgroup : getSubstanceGroups(mol)) {
+    // RDKit❗✔️:     ret << BuildV2000IdxVectorDataLines(15, idx, "SAL", sgroup.getAtoms());
+    // RDKit❗✔️:     ret << BuildV2000IdxVectorDataLines(15, idx, "SPA",
+    // RDKit❗✔️:                                         sgroup.getParentAtoms());
+    // RDKit❗✔️:     ret << BuildV2000IdxVectorDataLines(15, idx, "SBL", sgroup.getBonds());
+    // RDKit❗✔️:     ret << BuildV2000SDILine(idx, sgroup);
+    // RDKit❗✔️:     ret << BuildV2000SMTLine(idx, sgroup);
+    // RDKit❗✔️:     ret << BuildV2000SBVLine(idx, sgroup);
+    // RDKit❗✔️:     ret << BuildV2000SDTLine(idx, sgroup);
+    // RDKit❗✔️:     ret << BuildV2000SDDLine(idx, sgroup);
+    // RDKit❗✔️:     ret << BuildV2000SCDSEDLines(idx, sgroup);
+    // RDKit❗✔️:     ret << BuildV2000SAPLines(idx, sgroup);
+    // RDKit❗✔️:     ret << BuildV2000SCLLine(idx, sgroup);
     // RDKit❗✔️: }
     let mut output = String::new();
     let sty = topology
@@ -4090,17 +5211,7 @@ pub(super) fn write_v2000_sgroups(topology: &TopologyBlock) -> Result<String, Sd
             output.push('\n');
         }
         if let Some(data) = group.data() {
-            if let Some(field_name) = &data.field_name {
-                output.push_str(&format!(
-                    "M  SDT{} {:<30}{:<2}{:<20}{:<2}{}\n",
-                    v2000_int(index),
-                    field_name,
-                    data.field_type.as_deref().unwrap_or("T"),
-                    data.field_info.as_deref().unwrap_or_default(),
-                    data.query_type.as_deref().unwrap_or_default(),
-                    data.query_op.as_deref().unwrap_or_default()
-                ));
-            }
+            append_v2000_sdt(&mut output, index, data)?;
             if let Some(display) = &data.field_display {
                 output.push_str(&format!("M  SDD{} {}\n", v2000_int(index), display));
             }
@@ -4164,6 +5275,8 @@ mod cf3d_sgids_io_4_tests {
             "M  V30 END COLLECTION",
         ];
         let mut cursor = 0;
+        let progress = crate::sdf::MolBlockReadProgress::default();
+        let lines = crate::sdf::MolBlockLines::new(&lines, &progress);
         let groups = parse_v3000_collection_block(&lines, &mut cursor, 4, true).unwrap();
 
         assert_eq!(cursor, lines.len());
@@ -4230,7 +5343,7 @@ mod cf3d_sgids_io_5_tests {
             vec![Some(1), Some(9), Some(2), Some(4), Some(1), Some(4), None]
         );
         assert_eq!(
-            write_v3000_typed_blocks(&topology),
+            write_v3000_typed_blocks(&topology).expect("valid source stereo fixture"),
             "M  V30 BEGIN COLLECTION\n\
              M  V30 MDLV30/STEREL1 ATOMS=(1 1)\n\
              M  V30 MDLV30/STEREL9 ATOMS=(1 2)\n\

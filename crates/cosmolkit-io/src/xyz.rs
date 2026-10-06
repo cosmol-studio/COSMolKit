@@ -106,16 +106,28 @@ fn rdkit_to_unsigned(value: &str) -> Result<usize, XyzReadError> {
 
 fn rdkit_to_double_no_spaces(value: &str, line: usize) -> Result<f64, XyzReadError> {
     // BEGIN RDKIT CPP FUNCTION FileParserUtils::toDouble
-    // RDKit✔️✔️:   for (size_t i = 0u; i < input.size() && *txt != '\x00'; ++i) {
-    // RDKit✔️✔️:     if ((*txt >= '0' && *txt <= '9') || (acceptSpaces && *txt == ' ') ||
-    // RDKit✔️✔️:         *txt == '+' || *txt == '-' || *txt == ',' || *txt == '.') {
-    // RDKit✔️✔️:       ++txt;
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       throw boost::bad_lexical_cast();
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   double res = atof(input.data());
-    // RDKit✔️✔️:   return res;
+    // RDKit❗✔️: double toDouble(const std::string_view input, bool acceptSpaces) {
+    // RDKit❗✔️:   // sanity check on the input since strtol doesn't do it for us:
+    // RDKit❗✔️:   const char *txt = input.data();
+    // RDKit❗✔️:   for (size_t i = 0u; i < input.size() && *txt != '\x00'; ++i) {
+    // RDKit❗✔️:     // check for ',' and '.' because locale
+    // RDKit❗✔️:     if ((*txt >= '0' && *txt <= '9') || (acceptSpaces && *txt == ' ') ||
+    // RDKit❗✔️:         *txt == '+' || *txt == '-' || *txt == ',' || *txt == '.') {
+    // RDKit❗✔️:       ++txt;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       throw boost::bad_lexical_cast();
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // unfortunately from_chars() with doubles didn't work on g++ until v11.1
+    // RDKit❗✔️:   // and the status with clang is hard to figure out... we remain old-school
+    // RDKit❗✔️:   // remove leading spaces
+    // RDKit❗✔️:   double res = atof(input.data());
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: double toDouble(const std::string &input, bool acceptSpaces) {
+    // RDKit❗✔️:   return toDouble(std::string_view(input.c_str()), acceptSpaces);
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION
     let checked = value.split_once('\0').map_or(value, |(prefix, _)| prefix);
     if !checked
         .bytes()
@@ -127,17 +139,13 @@ fn rdkit_to_double_no_spaces(value: &str, line: usize) -> Result<f64, XyzReadErr
             source: value.parse::<f64>().err().unwrap_or_else(parse_float_error),
         });
     }
-    let result = checked
-        .split_once(',')
-        .map_or(checked, |(prefix, _)| prefix)
-        .parse::<f64>()
-        .map_err(|source| XyzReadError::Coordinate {
-            value: value.to_string(),
-            line,
-            source,
-        });
-    // END RDKIT CPP FUNCTION
-    result
+    // Reuse the canonical private atof owner after source alphabet screening.
+    // Prefix parsing and source no-conversion zero are observable chemistry
+    // behavior; invalid letters still fail above. The existing ordinary finite
+    // coordinate contract and known extreme numeric boundaries remain intact.
+    // Cost: borrowed linear byte screening and canonical prefix conversion;
+    // no new string clone or numeric algorithm. No all-input libc equivalence.
+    Ok(crate::sdf::parse_rdkit_atof(checked))
 }
 
 fn normalize_symbol(raw: &str) -> String {
@@ -150,23 +158,75 @@ fn normalize_symbol(raw: &str) -> String {
 
 fn parse_atom_line(line_text: &str, line: usize) -> Result<(Element, [f64; 3]), XyzReadError> {
     // BEGIN RDKIT CPP FUNCTION ParseXYZFileAtomLine
-    // RDKit✔️✔️: std::string whitespace{" \t"};
-    // RDKit✔️✔️: size_t delims[8];
-    // RDKit✔️✔️: size_t prev = 0;
-    // RDKit✔️✔️: for (unsigned int i = 0; i < 7; i++) {
-    // RDKit✔️✔️:   if (i % 2 == 0) {
-    // RDKit✔️✔️:     delims[i] = atomLine.find_first_not_of(whitespace, prev);
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     delims[i] = atomLine.find_first_of(whitespace, prev);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (delims[i] == std::string::npos) {
-    // RDKit✔️✔️:     std::ostringstream errout;
-    // RDKit✔️✔️:     errout << "Missing coordinates on line " << line << std::endl;
-    // RDKit✔️✔️:     throw FileParseException(errout.str());
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   prev = delims[i];
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: delims[7] = atomLine.find_last_not_of(whitespace) + 1;
+    // RDKit❗✔️: Atom *ParseXYZFileAtomLine(const std::string &atomLine, RDGeom::Point3D &pos,
+    // RDKit❗✔️:                            unsigned int line) {
+    // RDKit❗✔️:   std::string whitespace{" \t"};
+    // RDKit❗✔️:   size_t delims[8];
+    // RDKit❗✔️:   size_t prev = 0;
+    // RDKit❗✔️:   for (unsigned int i = 0; i < 7; i++) {
+    // RDKit❗✔️:     if (i % 2 == 0) {
+    // RDKit❗✔️:       delims[i] = atomLine.find_first_not_of(whitespace, prev);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       delims[i] = atomLine.find_first_of(whitespace, prev);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (delims[i] == std::string::npos) {
+    // RDKit❗✔️:       std::ostringstream errout;
+    // RDKit❗✔️:       errout << "Missing coordinates on line " << line << std::endl;
+    // RDKit❗✔️:       throw FileParseException(errout.str());
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     prev = delims[i];
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   delims[7] = atomLine.find_last_not_of(whitespace) + 1;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // set conformer
+    // RDKit❗✔️:   try {
+    // RDKit❗✔️:     pos.x = FileParserUtils::toDouble(
+    // RDKit❗✔️:         atomLine.substr(delims[2], delims[3] - delims[2]), false);
+    // RDKit❗✔️:   } catch (boost::bad_lexical_cast &) {
+    // RDKit❗✔️:     std::ostringstream errout;
+    // RDKit❗✔️:     errout << "Cannot convert '"
+    // RDKit❗✔️:            << atomLine.substr(delims[2], delims[3] - delims[2])
+    // RDKit❗✔️:            << "' to double on line " << line << std::endl;
+    // RDKit❗✔️:     throw FileParseException(errout.str());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   try {
+    // RDKit❗✔️:     pos.y = FileParserUtils::toDouble(
+    // RDKit❗✔️:         atomLine.substr(delims[4], delims[5] - delims[4]), false);
+    // RDKit❗✔️:   } catch (boost::bad_lexical_cast &) {
+    // RDKit❗✔️:     std::ostringstream errout;
+    // RDKit❗✔️:     errout << "Cannot convert '"
+    // RDKit❗✔️:            << atomLine.substr(delims[4], delims[5] - delims[4])
+    // RDKit❗✔️:            << "' to double on line " << line << std::endl;
+    // RDKit❗✔️:     throw FileParseException(errout.str());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   try {
+    // RDKit❗✔️:     pos.z = FileParserUtils::toDouble(
+    // RDKit❗✔️:         atomLine.substr(delims[6], delims[7] - delims[6]), false);
+    // RDKit❗✔️:   } catch (boost::bad_lexical_cast &) {
+    // RDKit❗✔️:     std::ostringstream errout;
+    // RDKit❗✔️:     errout << "Cannot convert '"
+    // RDKit❗✔️:            << atomLine.substr(delims[6], delims[7] - delims[6])
+    // RDKit❗✔️:            << "' to double on line " << line << std::endl;
+    // RDKit❗✔️:     throw FileParseException(errout.str());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string symb{atomLine.substr(delims[0], delims[1] - delims[0])};
+    // RDKit❗✔️:   if (symb.size() == 2 && symb[1] >= 'A' && symb[1] <= 'Z') {
+    // RDKit❗✔️:     symb[1] = static_cast<char>(tolower(symb[1]));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   Atom *atom;
+    // RDKit❗✔️:   try {
+    // RDKit❗✔️:     atom = new Atom(PeriodicTable::getTable()->getAtomicNumber(symb));
+    // RDKit❗✔️:   } catch (const Invar::Invariant &e) {
+    // RDKit❗✔️:     throw FileParseException(e.what());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return atom;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTION
     let mut delims = [0usize; 8];
     let mut prev = 0usize;
     for (i, delim) in delims.iter_mut().take(7).enumerate() {
@@ -185,15 +245,18 @@ fn parse_atom_line(line_text: &str, line: usize) -> Result<(Element, [f64; 3]), 
     delims[7] = line_text
         .rfind(|ch: char| ch != ' ' && ch != '\t')
         .map_or(0, |index| index + 1);
-    let symbol = normalize_symbol(&line_text[delims[0]..delims[1]]);
-    let element = Element::from_symbol(&symbol).ok_or_else(|| XyzReadError::AtomSymbol {
-        message: format!("Element '{symbol}' not found"),
-    })?;
     let coord = [
         rdkit_to_double_no_spaces(&line_text[delims[2]..delims[3]], line)?,
         rdkit_to_double_no_spaces(&line_text[delims[4]..delims[5]], line)?,
         rdkit_to_double_no_spaces(&line_text[delims[6]..delims[7]], line)?,
     ];
+    // Source converts x/y/z before symbol lookup; preserve error priority.
+    let symbol = normalize_symbol(&line_text[delims[0]..delims[1]]);
+    let element = Element::from_symbol(&symbol).ok_or_else(|| XyzReadError::AtomSymbol {
+        message: format!("Element '{symbol}' not found"),
+    })?;
+    // Seven disjoint delimiter searches and three borrowed coordinate slices
+    // remain linear in the line; symbol normalization is bounded by symbol size.
     Ok((element, coord))
 }
 

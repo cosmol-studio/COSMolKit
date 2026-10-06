@@ -72,6 +72,16 @@ impl<'a> ScanCursor<'a> {
         self.start = self.pos;
     }
 
+    /// Borrow the current string pointer without copying or pre-scanning.
+    pub(super) fn remaining_bytes(&self) -> &'a [u8] {
+        self.bytes.get(self.pos..).unwrap_or(&[])
+    }
+
+    /// Move to the source end pointer after a bounded borrowed-byte scan.
+    pub(super) fn advance_bytes(&mut self, count: usize) {
+        self.pos += count;
+    }
+
     /// `shcnt(f)`: bytes consumed since construction or the last reset.
     pub(crate) fn consumed(&self) -> usize {
         // musl✔️✔️: #define shcnt(f) ((f)->shcnt + ((f)->rpos - (f)->buf))

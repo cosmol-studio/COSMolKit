@@ -1856,6 +1856,255 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "TopologicalFingerprintResult.bit_info",
         ]);
     }
+    // ROOT-authorized BATCH registry fixture; fixed declaration order and feature gates.
+    // Delivery proposal: exact pinned current IO prerequisite declaration order.
+    if cfg!(feature = "cap-io") {
+        expected.extend([
+            "SdfRecord.from_query_graph",
+            "SdfRecord.to_mol",
+            "SdfRecord.to_mol_with_params",
+            "SdfRecord.to_sdf",
+            "SdfRecord.to_sdf_with_params",
+            "types.PropertyStringError",
+            "PropertyStringError.kind",
+            "Molecule.atom_property_string",
+            "Molecule.bond_property_string",
+            "types.MolecularIoError",
+            "types.Mol2ReadParams",
+            "types.Mol2Type",
+            "types.Mol2ReadError",
+            "types.Mol2PostError",
+            "types.XyzReadError",
+            "types.XyzWriteError",
+            "types.XyzWriteParams",
+            "types.SdfDataset",
+            "types.SdfDatasetIterator",
+            "types.SdfRecordMetadata",
+            "types.SdfRecordStream",
+            "Molecule.from_xyz_block",
+            "Molecule.read_xyz",
+            "Molecule.from_mol2",
+            "Molecule.read_mol2",
+            "Molecule.read_mol",
+            "Molecule.read_sdf",
+            "Molecule.from_mol2_with_params",
+            "Molecule.read_mol2_with_params",
+            "Molecule.read_mol_with_params",
+            "Molecule.read_sdf_with_params",
+            "Molecule.from_mol",
+            "Molecule.from_mol_with_params",
+            "Molecule.to_xyz",
+            "Molecule.to_xyz_with_params",
+            "Molecule.write_xyz",
+            "Molecule.write_xyz_with_params",
+            "SdfDataset.open",
+            "SdfDataset.open_with_params",
+            "SdfRecordStream.open",
+            "SdfRecordStream.open_with_params",
+            "SdfDataset.len",
+            "SdfDataset.is_empty",
+            "SdfDataset.path",
+            "SdfDataset.iter",
+            "SdfDataset.metadata",
+            "SdfDataset.record",
+            "SdfDataset.record_with_params",
+            "SdfDataset.record_text",
+            "SdfRecordStream.next_record",
+            "SdfRecordStream.is_end",
+            "SdfRecordStream.records_consumed",
+            "SdfRecordStream.bytes_consumed",
+            "SdfRecordStream.lines_consumed",
+            "SdfRecordMetadata.index",
+            "SdfRecordMetadata.byte_offset",
+            "SdfRecordMetadata.byte_len",
+            "SdfRecordMetadata.byte_range",
+            "SdfRecordMetadata.line_range",
+            "SdfRecordMetadata.title",
+            "SdfRecord.title",
+            "SdfRecord.index",
+            "SdfRecord.data_field",
+        ]);
+    }
+    if cfg!(feature = "cap-io") && cfg!(feature = "cap-batch") {
+        expected.extend([
+            "types.SdfBatchIterator",
+            "types.SdfReaderBatchIterator",
+            "MoleculeBatch.from_sdf_records",
+            "MoleculeBatch.from_sdf_records_with_params",
+            "MoleculeBatch.read_sdf",
+            "MoleculeBatch.read_sdf_with_params",
+            "MoleculeBatch.from_dataset_indices",
+            "MoleculeBatch.get",
+            "MoleculeBatch.records",
+            "SdfDataset.batches",
+            "SdfBatchIterator.next_batch",
+            "SdfReaderBatchIterator.next_batch",
+        ]);
+    }
+    if cfg!(feature = "cap-io") {
+        expected.extend([
+            "types.SdfReader",
+            "SdfReader.open",
+            "SdfReader.open_with_params",
+            "SdfReader.path",
+            "SdfReader.params",
+        ]);
+    }
+    if cfg!(feature = "cap-io") && cfg!(feature = "cap-batch") {
+        expected.extend(["SdfReader.batches"]);
+    }
+    if cfg!(feature = "cap-io") {
+        expected.extend([
+            "types.MolWriteError",
+            "types.MolBlockWriteParams",
+            "types.MolCoordinateSelection",
+            "types.SdfFormat",
+            "Molecule.to_mol",
+            "Molecule.to_mol_with_params",
+            "Molecule.to_sdf",
+            "Molecule.to_sdf_with_params",
+            "Molecule.to_sdf_2d",
+            "Molecule.to_sdf_2d_with_params",
+            "Molecule.to_sdf_3d",
+            "Molecule.to_sdf_3d_with_params",
+            "Molecule.write_mol",
+            "Molecule.write_mol_with_params",
+            "Molecule.write_sdf",
+            "Molecule.write_sdf_with_params",
+            "Molecule.write_sdf_files",
+            "Molecule.write_sdf_files_with_params",
+        ]);
+    }
+    if cfg!(feature = "cap-io") && cfg!(feature = "cap-batch") {
+        expected.extend([
+            "types.BatchExportParams",
+            "MoleculeBatch.to_sdf",
+            "MoleculeBatch.to_sdf_files",
+            "MoleculeBatch.to_sdf_with_params",
+            "MoleculeBatch.to_sdf_files_with_params",
+            "BatchExportReport.total",
+            "BatchExportReport.success",
+            "BatchExportReport.failed",
+            "BatchExportReport.errors",
+            "SdfRecordStream.batches",
+        ]);
+    }
+    if cfg!(feature = "cap-batch") {
+        expected.extend([
+            "types.MoleculeBatch",
+            "types.BatchRecord",
+            "types.BatchError",
+            "types.BatchErrorMode",
+            "types.BatchValidationError",
+            "types.BatchParams",
+            "types.BatchExportReport",
+            "MoleculeBatch.len",
+            "MoleculeBatch.is_empty",
+            "MoleculeBatch.valid_mask",
+            "MoleculeBatch.invalid_mask",
+            "MoleculeBatch.valid_count",
+            "MoleculeBatch.invalid_count",
+            "MoleculeBatch.errors",
+            "MoleculeBatch.parallel_jobs",
+            "MoleculeBatch.progress_bar",
+            "MoleculeBatch.to_list",
+            "MoleculeBatch.with_valid_records",
+            "MoleculeBatch.with_parallel_jobs",
+            "MoleculeBatch.with_progress_bar",
+            "MoleculeBatch.from_records",
+        ]);
+        if cfg!(feature = "cap-smiles") {
+            expected.extend([
+                "MoleculeBatch.from_smiles_list",
+                "MoleculeBatch.from_smiles_list_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-sanitize") {
+            expected.extend([
+                "MoleculeBatch.sanitize",
+                "MoleculeBatch.sanitize_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-hydrogens") {
+            expected.extend([
+                "MoleculeBatch.with_hydrogens",
+                "MoleculeBatch.with_hydrogens_with_params",
+                "MoleculeBatch.without_hydrogens",
+                "MoleculeBatch.without_hydrogens_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-kekulize") {
+            expected.extend([
+                "MoleculeBatch.with_kekulized_bonds",
+                "MoleculeBatch.with_kekulized_bonds_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-depict") {
+            expected.extend([
+                "MoleculeBatch.with_2d_coordinates",
+                "MoleculeBatch.with_2d_coordinates_with_params",
+            ]);
+        }
+        expected.extend(["types.BatchQueryParams"]);
+        if cfg!(feature = "cap-smiles") {
+            expected.extend([
+                "MoleculeBatch.to_smiles_list",
+                "MoleculeBatch.to_smiles_list_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-conformer") {
+            expected.extend([
+                "MoleculeBatch.dg_bounds_matrix_list",
+                "MoleculeBatch.dg_bounds_matrix_list_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-depict") {
+            expected.extend([
+                "MoleculeBatch.to_svg_list",
+                "MoleculeBatch.to_svg_list_with_params",
+                "types.BatchImageParams",
+                "types.BatchImageError",
+                "MoleculeBatch.to_images",
+                "MoleculeBatch.to_images_with_params",
+            ]);
+        }
+        if cfg!(feature = "cap-fingerprints") {
+            expected.extend([
+                "MoleculeBatch.fingerprint_atom_pair_list",
+                "MoleculeBatch.fingerprint_atom_pair_list_with_params",
+                "MoleculeBatch.fingerprint_atom_pair_sparse_count_list",
+                "MoleculeBatch.fingerprint_atom_pair_sparse_count_list_with_params",
+                "MoleculeBatch.fingerprint_atom_pair_count_list",
+                "MoleculeBatch.fingerprint_atom_pair_count_list_with_params",
+                "MoleculeBatch.fingerprint_atom_pair_sparse_bits_list",
+                "MoleculeBatch.fingerprint_atom_pair_sparse_bits_list_with_params",
+                "MoleculeBatch.fingerprint_layered_list",
+                "MoleculeBatch.fingerprint_layered_list_with_params",
+                "MoleculeBatch.fingerprint_layered_with_output_list",
+                "MoleculeBatch.fingerprint_layered_with_output_list_with_params",
+                "MoleculeBatch.pattern_fingerprint_list",
+                "MoleculeBatch.pattern_fingerprint_list_with_params",
+                "MoleculeBatch.fingerprint_morgan_list",
+                "MoleculeBatch.fingerprint_morgan_list_with_params",
+                "types.BatchFingerprintOutput",
+                "MoleculeBatch.fingerprint_atom_pair_with_output_list",
+                "MoleculeBatch.fingerprint_atom_pair_with_output_list_with_params",
+                "MoleculeBatch.fingerprint_morgan_with_output_list",
+                "MoleculeBatch.fingerprint_morgan_with_output_list_with_params",
+                "MoleculeBatch.fingerprint_morgan_list_with_generator_params",
+                "MoleculeBatch.fingerprint_morgan_with_output_list_with_generator_params",
+                "types.BatchFingerprintAdditionalOutput",
+                "types.BatchFingerprintOutputError",
+                "BatchFingerprintAdditionalOutput.atom_counts",
+                "BatchFingerprintAdditionalOutput.atom_to_bits",
+                "BatchFingerprintAdditionalOutput.bit_info_map",
+                "BatchFingerprintAdditionalOutput.bit_paths",
+                "BatchFingerprintAdditionalOutput.atoms_per_bit",
+                "BatchFingerprintOutput.fingerprint",
+                "BatchFingerprintOutput.additional_output",
+            ]);
+        }
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()
@@ -2598,7 +2847,87 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "Molecule.with_cleared_3d_conformers"
                 | "Molecule.clear_3d_conformers_"
         );
-        let expected = if native_coordinates {
+        // These exact project-native BATCH statuses remain declared in the source registry.
+        let native_batch = matches!(
+            contract.semantic_id,
+            "types.MoleculeBatch"
+                | "types.BatchRecord"
+                | "types.BatchError"
+                | "types.BatchErrorMode"
+                | "types.BatchValidationError"
+                | "types.BatchParams"
+                | "types.BatchExportReport"
+                | "MoleculeBatch.len"
+                | "MoleculeBatch.is_empty"
+                | "MoleculeBatch.valid_mask"
+                | "MoleculeBatch.invalid_mask"
+                | "MoleculeBatch.valid_count"
+                | "MoleculeBatch.invalid_count"
+                | "MoleculeBatch.errors"
+                | "MoleculeBatch.parallel_jobs"
+                | "MoleculeBatch.progress_bar"
+                | "MoleculeBatch.to_list"
+                | "MoleculeBatch.with_valid_records"
+                | "MoleculeBatch.with_parallel_jobs"
+                | "MoleculeBatch.with_progress_bar"
+                | "MoleculeBatch.from_records"
+                | "MoleculeBatch.from_smiles_list"
+                | "MoleculeBatch.from_smiles_list_with_params"
+                | "MoleculeBatch.sanitize"
+                | "MoleculeBatch.sanitize_with_params"
+                | "MoleculeBatch.with_hydrogens"
+                | "MoleculeBatch.with_hydrogens_with_params"
+                | "MoleculeBatch.without_hydrogens"
+                | "MoleculeBatch.without_hydrogens_with_params"
+                | "MoleculeBatch.with_kekulized_bonds"
+                | "MoleculeBatch.with_kekulized_bonds_with_params"
+                | "MoleculeBatch.with_2d_coordinates"
+                | "MoleculeBatch.with_2d_coordinates_with_params"
+                | "types.BatchQueryParams"
+                | "MoleculeBatch.to_smiles_list"
+                | "MoleculeBatch.to_smiles_list_with_params"
+                | "MoleculeBatch.dg_bounds_matrix_list"
+                | "MoleculeBatch.dg_bounds_matrix_list_with_params"
+                | "MoleculeBatch.to_svg_list"
+                | "MoleculeBatch.to_svg_list_with_params"
+                | "types.BatchImageParams"
+                | "types.BatchImageError"
+                | "MoleculeBatch.to_images"
+                | "MoleculeBatch.to_images_with_params"
+                | "MoleculeBatch.fingerprint_atom_pair_list"
+                | "MoleculeBatch.fingerprint_atom_pair_list_with_params"
+                | "MoleculeBatch.fingerprint_atom_pair_sparse_count_list"
+                | "MoleculeBatch.fingerprint_atom_pair_sparse_count_list_with_params"
+                | "MoleculeBatch.fingerprint_atom_pair_count_list"
+                | "MoleculeBatch.fingerprint_atom_pair_count_list_with_params"
+                | "MoleculeBatch.fingerprint_atom_pair_sparse_bits_list"
+                | "MoleculeBatch.fingerprint_atom_pair_sparse_bits_list_with_params"
+                | "MoleculeBatch.fingerprint_layered_list"
+                | "MoleculeBatch.fingerprint_layered_list_with_params"
+                | "MoleculeBatch.fingerprint_layered_with_output_list"
+                | "MoleculeBatch.fingerprint_layered_with_output_list_with_params"
+                | "MoleculeBatch.pattern_fingerprint_list"
+                | "MoleculeBatch.pattern_fingerprint_list_with_params"
+                | "MoleculeBatch.fingerprint_morgan_list"
+                | "MoleculeBatch.fingerprint_morgan_list_with_params"
+                | "types.BatchFingerprintOutput"
+                | "MoleculeBatch.fingerprint_atom_pair_with_output_list"
+                | "MoleculeBatch.fingerprint_atom_pair_with_output_list_with_params"
+                | "MoleculeBatch.fingerprint_morgan_with_output_list"
+                | "MoleculeBatch.fingerprint_morgan_with_output_list_with_params"
+                | "MoleculeBatch.fingerprint_morgan_list_with_generator_params"
+                | "MoleculeBatch.fingerprint_morgan_with_output_list_with_generator_params"
+                | "types.BatchFingerprintAdditionalOutput"
+                | "types.BatchFingerprintOutputError"
+                | "BatchFingerprintAdditionalOutput.atom_counts"
+                | "BatchFingerprintAdditionalOutput.atom_to_bits"
+                | "BatchFingerprintAdditionalOutput.bit_info_map"
+                | "BatchFingerprintAdditionalOutput.bit_paths"
+                | "BatchFingerprintAdditionalOutput.atoms_per_bit"
+                | "BatchFingerprintOutput.fingerprint"
+                | "BatchFingerprintOutput.additional_output"
+        );
+        let expected = if native_coordinates || native_batch {
             FunctionStatus::Native
         } else if fuzzy {
             FunctionStatus::Parity { reference: "RDKit" }

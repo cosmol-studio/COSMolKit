@@ -8,7 +8,11 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::error::Error;
 
 pyo3::create_exception!(cosmolkit, LayeredFingerprintError, PyValueError);
-pub(crate) fn layered_pyerr(py: Python<'_>, source: ck::LayeredFingerprintError) -> PyErr {
+pub(crate) fn layered_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::LayeredFingerprintError>,
+) -> PyErr {
+    let source = source.borrow();
     use ck::LayeredFingerprintError as E;
     let err = LayeredFingerprintError::new_err(source.to_string());
     let attrs = || -> PyResult<()> {
@@ -16,7 +20,7 @@ pub(crate) fn layered_pyerr(py: Python<'_>, source: ck::LayeredFingerprintError)
         object.setattr("domain", "Fingerprint")?;
         object.setattr(
             "kind",
-            match &source {
+            match source {
                 E::InvalidArguments { .. } => "InvalidArguments",
                 E::Topology(_) => "Topology",
                 E::Query(_) => "Query",
@@ -25,7 +29,7 @@ pub(crate) fn layered_pyerr(py: Python<'_>, source: ck::LayeredFingerprintError)
                 E::Value(_) => "Value",
             },
         )?;
-        if let E::InvalidArguments { reason } = &source {
+        if let E::InvalidArguments { reason } = source {
             object.setattr("reason", reason)?;
         }
         Ok(())

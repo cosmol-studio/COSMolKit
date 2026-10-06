@@ -3529,7 +3529,7 @@ fn atom_text(
     let needs_bracket = if custom_symbol.is_some() || params.all_hydrogens_explicit {
         true
     } else {
-        if !in_organic_subset(atom.atomic_number()) {
+        if !cosmolkit_core::is_rdkit_organic_subset(atom.atomic_number()) {
             true
         } else if atom.formal_charge() != 0 {
             true
@@ -3820,23 +3820,6 @@ fn other_atom(bond: &Bond, atom: usize) -> Result<usize, SmilesParseError> {
             bond.id().index()
         )))
     }
-}
-
-fn in_organic_subset(atomic_number: u8) -> bool {
-    // BEGIN RDKIT CPP FUNCTION inOrganicSubset
-    // RDKit✔️✔️: const int atomicSmiles[] = {0, 5, 6, 7, 8, 9, 15, 16, 17, 35, 53, -1};
-    // RDKit✔️✔️: bool inOrganicSubset(int atomicNumber) {
-    // RDKit✔️✔️:   unsigned int idx = 0;
-    // RDKit✔️✔️:   while (atomicSmiles[idx] < atomicNumber && atomicSmiles[idx] != -1) {
-    // RDKit✔️✔️:     ++idx;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return atomicSmiles[idx] == atomicNumber;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION inOrganicSubset
-    matches!(
-        atomic_number,
-        0 | 5 | 6 | 7 | 8 | 9 | 15 | 16 | 17 | 35 | 53
-    )
 }
 
 fn rdkit_query_ops_is_metal(atomic_number: u8) -> bool {

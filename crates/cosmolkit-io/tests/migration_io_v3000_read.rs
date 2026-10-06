@@ -4340,12 +4340,13 @@ fn v3k_atom_rows_short_row_is_bad_atom_line() {
 #[test]
 fn v3k_atom_rows_early_end_atom_is_bad_atom_line() {
     // Two atoms declared but only one row before `END ATOM`; the marker line is
-    // consumed as the second atom row and fails the required-field check.
+    // consumed as the second atom row. ParseV3000AtomSymbol runs before the
+    // coordinate-field checks, so the unknown symbol ATOM fails first.
     let block =
         v3000_with_outer_and_blocks(ZERO_OUTER, "2 0 0 0 0", &["M  V30 1 C 0.0 0.0 0.0 0"], &[]);
     match read_mol_block_detached(&block) {
         Err(SdfReadError::Parse(message)) => assert!(
-            message.contains("Bad atom line"),
+            message.contains("Element 'ATOM' not found"),
             "unexpected diagnostic: {message}"
         ),
         other => panic!("expected an early-END-ATOM failure, got {other:?}"),
@@ -4438,12 +4439,31 @@ fn v3k_atom_numbers_nonfinite_coordinates_are_rejected() {
             "1 0 0 0 0",
             &[&format!("M  V30 1 C {value} 0 0 0")],
         );
-        assert!(
-            matches!(
-                read_mol_block_detached(&block),
-                Err(SdfReadError::Coordinates(_))
-            ),
-            "non-finite coordinate {value:?} must fail the finite-coordinate boundary"
+        // ParseV3000AtomBlock stores raw atof results without a finite test.
+        let MolBlockRecord::Concrete { coordinates, .. } =
+            read_mol_block_detached(&block).expect("source raw nonfinite storage")
+        else {
+            panic!("concrete record expected");
+        };
+        let conformer = &coordinates.conformers_2d[0];
+        let actual = conformer.coordinates()[0][0];
+        if value == "nan" {
+            assert!(actual.is_nan());
+        } else {
+            assert_eq!(actual.to_bits(), f64::INFINITY.to_bits());
+        }
+        assert_eq!(conformer.coordinates().len(), 1);
+        assert_eq!(conformer.coordinates()[0][1], 0.0);
+        assert_eq!(
+            conformer.validate_checked_for_atom_count(1),
+            Err(
+                cosmolkit_model::CoordinateValidationError::NonFiniteCoordinate {
+                    dimension: "2D",
+                    conformer: 0,
+                    atom: 0,
+                    axis: "x"
+                }
+            )
         );
     }
 }
@@ -5013,18 +5033,12 @@ fn v3k_charge_leading_plus_is_screened_but_not_converted_for_concrete_and_query_
     };
     let atom = record.query.atom(0).expect("query atom");
     assert_eq!(atom.formal_charge(), 0);
-    let QueryNode::And(children) = atom.predicate() else {
-        panic!("expandQuery must conjoin the formal-charge predicate");
-    };
-    assert_eq!(children.len(), 2);
-    assert!(matches!(
-        &children[0],
-        QueryNode::Predicate(AtomQueryPredicate::Any)
-    ));
-    assert!(matches!(
-        &children[1],
-        QueryNode::Predicate(AtomQueryPredicate::FormalCharge(0))
-    ));
+    // QueryAtom::expandQuery -> mergeNullQFirst: non-negated Null AND
+    // swaps in the new predicate; no redundant Any child survives.
+    assert_eq!(
+        atom.predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::FormalCharge(0))
+    );
 }
 
 #[test]
@@ -5039,18 +5053,12 @@ fn v3k_charge_query_atoms_expand_the_query_without_setting_concrete_charge() {
     };
     let atom = record.query.atom(0).expect("query atom");
     assert_eq!(atom.formal_charge(), 0);
-    let QueryNode::And(children) = atom.predicate() else {
-        panic!("expandQuery must conjoin the formal-charge predicate");
-    };
-    assert_eq!(children.len(), 2);
-    assert!(matches!(
-        &children[0],
-        QueryNode::Predicate(AtomQueryPredicate::Any)
-    ));
-    assert!(matches!(
-        &children[1],
-        QueryNode::Predicate(AtomQueryPredicate::FormalCharge(-3))
-    ));
+    // QueryAtom::expandQuery -> mergeNullQFirst: non-negated Null AND
+    // swaps in the new predicate; no redundant Any child survives.
+    assert_eq!(
+        atom.predicate(),
+        &QueryNode::predicate(AtomQueryPredicate::FormalCharge(-3))
+    );
 }
 
 #[test]
@@ -5120,10 +5128,7 @@ fn v3k_charge_rejects_unrepresentable_concrete_and_query_values_without_narrowin
         assert_eq!(atom.formal_charge(), 0, "query carrier for CHG={charge}");
         assert_eq!(
             atom.predicate(),
-            &QueryNode::and(vec![
-                QueryNode::predicate(AtomQueryPredicate::Any),
-                QueryNode::predicate(AtomQueryPredicate::FormalCharge(expected)),
-            ]),
+            &QueryNode::predicate(AtomQueryPredicate::FormalCharge(expected)),
             "full-width query target for CHG={charge}"
         );
     }
@@ -5259,7 +5264,7 @@ fn v3k_mass_integer_fractional_and_integer_conversion_edges_are_source_shaped() 
 #[test]
 fn v3k_mass_query_atoms_expand_typed_isotope_predicates() {
     // The source calls expandQuery(makeAtomIsotopeQuery(v)) for an existing
-    // query atom. Assert the typed conjunction and leave concrete isotope
+    // query atom. Assert the typed predicate and leave concrete isotope
     // state unchanged instead of relying on a Debug rendering.
     for (property, expected) in [
         ("MASS=13", 13),
@@ -5277,18 +5282,12 @@ fn v3k_mass_query_atoms_expand_typed_isotope_predicates() {
         };
         let atom = record.query.atom(0).expect("query atom");
         assert_eq!(atom.isotope(), None, "{property}");
-        let QueryNode::And(children) = atom.predicate() else {
-            panic!("{property}: isotope expansion must conjoin the predicate");
-        };
-        assert_eq!(children.len(), 2, "{property}");
-        assert!(matches!(
-            &children[0],
-            QueryNode::Predicate(AtomQueryPredicate::Any)
-        ));
-        assert!(matches!(
-            &children[1],
-            QueryNode::Predicate(AtomQueryPredicate::Isotope(value)) if *value == expected
-        ));
+        // NullQueryAlgebra replaces the non-negated wildcard for AND.
+        assert_eq!(
+            atom.predicate(),
+            &QueryNode::predicate(AtomQueryPredicate::Isotope(expected)),
+            "{property}"
+        );
     }
 }
 
@@ -5336,10 +5335,7 @@ fn v3k_mass_unrepresentable_model_values_are_checked_without_narrowing() {
         assert_eq!(atom.isotope(), None, "query carrier for MASS={value}");
         assert_eq!(
             atom.predicate(),
-            &QueryNode::and(vec![
-                QueryNode::predicate(AtomQueryPredicate::Any),
-                QueryNode::predicate(AtomQueryPredicate::Isotope(expected)),
-            ]),
+            &QueryNode::predicate(AtomQueryPredicate::Isotope(expected)),
             "full-width query target for MASS={value}"
         );
     }
@@ -6343,12 +6339,27 @@ fn v3k_atom_numbers_signed_zero_and_subnormal_boundaries() {
 fn v3k_atom_numbers_overflow_and_nonfinite_rejected() {
     for token in ["0x1p+2000", "0x1p+1024", "1e400"] {
         let block = v3000_single_atom_x(token);
-        assert!(
-            matches!(
-                read_mol_block_detached(&block),
-                Err(SdfReadError::Coordinates(_))
-            ),
-            "overflowing coordinate {token:?} must fail the finite-coordinate boundary"
+        // ParseV3000AtomBlock stores raw atof results without a finite test.
+        let MolBlockRecord::Concrete { coordinates, .. } =
+            read_mol_block_detached(&block).expect("source raw nonfinite storage")
+        else {
+            panic!("concrete record expected");
+        };
+        let conformer = &coordinates.conformers_2d[0];
+        let actual = conformer.coordinates()[0][0];
+        assert_eq!(actual.to_bits(), f64::INFINITY.to_bits());
+        assert_eq!(conformer.coordinates().len(), 1);
+        assert_eq!(conformer.coordinates()[0][1], 0.0);
+        assert_eq!(
+            conformer.validate_checked_for_atom_count(1),
+            Err(
+                cosmolkit_model::CoordinateValidationError::NonFiniteCoordinate {
+                    dimension: "2D",
+                    conformer: 0,
+                    atom: 0,
+                    axis: "x"
+                }
+            )
         );
     }
     // Gradual underflow to zero is a finite coordinate and is accepted.
@@ -6410,16 +6421,30 @@ fn v3k_symbols_lists_multibyte_entry_does_not_panic() {
 
 #[test]
 fn v3k_atom_numbers_atof_port_counterexamples() {
-    // 0x10p followed by fifty 9s overflows to +inf and must fail the existing
-    // finite-coordinate boundary (previously a silent 0.0).
+    // 0x10p followed by fifty 9s stores raw +inf, and fails the distinct
+    // checked finite boundary (previously a silent 0.0).
     let overflow = format!("0x10p{}", "9".repeat(50));
     let block = v3000_single_atom_x(&overflow);
-    assert!(
-        matches!(
-            read_mol_block_detached(&block),
-            Err(SdfReadError::Coordinates(_))
-        ),
-        "huge positive hex exponent must be rejected as non-finite"
+    let MolBlockRecord::Concrete { coordinates, .. } =
+        read_mol_block_detached(&block).expect("source huge exponent raw infinity")
+    else {
+        panic!("concrete record expected");
+    };
+    let conformer = &coordinates.conformers_2d[0];
+    assert_eq!(
+        conformer.coordinates()[0][0].to_bits(),
+        f64::INFINITY.to_bits()
+    );
+    assert_eq!(
+        conformer.validate_checked_for_atom_count(1),
+        Err(
+            cosmolkit_model::CoordinateValidationError::NonFiniteCoordinate {
+                dimension: "2D",
+                conformer: 0,
+                atom: 0,
+                axis: "x"
+            }
+        )
     );
 
     // 0x0.1p- followed by fifty 9s underflows to +0.0 and is accepted as a
@@ -6497,12 +6522,32 @@ fn v3k_atom_numbers_atof_port_suffix_and_malformed_prefixes() {
 fn v3k_atom_numbers_atof_port_nan_rejected_and_alignment_unchanged() {
     for token in ["nan", "-nan", "0x1p+1024", "1e400"] {
         let block = v3000_single_atom_x(token);
-        assert!(
-            matches!(
-                read_mol_block_detached(&block),
-                Err(SdfReadError::Coordinates(_))
-            ),
-            "non-finite coordinate {token:?} must fail the finite-coordinate boundary"
+        // ParseV3000AtomBlock stores raw atof results without a finite test.
+        let MolBlockRecord::Concrete { coordinates, .. } =
+            read_mol_block_detached(&block).expect("source raw nonfinite storage")
+        else {
+            panic!("concrete record expected");
+        };
+        let conformer = &coordinates.conformers_2d[0];
+        let actual = conformer.coordinates()[0][0];
+        if token.contains("nan") {
+            assert!(actual.is_nan());
+            assert_eq!(actual.is_sign_negative(), token.starts_with('-'));
+        } else {
+            assert_eq!(actual.to_bits(), f64::INFINITY.to_bits());
+        }
+        assert_eq!(conformer.coordinates().len(), 1);
+        assert_eq!(conformer.coordinates()[0][1], 0.0);
+        assert_eq!(
+            conformer.validate_checked_for_atom_count(1),
+            Err(
+                cosmolkit_model::CoordinateValidationError::NonFiniteCoordinate {
+                    dimension: "2D",
+                    conformer: 0,
+                    atom: 0,
+                    axis: "x"
+                }
+            )
         );
     }
 
@@ -6534,10 +6579,10 @@ fn v3k_atom_numbers_atof_port_nan_rejected_and_alignment_unchanged() {
 
 #[test]
 fn v3k_atom_numbers_atof_port_musl_long_hex_source_value() {
-    // Retained excluded-scope discrepancy, NOT RDKit acceptance evidence:
-    // this musl-derived implementation rounds a long hexadecimal significand
-    // one ULP below glibc/RDKit; see IO-atof-port.md. Narrowing the coordinate
-    // contract must not erase this regression or claim all-input equivalence.
+    // The source converter uses FE_TONEAREST. The exact 61-bit integer
+    // discards eight bits: remainder 0x21 is below midpoint 0x80, so the
+    // binary64 significand stays 0x1814d899942241. No tolerance applies.
+    // Original differing expectation and failure remain in the review receipt.
     let block = v3000_single_atom_x("0x1814D89994224121");
     let MolBlockRecord::Concrete { coordinates, .. } =
         read_mol_block_detached(&block).expect("long hex significand")
@@ -6546,7 +6591,7 @@ fn v3k_atom_numbers_atof_port_musl_long_hex_source_value() {
     };
     assert_eq!(
         coordinates.conformers_2d[0].coordinates()[0][0].to_bits(),
-        0x43b8_14d8_9994_2242
+        0x43b8_14d8_9994_2241
     );
 }
 

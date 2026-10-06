@@ -1303,3 +1303,227 @@ mod tests {
         );
     }
 }
+
+/// Read-only detached batch provenance. The unique mutable collector is separate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatchFingerprintAdditionalOutput {
+    atom_counts: Option<Vec<u32>>,
+    atom_to_bits: Option<Vec<Vec<u64>>>,
+    bit_info_map: Option<BTreeMap<u64, Vec<(u32, u32)>>>,
+    bit_paths: Option<BTreeMap<u64, Vec<Vec<i32>>>>,
+    atoms_per_bit: Option<BTreeMap<u64, Vec<Vec<i32>>>>,
+}
+impl BatchFingerprintAdditionalOutput {
+    fn from_output(output: &FingerprintAdditionalOutput) -> Self {
+        // COSMolKit❗❌: pinned d892ec3 Python AP/Morgan result wrappers copy
+        // provenance on read; this immutable result snapshots it once instead.
+        // Copying is linear in metadata and adds one owned snapshot while the
+        // source Rust bundle merely moved the collector. No chemistry is copied.
+        // impl From<cosmolkit_core::AtomPairFingerprintOutput> for AtomPairFingerprintResult {
+        //     fn from(value: cosmolkit_core::AtomPairFingerprintOutput) -> Self {
+        //         Self {
+        //             fingerprint: Fingerprint {
+        //                 inner: value.fingerprint,
+        //             },
+        //             additional_output: value
+        //                 .additional_output
+        //                 .map(|inner| PyAdditionalOutput { inner }),
+        //         }
+        //     }
+        // }
+        //
+        Self {
+            atom_counts: output.atom_counts().map(<[u32]>::to_vec),
+            atom_to_bits: output.atom_to_bits().map(<[Vec<u64>]>::to_vec),
+            bit_info_map: output.bit_info_map().cloned(),
+            bit_paths: output.bit_paths().cloned(),
+            atoms_per_bit: output.atoms_per_bit().cloned(),
+        }
+    }
+    pub fn atom_counts(&self) -> Option<&[u32]> {
+        //     fn atom_counts(&self) -> Option<Vec<u32>> {
+        //         self.inner.atom_counts.clone()
+        //     }
+        self.atom_counts.as_deref()
+    }
+    pub fn atom_to_bits(&self) -> Option<&[Vec<u64>]> {
+        //     fn atom_to_bits(&self) -> Option<Vec<Vec<u64>>> {
+        //         self.inner.atom_to_bits.clone()
+        //     }
+        self.atom_to_bits.as_deref()
+    }
+    pub fn bit_info_map(&self) -> Option<&BTreeMap<u64, Vec<(u32, u32)>>> {
+        //     fn bit_info_map(&self) -> Option<BTreeMap<u64, Vec<(u32, u32)>>> {
+        //         self.inner.bit_info_map.clone()
+        //     }
+        self.bit_info_map.as_ref()
+    }
+    pub fn bit_paths(&self) -> Option<&BTreeMap<u64, Vec<Vec<i32>>>> {
+        //     fn bit_paths(&self) -> Option<BTreeMap<u64, Vec<Vec<usize>>>> {
+        //         self.inner.bit_paths.clone()
+        //     }
+        self.bit_paths.as_ref()
+    }
+    pub fn atoms_per_bit(&self) -> Option<&BTreeMap<u64, Vec<Vec<i32>>>> {
+        //     fn atoms_per_bit(&self) -> Option<BTreeMap<u64, Vec<Vec<usize>>>> {
+        //         self.inner.atoms_per_bit.clone()
+        //     }
+        self.atoms_per_bit.as_ref()
+    }
+}
+/// Source-defined failure when a result did not request provenance collection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BatchFingerprintOutputError {
+    MissingAdditionalOutput { fingerprint_kind: &'static str },
+}
+impl std::fmt::Display for BatchFingerprintOutputError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingAdditionalOutput { fingerprint_kind } => write!(
+                f,
+                "{fingerprint_kind} additional output was not collected for this fingerprint result"
+            ),
+        }
+    }
+}
+impl std::error::Error for BatchFingerprintOutputError {}
+/// Canonical immutable bits and optional read-only provenance for both families.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatchFingerprintOutput {
+    pub fingerprint: crate::Fingerprint,
+    pub additional_output: Option<BatchFingerprintAdditionalOutput>,
+    missing_output_error: BatchFingerprintOutputError,
+}
+impl BatchFingerprintOutput {
+    pub fn fingerprint(&self) -> &crate::Fingerprint {
+        &self.fingerprint
+    }
+    pub fn additional_output(
+        &self,
+    ) -> Result<&BatchFingerprintAdditionalOutput, BatchFingerprintOutputError> {
+        //     fn additional_output(&self) -> PyResult<PyAdditionalOutput> {
+        //         self.additional_output.clone().ok_or_else(|| {
+        //             PyValueError::new_err(
+        //                 "AtomPair additional output was not collected for this fingerprint result",
+        //             )
+        //         })
+        //     }
+        //
+        //     fn additional_output(&self) -> PyResult<MorganAdditionalOutput> {
+        //         self.additional_output.clone().ok_or_else(|| {
+        //             PyValueError::new_err(
+        //                 "Morgan additional output was not collected for this fingerprint result",
+        //             )
+        //         })
+        //     }
+        //
+        self.additional_output
+            .as_ref()
+            .ok_or(self.missing_output_error)
+    }
+}
+/// Narrow detached result factory for the facade scheduler, without mutable access.
+/// This owner entry is not reexported as a facade API or language constructor.
+pub fn batch_fingerprint_output(
+    fingerprint: crate::Fingerprint,
+    output: Option<&FingerprintAdditionalOutput>,
+    fingerprint_kind: &'static str,
+) -> BatchFingerprintOutput {
+    BatchFingerprintOutput {
+        fingerprint,
+        additional_output: output.map(BatchFingerprintAdditionalOutput::from_output),
+        missing_output_error: BatchFingerprintOutputError::MissingAdditionalOutput {
+            fingerprint_kind,
+        },
+    }
+}
+
+#[cfg(test)]
+mod batch_readonly_projection_tests {
+    use super::*;
+    #[test]
+    fn every_pointer_mask_preserves_none_empty_order_widths_and_snapshot_isolation() {
+        for mask in 0u8..32 {
+            for populated in [false, true] {
+                let mut collector = FingerprintAdditionalOutput::new();
+                if mask & 1 != 0 {
+                    collector.allocate_atom_counts();
+                    if populated {
+                        collector.atom_counts = Some(vec![u32::MAX, 0, 17]);
+                    }
+                }
+                if mask & 2 != 0 {
+                    collector.allocate_atom_to_bits();
+                    if populated {
+                        collector.atom_to_bits = Some(vec![vec![u64::MAX, 2, 2], vec![], vec![0]]);
+                    }
+                }
+                if mask & 4 != 0 {
+                    collector.allocate_bit_info_map();
+                    if populated {
+                        collector.bit_info_map = Some(BTreeMap::from([
+                            (u64::MAX, vec![(u32::MAX, 2), (7, 2), (7, 2)]),
+                            (0, vec![]),
+                        ]));
+                    }
+                }
+                if mask & 8 != 0 {
+                    collector.allocate_bit_paths();
+                    if populated {
+                        collector.bit_paths = Some(BTreeMap::from([
+                            (
+                                u64::MAX,
+                                vec![vec![i32::MAX, i32::MIN, 7], vec![7, 7], vec![]],
+                            ),
+                            (0, vec![]),
+                        ]));
+                    }
+                }
+                if mask & 16 != 0 {
+                    collector.allocate_atoms_per_bit();
+                    if populated {
+                        collector.atoms_per_bit = Some(BTreeMap::from([
+                            (u64::MAX, vec![vec![2, 2, 0], vec![], vec![i32::MAX]]),
+                            (0, vec![]),
+                        ]));
+                    }
+                }
+                let snapshot = BatchFingerprintAdditionalOutput::from_output(&collector);
+                assert_eq!(snapshot.atom_counts(), collector.atom_counts());
+                assert_eq!(snapshot.atom_to_bits(), collector.atom_to_bits());
+                assert_eq!(snapshot.bit_info_map(), collector.bit_info_map());
+                assert_eq!(snapshot.bit_paths(), collector.bit_paths());
+                assert_eq!(snapshot.atoms_per_bit(), collector.atoms_per_bit());
+                let expected = snapshot.clone();
+                collector.allocate_atom_counts();
+                collector.allocate_atom_to_bits();
+                collector.allocate_bit_info_map();
+                collector.allocate_bit_paths();
+                collector.allocate_atoms_per_bit();
+                assert_eq!(snapshot, expected);
+                assert_eq!(snapshot.atom_counts().is_some(), mask & 1 != 0);
+                assert_eq!(snapshot.atom_to_bits().is_some(), mask & 2 != 0);
+                assert_eq!(snapshot.bit_info_map().is_some(), mask & 4 != 0);
+                assert_eq!(snapshot.bit_paths().is_some(), mask & 8 != 0);
+                assert_eq!(snapshot.atoms_per_bit().is_some(), mask & 16 != 0);
+            }
+        }
+    }
+    #[test]
+    fn missing_output_keeps_source_family_error_and_never_synthesizes_empty_metadata() {
+        for family in ["AtomPair", "Morgan"] {
+            let fingerprint = crate::Fingerprint::new(128);
+            let result = batch_fingerprint_output(fingerprint.clone(), None, family);
+            assert_eq!(result.fingerprint(), &fingerprint);
+            let error = result.additional_output().unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("{family} additional output was not collected for this fingerprint result")
+            );
+            assert!(matches!(
+                error,
+                BatchFingerprintOutputError::MissingAdditionalOutput { .. }
+            ));
+        }
+    }
+}

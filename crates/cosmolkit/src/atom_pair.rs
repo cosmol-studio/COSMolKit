@@ -57,6 +57,35 @@ impl std::error::Error for AtomPairReadError {
     }
 }
 impl Molecule {
+    pub(super) fn with_atom_pair_batch_input<T>(
+        &self,
+        params: &AtomPairFingerprintParams,
+        run: impl FnOnce(&AtomPairPreparedInput<'_>, &AtomPairCall<'_>) -> Result<T, AtomPairError>,
+    ) -> Result<T, AtomPairReadError> {
+        // Extract through the same read-only preparation as scalar calls;
+        // keep temporary rings alive for the detached owner invocation.
+        let prepared = crate::morgan::prepare_morgan_read_input(self)
+            .map_err(AtomPairReadError::Preparation)?;
+        let base = prepared.owner_input();
+        let input = AtomPairPreparedInput {
+            topology: base.topology,
+            properties: base.properties,
+            coordinates: base.coordinates,
+            valence: base.valence,
+            rings: base.rings,
+            use_legacy_stereo_perception: params.use_legacy_stereo_perception,
+        };
+        let call = AtomPairCall {
+            from_atoms: params.from_atoms.as_deref(),
+            ignore_atoms: params.ignore_atoms.as_deref(),
+            custom_atom_invariants: params.custom_atom_invariants.as_deref(),
+            custom_bond_invariants: params.custom_bond_invariants.as_deref(),
+            conformer_id: params.conformer_id,
+            atom_invariants_generator: params.atom_invariants_generator,
+        };
+        run(&input, &call).map_err(AtomPairReadError::Generator)
+    }
+
     pub fn atom_pair_fingerprint(&self) -> Result<Fingerprint, AtomPairReadError> {
         self.atom_pair_fingerprint_with_params(&AtomPairFingerprintParams::default(), None)
     }

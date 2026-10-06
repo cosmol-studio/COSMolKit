@@ -17,6 +17,7 @@ pub(crate) fn sdf_pyerr(py: Python<'_>, source: ck::SdfError) -> PyErr {
         ck::SdfError::Read(_) => "Read",
         ck::SdfError::Post(_) => "Post",
         ck::SdfError::Construction(_) => "Construction",
+        ck::SdfError::QueryGraph(_) => "QueryGraph",
         ck::SdfError::QueryRecord => "QueryRecord",
         ck::SdfError::WrongGraphKind { .. } => "WrongGraphKind",
     };
@@ -184,7 +185,7 @@ impl SdfGraph {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct SdfRecord {
-    inner: ck::SdfRecord,
+    pub(crate) inner: ck::SdfRecord,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]

@@ -43,6 +43,7 @@ fn query_finish_retains_actual_first_and_complete_source_order() {
             remove_hs: false,
             expand_attachment_points: false,
         },
+        None,
     )
     .unwrap();
     let MolBlockRecord::Query(output) = output else {

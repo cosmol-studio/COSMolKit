@@ -18,7 +18,8 @@ use cosmolkit_model::{
 use cosmolkit_types::BondOrder;
 
 use crate::sdf::{
-    MolBlockRecord, QueryMolBlockRecord, parse_rdkit_int, query_from_concrete_atom_value,
+    MolBlockRecord, QueryMolBlockRecord, parse_rdkit_int, parse_rdkit_unsigned,
+    query_from_concrete_atom_value,
 };
 
 /// Source options applied after Molfile syntax parsing.
@@ -45,6 +46,52 @@ impl Default for MolPostParams {
     }
 }
 
+/// Typed reasons carried inside the existing Molfile postprocessing categories.
+/// This value grants no runtime or commit authority.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum MolProcessingError {
+    #[error("{0}")]
+    Valence(#[from] cosmolkit_core::ValenceError),
+    #[error("{0}")]
+    Rings(#[from] cosmolkit_core::RingFindingError),
+    #[error("{0}")]
+    Stereo(#[from] cosmolkit_core::StereoError),
+    #[error("{0}")]
+    DoubleBondStereo(#[from] cosmolkit_core::DoubleBondStereoError),
+    #[error("{0}")]
+    BondDirectionStereo(#[from] cosmolkit_core::BondDirectionStereoError),
+    #[error("{0}")]
+    Atropisomer(#[from] cosmolkit_core::AtropisomerError),
+    #[error("{0}")]
+    Sanitize(#[from] cosmolkit_core::SanitizeError),
+    #[error("{0}")]
+    Hydrogen(#[from] cosmolkit_core::HydrogenError),
+    #[error("{0}")]
+    LegacyStereo(#[from] cosmolkit_core::LegacyStereoError),
+    #[error("{0}")]
+    AttachmentExpansion(#[from] cosmolkit_core::AttachmentExpansionError),
+    #[error("{0}")]
+    QueryAtom(#[from] cosmolkit_model::QueryAtomConversionError),
+    #[error("{0}")]
+    QueryGraph(#[from] cosmolkit_model::QueryGraphError),
+    #[error("{0}")]
+    QueryState(#[from] cosmolkit_model::QueryStateError),
+    #[error("{0}")]
+    Topology(#[from] cosmolkit_model::TopologyValidationError),
+    #[error("{0}")]
+    TopologyEdit(#[from] cosmolkit_model::TopologyEditError),
+    #[error("{0}")]
+    PropertyValue(#[from] cosmolkit_model::PropertyValueError),
+    #[error("{0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
+    #[error("{0}")]
+    BondValue(#[from] cosmolkit_model::BondValueError),
+    #[error("{0}")]
+    Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
+    #[error("{0}")]
+    MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
+}
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MolPostError {
     #[error(
@@ -64,13 +111,15 @@ pub enum MolPostError {
     #[error("invalid attachment value on atom {atom}: {value:?}")]
     AttachmentValue { atom: AtomId, value: String },
     #[error("attachment-point expansion failed: {0}")]
-    AttachmentExpansion(String),
+    AttachmentExpansion(#[source] MolProcessingError),
     #[error("Molfile postprocessing property is outside the detached model: {0}")]
     Representation(&'static str),
+    #[error("invalid numeric data {value:?} in DAT SGroup {field}")]
+    DataFieldNumber { field: &'static str, value: String },
     #[error(transparent)]
     QueryAtomConversion(#[from] QueryAtomConversionError),
     #[error("Molfile postprocessing failed: {0}")]
-    Processing(String),
+    Processing(#[source] MolProcessingError),
 }
 
 fn parse_int_property(value: &PropertyValue) -> Result<i32, ()> {
@@ -99,7 +148,7 @@ fn source_int_property_or_zero(
     // RDKit❗✔️: }
     // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
 
-    // RDKit❗✔️: if (atom->getPropIfPresent(common_properties::molSubstCount, ival) &&
+    // RDKit❗✔️:     if (atom->getPropIfPresent(common_properties::molSubstCount, ival) &&
     // Vector cast errors are lazy, source-key-specific and cannot become zero.
     // Other scalar conditions are retained; no allocation or full-map preflight.
     match atom.prop(key) {
@@ -171,134 +220,521 @@ fn retain_substance_groups(
     Ok(retained)
 }
 
-fn process_groups_on_topology(topology: &mut TopologyBlock) -> Result<(), MolPostError> {
-    // BEGIN RDKIT CPP FUNCTION processSGroups
+fn process_mrv_coordinate_bond(
+    atoms: &mut [cosmolkit_model::Atom],
+    bonds: &mut [cosmolkit_model::Bond],
+    query_bonds: Option<&mut [QueryBond]>,
+    group: &SubstanceGroup,
+) -> Result<(), MolPostError> {
+    // RDKit✔️❌: void processMrvCoordinateBond(RWMol &mol, const SubstanceGroup &sg) {
+    // RDKit✔️❌:   std::vector<std::string> dataFields;
+    // RDKit✔️❌:   if (sg.getPropIfPresent("DATAFIELDS", dataFields)) {
+    // RDKit✔️❌:     if (dataFields.empty()) {
+    // RDKit✔️❌:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:           << "ignoring MRV_COORDINATE_BOND_TYPE SGroup without data fields."
+    // RDKit✔️❌:           << std::endl;
+    // RDKit✔️❌:       return;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     auto coordinate_bond_idx =
+    // RDKit✔️❌:         FileParserUtils::toUnsigned(dataFields[0], true) - 1;
+    // RDKit✔️❌:
+    // RDKit✔️❌:     if (dataFields.size() > 1) {
+    // RDKit✔️❌:       BOOST_LOG(rdWarningLog) << "ignoring extra data fields in "
+    // RDKit✔️❌:                                  "MRV_COORDINATE_BOND_TYPE SGroup for bond "
+    // RDKit✔️❌:                               << coordinate_bond_idx << '.' << std::endl;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     Bond *old_bond = nullptr;
+    // RDKit✔️❌:     try {
+    // RDKit✔️❌:       old_bond = mol.getBondWithIdx(coordinate_bond_idx);
+    // RDKit✔️❌:     } catch (const Invar::Invariant &) {
+    // RDKit✔️❌:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:           << "molecule does not contain a bond matching the "
+    // RDKit✔️❌:              "MRV_COORDINATE_BOND_TYPE SGroup for bond "
+    // RDKit✔️❌:           << coordinate_bond_idx << ", ignoring." << std::endl;
+    // RDKit✔️❌:       return;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     if (!old_bond || old_bond->getBondType() != Bond::BondType::UNSPECIFIED) {
+    // RDKit✔️❌:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:           << "MRV_COORDINATE_BOND_TYPE SGroup with value "
+    // RDKit✔️❌:           << coordinate_bond_idx
+    // RDKit✔️❌:           << " does not reference a query bond, ignoring." << std::endl;
+    // RDKit✔️❌:       return;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     Bond new_bond(Bond::BondType::DATIVE);
+    // RDKit✔️❌:     auto preserveProps = true;
+    // RDKit✔️❌:     auto keepSGroups = true;
+    // RDKit✔️❌:     mol.replaceBond(coordinate_bond_idx, &new_bond, preserveProps, keepSGroups);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // RDKit✔️❌: void RWMol::replaceBond(unsigned int idx, Bond *bond_pin, bool preserveProps,
+    // RDKit✔️❌:                         bool keepSGroups) {
+    // RDKit✔️❌:   PRECONDITION(bond_pin, "bad bond passed to replaceBond");
+    // RDKit✔️❌:   URANGE_CHECK(idx, getNumBonds());
+    // RDKit✔️❌:   auto bIter = getEdges();
+    // RDKit✔️❌:   for (unsigned int i = 0; i < idx; i++) {
+    // RDKit✔️❌:     ++bIter.first;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   const auto *obond = d_graph[*(bIter.first)];
+    // RDKit✔️❌:   auto *bond_p = bond_pin->copy();
+    // RDKit✔️❌:   bond_p->setOwningMol(this);
+    // RDKit✔️❌:   bond_p->setIdx(idx);
+    // RDKit✔️❌:   bond_p->setBeginAtomIdx(obond->getBeginAtomIdx());
+    // RDKit✔️❌:   bond_p->setEndAtomIdx(obond->getEndAtomIdx());
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // Update explicit Hs, if set, on both ends. This was github #7128
+    // RDKit✔️❌:   auto orderDifference =
+    // RDKit✔️❌:       bond_p->getBondTypeAsDouble() - obond->getBondTypeAsDouble();
+    // RDKit✔️❌:   if (orderDifference > 0) {
+    // RDKit✔️❌:     for (auto atom : {bond_p->getBeginAtom(), bond_p->getEndAtom()}) {
+    // RDKit✔️❌:       if (auto explicit_hs = atom->getNumExplicitHs(); explicit_hs > 0) {
+    // RDKit✔️❌:         auto new_hs = static_cast<int>(explicit_hs - orderDifference);
+    // RDKit✔️❌:         atom->setNumExplicitHs(std::max(new_hs, 0));
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (preserveProps) {
+    // RDKit✔️❌:     const bool replaceExistingData = false;
+    // RDKit✔️❌:     bond_p->updateProps(*d_graph[*(bIter.first)], replaceExistingData);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   const auto orig_p = d_graph[*(bIter.first)];
+    // RDKit✔️❌:   delete orig_p;
+    // RDKit✔️❌:   d_graph[*(bIter.first)] = bond_p;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (!keepSGroups) {
+    // RDKit✔️❌:     removeSubstanceGroupsReferencingBond(*this, idx);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // handle bookmarks
+    // RDKit✔️❌:   for (auto &ab : d_bondBookmarks) {
+    // RDKit✔️❌:     for (auto &elem : ab.second) {
+    // RDKit✔️❌:       if (elem == orig_p) {
+    // RDKit✔️❌:         elem = bond_p;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: };
+    // RDKit✔️❌: double Bond::getBondTypeAsDouble() const {
+    // RDKit✔️❌:   double res;
+    // RDKit✔️❌:   switch (getBondType()) {
+    // RDKit✔️❌:     case UNSPECIFIED:
+    // RDKit✔️❌:     case IONIC:
+    // RDKit✔️❌:     case ZERO:
+    // RDKit✔️❌:       res = 0;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case SINGLE:
+    // RDKit✔️❌:       res = 1;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case DOUBLE:
+    // RDKit✔️❌:       res = 2;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case TRIPLE:
+    // RDKit✔️❌:       res = 3;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case QUADRUPLE:
+    // RDKit✔️❌:       res = 4;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case QUINTUPLE:
+    // RDKit✔️❌:       res = 5;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case HEXTUPLE:
+    // RDKit✔️❌:       res = 6;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case ONEANDAHALF:
+    // RDKit✔️❌:       res = 1.5;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case TWOANDAHALF:
+    // RDKit✔️❌:       res = 2.5;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case THREEANDAHALF:
+    // RDKit✔️❌:       res = 3.5;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case FOURANDAHALF:
+    // RDKit✔️❌:       res = 4.5;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case FIVEANDAHALF:
+    // RDKit✔️❌:       res = 5.5;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case AROMATIC:
+    // RDKit✔️❌:       res = 1.5;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case DATIVEONE:
+    // RDKit✔️❌:       res = 1.0;
+    // RDKit✔️❌:       break;  // FIX: this should probably be different
+    // RDKit✔️❌:     case DATIVE:
+    // RDKit✔️❌:       res = 1.0;
+    // RDKit✔️❌:       break;  // FIX: again probably wrong
+    // RDKit✔️❌:     case HYDROGEN:
+    // RDKit✔️❌:       res = 0.0;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     default:
+    // RDKit✔️❌:       UNDER_CONSTRUCTION("Bad bond type");
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return res;
+    // RDKit✔️❌: }
+    // Behavior review: a new ordinary DATIVE Bond replaces only an
+    // UNSPECIFIED target; row ID/endpoints and ordered typed properties survive,
+    // while direction, stereo, flags and query identity start at defaults.
+    // Source order difference is 1 - 0, so positive explicit Hs at both ends
+    // decrease by one, including the donor. Other orders/out-of-range rows are
+    // source-defined no-ops; malformed numeric data propagates before lookup.
+    // Complexity review: one numeric scan and indexed lookup; copying only the
+    // replaced bond's properties follows preserveProps. Ordered tree insertion
+    // and the extra owned query carrier copy exceed the single source Bond;
+    // the performance axis records that cost. No entire group payload clone.
+    let Some(value) = data_values(group).first() else {
+        return Ok(());
+    };
+    let row = parse_rdkit_unsigned(value)
+        .map_err(|()| MolPostError::DataFieldNumber {
+            field: "MRV_COORDINATE_BOND_TYPE",
+            value: value.clone(),
+        })?
+        .wrapping_sub(1) as usize;
+    let Some(old) = bonds
+        .get(row)
+        .filter(|bond| bond.order() == BondOrder::Unspecified)
+    else {
+        return Ok(());
+    };
+    let mut replacement = cosmolkit_model::Bond::from_spec(
+        old.id(),
+        cosmolkit_model::BondSpec::new(old.begin(), old.end(), BondOrder::Dative),
+    );
+    for (key, value) in cosmolkit_model::ordered_bond_properties(old) {
+        if old.is_prop_computed(key) {
+            replacement.set_computed_prop(key, value.clone())
+        } else {
+            replacement.set_prop(key, value.clone())
+        }
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+    }
+    for id in [old.begin(), old.end()] {
+        let atom = &mut atoms[id.index()];
+        atom.set_explicit_hydrogens(atom.explicit_hydrogens().saturating_sub(1));
+    }
+    if let Some(query_bonds) = query_bonds {
+        query_bonds[row] = QueryBond::from_carrier_parts(
+            replacement.clone(),
+            QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Dative)),
+        );
+    }
+    bonds[row] = replacement;
+    Ok(())
+}
+
+fn process_mrv_implicit_h(
+    atoms: &mut [cosmolkit_model::Atom],
+    bonds: &[cosmolkit_model::Bond],
+    adjacency: &AdjacencyList,
+    group: &SubstanceGroup,
+) -> Result<(), MolPostError> {
+    // RDKit✔️✔️: void processMrvImplicitH(RWMol &mol, const SubstanceGroup &sg) {
+    // RDKit✔️✔️:   std::vector<std::string> dataFields;
+    // RDKit✔️✔️:   if (sg.getPropIfPresent("DATAFIELDS", dataFields)) {
+    // RDKit✔️✔️:     for (const auto &df : dataFields) {
+    // RDKit✔️✔️:       if (df.substr(0, 6) == "IMPL_H") {
+    // RDKit✔️✔️:         auto val = FileParserUtils::toInt(df.substr(6));
+    // RDKit✔️✔️:         for (auto atIdx : sg.getAtoms()) {
+    // RDKit✔️✔️:           if (atIdx < mol.getNumAtoms()) {
+    // RDKit✔️✔️:             // if the atom has aromatic bonds to it, then set the explicit
+    // RDKit✔️✔️:             // value, otherwise skip it.
+    // RDKit✔️✔️:             auto atom = mol.getAtomWithIdx(atIdx);
+    // RDKit✔️✔️:             bool hasAromaticBonds = false;
+    // RDKit✔️✔️:             for (auto bndI :
+    // RDKit✔️✔️:                  boost::make_iterator_range(mol.getAtomBonds(atom))) {
+    // RDKit✔️✔️:               auto bnd = (mol)[bndI];
+    // RDKit✔️✔️:               if (bnd->getIsAromatic() ||
+    // RDKit✔️✔️:                   bnd->getBondType() == Bond::AROMATIC) {
+    // RDKit✔️✔️:                 hasAromaticBonds = true;
+    // RDKit✔️✔️:                 break;
+    // RDKit✔️✔️:               }
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:             if (hasAromaticBonds) {
+    // RDKit✔️✔️:               atom->setNumExplicitHs(val);
+    // RDKit✔️✔️:             } else {
+    // RDKit✔️✔️:               BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:                   << "MRV_IMPLICIT_H SGroup on atom without aromatic "
+    // RDKit✔️✔️:                      "bonds, "
+    // RDKit✔️✔️:                   << atIdx << ", ignored." << std::endl;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           } else {
+    // RDKit✔️✔️:             BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:                 << "bad atom index, " << atIdx
+    // RDKit✔️✔️:                 << ", found in MRV_IMPLICIT_H SGroup. Ignoring it."
+    // RDKit✔️✔️:                 << std::endl;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Behavior review: convert each IMPL_H suffix before visiting atoms;
+    // lexical errors propagate, while only aromatic neighbors trigger a write.
+    // Checked model width errors occur only at the actual source setter.
+    // Complexity review: one data scan plus direct per-atom adjacency traversal;
+    // groups/data and bonds are borrowed, with no repeated graph scan.
+    for value in data_values(group) {
+        let Some(raw) = value.strip_prefix("IMPL_H") else {
+            continue;
+        };
+        let count = parse_rdkit_int(raw).map_err(|()| MolPostError::DataFieldNumber {
+            field: "MRV_IMPLICIT_H",
+            value: raw.to_owned(),
+        })?;
+        for id in group.atoms() {
+            let Some(atom) = atoms.get_mut(id.index()) else {
+                continue;
+            };
+            if adjacency.neighbors_of(id.index()).iter().any(|neighbor| {
+                let bond = &bonds[neighbor.bond.index()];
+                bond.is_aromatic() || bond.order() == BondOrder::Aromatic
+            }) {
+                atom.set_explicit_hydrogens(u8::try_from(count).map_err(|_| {
+                    MolPostError::Representation("MRV_IMPLICIT_H count outside u8")
+                })?);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn process_zbo(bonds: &mut [cosmolkit_model::Bond], group: &SubstanceGroup) {
+    // RDKit✔️✔️: void processZBO(RWMol &mol, const SubstanceGroup &sg) {
+    // RDKit✔️✔️:   for (auto bidx : sg.getBonds()) {
+    // RDKit✔️✔️:     auto bond = mol.getBondWithIdx(bidx);
+    // RDKit✔️✔️:     bond->setBondType(Bond::BondType::ZERO);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Behavior/complexity review: validated SGroup membership indexes the
+    // existing rows once; only the bond order changes, without replacement.
+    for id in group.bonds() {
+        bonds[id.index()].set_order(BondOrder::Zero);
+    }
+}
+
+fn process_zch(
+    atoms: &mut [cosmolkit_model::Atom],
+    group: &SubstanceGroup,
+) -> Result<(), MolPostError> {
+    // RDKit✔️✔️: void processZCH(RWMol &mol, const SubstanceGroup &sg) {
+    // RDKit✔️✔️:   RDUNUSED_PARAM(mol);
+    // RDKit✔️✔️:   std::vector<std::string> dataFields;
+    // RDKit✔️✔️:   if (sg.getPropIfPresent("DATAFIELDS", dataFields)) {
+    // RDKit✔️✔️:     if (dataFields.empty()) {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:           << "ignoring ZCHG SGroup without data fields." << std::endl;
+    // RDKit✔️✔️:       return;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (const auto &df : dataFields) {
+    // RDKit✔️✔️:       std::string trimmed = boost::trim_copy(df);
+    // RDKit✔️✔️:       std::vector<std::string> splitLine;
+    // RDKit✔️✔️:       boost::split(splitLine, trimmed, boost::is_any_of(";"),
+    // RDKit✔️✔️:                    boost::token_compress_off);
+    // RDKit✔️✔️:       const auto &aids = sg.getAtoms();
+    // RDKit✔️✔️:       if (splitLine.size() < aids.size()) {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:             << "DATAFIELDS in ZCH SGroup is shorter than the number of atoms in the SGroup. Ignoring it."
+    // RDKit✔️✔️:             << std::endl;
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       for (auto i = 0u; i < aids.size(); ++i) {
+    // RDKit✔️✔️:         auto aid = aids[i];
+    // RDKit✔️✔️:         auto atom = mol.getAtomWithIdx(aid);
+    // RDKit✔️✔️:         auto val = 0;
+    // RDKit✔️✔️:         if (!splitLine[i].empty()) {
+    // RDKit✔️✔️:           val = FileParserUtils::toInt(splitLine[i]);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         atom->setFormalCharge(val);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Behavior review: short rows are ignored; empty tokens mean zero.
+    // Invalid nonempty tokens propagate the source numeric conversion error.
+    // Complexity review: splitting is linear and no group/data is cloned.
+    for value in data_values(group) {
+        let values = value.trim().split(';').collect::<Vec<_>>();
+        if values.len() < group.atoms().len() {
+            continue;
+        }
+        for (id, text) in group.atoms().iter().zip(values) {
+            let parsed = if text.is_empty() {
+                0
+            } else {
+                parse_rdkit_int(text).map_err(|()| MolPostError::DataFieldNumber {
+                    field: "ZCH",
+                    value: text.to_owned(),
+                })?
+            };
+            atoms[id.index()].set_formal_charge(
+                i8::try_from(parsed)
+                    .map_err(|_| MolPostError::Representation("ZCH charge outside i8"))?,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn process_hyd(
+    atoms: &mut [cosmolkit_model::Atom],
+    group: &SubstanceGroup,
+) -> Result<(), MolPostError> {
+    // RDKit✔️✔️: void processHYD(RWMol &mol, const SubstanceGroup &sg) {
+    // RDKit✔️✔️:   std::vector<std::string> dataFields;
+    // RDKit✔️✔️:   if (sg.getPropIfPresent("DATAFIELDS", dataFields)) {
+    // RDKit✔️✔️:     if (dataFields.empty()) {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:           << "ignoring HYD SGroup without data fields." << std::endl;
+    // RDKit✔️✔️:       return;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (const auto &df : dataFields) {
+    // RDKit✔️✔️:       std::string trimmed = boost::trim_copy(df);
+    // RDKit✔️✔️:       std::vector<std::string> splitLine;
+    // RDKit✔️✔️:       boost::split(splitLine, trimmed, boost::is_any_of(";"),
+    // RDKit✔️✔️:                    boost::token_compress_off);
+    // RDKit✔️✔️:       const auto &aids = sg.getAtoms();
+    // RDKit✔️✔️:       if (splitLine.size() < aids.size()) {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:             << "DATAFIELDS in HYD SGroup is shorter than the number of atoms in the SGroup. Ignoring it."
+    // RDKit✔️✔️:             << std::endl;
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       for (auto i = 0u; i < aids.size(); ++i) {
+    // RDKit✔️✔️:         auto aid = aids[i];
+    // RDKit✔️✔️:         auto atom = mol.getAtomWithIdx(aid);
+    // RDKit✔️✔️:         auto val = 0;
+    // RDKit✔️✔️:         if (!splitLine[i].empty()) {
+    // RDKit✔️✔️:           val = FileParserUtils::toInt(splitLine[i]);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         atom->setProp("_ZBO_H", true);
+    // RDKit✔️✔️:         atom->setNumExplicitHs(val);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Behavior review: preserves the source short-row/empty-token rules and
+    // typed numeric error, then sets the established _ZBO_H marker and H count.
+    // Complexity review: one split/application pass; all group payload borrowed.
+    for value in data_values(group) {
+        let values = value.trim().split(';').collect::<Vec<_>>();
+        if values.len() < group.atoms().len() {
+            continue;
+        }
+        for (id, text) in group.atoms().iter().zip(values) {
+            let parsed = if text.is_empty() {
+                0
+            } else {
+                parse_rdkit_int(text).map_err(|()| MolPostError::DataFieldNumber {
+                    field: "HYD",
+                    value: text.to_owned(),
+                })?
+            };
+            let atom = &mut atoms[id.index()];
+            atom.set_prop("_ZBO_H", "1")
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+            atom.set_explicit_hydrogens(
+                u8::try_from(parsed)
+                    .map_err(|_| MolPostError::Representation("HYD count outside u8"))?,
+            );
+        }
+    }
+    Ok(())
+}
+
+fn process_groups_on_topology(
+    topology: &mut TopologyBlock,
+    mut query_bonds: Option<&mut [QueryBond]>,
+) -> Result<(), MolPostError> {
+    // RDKit✔️✔️: void processSGroups(RWMol *mol) {
+    // RDKit✔️✔️:   std::vector<unsigned int> sgsToRemove;
+    // RDKit✔️✔️:   unsigned int sgIdx = 0;
     // RDKit✔️✔️:   for (auto &sg : getSubstanceGroups(*mol)) {
     // RDKit✔️✔️:     if (sg.getProp<std::string>("TYPE") == "DAT") {
     // RDKit✔️✔️:       std::string field;
     // RDKit✔️✔️:       if (sg.getPropIfPresent("FIELDNAME", field)) {
     // RDKit✔️✔️:         if (field == "MRV_COORDINATE_BOND_TYPE") {
+    // RDKit✔️✔️:           // V2000 support for coordinate bonds
     // RDKit✔️✔️:           processMrvCoordinateBond(*mol, sg);
     // RDKit✔️✔️:           sgsToRemove.push_back(sgIdx);
     // RDKit✔️✔️:           continue;
     // RDKit✔️✔️:         } else if (field == "MRV_IMPLICIT_H") {
+    // RDKit✔️✔️:           // CXN extension to specify implicit Hs, used for aromatic rings
     // RDKit✔️✔️:           processMrvImplicitH(*mol, sg);
     // RDKit✔️✔️:           sgsToRemove.push_back(sgIdx);
     // RDKit✔️✔️:           continue;
     // RDKit✔️✔️:         } else if (field == "ZBO") {
+    // RDKit✔️✔️:           // RDKit extension for zero-order bonds
     // RDKit✔️✔️:           processZBO(*mol, sg);
     // RDKit✔️✔️:           sgsToRemove.push_back(sgIdx);
     // RDKit✔️✔️:           continue;
     // RDKit✔️✔️:         } else if (field == "ZCH") {
+    // RDKit✔️✔️:           // RDKit extension for charge on atoms involved in zero-order bonds
     // RDKit✔️✔️:           processZCH(*mol, sg);
     // RDKit✔️✔️:           sgsToRemove.push_back(sgIdx);
     // RDKit✔️✔️:           continue;
     // RDKit✔️✔️:         } else if (field == "HYD") {
+    // RDKit✔️✔️:           // RDKit extension for hydrogen-count on atoms involved in
+    // RDKit✔️✔️:           // zero-order bonds
     // RDKit✔️✔️:           processHYD(*mol, sg);
     // RDKit✔️✔️:           sgsToRemove.push_back(sgIdx);
     // RDKit✔️✔️:           continue;
     // RDKit✔️✔️:         }
     // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (sg.getPropIfPresent("QUERYTYPE", field) &&
+    // RDKit✔️✔️:           (field == "SMARTSQ" || field == "SQ")) {
+    // RDKit✔️✔️:         processSMARTSQ(*mol, sg);
+    // RDKit✔️✔️:         sgsToRemove.push_back(sgIdx);
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ++sgIdx;
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   // now remove the S groups we processed, we saved indices so do this in
+    // RDKit✔️✔️:   // backwards
+    // RDKit✔️✔️:   auto &sgs = getSubstanceGroups(*mol);
     // RDKit✔️✔️:   for (auto it = sgsToRemove.rbegin(); it != sgsToRemove.rend(); ++it) {
     // RDKit✔️✔️:     sgs.erase(sgs.begin() + *it);
     // RDKit✔️✔️:   }
-    // END RDKIT CPP FUNCTION
-    // Behavior review: recognized DAT groups are processed in input order and
-    // removed only after their source action. Invalid coordinate-bond targets
-    // remain source-style no-ops. Checked Rust model widths are explicit errors.
-    // Complexity review: one linear group pass plus membership-local work and
-    // one retain pass matches the source's linear traversal/removal shape.
-    let groups = topology.substance_groups.clone();
-    let mut remove = vec![false; groups.len()];
-    for (index, group) in groups.iter().enumerate() {
-        let Some(data) = group.data() else { continue };
+    // RDKit✔️✔️: }
+    // Behavior review: process recognized DAT groups in input order; SMARTSQ
+    // remains on the query carrier until its query action. Consume recognized
+    // groups only after successful processing, preserving other groups/parents.
+    // Complexity review: split field borrows avoid cloning any group/data.
+    // Membership-local work and one ordered retain pass replace source erases.
+    let TopologyBlock {
+        atoms,
+        bonds,
+        adjacency,
+        substance_groups,
+        ..
+    } = topology;
+    let mut remove = vec![false; substance_groups.len()];
+    for (index, group) in substance_groups.iter().enumerate() {
+        let Some(data) = group.data() else {
+            continue;
+        };
         let Some(field) = data.field_name.as_deref() else {
             continue;
         };
         match field {
             "MRV_COORDINATE_BOND_TYPE" => {
-                if let Some(value) = data_values(group).first()
-                    && let Ok(raw) = value.trim().parse::<usize>()
-                    && let Some(bond) = raw
-                        .checked_sub(1)
-                        .and_then(|idx| topology.bonds.get_mut(idx))
-                    && bond.order() == BondOrder::Unspecified
-                {
-                    bond.set_order(BondOrder::Dative);
-                }
-                remove[index] = true;
+                process_mrv_coordinate_bond(atoms, bonds, query_bonds.as_deref_mut(), group)?
             }
-            "MRV_IMPLICIT_H" => {
-                for value in data_values(group) {
-                    let Some(raw) = value.strip_prefix("IMPL_H") else {
-                        continue;
-                    };
-                    let count = parse_rdkit_int(raw).unwrap_or(0);
-                    let count = u8::try_from(count).map_err(|_| {
-                        MolPostError::Representation("MRV_IMPLICIT_H count outside u8")
-                    })?;
-                    for atom_id in group.atoms() {
-                        if atom_id.index() >= topology.atoms.len() {
-                            continue;
-                        }
-                        let aromatic = topology.adjacency.neighbors_of(atom_id.index()).iter().any(
-                            |neighbor| {
-                                let bond = &topology.bonds[neighbor.bond.index()];
-                                bond.is_aromatic() || bond.order() == BondOrder::Aromatic
-                            },
-                        );
-                        if aromatic {
-                            topology.atoms[atom_id.index()].set_explicit_hydrogens(count);
-                        }
-                    }
-                }
-                remove[index] = true;
-            }
-            "ZBO" => {
-                for bond_id in group.bonds() {
-                    if let Some(bond) = topology.bonds.get_mut(bond_id.index()) {
-                        bond.set_order(BondOrder::Zero);
-                    }
-                }
-                remove[index] = true;
-            }
-            "ZCH" | "HYD" => {
-                for value in data_values(group) {
-                    let values = value.trim().split(';').collect::<Vec<_>>();
-                    if values.len() < group.atoms().len() {
-                        continue;
-                    }
-                    for (atom_id, text) in group.atoms().iter().zip(values) {
-                        let parsed = if text.is_empty() {
-                            0
-                        } else {
-                            parse_rdkit_int(text).unwrap_or(0)
-                        };
-                        let Some(atom) = topology.atoms.get_mut(atom_id.index()) else {
-                            continue;
-                        };
-                        if field == "ZCH" {
-                            atom.set_formal_charge(i8::try_from(parsed).map_err(|_| {
-                                MolPostError::Representation("ZCH charge outside i8")
-                            })?);
-                        } else {
-                            atom.set_prop("_ZBO_H", "1")
-                                .map_err(|error| MolPostError::Processing(error.to_string()))?;
-                            atom.set_explicit_hydrogens(u8::try_from(parsed).map_err(|_| {
-                                MolPostError::Representation("HYD count outside u8")
-                            })?);
-                        }
-                    }
-                }
-                remove[index] = true;
-            }
-            _ => {}
+            "MRV_IMPLICIT_H" => process_mrv_implicit_h(atoms, bonds, adjacency, group)?,
+            "ZBO" => process_zbo(bonds, group),
+            "ZCH" => process_zch(atoms, group)?,
+            "HYD" => process_hyd(atoms, group)?,
+            _ => continue,
         }
+        remove[index] = true;
     }
-    topology.substance_groups =
-        retain_substance_groups(std::mem::take(&mut topology.substance_groups), &remove)?;
+    *substance_groups = retain_substance_groups(std::mem::take(substance_groups), &remove)?;
     Ok(())
 }
 
@@ -306,7 +742,10 @@ fn process_atom_properties(
     topology: &mut TopologyBlock,
     mut query_atoms: Option<&mut [QueryAtom]>,
 ) -> Result<(), MolPostError> {
-    // BEGIN RDKIT CPP FUNCTION ProcessMolProps
+    // RDKit✔️✔️: void ProcessMolProps(RWMol *mol) {
+    // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
+    // RDKit✔️✔️:   // we have to loop the ugly way because we may need to actually replace an
+    // RDKit✔️✔️:   // atom
     // RDKit✔️✔️:   for (unsigned int aidx = 0; aidx < mol->getNumAtoms(); ++aidx) {
     // RDKit✔️✔️:     auto atom = mol->getAtomWithIdx(aidx);
     // RDKit✔️✔️:     int ival = 0;
@@ -319,13 +758,17 @@ fn process_atom_properties(
     // RDKit✔️✔️:       if (ival == -1) {
     // RDKit✔️✔️:         ival = 0;
     // RDKit✔️✔️:       } else if (ival == -2) {
+    // RDKit✔️✔️:         // as drawn
     // RDKit✔️✔️:         ival = atom->getDegree();
     // RDKit✔️✔️:       } else if (ival >= 6) {
+    // RDKit✔️✔️:         // 6 or more
     // RDKit✔️✔️:         gtQuery = true;
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:       if (!gtQuery) {
     // RDKit✔️✔️:         atom->expandQuery(makeAtomExplicitDegreeQuery(ival));
     // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         // create a temp query the normal way so that we can be sure to get
+    // RDKit✔️✔️:         // the description right
     // RDKit✔️✔️:         std::unique_ptr<ATOM_EQUALS_QUERY> tmp{
     // RDKit✔️✔️:             makeAtomExplicitDegreeQuery(ival)};
     // RDKit✔️✔️:         atom->expandQuery(makeAtomSimpleQuery<ATOM_LESSEQUAL_QUERY>(
@@ -336,24 +779,37 @@ fn process_atom_properties(
     // RDKit✔️✔️:     if (atom->getPropIfPresent(common_properties::molTotValence, ival) &&
     // RDKit✔️✔️:         ival != 0 && !atom->hasProp("_ZBO_H")) {
     // RDKit✔️✔️:       atom->setNoImplicit(true);
-    // RDKit✔️✔️:       if (ival == 15 || ival == -1) {
-    // RDKit✔️✔️:         atom->setNumExplicitHs(0);
-    // RDKit✔️✔️:       } else if (static_cast<int>(atom->getValence(Atom::ValenceType::EXPLICIT)) > ival) {
+    // RDKit✔️✔️:       if (ival == 15     // V2000
+    // RDKit✔️✔️:           || ival == -1  // v3000
+    // RDKit✔️✔️:       ) {
     // RDKit✔️✔️:         atom->setNumExplicitHs(0);
     // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         atom->setNumExplicitHs(ival - atom->getValence(Atom::ValenceType::EXPLICIT));
+    // RDKit✔️✔️:         if (static_cast<int>(atom->getValence(Atom::ValenceType::EXPLICIT)) >
+    // RDKit✔️✔️:             ival) {
+    // RDKit✔️✔️:           BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:               << "atom " << atom->getIdx() << " has specified valence (" << ival
+    // RDKit✔️✔️:               << ") smaller than the drawn valence "
+    // RDKit✔️✔️:               << atom->getValence(Atom::ValenceType::EXPLICIT) << "."
+    // RDKit✔️✔️:               << std::endl;
+    // RDKit✔️✔️:           atom->setNumExplicitHs(0);
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           atom->setNumExplicitHs(ival -
+    // RDKit✔️✔️:                                  atom->getValence(Atom::ValenceType::EXPLICIT));
+    // RDKit✔️✔️:         }
     // RDKit✔️✔️:       }
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:     atom->clearProp(common_properties::molTotValence);
     // RDKit✔️✔️:   }
-    // END RDKIT CPP FUNCTION
+    // RDKit✔️✔️:   processSGroups(mol);
+    // RDKit✔️✔️: }
     // Behavior review: the optional query slice is present exactly after the
     // Molfile owner has promoted a record containing SUBST/SMARTSQ/query
     // syntax. SUBST expands the existing predicate in source order and marks
     // the carrier as a real source QueryAtom for downstream RemoveHs. The
     // total-valence branch observes the same current carrier topology.
-    // Complexity review: one atom pass with O(1) predicate construction and
-    // one valence calculation per atom matches the source traversal shape.
+    // Complexity review: move the existing tree through the sole source AND
+    // helper; no deep predicate clone. The temporary empty vector allocates
+    // nothing and cannot escape. Per-atom valence traversal remains source-shaped.
     for index in 0..topology.atoms.len() {
         let substitution = source_int_property_or_zero(&topology.atoms[index], "molSubstCount")?;
         if substitution != 0 {
@@ -381,23 +837,24 @@ fn process_atom_properties(
                 })?;
                 AtomQueryPredicate::ExplicitDegree(degree)
             };
-            let current = atoms[index].predicate().clone();
-            atoms[index].set_predicate(QueryNode::and(vec![
-                current,
+            let current =
+                std::mem::replace(atoms[index].predicate_mut(), QueryNode::and(Vec::new()));
+            atoms[index].set_predicate(crate::sdf::expand_molfile_atom_query(
+                Some(current),
                 QueryNode::predicate(predicate),
-            ]));
+            ));
             topology.atoms[index]
                 .set_prop("_MolFileAtomQuery", "1")
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             atoms[index]
                 .set_prop("_MolFileAtomQuery", "1")
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         }
         let value = source_int_property_or_zero(&topology.atoms[index], "molTotValence")?;
         if value != 0 && topology.atoms[index].prop("_ZBO_H").is_none() {
             let explicit =
                 calculate_explicit_valence_for_topology(topology, AtomId::new(index), false, false)
-                    .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                    .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             let hydrogens = if value == 15 || value == -1 || explicit > value {
                 0
             } else {
@@ -426,6 +883,7 @@ fn apply_stereo_and_sanitize(
         cosmolkit_model::MoleculeProperties,
         TopologyMapping,
         Option<(Vec<QueryAtom>, Vec<QueryBond>)>,
+        MolPostDerivedState,
     ),
     MolPostError,
 > {
@@ -443,7 +901,7 @@ fn apply_stereo_and_sanitize(
     // RDKit✔️✔️:     if (!conf.is3D()) {
     // RDKit✔️✔️:       bool replaceExistingTags = true;
     // RDKit✔️✔️:       MolOps::assignChiralTypesFromBondDirs(*res, conf.getId(),
-    // RDKit✔️✔️:                                           replaceExistingTags);
+    // RDKit✔️✔️:                                             replaceExistingTags);
     // RDKit✔️✔️:     } else {
     // RDKit✔️✔️:       res->updatePropertyCache(false);
     // RDKit✔️✔️:       MolOps::assignChiralTypesFrom3D(*res, conf.getId(), true);
@@ -492,6 +950,7 @@ fn apply_stereo_and_sanitize(
     // Complexity review: each owner call is linear or owner-defined; this
     // orchestration introduces no repeated whole-graph clone beyond the owned
     // source-equivalent transform results.
+    let mut final_state = MolPostDerivedState::default();
     let original_atom_count = topology.atoms.len();
     let original_bond_count = topology.bonds.len();
     let mut mapping = TopologyMapping::identity(original_atom_count, original_bond_count);
@@ -499,26 +958,26 @@ fn apply_stereo_and_sanitize(
     if let Some(conformer) = first_3d {
         if conformer.is_3d() {
             let valence = assign_valence_for_topology(&topology, ValenceModel::RdkitLike)
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             topology = assign_chiral_tags_from_structure(
                 &topology,
                 &coordinates,
                 &valence,
                 &StructureTagParams::default(),
             )
-            .map_err(|error| MolPostError::Processing(error.to_string()))?
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?
             .topology;
         } else if chirality_possible {
             assign_chiral_types_from_bond_dirs(&mut topology, conformer, true)
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         }
         let assignment =
             detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(conformer)))
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         for update in assignment.bond_updates {
             topology.bonds[update.bond.index()]
                 .set_stereo(update.stereo)
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         }
     } else if let Some(conformer) = coordinates.conformers_2d.first() {
         if chirality_possible {
@@ -532,19 +991,19 @@ fn apply_stereo_and_sanitize(
                 false,
             );
             assign_chiral_types_from_bond_dirs(&mut topology, &pseudo, true)
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         }
         let assignment =
             detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::TwoD(conformer)))
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         for update in assignment.bond_updates {
             topology.bonds[update.bond.index()]
                 .set_stereo(update.stereo)
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         }
     }
     topology = clear_single_bond_directions(topology, false)
-        .map_err(|error| MolPostError::Processing(error.to_string()))?;
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     if params.sanitize {
         if params.remove_hs {
             topology = sanitize_topology_with_query_state(
@@ -554,7 +1013,7 @@ fn apply_stereo_and_sanitize(
                 },
                 query_state,
             )
-            .map_err(|error| MolPostError::Processing(error.to_string()))?
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?
             .topology;
             topology = detect_double_bond_stereochemistry(topology, &coordinates)?;
             let removed = remove_hydrogens_with_query_state(
@@ -564,7 +1023,7 @@ fn apply_stereo_and_sanitize(
                 &RemoveHsParams::default(),
                 query_state,
             )
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             topology = removed.topology;
             coordinates = removed.coordinates;
             properties = removed.properties;
@@ -575,31 +1034,39 @@ fn apply_stereo_and_sanitize(
                 &SanitizeParams::default(),
                 query_state,
             )
-            .map_err(|error| MolPostError::Processing(error.to_string()))?
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?
             .topology;
             topology = detect_double_bond_stereochemistry(topology, &coordinates)?;
         }
         let remapped_query_rows = query_state
             .map(|state| remap_query_rows(state, &topology, &mapping))
             .transpose()
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         let final_query_state = remapped_query_rows
             .as_ref()
             .map(|(atoms, bonds)| QueryStateRef::try_for_topology(atoms, bonds, &topology))
             .transpose()
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         let valence = assign_valence_for_topology(&topology, ValenceModel::RdkitLike)
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         let rings = symmetrized_sssr(&topology, &RingSearchParams::default())
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
         topology = assign_legacy_stereochemistry_with_query_state(
             topology,
             &valence,
             &rings,
             final_query_state,
         )
-        .map_err(|error| MolPostError::Processing(error.to_string()))?;
-        // RDKit✔️✔️: mol.setProp(common_properties::_StereochemDone, 1, true);
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+        // RDKit❗✔️:     MolOps::assignStereochemistry(*res, true, true, true);
+        // ROOT io44-move-sanitized-ring-carrier: retain the exact final owner
+        // values already used above. Assignment moves are O(1); no finder,
+        // intermediate-topology row, property inference or live installation.
+        final_state = MolPostDerivedState {
+            valence: Some(valence),
+            rings: Some(rings),
+        };
+        // RDKit✔️✔️:   mol.setProp(common_properties::_StereochemDone, 1, true);
         // Behavior review: molecule-level computed properties are carried by
         // the detached `MoleculeProperties` block, so this is the implementing
         // location for the source wrapper's final property write.
@@ -607,41 +1074,53 @@ fn apply_stereo_and_sanitize(
         // source computed-property write and adds no graph traversal.
         properties
             .set_computed_prop("_StereochemDone", "1")
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     } else {
         topology = detect_double_bond_stereochemistry(topology, &coordinates)?;
     }
     let query_rows = query_state
         .map(|state| remap_query_rows(state, &topology, &mapping))
         .transpose()
-        .map_err(|error| MolPostError::Processing(error.to_string()))?;
-    Ok((topology, coordinates, properties, mapping, query_rows))
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+    Ok((
+        topology,
+        coordinates,
+        properties,
+        mapping,
+        query_rows,
+        final_state,
+    ))
 }
 
-fn detect_double_bond_stereochemistry(
+pub(super) fn detect_double_bond_stereochemistry(
     topology: TopologyBlock,
     coordinates: &CoordinateBlock,
 ) -> Result<TopologyBlock, MolPostError> {
     // BEGIN RDKIT CPP FUNCTION detectBondStereochemistry
-    // RDKit✔️✔️: void detectBondStereochemistry(ROMol &mol, int confId) {
-    // RDKit✔️✔️:   if (!mol.getNumConformers()) {
-    // RDKit✔️✔️:     return;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   const Conformer &conf = mol.getConformer(confId);
-    // RDKit✔️✔️:   setDoubleBondNeighborDirections(mol, &conf);
-    // RDKit✔️✔️: }
+    // RDKit✔️❌: void detectBondStereochemistry(ROMol &mol, int confId) {
+    // RDKit✔️❌:   if (!mol.getNumConformers()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   const Conformer &conf = mol.getConformer(confId);
+    // RDKit✔️❌:   setDoubleBondNeighborDirections(mol, &conf);
+    // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION detectBondStereochemistry
     // Behavior review: the first stored conformer is used regardless of its
     // independent is_3d flag; XY is lifted with exact positive-zero Z only for
     // the detached geometry kernel. This prepares directions without assigning
     // final bond stereo, matching the source phase boundary.
-    // Complexity review: ring perception plus the source-shaped direction
-    // owner performs the same graph-scale work without an additional clone.
+    // Complexity review: empty coordinates return before ring perception.
+    // With 2D coordinates, lifting all n points allocates O(n) extra geometry
+    // unlike source conformer access; retain a negative cost marker for this
+    // detached adaptation. No topology clone is introduced here.
+    if coordinates.conformers_3d.is_empty() && coordinates.conformers_2d.is_empty() {
+        return Ok(topology);
+    }
     let rings = symmetrized_sssr(&topology, &RingSearchParams::default())
-        .map_err(|error| MolPostError::Processing(error.to_string()))?;
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     if let Some(conformer) = coordinates.conformers_3d.first() {
         return set_double_bond_neighbor_directions(topology, &rings, Some(conformer))
-            .map_err(|error| MolPostError::Processing(error.to_string()));
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)));
     }
     let Some(conformer) = coordinates.conformers_2d.first() else {
         return Ok(topology);
@@ -656,7 +1135,7 @@ fn detect_double_bond_stereochemistry(
         false,
     );
     set_double_bond_neighbor_directions(topology, &rings, Some(&lifted))
-        .map_err(|error| MolPostError::Processing(error.to_string()))
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))
 }
 
 fn concrete_to_query(
@@ -697,12 +1176,12 @@ fn concrete_to_query(
         coordinates.conformers_3d,
         topology.stereo_groups,
     )
-    .map_err(|error| MolPostError::Processing(error.to_string()))?;
+    .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     query
         .set_source_conformer_order(coordinates.source_conformer_order)
-        .map_err(|error| MolPostError::Processing(error.to_string()))?;
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     replace_query_substance_groups(&mut query, substance_groups)
-        .map_err(|error| MolPostError::Processing(error.to_string()))?;
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     Ok(QueryMolBlockRecord {
         query,
         properties,
@@ -719,14 +1198,22 @@ fn is_source_query_bond(bond: &QueryBond) -> bool {
 }
 
 fn synchronize_query_atom(source: &mut QueryAtom, carrier: cosmolkit_model::Atom) {
-    // BEGIN RDKIT CPP FUNCTION QueryOps::replaceAtomWithQueryAtom
-    // RDKit✔️✔️: if (!atom->hasQuery()) {
-    // RDKit✔️✔️:   auto *newAt = new QueryAtom(*atom);
-    // RDKit✔️✔️:   res = static_cast<QueryAtom *>(mol.replaceAtom(atom->getIdx(), newAt));
-    // RDKit✔️✔️: } else {
-    // RDKit✔️✔️:   res = static_cast<QueryAtom *>(atom);
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION QueryOps::replaceAtomWithQueryAtom
+    // RDKit❗✔️: Atom *replaceAtomWithQueryAtom(RWMol *mol, Atom *atom) {
+    // RDKit❗✔️:   PRECONDITION(mol, "bad molecule");
+    // RDKit❗✔️:   PRECONDITION(atom, "bad atom");
+    // RDKit❗✔️:   if (atom->hasQuery()) {
+    // RDKit❗✔️:     return atom;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   QueryAtom qa(*atom);
+    // RDKit❗✔️:   unsigned int idx = atom->getIdx();
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (atom->hasProp(common_properties::_hasMassQuery)) {
+    // RDKit❗✔️:     qa.expandQuery(makeAtomMassQuery(static_cast<int>(atom->getMass())));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   mol->replaceAtom(idx, &qa);
+    // RDKit❗✔️:   return mol->getAtomWithIdx(idx);
+    // RDKit❗✔️: }
     // Behavior review: typed construction provenance distinguishes an
     // explicit detached query from Molfile IO's uniform wrapper around an
     // ordinary atom. Only the latter receives the constructor snapshot of the
@@ -745,8 +1232,8 @@ fn synchronize_query_atom(source: &mut QueryAtom, carrier: cosmolkit_model::Atom
 
 fn synchronize_query_bond(mut source: QueryBond, carrier: cosmolkit_model::Bond) -> QueryBond {
     // BEGIN RDKIT CPP FUNCTION QueryBond::QueryBond(const Bond &)
-    // RDKit✔️✔️: explicit QueryBond(const Bond &other)
-    // RDKit✔️✔️:     : Bond(other), dp_query(makeBondOrderEqualsQuery(other.getBondType())) {}
+    // RDKit✔️✔️:   explicit QueryBond(const Bond &other)
+    // RDKit✔️✔️:       : Bond(other), dp_query(makeBondOrderEqualsQuery(other.getBondType())) {}
     // END RDKIT CPP FUNCTION QueryBond::QueryBond(const Bond &)
     // Behavior review: explicit detached query types retain their predicate;
     // a Molfile-owned uniform wrapper for an ordinary source Bond is
@@ -809,6 +1296,72 @@ fn promote_record_to_query(record: &mut MolBlockRecord) -> Result<(), MolPostErr
 }
 
 fn process_smarts_groups(record: &mut MolBlockRecord) -> Result<(), MolPostError> {
+    // RDKit✔️❌: void processSMARTSQ(RWMol &mol, const SubstanceGroup &sg) {
+    // RDKit✔️❌:   std::string field;
+    // RDKit✔️❌:   if (sg.getPropIfPresent("QUERYOP", field) && field != "=") {
+    // RDKit✔️❌:     BOOST_LOG(rdWarningLog) << "unrecognized QUERYOP '" << field
+    // RDKit✔️❌:                             << "' for SMARTSQ. Query ignored." << std::endl;
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   std::vector<std::string> dataFields;
+    // RDKit✔️❌:   if (!sg.getPropIfPresent("DATAFIELDS", dataFields) || dataFields.empty()) {
+    // RDKit✔️❌:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:         << "empty FIELDDATA for SMARTSQ. Query ignored." << std::endl;
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (dataFields.size() > 1) {
+    // RDKit✔️❌:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:         << "multiple FIELDDATA values for SMARTSQ. Taking the first."
+    // RDKit✔️❌:         << std::endl;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   const std::string &sma = dataFields[0];
+    // RDKit✔️❌:   if (sma.empty()) {
+    // RDKit✔️❌:     BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:         << "Skipping empty SMARTS value for SMARTSQ." << std::endl;
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   for (auto aidx : sg.getAtoms()) {
+    // RDKit✔️❌:     auto at = mol.getAtomWithIdx(aidx);
+    // RDKit✔️❌:
+    // RDKit✔️❌:     std::unique_ptr<RWMol> m;
+    // RDKit✔️❌:     try {
+    // RDKit✔️❌:       m.reset(SmartsToMol(sma));
+    // RDKit✔️❌:     } catch (...) {
+    // RDKit✔️❌:       // Is this ever used?
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     if (!m || !m->getNumAtoms()) {
+    // RDKit✔️❌:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:           << "SMARTS for SMARTSQ '" << sma
+    // RDKit✔️❌:           << "' could not be parsed or has no atoms. Ignoring it." << std::endl;
+    // RDKit✔️❌:       return;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     if (!at->hasQuery()) {
+    // RDKit✔️❌:       QueryAtom qAt(*at);
+    // RDKit✔️❌:       int oidx = at->getIdx();
+    // RDKit✔️❌:       mol.replaceAtom(oidx, &qAt);
+    // RDKit✔️❌:       at = mol.getAtomWithIdx(oidx);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     QueryAtom::QUERYATOM_QUERY *query = nullptr;
+    // RDKit✔️❌:     if (m->getNumAtoms() == 1) {
+    // RDKit✔️❌:       query = m->getAtomWithIdx(0)->getQuery()->copy();
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       query = new RecursiveStructureQuery(m.release());
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     at->setQuery(query);
+    // RDKit✔️❌:     at->setProp(common_properties::MRV_SMA, sma);
+    // RDKit✔️❌:     at->setProp(common_properties::_MolFileAtomQuery, 1);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // Behavior review: source-defined invalid/empty/query-op fallbacks and
+    // per-target predicate copies preserve query application and source order.
+    // Complexity review: the borrowed QueryGraph API requires a group/data
+    // snapshot before mutable atom writes; this deep clone exceeds RDKit's
+    // reference iteration. Parsing once reuses syntax, but does not erase that
+    // extra allocation cost, so the performance axis remains negative.
+
     let MolBlockRecord::Query(query_record) = record else {
         return Ok(());
     };
@@ -846,17 +1399,17 @@ fn process_smarts_groups(record: &mut MolBlockRecord) -> Result<(), MolPostError
             if let Some(atom) = query_record.query.atom_mut(atom_id.index()) {
                 atom.set_predicate(predicate.clone());
                 atom.set_prop("_MolFileAtomQuery", "1")
-                    .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                    .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
                 atom.set_prop("MRV SMA", smarts)
-                    .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                    .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
                 atom.set_prop("_MolFileAtomQuery", "1")
-                    .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                    .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             }
         }
     }
     groups = retain_substance_groups(groups, &remove)?;
     replace_query_substance_groups(&mut query_record.query, groups)
-        .map_err(|error| MolPostError::Processing(error.to_string()))?;
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     Ok(())
 }
 
@@ -932,7 +1485,9 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
             {
                 let result =
                     expand_attachment_points(topology, coordinates, None, &values, true, true)
-                        .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+                        .map_err(|error| {
+                            MolPostError::AttachmentExpansion(MolProcessingError::from(error))
+                        })?;
                 for warning in result.warnings {
                     eprintln!(
                         "Invalid value for molAttachPoint: {} on atom {}. Not expanding this atttachment point.",
@@ -961,10 +1516,12 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
                 query_substance_groups(&query_record.query).to_vec(),
                 query_record.query.stereo_groups().to_vec(),
             )
-            .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            .map_err(|error| MolPostError::AttachmentExpansion(MolProcessingError::from(error)))?;
             let values = attachment_values(&topology)?;
             let state = QueryStateRef::try_for_topology(&old_atoms, &old_bonds, &topology)
-                .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+                .map_err(|error| {
+                    MolPostError::AttachmentExpansion(MolProcessingError::from(error))
+                })?;
             let result = expand_attachment_points(
                 topology,
                 query_record
@@ -975,7 +1532,7 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
                 true,
                 true,
             )
-            .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            .map_err(|error| MolPostError::AttachmentExpansion(MolProcessingError::from(error)))?;
             for warning in result.warnings {
                 eprintln!(
                     "Invalid value for molAttachPoint: {} on atom {}. Not expanding this atttachment point.",
@@ -996,12 +1553,15 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
                 result.coordinates.conformers_3d,
                 stereo_groups,
             )
-            .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            .map_err(|error| MolPostError::AttachmentExpansion(MolProcessingError::from(error)))?;
             query
                 .set_source_conformer_order(result.coordinates.source_conformer_order)
-                .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
-            replace_query_substance_groups(&mut query, substance_groups)
-                .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+                .map_err(|error| {
+                    MolPostError::AttachmentExpansion(MolProcessingError::from(error))
+                })?;
+            replace_query_substance_groups(&mut query, substance_groups).map_err(|error| {
+                MolPostError::AttachmentExpansion(MolProcessingError::from(error))
+            })?;
             Ok(MolBlockRecord::Query(QueryMolBlockRecord {
                 query,
                 properties: query_record.properties,
@@ -1043,7 +1603,7 @@ fn calculate_record_explicit_valence(record: &MolBlockRecord) -> Result<(), MolP
                 query_substance_groups(&query.query).to_vec(),
                 query.query.stereo_groups().to_vec(),
             )
-            .map_err(|error| MolPostError::Processing(error.to_string()))?,
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?,
         ),
     };
     let topology = match record {
@@ -1054,16 +1614,25 @@ fn calculate_record_explicit_valence(record: &MolBlockRecord) -> Result<(), MolP
     };
     for atom in &topology.atoms {
         calculate_explicit_valence_for_topology(topology, atom.id(), false, false)
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     }
     Ok(())
 }
 
+/// Detached final chemistry assignments for the final postprocessed topology.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct MolPostDerivedState {
+    pub valence: Option<cosmolkit_core::ValenceAssignment>,
+    pub rings: Option<cosmolkit_core::RingInfo>,
+}
+
 /// Apply the ordered Molfile postprocessing closure to a detached record.
+/// `final_state` receives moved final assignments; no live cache is installed.
 pub fn finish_mol_block_record(
     mut record: MolBlockRecord,
     chirality_possible: bool,
     params: MolPostParams,
+    final_state: Option<&mut MolPostDerivedState>,
 ) -> Result<MolBlockRecord, MolPostError> {
     if params.expand_attachment_points {
         record = expand_record_attachment_points(record)?;
@@ -1077,8 +1646,8 @@ pub fn finish_mol_block_record(
             properties,
         } => {
             process_atom_properties(&mut topology, None)?;
-            process_groups_on_topology(&mut topology)?;
-            let (topology, coordinates, properties, _, _) = apply_stereo_and_sanitize(
+            process_groups_on_topology(&mut topology, None)?;
+            let (topology, coordinates, properties, _, _, state) = apply_stereo_and_sanitize(
                 topology,
                 coordinates,
                 properties,
@@ -1086,6 +1655,9 @@ pub fn finish_mol_block_record(
                 params,
                 None,
             )?;
+            if let Some(output) = final_state {
+                *output = state;
+            }
             Ok(MolBlockRecord::Concrete {
                 topology,
                 coordinates,
@@ -1119,7 +1691,7 @@ pub fn finish_mol_block_record(
                 stereo_groups: query_record.query.stereo_groups().to_vec(),
             };
             process_atom_properties(&mut topology, Some(query_record.query.atoms_mut()))?;
-            process_groups_on_topology(&mut topology)?;
+            process_groups_on_topology(&mut topology, Some(query_record.query.bonds_mut()))?;
             for (query_atom, atom) in query_record
                 .query
                 .atoms_mut()
@@ -1140,7 +1712,7 @@ pub fn finish_mol_block_record(
                 &mut query_record.query,
                 topology.substance_groups.clone(),
             )
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             let mut wrapped = MolBlockRecord::Query(query_record);
             process_smarts_groups(&mut wrapped)?;
             let MolBlockRecord::Query(mut query_record) = wrapped else {
@@ -1159,15 +1731,16 @@ pub fn finish_mol_block_record(
             let old_atoms = old_query.atoms().to_vec();
             let old_bonds = old_query.bonds().to_vec();
             let query_state = QueryStateRef::try_for_topology(&old_atoms, &old_bonds, &topology)
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
-            let (topology, coordinates, properties, _, query_rows) = apply_stereo_and_sanitize(
-                topology,
-                coordinates,
-                query_record.properties,
-                chirality_possible,
-                params,
-                Some(query_state),
-            )?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+            let (topology, coordinates, properties, _, query_rows, state) =
+                apply_stereo_and_sanitize(
+                    topology,
+                    coordinates,
+                    query_record.properties,
+                    chirality_possible,
+                    params,
+                    Some(query_state),
+                )?;
             let (query_atoms, query_bonds) = query_rows.ok_or(MolPostError::Representation(
                 "query state missing after mol-post finalization",
             ))?;
@@ -1193,12 +1766,12 @@ pub fn finish_mol_block_record(
                 coordinates.conformers_3d,
                 topology.stereo_groups,
             )
-            .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             query
                 .set_source_conformer_order(coordinates.source_conformer_order)
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             replace_query_substance_groups(&mut query, topology.substance_groups)
-                .map_err(|error| MolPostError::Processing(error.to_string()))?;
+                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
             query_record.query = query;
             query_record.properties = properties;
             query_record.source_coordinate_dim = source_coordinate_dim;
@@ -1208,6 +1781,9 @@ pub fn finish_mol_block_record(
                     &mut query_record.query,
                     cosmolkit_search::QUERY_SCAN_MAGIC_VALUE,
                 );
+            }
+            if let Some(output) = final_state {
+                *output = state;
             }
             Ok(MolBlockRecord::Query(query_record))
         }

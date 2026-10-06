@@ -38,6 +38,26 @@ struct PeriodicRow {
 
 static PERIODIC_ROWS: OnceLock<Box<[PeriodicRow]>> = OnceLock::new();
 
+/// Domain-internal pinned elemental vocabulary shared by notation and IO.
+pub fn is_rdkit_organic_subset(atomic_number: u8) -> bool {
+    // BEGIN RDKIT CPP FUNCTION inOrganicSubset
+    // RDKit✔️✔️: const int atomicSmiles[] = {0, 5, 6, 7, 8, 9, 15, 16, 17, 35, 53, -1};
+    // RDKit✔️✔️: bool inOrganicSubset(int atomicNumber) {
+    // RDKit✔️✔️:   unsigned int idx = 0;
+    // RDKit✔️✔️:   while (atomicSmiles[idx] < atomicNumber && atomicSmiles[idx] != -1) {
+    // RDKit✔️✔️:     ++idx;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return atomicSmiles[idx] == atomicNumber;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION inOrganicSubset
+    // Fixed u8 elemental predicate: bounded comparisons, no allocation or
+    // ownership change, matching the original bounded source array scan.
+    matches!(
+        atomic_number,
+        0 | 5 | 6 | 7 | 8 | 9 | 15 | 16 | 17 | 35 | 53
+    )
+}
+
 fn rows() -> &'static [PeriodicRow] {
     PERIODIC_ROWS.get_or_init(|| {
         // BEGIN RDKIT CPP FUNCTION PeriodicTable::PeriodicTable

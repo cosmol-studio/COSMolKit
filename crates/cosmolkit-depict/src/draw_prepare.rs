@@ -47,11 +47,34 @@ impl PreparedDrawing {
 }
 
 fn check_ring_dimensions(rings: &RingInfo, atoms: usize, bonds: usize) -> Result<(), DrawingError> {
+    // BEGIN RDKIT CPP FUNCTIONS third_party/rdkit/Code/GraphMol/RingInfo.cpp :: atomMembers, bondMembers
+    // RDKit❗✔️: const RingInfo::INT_VECT &RingInfo::atomMembers(unsigned int idx) const {
+    // RDKit❗✔️:   PRECONDITION(df_init, "RingInfo not initialized");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   static const INT_VECT emptyVect;
+    // RDKit❗✔️:   if (idx < d_atomMembers.size()) {
+    // RDKit❗✔️:     return d_atomMembers[idx];
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return emptyVect;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: const RingInfo::INT_VECT &RingInfo::bondMembers(unsigned int idx) const {
+    // RDKit❗✔️:   PRECONDITION(df_init, "RingInfo not initialized");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   static const INT_VECT emptyVect;
+    // RDKit❗✔️:   if (idx < d_bondMembers.size()) {
+    // RDKit❗✔️:     return d_bondMembers[idx];
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return emptyVect;
+    // RDKit❗✔️: }
+    // END RDKIT CPP FUNCTIONS third_party/rdkit/Code/GraphMol/RingInfo.cpp :: atomMembers, bondMembers
+    // The source permits a smaller stored prefix, including zero rows. Keep
+    // the typed rejection for oversized carriers; suffix reads are empty/zero.
+    // Cost: two O(1) dimension reads, no traversal or allocation in this check.
     for (field, actual, expected) in [
         ("ring atom memberships", rings.atom_row_count(), atoms),
         ("ring bond memberships", rings.bond_row_count(), bonds),
     ] {
-        if actual != expected {
+        if actual > expected {
             return Err(DrawingError::StateRows {
                 field,
                 actual,
@@ -156,6 +179,26 @@ pub(crate) fn prepare(input: DrawingInput<'_>) -> Result<PreparedDrawing, Drawin
     let mut coordinates = input.coordinates.clone();
     let mut properties = input.properties.clone();
     let mut rings = input.rings.cloned();
+    if let Some(carrier) = rings.as_mut() {
+        if carrier.is_initialized()
+            && (carrier.atom_row_count() < topology.atoms.len()
+                || carrier.bond_row_count() < topology.bonds.len())
+        {
+            // BEGIN RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/RingInfo.cpp :: preallocate
+            // RDKit❗❌: void RingInfo::preallocate(unsigned int numAtoms, unsigned int numBonds) {
+            // RDKit❗❌:   d_atomMembers.resize(numAtoms);
+            // RDKit❗❌:   d_bondMembers.resize(numBonds);
+            // RDKit❗❌: }
+            // END RDKIT CPP FUNCTION third_party/rdkit/Code/GraphMol/RingInfo.cpp :: preallocate
+            // Existing detached Kekulize/Wedge consumers require complete row
+            // storage. Materialize the source-defined empty suffix only in this
+            // working copy: retained rows, find type and borrowed/live cache
+            // remain unchanged, and no finder or ring recomputation is added.
+            // Cost: O(missing atom + bond rows) empty-vector storage and possible
+            // reallocation, beyond source O(1) virtual-empty membership reads.
+            carrier.preallocate(topology.atoms.len(), topology.bonds.len());
+        }
+    }
     #[cfg(test)]
     draw_prepare_stage_probe::observe(
         "entry",

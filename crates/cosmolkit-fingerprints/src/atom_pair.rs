@@ -92,8 +92,121 @@ impl Default for AtomPairParams {
         }
     }
 }
+/// Preserve the pinned project-native batch wrapper's preflight ordering.
+/// Modern scalar RDKit entrypoints retain their independent zero-size semantics.
+pub fn validate_atom_pair_params(params: &AtomPairParams) -> Result<(), FingerprintError> {
+    AtomPairBatchArguments::new(params).map(|_| ())
+}
+
+fn batch_common(params: &AtomPairParams) -> Result<FingerprintArguments, FingerprintError> {
+    // COSMolKit❗✔️: d892ec3507c5b568c5ed5d86ae44e466f7d03855
+    // properties/fingerprint/atom_pair.rs:812-842. The detached parameters
+    // already carry a u32 width; the Python projection performs the source
+    // checked usize conversion before invoking this narrow owner seam.
+    //     pub fn new(params: &AtomPairFingerprintParams) -> Result<Self, FingerprintError> {
+    //         if params.n_bits == 0 {
+    //             return Err(FingerprintError::EmptyFingerprint);
+    //         }
+    //         let fp_size =
+    //             u32::try_from(params.n_bits).map_err(|_| FingerprintError::InvalidArguments {
+    //                 reason: "AtomPair n_bits exceeds the source uint32 range",
+    //             })?;
+    //         let mut generator = atom_pair_generator_with_parameters(
+    //             params.min_distance,
+    //             params.max_distance,
+    //             params.use_chirality,
+    //             params.use_2d,
+    //             None,
+    //             params.count_simulation,
+    //             fp_size,
+    //             params.count_bounds.clone(),
+    //             false,
+    //         )?;
+    //         if params.num_bits_per_feature == 0 {
+    //             return Err(FingerprintError::InvalidArguments {
+    //                 reason: "num_bits_per_feature must be greater than zero",
+    //             });
+    //         }
+    //         generator
+    //             .arguments
+    //             .fingerprint_arguments
+    //             .d_num_bits_per_feature = params.num_bits_per_feature;
+    //         Ok(generator)
+    //     }
+    if params.fp_size == 0 {
+        return Err(FingerprintError::EmptyFingerprint);
+    }
+    let mut common = params.common_with_bits_per_feature(1)?;
+    if params.bits_per_feature == 0 {
+        return Err(FingerprintError::InvalidArguments {
+            reason: "num_bits_per_feature must be greater than zero",
+        });
+    }
+    common.bits_per_feature = params.bits_per_feature;
+    Ok(common)
+}
+
+/// Immutable construction state for the existing batch owner boundary.
+/// Never exposed by the public chemistry facade or language projections.
+#[doc(hidden)]
+pub struct AtomPairBatchArguments<'a> {
+    params: &'a AtomPairParams,
+    common: FingerprintArguments,
+}
+
+impl<'a> AtomPairBatchArguments<'a> {
+    pub fn new(params: &'a AtomPairParams) -> Result<Self, FingerprintError> {
+        // COSMolKit❗✔️: pinned batch::atom_pair_generator_for_batch constructs
+        // one generator before collect_optional_values_with_options.
+        // The source constructor anchor and ordered guards live in batch_common.
+        // Cost: one O(count_bounds.len()) copy, then shared immutable borrows.
+        Ok(Self {
+            params,
+            common: batch_common(params)?,
+        })
+    }
+    pub fn sparse_count(
+        &self,
+        input: &AtomPairPreparedInput<'_>,
+        call: &AtomPairCall<'_>,
+        output: Option<&mut FingerprintAdditionalOutput>,
+    ) -> Result<SparseCountFingerprint, AtomPairError> {
+        atom_pair_sparse_count_with_common(input, self.params, &self.common, call, output)
+    }
+    pub fn sparse_bits(
+        &self,
+        input: &AtomPairPreparedInput<'_>,
+        call: &AtomPairCall<'_>,
+        output: Option<&mut FingerprintAdditionalOutput>,
+    ) -> Result<SparseBitFingerprint, AtomPairError> {
+        atom_pair_sparse_bits_with_common(input, self.params, &self.common, call, output)
+    }
+    pub fn count(
+        &self,
+        input: &AtomPairPreparedInput<'_>,
+        call: &AtomPairCall<'_>,
+        output: Option<&mut FingerprintAdditionalOutput>,
+    ) -> Result<SparseCountFingerprint32, AtomPairError> {
+        atom_pair_count_with_common(input, self.params, &self.common, call, output)
+    }
+    pub fn bits(
+        &self,
+        input: &AtomPairPreparedInput<'_>,
+        call: &AtomPairCall<'_>,
+        output: Option<&mut FingerprintAdditionalOutput>,
+    ) -> Result<Fingerprint, AtomPairError> {
+        atom_pair_bits_with_common(input, self.params, &self.common, call, output)
+    }
+}
+
 impl AtomPairParams {
     fn common(&self) -> Result<FingerprintArguments, FingerprintError> {
+        self.common_with_bits_per_feature(self.bits_per_feature)
+    }
+    fn common_with_bits_per_feature(
+        &self,
+        bits_per_feature: u32,
+    ) -> Result<FingerprintArguments, FingerprintError> {
         // RDKit❗✔️: AtomPairArguments::AtomPairArguments(
         // RDKit❗✔️:     const bool countSimulation, const bool includeChirality, const bool use2D,
         // RDKit❗✔️:     const unsigned int minDistance, const unsigned int maxDistance,
@@ -109,7 +222,7 @@ impl AtomPairParams {
             self.count_simulation,
             self.count_bounds.clone(),
             self.fp_size,
-            self.bits_per_feature,
+            bits_per_feature,
             self.include_chirality,
         )?;
         if self.min_distance > self.max_distance {
@@ -635,7 +748,16 @@ pub fn atom_pair_sparse_count(
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint, AtomPairError> {
     let common = params.common()?;
-    count_helper(input, params, &common, call, 0, output)
+    atom_pair_sparse_count_with_common(input, params, &common, call, output)
+}
+fn atom_pair_sparse_count_with_common(
+    input: &AtomPairPreparedInput<'_>,
+    params: &AtomPairParams,
+    common: &FingerprintArguments,
+    call: &AtomPairCall<'_>,
+    output: Option<&mut FingerprintAdditionalOutput>,
+) -> Result<SparseCountFingerprint, AtomPairError> {
+    count_helper(input, params, common, call, 0, output)
 }
 pub fn atom_pair_sparse_bits(
     input: &AtomPairPreparedInput<'_>,
@@ -644,12 +766,21 @@ pub fn atom_pair_sparse_bits(
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseBitFingerprint, AtomPairError> {
     let common = params.common()?;
+    atom_pair_sparse_bits_with_common(input, params, &common, call, output)
+}
+fn atom_pair_sparse_bits_with_common(
+    input: &AtomPairPreparedInput<'_>,
+    params: &AtomPairParams,
+    common: &FingerprintArguments,
+    call: &AtomPairCall<'_>,
+    output: Option<&mut FingerprintAdditionalOutput>,
+) -> Result<SparseBitFingerprint, AtomPairError> {
     project_sparse_fingerprint(
-        &common,
+        common,
         params.result_size(),
         input.topology.atoms.len(),
         output,
-        |fp_size, output| count_helper(input, params, &common, call, fp_size, output),
+        |fp_size, output| count_helper(input, params, common, call, fp_size, output),
     )
 }
 pub fn atom_pair_count(
@@ -659,11 +790,20 @@ pub fn atom_pair_count(
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<SparseCountFingerprint32, AtomPairError> {
     let common = params.common()?;
+    atom_pair_count_with_common(input, params, &common, call, output)
+}
+fn atom_pair_count_with_common(
+    input: &AtomPairPreparedInput<'_>,
+    params: &AtomPairParams,
+    common: &FingerprintArguments,
+    call: &AtomPairCall<'_>,
+    output: Option<&mut FingerprintAdditionalOutput>,
+) -> Result<SparseCountFingerprint32, AtomPairError> {
     project_count_fingerprint(
-        &common,
+        common,
         input.topology.atoms.len(),
         output,
-        |fp_size, output| count_helper(input, params, &common, call, fp_size, output),
+        |fp_size, output| count_helper(input, params, common, call, fp_size, output),
     )
 }
 pub fn atom_pair_bits(
@@ -673,16 +813,108 @@ pub fn atom_pair_bits(
     output: Option<&mut FingerprintAdditionalOutput>,
 ) -> Result<Fingerprint, AtomPairError> {
     let common = params.common()?;
+    atom_pair_bits_with_common(input, params, &common, call, output)
+}
+fn atom_pair_bits_with_common(
+    input: &AtomPairPreparedInput<'_>,
+    params: &AtomPairParams,
+    common: &FingerprintArguments,
+    call: &AtomPairCall<'_>,
+    output: Option<&mut FingerprintAdditionalOutput>,
+) -> Result<Fingerprint, AtomPairError> {
     project_fingerprint(
-        &common,
+        common,
         input.topology.atoms.len(),
         output,
-        |fp_size, output| count_helper(input, params, &common, call, fp_size, output),
+        |fp_size, output| count_helper(input, params, common, call, fp_size, output),
     )
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn project_batch_preflight_preserves_legacy_rejection_order_and_scalar_zero_size() {
+        let zero = AtomPairParams {
+            fp_size: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_atom_pair_params(&zero).unwrap_err().to_string(),
+            "fingerprint requires n_bits > 0"
+        );
+        assert_eq!(zero.common().unwrap().fp_size, 0);
+        let distance_and_bits = AtomPairParams {
+            min_distance: 31,
+            max_distance: 30,
+            bits_per_feature: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_atom_pair_params(&distance_and_bits),
+            Err(FingerprintError::PreconditionViolation {
+                what: "bad distances provided"
+            })
+        );
+        let bounds_and_distance = AtomPairParams {
+            count_bounds: vec![],
+            min_distance: 31,
+            max_distance: 30,
+            bits_per_feature: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_atom_pair_params(&bounds_and_distance),
+            Err(FingerprintError::PreconditionViolation {
+                what: "bad count bounds provided"
+            })
+        );
+        let bits = AtomPairParams {
+            bits_per_feature: 0,
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_atom_pair_params(&bits),
+            Err(FingerprintError::InvalidArguments {
+                reason: "num_bits_per_feature must be greater than zero"
+            })
+        );
+        assert!(
+            validate_atom_pair_params(&AtomPairParams {
+                count_simulation: false,
+                count_bounds: vec![],
+                ..Default::default()
+            })
+            .is_ok()
+        );
+        let input = TestBuilder::default().build().unwrap();
+        // getFingerprint's source count-simulation branch rejects bounds.len() >= fpSize;
+        // the defined zero-size no-simulation branch returns empty for no environments.
+        assert!(matches!(
+            atom_pair_bits(&input.input(), &zero, &AtomPairCall::default(), None),
+            Err(AtomPairError::Fingerprint(
+                FingerprintError::InvalidArguments {
+                    reason: "Count bounds size is >= fingerprint size"
+                }
+            ))
+        ));
+        let scalar_zero = AtomPairParams {
+            count_simulation: false,
+            ..zero.clone()
+        };
+        assert_eq!(
+            atom_pair_bits(&input.input(), &scalar_zero, &AtomPairCall::default(), None)
+                .unwrap()
+                .n_bits(),
+            0
+        );
+        assert_eq!(
+            atom_pair_count(&input.input(), &zero, &AtomPairCall::default(), None)
+                .unwrap()
+                .length(),
+            0
+        );
+    }
+
     use super::*;
     #[test]
     fn environment_bit_id_exact_mode_matches_pair_packing_and_endpoint_reversal() {

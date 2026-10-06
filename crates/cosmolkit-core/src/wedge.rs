@@ -1454,8 +1454,8 @@ pub fn pick_bonds_to_wedge_with_existing_ring_info(
     if has_chiral_centers {
         // The pinned comparator uses only the score; equal scores have no
         // source-defined secondary key, so do not add an atom-index tie-break.
-        atom_indices.sort_unstable_by(|left, right| {
-            chiral_neighbor_counts[*left].cmp(&chiral_neighbor_counts[*right])
+        crate::source_sort::sort_by(&mut atom_indices, |left, right| {
+            chiral_neighbor_counts[*left] < chiral_neighbor_counts[*right]
         });
     }
 

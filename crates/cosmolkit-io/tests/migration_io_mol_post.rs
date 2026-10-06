@@ -165,6 +165,7 @@ fn mol_post_attachment_v3000_value_and_final_classification() {
                 remove_hs: false,
                 expand_attachment_points: true,
             },
+            None,
         )
         .unwrap();
         if labels.is_empty() {
@@ -222,6 +223,7 @@ fn mol_post_attachment_v2000_and_existing_query_obey_source_order() {
                 remove_hs: false,
                 expand_attachment_points: true,
             },
+            None,
         )
         .unwrap();
         let MolBlockRecord::Query(record) = finished else {
@@ -238,6 +240,7 @@ fn mol_post_attachment_v2000_and_existing_query_obey_source_order() {
             remove_hs: false,
             expand_attachment_points: true,
         },
+        None,
     )
     .unwrap();
     let MolBlockRecord::Query(record) = finished else {
@@ -263,6 +266,7 @@ fn mol_post_attachment_v2000_and_existing_query_obey_source_order() {
             remove_hs: false,
             expand_attachment_points: true,
         },
+        None,
     )
     .unwrap();
     let MolBlockRecord::Query(record) = finished else {
@@ -292,6 +296,7 @@ fn mol_post_attachment_options_and_invalid_local_value_are_atomic() {
                     remove_hs,
                     expand_attachment_points: true,
                 },
+                None,
             )
             .unwrap();
             let MolBlockRecord::Query(record) = expanded else {
@@ -314,6 +319,7 @@ fn mol_post_attachment_options_and_invalid_local_value_are_atomic() {
                     remove_hs,
                     expand_attachment_points: false,
                 },
+                None,
             )
             .unwrap();
             assert!(matches!(disabled, MolBlockRecord::Concrete { .. }));
@@ -327,7 +333,7 @@ fn mol_post_attachment_options_and_invalid_local_value_are_atomic() {
     }
     let original = invalid.clone();
     assert!(matches!(
-        finish_mol_block_record(invalid.clone(), false, MolPostParams { expand_attachment_points: true, ..MolPostParams::default() }),
+        finish_mol_block_record(invalid.clone(), false, MolPostParams { expand_attachment_points: true, ..MolPostParams::default() }, None),
         Err(MolPostError::AttachmentValue { atom, value }) if atom == AtomId::new(0) && value == "nonsense"
     ));
     assert_eq!(invalid, original);
@@ -365,9 +371,10 @@ fn mol_post_explicit_valence_prepass_runs_for_concrete_and_query_before_properti
                             remove_hs,
                             expand_attachment_points: false,
                         },
+                        None,
                     );
                     assert!(
-                        matches!(result, Err(MolPostError::Processing(ref message)) if message == "Bad bond type"),
+                        matches!(result, Err(MolPostError::Processing(ref message)) if message.to_string() == "Bad bond type"),
                         "query={query} substitution={substitution:?} sanitize={sanitize} remove_hs={remove_hs}: {result:?}"
                     );
                     assert_eq!(
@@ -408,6 +415,7 @@ fn mol_post_explicit_valence_prepass_runs_for_concrete_and_query_before_properti
             remove_hs: false,
             expand_attachment_points: true,
         },
+        None,
     )
     .unwrap();
     assert!(matches!(result, MolBlockRecord::Query(record) if record.query.num_atoms() == 3));
@@ -486,6 +494,7 @@ fn finished_center_tag_and_group_count(
             remove_hs,
             expand_attachment_points: false,
         },
+        None,
     )
     .expect("tetrahedral mol-post");
     match finished {
@@ -644,7 +653,7 @@ fn finish_v3000_wedge(z: &str, cfg: u8) -> (TopologyBlock, CoordinateBlock) {
         topology,
         coordinates,
         ..
-    } = finish_mol_block_record(parsed, true, unsanitized()).unwrap()
+    } = finish_mol_block_record(parsed, true, unsanitized(), None).unwrap()
     else {
         panic!("concrete record expected")
     };
@@ -759,6 +768,7 @@ fn mol_post_final_stereochemistry_assigns_coordinate_double_bond_stereo_after_sa
                     remove_hs: false,
                     expand_attachment_points: false,
                 },
+                None,
             )
             .expect("alkene mol-post");
             let stereo = match finished {
@@ -786,6 +796,7 @@ fn mol_post_legacy_closure_iteratively_reranks_resolved_stereo_for_concrete_and_
                 remove_hs: false,
                 expand_attachment_points: false,
             },
+            None,
         )
         .expect("iterative legacy stereo mol-post");
         let (tags, codes) = match finished {
@@ -857,6 +868,7 @@ fn mol_post_legacy_closure_retains_source_ring_special_cases_for_concrete_and_qu
                 remove_hs: false,
                 expand_attachment_points: false,
             },
+            None,
         )
         .expect("ring-special legacy stereo mol-post");
         let atoms = match &finished {
@@ -909,6 +921,7 @@ fn mol_post_legacy_closure_sets_stereochem_done_only_in_sanitize_branch() {
                     remove_hs: false,
                     expand_attachment_points: false,
                 },
+                None,
             )
             .expect("stereochem-done mol-post");
             let properties = match &finished {
@@ -955,6 +968,7 @@ fn mol_post_legacy_closure_cleans_directional_state_for_concrete_and_query() {
                 remove_hs: false,
                 expand_attachment_points: false,
             },
+            None,
         )
         .unwrap();
         match finished {
@@ -1025,6 +1039,7 @@ fn mol_post_legacy_closure_cleans_atrop_groups_before_general_groups_for_both_re
                 remove_hs: false,
                 expand_attachment_points: false,
             },
+            None,
         )
         .unwrap();
         let groups = match &finished {
@@ -1119,7 +1134,7 @@ fn mol_post_false_flag_xyz_stereo_feeds_atropisomer_owner_before_direction_clear
         topology,
         coordinates: output_coordinates,
         ..
-    } = finish_mol_block_record(record, false, unsanitized()).unwrap()
+    } = finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("concrete record expected")
     };
@@ -1133,7 +1148,7 @@ fn mol_post_query_closure_false_flag_xyz_runs_stereo_before_direction_clearing()
     let block = v3000_tetrahedral_wedge("0.0005", 1).replace("0 0.0005 0", "0 0.0005 0 RBCNT=1");
     let parsed = read_mol_block_detached(&block).expect("query wedge record");
     let MolBlockRecord::Query(record) =
-        finish_mol_block_record(parsed, true, unsanitized()).expect("query mol-post")
+        finish_mol_block_record(parsed, true, unsanitized(), None).expect("query mol-post")
     else {
         panic!("RBCNT must retain a query record")
     };
@@ -1173,6 +1188,7 @@ fn q05_query_identity_composition_parsed_hydrogen_distinguishes_explicit_and_car
                         remove_hs,
                         expand_attachment_points: false,
                     },
+                    None,
                 )
                 .expect("query hydrogen mol-post") else {
                     panic!("query record expected")
@@ -1242,6 +1258,7 @@ fn q05_query_identity_composition_mol_post_parameter_matrix_preserves_state_and_
                         remove_hs,
                         expand_attachment_points: false,
                     },
+                    None,
                 )
                 .expect("parameter-matrix mol-post");
                 let expected_group_atoms = if expected_atoms == 1 {
@@ -1311,6 +1328,7 @@ fn q05_query_identity_composition_ordinary_hydrogen_removal_remaps_typed_sgroups
             remove_hs: true,
             expand_attachment_points: false,
         },
+        None,
     )
     .expect("query hydrogen removal with typed SGroup") else {
         panic!("query record expected")
@@ -1350,7 +1368,7 @@ fn query_sgroups_concrete_promotion_installs_complete_groups_on_query_graph() {
     let record = concrete(topology(vec![atom], vec![], groups.clone()));
 
     let MolBlockRecord::Query(record) =
-        finish_mol_block_record(record, false, unsanitized()).expect("concrete promotion")
+        finish_mol_block_record(record, false, unsanitized(), None).expect("concrete promotion")
     else {
         panic!("molSubstCount must promote the concrete record to QueryGraph");
     };
@@ -1400,7 +1418,7 @@ fn query_sgroups_identity_finalization_preserves_groups_and_ordered_crossing_sta
     );
 
     let MolBlockRecord::Query(record) =
-        finish_mol_block_record(source, false, unsanitized()).expect("identity finalization")
+        finish_mol_block_record(source, false, unsanitized(), None).expect("identity finalization")
     else {
         panic!("explicit query finalization must retain QueryGraph");
     };
@@ -1489,6 +1507,7 @@ fn query_sgroups_hydrogen_removal_updates_groups_and_consumes_source_smart_group
             remove_hs: true,
             expand_attachment_points: false,
         },
+        None,
     )
     .expect("source-shaped hydrogen and SGroup removal") else {
         panic!("hydrogen-removal query must remain a QueryGraph");
@@ -1537,7 +1556,7 @@ fn mol_post_query_closure_substitution_count_converts_and_composes_in_source_ord
         let parsed = read_mol_block_detached(&v3000_query_hydrogen(false, Some(value)))
             .expect("SUBST query record");
         let MolBlockRecord::Query(record) =
-            finish_mol_block_record(parsed, false, unsanitized()).expect("SUBST mol-post")
+            finish_mol_block_record(parsed, false, unsanitized(), None).expect("SUBST mol-post")
         else {
             panic!("SUBST must produce a query record")
         };
@@ -1587,7 +1606,7 @@ fn mol_post_query_closure_failure_is_atomic_for_query_records() {
     });
     let snapshot = source.clone();
     assert_eq!(
-        finish_mol_block_record(source, false, unsanitized()),
+        finish_mol_block_record(source, false, unsanitized(), None),
         Err(MolPostError::Representation("HYD count outside u8"))
     );
     let MolBlockRecord::Query(snapshot) = snapshot else {
@@ -1631,7 +1650,7 @@ fn mol_post_query_closure_atom_and_dat_queries_follow_source_order_then_complete
             .unwrap(),
     };
     let MolBlockRecord::Query(record) =
-        finish_mol_block_record(record, false, unsanitized()).expect("ordered query closure")
+        finish_mol_block_record(record, false, unsanitized(), None).expect("ordered query closure")
     else {
         panic!("SMARTSQ must produce a query record")
     };
@@ -1663,7 +1682,8 @@ fn mol_post_params_match_source_defaults_and_noop_expansion() {
             MolPostParams {
                 expand_attachment_points: true,
                 ..MolPostParams::default()
-            }
+            },
+            None
         ),
         Ok(MolBlockRecord::Concrete { .. })
     ));
@@ -1686,7 +1706,7 @@ fn mol_post_mol_tot_valence_sentinels_clear_property_and_respect_zbo_h() {
             vec![],
         ));
         let MolBlockRecord::Concrete { topology, .. } =
-            finish_mol_block_record(record, false, unsanitized()).unwrap()
+            finish_mol_block_record(record, false, unsanitized(), None).unwrap()
         else {
             panic!("concrete record expected")
         };
@@ -1710,7 +1730,7 @@ fn mol_post_mol_tot_valence_sentinels_clear_property_and_respect_zbo_h() {
         vec![],
     ));
     let MolBlockRecord::Concrete { topology, .. } =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("concrete record expected")
     };
@@ -1745,7 +1765,7 @@ fn mol_post_processes_atom_properties_before_hyd_group() {
         vec![hyd],
     ));
     let MolBlockRecord::Concrete { topology, .. } =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("concrete record expected")
     };
@@ -1799,7 +1819,7 @@ fn mol_post_dat_actions_remove_only_recognized_groups() {
     ];
     let record = concrete(topology(atoms, vec![bond], groups));
     let MolBlockRecord::Concrete { topology, .. } =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("concrete record expected")
     };
@@ -1829,7 +1849,7 @@ fn mol_post_short_zch_and_hyd_fields_are_source_noops_but_groups_are_consumed() 
             vec![group],
         ));
         let MolBlockRecord::Concrete { topology, .. } =
-            finish_mol_block_record(record, false, unsanitized()).unwrap()
+            finish_mol_block_record(record, false, unsanitized(), None).unwrap()
         else {
             panic!("concrete record expected")
         };
@@ -1866,7 +1886,7 @@ fn mol_post_mrv_implicit_h_requires_an_aromatic_bond() {
         vec![group],
     ));
     let MolBlockRecord::Concrete { topology, .. } =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("concrete record expected")
     };
@@ -1901,7 +1921,7 @@ fn mol_post_smartsq_builds_typed_query_and_preserves_unconsumed_groups() {
         vec![smart, unknown],
     ));
     let MolBlockRecord::Query(record) =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("query record expected")
     };
@@ -1935,7 +1955,7 @@ fn mol_post_smartsq_non_equals_is_consumed_without_replacing_predicate() {
     );
     let record = concrete(topology(vec![atom(0, Element::C)], vec![], vec![smart]));
     let MolBlockRecord::Query(record) =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("query record expected")
     };
@@ -1970,7 +1990,7 @@ fn mol_post_query_scan_is_cleared_and_completed() {
         source_coordinate_dim: None,
     });
     let MolBlockRecord::Query(record) =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("query record expected")
     };
@@ -2033,6 +2053,7 @@ fn mol_post_explicit_query_provenance_preserves_unmarked_atom_predicates_and_mat
                         remove_hs,
                         expand_attachment_points: false,
                     },
+                    None,
                 )
                 .unwrap() else {
                     panic!("explicit query record expected")
@@ -2054,7 +2075,7 @@ fn mol_post_explicit_query_provenance_preserves_unmarked_atom_predicates_and_mat
         vec![],
     );
     let MolBlockRecord::Query(finished) =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("explicit query record expected")
     };
@@ -2115,6 +2136,7 @@ fn mol_post_explicit_query_provenance_preserves_unmarked_bond_predicates() {
                     remove_hs: false,
                     expand_attachment_points: false,
                 },
+                None,
             )
             .unwrap() else {
                 panic!("explicit query record expected")
@@ -2159,6 +2181,7 @@ fn q05_query_identity_composition_explicit_query_provenance_survives_remapping_a
                     remove_hs,
                     expand_attachment_points: false,
                 },
+                None,
             )
             .unwrap() else {
                 panic!("explicit query record expected")
@@ -2192,6 +2215,7 @@ fn q05_query_identity_composition_explicit_query_provenance_survives_remapping_a
                 remove_hs: false,
                 expand_attachment_points: true,
             },
+            None,
         ),
         Ok(MolBlockRecord::Query(_))
     ));
@@ -2222,7 +2246,7 @@ fn mol_post_preserves_input_value_on_processing_error() {
     let record = concrete(topology(vec![atom(0, Element::C)], vec![], vec![group]));
     let source = record.clone();
     assert_eq!(
-        finish_mol_block_record(record, false, unsanitized()),
+        finish_mol_block_record(record, false, unsanitized(), None),
         Err(MolPostError::Representation("HYD count outside u8"))
     );
     let MolBlockRecord::Concrete { topology, .. } = source else {
@@ -2273,14 +2297,14 @@ fn mol_post_query_bond_state_survives_dat_processing() {
         source_coordinate_dim: None,
     });
     let MolBlockRecord::Query(record) =
-        finish_mol_block_record(record, false, unsanitized()).unwrap()
+        finish_mol_block_record(record, false, unsanitized(), None).unwrap()
     else {
         panic!("query record expected")
     };
     assert_eq!(record.query.bonds()[0].bond().order(), BondOrder::Dative);
     assert_eq!(
         record.query.bonds()[0].predicate(),
-        &QueryNode::predicate(BondQueryPredicate::Any)
+        &QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Dative))
     );
     assert!(query_substance_groups(&record.query).is_empty());
 }
@@ -2296,6 +2320,7 @@ fn mol_post_query_predicate_sync_rebuilds_synthesized_aromatic_carriers() {
             remove_hs: false,
             expand_attachment_points: false,
         },
+        None,
     )
     .expect("benzene query mol-post") else {
         panic!("RBCNT must retain a query record")
@@ -2375,6 +2400,7 @@ M  END\n";
                 remove_hs: false,
                 expand_attachment_points: false,
             },
+            None,
         )
         .expect("explicit bond query mol-post") else {
             panic!("query bond must retain query record")

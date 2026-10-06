@@ -6,7 +6,11 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::error::Error;
 pyo3::create_exception!(cosmolkit, PatternFingerprintError, PyValueError);
-pub(crate) fn pattern_pyerr(py: Python<'_>, source: ck::PatternFingerprintError) -> PyErr {
+pub(crate) fn pattern_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::PatternFingerprintError>,
+) -> PyErr {
+    let source = source.borrow();
     use ck::PatternFingerprintError as E;
     let err = PatternFingerprintError::new_err(source.to_string());
     let attrs = || -> PyResult<()> {
@@ -14,7 +18,7 @@ pub(crate) fn pattern_pyerr(py: Python<'_>, source: ck::PatternFingerprintError)
         object.setattr("domain", "Fingerprint")?;
         object.setattr(
             "kind",
-            match &source {
+            match source {
                 E::EmptyFingerprint => "EmptyFingerprint",
                 E::InvalidArguments { .. } => "InvalidArguments",
                 E::BitLengthMismatch { .. } => "BitLengthMismatch",
@@ -29,7 +33,7 @@ pub(crate) fn pattern_pyerr(py: Python<'_>, source: ck::PatternFingerprintError)
                 E::Value(_) => "Value",
             },
         )?;
-        match &source {
+        match source {
             E::InvalidArguments { reason } => object.setattr("reason", reason)?,
             E::BitLengthMismatch { left, right } => {
                 object.setattr("left", left)?;

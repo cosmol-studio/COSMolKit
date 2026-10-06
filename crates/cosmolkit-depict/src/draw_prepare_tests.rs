@@ -580,7 +580,10 @@ fn drawing_prepare_typed_invalid_coordinates_and_memberships() {
         })
     ));
     assert!(error.source().is_some());
-    let wrong = RingInfo::new(cosmolkit_core::RingFindType::Sssr, 0, 0);
+    // A short (even empty) prefix is source-valid; only oversized storage is
+    // malformed. Original zero-prefix fixture and its red result are retained
+    // in the immutable delivery proposal for independent p1/ROOT review.
+    let wrong = RingInfo::new(cosmolkit_core::RingFindType::Sssr, 2, 0);
     let error = prepare(DrawingInput {
         topology: &topology,
         coordinates: &CoordinateBlock::default(),
@@ -594,8 +597,110 @@ fn drawing_prepare_typed_invalid_coordinates_and_memberships() {
         error,
         DrawingError::StateRows {
             field: "ring atom memberships",
-            actual: 0,
+            actual: 2,
             expected: 1
         }
     ));
+    let wrong = RingInfo::new(cosmolkit_core::RingFindType::Sssr, 1, 1);
+    let error = prepare(DrawingInput {
+        topology: &topology,
+        coordinates: &CoordinateBlock::default(),
+        properties: &properties,
+        valence: None,
+        rings: Some(&wrong),
+    })
+    .err()
+    .unwrap();
+    assert!(matches!(
+        error,
+        DrawingError::StateRows {
+            field: "ring bond memberships",
+            actual: 1,
+            expected: 0
+        }
+    ));
+}
+
+#[test]
+fn drawing_prepare_sparse_ring_prefix_preserves_source_membership_reads() {
+    // RDKit pin351f8f378f8ad6bbd517980c38896e66bf907af8:
+    // RingInfo.cpp atomMembers/bondMembers return empty and num*Rings zero
+    // beyond the cached prefix. AddHs preserves that old RingInfo carrier.
+    let ethanol = literal_topology(
+        &[
+            (Element::C, false, 0, false, ChiralTag::Unspecified),
+            (Element::C, false, 0, false, ChiralTag::Unspecified),
+            (Element::O, false, 0, false, ChiralTag::Unspecified),
+        ],
+        &[
+            (0, 1, BondOrder::Single, false),
+            (1, 2, BondOrder::Single, false),
+        ],
+    );
+    let benzene = literal_topology(
+        &[(Element::C, true, 0, false, ChiralTag::Unspecified); 6],
+        &(0..6)
+            .map(|i| (i, (i + 1) % 6, BondOrder::Aromatic, true))
+            .collect::<Vec<_>>(),
+    );
+    for topology in [ethanol, benzene] {
+        let original = symmetrized_sssr(&topology, &RingSearchParams::default()).unwrap();
+        let expanded = add_hydrogens_with_params(
+            topology.clone(),
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+            &AddHsParams::default(),
+        )
+        .unwrap();
+        assert!(expanded.topology.atoms.len() > topology.atoms.len());
+        let supplied = CoordinateBlock {
+            conformers_2d: vec![
+                compute_2d_coordinates(
+                    &expanded.topology,
+                    &MoleculeProperties::default(),
+                    &Compute2DCoordinatesParams::default(),
+                )
+                .unwrap(),
+            ],
+            ..Default::default()
+        };
+        let prepared = prepared_preserving(&expanded.topology, &supplied, Some(&original));
+        assert_eq!(prepared.rings.atom_rings(), original.atom_rings());
+        assert_eq!(prepared.rings.bond_rings(), original.bond_rings());
+        assert_eq!(prepared.rings.is_symm_sssr(), original.is_symm_sssr());
+        for i in 0..expanded.topology.atoms.len() {
+            assert_eq!(
+                prepared.rings.atom_members(AtomId::new(i)),
+                original.atom_members(AtomId::new(i))
+            );
+            assert_eq!(
+                prepared.rings.num_atom_rings(AtomId::new(i)),
+                original.num_atom_rings(AtomId::new(i))
+            );
+        }
+        for i in 0..expanded.topology.bonds.len() {
+            assert_eq!(
+                prepared.rings.bond_members(BondId::new(i)),
+                original.bond_members(BondId::new(i))
+            );
+            assert_eq!(
+                prepared.rings.num_bond_rings(BondId::new(i)),
+                original.num_bond_rings(BondId::new(i))
+            );
+        }
+        // Borrowed original state and supplied coordinates remain untouched.
+        assert_eq!(original.atom_row_count(), topology.atoms.len());
+        assert_eq!(original.bond_row_count(), topology.bonds.len());
+        assert_eq!(prepared.coordinates, supplied);
+    }
+    let topology = literal_topology(
+        &[(Element::C, false, 0, false, ChiralTag::Unspecified)],
+        &[],
+    );
+    let empty_prefix = RingInfo::new(cosmolkit_core::RingFindType::Sssr, 0, 0);
+    let prepared = prepared_preserving(&topology, &CoordinateBlock::default(), Some(&empty_prefix));
+    assert!(prepared.rings.atom_rings().is_empty());
+    assert!(prepared.rings.bond_rings().is_empty());
+    assert_eq!(prepared.rings.num_atom_rings(AtomId::new(0)), 0);
+    assert_eq!(empty_prefix.atom_row_count(), 0);
 }

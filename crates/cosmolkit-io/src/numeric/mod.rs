@@ -1,8 +1,9 @@
-//! Private C-locale byte-prefix float conversion ported from musl 1.2.5.
+//! Private C-locale byte-prefix float conversion with pinned source branches.
 //!
-//! The implementation's provenance is musl, not RDKit's runtime libc.
-//! RDKit compatibility is limited to the coordinate contract documented on
-//! `parse_rdkit_atof_prefix`; acceptance uses the pinned RDKit coordinate parity test.
+//! Provenance: musl decimal conversion and pinned runtime glibc hex/NaN branches.
+//! Decimal conversion reuses the source-backed musl port. Hexadecimal
+//! rounding and signed NaN payloads use the pinned glibc 2.43 source branches.
+//! Acceptance remains independent; no numerical input exemptions are applied.
 //! This module is private to `cosmolkit-io`; no public API is added.
 //!
 //! Source basis: musl 1.2.5 (`third_party/musl/`), selected binary64
@@ -20,35 +21,23 @@ pub(crate) use float_scan::float_scan;
 /// Parse the longest numeric prefix of `bytes` as a binary64 value and return
 /// it with the number of consumed bytes.
 pub(crate) fn parse_rdkit_atof_prefix(bytes: &[u8]) -> (f64, usize) {
-    // Coordinate numeric compatibility contract (2026-09-19):
-    // - Ordinary finite decimal coordinates, including scientific notation,
-    //   must match the fixed RDKit reference bit-for-bit, not within epsilon.
-    // - Signs, negative zero, C-locale whitespace, longest-prefix consumption,
-    //   incomplete-exponent rollback and source-defined no-conversion zero
-    //   remain required. Missing fields and per-format screening/error policy
-    //   belong to the reader; this helper must not erase those distinctions.
-    // - Very long significands, subnormal rounding boundaries, hexadecimal
-    //   floats and NaN payloads are outside this stage's exact-parity promise.
-    //   This does not authorize clamping, filtering failing ordinary inputs,
-    //   deleting counterexamples, or claiming all-input libc equivalence.
-    // Reference: RDKit 2026.03.1 cp313 manylinux_2_28_x86_64 FileParsers,
-    // Ubuntu glibc 2.43-2ubuntu2.4 amd64, LC_NUMERIC=C, FE_TONEAREST.
-    // The explicit live-oracle test checks the loaded binary hashes. Its
-    // sample envelope is coverage, not a new parser rejection threshold.
-    // Known excluded differences are retained in IO-atof-port.md, including
-    // 0x1.00000003p-1044 and 0x1.00000005p-1044 (RDKit bits 0x40000001).
-    // The musl source anchors below establish implementation provenance only;
-    // they do not establish the identity of RDKit's strtod implementation.
-    // musl✔️✔️: static long double strtox(const char *s, char **p, int prec)
-    // musl✔️✔️: {
-    // musl✔️✔️: 	FILE f;
-    // musl✔️✔️: 	sh_fromstring(&f, s);
-    // musl✔️✔️: 	shlim(&f, 0);
-    // musl✔️✔️: 	long double y = __floatscan(&f, prec, 1);
-    // musl✔️✔️: 	off_t cnt = shcnt(&f);
-    // musl✔️✔️: 	if (p) *p = cnt ? (char *)s + cnt : (char *)s;
-    // musl✔️✔️: 	return y;
-    // musl✔️✔️: }
+    // Pinned RDKit source calls atof. The original source-backed decimal
+    // converter is reused; hexadecimal conversion and signed NaN payloads
+    // use complete glibc 2.43 branches in their implementing functions.
+    // C locale, FE_TONEAREST, prefix/no-conversion semantics are required.
+    // No input class or known counterexample is waived from source parity.
+    // Missing fields and per-format screening remain reader responsibilities.
+    // This helper is not a complete general locale/fenv glibc implementation.
+    // musl❗✔️: static long double strtox(const char *s, char **p, int prec)
+    // musl❗✔️: {
+    // musl❗✔️: 	FILE f;
+    // musl❗✔️: 	sh_fromstring(&f, s);
+    // musl❗✔️: 	shlim(&f, 0);
+    // musl❗✔️: 	long double y = __floatscan(&f, prec, 1);
+    // musl❗✔️: 	off_t cnt = shcnt(&f);
+    // musl❗✔️: 	if (p) *p = cnt ? (char *)s + cnt : (char *)s;
+    // musl❗✔️: 	return y;
+    // musl❗✔️: }
     // Specialization: prec=1, binary64, return the offset rather than a pointer.
     let mut cursor = cursor::ScanCursor::new(bytes);
     let value = float_scan(&mut cursor, 1, true);
@@ -69,6 +58,34 @@ mod tests {
     fn run(token: &[u8]) -> (u64, usize) {
         let (value, offset) = parse_rdkit_atof_prefix(token);
         (bits(value), offset)
+    }
+
+    #[test]
+    fn atof_source_exact_glibc_hex_and_nan_branches() {
+        for (token, expected, consumed) in [
+            ("0x1.00000003p-1044", 0x0000_0000_4000_0001, 18),
+            ("0x1.00000005p-1044", 0x0000_0000_4000_0001, 18),
+            ("-nan", 0xfff8_0000_0000_0000, 4),
+            ("nan(123)", 0x7ff8_0000_0000_007b, 8),
+            ("nan(0173)", 0x7ff8_0000_0000_007b, 9),
+            ("-NAN(0x7b)", 0xfff8_0000_0000_007b, 10),
+            ("nan(09)", 0x7ff8_0000_0000_0000, 7),
+            ("nan(18446744073709551616)", 0x7fff_ffff_ffff_ffff, 25),
+            ("nan(0b1)", 0x7ff8_0000_0000_0000, 8),
+            ("nan(abc)", 0x7ff8_0000_0000_0000, 8),
+            ("nan(123", 0x7ff8_0000_0000_0000, 3),
+            ("-nan(12 3)", 0xfff8_0000_0000_0000, 4),
+            ("0x1p-1075", 0, 9),
+            ("0x1.0000000000001p-1075", 1, 23),
+            ("0x1.8p-1074", 2, 11),
+            ("0x1.4p-1074", 1, 11),
+            ("0x1.fffffffffffffp-1023", 0x0010_0000_0000_0000, 23),
+            ("0x1.fffffffffffffp1023", 0x7fef_ffff_ffff_ffff, 22),
+            ("0x1.fffffffffffff8p1023", 0x7ff0_0000_0000_0000, 23),
+            ("0x.0008p0tail", 0x3f20_0000_0000_0000, 9),
+        ] {
+            assert_eq!(run(token.as_bytes()), (expected, consumed), "{token}");
+        }
     }
 
     #[test]

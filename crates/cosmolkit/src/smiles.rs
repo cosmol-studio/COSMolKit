@@ -367,7 +367,7 @@ impl Molecule {
         )?;
         // Stereo may need local non-strict values, but sanitize=false must not
         // revive runtime validity after CK-VALENCE-001 hydrogen removal.
-        Self::from_smiles_parts_with_derived_state(
+        Self::from_parsed_parts_with_derived_state(
             record.topology,
             record.coordinates,
             record.properties,

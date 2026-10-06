@@ -96,12 +96,17 @@ use cosmolkit_core::{
 };
 use cosmolkit_model::{MoleculePropertyError, TopologyBlock};
 
-pub use additional_output::FingerprintAdditionalOutput;
+pub use additional_output::{
+    BatchFingerprintAdditionalOutput, BatchFingerprintOutput, BatchFingerprintOutputError,
+    FingerprintAdditionalOutput, batch_fingerprint_output,
+};
 pub use atom_code::{AtomCodeAssignment, AtomCodeError, AtomCodeInput, AtomCodeOptions, atom_code};
+#[doc(hidden)]
+pub use atom_pair::AtomPairBatchArguments;
 pub use atom_pair::{
     AtomPairAtomInvariantsGenerator, AtomPairCall, AtomPairError, AtomPairParams,
     AtomPairPreparedInput, atom_pair_bits, atom_pair_count, atom_pair_sparse_bits,
-    atom_pair_sparse_count,
+    atom_pair_sparse_count, validate_atom_pair_params,
 };
 pub use cosmolkit_search::QueryGraph;
 pub use layered::{
@@ -113,7 +118,7 @@ pub use layered::{
 };
 pub use morgan::{
     MorganAtomInvariants, MorganCall, MorganParams, morgan_bits, morgan_count, morgan_sparse_bits,
-    morgan_sparse_count,
+    morgan_sparse_count, validate_morgan_batch_params,
 };
 pub use packed_codes::{atom_pair_code, topological_torsion_code, topological_torsion_hash};
 pub use prepared::MorganPreparedInput;
@@ -128,6 +133,8 @@ pub use values::Fingerprint;
 /// plus the existing fail-closed `Unsupported` generator boundary.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FingerprintError {
+    /// Pinned project-native wrapper rejection; scalar RDKit zero-size inputs remain defined.
+    EmptyFingerprint,
     Unsupported,
     /// Source `IndexErrorException`: an index is outside the vector length.
     SparseIndexOutOfRange {
@@ -185,6 +192,10 @@ pub enum FingerprintError {
 impl fmt::Display for FingerprintError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            // COSMolKit❗✔️: #[error("fingerprint requires n_bits > 0")]
+            // COSMolKit❗✔️: EmptyFingerprint,
+            // d892ec3507c5b568c5ed5d86ae44e466f7d03855: properties/fingerprint.rs.
+            Self::EmptyFingerprint => f.write_str("fingerprint requires n_bits > 0"),
             Self::Unsupported => {
                 write!(f, "unsupported fingerprint operation")
             }

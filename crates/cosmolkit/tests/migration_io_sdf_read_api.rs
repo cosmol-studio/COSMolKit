@@ -256,10 +256,40 @@ fn sdf_public_errors_are_structured_and_do_not_modify_existing_values() {
         v2000_atom(0.0, 0.0, 0.0, "C"),
         v2000_atom(1.0, 0.0, 0.0, "O")
     );
-    assert!(matches!(
-        SdfRecord::from_sdf(&bad_list),
-        Err(SdfError::Read(_))
-    ));
+    // FileParserUtils.h::applyMolListProp warns and returns before setting
+    // items on a count mismatch, without consulting strict parsing.
+    for strict_parsing in [true, false] {
+        let record = SdfRecord::from_sdf_with_params(
+            &bad_list,
+            &SdfReadParams {
+                strict_parsing,
+                ..SdfReadParams::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            record.data_fields(),
+            &[("atom.prop.Label".to_owned(), "only-one".to_owned())]
+        );
+        assert_eq!(
+            record.properties().prop("atom.prop.Label"),
+            Some("only-one")
+        );
+        assert!(record.properties().sdf_property_lists().is_empty());
+        let molecule = record.molecule().unwrap();
+        assert_eq!(molecule.num_atoms(), 2);
+        assert_eq!(molecule.num_bonds(), 0);
+        assert!(
+            molecule
+                .atoms()
+                .iter()
+                .all(|atom| atom.prop("Label").is_none())
+        );
+        assert_eq!(
+            molecule.coordinates_2d(),
+            Some(&[[0.0, 0.0], [1.0, 0.0]][..])
+        );
+    }
     let raw = SdfRecord::from_sdf_with_params(
         &bad_list,
         &SdfReadParams {

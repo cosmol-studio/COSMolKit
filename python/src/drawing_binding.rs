@@ -26,10 +26,14 @@ pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'st
     crate::canonical_values::source_pyerr(py, source)
 }
 
-fn drawing_pyerr(py: Python<'_>, source: ck::DrawingError) -> PyErr {
+pub(crate) fn drawing_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::DrawingError>,
+) -> PyErr {
+    let source = source.borrow();
     use ck::DrawingError as E;
     let error = DrawingError::new_err(source.to_string());
-    let kind = match &source {
+    let kind = match source {
         E::Property(..) => "Property",
         E::Topology(..) => "Topology",
         E::Coordinates(..) => "Coordinates",
@@ -50,7 +54,7 @@ fn drawing_pyerr(py: Python<'_>, source: ck::DrawingError) -> PyErr {
         let value = error.value(py);
         value.setattr("domain", "drawing")?;
         value.setattr("kind", kind)?;
-        match &source {
+        match source {
             E::InvalidDimensions { width, height } | E::PixmapAllocation { width, height } => {
                 value.setattr("width", *width)?;
                 value.setattr("height", *height)?;
@@ -77,14 +81,18 @@ fn drawing_pyerr(py: Python<'_>, source: ck::DrawingError) -> PyErr {
     }
     error.set_cause(
         py,
-        std::error::Error::source(&source).map(|cause| source_pyerr(py, cause)),
+        std::error::Error::source(source).map(|cause| source_pyerr(py, cause)),
     );
     error
 }
 
-pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyErr {
+pub(crate) fn operation_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::OperationError>,
+) -> PyErr {
+    let source = source.borrow();
     use ck::OperationError as E;
-    let kind = match &source {
+    let kind = match source {
         E::Alignment(..) => "Alignment",
         E::UnsupportedFeature { .. } => "UnsupportedFeature",
         E::Unsupported { .. } => "Unsupported",
@@ -139,7 +147,7 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
     }
     error.set_cause(
         py,
-        match &source {
+        match source {
             E::UffOptimization(cause) => Some(crate::uff_binding::optimization_pyerr(py, cause)),
             E::MmffOptimization(cause) => Some(crate::mmff_binding::optimization_pyerr(py, cause)),
             E::Tautomer(cause) => Some(crate::tautomer_binding::run_pyerr(py, cause)),
@@ -149,27 +157,22 @@ pub(crate) fn operation_pyerr(py: Python<'_>, source: ck::OperationError) -> PyE
             E::PotentialStereo(cause) => {
                 Some(crate::canonical_potential_stereo::error_pyerr(py, cause))
             }
-            _ => std::error::Error::source(&source).map(|cause| source_pyerr(py, cause)),
+            _ => std::error::Error::source(source).map(|cause| source_pyerr(py, cause)),
         },
     );
     error
 }
 
 fn expand_user_path(path: &str) -> PyResult<std::path::PathBuf> {
-    if path == "~" || path.starts_with("~/") {
-        let home = std::env::var_os("HOME")
-            .ok_or_else(|| PyValueError::new_err("cannot expand '~': HOME is not set"))?;
-        let mut expanded = std::path::PathBuf::from(home);
-        if let Some(rest) = path.strip_prefix("~/") {
-            expanded.push(rest);
-        }
-        Ok(expanded)
-    } else {
-        Ok(std::path::PathBuf::from(path))
-    }
+    crate::user_path::expand_user_path(path)
+        .map_err(|source| PyValueError::new_err(source.to_string()))
 }
 
-fn drawing_write_pyerr(py: Python<'_>, source: ck::DrawingWriteError) -> PyErr {
+pub(crate) fn drawing_write_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::DrawingWriteError>,
+) -> PyErr {
+    let source = source.borrow();
     match source {
         ck::DrawingWriteError::Drawing(error) => drawing_pyerr(py, error),
         ck::DrawingWriteError::Io { path, source } => {
@@ -193,8 +196,8 @@ fn drawing_write_pyerr(py: Python<'_>, source: ck::DrawingWriteError) -> PyErr {
 /// Immutable detached parameters projected from the public facade.
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
-struct Coordinate2DParams {
-    inner: ck::Coordinate2DParams,
+pub(crate) struct Coordinate2DParams {
+    pub(crate) inner: ck::Coordinate2DParams,
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
@@ -3677,6 +3680,9 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::alignment_binding::register(module)?;
     crate::canonical_search::register(module)?;
     crate::canonical_sdf::register(module)?;
+    crate::canonical_batch::register(module)?;
+    crate::canonical_batch_params::register(module)?;
+    crate::canonical_batch_fingerprint_values::register(module)?;
     crate::canonical_atom_bond::register(module)?;
     crate::canonical_potential_stereo::register(module)?;
     crate::canonical_binary::register(module)?;

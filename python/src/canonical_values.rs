@@ -17,6 +17,38 @@ pyo3::create_exception!(cosmolkit, FingerprintError, PyValueError);
 pyo3::create_exception!(cosmolkit, FingerprintJsonError, PyValueError);
 
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
+    // Preserve each batch row's typed scalar cause through the same canonical
+    // mapper as a direct scalar call, without copying or reconstructing errors.
+    if let Some(error) = source.downcast_ref::<ck::SmilesError>() {
+        return smiles_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::SmilesWriteError>() {
+        return smiles_write_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::MorganReadError>() {
+        return morgan_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::AtomPairReadError>() {
+        return atom_pair_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::LayeredFingerprintError>() {
+        return crate::canonical_layered::layered_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::PatternFingerprintError>() {
+        return crate::canonical_pattern::pattern_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::OperationError>() {
+        return crate::drawing_binding::operation_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::DrawingError>() {
+        return crate::drawing_binding::drawing_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::DrawingWriteError>() {
+        return crate::drawing_binding::drawing_write_pyerr(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::FingerprintError>() {
+        return fingerprint_pyerr(py, *error);
+    }
     if let Some(error) = source.downcast_ref::<ck::BioStructureError>() {
         return crate::canonical_bio_binding::structure_error(py, error);
     }
@@ -31,6 +63,12 @@ pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'st
     }
     if let Some(error) = source.downcast_ref::<ck::MatrixError>() {
         return crate::canonical_chemistry_values::matrix_pyerr(py, error.clone());
+    }
+    if let Some(error) = source.downcast_ref::<ck::BatchValidationError>() {
+        return crate::canonical_batch::batch_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::BatchImageError>() {
+        return crate::canonical_batch::batch_image_error(py, error);
     }
     if let Some(error) = source.downcast_ref::<ck::CoordinateInputError>() {
         return crate::canonical_coordinate_input::error_pyerr(py, error);
@@ -71,8 +109,12 @@ pub(crate) fn annotate(
     error
 }
 
-pub(crate) fn smiles_pyerr(py: Python<'_>, source: ck::SmilesError) -> PyErr {
-    let kind = match &source {
+pub(crate) fn smiles_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::SmilesError>,
+) -> PyErr {
+    let source = source.borrow();
+    let kind = match source {
         ck::SmilesError::Parse(_) => "Parse",
         ck::SmilesError::Hydrogen(_) => "Hydrogen",
         ck::SmilesError::Sanitize(_) => "Sanitize",
@@ -84,12 +126,16 @@ pub(crate) fn smiles_pyerr(py: Python<'_>, source: ck::SmilesError) -> PyErr {
         SmilesError::new_err(source.to_string()),
         "smiles",
         kind,
-        &source,
+        source,
     )
 }
 
-pub(crate) fn smiles_write_pyerr(py: Python<'_>, source: ck::SmilesWriteError) -> PyErr {
-    let kind = match &source {
+pub(crate) fn smiles_write_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::SmilesWriteError>,
+) -> PyErr {
+    let source = source.borrow();
+    let kind = match source {
         ck::SmilesWriteError::Write(_) => "Write",
         ck::SmilesWriteError::Fragment(_) => "Fragment",
     };
@@ -98,7 +144,7 @@ pub(crate) fn smiles_write_pyerr(py: Python<'_>, source: ck::SmilesWriteError) -
         SmilesWriteError::new_err(source.to_string()),
         "smiles",
         kind,
-        &source,
+        source,
     )
 }
 
@@ -117,8 +163,12 @@ pub(crate) fn fingerprint_json_pyerr(py: Python<'_>, source: ck::FingerprintJson
     )
 }
 
-pub(crate) fn morgan_pyerr(py: Python<'_>, source: ck::MorganReadError) -> PyErr {
-    let kind = match &source {
+pub(crate) fn morgan_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::MorganReadError>,
+) -> PyErr {
+    let source = source.borrow();
+    let kind = match source {
         ck::MorganReadError::Preparation(_) => "Preparation",
         ck::MorganReadError::Generator(_) => "Generator",
     };
@@ -127,12 +177,16 @@ pub(crate) fn morgan_pyerr(py: Python<'_>, source: ck::MorganReadError) -> PyErr
         MorganReadError::new_err(source.to_string()),
         "fingerprints",
         kind,
-        &source,
+        source,
     )
 }
 
-pub(crate) fn atom_pair_pyerr(py: Python<'_>, source: ck::AtomPairReadError) -> PyErr {
-    let kind = match &source {
+pub(crate) fn atom_pair_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::AtomPairReadError>,
+) -> PyErr {
+    let source = source.borrow();
+    let kind = match source {
         ck::AtomPairReadError::Preparation(_) => "Preparation",
         ck::AtomPairReadError::Generator(_) => "Generator",
     };
@@ -141,7 +195,7 @@ pub(crate) fn atom_pair_pyerr(py: Python<'_>, source: ck::AtomPairReadError) -> 
         AtomPairReadError::new_err(source.to_string()),
         "fingerprints",
         kind,
-        &source,
+        source,
     )
 }
 
@@ -165,6 +219,7 @@ pub(crate) fn topological_torsion_pyerr(
 fn fingerprint_pyerr(py: Python<'_>, source: ck::FingerprintError) -> PyErr {
     use ck::FingerprintError as E;
     let kind = match source {
+        E::EmptyFingerprint => "EmptyFingerprint",
         E::Unsupported => "Unsupported",
         E::SparseIndexOutOfRange { .. } => "SparseIndexOutOfRange",
         E::BitLengthMismatch { .. } => "BitLengthMismatch",
@@ -200,7 +255,7 @@ fn fingerprint_pyerr(py: Python<'_>, source: ck::FingerprintError) -> PyErr {
             E::UndefinedArithmetic { site } => value.setattr("site", site)?,
             E::PreconditionViolation { what } => value.setattr("what", what)?,
             E::InvalidArguments { reason } => value.setattr("reason", reason)?,
-            E::Unsupported => (),
+            E::EmptyFingerprint | E::Unsupported => (),
         }
         Ok(())
     };

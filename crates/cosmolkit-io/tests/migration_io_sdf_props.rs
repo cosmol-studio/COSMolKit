@@ -425,25 +425,54 @@ fn sdf_props_query_records_keep_query_carrier_and_apply_atom_and_bond_lists() {
 fn sdf_props_strict_count_mismatches_are_structured_for_atom_and_bond_targets() {
     let atom_short =
         concrete_record(">  <atom.prop.ValidBefore>\na b c\n\n>  <atom.iprop.Short>\n1 2\n\n");
+    // Source applyMolListProp warns and returns before assigning any item.
+    let record =
+        read_sdf_record_detached(&atom_short).expect("source count mismatch preserves raw field");
+    assert_eq!(record.properties.prop("atom.iprop.Short"), Some("1 2"));
     assert_eq!(
-        read_sdf_record_detached(&atom_short),
-        Err(SdfReadError::PropertyListCount {
-            target: "atom",
-            name: "atom.iprop.Short".to_owned(),
-            actual: 2,
-            expected: 3,
-        })
+        record.data_fields.last(),
+        Some(&("atom.iprop.Short".to_owned(), "1 2".to_owned()))
+    );
+    assert_eq!(record.topology.atoms.len(), 3);
+    assert_eq!(record.topology.bonds.len(), 2);
+    assert_eq!(record.properties.sdf_property_lists().len(), 1);
+    assert_list(
+        &record.properties,
+        0,
+        SdfPropertyListTarget::Atom,
+        "ValidBefore",
+        &[
+            Some(PropertyValue::String("a".into())),
+            Some(PropertyValue::String("b".into())),
+            Some(PropertyValue::String("c".into())),
+        ],
+    );
+    assert!(
+        record
+            .topology
+            .atoms
+            .iter()
+            .all(|item| item.prop("Short").is_none())
     );
 
     let bond_long = concrete_record(">  <bond.prop.Long>\na b c\n\n");
+    // Source applyMolListProp warns and returns before assigning any item.
+    let record =
+        read_sdf_record_detached(&bond_long).expect("source count mismatch preserves raw field");
+    assert_eq!(record.properties.prop("bond.prop.Long"), Some("a b c"));
     assert_eq!(
-        read_sdf_record_detached(&bond_long),
-        Err(SdfReadError::PropertyListCount {
-            target: "bond",
-            name: "bond.prop.Long".to_owned(),
-            actual: 3,
-            expected: 2,
-        })
+        record.data_fields.last(),
+        Some(&("bond.prop.Long".to_owned(), "a b c".to_owned()))
+    );
+    assert_eq!(record.topology.atoms.len(), 3);
+    assert_eq!(record.topology.bonds.len(), 2);
+    assert!(record.properties.sdf_property_lists().is_empty());
+    assert!(
+        record
+            .topology
+            .bonds
+            .iter()
+            .all(|item| item.prop("Long").is_none())
     );
 }
 
@@ -487,37 +516,70 @@ fn sdf_props_nonstrict_count_mismatches_preserve_raw_fields_without_partial_expa
 #[test]
 fn sdf_props_zero_tables_and_boundary_empty_tokens_follow_count_rules() {
     let empty_value = zero_record(">  <atom.prop.Empty>\n\n");
+    // Source applyMolListProp warns and returns before assigning any item.
+    let record =
+        read_sdf_record_detached(&empty_value).expect("source count mismatch preserves raw field");
+    assert_eq!(record.properties.prop("atom.prop.Empty"), Some(""));
     assert_eq!(
-        read_sdf_record_detached(&empty_value),
-        Err(SdfReadError::PropertyListCount {
-            target: "atom",
-            name: "atom.prop.Empty".to_owned(),
-            actual: 1,
-            expected: 0,
-        })
+        record.data_fields.last(),
+        Some(&("atom.prop.Empty".to_owned(), "".to_owned()))
+    );
+    assert_eq!(record.topology.atoms.len(), 0);
+    assert_eq!(record.topology.bonds.len(), 0);
+    assert!(record.properties.sdf_property_lists().is_empty());
+    assert!(
+        record
+            .topology
+            .atoms
+            .iter()
+            .all(|item| item.prop("Empty").is_none())
     );
 
     // boost::split(token_compress_on) preserves boundary empty tokens. They
     // therefore participate in the source count check instead of being trim.
     let leading = concrete_record(">  <atom.prop.Leading>\n one two three\n\n");
+    // Source applyMolListProp warns and returns before assigning any item.
+    let record =
+        read_sdf_record_detached(&leading).expect("source count mismatch preserves raw field");
     assert_eq!(
-        read_sdf_record_detached(&leading),
-        Err(SdfReadError::PropertyListCount {
-            target: "atom",
-            name: "atom.prop.Leading".to_owned(),
-            actual: 4,
-            expected: 3,
-        })
+        record.properties.prop("atom.prop.Leading"),
+        Some(" one two three")
+    );
+    assert_eq!(
+        record.data_fields.last(),
+        Some(&("atom.prop.Leading".to_owned(), " one two three".to_owned()))
+    );
+    assert_eq!(record.topology.atoms.len(), 3);
+    assert_eq!(record.topology.bonds.len(), 2);
+    assert!(record.properties.sdf_property_lists().is_empty());
+    assert!(
+        record
+            .topology
+            .atoms
+            .iter()
+            .all(|item| item.prop("Leading").is_none())
     );
     let trailing = concrete_record(">  <bond.prop.Trailing>\none two \n\n");
+    // Source applyMolListProp warns and returns before assigning any item.
+    let record =
+        read_sdf_record_detached(&trailing).expect("source count mismatch preserves raw field");
     assert_eq!(
-        read_sdf_record_detached(&trailing),
-        Err(SdfReadError::PropertyListCount {
-            target: "bond",
-            name: "bond.prop.Trailing".to_owned(),
-            actual: 3,
-            expected: 2,
-        })
+        record.properties.prop("bond.prop.Trailing"),
+        Some("one two ")
+    );
+    assert_eq!(
+        record.data_fields.last(),
+        Some(&("bond.prop.Trailing".to_owned(), "one two ".to_owned()))
+    );
+    assert_eq!(record.topology.atoms.len(), 3);
+    assert_eq!(record.topology.bonds.len(), 2);
+    assert!(record.properties.sdf_property_lists().is_empty());
+    assert!(
+        record
+            .topology
+            .bonds
+            .iter()
+            .all(|item| item.prop("Trailing").is_none())
     );
 }
 

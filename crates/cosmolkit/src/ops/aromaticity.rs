@@ -143,7 +143,7 @@ mod ring_live_tests {
 
     fn supplied(input: &str, rings: Option<cosmolkit_core::RingInfo>) -> Molecule {
         let base = raw(input);
-        crate::Molecule::from_smiles_parts_with_derived_state(
+        crate::Molecule::from_parsed_parts_with_derived_state(
             base.topology().clone(),
             base.coordinate_block_runtime().clone(),
             base.properties().clone(),

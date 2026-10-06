@@ -168,7 +168,7 @@ mod ring_live_tests {
     }
 
     fn supplied(topology: &TopologyBlock, rings: Option<cosmolkit_core::RingInfo>) -> Molecule {
-        Molecule::from_smiles_parts_with_derived_state(
+        Molecule::from_parsed_parts_with_derived_state(
             topology.clone(),
             CoordinateBlock::default(),
             MoleculeProperties::default(),

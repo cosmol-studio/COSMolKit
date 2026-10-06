@@ -1306,6 +1306,24 @@ fn update_neighbor_layer(
     Some(invariant)
 }
 
+/// Project-native batch wrapper preflight; the reusable C++ generator keeps its own rules.
+pub fn validate_morgan_batch_params(params: &MorganParams) -> Result<(), MorganError> {
+    // COSMolKit❗✔️: pinned d892ec3507c5b568c5ed5d86ae44e466f7d03855
+    // properties/fingerprint.rs::morgan_fingerprint_with_output, lines 4797–4803.
+    //     validate_morgan_params(params)?;
+    //     if params.n_bits == 0 {
+    //         return Err(FingerprintError::EmptyFingerprint);
+    //     }
+    // The defining validate_morgan_params is source-defined no-op: let _ = params; Ok(()).
+    // Behavior: this applies only to the original batch wrapper; per-record callers
+    // invoke it before constructing the existing canonical generator.
+    // Complexity: one constant-time check, no allocation or topology traversal.
+    if params.fp_size == 0 {
+        return Err(FingerprintError::EmptyFingerprint.into());
+    }
+    Ok(())
+}
+
 /// Morgan-specific and shared fingerprint generator options.
 ///
 /// This type is defined inside the private `morgan` module. Public visibility

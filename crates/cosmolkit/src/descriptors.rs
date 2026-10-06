@@ -1505,7 +1505,7 @@ mod ring_live_public_q1_tests {
 
     fn supplied(input: &str, rings: Option<cosmolkit_core::RingInfo>) -> Molecule {
         let base = raw(input);
-        Molecule::from_smiles_parts_with_derived_state(
+        Molecule::from_parsed_parts_with_derived_state(
             base.topology().clone(),
             base.coordinate_block_runtime().clone(),
             base.properties().clone(),
@@ -2360,7 +2360,7 @@ mod descriptor_public_storage_tests {
             .valence_assignment()
             .expect("sanitized base carries a valid assignment")
             .clone();
-        let molecule = Molecule::from_smiles_parts_with_derived_state(
+        let molecule = Molecule::from_parsed_parts_with_derived_state(
             base.topology().clone(),
             base.coordinate_block_runtime().clone(),
             base.properties().clone(),
@@ -2616,7 +2616,7 @@ mod descriptor_public_storage_tests {
             .valence_assignment()
             .expect("sanitized base carries a valid assignment")
             .clone();
-        let molecule = Molecule::from_smiles_parts_with_derived_state(
+        let molecule = Molecule::from_parsed_parts_with_derived_state(
             base.topology().clone(),
             base.coordinate_block_runtime().clone(),
             base.properties().clone(),
@@ -2990,7 +2990,7 @@ mod d02_query_storage_tests {
     fn d02_all12_chi_succeed_with_absent_reset_rings_mqn_requires_rings() {
         let base = Molecule::from_smiles("CCCC").unwrap();
         assert!(base.derived_cache_runtime().valid_ring_info().is_some());
-        let absent = Molecule::from_smiles_parts_with_derived_state(
+        let absent = Molecule::from_parsed_parts_with_derived_state(
             base.topology().clone(),
             base.coordinate_block_runtime().clone(),
             base.properties().clone(),

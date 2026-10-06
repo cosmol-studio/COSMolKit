@@ -62,6 +62,8 @@ pub enum SdfError {
     Post(cosmolkit_io::MolPostError),
     /// Validated live molecule construction failed.
     Construction(OperationError),
+    /// Invalid detached query record input.
+    QueryGraph(cosmolkit_model::QueryGraphError),
     /// A concrete-only reader encountered a finalized query record.
     QueryRecord,
     /// An accessor requested the other tagged graph payload.
@@ -77,6 +79,9 @@ impl fmt::Display for SdfError {
             Self::Read(error) => write!(formatter, "SDF reading failed: {error}"),
             Self::Post(error) => write!(formatter, "SDF finalization failed: {error}"),
             Self::Construction(error) => write!(formatter, "SDF construction failed: {error}"),
+            Self::QueryGraph(error) => {
+                write!(formatter, "SDF query graph validation failed: {error}")
+            }
             Self::QueryRecord => formatter
                 .write_str("query-bearing SDF record cannot be represented as a concrete molecule"),
             Self::WrongGraphKind { expected, actual } => {
@@ -92,6 +97,7 @@ impl std::error::Error for SdfError {
             Self::Read(error) => Some(error),
             Self::Post(error) => Some(error),
             Self::Construction(error) => Some(error),
+            Self::QueryGraph(error) => Some(error),
             Self::QueryRecord | Self::WrongGraphKind { .. } => None,
         }
     }
@@ -125,12 +131,72 @@ impl From<OperationError> for SdfError {
 #[derive(Clone, Debug)]
 pub struct SdfRecord {
     graph: SdfGraph,
+    index: usize,
     data_fields: Vec<(String, String)>,
     properties: MoleculeProperties,
     source_coordinate_dim: Option<CoordinateDimension>,
+    query_rings: Option<cosmolkit_core::RingInfo>,
 }
 
 impl SdfRecord {
+    /// Form a validated detached query record without converting it to Molecule.
+    pub fn from_query_graph(
+        query: QueryGraph,
+        properties: MoleculeProperties,
+    ) -> Result<Self, SdfError> {
+        query.validate().map_err(SdfError::QueryGraph)?;
+        let fields = properties.sdf_data_fields().to_vec();
+        Ok(Self::from_finalized_graph(
+            SdfGraph::Query(query),
+            fields,
+            properties,
+            None,
+        ))
+    }
+
+    pub fn to_mol(&self) -> Result<String, crate::MolecularIoError> {
+        self.to_mol_with_params(&crate::MolBlockWriteParams::default())
+    }
+    pub fn to_mol_with_params(
+        &self,
+        params: &crate::MolBlockWriteParams,
+    ) -> Result<String, crate::MolecularIoError> {
+        match &self.graph {
+            SdfGraph::Molecule(molecule) => molecule.to_mol_with_params(params),
+            SdfGraph::Query(query) => cosmolkit_io::write_query_mol_block_with_params(
+                cosmolkit_io::QueryMolWriteInput {
+                    query,
+                    properties: &self.properties,
+                    source_coordinate_dim: self.source_coordinate_dim,
+                    rings: self.query_rings.as_ref(),
+                },
+                params,
+            )
+            .map_err(crate::MolecularIoError::MolWrite),
+        }
+    }
+    pub fn to_sdf(&self) -> Result<String, crate::MolecularIoError> {
+        self.to_sdf_with_params(&crate::MolBlockWriteParams::default())
+    }
+    pub fn to_sdf_with_params(
+        &self,
+        params: &crate::MolBlockWriteParams,
+    ) -> Result<String, crate::MolecularIoError> {
+        match &self.graph {
+            SdfGraph::Molecule(molecule) => molecule.to_sdf_with_params(params),
+            SdfGraph::Query(query) => cosmolkit_io::write_query_sdf_with_params(
+                cosmolkit_io::QueryMolWriteInput {
+                    query,
+                    properties: &self.properties,
+                    source_coordinate_dim: self.source_coordinate_dim,
+                    rings: self.query_rings.as_ref(),
+                },
+                params,
+            )
+            .map_err(crate::MolecularIoError::MolWrite),
+        }
+    }
+
     /// Read and finalize the first SDF record using the default source policy.
     pub fn from_sdf(text: &str) -> Result<Self, SdfError> {
         Self::from_sdf_with_params(text, &SdfReadParams::default())
@@ -148,39 +214,68 @@ impl SdfRecord {
                 coordinate_mode: params.coordinate_mode,
             },
         )?;
-        let finalized = parsed.finish_mol_post(cosmolkit_io::MolPostParams {
+        Self::from_parsed(parsed, params, 0)
+    }
+
+    pub(crate) fn from_parsed(
+        parsed: cosmolkit_io::SdfGraphRecord,
+        params: &SdfReadParams,
+        index: usize,
+    ) -> Result<Self, SdfError> {
+        let mut finalized = parsed.finish_mol_post(cosmolkit_io::MolPostParams {
             sanitize: params.sanitize,
             remove_hs: params.remove_hydrogens,
             expand_attachment_points: params.expand_attachment_points,
         })?;
+        let state = finalized.take_post_state();
         let data_fields = finalized.data_fields;
         let mol_block = finalized.mol_block;
-        match mol_block {
+        let mut record = match mol_block {
             cosmolkit_io::MolBlockRecord::Concrete {
                 topology,
                 coordinates,
                 properties,
             } => {
                 let source_coordinate_dim = coordinates.source_coordinate_dim;
-                let graph = SdfGraph::Molecule(Molecule::from_validated_parts(
+                let graph = SdfGraph::Molecule(Molecule::from_parsed_parts_with_derived_state(
                     topology,
                     coordinates,
                     properties.clone(),
+                    state.valence,
+                    state.rings,
                 )?);
-                Ok(Self::from_finalized_graph(
+                Ok::<Self, SdfError>(Self::from_finalized_graph(
                     graph,
                     data_fields,
                     properties,
                     source_coordinate_dim,
                 ))
             }
-            cosmolkit_io::MolBlockRecord::Query(record) => Ok(Self::from_finalized_graph(
-                SdfGraph::Query(record.query),
-                data_fields,
-                record.properties,
-                record.source_coordinate_dim,
-            )),
-        }
+            cosmolkit_io::MolBlockRecord::Query(record) => {
+                let mut finalized = Self::from_finalized_graph(
+                    SdfGraph::Query(record.query),
+                    data_fields,
+                    record.properties,
+                    record.source_coordinate_dim,
+                );
+                finalized.query_rings = state.rings;
+                Ok(finalized)
+            }
+        }?;
+        record.index = index;
+        Ok(record)
+    }
+
+    pub const fn index(&self) -> usize {
+        self.index
+    }
+    pub fn title(&self) -> Option<&str> {
+        self.properties.name()
+    }
+    pub fn data_field(&self, name: &str) -> Option<&str> {
+        self.data_fields
+            .iter()
+            .find_map(|(key, value)| (key == name).then_some(value.as_str()))
     }
 
     /// Receives a graph only after detached finalization and, for a concrete
@@ -193,9 +288,11 @@ impl SdfRecord {
     ) -> Self {
         Self {
             graph,
+            index: 0,
             data_fields,
             properties,
             source_coordinate_dim,
+            query_rings: None,
         }
     }
 

@@ -4,6 +4,9 @@
 //! Historical adapters remain as source evidence, outside module compilation.
 
 mod canonical_atom_bond;
+mod canonical_batch;
+mod canonical_batch_fingerprint_values;
+mod canonical_batch_params;
 mod canonical_binary;
 mod canonical_bio_binding;
 mod canonical_bio_metadata;
@@ -28,6 +31,7 @@ mod canonical_stereo_queries;
 mod canonical_valence;
 mod canonical_values;
 mod drawing_binding;
+mod user_path;
 
 #[cfg(feature = "stubgen")]
 pyo3_stub_gen::define_stub_info_gatherer!(stub_info);
