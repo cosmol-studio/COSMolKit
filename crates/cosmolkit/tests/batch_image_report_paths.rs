@@ -1,6 +1,8 @@
-//! Author proposals against d892ec3 and the ROOT-approved Rust-only report
-//! receiver. Independent p1/ROOT acceptance remains pending.
-use cosmolkit::{BatchExportReport, BatchImageParams, BatchParams, MoleculeBatch};
+//! Independent p1/ROOT acceptance pending.
+#[cfg(all(feature = "cap-batch", feature = "cap-depict"))]
+use cosmolkit::BatchImageParams;
+#[cfg(feature = "cap-batch")]
+use cosmolkit::{BatchExportReport, BatchParams, MoleculeBatch};
 use std::{cell::Cell, path::PathBuf};
 #[path = "../../../python/src/user_path.rs"]
 mod user_path;
@@ -23,9 +25,11 @@ impl Drop for Directory {
         std::fs::remove_dir_all(&self.0).unwrap();
     }
 }
+#[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
 fn batch() -> MoleculeBatch {
     MoleculeBatch::from_smiles_list(&["CCO".into()]).unwrap()
 }
+#[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
 fn options(jobs: usize) -> BatchImageParams {
     BatchImageParams {
         format: "svg".into(),
@@ -39,6 +43,7 @@ fn options(jobs: usize) -> BatchImageParams {
     }
 }
 #[test]
+#[cfg(feature = "cap-batch")]
 fn canonical_report_receiver_preserves_exact_source_json_csv_and_literal_rust_paths() {
     let root = Directory::new();
     let report = BatchExportReport {
@@ -71,6 +76,7 @@ fn canonical_report_receiver_preserves_exact_source_json_csv_and_literal_rust_pa
     assert_eq!((report.written, report.skipped, report.failed), (2, 3, 1));
 }
 #[test]
+#[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
 fn actual_image_output_precedes_report_home_lookup_and_uses_the_canonical_writer() {
     let root = Directory::new();
     let batch = batch();
@@ -121,6 +127,7 @@ fn actual_image_output_precedes_report_home_lookup_and_uses_the_canonical_writer
     }
 }
 #[test]
+#[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
 fn missing_report_home_retains_actual_images_and_export_failure_never_reads_report_home() {
     let root = Directory::new();
     let batch = batch();
@@ -176,6 +183,7 @@ fn missing_report_home_retains_actual_images_and_export_failure_never_reads_repo
     assert!(!invalid_dir.exists());
 }
 #[test]
+#[cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
 fn report_io_failure_retains_real_cause_and_completed_images() {
     let root = Directory::new();
     let batch = batch();

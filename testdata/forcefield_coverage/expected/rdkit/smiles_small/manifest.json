@@ -1,0 +1,68 @@
+{
+  "domain": "forcefield_coverage",
+  "family": "rdkit",
+  "input": {
+    "path": "testdata/smiles/corpus/smiles_small.smi",
+    "sha256": "47380e477dc2ab4b3c2b7cd62754e52b718bb9f3f0b977d47eb97db45074442e"
+  },
+  "outputs": [
+    {
+      "generator": [
+        {
+          "path": "tools/testdata/rdkit/generate_all.py",
+          "sha256": "97ff81ab06076fc735bf543abc7e76fea893eea236ec83ca0560a6e391bef30b"
+        },
+        {
+          "path": "tools/testdata/rdkit/_expected_schema.py",
+          "sha256": "50fcb2085b8e13210801043d0645ad7561e52d47039dda11e3847bd6e43bd4ec"
+        },
+        {
+          "path": "testdata/reference/rdkit.json",
+          "sha256": "7bb3fdaddf8cfabe5339d953a85ab417ee49d1e4f5acf82e177a9c9e9ee958de"
+        },
+        {
+          "path": "tools/testdata/rdkit/_generate_forcefield_coverage_golden.py",
+          "sha256": "b5e8e66b478119aa77a16da511eacb2b7bcd74e368b7ea8d289a6d2560d12c67"
+        },
+        {
+          "path": "tools/testdata/rdkit/_generate_forcefield_params_golden.py",
+          "sha256": "b9ab547718cb3fcdcc413850134efe3262cf7775c709dab1ea11e2653359618f"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "testdata/smiles/corpus/smiles_small.smi",
+          "sha256": "47380e477dc2ab4b3c2b7cd62754e52b718bb9f3f0b977d47eb97db45074442e"
+        }
+      ],
+      "options": {
+        "arguments": [
+          "--input",
+          "testdata/smiles/corpus/smiles_small.smi",
+          "--output",
+          "forcefield_coverage.jsonl"
+        ],
+        "profile": "smiles_small"
+      },
+      "output_schema_version": 1,
+      "path": "forcefield_coverage.jsonl",
+      "platform": {
+        "machine": "x86_64",
+        "system": "Linux"
+      },
+      "records": 152,
+      "sha256": "17b4f7d9520ecebd7e367862b553dfbfe959a187fe031eae15e457e2d7b5c542"
+    }
+  ],
+  "profile": "smiles_small",
+  "reference_implementation": {
+    "name": "rdkit",
+    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8",
+    "version": "2026.03.1"
+  },
+  "reference_runtime": {
+    "implementation": "cpython",
+    "version": "3.13.12"
+  },
+  "schema_version": 1
+}

@@ -16,7 +16,7 @@ DEPENDENCIES = [
      "cosmolkit-depict cosmolkit-fingerprints cosmolkit-forcefields cosmolkit-inchi "
      "cosmolkit-io cosmolkit-search cosmolkit-smiles cosmolkit-stereo cosmolkit-tautomer"),
     ("crates/cosmolkit-alignment/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-search"),
-    ("crates/cosmolkit-batch/Cargo.toml", "dependencies", "cosmolkit-model"),
+    ("crates/cosmolkit-batch/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-io"),
     ("crates/cosmolkit-bio/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-types"),
     ("crates/cosmolkit-conformer/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-core cosmolkit-forcefields cosmolkit-alignment cosmolkit-search"),
     ("crates/cosmolkit-conformer/Cargo.toml", "dev-dependencies", "cosmolkit-smiles cosmolkit-io"),
@@ -28,7 +28,7 @@ DEPENDENCIES = [
     ("crates/cosmolkit-fingerprints/Cargo.toml", "dev-dependencies", "cosmolkit-smiles"),
     ("crates/cosmolkit-forcefields/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search"),
     ("crates/cosmolkit-forcefields/Cargo.toml", "dev-dependencies", "cosmolkit-smiles cosmolkit-io"),
-    ("crates/cosmolkit-io/Cargo.toml", "dependencies", "cosmolkit-bio cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-types"),
+    ("crates/cosmolkit-io/Cargo.toml", "dependencies", "cosmolkit-bio cosmolkit-core cosmolkit-depict cosmolkit-model cosmolkit-search cosmolkit-types"),
     ("crates/cosmolkit-model/Cargo.toml", "dependencies", "cosmolkit-types"),
     ("crates/cosmolkit-search/Cargo.toml", "dependencies", "cosmolkit-cx cosmolkit-core cosmolkit-model cosmolkit-types"),
     ("crates/cosmolkit-smiles/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-cx cosmolkit-model cosmolkit-types"),

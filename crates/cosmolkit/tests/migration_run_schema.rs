@@ -1991,6 +1991,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     }
     if cfg!(feature = "cap-batch") {
         expected.extend([
+            "BatchExportReport.write_report",
             "types.MoleculeBatch",
             "types.BatchRecord",
             "types.BatchError",
@@ -2850,7 +2851,8 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
         // These exact project-native BATCH statuses remain declared in the source registry.
         let native_batch = matches!(
             contract.semantic_id,
-            "types.MoleculeBatch"
+            "BatchExportReport.write_report"
+                | "types.MoleculeBatch"
                 | "types.BatchRecord"
                 | "types.BatchError"
                 | "types.BatchErrorMode"

@@ -607,7 +607,7 @@ fn compare_rows<'a>(
         });
         let matches = match (&reference.output, &actual) {
             (registry::Value::Uff(expected), Ok(registry::Value::Uff(actual))) => {
-                uff::matches(expected, actual)
+                uff::matches(&reference.input, expected, actual)
             }
             (registry::Value::Molecular(expected), Ok(registry::Value::Molecular(actual))) => {
                 if matches!(

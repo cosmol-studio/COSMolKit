@@ -204,27 +204,29 @@ fn uff_pipeline_global_preflight_prevents_calls_on_missing_geometry() {
 
 #[test]
 fn uff_pipeline_bitwise_observation_and_errors_are_not_false_passes() {
+    let input = registry::expand(&cases(), tasks()[1]).remove(0);
     let expected = uff::Observation::Optimized {
         status: 0,
         energy_bits: 1.0_f64.to_bits(),
         xyz_bits: vec![[0; 3]],
     };
-    assert!(uff::matches(&expected, &expected));
+    assert!(uff::matches(&input, &expected, &expected));
     let changed = uff::Observation::Optimized {
         status: 0,
         energy_bits: 1.0_f64.to_bits() + 1,
         xyz_bits: vec![[0; 3]],
     };
-    assert!(!uff::matches(&expected, &changed));
+    assert!(!uff::matches(&input, &expected, &changed));
     let error = uff::Observation::Error {
         stage: molecular::Stage::Operation,
         detail: "source error".into(),
+        reason: None,
     };
-    assert!(!uff::matches(&error, &error));
+    assert!(!uff::matches(&input, &error, &error));
 }
 
 #[test]
-fn uff_pipeline_recorded_source_rejections_are_retained_not_passed() {
+fn uff_pipeline_recorded_source_rejections_are_strict_error_behavior_passes() {
     let task = tasks()[1];
     let cases = cases();
     let inputs = registry::expand(&cases, task);
@@ -234,11 +236,12 @@ fn uff_pipeline_recorded_source_rejections_are_retained_not_passed() {
     };
     row.preparation = Some(uff::GeometryPreparation::Rejected {
         stage: molecular::Stage::Preparation,
-        detail: "source embedding rejected".into(),
+        detail: "ValueError: UFF common geometry embedding failed: one".into(),
     });
     records[0].output = registry::Value::Uff(uff::Observation::Error {
         stage: molecular::Stage::Preparation,
-        detail: "source embedding rejected".into(),
+        detail: "ValueError: UFF common geometry embedding failed: one".into(),
+        reason: None,
     });
     check_records(task, &inputs, &records).unwrap();
     let actual = uff::run(&records[0].input).unwrap();
@@ -249,7 +252,68 @@ fn uff_pipeline_recorded_source_rejections_are_retained_not_passed() {
         unreachable!()
     };
     assert!(matches!(actual_value, uff::Observation::Error { .. }));
-    assert!(!uff::matches(expected_value, &actual_value));
+    assert!(uff::matches(
+        &records[0].input,
+        expected_value,
+        &actual_value
+    ));
+    let uff::Observation::Error {
+        stage,
+        detail,
+        reason,
+    } = &actual_value
+    else {
+        unreachable!()
+    };
+    assert_eq!(*stage, molecular::Stage::Preparation);
+    assert_eq!(
+        detail,
+        "ValueError: UFF common geometry embedding failed: one"
+    );
+    assert_eq!(
+        *reason,
+        Some(uff::ExpectedErrorReason::EmbeddingRejected {
+            case_id: "one".into()
+        })
+    );
+    for wrong in [
+        uff::Observation::Error {
+            stage: molecular::Stage::Operation,
+            detail: detail.clone(),
+            reason: reason.clone(),
+        },
+        uff::Observation::Error {
+            stage: stage.clone(),
+            detail: "another rejection".into(),
+            reason: reason.clone(),
+        },
+        uff::Observation::Error {
+            stage: stage.clone(),
+            detail: detail.clone(),
+            reason: Some(uff::ExpectedErrorReason::EmbeddingRejected {
+                case_id: "other".into(),
+            }),
+        },
+        uff::Observation::Error {
+            stage: stage.clone(),
+            detail: detail.clone(),
+            reason: None,
+        },
+        uff::Observation::Coverage(true),
+    ] {
+        assert!(!uff::matches(&records[0].input, expected_value, &wrong));
+    }
+    let mut wrong_input = records[0].input.clone();
+    let Input::Uff(wrong_row) = &mut wrong_input else {
+        unreachable!()
+    };
+    wrong_row.preparation = None;
+    assert!(!uff::matches(&wrong_input, expected_value, &actual_value));
+    assert!(!uff::matches(
+        &records[0].input,
+        &uff::Observation::Coverage(true),
+        &actual_value
+    ));
     let temp = tempfile::tempdir().unwrap();
     let report = prepare_then_run_with(
         &[task],
@@ -269,7 +333,7 @@ fn uff_pipeline_recorded_source_rejections_are_retained_not_passed() {
     )
     .unwrap();
     assert_eq!(report.len(), 2);
-    assert_eq!(report.iter().filter(|row| !row.matches).count(), 1);
+    assert_eq!(report.iter().filter(|row| !row.matches).count(), 0);
 }
 
 #[test]
@@ -533,4 +597,105 @@ fn uff_new_reference_missing_last_geometry_blocks_every_executor_call() {
     .unwrap_err();
     assert!(error.contains("0 Rust operation calls"));
     assert_eq!(calls.get(), 0);
+}
+
+#[test]
+fn uff_original_center_parameter_errors_use_precise_source_cause() {
+    // Unchanged original prepared inputs and raw reference errors from the
+    // two 5000-case reports; this fixed regression never invokes an oracle.
+    let records: Vec<Record> = serde_json::from_str(include_str!(
+        "../../testdata/uff/expected_error_line320.json"
+    ))
+    .unwrap();
+    assert_eq!(records.len(), 2);
+    for record in records {
+        let registry::Value::Uff(expected) = &record.output else {
+            unreachable!()
+        };
+        let actual = uff::run(&record.input).unwrap();
+        let registry::Value::Uff(actual) = &actual.output else {
+            unreachable!()
+        };
+        assert!(uff::matches(&record.input, expected, actual), "{actual:?}");
+        let uff::Observation::Error {
+            stage,
+            detail,
+            reason,
+        } = actual
+        else {
+            unreachable!()
+        };
+        assert_eq!(*stage, molecular::Stage::Operation);
+        assert_eq!(
+            *reason,
+            Some(uff::ExpectedErrorReason::SourceTbpCenterParamsMissing {
+                center_atom_index: 1
+            })
+        );
+        // A different index, missing structured cause, wrong stage, generic
+        // construction failure or unexpected success cannot pass.
+        for wrong in [
+            uff::Observation::Error {
+                stage: molecular::Stage::Preparation,
+                detail: detail.clone(),
+                reason: reason.clone(),
+            },
+            uff::Observation::Error {
+                stage: stage.clone(),
+                detail: detail.clone(),
+                reason: Some(uff::ExpectedErrorReason::SourceTbpCenterParamsMissing {
+                    center_atom_index: 0,
+                }),
+            },
+            uff::Observation::Error {
+                stage: stage.clone(),
+                detail: "Construction(other)".into(),
+                reason: None,
+            },
+            uff::Observation::Error {
+                stage: stage.clone(),
+                detail: String::new(),
+                reason: reason.clone(),
+            },
+            uff::Observation::Optimized {
+                status: 0,
+                energy_bits: 0,
+                xyz_bits: vec![],
+            },
+        ] {
+            assert!(!uff::matches(&record.input, expected, &wrong));
+        }
+        let uff::Observation::Error {
+            stage: expected_stage,
+            detail: expected_detail,
+            ..
+        } = expected
+        else {
+            unreachable!()
+        };
+        for wrong_detail in [
+            expected_detail.replace("at2Params", "at1Params"),
+            expected_detail.replace("line 79", "line 78"),
+            expected_detail.replace("AngleBend.cpp", "BondStretch.cpp"),
+            "RuntimeError: unexpected Construction failure".into(),
+        ] {
+            let wrong = uff::Observation::Error {
+                stage: expected_stage.clone(),
+                detail: wrong_detail,
+                reason: None,
+            };
+            assert!(!uff::matches(&record.input, &wrong, actual));
+        }
+        let mut wrong_input = record.input.clone();
+        let Input::Uff(row) = &mut wrong_input else {
+            unreachable!()
+        };
+        row.case.id = "line:321".into();
+        assert!(!uff::matches(&wrong_input, expected, actual));
+        assert!(!uff::matches(
+            &record.input,
+            &uff::Observation::Coverage(true),
+            actual
+        ));
+    }
 }

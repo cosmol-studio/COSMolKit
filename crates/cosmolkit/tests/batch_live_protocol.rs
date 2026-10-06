@@ -1,8 +1,10 @@
 //! Original d892ec3 batch protocol cases, canonical signature adaptation only.
 //! Delivery proposal; original expectations and inputs retained for independent review.
-use cosmolkit::{
-    BatchErrorMode, BatchParams, BatchRecord, Coordinate2DParams, MoleculeBatch, SmilesParseParams,
-};
+#![cfg(all(feature = "cap-batch", feature = "cap-smiles"))]
+
+#[cfg(feature = "cap-depict")]
+use cosmolkit::Coordinate2DParams;
+use cosmolkit::{BatchErrorMode, BatchParams, BatchRecord, MoleculeBatch, SmilesParseParams};
 fn kept(smiles: &[String]) -> MoleculeBatch {
     MoleculeBatch::from_smiles_list_with_params(
         smiles,
@@ -62,6 +64,7 @@ fn batch_configuration_can_be_set_and_cleared() {
 }
 
 #[test]
+#[cfg(feature = "cap-depict")]
 fn batch_configuration_is_preserved_across_transforms() {
     let batch = kept(&["CC".to_string()])
         .with_parallel_jobs(Some(2))
@@ -90,6 +93,7 @@ fn batch_configuration_is_preserved_across_filter_valid() {
 }
 
 #[test]
+#[cfg(feature = "cap-depict")]
 fn transform_options_preserve_batch_configuration() {
     let batch = kept(&["CC".to_string()])
         .with_parallel_jobs(Some(4))
@@ -112,6 +116,7 @@ fn transform_options_preserve_batch_configuration() {
 }
 
 #[test]
+#[cfg(feature = "cap-hydrogens")]
 fn strict_aggregates_all_original_parse_errors_and_transform_retains_original_indices() {
     let smiles = vec!["C1".into(), "CCO".into(), "bad".into()];
     let strict = MoleculeBatch::from_smiles_list(&smiles).unwrap_err();
@@ -183,6 +188,12 @@ fn strict_aggregates_all_original_parse_errors_and_transform_retains_original_in
     assert!(matches!(batch.get(0), Some(BatchRecord::Error(_))));
 }
 #[test]
+#[cfg(all(
+    feature = "cap-sanitize",
+    feature = "cap-hydrogens",
+    feature = "cap-kekulize",
+    feature = "cap-depict"
+))]
 fn every_authorized_transform_matches_its_scalar_owner_and_leaves_input_unchanged() {
     let batch = MoleculeBatch::from_smiles_list(&["CCO".into(), "c1ccccc1".into()]).unwrap();
     let input = batch

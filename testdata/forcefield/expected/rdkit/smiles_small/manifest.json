@@ -1,0 +1,123 @@
+{
+  "domain": "forcefield",
+  "family": "rdkit",
+  "input": {
+    "path": "testdata/smiles/corpus/smiles_small.smi",
+    "sha256": "47380e477dc2ab4b3c2b7cd62754e52b718bb9f3f0b977d47eb97db45074442e"
+  },
+  "outputs": [
+    {
+      "generator": [
+        {
+          "path": "tools/testdata/rdkit/generate_all.py",
+          "sha256": "97ff81ab06076fc735bf543abc7e76fea893eea236ec83ca0560a6e391bef30b"
+        },
+        {
+          "path": "tools/testdata/rdkit/_expected_schema.py",
+          "sha256": "50fcb2085b8e13210801043d0645ad7561e52d47039dda11e3847bd6e43bd4ec"
+        },
+        {
+          "path": "testdata/reference/rdkit.json",
+          "sha256": "7bb3fdaddf8cfabe5339d953a85ab417ee49d1e4f5acf82e177a9c9e9ee958de"
+        },
+        {
+          "path": "tools/testdata/rdkit/_generate_forcefield_params_golden.py",
+          "sha256": "b9ab547718cb3fcdcc413850134efe3262cf7775c709dab1ea11e2653359618f"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "testdata/smiles/corpus/smiles_small.smi",
+          "sha256": "47380e477dc2ab4b3c2b7cd62754e52b718bb9f3f0b977d47eb97db45074442e"
+        }
+      ],
+      "options": {
+        "arguments": [
+          "--input",
+          "testdata/smiles/corpus/smiles_small.smi",
+          "--output",
+          "forcefield_params.jsonl"
+        ],
+        "profile": "smiles_small"
+      },
+      "output_schema_version": 1,
+      "path": "forcefield_params.jsonl",
+      "platform": {
+        "machine": "x86_64",
+        "system": "Linux"
+      },
+      "records": 152,
+      "sha256": "7cf9e84bea3a66ee4d29f198639ed62b6caf0f5b0ad369d7812b5417e91519be"
+    },
+    {
+      "generator": [
+        {
+          "path": "tools/testdata/rdkit/generate_all.py",
+          "sha256": "97ff81ab06076fc735bf543abc7e76fea893eea236ec83ca0560a6e391bef30b"
+        },
+        {
+          "path": "tools/testdata/rdkit/_expected_schema.py",
+          "sha256": "50fcb2085b8e13210801043d0645ad7561e52d47039dda11e3847bd6e43bd4ec"
+        },
+        {
+          "path": "testdata/reference/rdkit.json",
+          "sha256": "7bb3fdaddf8cfabe5339d953a85ab417ee49d1e4f5acf82e177a9c9e9ee958de"
+        },
+        {
+          "path": "tools/testdata/rdkit/_generate_mmff_builtin_golden.py",
+          "sha256": "03fda9328d65a7a805a3e89c8e638525fefcef85ff0a05d12344a814447f1169"
+        }
+      ],
+      "inputs": [
+        {
+          "path": "testdata/smiles/corpus/smiles_small.smi",
+          "sha256": "47380e477dc2ab4b3c2b7cd62754e52b718bb9f3f0b977d47eb97db45074442e"
+        },
+        {
+          "path": "testdata/forcefield/fixtures/mmff/rdkit/MMFF94_dative.smi",
+          "sha256": "d83d4d47899645a997ef3d8aef23f4b5261c36fe50a1620dfb95cbb86226651a"
+        },
+        {
+          "path": "testdata/forcefield/fixtures/mmff/rdkit/MMFF94_hypervalent.smi",
+          "sha256": "6fa6d8e53b18903d1599ec012cae7fbae2aa413f69e1c28d512f71ebc31cb47e"
+        },
+        {
+          "path": "testdata/forcefield/fixtures/mmff/rdkit/MMFF94s_dative.smi",
+          "sha256": "a961d12e7d77df9c5416299f8bf78e6cb4dea056854b99f2f1d65e4bab06eb3e"
+        },
+        {
+          "path": "testdata/forcefield/fixtures/mmff/rdkit/MMFF94s_hypervalent.smi",
+          "sha256": "f4490e008daa63582887fee198652e19431b9c030ed9b524ab3df08121e62adf"
+        }
+      ],
+      "options": {
+        "arguments": [
+          "--input",
+          "testdata/smiles/corpus/smiles_small.smi",
+          "--output",
+          "mmff_builtin.jsonl"
+        ],
+        "profile": "smiles_small"
+      },
+      "output_schema_version": 1,
+      "path": "mmff_builtin.jsonl",
+      "platform": {
+        "machine": "x86_64",
+        "system": "Linux"
+      },
+      "records": 2052,
+      "sha256": "9311d6648194c3f5435b82ed77c334a7af8191faa901d8bb912746410ab316af"
+    }
+  ],
+  "profile": "smiles_small",
+  "reference_implementation": {
+    "name": "rdkit",
+    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8",
+    "version": "2026.03.1"
+  },
+  "reference_runtime": {
+    "implementation": "cpython",
+    "version": "3.13.12"
+  },
+  "schema_version": 1
+}

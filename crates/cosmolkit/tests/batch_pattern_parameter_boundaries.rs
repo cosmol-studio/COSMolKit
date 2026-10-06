@@ -1,9 +1,10 @@
 //! Author supplement required by ROOT CKebb; independent acceptance pending.
 //! Canonical public width errors, never a public invalid-mask call.
-use cosmolkit::{
-    BatchErrorMode, BatchParams, BatchQueryParams, Molecule, MoleculeBatch,
-    PatternFingerprintError, PatternFingerprintParams,
-};
+#![cfg(all(feature = "cap-smiles", feature = "cap-fingerprints"))]
+
+#[cfg(feature = "cap-batch")]
+use cosmolkit::{BatchErrorMode, BatchParams, BatchQueryParams, MoleculeBatch};
+use cosmolkit::{Molecule, PatternFingerprintError, PatternFingerprintParams};
 use std::error::Error;
 
 fn widths() -> Vec<(usize, PatternFingerprintError)> {
@@ -39,6 +40,7 @@ fn scalar_pattern_zero_and_source_unsigned_width_errors_remain_structured() {
 }
 
 #[test]
+#[cfg(feature = "cap-batch")]
 fn batch_pattern_zero_and_source_unsigned_width_errors_retain_all_indices_and_causes() {
     let input = vec!["CCC".to_owned(), "CC".to_owned(), "C".to_owned()];
     let batch = MoleculeBatch::from_smiles_list_with_params(

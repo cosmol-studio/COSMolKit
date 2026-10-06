@@ -824,16 +824,191 @@ fn parse_coordinate_component(
     value: Option<&str>,
     offset: usize,
 ) -> Result<Option<f64>, CxParseError> {
+    // RDKit351f8f378f8ad6bbd517980c38896e66bf907af8 CXSmilesOps.cpp:
+    // RDKit✔️✔️:          pt.x = boost::lexical_cast<double>(tokens[0]);
+    // Boost lexical_cast pinned by dev/double_formatting_contract.md at
+    // 02e5821ab32c45fad719829e9644e5d681c9ba0b (these helpers also match 1.85).
+    // Boost✔️✔️: reproduce signed inf/nan keywords before numeric conversion;
+    // stream failures, including decimal overflow, remain syntax errors.
+    // Performance: borrowed keyword comparisons and one decimal conversion,
+    // O(n) time with no added string allocation or molecule-state cloning.
+    /*
+        template <class CharT>
+        bool lc_iequal(const CharT* val, const CharT* lcase, const CharT* ucase, unsigned int len) noexcept {
+            for( unsigned int i=0; i < len; ++i ) {
+                if ( val[i] != lcase[i] && val[i] != ucase[i] ) return false;
+            }
+
+            return true;
+        }
+    */
+    /*
+        template <class CharT, class T>
+        inline bool parse_inf_nan_impl(const CharT* begin, const CharT* end, T& value
+            , const CharT* lc_NAN, const CharT* lc_nan
+            , const CharT* lc_INFINITY, const CharT* lc_infinity
+            , const CharT opening_brace, const CharT closing_brace) noexcept
+        {
+            if (begin == end) return false;
+            const CharT minus = lcast_char_constants<CharT>::minus;
+            const CharT plus = lcast_char_constants<CharT>::plus;
+            const int inifinity_size = 8; // == sizeof("infinity") - 1
+
+            /* Parsing +/- */
+            bool const has_minus = (*begin == minus);
+            if (has_minus || *begin == plus) {
+                ++ begin;
+            }
+
+            if (end - begin < 3) return false;
+            if (lc_iequal(begin, lc_nan, lc_NAN, 3)) {
+                begin += 3;
+                if (end != begin) {
+                    /* It is 'nan(...)' or some bad input*/
+
+                    if (end - begin < 2) return false; // bad input
+                    -- end;
+                    if (*begin != opening_brace || *end != closing_brace) return false; // bad input
+                }
+
+                if( !has_minus ) value = std::numeric_limits<T>::quiet_NaN();
+                else value = boost::core::copysign(std::numeric_limits<T>::quiet_NaN(), static_cast<T>(-1));
+                return true;
+            } else if (
+                ( /* 'INF' or 'inf' */
+                  end - begin == 3      // 3 == sizeof('inf') - 1
+                  && lc_iequal(begin, lc_infinity, lc_INFINITY, 3)
+                )
+                ||
+                ( /* 'INFINITY' or 'infinity' */
+                  end - begin == inifinity_size
+                  && lc_iequal(begin, lc_infinity, lc_INFINITY, inifinity_size)
+                )
+             )
+            {
+                if( !has_minus ) value = std::numeric_limits<T>::infinity();
+                else value = -std::numeric_limits<T>::infinity();
+                return true;
+            }
+
+            return false;
+        }
+    */
+    /*
+        template <class T>
+        bool float_types_converter_internal(T& output) {
+            if (parse_inf_nan(start, finish, output)) return true;
+            bool const return_value = shr_using_base_class(output);
+
+            /* Some compilers and libraries successfully
+             * parse 'inf', 'INFINITY', '1.0E', '1.0E-'...
+             * We are trying to provide a unified behaviour,
+             * so we just forbid such conversions (as some
+             * of the most popular compilers/libraries do)
+             * */
+            CharT const minus = lcast_char_constants<CharT>::minus;
+            CharT const plus = lcast_char_constants<CharT>::plus;
+            CharT const capital_e = lcast_char_constants<CharT>::capital_e;
+            CharT const lowercase_e = lcast_char_constants<CharT>::lowercase_e;
+            if ( return_value &&
+                 (
+                    Traits::eq(*(finish-1), lowercase_e)                   // 1.0e
+                    || Traits::eq(*(finish-1), capital_e)                  // 1.0E
+                    || Traits::eq(*(finish-1), minus)                      // 1.0e- or 1.0E-
+                    || Traits::eq(*(finish-1), plus)                       // 1.0e+ or 1.0E+
+                 )
+            ) return false;
+
+            return return_value;
+        }
+    */
+    /*
+            template<typename InputStreamable>
+            bool shr_using_base_class(InputStreamable& output)
+            {
+                static_assert(
+                    !boost::is_pointer<InputStreamable>::value,
+                    "boost::lexical_cast can not convert to pointers"
+                );
+
+    #if defined(BOOST_NO_STRINGSTREAM) || defined(BOOST_NO_STD_LOCALE)
+                static_assert(boost::is_same<char, CharT>::value,
+                    "boost::lexical_cast can not convert, because your STL library does not "
+                    "support such conversions. Try updating it."
+                );
+    #endif
+
+    #if defined(BOOST_NO_STRINGSTREAM)
+                std::istrstream stream(start, static_cast<std::istrstream::streamsize>(finish - start));
+    #else
+                typedef detail::lcast::buffer_t<CharT, Traits> buffer_t;
+                buffer_t buf;
+                // Usually `istream` and `basic_istream` do not modify
+                // content of buffer; `buffer_t` assures that this is true
+                buf.setbuf(const_cast<CharT*>(start), static_cast<typename buffer_t::streamsize>(finish - start));
+    #if defined(BOOST_NO_STD_LOCALE)
+                std::istream stream(&buf);
+    #else
+                std::basic_istream<CharT, Traits> stream(&buf);
+    #endif // BOOST_NO_STD_LOCALE
+    #endif // BOOST_NO_STRINGSTREAM
+
+    #ifndef BOOST_NO_EXCEPTIONS
+                stream.exceptions(std::ios::badbit);
+                try {
+    #endif
+                stream.unsetf(std::ios::skipws);
+                lcast_set_precision(stream, static_cast<InputStreamable*>(0));
+
+                return (stream >> output)
+                    && (stream.get() == Traits::eof());
+
+    #ifndef BOOST_NO_EXCEPTIONS
+                } catch (const ::std::ios_base::failure& /*f*/) {
+                    return false;
+                }
+    #endif
+            }
+        */
     let Some(value) = value else {
         return Ok(None);
     };
     if value.is_empty() {
         return Ok(None);
     }
-    value
-        .parse::<f64>()
-        .map(Some)
-        .map_err(|_| CxParseError::new(offset, "invalid CX coordinate"))
+    let (negative, unsigned) = match value.as_bytes()[0] {
+        b'-' => (true, &value[1..]),
+        b'+' => (false, &value[1..]),
+        _ => (false, value),
+    };
+    if unsigned.eq_ignore_ascii_case("inf") || unsigned.eq_ignore_ascii_case("infinity") {
+        return Ok(Some(if negative {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        }));
+    }
+    let keyword = unsigned.as_bytes();
+    if keyword
+        .get(..3)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"nan"))
+    {
+        let payload = &keyword[3..];
+        if payload.is_empty()
+            || (payload.len() >= 2
+                && payload.first() == Some(&b'(')
+                && payload.last() == Some(&b')'))
+        {
+            return Ok(Some(f64::NAN.copysign(if negative { -1.0 } else { 1.0 })));
+        }
+    }
+    // Boost's stream requires the entire non-whitespace token. Decimal overflow
+    // sets failbit; Rust instead returns infinity, which must be rejected here.
+    // Explicit infinity/nan already returned through the source keyword branch.
+    match value.parse::<f64>() {
+        Ok(parsed) if parsed.is_finite() => Ok(Some(parsed)),
+        _ => Err(CxParseError::new(offset, "invalid CX coordinate")),
+    }
 }
 
 fn parse_labels_or_values_progress(
@@ -3084,8 +3259,69 @@ mod tests {
         CxAtomConstraint, CxAtomProperty, CxBondReference, CxCoordinateBondKind, CxCountConstraint,
         CxDispatch, CxDoubleBondStereoKind, CxLinkNode, CxProgressPhase, CxRecord, CxRingBond,
         CxSGroupHierarchy, CxStereoGroupKind, CxVariableAttachment, CxWedgeDirection,
-        classify_cx_dispatch, parse_cx_extensions, parse_cx_extensions_progress,
+        classify_cx_dispatch, parse_coordinate_component, parse_cx_extensions,
+        parse_cx_extensions_progress,
     };
+
+    #[test]
+    fn cx_coordinate_component_decimal_range_and_signed_zero_follow_source_conversion() {
+        assert_eq!(parse_coordinate_component(None, 17), Ok(None));
+        assert_eq!(parse_coordinate_component(Some(""), 17), Ok(None));
+        for (text, expected) in [
+            ("1.7976931348623157e308", f64::MAX),
+            ("1.7976931348623158e308", f64::MAX),
+            ("-1.7976931348623157e308", -f64::MAX),
+            ("-0", -0.0),
+            ("+0.0e+0", 0.0),
+            ("1e-9999", 0.0),
+            ("-1e-9999", -0.0),
+        ] {
+            let actual = parse_coordinate_component(Some(text), 17).unwrap().unwrap();
+            assert_eq!(actual.to_bits(), expected.to_bits(), "{text}");
+        }
+        for text in ["1e309", "-1e309", "+1e309", "1.7976931348623159e308"] {
+            assert_eq!(
+                parse_coordinate_component(Some(text), 17),
+                Err(super::CxParseError::new(17, "invalid CX coordinate")),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn cx_coordinate_component_explicit_inf_nan_keywords_keep_source_sign_and_payload_policy() {
+        for text in ["inf", "INF", "InFiNiTy", "+infinity", "-iNf", "-INFINITY"] {
+            let value = parse_coordinate_component(Some(text), 17).unwrap().unwrap();
+            assert!(value.is_infinite(), "{text}");
+            assert_eq!(value.is_sign_negative(), text.starts_with('-'), "{text}");
+        }
+        for text in [
+            "nan",
+            "NAN",
+            "+nAn",
+            "-NaN",
+            "nan()",
+            "NaN(payload)",
+            "-NaN(any!é)tail)",
+        ] {
+            let value = parse_coordinate_component(Some(text), 17).unwrap().unwrap();
+            assert!(value.is_nan(), "{text}");
+            assert_eq!(value.is_sign_negative(), text.starts_with('-'), "{text}");
+        }
+    }
+
+    #[test]
+    fn cx_coordinate_component_malformed_tokens_preserve_the_original_error_offset() {
+        for text in [
+            "x", "+", "-", "1e", "1e+", "1.0E-", " inf", "inf ", "nanx", "nan(", "nan)x", "--inf",
+        ] {
+            assert_eq!(
+                parse_coordinate_component(Some(text), 23),
+                Err(super::CxParseError::new(23, "invalid CX coordinate")),
+                "{text}"
+            );
+        }
+    }
 
     #[test]
     fn cx_progress_dispatch_uses_source_order_and_length_guards() {

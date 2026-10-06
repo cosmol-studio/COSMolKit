@@ -48,7 +48,18 @@ fn coordinates_lower_into_dimension_specific_typed_conformers() {
     );
 
     let error = parse_smiles("C |(1e309,0)|", &Default::default()).unwrap_err();
-    assert!(matches!(error, SmilesParseError::Model(message) if message.contains("non-finite")));
+    assert!(
+        matches!(error, SmilesParseError::Cx(message) if message.contains("invalid CX coordinate"))
+    );
+}
+
+#[test]
+fn coordinates_preserve_explicit_source_infinity_and_nan_tokens() {
+    let record = parse("C |(inf,-nan)|");
+    let point = record.coordinates.conformers_2d[0].coordinates()[0];
+    assert_eq!(point[0], f64::INFINITY);
+    assert!(point[1].is_nan());
+    assert!(point[1].is_sign_negative());
 }
 
 #[test]

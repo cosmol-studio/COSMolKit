@@ -1,3 +1,4 @@
+#![cfg(all(feature = "cap-batch", feature = "cap-smiles", feature = "cap-depict"))]
 //! Source-backed delivery proposals; p1/ROOT alone decide acceptance conditions.
 use cosmolkit::{
     BatchErrorMode, BatchImageParams, BatchParams, BatchQueryParams, MoleculeBatch,
@@ -37,6 +38,7 @@ impl Drop for Directory {
     }
 }
 #[test]
+#[cfg(feature = "cap-conformer")]
 fn complete_query_values_and_invalid_positions_match_scalar_serial_and_parallel() {
     let batch = batch();
     let originals = batch.to_list();
@@ -88,6 +90,7 @@ fn complete_query_values_and_invalid_positions_match_scalar_serial_and_parallel(
     );
 }
 #[test]
+#[cfg(feature = "cap-depict")]
 fn image_exports_preserve_original_filename_rules_complete_bytes_and_reports() {
     let batch = batch();
     let directory = Directory::new();
@@ -156,6 +159,7 @@ fn image_exports_preserve_original_filename_rules_complete_bytes_and_reports() {
     }
 }
 #[test]
+#[cfg(feature = "cap-depict")]
 fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_errors() {
     let batch = batch();
     let directory = Directory::new();

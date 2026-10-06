@@ -408,6 +408,6 @@ fn errors_preserve_offsets_ring_context_and_final_model_validation() {
     );
     let coordinate = parse_smiles("C |(1e309,0)|", &Default::default()).unwrap_err();
     assert!(
-        matches!(coordinate, SmilesParseError::Model(message) if message.contains("non-finite"))
+        matches!(coordinate, SmilesParseError::Cx(message) if message.contains("invalid CX coordinate"))
     );
 }

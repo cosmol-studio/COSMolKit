@@ -5,6 +5,7 @@ use cosmolkit::{
     UffConformerOptimizationParams, UffOptimizationParams,
 };
 use serde::{Deserialize, Serialize};
+use std::error::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Profile {
@@ -89,6 +90,12 @@ pub struct UffInput {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExpectedErrorReason {
+    EmbeddingRejected { case_id: String },
+    SourceTbpCenterParamsMissing { center_atom_index: usize },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Observation {
     Coverage(bool),
     Optimized {
@@ -102,6 +109,10 @@ pub enum Observation {
     Error {
         stage: crate::molecular::Stage,
         detail: String,
+        /// Original references retain their raw diagnostics. Actual failures
+        /// additionally retain the narrow structured cause, never a success.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<ExpectedErrorReason>,
     },
 }
 
@@ -211,6 +222,7 @@ pub fn validate_reference(
             Observation::Error {
                 stage: output_stage,
                 detail: output_detail,
+                ..
             },
         ) if matches!(
             stage,
@@ -227,6 +239,7 @@ pub fn validate_reference(
             Observation::Error {
                 stage: output_stage,
                 detail: output_detail,
+                ..
             },
         ) if matches!(
             stage,
@@ -260,10 +273,133 @@ fn valid_coordinate_rows(geometry: &Geometry, expected_count: usize) -> bool {
             })
 }
 
-pub fn matches(expected: &Observation, actual: &Observation) -> bool {
-    !matches!(expected, Observation::Error { .. })
-        && !matches!(actual, Observation::Error { .. })
-        && expected == actual
+/// CK-c053 authorizes only the original two profiles and these source errors.
+/// Reference bytes remain unchanged; classification preserves their raw detail.
+fn reference_error_reason(
+    input: &UffInput,
+    stage: &crate::molecular::Stage,
+    detail: &str,
+) -> Option<ExpectedErrorReason> {
+    use crate::molecular::Stage;
+    let operation = match input.profile {
+        Profile::Optimization { .. } => Operation::UffOptimization,
+        Profile::ConformerOptimization { .. } => Operation::UffConformerOptimization,
+        Profile::Coverage { .. } => return None,
+    };
+    if !profiles(operation).contains(&input.profile) {
+        return None;
+    }
+    match (&input.preparation, stage) {
+        (
+            Some(GeometryPreparation::Rejected {
+                stage: rejected_stage,
+                detail: rejected_detail,
+            }),
+            Stage::Preparation,
+        ) if rejected_stage == stage
+            && rejected_detail == detail
+            && detail
+                == format!(
+                    "ValueError: UFF common geometry embedding failed: {}",
+                    input.case.id
+                ) =>
+        {
+            Some(ExpectedErrorReason::EmbeddingRejected {
+                case_id: input.case.id.clone(),
+            })
+        }
+        (Some(GeometryPreparation::Ready(_)), Stage::Operation) if input.case.id == "line:320" => {
+            // Pinned 351f8f378f8ad6bbd517980c38896e66bf907af8:
+            // Builder.cpp:324-327 checks both endpoints but passes params[atomIdx].
+            // AngleBend.cpp:79: PRECONDITION(at2Params, "bad params pointer");
+            // Independent p1 source trace identifies this original center as 1.
+            // This is the approved original reference error, not a molecule patch.
+            let lines: Vec<_> = detail.lines().map(str::trim).collect();
+            if lines.len() == 6
+                && lines[0] == "RuntimeError: Pre-condition Violation"
+                && lines[1] == "bad params pointer"
+                && lines[2]
+                    == "Violation occurred on line 79 in file Code/ForceField/UFF/AngleBend.cpp"
+                && lines[3] == "Failed Expression: at2Params"
+                && lines[4] == "RDKIT: 2026.03.1"
+                && lines[5] == "BOOST: 1_85"
+            {
+                Some(ExpectedErrorReason::SourceTbpCenterParamsMissing {
+                    center_atom_index: 1,
+                })
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn optimization_error_reason(
+    error: &cosmolkit::OperationError,
+    all_conformers: bool,
+) -> Option<ExpectedErrorReason> {
+    let cosmolkit::OperationError::UffOptimization(cause) = error else {
+        return None;
+    };
+    let required_kind = if all_conformers {
+        cosmolkit::UffOptimizationErrorKind::ConformerOptimization
+    } else {
+        cosmolkit::UffOptimizationErrorKind::Optimization
+    };
+    if cause.kind() != required_kind {
+        return None;
+    }
+    // The public boundary preserves Error::source() but keeps builder types private.
+    // Decode only the terminal concrete cause's existing Debug field representation;
+    // do not inspect the outer display string or accept generic Construction errors.
+    let mut leaf: &(dyn Error + 'static) = cause;
+    while let Some(source) = leaf.source() {
+        leaf = source;
+    }
+    let diagnostic = format!("{leaf:?}");
+    let index = diagnostic
+        .strip_prefix("SourceTbpCenterParamsMissing { center_atom_index: ")?
+        .strip_suffix(" }")?
+        .parse::<usize>()
+        .ok()?;
+    Some(ExpectedErrorReason::SourceTbpCenterParamsMissing {
+        center_atom_index: index,
+    })
+}
+
+pub fn matches(input: &Input, expected: &Observation, actual: &Observation) -> bool {
+    match (expected, actual) {
+        (
+            Observation::Error { stage, detail, .. },
+            Observation::Error {
+                stage: actual_stage,
+                detail: actual_detail,
+                reason: Some(actual_reason),
+            },
+        ) => {
+            let Input::Uff(row) = input else {
+                return false;
+            };
+            if stage != actual_stage || validate_reference(row, row, expected).is_err() {
+                return false;
+            }
+            let Some(expected_reason) = reference_error_reason(row, stage, detail) else {
+                return false;
+            };
+            if &expected_reason != actual_reason {
+                return false;
+            }
+            match expected_reason {
+                ExpectedErrorReason::EmbeddingRejected { .. } => detail == actual_detail,
+                ExpectedErrorReason::SourceTbpCenterParamsMissing { .. } => {
+                    !actual_detail.is_empty()
+                }
+            }
+        }
+        (Observation::Error { .. }, _) | (_, Observation::Error { .. }) => false,
+        _ => expected == actual,
+    }
 }
 
 pub fn run(input: &Input) -> Result<Record, String> {
@@ -271,6 +407,7 @@ pub fn run(input: &Input) -> Result<Record, String> {
         return Err("expected UFF input".into());
     };
     let mut stage = crate::molecular::Stage::Parse;
+    let mut reason = None;
     let result = (|| -> Result<Observation, String> {
         match row.profile {
             Profile::Coverage { add_hydrogens } => {
@@ -307,10 +444,11 @@ pub fn run(input: &Input) -> Result<Record, String> {
                         stage: failed_stage,
                         detail,
                     } => {
-                        // There is no common geometry on which either engine
-                        // can run. Retain the preparation failure, never pass it.
+                        // No optimization is called for this recorded rejection.
+                        // Verify its precise preparation reason separately.
                         stage = failed_stage.clone();
-                        return Err(format!("common input rejected: {detail}"));
+                        reason = reference_error_reason(row, failed_stage, detail);
+                        return Err(detail.clone());
                     }
                 };
                 stage = crate::molecular::Stage::Preparation;
@@ -337,7 +475,10 @@ pub fn run(input: &Input) -> Result<Record, String> {
                         ignore_interfragment_interactions,
                         conformer_id,
                     })
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| {
+                        reason = optimization_error_reason(&e, false);
+                        e.to_string()
+                    })?;
                 let selected = conformer_id.unwrap_or(0);
                 let conf = result
                     .molecule
@@ -373,7 +514,8 @@ pub fn run(input: &Input) -> Result<Record, String> {
                         detail,
                     } => {
                         stage = failed_stage.clone();
-                        return Err(format!("common input rejected: {detail}"));
+                        reason = reference_error_reason(row, failed_stage, detail);
+                        return Err(detail.clone());
                     }
                 };
                 if !valid_coordinate_rows(geometry, conformer_count) {
@@ -427,7 +569,10 @@ pub fn run(input: &Input) -> Result<Record, String> {
                         vdw_threshold: f64::from(vdw_threshold),
                         ignore_interfragment_interactions,
                     })
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| {
+                        reason = optimization_error_reason(&e, true);
+                        e.to_string()
+                    })?;
                 let stored_coordinates = result.molecule.conformers_3d();
                 if result.conformers.len() != conformer_count
                     || stored_coordinates.len() != conformer_count
@@ -460,6 +605,10 @@ pub fn run(input: &Input) -> Result<Record, String> {
     })();
     Ok(Record {
         input: input.clone(),
-        output: Value::Uff(result.unwrap_or_else(|detail| Observation::Error { stage, detail })),
+        output: Value::Uff(result.unwrap_or_else(|detail| Observation::Error {
+            stage,
+            detail,
+            reason,
+        })),
     })
 }

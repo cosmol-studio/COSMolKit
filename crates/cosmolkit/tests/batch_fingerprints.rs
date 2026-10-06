@@ -1,4 +1,8 @@
-//! Delivery proposals retaining d892ec3 batch inputs, error indices and complete values.
+#![cfg(all(
+    feature = "cap-batch",
+    feature = "cap-smiles",
+    feature = "cap-fingerprints"
+))]
 use cosmolkit::{
     AtomPairFingerprintParams, AtomPairParams, BatchErrorMode, BatchParams, BatchQueryParams,
     BatchRecord, FingerprintAdditionalOutput, LayeredFingerprintParams, Molecule, MoleculeBatch,
