@@ -106,7 +106,7 @@ class RunUnitValidationRegressionTests(unittest.TestCase):
                 },
                 {
                     "name": "cosmolkit-core",
-                    "features": {"op-contracts-strict": []},
+                    "features": {},
                     "dependencies": [],
                 },
                 {
@@ -123,7 +123,7 @@ class RunUnitValidationRegressionTests(unittest.TestCase):
         }
         self.assertEqual(
             runner.dependency_feature_selectors(metadata, "cosmolkit"),
-            {"cosmolkit-core/op-contracts-strict", "renamed/strict"},
+            {"renamed/strict"},
         )
 
     def test_propagates_failing_test_subprocess_and_records_evidence(self) -> None:

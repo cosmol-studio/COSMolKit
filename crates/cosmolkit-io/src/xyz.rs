@@ -280,6 +280,7 @@ pub fn read_xyz_detached(
         },
         source_coordinate_dim: (atom_count > 0)
             .then_some(cosmolkit_model::CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     coordinates.validate_for_atom_count(atom_count)?;
     let result = Ok((topology, coordinates, properties));

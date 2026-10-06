@@ -1,11 +1,10 @@
-#![cfg(feature = "op-contracts-strict")]
-
-use cosmolkit_core::{
-    __migration_hydrogens::{
+use crate::{
+    AddHsParams, add_hydrogens_with_params,
+    hydrogens::{
         AddHydrogensTopologyResult, AddedHydrogen, AddedHydrogenKind, HydrogenError,
         add_hydrogen_coordinates, add_hydrogens_topology,
     },
-    AddHsParams, add_hydrogens_with_params, rdkit_rb0,
+    rdkit_rb0,
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomPdbResidueInfo, AtomSpec, Bond, BondId, BondOrder, BondSpec,
@@ -117,6 +116,7 @@ fn disabled_placement_grows_all_conformers_and_preserves_every_old_value() {
             Conformer3D::new(12, vec![[-1.0, 2.0, 0.0]], false).with_prop("flat", "yes"),
         ],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     let coordinates_snapshot = coordinates.clone();
     let output =

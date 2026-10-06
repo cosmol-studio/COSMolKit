@@ -1,8 +1,5 @@
-#![cfg(feature = "op-contracts-strict")]
-
-use cosmolkit_core::{
-    __migration_hydrogens::prepare_hydrogen_removal_stereo, HydrogenError, RemoveHsParams,
-    ValenceAssignment,
+use crate::{
+    HydrogenError, RemoveHsParams, ValenceAssignment, hydrogens::prepare_hydrogen_removal_stereo,
 };
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondDirection, BondId, BondSpec, BondStereo, ChiralTag,
@@ -57,7 +54,7 @@ fn prepare(
     candidates: Vec<usize>,
     valence: &ValenceAssignment,
     params: &RemoveHsParams,
-) -> Result<cosmolkit_core::__migration_hydrogens::PreparedHydrogenRemoval, HydrogenError> {
+) -> Result<crate::hydrogens::PreparedHydrogenRemoval, HydrogenError> {
     prepare_hydrogen_removal_stereo(
         source,
         candidates.into_iter().map(atom).collect(),

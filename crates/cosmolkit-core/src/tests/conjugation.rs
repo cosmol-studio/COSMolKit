@@ -1,6 +1,6 @@
-use cosmolkit_core::{
-    __migration_conjugation::atom_has_conjugated_bond, AromaticityError, ConjugationError,
-    ValenceAssignment, ValenceError, assign_conjugation_flags,
+use crate::{
+    AromaticityError, ValenceAssignment, ValenceError,
+    conjugation::{ConjugationError, assign_conjugation, atom_has_conjugated_bond},
 };
 use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, TopologyBlock};
 use cosmolkit_types::{BondOrder, Element};
@@ -512,18 +512,4 @@ fn repeated_assignment_predicate_and_complete_row_identity_are_deterministic() {
 
     let isolated = topology(vec![AtomSpec::new(Element::C)], vec![]);
     assert!(!atom_has_conjugated_bond(&isolated, AtomId::new(0)).unwrap());
-}
-
-// Test-only output transport keeps the original conditions and expected detached fields.
-// The production flags entry is exercised directly; the original source graph is untouched.
-fn assign_conjugation(
-    graph: &TopologyBlock,
-    valence: &ValenceAssignment,
-) -> Result<TopologyBlock, ConjugationError> {
-    let result_flags = assign_conjugation_flags(graph, valence)?;
-    let mut output = graph.clone();
-    for (bond, value) in output.bonds.iter_mut().zip(result_flags) {
-        bond.set_conjugated(value);
-    }
-    Ok(output)
 }

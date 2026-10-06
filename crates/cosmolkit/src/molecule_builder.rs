@@ -252,9 +252,13 @@ impl MoleculeBuilder {
     pub fn set_2d_coordinates(&mut self, coordinates: Vec<[f64; 2]>) -> Result<(), OperationError> {
         let conformer = Conformer2D::new(0, coordinates);
         conformer
-            .validate_for_atom_count(self.topology.atoms.len())
+            .validate_checked_for_atom_count(self.topology.atoms.len())
             .map_err(OperationError::InvalidCoordinates)?;
-        self.coordinates.conformers_2d = vec![conformer];
+        self.coordinates.clear_2d_conformers();
+        self.coordinates
+            .record_source_conformer_append(cosmolkit_model::CoordinateDimension::TwoD)
+            .map_err(OperationError::InvalidCoordinates)?;
+        self.coordinates.conformers_2d.push(conformer);
         Ok(())
     }
 
@@ -361,7 +365,10 @@ impl MoleculeBuilder {
                     next_conformer_id(self.coordinates.conformers_2d.iter().map(Conformer2D::id));
                 let conformer = Conformer2D::new(id, coordinates);
                 conformer
-                    .validate_for_atom_count(self.topology.atoms.len())
+                    .validate_checked_for_atom_count(self.topology.atoms.len())
+                    .map_err(OperationError::InvalidCoordinates)?;
+                self.coordinates
+                    .record_source_conformer_append(cosmolkit_model::CoordinateDimension::TwoD)
                     .map_err(OperationError::InvalidCoordinates)?;
                 self.coordinates.conformers_2d.push(conformer);
                 Ok(id)
@@ -371,7 +378,10 @@ impl MoleculeBuilder {
                     next_conformer_id(self.coordinates.conformers_3d.iter().map(Conformer3D::id));
                 let conformer = Conformer3D::new(id, coordinates, true);
                 conformer
-                    .validate_for_atom_count(self.topology.atoms.len())
+                    .validate_checked_for_atom_count(self.topology.atoms.len())
+                    .map_err(OperationError::InvalidCoordinates)?;
+                self.coordinates
+                    .record_source_conformer_append(cosmolkit_model::CoordinateDimension::ThreeD)
                     .map_err(OperationError::InvalidCoordinates)?;
                 self.coordinates.conformers_3d.push(conformer);
                 Ok(id)

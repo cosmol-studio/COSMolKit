@@ -65,6 +65,7 @@ pub struct FragmentCoordinateView<'a> {
     conformers_2d: Vec<FragmentConformer2D<'a>>,
     conformers_3d: Vec<FragmentConformer3D<'a>>,
     source_coordinate_dim: Option<CoordinateDimension>,
+    source_conformer_order: Option<Vec<CoordinateDimension>>,
 }
 
 /// Invalid selected-coordinate metadata for a borrowed fragment view.
@@ -94,6 +95,9 @@ impl<'a> FragmentCoordinateView<'a> {
     #[must_use]
     pub fn without_3d_conformers(mut self) -> Self {
         self.conformers_3d.clear();
+        if let Some(order) = &mut self.source_conformer_order {
+            order.retain(|d| *d != CoordinateDimension::ThreeD);
+        }
         self
     }
 
@@ -124,6 +128,7 @@ impl<'a> FragmentCoordinateView<'a> {
                 })
                 .collect(),
             source_coordinate_dim: source.source_coordinate_dim,
+            source_conformer_order: source.source_conformer_order.clone(),
         }
     }
 
@@ -143,6 +148,7 @@ impl<'a> FragmentCoordinateView<'a> {
         selected_kernel_rows: &'a [&'a [f64]],
         conformers_3d_after: &'a [Conformer3D],
         source_coordinate_dim: Option<CoordinateDimension>,
+        source_conformer_order: Option<&[CoordinateDimension]>,
     ) -> Result<Self, FragmentCoordinateViewError> {
         for (row, coordinates) in selected_kernel_rows.iter().enumerate() {
             if coordinates.len() != 3 {
@@ -195,6 +201,7 @@ impl<'a> FragmentCoordinateView<'a> {
             conformers_2d,
             conformers_3d,
             source_coordinate_dim,
+            source_conformer_order: source_conformer_order.map(<[CoordinateDimension]>::to_vec),
         })
     }
 
@@ -278,6 +285,7 @@ impl<'a> FragmentCoordinateView<'a> {
             conformers_2d,
             conformers_3d,
             source_coordinate_dim: self.source_coordinate_dim,
+            source_conformer_order: self.source_conformer_order.clone(),
         }
     }
 }
@@ -1083,6 +1091,9 @@ fn copy_full_copy_coordinates(
     // ID, dimensional flag, properties, and retained source rows in their
     // post-deletion order. `None` output rows are impossible because this
     // branch only removes source atoms; report them as a typed invariant error.
+    // Source clone/delete transports IEEE values verbatim; it does not reject
+    // non-finite rows. Preserve signed zero and NaN payload bits, while retaining
+    // structural row-count and mapping checks before any indexed access.
     // Complexity: one output coordinate row pass per conformer and retained
     // atom, with one output vector per conformer; no discarded full-size
     // coordinate block is allocated before deletion.
@@ -1097,20 +1108,6 @@ fn copy_full_copy_coordinates(
                 },
             ));
         }
-        for (atom, coordinate) in conformer.coordinates.iter().enumerate() {
-            for (axis, value) in [("x", coordinate[0]), ("y", coordinate[1])] {
-                if !value.is_finite() {
-                    return Err(FullCopyComponentError::CoordinateValidation(
-                        CoordinateValidationError::NonFiniteCoordinate {
-                            dimension: "2D",
-                            conformer: conformer.id,
-                            atom,
-                            axis,
-                        },
-                    ));
-                }
-            }
-        }
     }
     for conformer in &source.conformers_3d {
         if conformer.coordinates.len() != source_atom_count {
@@ -1122,28 +1119,6 @@ fn copy_full_copy_coordinates(
                     atom_count: source_atom_count,
                 },
             ));
-        }
-        for atom in 0..source_atom_count {
-            let coordinate = conformer
-                .coordinates
-                .get(atom)
-                .expect("coordinate row count checked above");
-            for (axis, value) in [
-                ("x", coordinate[0]),
-                ("y", coordinate[1]),
-                ("z", coordinate[2]),
-            ] {
-                if !value.is_finite() {
-                    return Err(FullCopyComponentError::CoordinateValidation(
-                        CoordinateValidationError::NonFiniteCoordinate {
-                            dimension: "3D",
-                            conformer: conformer.id,
-                            atom,
-                            axis,
-                        },
-                    ));
-                }
-            }
         }
     }
     let conformers_2d = source
@@ -1183,6 +1158,7 @@ fn copy_full_copy_coordinates(
         conformers_2d,
         conformers_3d,
         source_coordinate_dim: source.source_coordinate_dim,
+        source_conformer_order: source.source_conformer_order.clone(),
     })
 }
 
@@ -1414,6 +1390,7 @@ fn copy_subset_coordinates_with_view(
         conformers_2d,
         conformers_3d,
         source_coordinate_dim: source.source_coordinate_dim,
+        source_conformer_order: source.source_conformer_order.clone(),
     }
 }
 
@@ -2203,8 +2180,8 @@ pub fn get_molecule_fragments_with_coordinate_view(
 
     if !copy_conformers {
         for fragment in &mut fragments {
-            fragment.copy.coordinates.conformers_2d.clear();
-            fragment.copy.coordinates.conformers_3d.clear();
+            fragment.copy.coordinates.clear_2d_conformers();
+            fragment.copy.coordinates.clear_3d_conformers();
         }
     }
 
@@ -2521,6 +2498,7 @@ mod cf3d_frag_f07_tests {
                 .with_prop("subset-only", "drop"),
             ],
             source_coordinate_dim: Some(CoordinateDimension::TwoD),
+            source_conformer_order: None,
         };
         let original_one = one.clone();
         let one_view = FragmentCoordinateView::from_coordinate_block(&one);
@@ -2529,6 +2507,7 @@ mod cf3d_frag_f07_tests {
             conformers_2d: vec![Conformer2D::new(41, vec![[3.0, 4.0]])],
             conformers_3d: vec![Conformer3D::new(41, vec![[4.0, 5.0, 6.0]], false)],
             source_coordinate_dim: Some(CoordinateDimension::TwoD),
+            source_conformer_order: None,
         };
 
         assert_eq!(
@@ -2597,6 +2576,7 @@ mod cf3d_frag_f07_tests {
                 .with_prop("kind", "3d-second"),
             ],
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         let original_source = source.clone();
         let atom_mapping = BTreeMap::from([
@@ -2626,6 +2606,7 @@ mod cf3d_frag_f07_tests {
                 ),
             ],
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
 
         assert_eq!(copy_subset_coordinates(&source, &atom_mapping), expected);
@@ -2648,6 +2629,7 @@ mod cf3d_frag_f07_tests {
                     .with_prop("copy", "preserved-second-3d"),
             ],
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         let original_source = source.clone();
         let source_view = FragmentCoordinateView::from_coordinate_block(&source);
@@ -3974,6 +3956,7 @@ mod cf3d_frag_f10_tests {
                 .with_prop("kind", "source-3d"),
             ],
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
 
         (topology, coordinates)
@@ -4034,6 +4017,7 @@ mod cf3d_frag_f10_tests {
                 false,
             )],
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         }
     }
 
@@ -4127,6 +4111,7 @@ mod cf3d_frag_f10_tests {
                 conformers_2d: vec![Conformer2D::new(31, Vec::new())],
                 conformers_3d: vec![Conformer3D::new(45, Vec::new(), false)],
                 source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+                source_conformer_order: None,
             }
         );
 
@@ -4166,6 +4151,7 @@ mod cf3d_frag_f10_tests {
                     false,
                 )],
                 source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+                source_conformer_order: None,
             }
         );
         assert_eq!(source_topology, original_topology);
@@ -4518,6 +4504,7 @@ mod cf3d_frag_f15_tests {
             conformers_2d,
             conformers_3d,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         let properties = MoleculeProperties::default()
             .with_name("source-molecule")
@@ -4833,6 +4820,7 @@ mod cf3d_frag_f16_tests {
             conformers_2d,
             conformers_3d,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         }
     }
 
@@ -5163,6 +5151,7 @@ mod cf3d_frag_f17_tests {
                 .with_prop("source-conformer", "3d-source"),
             ],
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         }
     }
 

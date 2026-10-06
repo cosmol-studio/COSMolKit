@@ -445,7 +445,7 @@ fn privacy_cargo_check(case: &str, strict: bool) -> Output {
          --cfg=cosmolkit_runtime_privacy_case=\"{case}\""
     );
     let features = if strict {
-        "cap-sanitize,op-contracts-strict,cosmolkit-core/op-contracts-strict"
+        "cap-sanitize,op-contracts-strict"
     } else {
         "cap-sanitize"
     };

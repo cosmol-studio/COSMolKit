@@ -12,6 +12,7 @@ fn mixed() -> CoordinateBlock {
             Conformer3D::new(7, vec![[1.; 3]; 2], true),
         ],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     }
 }
 
@@ -288,4 +289,40 @@ fn replacement_id_lookup_rejects_positions_and_missing_default_before_any_mutati
     assert_eq!(block.conformers_3d[2], before.conformers_3d[2]);
     assert_eq!(block.conformers_2d, before.conformers_2d);
     assert_eq!(block.source_coordinate_dim, before.source_coordinate_dim);
+}
+
+mod source_order_regression {
+    use cosmolkit_core::{Coordinate3DInputParams, append_3d_conformer};
+    use cosmolkit_model::{
+        Conformer2D, CoordinateBlock, CoordinateDimension, CoordinateSourceConformer,
+    };
+    #[test]
+    fn append_records_actual_source_occurrence() {
+        let mut block = CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(9, vec![[1.0, -0.0]])],
+            source_conformer_order: Some(vec![CoordinateDimension::TwoD]),
+            ..Default::default()
+        };
+        let position = append_3d_conformer(
+            &mut block,
+            1,
+            vec![vec![2.0, 3.0, 4.0]],
+            &Coordinate3DInputParams { is_3d: false },
+        )
+        .unwrap();
+        assert_eq!(position, 0);
+        assert_eq!(
+            block.conformers_2d[0].coordinates()[0][1].to_bits(),
+            (-0.0_f64).to_bits()
+        );
+        assert_eq!(
+            block.source_conformer_order,
+            Some(vec![CoordinateDimension::TwoD, CoordinateDimension::ThreeD])
+        );
+        block.validate_for_atom_count(1).unwrap();
+        assert!(matches!(
+            block.first_source_conformer().unwrap(),
+            Some(CoordinateSourceConformer::TwoD(_))
+        ));
+    }
 }

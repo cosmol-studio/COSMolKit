@@ -1,8 +1,6 @@
-#![cfg(feature = "op-contracts-strict")]
-
-use cosmolkit_core::{
-    __migration_hydrogens::{attachment_query_rows, place_terminal_attachment_coordinates},
-    expand_attachment_points, rdkit_rb0,
+use crate::{
+    attachment_points::attachment_query_rows, expand_attachment_points,
+    hydrogens::place_terminal_attachment_coordinates, rdkit_rb0,
 };
 use cosmolkit_model::{
     Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondOrder, BondQueryPredicate,
@@ -141,6 +139,7 @@ fn attachment_expansion_values_options_and_query_origins() {
                         Conformer3D::new(11, vec![[2.0, 3.0, 0.5]], true),
                     ],
                     source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+                    source_conformer_order: None,
                 };
                 let original_snapshot = original.clone();
                 let result = expand_attachment_points(
@@ -398,6 +397,7 @@ fn attachment_coordinates_ck_coord_001_mixed_flags_preserve_xyz_and_order() {
             Conformer3D::new(12, vec![[4.0, 5.0, 7.0], [0.0; 3]], false),
         ],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     let snapshot = original.clone();
     let result = place_terminal_attachment_coordinates(

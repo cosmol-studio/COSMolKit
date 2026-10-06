@@ -1,5 +1,3 @@
-#![cfg(feature = "op-contracts-strict")]
-
 use cosmolkit_core::{
     HydrogenError, HydrogenWarning, RemoveHsParams, remove_hydrogens_impl,
     remove_hydrogens_with_params,
@@ -494,6 +492,7 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
             .with_prop("dim", "three"),
         ],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     let properties = MoleculeProperties::default()
         .with_name("named")

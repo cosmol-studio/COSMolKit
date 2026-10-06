@@ -29,6 +29,7 @@ fn coordinate_dimensions_and_empty_blocks_are_valid() {
         conformers_2d: vec![Conformer2D::new(5, Vec::new())],
         conformers_3d: vec![Conformer3D::new(5, Vec::new(), false)],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     assert_eq!(zero_atom_block.validate_for_atom_count(0), Ok(()));
 }
@@ -130,147 +131,131 @@ fn row_count_errors_are_exact_for_both_dimensions() {
 }
 
 #[test]
-fn duplicate_ids_are_dimension_local_and_exact() {
-    let duplicate_2d = CoordinateBlock {
+fn duplicate_ids_preserve_source_entries_and_order() {
+    // ROMol.cpp::addConformer(assignId=false) appends without deduplication.
+    let block = CoordinateBlock {
         conformers_2d: vec![
             Conformer2D::new(8, vec![[0.0, 0.0]]),
             Conformer2D::new(8, vec![[1.0, 1.0]]),
         ],
-        ..Default::default()
-    };
-    assert_eq!(
-        duplicate_2d.validate_for_atom_count(1),
-        Err(CoordinateValidationError::DuplicateConformerId {
-            dimension: "2D",
-            id: 8,
-        })
-    );
-
-    let duplicate_3d = CoordinateBlock {
         conformers_3d: vec![
             Conformer3D::new(13, vec![[0.0, 0.0, 0.0]], true),
             Conformer3D::new(13, vec![[1.0, 1.0, 1.0]], false),
         ],
-        ..Default::default()
-    };
-    assert_eq!(
-        duplicate_3d.validate_for_atom_count(1),
-        Err(CoordinateValidationError::DuplicateConformerId {
-            dimension: "3D",
-            id: 13,
-        })
-    );
-
-    let same_id_across_dimensions = CoordinateBlock {
-        conformers_2d: vec![Conformer2D::new(21, vec![[0.0, 0.0]])],
-        conformers_3d: vec![Conformer3D::new(21, vec![[0.0, 0.0, 0.0]], true)],
         source_coordinate_dim: Some(CoordinateDimension::TwoD),
+        source_conformer_order: None,
     };
-    assert_eq!(same_id_across_dimensions.validate_for_atom_count(1), Ok(()));
+    assert_eq!(block.validate_for_atom_count(1), Ok(()));
+    assert_eq!(
+        block
+            .conformers_2d
+            .iter()
+            .map(Conformer2D::id)
+            .collect::<Vec<_>>(),
+        [8, 8]
+    );
+    assert_eq!(
+        block
+            .conformers_3d
+            .iter()
+            .map(Conformer3D::id)
+            .collect::<Vec<_>>(),
+        [13, 13]
+    );
+    assert_eq!(block.conformers_2d[1].coordinates(), &[[1.0, 1.0]]);
+    assert_eq!(block.conformers_3d[1].coordinates(), &[[1.0, 1.0, 1.0]]);
+    assert!(!block.conformers_3d[1].is_3d());
 }
 
 #[test]
-fn nonfinite_2d_axes_report_exact_fields_for_all_classes() {
-    for (axis_index, axis) in [(0, "x"), (1, "y")] {
-        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+fn nonfinite_2d_coordinates_preserve_all_axis_bits() {
+    // Conformer.h::setAtomPos assigns every supplied floating-point bit pattern.
+    for axis_index in 0..2 {
+        for value in [
+            f64::from_bits(0x7ff8_0000_0000_007b),
+            f64::from_bits(0xfff8_0000_0000_0000),
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
             let mut rows = vec![[0.0, 0.0], [1.0, 2.0]];
             rows[1][axis_index] = value;
+            let expected = bits_2d(&rows);
+            let conformer = Conformer2D::new(31, rows);
+            assert_eq!(conformer.validate_for_atom_count(2), Ok(()));
+            assert_eq!(bits_2d(conformer.coordinates()), expected);
             assert_eq!(
-                Conformer2D::new(31, rows).validate_for_atom_count(2),
-                Err(CoordinateValidationError::NonFiniteCoordinate {
-                    dimension: "2D",
-                    conformer: 31,
-                    atom: 1,
-                    axis,
-                })
+                conformer.coordinates()[1][axis_index].to_bits(),
+                value.to_bits()
             );
         }
     }
 }
 
 #[test]
-fn nonfinite_3d_axes_report_exact_fields_for_all_classes() {
-    for (axis_index, axis) in [(0, "x"), (1, "y"), (2, "z")] {
-        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+fn nonfinite_3d_coordinates_preserve_all_axis_bits() {
+    // Conformer.h::setAtomPos assigns every supplied floating-point bit pattern.
+    for axis_index in 0..3 {
+        for value in [
+            f64::from_bits(0x7ff8_0000_0000_007b),
+            f64::from_bits(0xfff8_0000_0000_0000),
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
             let mut rows = vec![[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]];
             rows[1][axis_index] = value;
+            let expected = bits_3d(&rows);
+            let conformer = Conformer3D::new(37, rows, true);
+            assert_eq!(conformer.validate_for_atom_count(2), Ok(()));
+            assert_eq!(bits_3d(conformer.coordinates()), expected);
             assert_eq!(
-                Conformer3D::new(37, rows, true).validate_for_atom_count(2),
-                Err(CoordinateValidationError::NonFiniteCoordinate {
-                    dimension: "3D",
-                    conformer: 37,
-                    atom: 1,
-                    axis,
-                })
+                conformer.coordinates()[1][axis_index].to_bits(),
+                value.to_bits()
             );
         }
     }
 }
 
 #[test]
-fn validation_order_is_rows_then_axes_then_conformers_then_dimensions() {
+fn row_validation_rejects_mismatches_without_rejecting_source_values() {
     assert_eq!(
         Conformer2D::new(40, vec![[f64::NAN, 0.0]]).validate_for_atom_count(2),
         Err(CoordinateValidationError::RowCount {
             dimension: "2D",
             conformer: 40,
             rows: 1,
-            atom_count: 2,
+            atom_count: 2
         })
     );
-
     assert_eq!(
         Conformer3D::new(
             41,
             vec![[0.0, f64::INFINITY, 0.0], [f64::NAN, 0.0, 0.0]],
-            true,
+            true
         )
         .validate_for_atom_count(2),
-        Err(CoordinateValidationError::NonFiniteCoordinate {
-            dimension: "3D",
-            conformer: 41,
-            atom: 0,
-            axis: "y",
-        })
+        Ok(())
     );
-
-    let earlier_conformer_and_dimension = CoordinateBlock {
+    let duplicate_with_bad_rows = CoordinateBlock {
         conformers_2d: vec![
-            Conformer2D::new(42, vec![[0.0, f64::NEG_INFINITY]]),
-            Conformer2D::new(43, vec![[f64::NAN, 0.0]]),
-        ],
-        conformers_3d: vec![Conformer3D::new(44, vec![[f64::NAN, 0.0, 0.0]], true)],
-        source_coordinate_dim: Some(CoordinateDimension::ThreeD),
-    };
-    assert_eq!(
-        earlier_conformer_and_dimension.validate_for_atom_count(1),
-        Err(CoordinateValidationError::NonFiniteCoordinate {
-            dimension: "2D",
-            conformer: 42,
-            atom: 0,
-            axis: "y",
-        })
-    );
-
-    let duplicate_precedes_second_validation = CoordinateBlock {
-        conformers_2d: vec![
-            Conformer2D::new(45, vec![[0.0, 0.0]]),
+            Conformer2D::new(45, vec![[f64::NEG_INFINITY, 0.0]]),
             Conformer2D::new(45, Vec::new()),
         ],
         ..Default::default()
     };
     assert_eq!(
-        duplicate_precedes_second_validation.validate_for_atom_count(1),
-        Err(CoordinateValidationError::DuplicateConformerId {
+        duplicate_with_bad_rows.validate_for_atom_count(1),
+        Err(CoordinateValidationError::RowCount {
             dimension: "2D",
-            id: 45,
+            conformer: 45,
+            rows: 0,
+            atom_count: 1
         })
     );
-
     let valid_mixed = CoordinateBlock {
         conformers_2d: vec![Conformer2D::new(1, vec![[-0.0, f64::MAX]])],
         conformers_3d: vec![Conformer3D::new(2, vec![[f64::MIN, 0.0, -0.0]], false)],
         source_coordinate_dim: Some(CoordinateDimension::TwoD),
+        source_conformer_order: None,
     };
     assert_eq!(valid_mixed.validate_for_atom_count(1), Ok(()));
 }
@@ -299,6 +284,7 @@ fn remap_preserves_order_bits_properties_flags_and_source_dimension() {
             Conformer3D::new(99, three_d_second.to_vec(), false).with_prop("which", "3d-second"),
         ],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
 
     block.remap_topology(&[2, 0]);
@@ -402,6 +388,7 @@ fn remap_preserves_ids_for_identity_removal_reorder_and_empty_projection() {
             .with_prop("label", "3d-second"),
         ],
         source_coordinate_dim: Some(CoordinateDimension::TwoD),
+        source_conformer_order: None,
     };
     original.validate_for_atom_count(3).unwrap();
     for kept in [&[0, 1, 2][..], &[0, 2], &[2, 0, 1], &[]] {

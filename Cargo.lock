@@ -167,7 +167,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cosmolkit"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-batch",
@@ -193,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-alignment"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -204,14 +204,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-batch"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-model",
 ]
 
 [[package]]
 name = "cosmolkit-bio"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-model",
  "cosmolkit-types",
@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-conformer"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-core",
@@ -237,7 +237,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-model",
  "cosmolkit-ringdecomposer",
@@ -249,11 +249,11 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-cx"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 
 [[package]]
 name = "cosmolkit-depict"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -267,7 +267,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-descriptors"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -279,7 +279,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-fingerprints"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-forcefields"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-io",
@@ -303,7 +303,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-inchi"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "bytemuck",
  "hexf-parse",
@@ -313,7 +313,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-io"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-bio",
  "cosmolkit-core",
@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -346,7 +346,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-model"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-types",
  "serde_json",
@@ -371,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit",
  "glam",
@@ -386,14 +386,14 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-ringdecomposer"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-search"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-smiles"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -416,7 +416,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-stereo"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -426,7 +426,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-tautomer"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -440,7 +440,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-types"
-version = "0.5.0-rc.10"
+version = "0.5.0-rc.11"
 dependencies = [
  "serde",
  "serde_json",
@@ -1155,9 +1155,9 @@ dependencies = [
 
 [[package]]
 name = "powerfmt"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
+checksum = "4a6394b9e965e73d0a289ee54f589087e2c676aedf60885baf52c76b771e4958"
 
 [[package]]
 name = "ppv-lite86"
@@ -2096,18 +2096,18 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "zerocopy"
-version = "0.8.59"
+version = "0.8.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6df92bf3d9227be3d53173901ddbffac2babc27ae50f397776ffd6dc33f800cb"
+checksum = "6400fc4bb7426f6faac3fb07566122bb18622e3022bd2c36426a92ed489b1dbe"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.59"
+version = "0.8.60"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac4f328cf2f05d084e496c3e9c3f33ed0a183656a16e1fcec4d464d8373aec82"
+checksum = "99c27cc7525bad4df59a45e073c45b2c2aa820efb588234cc23a547ec69a34db"
 dependencies = [
  "proc-macro2",
  "quote",

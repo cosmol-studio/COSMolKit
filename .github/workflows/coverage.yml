@@ -62,7 +62,7 @@ jobs:
                   eval "$coverage_env"
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
                   cargo build "${packages[@]}" --lib --release \
-                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
+                      --features cosmolkit/op-contracts-strict
 
             - name: Fetch pinned test sources only after successful compilation
               run: git submodule update --init --depth 1 third_party/gemmi third_party/rdkit
@@ -83,12 +83,11 @@ jobs:
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
                   status=0
                   cargo test "${packages[@]}" --release \
-                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
+                      --features cosmolkit/op-contracts-strict \
                       --no-fail-fast || status=$?
                   # The runner's corpus target belongs AFTER reference preparation.
-                  # Select core too to enable its strict feature (its lib tests repeat).
-                  cargo test -p cosmolkit-parity-tests -p cosmolkit-core --lib --bins --release \
-                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
+                  cargo test -p cosmolkit-parity-tests --lib --bins --release \
+                      --features cosmolkit/op-contracts-strict \
                       --no-fail-fast || status=$?
                   exit "$status"
 
@@ -102,7 +101,7 @@ jobs:
                   packages=()
                   while IFS= read -r package; do packages+=(-p "$package"); done < "$RUNNER_TEMP/test-packages.txt"
                   cargo test "${packages[@]}" --release --doc --no-fail-fast \
-                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
+                      --features cosmolkit/op-contracts-strict
 
             - uses: actions/setup-python@v5
               id: python
@@ -136,9 +135,9 @@ jobs:
                   coverage_env="$(cargo llvm-cov show-env --sh)"
                   eval "$coverage_env"
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
-                  cargo build -p cosmolkit-parity-tests -p cosmolkit-core --release \
+                  cargo build -p cosmolkit-parity-tests --release \
                       --bin cosmolkit-parity-tests \
-                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
+                      --features cosmolkit/op-contracts-strict
                   # Sequential generator calls; each Python function parallelizes cases.
                   set +e
                   "$CARGO_TARGET_DIR/release/cosmolkit-parity-tests" prepare \
@@ -172,7 +171,7 @@ jobs:
                   # No handwritten per-test target list or workflow-specific recipe.
                   cargo test -p cosmolkit-parity-tests \
                       --release --test '*' --no-fail-fast \
-                      --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict \
+                      --features cosmolkit/op-contracts-strict \
                       2>&1 | tee "$RUNNER_TEMP/parity-5000.log"
 
             - name: Save validated reference generations

@@ -179,17 +179,13 @@ fn validate_matrix(
             });
         }
     }
-    for (row, values) in rows.iter().enumerate() {
-        for (column, value) in values.iter().copied().enumerate() {
-            if !value.is_finite() {
-                return Err(CoordinateInputError::NonFinite {
-                    dimension,
-                    row,
-                    column,
-                    value,
-                });
-            }
-        }
+    if let Some((row, column, value)) = cosmolkit_model::first_non_finite_coordinate(rows) {
+        return Err(CoordinateInputError::NonFinite {
+            dimension,
+            row,
+            column,
+            value,
+        });
     }
     Ok(())
 }
@@ -344,7 +340,8 @@ pub fn install_2d_coordinates(
     // Domain operates in the runtime-provided detached block; no whole-state clone.
 
     let coords = coordinates_2d_from_input(atom_count, rows, params)?;
-    block.conformers_2d.clear();
+    block.clear_2d_conformers();
+    block.record_source_conformer_append(CoordinateDimension::TwoD)?;
     block.conformers_2d.push(Conformer2D::new(0, coords));
     block.source_coordinate_dim = Some(CoordinateDimension::TwoD);
     Ok(())
@@ -456,6 +453,7 @@ pub fn append_3d_conformer(
         None => 0,
     };
     let position = block.conformers_3d.len();
+    block.record_source_conformer_append(CoordinateDimension::ThreeD)?;
     block
         .conformers_3d
         .push(Conformer3D::new(id, coords, params.is_3d));
@@ -500,7 +498,8 @@ pub fn install_only_3d_conformer(
     // Domain operates in the runtime-provided detached block; no whole-state clone.
 
     let coords = coordinates_3d_from_input(atom_count, rows)?;
-    block.conformers_3d.clear();
+    block.clear_3d_conformers();
+    block.record_source_conformer_append(CoordinateDimension::ThreeD)?;
     block
         .conformers_3d
         .push(Conformer3D::new(0, coords, params.is_3d));
@@ -521,7 +520,7 @@ pub fn clear_3d_conformers(block: &mut CoordinateBlock) {
     // COSMolKit✔️✔️: Native source transition and scan/allocation shape reproduced.
     // Domain operates in the runtime-provided detached block; no whole-state clone.
 
-    block.conformers_3d.clear();
+    block.clear_3d_conformers();
     block.source_coordinate_dim = source_dimension(block);
 }
 

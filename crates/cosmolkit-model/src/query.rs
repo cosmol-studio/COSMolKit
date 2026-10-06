@@ -1291,6 +1291,7 @@ pub struct QueryGraph {
     props: BTreeMap<String, String>,
     conformers_2d: Vec<Conformer2D>,
     conformers_3d: Vec<Conformer3D>,
+    source_conformer_order: Option<Vec<crate::CoordinateDimension>>,
     stereo_groups: Vec<StereoGroup>,
     substance_groups: Vec<SubstanceGroup>,
 }
@@ -1322,6 +1323,7 @@ impl QueryGraph {
             props,
             conformers_2d,
             conformers_3d,
+            source_conformer_order: None,
             stereo_groups,
             substance_groups: Vec::new(),
         };
@@ -1376,6 +1378,7 @@ impl QueryGraph {
             conformers_2d: self.conformers_2d.clone(),
             conformers_3d: self.conformers_3d.clone(),
             source_coordinate_dim: None,
+            source_conformer_order: self.source_conformer_order.clone(),
         };
         coordinates
             .validate_for_atom_count(self.atoms.len())
@@ -1520,7 +1523,40 @@ impl QueryGraph {
             conformers_2d: self.conformers_2d.clone(),
             conformers_3d: self.conformers_3d.clone(),
             source_coordinate_dim,
+            source_conformer_order: self.source_conformer_order.clone(),
         }
+    }
+
+    #[doc(hidden)]
+    pub fn set_source_conformer_order(
+        &mut self,
+        order: Option<Vec<crate::CoordinateDimension>>,
+    ) -> Result<(), QueryGraphError> {
+        if let Some(order) = &order {
+            let two_d = order
+                .iter()
+                .filter(|d| **d == crate::CoordinateDimension::TwoD)
+                .count();
+            let three_d = order.len() - two_d;
+            if two_d != self.conformers_2d.len() || three_d != self.conformers_3d.len() {
+                return Err(QueryGraphError::CoordinateValidation(
+                    CoordinateValidationError::SourceConformerOrder {
+                        two_d,
+                        three_d,
+                        expected_two_d: self.conformers_2d.len(),
+                        expected_three_d: self.conformers_3d.len(),
+                    },
+                ));
+            }
+        }
+        self.source_conformer_order = order;
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    #[must_use]
+    pub fn source_conformer_order(&self) -> Option<&[crate::CoordinateDimension]> {
+        self.source_conformer_order.as_deref()
     }
 
     #[doc(hidden)]
@@ -1535,6 +1571,13 @@ impl QueryGraph {
                 },
             ));
         }
+        crate::coordinates::record_source_append(
+            &mut self.source_conformer_order,
+            self.conformers_2d.len(),
+            self.conformers_3d.len(),
+            crate::CoordinateDimension::ThreeD,
+        )
+        .map_err(QueryGraphError::CoordinateValidation)?;
         self.conformers_3d.push(conformer);
         Ok(())
     }
@@ -1559,6 +1602,16 @@ impl QueryGraph {
                 },
             ));
         }
+        if let Some(order) = &mut self.source_conformer_order {
+            order.retain(|dimension| *dimension != crate::CoordinateDimension::TwoD);
+        }
+        crate::coordinates::record_source_append(
+            &mut self.source_conformer_order,
+            0,
+            self.conformers_3d.len(),
+            crate::CoordinateDimension::TwoD,
+        )
+        .map_err(QueryGraphError::CoordinateValidation)?;
         self.conformers_2d = vec![Conformer2D::new(0, coords)];
         Ok(self)
     }
@@ -2314,6 +2367,7 @@ mod tests {
             props: BTreeMap::new(),
             conformers_2d: Vec::new(),
             conformers_3d: Vec::new(),
+            source_conformer_order: None,
             stereo_groups: Vec::new(),
             substance_groups: Vec::new(),
         };

@@ -5,7 +5,7 @@ use crate::canonical_element_metadata::Element;
 use ::cosmolkit as ck;
 use pyo3::exceptions::{PyIndexError, PyOSError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::path::PathBuf;
@@ -21,6 +21,101 @@ pyo3::create_exception!(cosmolkit, BioOperationError, PyValueError);
 pyo3::create_exception!(cosmolkit, BioMmcifWriteError, PyValueError);
 pyo3::create_exception!(cosmolkit, BioSelectionParseError, PyValueError);
 pyo3::create_exception!(cosmolkit, BioPdbWriteError, PyValueError);
+pyo3::create_exception!(cosmolkit, BioStructureError, PyValueError);
+
+pub(crate) fn structure_error(py: Python<'_>, source: &ck::BioStructureError) -> PyErr {
+    let error = BioStructureError::new_err(source.to_string());
+    let fields = || -> PyResult<&str> {
+        let value = error.value(py);
+        Ok(match source {
+            ck::BioStructureError::RowIndexTooLarge { value: index } => {
+                value.setattr("value", *index)?;
+                "RowIndexTooLarge"
+            }
+            ck::BioStructureError::RowSpanOverflow { start, len } => {
+                value.setattr("start", *start)?;
+                value.setattr("len", *len)?;
+                "RowSpanOverflow"
+            }
+            ck::BioStructureError::RowSpanOutOfBounds {
+                start,
+                len,
+                table_len,
+            } => {
+                value.setattr("start", *start)?;
+                value.setattr("len", *len)?;
+                value.setattr("table_len", *table_len)?;
+                "RowSpanOutOfBounds"
+            }
+            ck::BioStructureError::TableTooLarge { table, len } => {
+                value.setattr("table", *table)?;
+                value.setattr("len", *len)?;
+                "TableTooLarge"
+            }
+            ck::BioStructureError::NonContiguousSpan {
+                table,
+                expected_start,
+                actual_start,
+            } => {
+                value.setattr("table", *table)?;
+                value.setattr("expected_start", *expected_start)?;
+                value.setattr("actual_start", *actual_start)?;
+                "NonContiguousSpan"
+            }
+            ck::BioStructureError::IncompleteCoverage {
+                table,
+                covered,
+                table_len,
+            } => {
+                value.setattr("table", *table)?;
+                value.setattr("covered", *covered)?;
+                value.setattr("table_len", *table_len)?;
+                "IncompleteCoverage"
+            }
+            ck::BioStructureError::ParentMismatch { table, index } => {
+                value.setattr("table", *table)?;
+                value.setattr("index", *index)?;
+                "ParentMismatch"
+            }
+            ck::BioStructureError::RowReferenceOutOfBounds {
+                table,
+                index,
+                table_len,
+            } => {
+                value.setattr("table", *table)?;
+                value.setattr("index", *index)?;
+                value.setattr("table_len", *table_len)?;
+                "RowReferenceOutOfBounds"
+            }
+            ck::BioStructureError::CoordinateCountMismatch {
+                atom_count,
+                coordinate_count,
+            } => {
+                value.setattr("atom_count", *atom_count)?;
+                value.setattr("coordinate_count", *coordinate_count)?;
+                "CoordinateCountMismatch"
+            }
+            ck::BioStructureError::EntitySubchainMismatch {
+                entity_id,
+                subchain,
+            } => {
+                value.setattr("entity_id", entity_id.index())?;
+                value.setattr("subchain", subchain)?;
+                "EntitySubchainMismatch"
+            }
+            ck::BioStructureError::EmptyResidueSpan { operation } => {
+                value.setattr("operation", *operation)?;
+                "EmptyResidueSpan"
+            }
+            ck::BioStructureError::ImpossibleCrystalAngle => "ImpossibleCrystalAngle",
+            ck::BioStructureError::AtomNotFound => "AtomNotFound",
+        })
+    };
+    match fields() {
+        Ok(kind) => annotate(py, error, kind, source),
+        Err(error) => error,
+    }
+}
 
 fn annotate(
     py: Python<'_>,
@@ -780,6 +875,122 @@ impl BioPdbWriteParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct AtomName {
+    inner: ck::AtomName,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AtomName {
+    #[staticmethod]
+    fn from_ascii(bytes: &Bound<'_, PyBytes>) -> Option<Self> {
+        ck::AtomName::from_ascii(bytes.as_bytes()).map(|inner| Self { inner })
+    }
+    fn as_bytes<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
+        PyBytes::new(py, self.inner.as_bytes())
+    }
+    fn as_str(&self) -> &str {
+        self.inner.as_str()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct AltLocLabel {
+    inner: ck::AltLocLabel,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AltLocLabel {
+    #[new]
+    fn new(value: u8) -> Self {
+        Self {
+            inner: ck::AltLocLabel::new(value),
+        }
+    }
+    fn value(&self) -> u8 {
+        self.inner.value()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct AltLocRequest {
+    inner: ck::AltLocRequest,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl AltLocRequest {
+    #[classattr]
+    #[pyo3(name = "Any")]
+    fn any() -> AltLocRequest {
+        Self {
+            inner: ck::AltLocRequest::Any,
+        }
+    }
+    #[staticmethod]
+    #[pyo3(name = "Exact", signature = (altloc))]
+    fn exact(altloc: Option<&AltLocLabel>) -> Self {
+        Self {
+            inner: ck::AltLocRequest::Exact(altloc.map(|label| label.inner)),
+        }
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct BioTransform {
+    inner: ck::BioTransform,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct BioCoordinateBlock {
+    inner: Arc<ck::BioStructure>,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl BioCoordinateBlock {
+    #[getter]
+    fn positions(&self) -> Vec<[f64; 3]> {
+        self.inner.coordinates().positions().to_vec()
+    }
+    fn __len__(&self) -> usize {
+        self.inner.coordinates().len()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl BioTransform {
+    fn approx(&self, other: &Self, epsilon: f64) -> bool {
+        self.inner.approx(&other.inner, epsilon)
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct BioCrystalInfo {
+    // Retain the immutable structure snapshot without copying symmetry images.
+    inner: Arc<ck::BioStructure>,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl BioCrystalInfo {
+    fn space_group_number(&self) -> Option<i32> {
+        self.inner
+            .crystal()
+            .expect("a crystal view is constructed only for an existing crystal")
+            .space_group_number()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct BioStructure {
     inner: Arc<ck::BioStructure>,
@@ -788,6 +999,68 @@ pub(crate) struct BioStructure {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioStructure {
+    #[pyo3(signature = (residue_id, name, request, element))]
+    fn find_atom(
+        &self,
+        residue_id: u32,
+        name: &AtomName,
+        request: &AltLocRequest,
+        element: Option<&Element>,
+    ) -> Option<(usize, BioAtomRow)> {
+        self.inner
+            .find_atom(
+                ck::BioResidueId::new(residue_id),
+                name.inner,
+                request.inner,
+                element.map(|value| value.inner),
+            )
+            .map(|(id, _)| {
+                let index = id.index();
+                (
+                    index,
+                    BioAtomRow {
+                        inner: Arc::clone(&self.inner),
+                        index,
+                    },
+                )
+            })
+    }
+    #[pyo3(signature = (residue_id, name, altloc))]
+    fn atom_by_altloc(
+        &self,
+        py: Python<'_>,
+        residue_id: u32,
+        name: &AtomName,
+        altloc: Option<&AltLocLabel>,
+    ) -> PyResult<(usize, BioAtomRow)> {
+        self.inner
+            .atom_by_altloc(
+                ck::BioResidueId::new(residue_id),
+                name.inner,
+                altloc.map(|label| label.inner),
+            )
+            .map(|(id, _)| {
+                let index = id.index();
+                (
+                    index,
+                    BioAtomRow {
+                        inner: Arc::clone(&self.inner),
+                        index,
+                    },
+                )
+            })
+            .map_err(|error| structure_error(py, &error))
+    }
+    fn validate(&self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .validate()
+            .map_err(|error| structure_error(py, &error))
+    }
+    fn coordinates(&self) -> BioCoordinateBlock {
+        BioCoordinateBlock {
+            inner: Arc::clone(&self.inner),
+        }
+    }
     fn to_molecule_with_params(
         &self,
         py: Python<'_>,
@@ -884,6 +1157,65 @@ impl BioStructure {
     }
     fn num_entities(&self) -> usize {
         self.inner.num_entities()
+    }
+    fn has_origx(&self) -> bool {
+        self.inner.has_origx()
+    }
+    fn origx(&self) -> BioTransform {
+        BioTransform {
+            inner: *self.inner.origx(),
+        }
+    }
+    fn ncs_oper_identity_id(&self) -> Option<&str> {
+        self.inner.ncs_oper_identity_id()
+    }
+    fn resolution(&self) -> f64 {
+        self.inner.resolution()
+    }
+    fn ter_status(&self) -> u8 {
+        self.inner.ter_status()
+    }
+    fn atom_position(&self, atom: u32) -> Option<[f64; 3]> {
+        self.inner.atom_position(ck::BioAtomId::new(atom))
+    }
+    fn residue_atoms(&self, residue: u32) -> Option<Vec<BioAtomRow>> {
+        let rows = self.inner.residue_atoms(ck::BioResidueId::new(residue))?;
+        let start = self.inner.residues()[residue as usize].atom_span().start() as usize;
+        Some(
+            (start..start + rows.len())
+                .map(|index| BioAtomRow {
+                    inner: self.inner.clone(),
+                    index,
+                })
+                .collect(),
+        )
+    }
+    fn crystal(&self) -> Option<BioCrystalInfo> {
+        self.inner.crystal().map(|_| BioCrystalInfo {
+            inner: self.inner.clone(),
+        })
+    }
+    fn find_entity(&self, source_id: &str) -> Option<(usize, BioEntityRow)> {
+        self.inner.find_entity(source_id).map(|(id, _)| {
+            (
+                id.index(),
+                BioEntityRow {
+                    inner: self.inner.clone(),
+                    index: id.index(),
+                },
+            )
+        })
+    }
+    fn find_entity_of_subchain(&self, subchain: &str) -> Option<(usize, BioEntityRow)> {
+        self.inner.find_entity_of_subchain(subchain).map(|(id, _)| {
+            (
+                id.index(),
+                BioEntityRow {
+                    inner: self.inner.clone(),
+                    index: id.index(),
+                },
+            )
+        })
     }
     fn models(&self) -> Vec<BioModelRow> {
         (0..self.inner.num_models())
@@ -1377,10 +1709,52 @@ impl ResidueSourceIds {
 pub(crate) struct Protein {
     inner: Arc<ck::Protein>,
 }
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct ProteinSelectionSummary {
+    inner: ck::ProteinSelectionSummary,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl ProteinSelectionSummary {
+    #[getter]
+    fn chains(&self) -> usize {
+        self.inner.chains
+    }
+    #[getter]
+    fn residues(&self) -> usize {
+        self.inner.residues
+    }
+    #[getter]
+    fn atoms(&self) -> usize {
+        self.inner.atoms
+    }
+}
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Protein {
+    fn as_bio_structure(&self) -> BioStructure {
+        BioStructure {
+            inner: Arc::new(self.inner.as_bio_structure().clone()),
+        }
+    }
+    fn into_bio_structure(&self) -> BioStructure {
+        BioStructure {
+            inner: Arc::new(self.inner.as_ref().clone().into_bio_structure()),
+        }
+    }
+    fn selection_summary(&self) -> ProteinSelectionSummary {
+        ProteinSelectionSummary {
+            inner: self.inner.selection_summary(),
+        }
+    }
+    fn chain(&self, index: usize) -> Option<ProteinChainRef> {
+        self.inner.chain(index).map(|row| ProteinChainRef {
+            inner: self.inner.clone(),
+            index: row.id().index(),
+        })
+    }
     fn to_molecule_with_params(
         &self,
         py: Python<'_>,
@@ -1570,6 +1944,17 @@ impl ProteinChainRef {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ProteinChainRef {
+    fn row(&self) -> BioChainRow {
+        BioChainRow {
+            inner: Arc::new(self.inner.as_bio_structure().clone()),
+            index: self.view().id().index(),
+        }
+    }
+    fn source(&self) -> ChainSourceIds {
+        ChainSourceIds {
+            inner: self.view().source().clone(),
+        }
+    }
     fn id(&self) -> usize {
         self.index
     }
@@ -1617,6 +2002,18 @@ impl ProteinResidueRef {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ProteinResidueRef {
+    fn row(&self) -> BioResidueRow {
+        BioResidueRow {
+            inner: Arc::new(self.inner.as_bio_structure().clone()),
+            index: self.view().id().index(),
+        }
+    }
+    fn chain(&self) -> ProteinChainRef {
+        ProteinChainRef {
+            inner: self.inner.clone(),
+            index: self.view().chain().id().index(),
+        }
+    }
     fn id(&self) -> usize {
         self.index
     }
@@ -1693,6 +2090,23 @@ impl ProteinAtomRef {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl ProteinAtomRef {
+    fn row(&self) -> BioAtomRow {
+        BioAtomRow {
+            inner: Arc::new(self.inner.as_bio_structure().clone()),
+            index: self.view().id().index(),
+        }
+    }
+    fn altloc(&self) -> Option<String> {
+        self.view()
+            .altloc()
+            .map(|label| char::from(label.value()).to_string())
+    }
+    fn residue(&self) -> ProteinResidueRef {
+        ProteinResidueRef {
+            inner: self.inner.clone(),
+            index: self.view().residue().id().index(),
+        }
+    }
     fn id(&self) -> usize {
         self.index
     }
@@ -1812,6 +2226,11 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         py.get_type::<BioMoleculeConversionError>(),
     )?;
     module.add("BioReadError", py.get_type::<BioReadError>())?;
+    module.add("BioStructureError", py.get_type::<BioStructureError>())?;
+    module.add_class::<AtomName>()?;
+    module.add_class::<AltLocLabel>()?;
+    module.add_class::<AltLocRequest>()?;
+    module.add_class::<BioCoordinateBlock>()?;
     module.add("BioPdbReadError", py.get_type::<BioPdbReadError>())?;
     module.add("BioMmcifReadError", py.get_type::<BioMmcifReadError>())?;
     module.add("ProteinReadError", py.get_type::<ProteinReadError>())?;
@@ -1827,8 +2246,11 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<BioReadParams>()?;
     module.add_class::<BioPdbReadParams>()?;
     module.add_class::<BioSelection>()?;
+    module.add_class::<BioTransform>()?;
+    module.add_class::<BioCrystalInfo>()?;
     module.add_class::<BioStructure>()?;
     module.add_class::<Protein>()?;
+    module.add_class::<ProteinSelectionSummary>()?;
     module.add_class::<BioModelRow>()?;
     module.add_class::<BioChainRow>()?;
     module.add_class::<BioResidueRow>()?;

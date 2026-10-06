@@ -2979,6 +2979,7 @@ pub(crate) mod remove_hs_ring_isotope_tests_helpers {
                 true,
             )],
             source_coordinate_dim: None,
+            source_conformer_order: None,
         }
     }
 
@@ -3099,6 +3100,7 @@ mod remove_hs_ring_isotope_tests {
                 true,
             )],
             source_coordinate_dim: None,
+            source_conformer_order: None,
         }
     }
 
@@ -3740,6 +3742,7 @@ mod remove_hs_ring_errors_tests {
                     )]
                 },
                 source_coordinate_dim: None,
+                source_conformer_order: None,
             };
             let properties = MoleculeProperties::default();
             let topology_snapshot = topology.clone();
@@ -5957,6 +5960,7 @@ mod tests {
                 Conformer3D::new(12, vec![[-1.0, 2.0, 0.0]], false).with_prop("flat", "yes"),
             ],
             source_coordinate_dim: Some(cosmolkit_model::CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         let original = coordinates.clone();
         let output =

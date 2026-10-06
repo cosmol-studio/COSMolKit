@@ -270,6 +270,7 @@ width='300px' height='300px' viewBox='0 0 300 300'>
                 conformers_2d: vec![Conformer2D::new(0, vec![[0.0, 0.0], [1.5, 0.0]])],
                 conformers_3d: vec![],
                 source_coordinate_dim: Some(CoordinateDimension::TwoD),
+                source_conformer_order: None,
             };
             let mut properties = MoleculeProperties::default();
             if let Some(note) = case.molecule {

@@ -17,6 +17,21 @@ pyo3::create_exception!(cosmolkit, FingerprintError, PyValueError);
 pyo3::create_exception!(cosmolkit, FingerprintJsonError, PyValueError);
 
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
+    if let Some(error) = source.downcast_ref::<ck::BioStructureError>() {
+        return crate::canonical_bio_binding::structure_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::ValenceError>() {
+        return crate::canonical_atom_bond::valence_pyerr(py, error.clone());
+    }
+    if let Some(error) = source.downcast_ref::<ck::KekulizeError>() {
+        return crate::canonical_chemistry_values::kekulize_pyerr(py, error.clone());
+    }
+    if let Some(error) = source.downcast_ref::<ck::SanitizeError>() {
+        return crate::canonical_chemistry_values::sanitize_pyerr(py, error.clone());
+    }
+    if let Some(error) = source.downcast_ref::<ck::MatrixError>() {
+        return crate::canonical_chemistry_values::matrix_pyerr(py, error.clone());
+    }
     if let Some(error) = source.downcast_ref::<ck::CoordinateInputError>() {
         return crate::canonical_coordinate_input::error_pyerr(py, error);
     }

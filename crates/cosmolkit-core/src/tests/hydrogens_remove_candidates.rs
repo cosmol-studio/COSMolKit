@@ -1,10 +1,6 @@
-#![cfg(feature = "op-contracts-strict")]
-
-use cosmolkit_core::{
-    __migration_hydrogens::{
-        remove_hydrogen_candidates, remove_hydrogen_candidates_with_query_state,
-    },
+use crate::{
     RemoveHsParams,
+    hydrogens::{remove_hydrogen_candidates, remove_hydrogen_candidates_with_query_state},
 };
 use cosmolkit_model::{
     Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondDirection, BondId, BondQueryPredicate,

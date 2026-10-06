@@ -1,15 +1,14 @@
-#![cfg(feature = "op-contracts-strict")]
-
-use cosmolkit_core::{
-    __migration_sanitize::{
-        AdjustHsError, HybridizationAssignment, adjust_hs, cleanup_chirality,
-        cleanup_invalid_atropisomers,
-    },
+use crate::{
     AtropisomerError, ChemistryProblemError, KekulizeError, KekulizeParams, RingFindType, RingInfo,
     RingSearchParams, SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage,
     StereoError, ValenceAssignment, ValenceError, ValenceModel, ValencePhase,
-    assign_valence_with_options_for_topology, detect_chemistry_problems, find_sssr, kekulize,
-    sanitize_topology,
+    assign_valence_with_options_for_topology,
+    atropisomer::cleanup_invalid_atropisomers,
+    detect_chemistry_problems, find_sssr,
+    hcount::{AdjustHsError, adjust_hs},
+    hybridization::HybridizationAssignment,
+    kekulize, sanitize_topology,
+    structure_tags::cleanup_chirality,
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, PropertyValue, StereoGroup,
@@ -1181,13 +1180,9 @@ fn sanitize_final_valence_kekulize_early_return_has_no_refreshed_rows() {
                 assert_eq!(result.final_valence, None);
                 assert!(result.refreshed_valence_atoms.is_empty());
             }
-            let result = cosmolkit_core::kekulize_selected_fragment(
-                &aromatic,
-                &[false; 6],
-                &[true; 6],
-                &params,
-            )
-            .unwrap();
+            let result =
+                crate::kekulize_selected_fragment(&aromatic, &[false; 6], &[true; 6], &params)
+                    .unwrap();
             calls += 1;
             assert_eq!(result.topology, aromatic);
             assert_eq!(result.final_valence, None);

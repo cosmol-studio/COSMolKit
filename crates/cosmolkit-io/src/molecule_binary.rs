@@ -35,7 +35,7 @@ const SECTION_MANIFEST: u16 = 1;
 const SECTION_MOLECULE_STATE: u16 = 2;
 const SECTION_DERIVED_STATE: u16 = 3;
 const SECTION_CANONICAL_STATE: u16 = 4;
-const CANONICAL_STATE_VERSION: u16 = 1;
+const CANONICAL_STATE_VERSION: u16 = 2;
 const MANIFEST_VERSION: u16 = 1;
 const MOLECULE_STATE_VERSION: u16 = 1;
 const DERIVED_STATE_VERSION: u16 = 1;
@@ -955,7 +955,7 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<BinaryRecord, PickleError> {
                 derived_state = Some(section.payload);
             }
             SECTION_CANONICAL_STATE => {
-                if archive_minor != 2 || section.version != CANONICAL_STATE_VERSION {
+                if archive_minor != 2 || !(1..=CANONICAL_STATE_VERSION).contains(&section.version) {
                     return Err(PickleError::UnsupportedSectionVersion {
                         section: section.id,
                         version: section.version,
@@ -964,7 +964,7 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<BinaryRecord, PickleError> {
                 if section.codec != SECTION_CODEC_RAW {
                     return Err(PickleError::InvalidArchive("canonical state codec".into()));
                 }
-                canonical_state = Some(section.payload);
+                canonical_state = Some((section.version, section.payload));
             }
             unknown => {
                 if section.is_required() {
@@ -1006,7 +1006,7 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<BinaryRecord, PickleError> {
     if archive_minor >= 2 {
         let data =
             canonical_state.ok_or(PickleError::MissingRequiredSection(SECTION_CANONICAL_STATE))?;
-        decode_canonical_state(data, &mut molecule)?;
+        decode_canonical_state(data.1, data.0, &mut molecule)?;
         let input = BinaryInput {
             topology: &molecule.topology,
             coordinates: &molecule.coordinates,
@@ -2410,6 +2410,7 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
             .collect(),
         conformers_3d,
         source_coordinate_dim,
+        source_conformer_order: None,
     };
 
     validate_computed(&props, &computed_props)?;
@@ -2864,6 +2865,16 @@ fn encode_canonical_state(mol: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError>
             }
         }
     }
+    w.write_bool(mol.coordinates.source_conformer_order.is_some());
+    if let Some(order) = &mol.coordinates.source_conformer_order {
+        w.write_count(order.len());
+        for dimension in order {
+            w.write_u8(match dimension {
+                CoordinateDimension::TwoD => 2,
+                CoordinateDimension::ThreeD => 3,
+            });
+        }
+    }
     w.into_inner()
 }
 
@@ -2875,7 +2886,11 @@ fn exact_count(r: &mut PickleReader<'_>, expected: usize) -> Result<(), PickleEr
     Ok(())
 }
 
-fn decode_canonical_state(data: &[u8], record: &mut BinaryRecord) -> Result<(), PickleError> {
+fn decode_canonical_state(
+    data: &[u8],
+    version: u16,
+    record: &mut BinaryRecord,
+) -> Result<(), PickleError> {
     let mut r = PickleReader::new(data);
     let bits = read_u16_le(&mut r)?;
     record.derived.valid_bits = Some(bits);
@@ -3089,6 +3104,27 @@ fn decode_canonical_state(data: &[u8], record: &mut BinaryRecord) -> Result<(), 
         props = props.with_sdf_property_list(SdfPropertyList::new(target, name, values));
     }
     record.properties = props;
+    record.coordinates.source_conformer_order = if version >= 2 && r.read_bool()? {
+        let count = r.read_count(1)?;
+        let mut order = Vec::with_capacity(count);
+        for _ in 0..count {
+            order.push(match r.read_u8()? {
+                2 => CoordinateDimension::TwoD,
+                3 => CoordinateDimension::ThreeD,
+                value => {
+                    return Err(PickleError::InvalidEnumValue {
+                        value,
+                        type_name: "CoordinateDimension",
+                    });
+                }
+            });
+        }
+        Some(order)
+    } else {
+        // Earlier CK canonical archives did not encode interleaving. Do not
+        // invent a first conformer when importing that unrecoverable state.
+        None
+    };
     if r.remaining() != 0 {
         return Err(PickleError::InvalidArchive(
             "trailing canonical state bytes".into(),
@@ -3104,6 +3140,57 @@ mod tests {
         AtomSpec, BondOrder, BondSpec, BondStereo, ChiralTag, Element, Hybridization,
         SdfPropertyList, SdfPropertyListTarget, StereoGroup, StereoGroupKind,
     };
+
+    #[test]
+    fn source_order_binary_roundtrip_keeps_cross_dimension_appends() {
+        let mut builder = DetachedFixtureBuilder::new();
+        builder.add_atom(AtomSpec::new(Element::C));
+        let mut record = builder.build().unwrap();
+        record
+            .coordinates
+            .record_source_conformer_append(CoordinateDimension::ThreeD)
+            .unwrap();
+        record
+            .coordinates
+            .conformers_3d
+            .push(Conformer3D::new(9, vec![[1.0, 2.0, -0.0]], false));
+        record
+            .coordinates
+            .record_source_conformer_append(CoordinateDimension::TwoD)
+            .unwrap();
+        record
+            .coordinates
+            .conformers_2d
+            .push(Conformer2D::new(9, vec![[3.0, 4.0]]));
+        record
+            .coordinates
+            .record_source_conformer_append(CoordinateDimension::ThreeD)
+            .unwrap();
+        record
+            .coordinates
+            .conformers_3d
+            .push(Conformer3D::new(0, vec![[5.0, 6.0, 7.0]], true));
+        let bytes = fixture_encode(&record).unwrap();
+        let restored = decode_molecule_binary(&bytes).unwrap();
+        assert_record_equal(&record, &restored, "source order transport");
+        match restored
+            .coordinates
+            .first_source_conformer()
+            .unwrap()
+            .unwrap()
+        {
+            cosmolkit_model::CoordinateSourceConformer::ThreeD(conformer) => {
+                assert_eq!(conformer.id(), 9);
+                assert!(!conformer.is_3d());
+                assert_eq!(
+                    conformer.coordinates()[0][2].to_bits(),
+                    (-0.0_f64).to_bits()
+                );
+            }
+            _ => panic!("first actual append remains first after decoding"),
+        }
+        assert_eq!(fixture_encode(&restored).unwrap(), bytes);
+    }
 
     #[test]
     fn native12_preserves_authoritative_sparse_ring_cache_extents() {
@@ -3784,6 +3871,7 @@ mod tests {
             conformers_2d: vec![],
             conformers_3d: vec![],
             source_coordinate_dim: None,
+            source_conformer_order: None,
         };
         let mol = BinaryRecord::from_blocks(topology, coord_block, mol_props)
             .expect("build molecule with property lists");
@@ -4149,7 +4237,13 @@ mod tests {
         let data = fixture_encode(&build_simple_methane()).unwrap();
         let (_, sections) = read_archive_sections(&data).unwrap();
         for (id, version, flags, codec, expected) in [
-            (SECTION_CANONICAL_STATE, 2, 1, 0, "version"),
+            (
+                SECTION_CANONICAL_STATE,
+                CANONICAL_STATE_VERSION + 1,
+                1,
+                0,
+                "version",
+            ),
             (SECTION_CANONICAL_STATE, 1, 0, 0, "required"),
             (SECTION_CANONICAL_STATE, 1, 2, 0, "flags"),
             (SECTION_CANONICAL_STATE, 1, 1, 1, "codec"),

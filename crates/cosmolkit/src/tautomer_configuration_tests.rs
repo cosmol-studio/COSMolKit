@@ -190,6 +190,7 @@ fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state
             true,
         )],
         source_coordinate_dim: None,
+        source_conformer_order: None,
     };
     let props = molecule
         .properties()

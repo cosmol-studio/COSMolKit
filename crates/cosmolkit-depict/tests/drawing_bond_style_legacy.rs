@@ -91,6 +91,7 @@ fn drawing_bond_style_legacy_product() {
                 conformers_2d: vec![Conformer2D::new(0, vec![[0.0, 0.0], [1.5, 0.0]])],
                 conformers_3d: vec![],
                 source_coordinate_dim: Some(CoordinateDimension::TwoD),
+                source_conformer_order: None,
             };
             let properties = MoleculeProperties::default();
             let valence = ValenceAssignment {

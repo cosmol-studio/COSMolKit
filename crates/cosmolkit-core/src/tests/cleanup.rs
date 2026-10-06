@@ -1,6 +1,6 @@
-use cosmolkit_core::{
-    __migration_cleanup::{CleanupError, CleanupParams, cleanup},
+use crate::{
     CanonicalRankError, ValenceError,
+    cleanup::{CleanupError, CleanupParams, cleanup},
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind,

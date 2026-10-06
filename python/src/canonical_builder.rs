@@ -81,6 +81,49 @@ pub(crate) struct MoleculeBuilder {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MoleculeBuilder {
+    fn bonds(&self) -> Vec<crate::canonical_atom_bond::Bond> {
+        self.inner
+            .bonds()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_atom_bond::Bond { inner })
+            .collect()
+    }
+    fn substance_groups(&self) -> Vec<crate::canonical_group_values::SubstanceGroup> {
+        self.inner
+            .substance_groups()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_group_values::SubstanceGroup { inner })
+            .collect()
+    }
+    fn stereo_groups(&self) -> Vec<crate::canonical_group_values::StereoGroup> {
+        self.inner
+            .stereo_groups()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_group_values::StereoGroup { inner })
+            .collect()
+    }
+    fn add_substance_group(
+        &mut self,
+        py: Python<'_>,
+        group: &crate::canonical_group_values::SubstanceGroup,
+    ) -> PyResult<crate::canonical_group_values::SubstanceGroupId> {
+        self.inner
+            .add_substance_group(group.inner.clone())
+            .map(|inner| crate::canonical_group_values::SubstanceGroupId { inner })
+            .map_err(|error| crate::drawing_binding::operation_pyerr(py, error))
+    }
+    fn add_stereo_group(
+        &mut self,
+        py: Python<'_>,
+        group: &crate::canonical_group_values::StereoGroup,
+    ) -> PyResult<usize> {
+        self.inner
+            .add_stereo_group(group.inner.clone())
+            .map_err(|error| crate::drawing_binding::operation_pyerr(py, error))
+    }
     #[staticmethod]
     fn new() -> Self {
         Self {
@@ -100,6 +143,77 @@ impl MoleculeBuilder {
         self.inner
             .set_atom_formal_charge(ck::AtomId::new(atom), charge)
             .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
+    }
+
+    fn remove_bond_between_atoms(
+        &mut self,
+        py: Python<'_>,
+        begin_atom: usize,
+        end_atom: usize,
+    ) -> PyResult<bool> {
+        self.inner
+            .remove_bond_between_atoms(ck::AtomId::new(begin_atom), ck::AtomId::new(end_atom))
+            .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
+    }
+
+    fn degree(&self, py: Python<'_>, atom_id: usize) -> PyResult<usize> {
+        self.inner
+            .degree(ck::AtomId::new(atom_id))
+            .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
+    }
+
+    fn neighbor_bonds(&self, py: Python<'_>, atom_id: usize) -> PyResult<Vec<usize>> {
+        self.inner
+            .neighbor_bonds(ck::AtomId::new(atom_id))
+            .map(|ids| ids.into_iter().map(ck::BondId::index).collect())
+            .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
+    }
+
+    fn bond_between_atoms(
+        &self,
+        py: Python<'_>,
+        begin_atom: usize,
+        end_atom: usize,
+    ) -> PyResult<Option<usize>> {
+        self.inner
+            .bond_between_atoms(ck::AtomId::new(begin_atom), ck::AtomId::new(end_atom))
+            .map(|id| id.map(ck::BondId::index))
+            .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
+    }
+
+    fn properties(&self) -> crate::canonical_property_values::MoleculeProperties {
+        crate::canonical_property_values::MoleculeProperties {
+            inner: self.inner.properties().clone(),
+        }
+    }
+
+    fn with_name(&self, name: String) -> Self {
+        Self {
+            inner: self.inner.clone().with_name(name),
+        }
+    }
+
+    fn with_property(&self, py: Python<'_>, key: String, value: String) -> PyResult<Self> {
+        self.inner
+            .clone()
+            .with_property(key, value)
+            .map(|inner| Self { inner })
+            .map_err(|e| crate::drawing_binding::operation_pyerr(py, e))
+    }
+
+    fn with_sdf_data_field(&self, key: String, value: String) -> Self {
+        Self {
+            inner: self.inner.clone().with_sdf_data_field(key, value),
+        }
+    }
+
+    fn with_properties(
+        &self,
+        properties: &crate::canonical_property_values::MoleculeProperties,
+    ) -> Self {
+        Self {
+            inner: self.inner.clone().with_properties(properties.inner.clone()),
+        }
     }
     fn set_bond_order(&mut self, py: Python<'_>, bond: usize, order: i64) -> PyResult<()> {
         let order = ck::BondOrder::from_rdkit_code(order)

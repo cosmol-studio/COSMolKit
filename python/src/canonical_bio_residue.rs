@@ -156,6 +156,45 @@ fn residue_info(index: usize) -> PyResult<ResidueInfo> {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
+#[pyfunction]
+fn residue_info_checked(index: usize) -> Option<ResidueInfo> {
+    ck::residue_info_checked(index).map(|inner| ResidueInfo { inner })
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct ResidueIdentity {
+    inner: ck::ResidueIdentity,
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
+#[pymethods]
+impl ResidueIdentity {
+    #[staticmethod]
+    fn new(name: String) -> Self {
+        Self {
+            inner: ck::ResidueIdentity::new(name),
+        }
+    }
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+    #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
+    fn code<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        enum_member(py, "ResidueCode", i64::from(self.inner.code().as_u16()))
+    }
+    fn info(&self) -> ResidueInfo {
+        ResidueInfo {
+            inner: self.inner.info(),
+        }
+    }
+    fn is_tabulated(&self) -> bool {
+        self.inner.is_tabulated()
+    }
+}
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pyfunction]
 #[gen_stub(override_return_type(type_repr = "ResidueCode"))]
@@ -251,9 +290,11 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         PyMappingProxy::new(py, kind_map.cast::<PyMapping>()?),
     )?;
     module.add_class::<ResidueInfo>()?;
+    module.add_class::<ResidueIdentity>()?;
     module.add_function(wrap_pyfunction!(find_residue_info, module)?)?;
     module.add_function(wrap_pyfunction!(find_residue_info_index, module)?)?;
     module.add_function(wrap_pyfunction!(residue_info, module)?)?;
+    module.add_function(wrap_pyfunction!(residue_info_checked, module)?)?;
     module.add_function(wrap_pyfunction!(residue_code, module)?)?;
     module.add_function(wrap_pyfunction!(expand_one_letter, module)?)?;
     module.add_function(wrap_pyfunction!(expand_one_letter_sequence, module)?)?;

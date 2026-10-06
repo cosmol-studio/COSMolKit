@@ -946,6 +946,7 @@ pub fn read_pdb_detached_with_params(
             .map(|(id, conformer)| Conformer3D::new(id, conformer.coordinates, conformer.is_3d))
             .collect(),
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     coordinate_block.validate_for_atom_count(topology.atoms.len())?;
     crate::postprocess_pdb_detached(

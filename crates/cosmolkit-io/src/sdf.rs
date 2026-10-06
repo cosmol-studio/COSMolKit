@@ -333,6 +333,9 @@ fn apply_coordinate_mode_to_block(coordinates: &mut CoordinateBlock, mode: SdfCo
                     .collect();
             }
             coordinates.conformers_3d.clear();
+            if let Some(order) = &mut coordinates.source_conformer_order {
+                *order = vec![CoordinateDimension::TwoD; coordinates.conformers_2d.len()];
+            }
             coordinates.source_coordinate_dim = Some(CoordinateDimension::TwoD);
         }
         SdfCoordinateMode::Require3D => {
@@ -350,6 +353,9 @@ fn apply_coordinate_mode_to_block(coordinates: &mut CoordinateBlock, mode: SdfCo
                     .collect();
             }
             coordinates.conformers_2d.clear();
+            if let Some(order) = &mut coordinates.source_conformer_order {
+                *order = vec![CoordinateDimension::ThreeD; coordinates.conformers_3d.len()];
+            }
             coordinates.source_coordinate_dim = Some(CoordinateDimension::ThreeD);
         }
     }
@@ -374,14 +380,7 @@ fn apply_sdf_coordinate_mode(
         MolBlockRecord::Query(query_record) => {
             let query = &query_record.query;
             let substance_groups = query_substance_groups(query).to_vec();
-            let mut coordinates = CoordinateBlock {
-                conformers_2d: query
-                    .coordinates_2d()
-                    .map(|rows| vec![Conformer2D::new(0, rows.to_vec())])
-                    .unwrap_or_default(),
-                conformers_3d: query.conformers_3d().to_vec(),
-                source_coordinate_dim: query_record.source_coordinate_dim,
-            };
+            let mut coordinates = query.coordinate_block(query_record.source_coordinate_dim);
             apply_coordinate_mode_to_block(&mut coordinates, mode);
             let mut rebuilt = QueryGraph::from_parts(
                 query.atoms().to_vec(),
@@ -391,6 +390,7 @@ fn apply_sdf_coordinate_mode(
                 coordinates.conformers_3d,
                 query.stereo_groups().to_vec(),
             )?;
+            rebuilt.set_source_conformer_order(coordinates.source_conformer_order)?;
             replace_query_substance_groups(&mut rebuilt, substance_groups)?;
             query_record.query = rebuilt;
             query_record.source_coordinate_dim = coordinates.source_coordinate_dim;
@@ -4115,6 +4115,7 @@ fn read_v2000_record_detached(
         } else {
             CoordinateDimension::TwoD
         }),
+        source_conformer_order: None,
     };
     // Behavior review: the source 1e-3 test and header/stereo precedence set
     // the effective flag; an XYZ carrier with false flag preserves sub-tolerance
@@ -4188,6 +4189,7 @@ fn read_v2000_record_detached(
             coordinates.conformers_3d.clone(),
             Vec::new(),
         )?;
+        query.set_source_conformer_order(coordinates.source_conformer_order.clone())?;
         replace_query_substance_groups(&mut query, substance_groups)?;
         // END RDKIT CPP FUNCTION
         return Ok(MolBlockRecord::Query(QueryMolBlockRecord {
@@ -6691,6 +6693,7 @@ fn read_v3000_record_detached(
         } else {
             CoordinateDimension::TwoD
         }),
+        source_conformer_order: None,
     };
     // Behavior review: one source conformer is retained even for zero atoms;
     // its atom-row order and all coordinate bits are retained. The effective
@@ -6766,6 +6769,7 @@ fn read_v3000_record_detached(
             coordinates.conformers_3d.clone(),
             stereo_groups,
         )?;
+        query.set_source_conformer_order(coordinates.source_conformer_order.clone())?;
         replace_query_substance_groups(&mut query, substance_groups)?;
         return Ok(MolBlockRecord::Query(QueryMolBlockRecord {
             query,

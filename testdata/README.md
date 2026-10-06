@@ -127,21 +127,15 @@ exact C result.
 ## Strict Test Commands
 
 ```bash
-cargo test -p cosmolkit-core --release --features op-contracts-strict
-
-cargo test -p cosmolkit-core --release --features op-contracts-strict \
-  --test rdkit_inchi_parity \
-  inchi_matches_pinned_rdkit_for_every_active_profile_row -- --exact
-
-COSMOLKIT_PARITY_PROFILE=smiles_5000 \
-  cargo test -p cosmolkit-core --release --features op-contracts-strict \
-  --test rdkit_inchi_parity \
-  inchi_matches_pinned_rdkit_for_every_active_profile_row -- --exact
+cargo test -p cosmolkit-core --release
+cargo test -p cosmolkit --release --features op-contracts-strict
 ```
 
-The focused commands above are successful only when the log reports exactly
-one executed test and `1 passed`; a filtered run with zero executed tests is
-not validation.
+Detached core regressions run without runtime feature selectors. Corpus
+preparation and comparison are owned by [`parity-tests`](../parity-tests/README.md),
+not by retired core integration targets. Enable `cosmolkit/op-contracts-strict`
+for strict public-runtime parity checks. A filtered run with zero executed
+tests is not validation.
 
 Feature-specific comparison boundaries are documented in
 [`VALIDATION.md`](../VALIDATION.md). The normative layout and

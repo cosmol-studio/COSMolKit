@@ -165,6 +165,7 @@ fn construct_selected_field<'a>(
         selected_props: &metadata,
         after,
         source_dimension: coordinates.source_coordinate_dim,
+        source_order: coordinates.source_conformer_order.as_deref(),
     };
     Ok(construct_force_field_with_props(
         &props.topology,
@@ -942,6 +943,7 @@ pub fn evaluate_mmff(
             selected_props: row.props(),
             after: &stored[selected + 1..],
             source_dimension: coordinates.source_coordinate_dim,
+            source_order: coordinates.source_conformer_order.as_deref(),
         };
         let mut field = construct_force_field_with_props(
             &props.topology,

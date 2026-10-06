@@ -134,6 +134,12 @@ fn literal(snapshot: &source::Snapshot) -> Result<PreparedDrawing, String> {
         {
             return Err("fixed conformer projection prerequisites".into());
         }
+        // The fixed source snapshot enumerates conformers in actual ROMol
+        // insertion order. Preserve that fact in the detached projection;
+        // coordinates, IDs, flags and all original comparisons stay intact.
+        coordinates
+            .record_source_conformer_append(cosmolkit_model::CoordinateDimension::TwoD)
+            .map_err(|e| e.to_string())?;
         coordinates.conformers_2d.push(Conformer2D::new(
             conformer.id as usize,
             conformer

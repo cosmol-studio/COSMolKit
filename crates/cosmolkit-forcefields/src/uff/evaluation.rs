@@ -113,6 +113,7 @@ pub fn evaluate_uff(
             selected_props: row.props(),
             after: &rows[index + 1..],
             source_dimension: coordinates.source_coordinate_dim,
+            source_order: coordinates.source_conformer_order.as_deref(),
         };
         let mut diagnostics = Vec::new();
         let mut field = super::builder::construct_force_field_with_automatic_typing_from_selected(

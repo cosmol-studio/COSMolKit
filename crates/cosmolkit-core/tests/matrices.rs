@@ -570,16 +570,40 @@ fn three_dimensional_errors_preserve_validation_and_selection_order() {
         )],
         ..CoordinateBlock::default()
     };
+    // Matrices.cpp get3DDistanceMat computes Euclidean length without a finite
+    // gate. Preserve the original input and assert the full symmetric result.
+    let original_bits = non_finite.conformers_3d[0]
+        .coordinates()
+        .iter()
+        .flat_map(|row| row.iter().map(|value| value.to_bits()))
+        .collect::<Vec<_>>();
+    let matrix =
+        distance_matrix_3d(&topology, &non_finite, &DistanceMatrix3dParams::default()).unwrap();
+    assert_eq!(matrix.dimension(), 2);
+    assert_eq!(matrix.values().len(), 4);
+    assert_eq!(matrix.values()[0].to_bits(), 0.0_f64.to_bits());
+    assert_eq!(matrix.values()[3].to_bits(), 0.0_f64.to_bits());
+    assert!(matrix.values()[1].is_nan());
+    assert_eq!(matrix.values()[1].to_bits(), matrix.values()[2].to_bits());
     assert_eq!(
-        distance_matrix_3d(&topology, &non_finite, &DistanceMatrix3dParams::default()),
-        Err(MatrixError::InvalidCoordinates(
-            CoordinateValidationError::NonFiniteCoordinate {
-                dimension: "3D",
-                conformer: 6,
-                atom: 1,
-                axis: "y",
+        distance_matrix_3d(
+            &topology,
+            &non_finite,
+            &DistanceMatrix3dParams {
+                conformer_id: Some(404),
+                ..DistanceMatrix3dParams::default()
             }
-        ))
+        ),
+        Err(MatrixError::ConformerNotFound { conformer_id: 404 })
+    );
+    assert_eq!(non_finite.conformers_3d[0].id(), 6);
+    assert_eq!(
+        non_finite.conformers_3d[0]
+            .coordinates()
+            .iter()
+            .flat_map(|row| row.iter().map(|value| value.to_bits()))
+            .collect::<Vec<_>>(),
+        original_bits
     );
 }
 

@@ -64,13 +64,116 @@ pub(crate) fn valence_pyerr(py: Python<'_>, source: ck::ValenceError) -> PyErr {
         E::HydrogenCountOverflow { .. } => "HydrogenCountOverflow",
         E::BadBondType { .. } => "BadBondType",
     };
-    crate::canonical_values::annotate(
+    let error = crate::canonical_values::annotate(
         py,
         ValenceError::new_err(source.to_string()),
         "valence",
         kind,
         &source,
-    )
+    );
+    let attributes = || -> PyResult<()> {
+        let value = error.value(py);
+        match &source {
+            E::PiElectronExplicitValenceCacheNotInitialized { atom }
+            | E::ExplicitValenceCacheNotInitialized { atom }
+            | E::ImplicitValenceCacheNotInitialized { atom } => {
+                value.setattr("atom", atom.index())?
+            }
+            E::PiElectronInvariant {
+                atom,
+                explicit_valence,
+                physical_bonds,
+            } => {
+                value.setattr("atom", atom.index())?;
+                value.setattr("explicit_valence", *explicit_valence)?;
+                value.setattr("physical_bonds", *physical_bonds)?;
+            }
+            E::InvalidValence {
+                atom,
+                atomic_number,
+                formal_charge,
+                phase,
+                calculated,
+                reason,
+                message,
+            } => {
+                value.setattr("atom", atom.index())?;
+                value.setattr("atomic_number", *atomic_number)?;
+                value.setattr("formal_charge", *formal_charge)?;
+                value.setattr("phase", format!("{phase:?}"))?;
+                value.setattr("calculated", *calculated)?;
+                value.setattr("reason", *reason)?;
+                value.setattr("message", message.as_str())?;
+            }
+            E::AtomOutOfRange { atom, atom_count } => {
+                value.setattr("atom", atom.index())?;
+                value.setattr("atom_count", *atom_count)?;
+            }
+            E::AdjacencyAtomOutOfRange {
+                atom,
+                neighbor_atom,
+                atom_count,
+            } => {
+                value.setattr("atom", atom.index())?;
+                value.setattr("neighbor_atom", *neighbor_atom)?;
+                value.setattr("atom_count", *atom_count)?;
+            }
+            E::AdjacencyBondOutOfRange {
+                atom,
+                bond,
+                bond_count,
+            } => {
+                value.setattr("atom", atom.index())?;
+                value.setattr("bond", bond.index())?;
+                value.setattr("bond_count", *bond_count)?;
+            }
+            E::AdjacencyEndpointMismatch {
+                atom,
+                neighbor_atom,
+                bond,
+                begin,
+                end,
+            } => {
+                value.setattr("atom", atom.index())?;
+                value.setattr("neighbor_atom", *neighbor_atom)?;
+                value.setattr("bond", bond.index())?;
+                value.setattr("begin", begin.index())?;
+                value.setattr("end", end.index())?;
+            }
+            E::InvalidExplicitValenceInput { atom, value: input } => {
+                value.setattr("atom", atom.index())?;
+                value.setattr("value", *input)?;
+            }
+            E::PeriodicTableLookup {
+                atomic_number,
+                field,
+            } => {
+                value.setattr("atomic_number", *atomic_number)?;
+                value.setattr("field", *field)?;
+            }
+            E::HydrogenCountOverflow {
+                atom,
+                explicit,
+                implicit,
+                neighbor_hydrogens,
+            } => {
+                value.setattr("atom", atom.index())?;
+                value.setattr("explicit", *explicit)?;
+                value.setattr("implicit", *implicit)?;
+                value.setattr("neighbor_hydrogens", *neighbor_hydrogens)?;
+            }
+            E::BadBondType { bond, order } => {
+                value.setattr("bond", bond.map(|id| id.index()))?;
+                value.setattr("order", enum_member(py, "BondOrder", *order as i64)?)?;
+            }
+            E::InvalidTopology { .. } => {}
+        }
+        Ok(())
+    };
+    match attributes() {
+        Ok(()) => error,
+        Err(error) => error,
+    }
 }
 pub(crate) fn enum_member<'py>(
     py: Python<'py>,
@@ -129,6 +232,14 @@ pub(crate) struct Atom {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Atom {
+    fn template_attachment_order(
+        &self,
+    ) -> Option<crate::canonical_group_values::TemplateAttachmentOrder> {
+        self.inner
+            .template_attachment_order()
+            .cloned()
+            .map(|inner| crate::canonical_group_values::TemplateAttachmentOrder { inner })
+    }
     fn id(&self) -> usize {
         self.inner.id().index()
     }

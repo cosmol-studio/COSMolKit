@@ -60,11 +60,14 @@ pub(crate) fn with_2d_coordinates_impl(params: &Coordinate2DParams) -> Result<()
     // block; identifier selection is the separate linear scan reviewed above.
     let mut coordinates = parts.checkout_coordinates()?;
     let id = if params.clear_existing_2d {
-        coordinates.conformers_2d.clear();
+        coordinates.clear_2d_conformers();
         0
     } else {
         next_2d_conformer_id(&coordinates).map_err(OperationError::Coordinate2D)?
     };
+    coordinates
+        .record_source_conformer_append(crate::CoordinateDimension::TwoD)
+        .map_err(OperationError::InvalidCoordinates)?;
     coordinates.conformers_2d.push(conformer.with_id(id));
     coordinates
         .validate_for_atom_count(atom_count)

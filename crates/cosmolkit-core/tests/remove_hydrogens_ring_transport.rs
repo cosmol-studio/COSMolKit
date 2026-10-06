@@ -114,6 +114,7 @@ fn coordinate_block(atom_count: usize) -> CoordinateBlock {
         conformers_2d: vec![coordinates_2d(atom_count)],
         conformers_3d: vec![coordinates_3d(atom_count)],
         source_coordinate_dim: None,
+        source_conformer_order: None,
     }
 }
 

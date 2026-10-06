@@ -853,6 +853,34 @@ pub(crate) struct TopologicalTorsionSettings {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TopologicalTorsionSettings {
+    #[pyo3(name = "set_torsion_atom_count")]
+    fn set_torsion_atom_count_method(&mut self, value: u32) -> PyResult<()> {
+        self.set_torsion_atom_count(value)
+    }
+    #[pyo3(name = "set_only_shortest_paths")]
+    fn set_only_shortest_paths_method(&mut self, value: bool) -> PyResult<()> {
+        self.set_only_shortest_paths(value)
+    }
+    #[pyo3(name = "set_include_chirality")]
+    fn set_include_chirality_method(&mut self, value: bool) -> PyResult<()> {
+        self.set_include_chirality(value)
+    }
+    #[pyo3(name = "set_count_simulation")]
+    fn set_count_simulation_method(&mut self, value: bool) -> PyResult<()> {
+        self.set_count_simulation(value)
+    }
+    #[pyo3(name = "set_fp_size")]
+    fn set_fp_size_method(&mut self, value: u32) -> PyResult<()> {
+        self.set_fp_size(value)
+    }
+    #[pyo3(name = "set_bits_per_feature")]
+    fn set_bits_per_feature_method(&mut self, value: u32) -> PyResult<()> {
+        self.set_bits_per_feature(value)
+    }
+    #[pyo3(name = "set_count_bounds")]
+    fn set_count_bounds_method(&mut self, value: Vec<u32>) -> PyResult<()> {
+        self.set_count_bounds(value)
+    }
     #[getter]
     fn torsion_atom_count(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner
@@ -1402,6 +1430,38 @@ pub(crate) struct MorganSettings {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MorganSettings {
+    #[pyo3(name = "set_radius")]
+    fn set_radius_method(&mut self, value: u32) -> PyResult<()> {
+        self.set_radius(value)
+    }
+    #[pyo3(name = "set_only_nonzero_invariants")]
+    fn set_only_nonzero_invariants_method(&mut self, value: bool) -> PyResult<()> {
+        self.set_only_nonzero_invariants(value)
+    }
+    #[pyo3(name = "set_include_redundant_environments")]
+    fn set_include_redundant_environments_method(&mut self, value: bool) -> PyResult<()> {
+        self.set_include_redundant_environments(value)
+    }
+    #[pyo3(name = "set_include_chirality")]
+    fn set_include_chirality_method(&mut self, value: bool) -> PyResult<()> {
+        self.set_include_chirality(value)
+    }
+    #[pyo3(name = "set_count_simulation")]
+    fn set_count_simulation_method(&mut self, value: bool) -> PyResult<()> {
+        self.set_count_simulation(value)
+    }
+    #[pyo3(name = "set_fp_size")]
+    fn set_fp_size_method(&mut self, value: u32) -> PyResult<()> {
+        self.set_fp_size(value)
+    }
+    #[pyo3(name = "set_bits_per_feature")]
+    fn set_bits_per_feature_method(&mut self, value: u32) -> PyResult<()> {
+        self.set_bits_per_feature(value)
+    }
+    #[pyo3(name = "set_count_bounds")]
+    fn set_count_bounds_method(&mut self, value: Vec<u32>) -> PyResult<()> {
+        self.set_count_bounds(value)
+    }
     #[getter]
     fn radius(&self, py: Python<'_>) -> PyResult<u32> {
         self.inner

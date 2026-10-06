@@ -48,10 +48,10 @@
 ## Validation and Handoff
 
 - After changing tests, immediately run the most specific relevant tests. Retain commands, exit codes, counts, and failures. When the plan specifies `run_unit_validation.py`, freeze targets/features first and do not bypass the runner.
-- For core changes, run `cargo check -p cosmolkit-core --features op-contracts-strict` and `cargo test -p cosmolkit-core --release --features op-contracts-strict`.
+- For core changes, run `cargo check -p cosmolkit-core` and `cargo test -p cosmolkit-core --release`. Core has no runtime-check features; private algorithm regressions run as ordinary unit tests, without public test bridges or feature gates.
 - For runtime, operation, or macro changes, also run affected-crate tests, `cargo check -p cosmolkit --features op-contracts-strict`, and `cargo test -p cosmolkit --release --features op-contracts-strict`. Explicitly enable affected capability features so cfg gates do not hide coverage.
 - For operation integration or visibility changes, run `cargo test -p cosmolkit --release --test migration_run_privacy`. Retain real-module-layout default/strict compile-pass and compile-fail cases; text checks or runtime rejection cannot replace compile-time isolation.
-- Final cross-crate validation: `cargo test --workspace --release --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict`. Enable runtime strict on `cosmolkit`; the core feature is not a substitute.
+- Final cross-crate validation: `cargo test --workspace --release --features cosmolkit/op-contracts-strict`. Enable runtime strict on `cosmolkit`; detached core algorithms do not own runtime contract checks.
 - Use stage-specific exclusions only as prescribed by the plan. Do not report a stage pass as a full workspace pass or silently exclude members from final validation.
 - Small focused debugging may use debug builds. Full, large, and parity suites use release with strict checks. Run `cargo fmt --all` after Rust edits.
 - Release builds use default features unless additional checks are explicitly requested. Building does not authorize publishing.

@@ -129,6 +129,7 @@ fn chain_molecule() -> Molecule {
             .with_prop("source", "three-d"),
         ],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     let properties = MoleculeProperties::default()
         .with_name("draw-public")
@@ -155,6 +156,7 @@ fn chain_molecule_with_conformer_ids(two_d_ids: &[usize], three_d_ids: &[usize])
             })
             .collect(),
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     Molecule::from_parts(
         source.topology().clone(),

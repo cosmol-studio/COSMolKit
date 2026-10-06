@@ -1,5 +1,3 @@
-#![cfg(feature = "op-contracts-strict")]
-
 use cosmolkit_core::{
     RingSearchParams, ValenceModel, assign_legacy_stereochemistry, assign_valence_for_topology,
     symmetrized_sssr,

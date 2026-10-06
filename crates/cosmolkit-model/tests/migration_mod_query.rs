@@ -756,7 +756,7 @@ fn query_graph_reports_stereo_coordinate_and_adjacency_errors() {
         ))
     ));
 
-    let duplicate_coordinate_error = QueryGraph::from_parts(
+    let duplicate_coordinates = QueryGraph::from_parts(
         vec![carbon(0)],
         Vec::new(),
         BTreeMap::new(),
@@ -767,15 +767,19 @@ fn query_graph_reports_stereo_coordinate_and_adjacency_errors() {
         ],
         Vec::new(),
     );
-    assert!(matches!(
-        duplicate_coordinate_error,
-        Err(QueryGraphError::CoordinateValidation(
-            CoordinateValidationError::DuplicateConformerId {
-                dimension: "3D",
-                id: 4
-            }
-        ))
-    ));
+    // ROMol::addConformer(conf, false) appends duplicate IDs in source order.
+    let duplicate_coordinates = duplicate_coordinates.unwrap();
+    assert_eq!(duplicate_coordinates.conformers_3d().len(), 2);
+    assert_eq!(duplicate_coordinates.conformers_3d()[0].id(), 4);
+    assert_eq!(duplicate_coordinates.conformers_3d()[1].id(), 4);
+    assert_eq!(
+        duplicate_coordinates.conformers_3d()[0].coordinates(),
+        &[[0.0, 0.0, 0.0]]
+    );
+    assert_eq!(
+        duplicate_coordinates.conformers_3d()[1].coordinates(),
+        &[[1.0, 0.0, 0.0]]
+    );
 
     let stereo_group_atom_error = QueryGraph::from_parts(
         vec![carbon(0)],

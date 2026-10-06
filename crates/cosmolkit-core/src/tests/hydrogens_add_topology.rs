@@ -1,8 +1,6 @@
-#![cfg(feature = "op-contracts-strict")]
-
-use cosmolkit_core::{
-    __migration_hydrogens::{AddedHydrogenKind, HydrogenError, add_hydrogens_topology},
+use crate::{
     AddHsParams, add_hydrogens_topology_with_query_state,
+    hydrogens::{AddedHydrogenKind, HydrogenError, add_hydrogens_topology},
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
@@ -41,9 +39,7 @@ fn propane() -> TopologyBlock {
     )
 }
 
-fn selected_parents(
-    result: &cosmolkit_core::__migration_hydrogens::AddHydrogensTopologyResult,
-) -> Vec<usize> {
+fn selected_parents(result: &crate::hydrogens::AddHydrogensTopologyResult) -> Vec<usize> {
     result
         .additions
         .iter()

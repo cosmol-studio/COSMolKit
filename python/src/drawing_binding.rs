@@ -1230,6 +1230,27 @@ impl Molecule {
             .collect()
     }
 
+    fn atom(&self, atom_id: usize) -> Option<crate::canonical_atom_bond::Atom> {
+        let inner = self.inner.atom(ck::AtomId::new(atom_id))?.clone();
+        let metadata = self.inner.atom_metadata(true);
+        Some(crate::canonical_atom_bond::Atom {
+            inner,
+            degree: self.inner.topology().adjacency.neighbors_of(atom_id).len(),
+            metadata: metadata.map(|rows| rows[atom_id].clone()),
+        })
+    }
+
+    fn bond(&self, bond_id: usize) -> Option<crate::canonical_atom_bond::Bond> {
+        self.inner
+            .bond(ck::BondId::new(bond_id))
+            .cloned()
+            .map(|inner| crate::canonical_atom_bond::Bond { inner })
+    }
+
+    fn property(&self, key: &str) -> Option<&str> {
+        self.inner.property(key)
+    }
+
     fn bonds(&self) -> Vec<crate::canonical_atom_bond::Bond> {
         self.inner
             .bonds()
@@ -1360,6 +1381,433 @@ impl Molecule {
             .with_assigned_valence()
             .map(|inner| Self { inner })
             .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_assigned_valence_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_valence::ValenceParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_assigned_valence_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_valence_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .assign_valence_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_valence_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &crate::canonical_valence::ValenceParams,
+    ) -> PyResult<()> {
+        self.inner
+            .assign_valence_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn has_valence_violation(&self, py: Python<'_>, atom_id: usize) -> PyResult<bool> {
+        self.inner
+            .has_valence_violation(ck::AtomId::new(atom_id))
+            .map_err(|e| crate::canonical_atom_bond::valence_pyerr(py, e))
+    }
+    fn with_kekulized_bonds(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .with_kekulized_bonds()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn kekulize_bonds_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .kekulize_bonds_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_kekulized_bonds_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::KekulizeParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_kekulized_bonds_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn kekulize_bonds_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::KekulizeParams,
+    ) -> PyResult<()> {
+        self.inner
+            .kekulize_bonds_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_assigned_aromaticity(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .with_assigned_aromaticity()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_aromaticity_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .assign_aromaticity_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_assigned_aromaticity_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::AromaticityParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_assigned_aromaticity_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_aromaticity_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::AromaticityParams,
+    ) -> PyResult<()> {
+        self.inner
+            .assign_aromaticity_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_assigned_radicals(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .with_assigned_radicals()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_radicals_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .assign_radicals_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_assigned_rings(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .with_assigned_rings()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_rings_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .assign_rings_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_assigned_ring_families(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .with_assigned_ring_families()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_ring_families_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .assign_ring_families_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_assigned_ring_families_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::RingSearchParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_assigned_ring_families_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_ring_families_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::RingSearchParams,
+    ) -> PyResult<()> {
+        self.inner
+            .assign_ring_families_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_chiral_tags_from_structure(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .with_chiral_tags_from_structure()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_chiral_tags_from_structure_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .assign_chiral_tags_from_structure_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_chiral_tags_from_structure_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::StructureTagParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_chiral_tags_from_structure_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn assign_chiral_tags_from_structure_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::StructureTagParams,
+    ) -> PyResult<()> {
+        self.inner
+            .assign_chiral_tags_from_structure_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn without_hydrogens(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .without_hydrogens()
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn remove_hydrogens_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .remove_hydrogens_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn without_hydrogens_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::RemoveHsParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .without_hydrogens_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn remove_hydrogens_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::RemoveHsParams,
+    ) -> PyResult<()> {
+        self.inner
+            .remove_hydrogens_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_hydrogens_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::AddHsParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_hydrogens_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn add_hydrogens_(&mut self, py: Python<'_>) -> PyResult<()> {
+        self.inner
+            .add_hydrogens_()
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn add_hydrogens_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::AddHsParams,
+    ) -> PyResult<()> {
+        self.inner
+            .add_hydrogens_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_3d_conformer_with_params(
+        &self,
+        py: Python<'_>,
+        params: &EmbedParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_3d_conformer_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn embed_3d_conformer_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &EmbedParams,
+    ) -> PyResult<()> {
+        self.inner
+            .embed_3d_conformer_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_3d_conformer_result_with_params(
+        &self,
+        py: Python<'_>,
+        params: &EmbedParams,
+    ) -> PyResult<EmbedMoleculeResult> {
+        self.inner
+            .with_3d_conformer_result_with_params(&params.inner)
+            .map(|inner| EmbedMoleculeResult { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn embed_3d_conformer_result_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &EmbedParams,
+    ) -> PyResult<EmbedMoleculeResult> {
+        self.inner
+            .embed_3d_conformer_result_with_params_(&params.inner)
+            .map(|inner| EmbedMoleculeResult { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_3d_conformers_with_params(
+        &self,
+        py: Python<'_>,
+        num_confs: u32,
+        params: &EmbedParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_3d_conformers_with_params(num_confs, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn embed_3d_conformers_with_params_(
+        &mut self,
+        py: Python<'_>,
+        num_confs: u32,
+        params: &EmbedParams,
+    ) -> PyResult<()> {
+        self.inner
+            .embed_3d_conformers_with_params_(num_confs, &params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_3d_conformers_result_with_params(
+        &self,
+        py: Python<'_>,
+        num_confs: u32,
+        params: &EmbedParams,
+    ) -> PyResult<EmbedMultipleConfsResult> {
+        self.inner
+            .with_3d_conformers_result_with_params(num_confs, &params.inner)
+            .map(|inner| EmbedMultipleConfsResult { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn embed_3d_conformers_result_with_params_(
+        &mut self,
+        py: Python<'_>,
+        num_confs: u32,
+        params: &EmbedParams,
+    ) -> PyResult<EmbedMultipleConfsResult> {
+        self.inner
+            .embed_3d_conformers_result_with_params_(num_confs, &params.inner)
+            .map(|inner| EmbedMultipleConfsResult { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn distance_matrix(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_chemistry_values::DenseMatrix> {
+        self.inner
+            .distance_matrix()
+            .map(|inner| crate::canonical_chemistry_values::DenseMatrix { inner })
+            .map_err(|e| crate::canonical_chemistry_values::matrix_pyerr(py, e))
+    }
+    fn distance_matrix_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::DistanceMatrixParams,
+    ) -> PyResult<crate::canonical_chemistry_values::DenseMatrix> {
+        self.inner
+            .distance_matrix_with_params(&params.inner)
+            .map(|inner| crate::canonical_chemistry_values::DenseMatrix { inner })
+            .map_err(|e| crate::canonical_chemistry_values::matrix_pyerr(py, e))
+    }
+    fn distance_matrix_3d(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_chemistry_values::DenseMatrix> {
+        self.inner
+            .distance_matrix_3d()
+            .map(|inner| crate::canonical_chemistry_values::DenseMatrix { inner })
+            .map_err(|e| crate::canonical_chemistry_values::matrix_pyerr(py, e))
+    }
+    fn distance_matrix_3d_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::DistanceMatrix3dParams,
+    ) -> PyResult<crate::canonical_chemistry_values::DenseMatrix> {
+        self.inner
+            .distance_matrix_3d_with_params(&params.inner)
+            .map(|inner| crate::canonical_chemistry_values::DenseMatrix { inner })
+            .map_err(|e| crate::canonical_chemistry_values::matrix_pyerr(py, e))
+    }
+    fn with_atom_position(
+        &self,
+        py: Python<'_>,
+        atom: usize,
+        position: [f64; 3],
+    ) -> PyResult<Self> {
+        self.inner
+            .with_atom_position(ck::AtomId::new(atom), position)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn with_atom_position_with_params(
+        &self,
+        py: Python<'_>,
+        atom: usize,
+        position: [f64; 3],
+        params: &crate::canonical_chemistry_values::AtomPositionParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .with_atom_position_with_params(ck::AtomId::new(atom), position, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn set_atom_position_(
+        &mut self,
+        py: Python<'_>,
+        atom: usize,
+        position: [f64; 3],
+    ) -> PyResult<()> {
+        self.inner
+            .set_atom_position_(ck::AtomId::new(atom), position)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn set_atom_position_with_params_(
+        &mut self,
+        py: Python<'_>,
+        atom: usize,
+        position: [f64; 3],
+        params: &crate::canonical_chemistry_values::AtomPositionParams,
+    ) -> PyResult<()> {
+        self.inner
+            .set_atom_position_with_params_(ck::AtomId::new(atom), position, &params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn sanitize_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::SanitizeParams,
+    ) -> PyResult<Self> {
+        self.inner
+            .sanitize_with_params(&params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn sanitize_with_params_(
+        &mut self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::SanitizeParams,
+    ) -> PyResult<()> {
+        self.inner
+            .sanitize_with_params_(&params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn detect_chemistry_problems(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_chemistry_values::ChemistryProblemReport> {
+        self.inner
+            .detect_chemistry_problems()
+            .map(|inner| crate::canonical_chemistry_values::ChemistryProblemReport { inner })
+            .map_err(|e| crate::canonical_chemistry_values::sanitize_pyerr(py, e))
+    }
+    fn detect_chemistry_problems_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_chemistry_values::SanitizeParams,
+    ) -> PyResult<crate::canonical_chemistry_values::ChemistryProblemReport> {
+        self.inner
+            .detect_chemistry_problems_with_params(&params.inner)
+            .map(|inner| crate::canonical_chemistry_values::ChemistryProblemReport { inner })
+            .map_err(|e| crate::canonical_chemistry_values::sanitize_pyerr(py, e))
     }
     fn with_uff_optimized(
         &self,
@@ -1897,6 +2345,66 @@ impl Molecule {
             .map_err(|e| smiles_write_pyerr(py, e))
     }
 
+    fn to_cx_smiles(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_cx_smiles()
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
+    fn to_fragment_smiles(&self, py: Python<'_>, atoms: Vec<usize>) -> PyResult<String> {
+        let atoms = atoms.into_iter().map(ck::AtomId::new).collect::<Vec<_>>();
+        self.inner
+            .to_fragment_smiles(&atoms)
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
+    fn to_fragment_cx_smiles(&self, py: Python<'_>, atoms: Vec<usize>) -> PyResult<String> {
+        let atoms = atoms.into_iter().map(ck::AtomId::new).collect::<Vec<_>>();
+        self.inner
+            .to_fragment_cx_smiles(&atoms)
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
+    fn to_cx_smiles_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_smiles_writer::CxSmilesWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_cx_smiles_with_params(&params.inner)
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
+    fn to_fragment_smiles_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_smiles_writer::FragmentSmilesWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_fragment_smiles_with_params(&params.inner)
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
+    fn to_fragment_cx_smiles_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_smiles_writer::FragmentCxSmilesWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_fragment_cx_smiles_with_params(&params.inner)
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
+    fn to_random_smiles(&self, py: Python<'_>, count: u32, seed: u32) -> PyResult<Vec<String>> {
+        self.inner
+            .to_random_smiles(count, seed)
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
+    fn to_random_smiles_with_params(
+        &self,
+        py: Python<'_>,
+        count: u32,
+        seed: u32,
+        params: &crate::canonical_smiles_writer::RandomSmilesWriteParams,
+    ) -> PyResult<Vec<String>> {
+        self.inner
+            .to_random_smiles_with_params(count, seed, &params.inner)
+            .map_err(|e| smiles_write_pyerr(py, e))
+    }
     fn atom_pair_fingerprint(&self, py: Python<'_>) -> PyResult<Fingerprint> {
         self.inner
             .atom_pair_fingerprint()
@@ -3114,6 +3622,9 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Coordinate2DParams>()?;
     crate::canonical_descriptor_binding::register(module)?;
     crate::canonical_values::register(module)?;
+    crate::canonical_smiles_writer::register(module)?;
+    crate::canonical_valence::register(module)?;
+    crate::canonical_chemistry_values::register(module)?;
     crate::canonical_path_score::register(module)?;
     crate::canonical_maccs::register(module)?;
     crate::canonical_layered::register(module)?;
@@ -3129,6 +3640,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_binary::register(module)?;
     crate::canonical_molecular_hash::register(module)?;
     crate::canonical_builder::register(module)?;
+    crate::canonical_group_values::register(module)?;
     crate::canonical_coordinate_input::register(module)?;
     crate::canonical_stereo_queries::register(module)?;
     crate::tautomer_binding::register(module)?;

@@ -28,7 +28,8 @@ pub use atom::{
 pub use bond::{Bond, BondId, BondSpec, BondValueError, ordered_bond_properties};
 pub use cip::{CipDescriptor, CipDescriptorError};
 pub use coordinates::{
-    Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, CoordinateValidationError,
+    Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, CoordinateSourceConformer,
+    CoordinateValidationError, first_non_finite_coordinate,
 };
 pub use mapping::{AtomMapping, BondMapping, MappingValidationError, TopologyMapping};
 pub use properties::{

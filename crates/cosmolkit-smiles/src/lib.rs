@@ -79,6 +79,8 @@ impl SmilesRecordView<'_> {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmilesParseError {
+    #[error("invalid CX coordinate state: {0}")]
+    Coordinates(#[source] cosmolkit_model::CoordinateValidationError),
     #[error("unsupported SMILES token '{token}' at byte {offset}")]
     Unsupported { token: char, offset: usize },
     #[error("invalid SMILES syntax at byte {offset}: {message}")]

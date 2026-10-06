@@ -31,6 +31,17 @@ def shell_steps():
 
 
 class CoverageWorkflowTests(unittest.TestCase):
+    def test_core_has_no_runtime_features_or_forwarders(self):
+        core = tomllib.loads((ROOT / "crates/cosmolkit-core/Cargo.toml").read_text())
+        self.assertEqual(core.get("features", {}), {})
+        facade = tomllib.loads((ROOT / "crates/cosmolkit/Cargo.toml").read_text())
+        self.assertEqual(
+            facade["features"]["op-contracts-strict"],
+            ["runtime-invariants", "op-contracts"],
+        )
+        for feature_values in facade["features"].values():
+            self.assertFalse(any("cosmolkit-core" in value and "/op-contracts" in value for value in feature_values))
+
     def test_feature_matrix_uses_declared_leaf_capabilities_and_user_bundles(self):
         workflow = (ROOT / ".github/workflows/features.yml").read_text()
         self.assertIn("cargo test -p cosmolkit --no-default-features --release --features op-contracts-strict", workflow)
@@ -67,7 +78,7 @@ class CoverageWorkflowTests(unittest.TestCase):
             "Build libraries before fetching third-party test sources": "cargo build",
             "Run all default crate regression suites with coverage": "cargo test",
             "Prepare and validate all reference values": "cargo build",
-            "Run independent Cargo corpus tests with coverage": "cargo test",
+            "Run all parity integration targets with coverage": "cargo test",
         }
         for name, command in stages.items():
             with self.subTest(step=name):
@@ -76,16 +87,19 @@ class CoverageWorkflowTests(unittest.TestCase):
                 self.assertIn('eval "$coverage_env"', script)
                 self.assertLess(script.index('export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"'), script.index(command))
                 self.assertIn("--release", script)
-                self.assertIn("cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict", script)
+                self.assertIn("cosmolkit/op-contracts-strict", script)
                 self.assertNotIn("--no-clean", script)
                 self.assertNotIn("--no-report", script)
         self.assertNotIn("--test reference_parity", steps["Run all default crate regression suites with coverage"])
+        parity = steps["Run all parity integration targets with coverage"]
+        self.assertIn("cargo test -p cosmolkit-parity-tests", parity)
+        self.assertIn("--test '*' --no-fail-fast", parity)
 
     def test_report_is_separate_and_test_failures_remain_failures(self):
         steps = shell_steps()
         self.assertIn("cargo llvm-cov report", steps["Generate coverage reports"])
         self.assertIn('exit "$status"', steps["Run all default crate regression suites with coverage"])
-        self.assertIn("set -o pipefail", steps["Run independent Cargo corpus tests with coverage"])
+        self.assertIn("set -o pipefail", steps["Run all parity integration targets with coverage"])
         self.assertIn("run: exit 1", (ROOT / ".github/workflows/coverage.yml").read_text())
 
 

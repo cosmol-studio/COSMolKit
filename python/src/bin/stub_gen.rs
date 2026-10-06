@@ -1,7 +1,13 @@
 fn main() -> pyo3_stub_gen::Result<()> {
-    cosmolkit_py::stub_info()?.generate()?;
+    // Render in memory: a failed contract check must not replace the last stub.
+    let info = cosmolkit_py::stub_info()?;
+    if info.modules.len() != 1 || !info.modules.contains_key("cosmolkit") {
+        return Err(
+            std::io::Error::other("expected the canonical flat cosmolkit stub module").into(),
+        );
+    }
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("cosmolkit.pyi");
-    let mut text = std::fs::read_to_string(&path)?;
+    let mut text = info.modules["cosmolkit"].format_with_config(info.config.use_type_statement);
     // PyO3 eq_int class enums expose typed variants and integer conversion,
     // not enum.Enum.name/value. Keep the generated TAU/property stubs faithful
     // to their actual native classes rather than promising nonexistent fields.
@@ -10,6 +16,9 @@ fn main() -> pyo3_stub_gen::Result<()> {
         "CoordinateZPolicy",
         "PropertyValueKind",
         "SdfPropertyListTarget",
+        "ValenceModel",
+        "AromaticityModel",
+        "SanitizeStage",
     ] {
         let prefix = format!("class {name}(enum.Enum):\n");
         assert_eq!(
@@ -99,9 +108,39 @@ _binding_profile: builtins.str
         "CoordinateInputError",
         "Coordinate3DReadError",
         "AlignmentError",
+        "SanitizeError",
+        "MatrixError",
+        "ChemistryProblemError",
+        "KekulizeError",
     ] {
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
+    }
+    for (name, fields) in [
+        (
+            "SanitizeError",
+            "    bits: builtins.int\n    unknown_bits: builtins.int\n    stage: SanitizeStage\n",
+        ),
+        (
+            "MatrixError",
+            "    position: builtins.int\n    atom: builtins.int\n    atom_count: builtins.int\n    bond: builtins.int\n    bond_count: builtins.int\n    first_position: builtins.int\n    second_position: builtins.int\n    endpoint: builtins.str\n    order: BondOrder\n    conformer_id: builtins.int\n    dimension: builtins.int\n",
+        ),
+        (
+            "ValenceError",
+            "    atom: builtins.int\n    atomic_number: builtins.int\n    formal_charge: builtins.int\n    phase: builtins.str\n    calculated: typing.Optional[builtins.int]\n    reason: builtins.str\n    message: builtins.str\n    atom_count: builtins.int\n    neighbor_atom: builtins.int\n    bond: typing.Optional[builtins.int]\n    bond_count: builtins.int\n    begin: builtins.int\n    end: builtins.int\n    value: builtins.int\n    field: builtins.str\n    explicit_valence: builtins.int\n    physical_bonds: builtins.int\n    explicit: builtins.int\n    implicit: builtins.int\n    neighbor_hydrogens: builtins.int\n    order: BondOrder\n",
+        ),
+        (
+            "KekulizeError",
+            "    expected: builtins.int\n    actual: builtins.int\n    atom: builtins.int\n    atom_count: builtins.int\n    field: builtins.str\n    begin: builtins.int\n    end: builtins.int\n    questions: builtins.int\n    bit_width: builtins.int\n    problem_atoms: typing.List[builtins.int]\n    before: builtins.int\n    after: builtins.int\n    bond: builtins.int\n    detail: builtins.str\n",
+        ),
+    ] {
+        let prefix = format!(
+            "class {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"
+        );
+        text = text.replace(
+            &prefix,
+            &format!("{prefix}    # Fields exist only on applicable Rust variants.\n{fields}"),
+        );
     }
     // Pattern publishes a ValueError subclass; project the attributes set by
     // canonical_pattern::pattern_pyerr, with variant-specific context fields.
@@ -275,7 +314,67 @@ _binding_profile: builtins.str
         "__all__ = [\n",
         "__all__ = [\n    \"AtomCodeExplanationError\",\n",
     );
+    check_registered_python_callables(&text)?;
     std::fs::write(path, text)?;
+    Ok(())
+}
+
+fn check_registered_python_callables(text: &str) -> pyo3_stub_gen::Result<()> {
+    use ::cosmolkit::{BINDING_CONTRACT, BindingItem, BindingOwner};
+    use pyo3::{prelude::*, types::PyModule};
+
+    // The linked registry already applies the facade's actual cfg gates.
+    // Neither Experimental status nor a missing binding exempts an enabled row.
+    let entries = BINDING_CONTRACT
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "semantic_id": entry.semantic_id,
+                "python_name": entry.python_name,
+                "feature": entry.feature,
+                "item": match entry.item {
+                    BindingItem::Callable => "callable",
+                    BindingItem::Type => "type",
+                },
+                "owner": match entry.owner {
+                    BindingOwner::Module => "module",
+                    BindingOwner::Molecule => "molecule",
+                    BindingOwner::Type => "type",
+                },
+            })
+        })
+        .collect::<Vec<_>>();
+    let contract = serde_json::to_string(&entries)?;
+    let code = std::ffi::CString::new(include_str!(
+        "../../../dev/tools/check_python_stub_contract.py"
+    ))?;
+    Python::initialize();
+    let missing = Python::attach(|py| -> PyResult<Vec<String>> {
+        let checker = PyModule::from_code(
+            py,
+            &code,
+            c"check_python_stub_contract.py",
+            c"_stub_contract",
+        )?;
+        checker
+            .getattr("check_contract")?
+            .call1((text, contract))?
+            .extract()
+    })?;
+    if !missing.is_empty() {
+        return Err(std::io::Error::other(format!(
+            "Python binding contract failed: {} registered callables missing from generated stubs:\n{}\nImplement the registered Python projections; no stub was written.",
+            missing.len(),
+            missing.join("\n"),
+        )).into());
+    }
+    eprintln!(
+        "Python binding contract: all {} enabled registered callables present",
+        BINDING_CONTRACT
+            .iter()
+            .filter(|entry| entry.item == BindingItem::Callable)
+            .count()
+    );
     Ok(())
 }
 
@@ -320,6 +419,7 @@ fn expose_bio_types(mut text: String) -> String {
     definitions.push_str("\nRESIDUE_CODE_MAP: typing.Mapping[builtins.str, ResidueCode]\nRESIDUE_INFO_KIND_MAP: typing.Mapping[builtins.str, ResidueInfoKind]\n");
     for (name, base) in [
         ("BioReadError", "builtins.ValueError"),
+        ("BioStructureError", "builtins.ValueError"),
         ("BioPdbReadError", "BioReadError"),
         ("BioMmcifReadError", "BioReadError"),
         ("ProteinReadError", "BioReadError"),

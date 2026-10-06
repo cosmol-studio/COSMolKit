@@ -279,6 +279,7 @@ fn drawing_line22_probe_same_prepared_renderer() {
         )],
         conformers_3d: vec![],
         source_coordinate_dim: None,
+        source_conformer_order: None,
     };
     let properties = MoleculeProperties::default();
     let valence = literal_valence();

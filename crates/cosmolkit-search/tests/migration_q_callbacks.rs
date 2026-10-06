@@ -394,6 +394,7 @@ fn q89_coordinate_callback_selects_conformers_tolerance_and_three_axes() {
             Conformer3D::new(13, vec![[0.0, 0.0, 2.0]], false),
         ],
         source_coordinate_dim: None,
+        source_conformer_order: None,
     };
 
     assert!(!coordinate_matches(

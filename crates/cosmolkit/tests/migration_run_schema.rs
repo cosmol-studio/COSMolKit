@@ -404,10 +404,12 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         ]);
     }
     if cfg!(feature = "cap-valence") {
+        expected.extend(["types.ValenceModel", "types.ValenceParams"]);
+    }
+    // Shared model vocabulary exists independently of valence computation.
+    expected.push("types.ValenceError");
+    if cfg!(feature = "cap-valence") {
         expected.extend([
-            "types.ValenceModel",
-            "types.ValenceParams",
-            "types.ValenceError",
             "Molecule.with_assigned_valence",
             "Molecule.with_assigned_valence_with_params",
             "Molecule.assign_valence_",
@@ -1078,17 +1080,15 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         }
     }
     {
-        let mut additions = Vec::new();
+        let mut additions = vec!["types.AtomMetadata"];
         if cfg!(feature = "cap-valence") {
-            additions.extend(["types.AtomMetadata", "Molecule.atom_metadata"]);
+            additions.push("Molecule.atom_metadata");
         }
-        if !additions.is_empty() {
-            let insertion = expected
-                .iter()
-                .position(|id| *id == "types.Molecule")
-                .expect("original fixture anchor types.Molecule");
-            expected.splice(insertion..insertion, additions);
-        }
+        let insertion = expected
+            .iter()
+            .position(|id| *id == "types.Molecule")
+            .expect("original fixture anchor types.Molecule");
+        expected.splice(insertion..insertion, additions);
     }
     {
         let mut additions = Vec::new();

@@ -1,5 +1,3 @@
-#![cfg(feature = "op-contracts-strict")]
-
 use cosmolkit_core::{
     AddHsParams, HydrogenError, HydrogenWarning, add_hydrogens_impl, add_hydrogens_with_params,
     add_hydrogens_with_query_state,

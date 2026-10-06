@@ -2918,6 +2918,9 @@ fn merge_query_hs_in_place(
         stereo_groups,
     )
     .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+    rebuilt
+        .set_source_conformer_order(coordinates.source_conformer_order)
+        .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
     replace_query_substance_groups(&mut rebuilt, substance_groups)
         .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
     *molecule = rebuilt;

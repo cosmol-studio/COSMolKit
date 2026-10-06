@@ -554,6 +554,7 @@ fn add_nonbonded(
     selected_conformer_props: &BTreeMap<String, String>,
     conformers_3d_after: &[Conformer3D],
     source_coordinate_dim: Option<CoordinateDimension>,
+    source_conformer_order: Option<&[CoordinateDimension]>,
     molecule_properties: &MoleculeProperties,
     params: &UffParamsByAtom<'_>,
     field: &mut ForceField<'_>,
@@ -628,6 +629,7 @@ fn add_nonbonded(
             &selected_kernel_rows,
             conformers_3d_after,
             source_coordinate_dim,
+            source_conformer_order,
         )
         .map_err(|error| {
             NonbondedAssemblyError::FragmentMapping(NonbondedFragmentMappingError::CoordinateView(
@@ -3166,6 +3168,7 @@ fn construct_force_field_with_params<'a>(
         conformers_2d,
         conformers_3d,
         source_coordinate_dim,
+        source_conformer_order,
     } = coordinates;
     let source_coordinate_dim = *source_coordinate_dim;
     let conformers_2d = conformers_2d.as_slice();
@@ -3207,6 +3210,7 @@ fn construct_force_field_with_params<'a>(
             selected_props: &selected_conformer_props,
             after: conformers_3d_after,
             source_dimension: source_coordinate_dim,
+            source_order: source_conformer_order.as_deref(),
         },
         params,
         rings,
@@ -3226,6 +3230,7 @@ pub(super) struct UffConformerContext<'a> {
     pub(super) selected_props: &'a BTreeMap<String, String>,
     pub(super) after: &'a [Conformer3D],
     pub(super) source_dimension: Option<CoordinateDimension>,
+    pub(super) source_order: Option<&'a [CoordinateDimension]>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3299,6 +3304,7 @@ fn construct_force_field_with_selected_params<'a>(
         context.selected_props,
         context.after,
         context.source_dimension,
+        context.source_order,
         molecule_properties,
         params,
         &mut field,
@@ -9508,6 +9514,7 @@ mod tests {
             conformers_2d,
             conformers_3d,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         }
     }
 
@@ -9542,6 +9549,7 @@ mod tests {
             selected_conformer.props(),
             &coordinates.conformers_3d[2..],
             coordinates.source_coordinate_dim,
+            coordinates.source_conformer_order.as_deref(),
             molecule_properties,
             &borrowed_params,
             &mut field,
@@ -9660,6 +9668,7 @@ mod tests {
             &selected_kernel_rows,
             &coordinates.conformers_3d[2..],
             source_dimension,
+            coordinates.source_conformer_order.as_deref(),
         )
         .expect("fixed kernel rows have three values each");
 
@@ -11282,6 +11291,7 @@ mod tests {
             selected.props(),
             &coordinates.conformers_3d[selected_index + 1..],
             coordinates.source_coordinate_dim,
+            coordinates.source_conformer_order.as_deref(),
             molecule_properties,
             params,
             &mut field,

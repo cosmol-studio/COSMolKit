@@ -18,10 +18,14 @@ pub(crate) fn with_3d_conformer_impl(params: &crate::EmbedParams) -> Result<(), 
     if let Ok(generated) = &generated {
         emit_diagnostics(&generated.diagnostics);
     }
-    let metadata = generated.map(|generated| {
-        coordinates.install_generated_3d(generated.clear_existing, generated.conformers);
-        generated.conf_ids
-    });
+    let metadata = generated
+        .map_err(OperationError::from)
+        .and_then(|generated| {
+            coordinates
+                .install_generated_3d(generated.clear_existing, generated.conformers)
+                .map_err(OperationError::InvalidCoordinates)?;
+            Ok(generated.conf_ids)
+        });
     parts.install_coordinates(coordinates)?;
     let conf_ids = metadata?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;
@@ -56,10 +60,14 @@ pub(crate) fn with_3d_conformer_result_impl(
     if let Ok(generated) = &generated {
         emit_diagnostics(&generated.diagnostics);
     }
-    let metadata = generated.map(|generated| {
-        coordinates.install_generated_3d(generated.clear_existing, generated.conformers);
-        generated.conf_ids
-    });
+    let metadata = generated
+        .map_err(OperationError::from)
+        .and_then(|generated| {
+            coordinates
+                .install_generated_3d(generated.clear_existing, generated.conformers)
+                .map_err(OperationError::InvalidCoordinates)?;
+            Ok(generated.conf_ids)
+        });
     parts.install_coordinates(coordinates)?;
     let conf_ids = metadata?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;
@@ -98,10 +106,14 @@ pub(crate) fn with_3d_conformers_impl(
     if let Ok(generated) = &generated {
         emit_diagnostics(&generated.diagnostics);
     }
-    let metadata = generated.map(|generated| {
-        coordinates.install_generated_3d(generated.clear_existing, generated.conformers);
-        generated.conf_ids
-    });
+    let metadata = generated
+        .map_err(OperationError::from)
+        .and_then(|generated| {
+            coordinates
+                .install_generated_3d(generated.clear_existing, generated.conformers)
+                .map_err(OperationError::InvalidCoordinates)?;
+            Ok(generated.conf_ids)
+        });
     parts.install_coordinates(coordinates)?;
     let conf_ids = metadata?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;
@@ -137,10 +149,14 @@ pub(crate) fn with_3d_conformers_result_impl(
     if let Ok(generated) = &generated {
         emit_diagnostics(&generated.diagnostics);
     }
-    let metadata = generated.map(|generated| {
-        coordinates.install_generated_3d(generated.clear_existing, generated.conformers);
-        generated.conf_ids
-    });
+    let metadata = generated
+        .map_err(OperationError::from)
+        .and_then(|generated| {
+            coordinates
+                .install_generated_3d(generated.clear_existing, generated.conformers)
+                .map_err(OperationError::InvalidCoordinates)?;
+            Ok(generated.conf_ids)
+        });
     parts.install_coordinates(coordinates)?;
     let conf_ids = metadata?;
     parts.clear_cache(DerivedState::STEREO.union(DerivedState::DRAWING))?;

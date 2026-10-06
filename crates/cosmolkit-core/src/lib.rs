@@ -1,4 +1,4 @@
-//! Detached chemistry algorithms for the crate migration.
+//! Detached source-backed chemistry algorithms.
 //!
 //! The crate is intentionally below the public runtime boundary. It accepts
 //! owned values from `cosmolkit-model` and never accepts a live `Molecule`, an
@@ -42,6 +42,9 @@ mod structure_tags;
 mod transforms;
 mod valence;
 mod wedge;
+
+#[cfg(test)]
+mod tests;
 
 pub use platform_threads::{
     ThreadCountError, cpu_online_count, observe_hardware_threads, rdkit_thread_count,
@@ -89,49 +92,15 @@ pub use hydrogens::{
     remove_hydrogens_with_params, remove_hydrogens_with_query_state,
 };
 
-/// Strict-build-only bridge for the detached AddHs topology migration target.
-///
-/// The topology addition plan is internal algorithm composition state and is
-/// not a public facade or binding surface.
-#[cfg(feature = "op-contracts-strict")]
-#[doc(hidden)]
-pub mod __migration_hydrogens {
-    pub use crate::attachment_points::{attachment_query_rows, expand_attachment_points};
-    pub use crate::hydrogens::{
-        AddHydrogensCoordinateResult, AddHydrogensTopologyResult, AddedHydrogen, AddedHydrogenKind,
-        HydrogenError, PreparedHydrogenRemoval, add_hydrogen_coordinates, add_hydrogens_topology,
-        place_terminal_attachment_coordinates, prepare_hydrogen_removal_stereo,
-        remove_hydrogen_candidates, remove_hydrogen_candidates_with_query_state,
-    };
-}
-
 pub use cip_ranks::{
     CipRankError, assign_atom_cip_ranks, assign_atom_cip_ranks_with_query_state,
     refine_atom_cip_ranks_from_invariants, refine_atom_cip_ranks_from_invariants_with_query_state,
 };
 pub(crate) use cleanup::{CleanupError, CleanupParams, cleanup};
 
-/// Strict-build-only bridge for detached cleanup migration validation.
-///
-/// Cleanup remains a private sanitize phase and is not a public facade API.
-#[cfg(feature = "op-contracts-strict")]
-#[doc(hidden)]
-pub mod __migration_cleanup {
-    pub use crate::cleanup::{CleanupError, CleanupParams, cleanup};
-}
 pub use conjugation::{ConjugationError, assign_conjugation_flags};
 pub(crate) use conjugation::{assign_conjugation, atom_has_conjugated_bond};
 
-/// Strict-build-only bridge for detached migration validation.
-///
-/// The conjugation phase remains absent from the default public surface and
-/// from the `cosmolkit` facade. This exact bridge exists only so the owning
-/// crate's integration target can validate the crate-private sanitize phase.
-#[cfg(feature = "op-contracts-strict")]
-#[doc(hidden)]
-pub mod __migration_conjugation {
-    pub use crate::conjugation::{ConjugationError, assign_conjugation, atom_has_conjugated_bond};
-}
 pub use double_stereo::{
     DoubleBondControl, DoubleBondStereoAssignment, DoubleBondStereoDescriptor,
     DoubleBondStereoError, DoubleBondStereoInfo, DoubleBondStereoSpecified,
@@ -150,36 +119,6 @@ pub use hybridization::{
 pub use nontetrahedral_stereo::{
     non_tetrahedral_across_ligand, non_tetrahedral_ideal_angle, trigonal_bipyramidal_axial_ligand,
 };
-
-/// Strict-build-only bridge for detached hybridization migration validation.
-///
-/// The hybridization phase remains absent from the default public surface and
-/// from the `cosmolkit` facade. This exact bridge exists only so the owning
-/// crate's integration target can validate the crate-private sanitize phase.
-#[cfg(feature = "op-contracts-strict")]
-#[doc(hidden)]
-pub mod __migration_hybridization {
-    pub use crate::hybridization::{
-        HybridizationAssignment, HybridizationError, assign_hybridization,
-    };
-}
-
-/// Strict-build-only bridge for detached sanitize-substage migration tests.
-///
-/// These values remain implementation details of sanitization and are not a
-/// default facade or binding surface.
-#[cfg(feature = "op-contracts-strict")]
-#[doc(hidden)]
-pub mod __migration_sanitize {
-    pub use crate::atropisomer::cleanup_invalid_atropisomers;
-    pub use crate::hcount::{AdjustHsAssignment, AdjustHsError, adjust_hs};
-    pub use crate::hybridization::HybridizationAssignment;
-    pub use crate::sanitize::{
-        SanitizeAssignment, SanitizeError, SanitizeOperations, SanitizeParams, SanitizeStage,
-        sanitize_topology,
-    };
-    pub use crate::structure_tags::cleanup_chirality;
-}
 
 pub use kekulize::{
     CanonicalRankError, CanonicalRankParams, KekulizeAssignment, KekulizeAttempt, KekulizeError,
@@ -247,18 +186,6 @@ pub use sanitize::{
 pub(crate) use sanitize::{
     PropertyCacheAssignment, PropertyCacheError, PropertyCacheParams, assign_property_cache,
 };
-
-/// Strict-build-only bridge for detached property-cache migration validation.
-///
-/// Property-cache calculation remains a private sanitize phase and this bridge
-/// exposes no live cache installation or facade API.
-#[cfg(feature = "op-contracts-strict")]
-#[doc(hidden)]
-pub mod __migration_property_cache {
-    pub use crate::sanitize::{
-        PropertyCacheAssignment, PropertyCacheError, PropertyCacheParams, assign_property_cache,
-    };
-}
 
 pub use stereo_order::{
     StereoOrderError, TetrahedralLigand, TetrahedralRemap, atom_nonzero_degree,

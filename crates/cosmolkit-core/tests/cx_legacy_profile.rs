@@ -1,5 +1,3 @@
-#![cfg(feature = "op-contracts-strict")]
-
 use cosmolkit_core::{
     LegacyStereoError, RingSearchParams, ValenceModel, assign_legacy_stereochemistry,
     assign_legacy_stereochemistry_for_depiction, assign_legacy_stereochemistry_with_flags,

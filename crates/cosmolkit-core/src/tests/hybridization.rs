@@ -1,6 +1,6 @@
-use cosmolkit_core::{
-    __migration_hybridization::{HybridizationError, assign_hybridization},
+use crate::{
     ValenceAssignment,
+    hybridization::{HybridizationError, assign_hybridization},
 };
 use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, TopologyBlock};
 use cosmolkit_types::{BondOrder, ChiralTag, Element, Hybridization};

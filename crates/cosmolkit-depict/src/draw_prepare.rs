@@ -257,14 +257,18 @@ pub(crate) fn prepare(input: DrawingInput<'_>) -> Result<PreparedDrawing, Drawin
     // Approved dimension-specific default, regardless of stored 3D. ID zero
     // belongs only to the newly generated 2D layout; retained IDs stay intact.
     if coordinates.conformers_2d.is_empty() {
-        coordinates.conformers_2d.push(compute_2d_coordinates(
+        let conformer = compute_2d_coordinates(
             &topology,
             &properties,
             &Compute2DCoordinatesParams {
                 canonical_orientation: true,
                 ..Default::default()
             },
-        )?);
+        )?;
+        coordinates
+            .record_source_conformer_append(cosmolkit_model::CoordinateDimension::TwoD)
+            .map_err(DrawingError::Coordinates)?;
+        coordinates.conformers_2d.push(conformer);
     }
     #[cfg(test)]
     draw_prepare_stage_probe::observe(

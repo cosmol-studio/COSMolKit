@@ -43,6 +43,7 @@ fn transform_molecule() -> Molecule {
                 .with_prop("kind", "explicit"),
         ],
         source_coordinate_dim: None,
+        source_conformer_order: None,
     };
     let properties = MoleculeProperties::default()
         .with_name("transforms-public")
@@ -312,4 +313,33 @@ fn missing_replacement_ids_and_default_preserve_all_live_blocks_and_sharing() {
         observer.to_builder().coordinates().source_coordinate_dim
     );
     unchanged_graph(&observer, &source);
+}
+
+mod source_order_regression {
+    use cosmolkit::{
+        AtomSpec, Coordinate3DInputParams, CoordinateDimension, Element, MoleculeBuilder,
+    };
+    #[test]
+    fn added_conformer_preserves_source_order_and_observer() {
+        let mut builder = MoleculeBuilder::new();
+        builder.add_atom(AtomSpec::new(Element::C));
+        builder.add_2d_conformer(vec![[1.0, -0.0]]).unwrap();
+        let source = builder.build().unwrap();
+        let observer = source.clone();
+        let before = source.to_builder();
+        let result = source
+            .with_added_3d_conformer_with_params(
+                vec![vec![2.0, 3.0, 4.0]],
+                &Coordinate3DInputParams { is_3d: false },
+            )
+            .unwrap();
+        assert_eq!(observer.to_builder().coordinates(), before.coordinates());
+        assert_eq!(source.to_builder().coordinates(), before.coordinates());
+        assert_eq!(
+            result.to_builder().coordinates().source_conformer_order,
+            Some(vec![CoordinateDimension::TwoD, CoordinateDimension::ThreeD])
+        );
+        assert_eq!(result.conformers_3d().len(), 1);
+        assert!(!result.conformers_3d()[0].is_3d());
+    }
 }

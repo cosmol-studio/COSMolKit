@@ -54,6 +54,7 @@ fn transform_molecule() -> Molecule {
                 .with_prop("kind", "explicit"),
         ],
         source_coordinate_dim: None,
+        source_conformer_order: None,
     };
     let properties = MoleculeProperties::default()
         .with_name("transforms-public")
@@ -369,6 +370,7 @@ fn missing_default_and_explicit_conformers_remain_distinct_errors() {
                 false,
             )],
             source_coordinate_dim: None,
+            source_conformer_order: None,
         },
         source.properties().clone(),
     )

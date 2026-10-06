@@ -1,6 +1,6 @@
-use cosmolkit_core::{
-    __migration_property_cache::{PropertyCacheError, PropertyCacheParams, assign_property_cache},
+use crate::{
     ValenceError, ValencePhase,
+    sanitize::{PropertyCacheError, PropertyCacheParams, assign_property_cache},
 };
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, StereoGroup, StereoGroupKind,

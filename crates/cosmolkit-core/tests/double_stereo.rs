@@ -221,21 +221,33 @@ fn ring_rank_and_conformer_rows_fail_before_assignment() {
         vec![[0.0; 3], [0.0; 3], [f64::NAN, 0.0, 0.0], [0.0; 3]],
         true,
     );
-    assert!(matches!(
-        set_double_bond_neighbor_directions(
-            source.clone(),
-            &empty_rings(&source),
-            Some(&nonfinite),
-        ),
-        Err(DoubleBondStereoError::InvalidConformer(
-            CoordinateValidationError::NonFiniteCoordinate {
-                conformer: 7,
-                atom: 2,
-                axis: "x",
-                ..
-            }
-        ))
-    ));
+    // Pinned Chirality.cpp uses isLinearArrangement and the unsigned dihedral
+    // comparison directly. NaN comparisons are false; no finite gate is added.
+    let original_bits = nonfinite
+        .coordinates()
+        .iter()
+        .flat_map(|row| row.iter().map(|value| value.to_bits()))
+        .collect::<Vec<_>>();
+    let assigned = set_double_bond_neighbor_directions(
+        source.clone(),
+        &empty_rings(&source),
+        Some(&nonfinite),
+    )
+    .unwrap();
+    let mut expected = source.clone();
+    expected.bonds[0].set_direction(BondDirection::EndUpRight);
+    expected.bonds[2].set_direction(BondDirection::EndDownRight);
+    assert_eq!(assigned, expected);
+    assert_eq!(nonfinite.id(), 7);
+    assert!(nonfinite.is_3d());
+    assert_eq!(
+        nonfinite
+            .coordinates()
+            .iter()
+            .flat_map(|row| row.iter().map(|value| value.to_bits()))
+            .collect::<Vec<_>>(),
+        original_bits
+    );
     assert_eq!(source.bonds[1].stereo(), BondStereo::None);
 }
 

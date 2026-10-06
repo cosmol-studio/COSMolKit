@@ -698,6 +698,9 @@ fn concrete_to_query(
         topology.stereo_groups,
     )
     .map_err(|error| MolPostError::Processing(error.to_string()))?;
+    query
+        .set_source_conformer_order(coordinates.source_conformer_order)
+        .map_err(|error| MolPostError::Processing(error.to_string()))?;
     replace_query_substance_groups(&mut query, substance_groups)
         .map_err(|error| MolPostError::Processing(error.to_string()))?;
     Ok(QueryMolBlockRecord {
@@ -994,6 +997,9 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
                 stereo_groups,
             )
             .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
+            query
+                .set_source_conformer_order(result.coordinates.source_conformer_order)
+                .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
             replace_query_substance_groups(&mut query, substance_groups)
                 .map_err(|error| MolPostError::AttachmentExpansion(error.to_string()))?;
             Ok(MolBlockRecord::Query(QueryMolBlockRecord {
@@ -1188,6 +1194,9 @@ pub fn finish_mol_block_record(
                 topology.stereo_groups,
             )
             .map_err(|error| MolPostError::Processing(error.to_string()))?;
+            query
+                .set_source_conformer_order(coordinates.source_conformer_order)
+                .map_err(|error| MolPostError::Processing(error.to_string()))?;
             replace_query_substance_groups(&mut query, topology.substance_groups)
                 .map_err(|error| MolPostError::Processing(error.to_string()))?;
             query_record.query = query;

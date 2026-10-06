@@ -507,6 +507,14 @@ fn apply_cx_to_smiles_record_in_place(
                         points[index] = *value;
                     }
                 }
+                record
+                    .coordinates
+                    .record_source_conformer_append(if coordinates.is_3d {
+                        cosmolkit_model::CoordinateDimension::ThreeD
+                    } else {
+                        cosmolkit_model::CoordinateDimension::TwoD
+                    })
+                    .map_err(SmilesParseError::Coordinates)?;
                 if coordinates.is_3d {
                     record.coordinates.conformers_3d.push(Conformer3D::new(
                         coordinates.conformer,

@@ -41,6 +41,7 @@ pub(crate) fn concrete_pruning_query(
         coordinates.conformers_3d.clone(),
         topology.stereo_groups.clone(),
     )?;
+    query.set_source_conformer_order(coordinates.source_conformer_order.clone())?;
     cosmolkit_model::replace_query_substance_groups(&mut query, topology.substance_groups.clone())?;
     Ok(query)
 }
@@ -52,6 +53,35 @@ mod tests {
         Element,
     };
     use cosmolkit_search::{SearchTarget, SubstructMatchParams};
+    #[test]
+    fn pruning_query_preserves_full_source_order_and_first_conformer() {
+        let topology = fixed_topology(vec![AtomSpec::new(Element::C)], vec![]);
+        let coordinates = CoordinateBlock {
+            conformers_2d: vec![cosmolkit_model::Conformer2D::new(9, vec![[1.0, -0.0]])],
+            conformers_3d: vec![Conformer3D::new(9, vec![[2.0, 3.0, 4.0]], false)],
+            source_conformer_order: Some(vec![
+                cosmolkit_model::CoordinateDimension::ThreeD,
+                cosmolkit_model::CoordinateDimension::TwoD,
+            ]),
+            ..Default::default()
+        };
+        let query = concrete_pruning_query(&topology, &coordinates, &MoleculeProperties::default())
+            .unwrap();
+        assert_eq!(query.coordinate_block(None), coordinates);
+        match query
+            .coordinate_block(None)
+            .first_source_conformer()
+            .unwrap()
+            .unwrap()
+        {
+            cosmolkit_model::CoordinateSourceConformer::ThreeD(first) => {
+                assert_eq!(first.id(), 9);
+                assert!(!first.is_3d());
+            }
+            _ => panic!("source first identity must survive representation transport"),
+        }
+    }
+
     fn fixed_topology(
         atoms: Vec<AtomSpec>,
         bonds: Vec<(usize, usize, BondOrder)>,

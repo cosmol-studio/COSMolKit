@@ -31,6 +31,8 @@ pub use molecule::Molecule;
 
 #[path = "../src/ops/context.rs"]
 mod context;
+#[path = "../src/ops/multiple.rs"]
+mod multiple;
 pub(crate) use context::{PendingMolecule, PendingResult, ResultFinalizer};
 
 #[test]

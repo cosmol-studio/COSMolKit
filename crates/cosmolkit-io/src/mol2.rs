@@ -188,6 +188,7 @@ impl DetachedBuilder {
             conformers_2d: Vec::new(),
             conformers_3d: vec![Conformer3D::new(0, self.coordinates, true)],
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         coordinates.validate_for_atom_count(topology.atoms.len())?;
         Ok(Mol2Record {

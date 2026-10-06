@@ -43,6 +43,24 @@ class ReleaseBumpTests(unittest.TestCase):
                         checked += 1
         self.assertGreater(checked, 40)
 
+    def test_dependency_list_matches_current_workspace_in_both_directions(self):
+        listed = [
+            (file, section, name)
+            for file, section, names in bump.DEPENDENCIES
+            for name in names.split()
+        ]
+        self.assertEqual(len(listed), len(set(listed)), "duplicate release dependency")
+        actual = set()
+        workspace = tomllib.loads(self.original["Cargo.toml"])
+        for member in workspace["workspace"]["members"]:
+            file = member + "/Cargo.toml"
+            manifest = tomllib.loads((ROOT / file).read_text())
+            for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+                for name, dependency in manifest.get(section, {}).items():
+                    if name.startswith("cosmolkit") and isinstance(dependency, dict) and "path" in dependency and "version" in dependency:
+                        actual.add((file, section, name))
+        self.assertEqual(set(listed), actual, "stale or missing release dependency")
+
     def test_stable_version_and_idempotence(self):
         updated = bump.prepare_updates(self.original, "0.5.0")
         self.assertEqual(tomllib.loads(updated["python/pyproject.toml"])["project"]["version"], "0.5.0")

@@ -5,6 +5,19 @@
 
 use std::collections::BTreeMap;
 
+/// Locate the first non-finite value in row/column order for checked inputs.
+/// Raw conformer storage and structural validation do not call this helper.
+pub fn first_non_finite_coordinate<R: AsRef<[f64]>>(rows: &[R]) -> Option<(usize, usize, f64)> {
+    for (row, values) in rows.iter().enumerate() {
+        for (column, value) in values.as_ref().iter().copied().enumerate() {
+            if !value.is_finite() {
+                return Some((row, column, value));
+            }
+        }
+    }
+    None
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CoordinateValidationError {
     #[error("3D conformer id {id} does not exist")]
@@ -17,6 +30,17 @@ pub enum CoordinateValidationError {
         conformer: usize,
         rows: usize,
         atom_count: usize,
+    },
+    #[error("mixed coordinate collections lack their source conformer order")]
+    MissingSourceConformerOrder,
+    #[error(
+        "source conformer order contains {two_d} 2D and {three_d} 3D entries; expected {expected_two_d} and {expected_three_d}"
+    )]
+    SourceConformerOrder {
+        two_d: usize,
+        three_d: usize,
+        expected_two_d: usize,
+        expected_three_d: usize,
     },
     #[error("duplicate {dimension} conformer id {id}")]
     DuplicateConformerId { dimension: &'static str, id: usize },
@@ -43,6 +67,23 @@ pub struct Conformer2D {
 }
 
 impl Conformer2D {
+    /// Validate explicit checked input, preserving shape-before-number errors.
+    pub fn validate_checked_for_atom_count(
+        &self,
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        self.validate_for_atom_count(atom_count)?;
+        if let Some((atom, column, _)) = first_non_finite_coordinate(&self.coords) {
+            return Err(CoordinateValidationError::NonFiniteCoordinate {
+                dimension: "2D",
+                conformer: self.id,
+                atom,
+                axis: ["x", "y"][column],
+            });
+        }
+        Ok(())
+    }
+
     pub fn validate_for_atom_count(
         &self,
         atom_count: usize,
@@ -55,18 +96,12 @@ impl Conformer2D {
                 atom_count,
             });
         }
-        for (atom, coord) in self.coords.iter().enumerate() {
-            for (axis, value) in [("x", coord[0]), ("y", coord[1])] {
-                if !value.is_finite() {
-                    return Err(CoordinateValidationError::NonFiniteCoordinate {
-                        dimension: "2D",
-                        conformer: self.id,
-                        atom,
-                        axis,
-                    });
-                }
-            }
-        }
+        // ROMol::addConformer checks the atom count, not numerical finiteness.
+        // RDKit✔️✔️: PRECONDITION(conf->getNumAtoms() == this->getNumAtoms(),
+        // RDKit✔️✔️:              "Number of atom mismatch");
+        // Source Conformer::setAtomPos stores the supplied Point3D unchanged.
+        // Non-finite values and their sign/payload are legitimate stored state;
+        // any numerical algorithm's source-defined checks belong to that owner.
         Ok(())
     }
 
@@ -132,6 +167,23 @@ pub struct Conformer3D {
 }
 
 impl Conformer3D {
+    /// Validate explicit checked input, preserving shape-before-number errors.
+    pub fn validate_checked_for_atom_count(
+        &self,
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        self.validate_for_atom_count(atom_count)?;
+        if let Some((atom, column, _)) = first_non_finite_coordinate(&self.coords) {
+            return Err(CoordinateValidationError::NonFiniteCoordinate {
+                dimension: "3D",
+                conformer: self.id,
+                atom,
+                axis: ["x", "y", "z"][column],
+            });
+        }
+        Ok(())
+    }
+
     pub fn validate_for_atom_count(
         &self,
         atom_count: usize,
@@ -144,18 +196,12 @@ impl Conformer3D {
                 atom_count,
             });
         }
-        for (atom, coord) in self.coords.iter().enumerate() {
-            for (axis, value) in [("x", coord[0]), ("y", coord[1]), ("z", coord[2])] {
-                if !value.is_finite() {
-                    return Err(CoordinateValidationError::NonFiniteCoordinate {
-                        dimension: "3D",
-                        conformer: self.id,
-                        atom,
-                        axis,
-                    });
-                }
-            }
-        }
+        // ROMol::addConformer checks the atom count, not numerical finiteness.
+        // RDKit✔️✔️: PRECONDITION(conf->getNumAtoms() == this->getNumAtoms(),
+        // RDKit✔️✔️:              "Number of atom mismatch");
+        // Source Conformer::setAtomPos stores the supplied Point3D unchanged.
+        // Non-finite values and their sign/payload are legitimate stored state;
+        // any numerical algorithm's source-defined checks belong to that owner.
         Ok(())
     }
 
@@ -234,7 +280,7 @@ impl Conformer3D {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CoordinateBlock {
     /// Zero or more 2D conformers.
     ///
@@ -244,6 +290,40 @@ pub struct CoordinateBlock {
     pub conformers_2d: Vec<Conformer2D>,
     pub conformers_3d: Vec<Conformer3D>,
     pub source_coordinate_dim: Option<CoordinateDimension>,
+    /// The actual interleaving of source conformer appends. Occurrences index
+    /// each dimension's collection; IDs and is_3d do not encode this fact.
+    /// None is sufficient only when at most one dimension has stored rows.
+    pub source_conformer_order: Option<Vec<CoordinateDimension>>,
+}
+
+impl PartialEq for CoordinateBlock {
+    fn eq(&self, other: &Self) -> bool {
+        if self.conformers_2d != other.conformers_2d
+            || self.conformers_3d != other.conformers_3d
+            || self.source_coordinate_dim != other.source_coordinate_dim
+        {
+            return false;
+        }
+        match (&self.source_conformer_order, &other.source_conformer_order) {
+            (Some(left), Some(right)) => left == right,
+            (None, None) => true,
+            (Some(order), None) | (None, Some(order)) => {
+                // A single typed collection already determines its complete
+                // insertion order. Explicitly recording that same fact does
+                // not change the detached coordinate value. Mixed unknown
+                // order remains distinct from every explicit interleaving.
+                if self.conformers_2d.is_empty() {
+                    order.len() == self.conformers_3d.len()
+                        && order.iter().all(|d| *d == CoordinateDimension::ThreeD)
+                } else if self.conformers_3d.is_empty() {
+                    order.len() == self.conformers_2d.len()
+                        && order.iter().all(|d| *d == CoordinateDimension::TwoD)
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 impl CoordinateBlock {
@@ -251,25 +331,30 @@ impl CoordinateBlock {
         &self,
         atom_count: usize,
     ) -> Result<(), CoordinateValidationError> {
-        let mut ids = std::collections::BTreeSet::new();
+        // RDKit✔️✔️: d_confs.push_back(nConf);
+        // Source addConformer(assignId=false) does not deduplicate IDs.
+        // Check every stored row while retaining vector order and all IDs.
+        // Cost: one borrowed O(C) pass, without an extra ID set allocation.
         for conformer in &self.conformers_2d {
-            if !ids.insert(conformer.id()) {
-                return Err(CoordinateValidationError::DuplicateConformerId {
-                    dimension: "2D",
-                    id: conformer.id(),
-                });
-            }
             conformer.validate_for_atom_count(atom_count)?;
         }
-        ids.clear();
         for conformer in &self.conformers_3d {
-            if !ids.insert(conformer.id()) {
-                return Err(CoordinateValidationError::DuplicateConformerId {
-                    dimension: "3D",
-                    id: conformer.id(),
+            conformer.validate_for_atom_count(atom_count)?;
+        }
+        if let Some(order) = &self.source_conformer_order {
+            let two_d = order
+                .iter()
+                .filter(|dimension| **dimension == CoordinateDimension::TwoD)
+                .count();
+            let three_d = order.len() - two_d;
+            if two_d != self.conformers_2d.len() || three_d != self.conformers_3d.len() {
+                return Err(CoordinateValidationError::SourceConformerOrder {
+                    two_d,
+                    three_d,
+                    expected_two_d: self.conformers_2d.len(),
+                    expected_three_d: self.conformers_3d.len(),
                 });
             }
-            conformer.validate_for_atom_count(atom_count)?;
         }
         Ok(())
     }
@@ -337,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_duplicate_ids_per_dimension() {
+    fn validate_preserves_duplicate_source_ids_per_dimension() {
         let block = CoordinateBlock {
             conformers_3d: vec![
                 Conformer3D::new(4, vec![[0.0, 0.0, 0.0]], true),
@@ -345,13 +430,16 @@ mod tests {
             ],
             ..Default::default()
         };
-        assert!(matches!(
-            block.validate_for_atom_count(1),
-            Err(CoordinateValidationError::DuplicateConformerId {
-                dimension: "3D",
-                id: 4
-            })
-        ));
+        assert_eq!(block.validate_for_atom_count(1), Ok(()));
+        assert_eq!(
+            block
+                .conformers_3d
+                .iter()
+                .map(Conformer3D::id)
+                .collect::<Vec<_>>(),
+            [4, 4]
+        );
+        assert_eq!(block.conformers_3d[1].coordinates(), &[[1.0, 1.0, 1.0]]);
     }
 }
 
@@ -378,13 +466,24 @@ impl CoordinateBlock {
         // RDKit❗✔️: void clearConformers() { d_confs.clear(); }
         // Approved dimension-specific generation keeps every 2D row.
         self.conformers_3d.clear();
+        if let Some(order) = &mut self.source_conformer_order {
+            order.retain(|dimension| *dimension != CoordinateDimension::ThreeD);
+        }
     }
     /// Install already-generated detached rows, without live commit authority.
-    pub fn install_generated_3d(&mut self, clear_existing: bool, rows: Vec<Conformer3D>) {
+    pub fn install_generated_3d(
+        &mut self,
+        clear_existing: bool,
+        rows: Vec<Conformer3D>,
+    ) -> Result<(), CoordinateValidationError> {
         if clear_existing {
-            self.conformers_3d.clear();
+            self.clear_3d_conformers();
         }
-        self.conformers_3d.extend(rows);
+        for row in rows {
+            self.record_source_conformer_append(CoordinateDimension::ThreeD)?;
+            self.conformers_3d.push(row);
+        }
+        Ok(())
     }
     pub fn append_3d_conformer(
         &mut self,
@@ -425,9 +524,212 @@ impl CoordinateBlock {
         let candidate = Conformer3D::new(id, coords, is_3d);
         candidate.validate_for_atom_count(atom_count)?;
         if clear_existing {
-            self.conformers_3d.clear();
+            self.clear_3d_conformers();
         }
+        self.record_source_conformer_append(CoordinateDimension::ThreeD)?;
         self.conformers_3d.push(candidate);
         Ok(id)
+    }
+}
+
+/// A borrowed coordinate set in its actual source insertion order.
+#[derive(Debug, Clone, Copy)]
+pub enum CoordinateSourceConformer<'a> {
+    TwoD(&'a Conformer2D),
+    ThreeD(&'a Conformer3D),
+}
+
+impl CoordinateBlock {
+    /// Return the source's first conformer, without consulting IDs, numerical
+    /// geometry, dimensional flags, or import-provenance hints.
+    pub fn first_source_conformer(
+        &self,
+    ) -> Result<Option<CoordinateSourceConformer<'_>>, CoordinateValidationError> {
+        // RDKit❗✔️: const Conformer &ROMol::getConformer(int id) const {
+        // RDKit❗✔️:   if (d_confs.size() == 0) {
+        // RDKit❗✔️:     throw ConformerException("No conformations available on the molecule");
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   if (id < 0) {
+        // RDKit❗✔️:     return *(d_confs.front());
+        // RDKit❗✔️:   }
+        // The detached optional empty result is translated by each caller's
+        // source-defined empty branch. Nonempty lookup is O(1), like front().
+        let first = match self.source_conformer_order.as_deref() {
+            Some(order) => order.first().copied(),
+            None if self.conformers_2d.is_empty() => self
+                .conformers_3d
+                .first()
+                .map(|_| CoordinateDimension::ThreeD),
+            None if self.conformers_3d.is_empty() => self
+                .conformers_2d
+                .first()
+                .map(|_| CoordinateDimension::TwoD),
+            None => return Err(CoordinateValidationError::MissingSourceConformerOrder),
+        };
+        Ok(match first {
+            Some(CoordinateDimension::TwoD) => self
+                .conformers_2d
+                .first()
+                .map(CoordinateSourceConformer::TwoD),
+            Some(CoordinateDimension::ThreeD) => self
+                .conformers_3d
+                .first()
+                .map(CoordinateSourceConformer::ThreeD),
+            None => None,
+        })
+    }
+
+    /// Record an actual append, before its row is pushed into typed storage.
+    pub fn record_source_conformer_append(
+        &mut self,
+        dimension: CoordinateDimension,
+    ) -> Result<(), CoordinateValidationError> {
+        // RDKit❗✔️: d_confs.push_back(nConf);
+        // Once materialized, a dimension occurrence appends in amortized O(1).
+        // A previously dimension-only detached collection has an unambiguous
+        // existing order; materialization costs O(C) only on the first append.
+        record_source_append(
+            &mut self.source_conformer_order,
+            self.conformers_2d.len(),
+            self.conformers_3d.len(),
+            dimension,
+        )?;
+        Ok(())
+    }
+
+    /// Remove one typed dimension while retaining every other occurrence's
+    /// relative source order. Replacing rows must record subsequent appends.
+    pub fn clear_2d_conformers(&mut self) {
+        self.conformers_2d.clear();
+        if let Some(order) = &mut self.source_conformer_order {
+            order.retain(|dimension| *dimension != CoordinateDimension::TwoD);
+        }
+    }
+}
+
+pub(crate) fn record_source_append(
+    order: &mut Option<Vec<CoordinateDimension>>,
+    two_d: usize,
+    three_d: usize,
+    dimension: CoordinateDimension,
+) -> Result<(), CoordinateValidationError> {
+    // RDKit❗✔️: d_confs.push_back(nConf);
+    // Appending does not inspect an existing conformer's ID or geometry.
+    // A detached mixed prefix without its source order cannot recover that
+    // fact by appending. Preserve its explicit unknown state instead of
+    // guessing an order or rejecting a dimension-local append. A source-first
+    // read still returns MissingSourceConformerOrder for that prefix.
+    // Known order appends in amortized O(1); a single-dimension prefix is
+    // materialized once in O(C), without copying any coordinate rows.
+    if order.is_none() {
+        let (existing_dimension, count) = if two_d == 0 {
+            (CoordinateDimension::ThreeD, three_d)
+        } else if three_d == 0 {
+            (CoordinateDimension::TwoD, two_d)
+        } else {
+            return Ok(());
+        };
+        *order = Some(vec![existing_dimension; count]);
+    }
+    order.as_mut().unwrap().push(dimension);
+    Ok(())
+}
+
+#[cfg(test)]
+mod source_order_tests {
+    use super::*;
+
+    #[test]
+    fn append_to_unknown_mixed_prefix_preserves_unknown_without_guessing() {
+        let mut block = CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(9, vec![[1.0, -0.0]])],
+            conformers_3d: vec![Conformer3D::new(9, vec![[2.0, 3.0, 4.0]], false)],
+            ..Default::default()
+        };
+        block
+            .record_source_conformer_append(CoordinateDimension::ThreeD)
+            .unwrap();
+        block
+            .conformers_3d
+            .push(Conformer3D::new(0, vec![[5.0, 6.0, 7.0]], true));
+        block.validate_for_atom_count(1).unwrap();
+        assert_eq!(block.source_conformer_order, None);
+        assert!(matches!(
+            block.first_source_conformer(),
+            Err(CoordinateValidationError::MissingSourceConformerOrder)
+        ));
+        assert_eq!(
+            block.conformers_2d[0].coordinates()[0][1].to_bits(),
+            (-0.0_f64).to_bits()
+        );
+        assert_eq!(block.conformers_3d[0].id(), 9);
+        assert!(!block.conformers_3d[0].is_3d());
+    }
+
+    #[test]
+    fn source_order_keeps_actual_first_across_dimensions_and_duplicate_ids() {
+        let mut block = CoordinateBlock::default();
+        block
+            .record_source_conformer_append(CoordinateDimension::ThreeD)
+            .unwrap();
+        block
+            .conformers_3d
+            .push(Conformer3D::new(9, vec![[3.0, 4.0, 5.0]], false));
+        block
+            .record_source_conformer_append(CoordinateDimension::TwoD)
+            .unwrap();
+        block
+            .conformers_2d
+            .push(Conformer2D::new(9, vec![[1.0, 2.0]]));
+        block
+            .record_source_conformer_append(CoordinateDimension::ThreeD)
+            .unwrap();
+        block
+            .conformers_3d
+            .push(Conformer3D::new(0, vec![[6.0, 7.0, 8.0]], true));
+        block.validate_for_atom_count(1).unwrap();
+        match block.first_source_conformer().unwrap().unwrap() {
+            CoordinateSourceConformer::ThreeD(conformer) => {
+                assert_eq!(conformer.id(), 9);
+                assert!(!conformer.is_3d());
+                assert_eq!(conformer.coordinates(), &[[3.0, 4.0, 5.0]]);
+            }
+            _ => panic!("the first actual source append is retained"),
+        }
+        block.clear_3d_conformers();
+        match block.first_source_conformer().unwrap().unwrap() {
+            CoordinateSourceConformer::TwoD(conformer) => assert_eq!(conformer.id(), 9),
+            _ => panic!("dimension-local clear retains remaining source order"),
+        }
+    }
+
+    #[test]
+    fn source_order_extent_validation_and_row_remap_preserve_facts() {
+        let mut block = CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(8, vec![[0.0, 1.0], [2.0, 3.0]])],
+            conformers_3d: vec![Conformer3D::new(
+                8,
+                vec![[4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+                true,
+            )],
+            source_conformer_order: Some(vec![
+                CoordinateDimension::ThreeD,
+                CoordinateDimension::TwoD,
+            ]),
+            ..Default::default()
+        };
+        block.validate_for_atom_count(2).unwrap();
+        block.remap_topology(&[1]);
+        block.validate_for_atom_count(1).unwrap();
+        assert_eq!(
+            block.source_conformer_order,
+            Some(vec![CoordinateDimension::ThreeD, CoordinateDimension::TwoD])
+        );
+        assert_eq!(block.conformers_3d[0].coordinates(), &[[7.0, 8.0, 9.0]]);
+        block.source_conformer_order = Some(vec![CoordinateDimension::TwoD]);
+        assert!(matches!(
+            block.validate_for_atom_count(1),
+            Err(CoordinateValidationError::SourceConformerOrder { .. })
+        ));
     }
 }

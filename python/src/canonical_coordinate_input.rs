@@ -175,6 +175,21 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: &ck::CoordinateInputError) -> 
             }
             E::ConformerIdOverflow { max_id } => value.setattr("max_id", *max_id)?,
             E::InvalidCoordinates(cause) => match cause {
+                ck::CoordinateValidationError::MissingSourceConformerOrder => {
+                    value.setattr("cause_kind", "MissingSourceConformerOrder")?;
+                }
+                ck::CoordinateValidationError::SourceConformerOrder {
+                    two_d,
+                    three_d,
+                    expected_two_d,
+                    expected_three_d,
+                } => {
+                    value.setattr("cause_kind", "SourceConformerOrder")?;
+                    value.setattr("two_d", *two_d)?;
+                    value.setattr("three_d", *three_d)?;
+                    value.setattr("expected_two_d", *expected_two_d)?;
+                    value.setattr("expected_three_d", *expected_three_d)?;
+                }
                 ck::CoordinateValidationError::Missing3DConformer { id } => {
                     value.setattr("conformer_id", *id)?;
                 }

@@ -58,6 +58,7 @@ pub(super) struct MmffConformerContext<'a> {
     pub(super) selected_props: &'a std::collections::BTreeMap<String, String>,
     pub(super) after: &'a [Conformer3D],
     pub(super) source_dimension: Option<CoordinateDimension>,
+    pub(super) source_order: Option<&'a [CoordinateDimension]>,
 }
 
 pub(super) fn construct_force_field_with_props<'a>(
@@ -946,6 +947,7 @@ pub(crate) fn add_nonbonded(
             &selected_rows,
             conformer_context.after,
             conformer_context.source_dimension,
+            conformer_context.source_order,
         )
         .map_err(NonbondedFragmentMappingError::CoordinateView)?;
         prepare_nonbonded_fragment_mapping(mol, &coordinate_view, molecule_properties, true)?
@@ -1339,6 +1341,7 @@ mod tests {
             selected_props: conf.props(),
             after: &source_rows[selected + 1..],
             source_dimension: input.coordinates.source_coordinate_dim,
+            source_order: input.coordinates.source_conformer_order.as_deref(),
         };
         super::construct_force_field_with_props(
             &input.topology,
@@ -1377,6 +1380,7 @@ mod tests {
             selected_props: &metadata,
             after: &[],
             source_dimension: None,
+            source_order: None,
         };
         super::add_nonbonded(
             &input.topology,
