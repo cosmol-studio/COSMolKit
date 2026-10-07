@@ -9,7 +9,7 @@ fn builtin_transform(name: &str) -> TautomerTransform {
         .unwrap()
         .transforms()
         .iter()
-        .find(|t| t.name() == name)
+        .find(|t| t.name().as_bytes() == name.as_bytes())
         .unwrap()
         .clone()
 }
@@ -24,7 +24,7 @@ fn first_transform_match(
         .unwrap()
         .into_iter()
         .next()
-        .unwrap_or_else(|| panic!("{} must match focused fixture", transform.name()))
+        .unwrap_or_else(|| panic!("{:?} must match focused fixture", transform.name()))
 }
 // Only adapt the original test's known-key set to the production borrowed lookup.
 fn apply_single_transform(
@@ -34,7 +34,7 @@ fn apply_single_transform(
     matched: &SubstructMatchResult,
     atoms: &BTreeSet<AtomId>,
     bonds: &BTreeSet<BondId>,
-    keys: &BTreeSet<String>,
+    keys: &BTreeSet<cosmolkit_model::PropertyText>,
     params: TautomerParams,
 ) -> Result<TautomerExpansionAttempt<Arc<TautomerRecord>>, TautomerRunError> {
     apply_tautomer_transform_match(
@@ -105,13 +105,15 @@ fn single_transform_application_reproduces_every_builtin_bond_edit_shape() {
         let molecule = product.tautomer.as_ref().clone();
 
         assert_eq!(
-            product.canonical_smiles, expected_smiles,
+            product.canonical_smiles.as_bytes(),
+            expected_smiles.as_bytes(),
             "{transform_name}"
         );
         assert_eq!(
             canonical_smiles(molecule.view(&CoordinateBlock::default()))
-                .expect("write product canonical SMILES"),
-            expected_smiles,
+                .expect("write product canonical SMILES")
+                .as_bytes(),
+            expected_smiles.as_bytes(),
             "{transform_name}"
         );
         assert_eq!(source, source_before, "source changed for {transform_name}");
@@ -192,7 +194,7 @@ fn single_transform_application_handles_explicit_implicit_and_isotopic_hydrogens
         let TautomerExpansionAttempt::Product(product) = attempt else {
             panic!("hydrogen transform must produce a product");
         };
-        assert_eq!(product.canonical_smiles, "C=CO");
+        assert_eq!(product.canonical_smiles.as_bytes(), b"C=CO");
     }
 
     let mut source = fixture("CC=O").expect("parse isotopic-H fixture");
@@ -254,7 +256,7 @@ fn single_transform_application_applies_source_ordered_charge_deltas() {
         product.tautomer.topology.atoms[matched.atom_mapping[1]].formal_charge(),
         1
     );
-    assert_eq!(product.canonical_smiles, "[C-]#[NH+]");
+    assert_eq!(product.canonical_smiles.as_bytes(), b"[C-]#[NH+]");
 }
 
 #[test]
@@ -285,7 +287,7 @@ fn single_transform_application_records_bonds_changed_only_by_sanitization() {
                 &BTreeSet::new(),
                 TautomerParams::default().with_reassign_stereo(false),
             )
-            .unwrap_or_else(|error| panic!("{}: {error}", transform.name()));
+            .unwrap_or_else(|error| panic!("{:?}: {error}", transform.name()));
             if let TautomerExpansionAttempt::Product(product) = attempt {
                 let sanitize_only = product
                     .modified_bonds
@@ -410,6 +412,77 @@ fn single_transform_application_catches_only_the_kekulize_failure_branch() {
     assert_eq!(modified_bonds.len(), 1);
     assert_eq!(source, source_before);
     assert_eq!(candidate, candidate_before);
+}
+
+#[test]
+fn source_property_failure_precedes_transform_sanitize_and_preserves_inputs() {
+    let source = fixture("CC=O").unwrap();
+    let mut candidate = kekulized(&source).unwrap();
+    let transform = builtin_transform("1,3 (thio)keto/enol f");
+    let matched = first_transform_match(&candidate, &transform);
+    candidate
+        .properties
+        .set_prop("__computedProps", cosmolkit_model::PropertyValue::Int(7))
+        .unwrap();
+    candidate.topology.atoms[0]
+        .set_prop("__computedProps", cosmolkit_model::PropertyValue::Int(8))
+        .unwrap();
+    let source_before = source.clone();
+    let candidate_before = candidate.clone();
+    let run = |candidate: &TautomerRecord| {
+        apply_single_transform(
+            &source,
+            candidate,
+            &transform,
+            &matched,
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            &BTreeSet::new(),
+            TautomerParams::default().with_reassign_stereo(false),
+        )
+    };
+    let error = run(&candidate).unwrap_err();
+    assert!(matches!(
+        error,
+        TautomerRunError::MoleculeProperty(
+            cosmolkit_model::MoleculePropertyError::ComputedListKind(_)
+        )
+    ));
+    assert_eq!(source, source_before);
+    assert_eq!(candidate, candidate_before);
+
+    // Fix only the molecule field: the original competing atom error remains
+    // observable at the next source stage, rather than being swallowed.
+    candidate
+        .properties
+        .set_prop(
+            "__computedProps",
+            cosmolkit_model::PropertyValue::StringVector(Vec::new()),
+        )
+        .unwrap();
+    let before_atom_failure = candidate.clone();
+    let error = run(&candidate).unwrap_err();
+    assert!(matches!(
+        error,
+        TautomerRunError::Sanitize(SanitizeError::AtomProperty(
+            cosmolkit_model::AtomPropertyError::ComputedListKind(_)
+        ))
+    ));
+    assert_eq!(candidate, before_atom_failure);
+
+    candidate.topology.atoms[0]
+        .set_prop(
+            "__computedProps",
+            cosmolkit_model::PropertyValue::StringVector(Vec::new()),
+        )
+        .unwrap();
+    let before_success = candidate.clone();
+    let TautomerExpansionAttempt::Product(product) = run(&candidate).unwrap() else {
+        panic!("valid source property state must preserve the original keto/enol product");
+    };
+    assert_eq!(product.canonical_smiles.as_bytes(), b"C=CO");
+    assert_eq!(candidate, before_success);
+    assert_eq!(source, source_before);
 }
 
 #[test]

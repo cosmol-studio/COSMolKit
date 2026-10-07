@@ -695,10 +695,15 @@ fn calculate_implicit_valence(
     // RDKit✔️✔️:   if (explicitValence == -1) {
     // RDKit✔️✔️:     explicitValence = calculateExplicitValence(atom, strict, checkIt);
     // RDKit✔️✔️:   }
-    let explicit_valence = if explicit_valence == -1 {
+    // RDKit✔️✔️: std::int8_t d_implicitValence, d_explicitValence;
+    // The source helper reads the stored field, after its signed-width
+    // conversion. The local fallback below does not overwrite that field.
+    // Constant work, no allocation, unchanged incident-bond traversal.
+    let cached_explicit_valence = i32::from(explicit_valence as i8);
+    let explicit_valence = if cached_explicit_valence == -1 {
         calculate_explicit_valence(atoms, bonds, adjacency, atom_id, strict, check_it)?
     } else {
-        explicit_valence
+        cached_explicit_valence
     };
     // RDKit✔️✔️:   // special cases
     // RDKit✔️✔️:   auto atomicNum = atom.d_atomicNum;
@@ -756,7 +761,7 @@ fn calculate_implicit_valence(
     }
 
     // RDKit✔️✔️:   int explicitPlusRadV = atom.d_explicitValence + atom.d_numRadicalElectrons;
-    let mut explicit_plus_rad_v = explicit_valence + i32::from(atom.radical_electrons());
+    let mut explicit_plus_rad_v = cached_explicit_valence + i32::from(atom.radical_electrons());
 
     // RDKit✔️✔️:   const auto &ovalens =
     // RDKit✔️✔️:       PeriodicTable::getTable()->getValenceList(atom.d_atomicNum);
@@ -977,7 +982,23 @@ pub fn implicit_valence_for_atom(
     calculate_implicit_valence_for_topology(
         topology,
         atom_id,
-        explicit_valence.unwrap_or(-1),
+        match explicit_valence {
+            Some(value) => value,
+            // RDKit✔️✔️: int Atom::calcImplicitValence(bool strict) {
+            // RDKit✔️✔️:   if (d_explicitValence == -1) {
+            // RDKit✔️✔️:     calcExplicitValence(strict);
+            // RDKit✔️✔️:   }
+            // Missing detached input requests actual preparation, unlike a
+            // supplied source cache whose wrapped -1 field remains stored.
+            None => calculate_explicit_valence(
+                &topology.atoms,
+                &topology.bonds,
+                &topology.adjacency,
+                atom_id,
+                strict,
+                false,
+            )?,
+        },
         strict,
         false,
     )
@@ -1065,18 +1086,10 @@ pub fn assign_valence_with_options_from_parts(
     let mut explicit_values = Vec::with_capacity(atoms.len());
     let mut implicit_hydrogens = Vec::with_capacity(atoms.len());
     for atom in atoms {
-        let explicit =
-            calculate_explicit_valence(atoms, bonds, adjacency, atom.id(), strict, false)?;
+        let (explicit, implicit) =
+            assign_valence_state_for_atom_from_parts(atoms, bonds, adjacency, atom.id(), strict)?;
         explicit_values.push(explicit);
-        implicit_hydrogens.push(calculate_implicit_valence(
-            atoms,
-            bonds,
-            adjacency,
-            atom.id(),
-            explicit,
-            strict,
-            false,
-        )?);
+        implicit_hydrogens.push(implicit);
     }
     // RDKit✔️✔️: void updatePropertyCache(bool strict = true) { (void)strict; }
     // END RDKIT CPP FUNCTION ROMol::updatePropertyCache / Atom::updatePropertyCache
@@ -1094,9 +1107,16 @@ pub fn assign_valence_state_for_atom_from_parts(
     atom_id: AtomId,
     strict: bool,
 ) -> Result<(i32, i32), ValenceError> {
-    let explicit = calculate_explicit_valence(atoms, bonds, adjacency, atom_id, strict, false)?;
-    let implicit =
-        calculate_implicit_valence(atoms, bonds, adjacency, atom_id, explicit, strict, false)?;
+    // RDKit✔️✔️: void Atom::updatePropertyCache(bool strict) {
+    // RDKit✔️✔️:   calcExplicitValence(strict);
+    // RDKit✔️✔️:   calcImplicitValence(strict);
+    // RDKit✔️✔️: }
+    // Both source field conversions use the same per-field owner below.
+    let explicit =
+        assign_explicit_valence_for_atom_from_parts(atoms, bonds, adjacency, atom_id, strict)?;
+    let implicit = assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
+        atoms, bonds, adjacency, atom_id, explicit, strict,
+    )?;
     Ok((explicit, implicit))
 }
 
@@ -1108,7 +1128,15 @@ pub fn assign_explicit_valence_for_atom_from_parts(
     atom_id: AtomId,
     strict: bool,
 ) -> Result<i32, ValenceError> {
+    // RDKit✔️✔️: int Atom::calcExplicitValence(bool strict) {
+    // RDKit✔️✔️:   bool checkIt = false;
+    // RDKit✔️✔️:   d_explicitValence = calculateExplicitValence(*this, strict, checkIt);
+    // RDKit✔️✔️:   return d_explicitValence;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: std::int8_t d_implicitValence, d_explicitValence;
+    // Reproduce stored-field width with constant work and no allocation.
     calculate_explicit_valence(atoms, bonds, adjacency, atom_id, strict, false)
+        .map(|value| i32::from(value as i8))
 }
 
 /// Assign one atom's implicit valence using an explicit detached value.
@@ -1120,6 +1148,18 @@ pub fn assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
     explicit_valence: i32,
     strict: bool,
 ) -> Result<i32, ValenceError> {
+    // RDKit✔️✔️: int Atom::calcImplicitValence(bool strict) {
+    // RDKit✔️✔️:   if (d_explicitValence == -1) {
+    // RDKit✔️✔️:     calcExplicitValence(strict);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   bool checkIt = false;
+    // RDKit✔️✔️:   d_implicitValence = calculateImplicitValence(*this, strict, checkIt);
+    // RDKit✔️✔️:   return d_implicitValence;
+    // RDKit✔️✔️: }
+    // The source refresh just prepared its explicit field; repeating it for
+    // wrapped -1 stores the same value. Unique helper reproduces local fallback
+    // versus stored-field reads without a second graph scan for that assignment.
+    // Signed-field conversion costs constant work and no extra allocation.
     calculate_implicit_valence(
         atoms,
         bonds,
@@ -1129,6 +1169,7 @@ pub fn assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
         strict,
         false,
     )
+    .map(|value| i32::from(value as i8))
 }
 
 /// Return the source-backed preferred valence list for an atomic number.
@@ -1418,7 +1459,7 @@ pub fn atom_metadata_from_assignment(
     // RDKit✔️❌:   d_explicitValence = calculateExplicitValence(*this, strict, checkIt);
     // RDKit✔️❌:   return d_explicitValence;
     // RDKit✔️❌: }
-    // The detached assignment retains calculation-width i32 values. Reproduce
+    // Caller-supplied detached assignments can retain calculation-width i32 values. Reproduce
     // the source's int8 storage conversion at this cached-getter boundary,
     // before applying its > -1 precondition; never recalculate strict valence.
     // Detached validation adds O(V+E) work over O(V) source cached getters,
@@ -1429,12 +1470,7 @@ pub fn atom_metadata_from_assignment(
     let mut rows = Vec::with_capacity(topology.atoms.len());
     for atom in &topology.atoms {
         let id = atom.id();
-        let explicit_valence = assignment
-            .and_then(|a| a.explicit_valence.get(id.index()))
-            .copied()
-            .map(|value| i32::from(value as i8))
-            .filter(|value| *value >= 0)
-            .ok_or(ValenceError::ExplicitValenceCacheNotInitialized { atom: id })?;
+        let explicit_valence = cached_explicit_valence(atom, assignment)?;
         let total_hydrogens = crate::hcount::total_hydrogen_count_from_validated(
             topology,
             assignment.expect("explicit cache checked"),
@@ -1451,4 +1487,105 @@ pub fn atom_metadata_from_assignment(
         });
     }
     Ok(rows)
+}
+
+/// Classify the source signed cache fields without preparing replacements.
+#[doc(hidden)]
+pub fn atom_valence_cache_needs_update(atom: &Atom, explicit: i32, implicit: i32) -> bool {
+    // RDKit✔️✔️: bool Atom::needsUpdatePropertyCache() const {
+    // RDKit✔️✔️:   return !(this->d_explicitValence >= 0 &&
+    // RDKit✔️✔️:            (this->df_noImplicit || this->d_implicitValence >= 0));
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️:   std::int8_t d_implicitValence, d_explicitValence;
+    // Behavior: classify signed source storage, including NoImplicit's I bypass.
+    // Complexity: O(1), no graph traversal, allocation or cached-field mutation.
+    let explicit = explicit as i8;
+    let implicit = implicit as i8;
+    !(explicit >= 0 && (atom.no_implicit() || implicit >= 0))
+}
+
+pub(crate) fn cached_explicit_valence(
+    atom: &Atom,
+    assignment: Option<&ValenceAssignment>,
+) -> Result<i32, ValenceError> {
+    // RDKit✔️✔️: unsigned int Atom::getValence(ValenceType which) const {
+    // RDKit✔️✔️:   if (!dp_mol) {
+    // RDKit✔️✔️:     return 0;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   PRECONDITION(
+    // RDKit✔️✔️:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
+    // RDKit✔️✔️:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
+    // RDKit✔️✔️:   PRECONDITION(
+    // RDKit✔️✔️:       (which == ValenceType::EXPLICIT || df_noImplicit ||
+    // RDKit✔️✔️:        d_implicitValence > -1),
+    // RDKit✔️✔️:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
+    // RDKit✔️✔️:   if (which == ValenceType::EXPLICIT) {
+    // RDKit✔️✔️:     return d_explicitValence;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return df_noImplicit ? 0 : d_implicitValence;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
+    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+    // RDKit✔️✔️: }
+    assignment
+        .and_then(|a| a.explicit_valence.get(atom.id().index()))
+        .copied()
+        .map(|value| i32::from(value as i8))
+        .filter(|value| *value >= 0)
+        .ok_or(ValenceError::ExplicitValenceCacheNotInitialized { atom: atom.id() })
+}
+
+pub(crate) fn cached_total_valence(
+    atom: &Atom,
+    assignment: &ValenceAssignment,
+) -> Result<i32, ValenceError> {
+    // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
+    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+    // RDKit✔️✔️: }
+    // Both source getters return initialized nonnegative int8 values; their
+    // sum is bounded by 254. Reuse the unique implicit getter, including its
+    // noImplicit early return, with no allocation or graph traversal.
+    let explicit = cached_explicit_valence(atom, Some(assignment))?;
+    let implicit = crate::hcount::implicit_hydrogen_count(atom, assignment)? as i32;
+    Ok(explicit + implicit)
+}
+
+#[cfg(test)]
+mod source_cached_field_initialization_tests {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, Element};
+    #[test]
+    fn source_initialization_observes_signed_width_and_no_implicit() {
+        let rows = [
+            (0, 0, false, false),
+            (4, 0, false, false),
+            (0, -1, false, true),
+            (0, -1, true, false),
+            (-1, 0, true, true),
+            (128, 0, false, true),
+            (255, 0, true, true),
+            (256, 0, false, false),
+            (-256, 0, false, false),
+            (-129, 0, false, false),
+            (0, 128, false, true),
+            (0, 255, false, true),
+            (0, 128, true, false),
+            (0, 256, false, false),
+            (0, -256, false, false),
+            (127, 127, false, false),
+        ];
+        for (explicit, implicit, no_implicit, expected) in rows {
+            let atom = Atom::from_spec(
+                AtomId::new(0),
+                AtomSpec::new(Element::C).with_no_implicit(no_implicit),
+            );
+            assert_eq!(
+                atom_valence_cache_needs_update(&atom, explicit, implicit),
+                expected,
+                "{explicit}/{implicit}/{no_implicit}"
+            );
+        }
+    }
 }

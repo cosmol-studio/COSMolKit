@@ -918,8 +918,27 @@ mod tests {
         query: &QueryGraph,
         params: &SubstructMatchParams,
     ) -> Vec<cosmolkit_search::SubstructMatchResult> {
-        cosmolkit_search::try_get_substruct_matches_with_params(&test_target(mol), query, params)
-            .unwrap()
+        // Original Molecule::from_smiles fixtures supplied their sanitized
+        // cached state. Detached topology fixtures must explicitly retain that
+        // state at SearchTarget; Search correctly does not recompute absent
+        // caches when a reached getter requires them. These are fixture-only
+        // calls to the canonical chemistry owners, not matcher fallbacks.
+        let rings = cosmolkit_core::symmetrized_sssr(mol, &Default::default()).unwrap();
+        let valence = cosmolkit_core::assign_valence_with_options_for_topology(
+            mol,
+            cosmolkit_core::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let empty_coordinates = CoordinateBlock::default();
+        let target = SearchTarget::new(
+            mol,
+            &empty_coordinates,
+            &mol.stereo_groups,
+            Some(&rings),
+            Some(&valence),
+        );
+        cosmolkit_search::try_get_substruct_matches_with_params(&target, query, params).unwrap()
     }
     fn get_experimental_torsions(
         mol: &TopologyBlock,
@@ -1901,6 +1920,7 @@ mod tests {
                     let query_node = query_bond.predicate();
                     Some(query_node).and_then(|query_node| {
                         bond_matches_query(mol_bond, query_node, &test_target(&mol))
+                            .unwrap()
                             .then_some(mol_bond_idx)
                     })
                 })
@@ -1969,6 +1989,7 @@ mod tests {
                     let query_node = query_bond.predicate();
                     Some(query_node).and_then(|query_node| {
                         bond_matches_query(mol_bond, query_node, &test_target(&mol))
+                            .unwrap()
                             .then_some(mol_bond_idx)
                     })
                 })
@@ -2056,6 +2077,7 @@ mod tests {
                     let query_node = query_bond.predicate();
                     Some(query_node).and_then(|query_node| {
                         bond_matches_query(mol_bond, query_node, &test_target(&mol))
+                            .unwrap()
                             .then_some(mol_bond_idx)
                     })
                 })
@@ -2131,6 +2153,7 @@ mod tests {
                     let query_node = query_bond.predicate();
                     Some(query_node).and_then(|query_node| {
                         bond_matches_query(mol_bond, query_node, &test_target(&mol))
+                            .unwrap()
                             .then_some(mol_bond_idx)
                     })
                 })

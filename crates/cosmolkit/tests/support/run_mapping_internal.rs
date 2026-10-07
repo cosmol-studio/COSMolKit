@@ -203,7 +203,7 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
         BlockSet::NONE,
     );
     assert_eq!(
-        OpParts::<MappingAccess>::validate_mapping_obligation(none, &one, &one, None, None),
+        OpParts::<MappingAccess>::validate_mapping_obligation(none, &one, &one, None, None, false),
         Ok(())
     );
     assert!(matches!(
@@ -213,6 +213,7 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
             &one,
             None,
             Some(&TopologyMapping::identity(1, 0)),
+            false
         ),
         Err(OperationError::MappingContract {
             operation: "none",
@@ -235,6 +236,7 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
             &one,
             Some(TopologyEditKind::Local),
             None,
+            false
         ),
         Err(OperationError::MappingContract {
             issue: "required mapping was not recorded",
@@ -248,6 +250,7 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
             &one,
             Some(TopologyEditKind::Local),
             Some(&TopologyMapping::identity(1, 0)),
+            false
         ),
         Ok(())
     );
@@ -259,6 +262,7 @@ fn requirement_profiles_reject_missing_unexpected_and_nonidentity_mappings() {
             &one,
             Some(TopologyEditKind::Local),
             Some(&nonidentity),
+            false
         ),
         Err(OperationError::MappingContract {
             issue: "mapping is not identity",
@@ -385,6 +389,7 @@ fn atom_mapping_failures_preserve_exact_direction_and_fields() {
                 &topology,
                 Some(TopologyEditKind::Local),
                 Some(&candidate),
+                false
             ),
             Err(OperationError::InvalidTopologyMapping {
                 operation: "atom-errors",
@@ -489,6 +494,7 @@ fn bond_mapping_failures_preserve_exact_direction_and_fields() {
                 &topology,
                 Some(TopologyEditKind::Local),
                 Some(&candidate),
+                false
             ),
             Err(OperationError::InvalidTopologyMapping {
                 operation: "bond-errors",
@@ -593,7 +599,10 @@ fn deletion_and_reorder_remap_all_coordinate_and_property_rows_in_new_order() {
         ]
     );
     assert_eq!(source.topology().atoms.len(), 3);
-    assert_eq!(source.properties().name(), Some("source"));
+    assert_eq!(
+        source.properties().name().map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
+    );
 }
 
 #[test]

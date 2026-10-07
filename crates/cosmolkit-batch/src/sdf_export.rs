@@ -70,7 +70,7 @@ fn serialize(
     format: SdfFormat,
     index: usize,
     operation: &'static str,
-) -> Result<String, BatchRecordError> {
+) -> Result<cosmolkit_model::PropertyText, BatchRecordError> {
     match record {
         SdfExportRecord::Error(error) => Err((*error).clone()),
         SdfExportRecord::Molecule(data) => {

@@ -1,6 +1,6 @@
 //! Source-backed string projection for detached atom and bond properties.
 
-use cosmolkit_model::{PropertyValue, PropertyValueKind};
+use cosmolkit_model::{PropertyText, PropertyValue, PropertyValueKind};
 use std::fmt::{self, Write as _};
 use thiserror::Error;
 
@@ -201,10 +201,40 @@ impl PropertyStringError {
     }
 }
 
-/// Convert a canonical detached property value using the pinned source's
-/// modeled `RDValue` string-conversion behavior.
-/// Project a signed integer vector using the source C-locale spelling.
-pub fn int_vector_to_string(value: &[i32]) -> String {
+// This numeric formatter writes to the same counted byte buffer as raw
+// strings. Its fmt::Write input is generated solely by signed-i32 Display;
+// arbitrary source PropertyText never passes through a Unicode formatter.
+struct PropertyVectorBuffer(PropertyText);
+
+impl fmt::Write for PropertyVectorBuffer {
+    fn write_str(&mut self, value: &str) -> fmt::Result {
+        self.0.extend_bytes(value.as_bytes());
+        Ok(())
+    }
+}
+
+trait SourceVectorElement {
+    fn append_to(&self, output: &mut PropertyVectorBuffer);
+}
+
+impl SourceVectorElement for i32 {
+    fn append_to(&self, output: &mut PropertyVectorBuffer) {
+        // Same signed-decimal Display primitive as the existing integer-vector
+        // path, without a per-element String or any change to float formatting.
+        write!(output, "{self}").expect("writing to an owned byte vector cannot fail");
+    }
+}
+
+impl SourceVectorElement for PropertyText {
+    fn append_to(&self, output: &mut PropertyVectorBuffer) {
+        // std::string stream insertion uses data()+size(), not a C-string
+        // terminator or UTF8 decoding. Preserve every counted payload byte.
+        output.0.extend_bytes(self.as_bytes());
+    }
+}
+
+fn format_property_vector<T: SourceVectorElement>(values: &[T]) -> PropertyText {
+    // BEGIN RDKIT CPP FUNCTION vectToString<T>
     // RDKit✔️✔️: std::string vectToString(RDValue val) {
     // RDKit✔️✔️:   const std::vector<T> &tv = rdvalue_cast<std::vector<T> &>(val);
     // RDKit✔️✔️:   std::ostringstream sstr;
@@ -218,42 +248,61 @@ pub fn int_vector_to_string(value: &[i32]) -> String {
     // RDKit✔️✔️:   sstr << "]";
     // RDKit✔️✔️:   return sstr.str();
     // RDKit✔️✔️: }
-    // Behavior: signed decimal elements, brackets, comma separators, no sorting.
-    // Complexity: one linear pass and one growing output buffer, as the stream.
-    let mut result = String::from("[");
-    for (index, value) in value.iter().enumerate() {
+    // END RDKIT CPP FUNCTION vectToString<T>
+    // Behavior: one canonical bracket/comma frame for the modeled signed-int
+    // and counted-string elements. Integer spelling stays C-locale decimal;
+    // precision17 has no effect on these two source element types. Strings
+    // retain NUL/non-UTF8/commas/brackets/empty bytes without quoting/escaping.
+    // Independent floating/unsigned-vector element capabilities are unmodeled.
+    // Complexity: one linear pass, one growing buffer, O(total output bytes),
+    // no payload clone, decoding/validity scan, element temporary or cache.
+    let mut output = PropertyVectorBuffer(PropertyText::new());
+    output.0.push_byte(b'[');
+    for (index, value) in values.iter().enumerate() {
         if index != 0 {
-            result.push(',');
+            output.0.push_byte(b',');
         }
-        write!(&mut result, "{value}").expect("writing to String cannot fail");
+        value.append_to(&mut output);
     }
-    result.push(']');
-    result
+    output.0.push_byte(b']');
+    output.0
 }
 
-pub fn property_value_to_string(value: &PropertyValue) -> Result<String, PropertyStringError> {
-    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:192-266
-    // RDKit❗✔️: inline bool rdvalue_tostring(RDValue_cast_t val, std::string &res) {
-    // RDKit❗✔️:   switch (val.getTag()) {
-    // RDKit❗✔️:     case RDTypeTag::StringTag:
-    // RDKit❗✔️:       res = rdvalue_cast<std::string>(val);
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️:     case RDTypeTag::IntTag:
-    // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<int>(val));
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️:     case RDTypeTag::DoubleTag: {
-    // RDKit❗✔️:       Utils::LocaleSwitcher ls;  // for lexical cast...
-    // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<double>(val));
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     case RDTypeTag::UnsignedIntTag:
-    // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<unsigned int>(val));
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️: #ifdef RDVALUE_HASBOOL
-    // RDKit❗✔️:     case RDTypeTag::BoolTag:
-    // RDKit❗✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️: #endif
+/// Project a signed integer vector using the source C-locale spelling.
+pub fn int_vector_to_string(value: &[i32]) -> String {
+    // Reuse the sole source framing implementation. This existing numeric
+    // primitive accepts only signed integers, so every emitted byte is ASCII.
+    // RDKit✔️❌: the unchanged String signature adds a known-ASCII validation
+    // pass; arbitrary source text never enters this numeric-only wrapper.
+    String::from_utf8(format_property_vector(value).into_bytes())
+        .expect("i32 Display plus ASCII frame emits only ASCII")
+}
+
+pub fn property_value_to_string(
+    value: &PropertyValue,
+) -> Result<cosmolkit_model::PropertyText, PropertyStringError> {
+    // BEGIN RDKIT CPP FUNCTION rdvalue_tostring
+    // RDKit✔️✔️: inline bool rdvalue_tostring(RDValue_cast_t val, std::string &res) {
+    // RDKit✔️✔️:   switch (val.getTag()) {
+    // RDKit✔️✔️:     case RDTypeTag::StringTag:
+    // RDKit✔️✔️:       res = rdvalue_cast<std::string>(val);
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case RDTypeTag::IntTag:
+    // RDKit✔️✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<int>(val));
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case RDTypeTag::DoubleTag: {
+    // RDKit✔️✔️:       Utils::LocaleSwitcher ls;  // for lexical cast...
+    // RDKit✔️✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<double>(val));
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     case RDTypeTag::UnsignedIntTag:
+    // RDKit✔️✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<unsigned int>(val));
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️: #ifdef RDVALUE_HASBOOL
+    // RDKit✔️✔️:     case RDTypeTag::BoolTag:
+    // RDKit✔️✔️:       res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️: #endif
     // RDKit❌❌:     case RDTypeTag::FloatTag: {
     // RDKit❌❌:       Utils::LocaleSwitcher ls;  // for lexical cast...
     // RDKit❌❌:       res = boost::lexical_cast<std::string>(rdvalue_cast<float>(val));
@@ -269,15 +318,15 @@ pub fn property_value_to_string(value: &PropertyValue) -> Result<String, Propert
     // RDKit❌❌:       res = vectToString<float>(val);
     // RDKit❌❌:       break;
     // RDKit❌❌:     }
-    // RDKit❗✔️:     case RDTypeTag::VecIntTag:
-    // RDKit❗✔️:       res = vectToString<int>(val);
-    // RDKit❗✔️:       break;
+    // RDKit✔️✔️:     case RDTypeTag::VecIntTag:
+    // RDKit✔️✔️:       res = vectToString<int>(val);
+    // RDKit✔️✔️:       break;
     // RDKit❌❌:     case RDTypeTag::VecUnsignedIntTag:
     // RDKit❌❌:       res = vectToString<unsigned int>(val);
     // RDKit❌❌:       break;
-    // RDKit❌❌:     case RDTypeTag::VecStringTag:
-    // RDKit❌❌:       res = vectToString<std::string>(val);
-    // RDKit❌❌:       break;
+    // RDKit✔️✔️:     case RDTypeTag::VecStringTag:
+    // RDKit✔️✔️:       res = vectToString<std::string>(val);
+    // RDKit✔️✔️:       break;
     // RDKit❌❌:     case RDTypeTag::AnyTag: {
     // RDKit❌❌:       Utils::LocaleSwitcher ls;  // for lexical cast...
     // RDKit❌❌:       try {
@@ -303,12 +352,12 @@ pub fn property_value_to_string(value: &PropertyValue) -> Result<String, Propert
     // RDKit❌❌:       }
     // RDKit❌❌:       break;
     // RDKit❌❌:     }
-    // RDKit❗✔️:     default:
-    // RDKit❗✔️:       res = "";
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   return true;
-    // RDKit❗✔️: }
-    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue.h:192-266
+    // RDKit❌❌:     default:
+    // RDKit❌❌:       res = "";
+    // RDKit❌❌:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION rdvalue_tostring
     // BEGIN BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/lcast_unsigned_converters.hpp:71-153
     // Boost❗✔️:         template <class Traits, class T, class CharT>
     // Boost❗✔️:         class lcast_put_unsigned: boost::noncopyable {
@@ -394,41 +443,117 @@ pub fn property_value_to_string(value: &PropertyValue) -> Result<String, Propert
     // Boost❗✔️:             }
     // Boost❗✔️:         };
     // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/scalar_dependency/boost_1_81_sources/boost/lexical_cast/detail/lcast_unsigned_converters.hpp:71-153
-    // BEGIN RDKIT CPP FUNCTION rdvalue_tostring
-    // RDKit✔️✔️: switch (val.getTag()) {
-    // RDKit✔️✔️:   case RDTypeTag::StringTag:
-    // RDKit✔️✔️:     res = rdvalue_cast<std::string>(val);
-    // RDKit✔️✔️:     break;
-    // RDKit✔️✔️:   case RDTypeTag::IntTag:
-    // RDKit✔️✔️:     res = boost::lexical_cast<std::string>(rdvalue_cast<int>(val));
-    // RDKit✔️✔️:     break;
-    // RDKit✔️✔️:   case RDTypeTag::DoubleTag: {
-    // RDKit✔️✔️:     Utils::LocaleSwitcher ls;  // for lexical cast...
-    // RDKit✔️✔️:     res = boost::lexical_cast<std::string>(rdvalue_cast<double>(val));
-    // RDKit✔️✔️:     break;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: #ifdef RDVALUE_HASBOOL
-    // RDKit✔️✔️:   case RDTypeTag::BoolTag:
-    // RDKit✔️✔️:     res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
-    // RDKit✔️✔️:     break;
-    // RDKit✔️✔️: #endif
-    // END RDKIT CPP FUNCTION rdvalue_tostring
-    // Behavior review: String bytes are copied without inspection, signed
-    // i32 values use normalized decimal spelling, and Boost's bool stream
-    // spelling is reproduced as `1` or `0`. Double uses the approved pure-Rust
-    // precision-17 `%g` implementation above; fixed owner regressions and the
-    // frozen native diagnostic support the modeled byte-equivalence marker.
-    // Complexity review: each scalar branch performs one output allocation
-    // and a constant-size conversion, matching the source assignment into its
-    // output std::string without an intermediate value cache.
+    // BEGIN RDKIT CPP DISPATCH CAST HELPER
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline std::string rdvalue_cast<std::string>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<std::string>(v)) {
+    // RDKit❗✔️:     return *v.ptrCast<std::string>();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT CPP DISPATCH CAST HELPER
+    // BEGIN RDKIT CPP DISPATCH CAST HELPER
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline double rdvalue_cast<double>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<double>(v)) {
+    // RDKit❗✔️:     return v.value.d;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<float>(v)) {
+    // RDKit❗✔️:     return v.value.f;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT CPP DISPATCH CAST HELPER
+    // BEGIN RDKIT CPP DISPATCH CAST HELPER
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return v.value.i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<int>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT CPP DISPATCH CAST HELPER
+    // BEGIN RDKIT CPP DISPATCH CAST HELPER
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return v.value.u;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT CPP DISPATCH CAST HELPER
+    // BEGIN RDKIT CPP DISPATCH CAST HELPER
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline bool rdvalue_cast<bool>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<bool>(v)) {
+    // RDKit❗✔️:     return v.value.b;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // END RDKIT CPP DISPATCH CAST HELPER
+    // Behavior: exhaustive matching supplies only the corresponding modeled
+    // tag to each source cast; the general cross-tag cast helpers above are
+    // independently implemented in the numeric/model owners, not duplicated
+    // here. String copies counted bytes without UTF8 inspection. Scalar Int,
+    // UInt and Bool retain existing C-locale decimal/0-or-1 primitives. Double
+    // delegates unchanged to the approved p5 binary64 formatter and locale-
+    // independent output. IntVector and StringVector share independently
+    // compared SF384 framing: raw string elements are not escaped or decoded.
+    // Unmodeled Float/other vectors/Any/Empty are not manufactured as modeled
+    // values or converted through a fallback. All seven modeled tags succeed.
+    // Complexity: one owning output allocation for scalar/string payloads;
+    // vectors traverse elements once into one growing output buffer. Numeric
+    // byte ownership adapters move their generated String buffers. The bounded
+    // binary64 formatter is unchanged; arbitrary text has no validation scan.
     match value {
         PropertyValue::String(value) => Ok(value.clone()),
-        PropertyValue::Int(value) => Ok(value.to_string()),
-        PropertyValue::UInt(value) => Ok(value.to_string()),
-        PropertyValue::IntVector(value) => Ok(int_vector_to_string(value)),
-        PropertyValue::Double(value) => Ok(format_boost_double(*value)),
-        PropertyValue::Bool(value) => Ok(if *value { "1" } else { "0" }.to_owned()),
+        PropertyValue::Int(value) => Ok(value.to_string().into()),
+        PropertyValue::UInt(value) => Ok(value.to_string().into()),
+        PropertyValue::IntVector(value) => Ok(format_property_vector(value)),
+        PropertyValue::StringVector(value) => Ok(format_property_vector(value)),
+        PropertyValue::Double(value) => Ok(format_boost_double(*value).into()),
+        PropertyValue::Bool(value) => Ok(if *value { "1" } else { "0" }.into()),
     }
+}
+
+/// A required source string read retains missing-key and conversion errors.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum RequiredPropertyStringError {
+    #[error(transparent)]
+    Missing(#[from] cosmolkit_model::MissingPropertyError),
+    #[error(transparent)]
+    Conversion(#[from] PropertyStringError),
+}
+
+/// Complete Dict::getVal(string&) using the model's required byte-key lookup.
+#[doc(hidden)]
+pub fn required_property_value_to_string(
+    value: Result<&PropertyValue, cosmolkit_model::MissingPropertyError>,
+) -> Result<PropertyText, RequiredPropertyStringError> {
+    // RDKit✔️🔝: void getVal(const std::string_view what, std::string &res) const {
+    // RDKit✔️🔝:     for (const auto &i : _data) {
+    // RDKit✔️🔝:       if (i.key == what) {
+    // RDKit✔️🔝:         rdvalue_tostring(i.val, res);
+    // RDKit✔️🔝:         return;
+    // RDKit✔️🔝:       }
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:     throw KeyErrorException(what);
+    // RDKit✔️🔝:   }
+    // Behavior: MODEL supplies the canonical tagged value or the exact
+    // owning missing key. Only a present value reaches rdvalue_tostring, whose
+    // complete independently compared SF379 implementation is reused below.
+    // Missing and conversion errors remain different structural variants;
+    // neither is changed to absence, an empty value, or Unsupported input.
+    // Complexity: canonical tree lookup is O(log P) rather than source O(P).
+    // No present-key copy, intermediate value clone or second formatter.
+    Ok(property_value_to_string(value?)?)
 }
 
 #[cfg(test)]
@@ -439,7 +564,7 @@ mod tests {
         for &(bits, expected) in cases {
             assert_eq!(
                 property_value_to_string(&PropertyValue::Double(f64::from_bits(bits))),
-                Ok(expected.to_owned()),
+                Ok(expected.into()),
                 "binary64 bits {bits:#018x}"
             );
         }
@@ -530,8 +655,8 @@ mod tests {
     fn property_string_scalar_preserves_string_bytes() {
         let bytes = "leading\0middle.\u{00e9}\ntrailing ".to_owned();
         assert_eq!(
-            property_value_to_string(&PropertyValue::String(bytes.clone())),
-            Ok(bytes)
+            property_value_to_string(&PropertyValue::String((bytes.clone()).into())),
+            Ok(bytes.into())
         );
     }
 
@@ -547,22 +672,22 @@ mod tests {
         for (value, expected) in cases {
             assert_eq!(
                 property_value_to_string(&PropertyValue::Int(value)),
-                Ok(expected.to_owned())
+                Ok(expected.into())
             );
         }
         assert_eq!(
             property_value_to_string(&PropertyValue::Bool(false)),
-            Ok("0".to_owned())
+            Ok("0".into())
         );
         assert_eq!(
             property_value_to_string(&PropertyValue::Bool(true)),
-            Ok("1".to_owned())
+            Ok("1".into())
         );
     }
 
     #[test]
     fn property_string_scalar_retains_explicit_wrong_kind_access_errors() {
-        let string_as_int = PropertyValue::String("007".to_owned())
+        let string_as_int = PropertyValue::String(("007".to_owned()).into())
             .as_int()
             .unwrap_err();
         assert_eq!(string_as_int.expected(), PropertyValueKind::Int);
@@ -592,7 +717,10 @@ mod q01_b1_tests {
             let value = PropertyValue::from(v.clone());
             let before = value.clone();
             assert_eq!(int_vector_to_string(&v), text);
-            assert_eq!(property_value_to_string(&value).unwrap(), text);
+            assert_eq!(
+                property_value_to_string(&value).unwrap().as_bytes(),
+                text.as_bytes()
+            );
             assert_eq!(value, before);
         }
     }
@@ -627,42 +755,60 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_text_0() {
         let v = PropertyValue::UInt(0_u32);
-        assert_eq!(property_value_to_string(&v).unwrap(), "0");
+        assert_eq!(
+            property_value_to_string(&v).unwrap().as_bytes(),
+            "0".as_bytes()
+        );
         assert_eq!(v, PropertyValue::UInt(0_u32));
     }
     // FROZEN UINT CONDITION: TEXT_1
     #[test]
     fn uint_cell_text_1() {
         let v = PropertyValue::UInt(1_u32);
-        assert_eq!(property_value_to_string(&v).unwrap(), "1");
+        assert_eq!(
+            property_value_to_string(&v).unwrap().as_bytes(),
+            "1".as_bytes()
+        );
         assert_eq!(v, PropertyValue::UInt(1_u32));
     }
     // FROZEN UINT CONDITION: TEXT_2147483646
     #[test]
     fn uint_cell_text_2147483646() {
         let v = PropertyValue::UInt(2147483646_u32);
-        assert_eq!(property_value_to_string(&v).unwrap(), "2147483646");
+        assert_eq!(
+            property_value_to_string(&v).unwrap().as_bytes(),
+            "2147483646".as_bytes()
+        );
         assert_eq!(v, PropertyValue::UInt(2147483646_u32));
     }
     // FROZEN UINT CONDITION: TEXT_2147483647
     #[test]
     fn uint_cell_text_2147483647() {
         let v = PropertyValue::UInt(2147483647_u32);
-        assert_eq!(property_value_to_string(&v).unwrap(), "2147483647");
+        assert_eq!(
+            property_value_to_string(&v).unwrap().as_bytes(),
+            "2147483647".as_bytes()
+        );
         assert_eq!(v, PropertyValue::UInt(2147483647_u32));
     }
     // FROZEN UINT CONDITION: TEXT_2147483648
     #[test]
     fn uint_cell_text_2147483648() {
         let v = PropertyValue::UInt(2147483648_u32);
-        assert_eq!(property_value_to_string(&v).unwrap(), "2147483648");
+        assert_eq!(
+            property_value_to_string(&v).unwrap().as_bytes(),
+            "2147483648".as_bytes()
+        );
         assert_eq!(v, PropertyValue::UInt(2147483648_u32));
     }
     // FROZEN UINT CONDITION: TEXT_4294967295
     #[test]
     fn uint_cell_text_4294967295() {
         let v = PropertyValue::UInt(4294967295_u32);
-        assert_eq!(property_value_to_string(&v).unwrap(), "4294967295");
+        assert_eq!(
+            property_value_to_string(&v).unwrap().as_bytes(),
+            "4294967295".as_bytes()
+        );
         assert_eq!(v, PropertyValue::UInt(4294967295_u32));
     }
 }

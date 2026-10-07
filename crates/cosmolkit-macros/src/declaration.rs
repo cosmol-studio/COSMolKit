@@ -8,8 +8,8 @@ use std::collections::HashSet;
 
 use quote::format_ident;
 use syn::{
-    Attribute, Expr, Ident, LitBool, LitStr, Pat, PatType, Path, Token, Type, braced, bracketed,
-    parenthesized, parse::Parse, parse::ParseStream,
+    Attribute, Expr, Ident, LitBool, LitStr, Pat, PatType, Path, Token, Type, Visibility, braced,
+    bracketed, parenthesized, parse::Parse, parse::ParseStream,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -42,6 +42,7 @@ pub(crate) enum SemanticPrecondition {
 pub(crate) enum MoleculeOutput {
     Single,
     Multiple,
+    LazyMultiple,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,6 +64,7 @@ pub(crate) enum TopologyEditKind {
     Compacting,
     Expanding,
     Reordering,
+    Reconstruction,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -70,6 +72,7 @@ pub(crate) enum MappingRequirement {
     None,
     Identity,
     Required,
+    Reconstruction,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -85,6 +88,7 @@ pub(crate) enum CipStatePolicy {
     Clear,
     Recompute,
     TautomerSourceTransition,
+    StereoisomerSourceTransition,
 }
 
 #[derive(Clone, Debug)]
@@ -104,6 +108,8 @@ pub(crate) struct DerivedEffectFields {
 #[derive(Clone)]
 pub(crate) struct MoleculeFields {
     pub(crate) method: Ident,
+    pub(crate) method_visibility: Visibility,
+    pub(crate) error_type: Type,
     pub(crate) docs: Option<LitStr>,
     pub(crate) impl_fn: Path,
     pub(crate) output: MoleculeOutput,
@@ -169,6 +175,8 @@ struct RawDerivedEffectFields {
 #[derive(Default)]
 struct RawMoleculeFields {
     method: Option<Ident>,
+    method_visibility: Option<Visibility>,
+    error_type: Option<Type>,
     docs: Option<LitStr>,
     impl_fn: Option<Path>,
     output: Option<Ident>,
@@ -239,6 +247,8 @@ impl Parse for MoleculeOperation {
             content.parse::<Token![:]>()?;
             match key.to_string().as_str() {
                 "method" => raw.method = Some(content.parse()?),
+                "method_visibility" => raw.method_visibility = Some(content.parse()?),
+                "error_type" => raw.error_type = Some(content.parse()?),
                 "docs" => raw.docs = Some(content.parse()?),
                 "impl_fn" => raw.impl_fn = Some(content.parse()?),
                 "output" => raw.output = Some(content.parse()?),
@@ -404,6 +414,12 @@ fn finish_molecule_fields(
 
     Ok(MoleculeFields {
         method,
+        method_visibility: raw
+            .method_visibility
+            .unwrap_or_else(|| syn::parse_quote!(pub)),
+        error_type: raw
+            .error_type
+            .unwrap_or_else(|| syn::parse_quote!(crate::ops::OperationError)),
         docs: raw.docs,
         impl_fn,
         output,
@@ -493,15 +509,44 @@ fn validate_molecule_relationships(
             "declared derived effects require derived_cache write access",
         ));
     }
-    validate_operation_defined(operation, derived_effects)?;
-    validate_cip_transition(operation, method, output, access, cip_state)?;
+    validate_operation_defined(
+        operation,
+        method,
+        output,
+        cip_state,
+        derived_effects,
+        kind,
+        topology_edit,
+        access,
+        requires_mapping,
+    )?;
+    validate_cip_transition(
+        operation,
+        method,
+        output,
+        access,
+        cip_state,
+        kind,
+        topology_edit,
+        requires_mapping,
+        may_mutate,
+    )?;
 
     let changes_indices = matches!(
         topology_edit,
-        TopologyEditKind::Compacting | TopologyEditKind::Expanding | TopologyEditKind::Reordering
+        TopologyEditKind::Compacting
+            | TopologyEditKind::Expanding
+            | TopologyEditKind::Reordering
+            | TopologyEditKind::Reconstruction
     );
     if changes_indices
-        && (kind != OperationKind::Strong || requires_mapping != MappingRequirement::Required)
+        && (kind != OperationKind::Strong
+            || requires_mapping
+                != if topology_edit == TopologyEditKind::Reconstruction {
+                    MappingRequirement::Reconstruction
+                } else {
+                    MappingRequirement::Required
+                })
     {
         return Err(syn::Error::new(
             operation.span(),
@@ -520,8 +565,25 @@ fn validate_molecule_relationships(
             "weak molecule operations cannot declare an index-changing topology edit",
         ));
     }
+    if requires_mapping == MappingRequirement::Reconstruction
+        && (output != MoleculeOutput::Multiple
+            || topology_edit != TopologyEditKind::Reconstruction
+            || [
+                MoleculeBlock::Topology,
+                MoleculeBlock::Coordinates,
+                MoleculeBlock::Properties,
+                MoleculeBlock::DerivedCache,
+            ]
+            .iter()
+            .any(|block| !access.write.contains(block)))
+    {
+        return Err(syn::Error::new(
+            operation.span(),
+            "reconstruction requires strong multiple output with all four blocks write-owned",
+        ));
+    }
 
-    if output == MoleculeOutput::Multiple && inplace {
+    if output != MoleculeOutput::Single && inplace {
         return Err(syn::Error::new(
             operation.span(),
             "multiple-output molecule operations cannot generate an in-place wrapper",
@@ -536,7 +598,7 @@ fn validate_molecule_relationships(
         }
     }
     if let Some(report) = report_type.or(inplace_result_type) {
-        if report_type.is_some() && inplace_result_type.is_some() {
+        if report_type.is_some() && inplace_result_type.is_some() && report_result_type.is_none() {
             return Err(syn::Error::new_spanned(
                 report,
                 "report_type and inplace_result_type are mutually exclusive",
@@ -560,6 +622,12 @@ fn validate_molecule_relationships(
                 "inplace_result_type requires inplace: true",
             ));
         }
+    }
+    if output == MoleculeOutput::LazyMultiple && (result_type.is_some() || assemble_fn.is_some()) {
+        return Err(syn::Error::new(
+            operation.span(),
+            "lazy_multiple owns per-next finalization and cannot declare result_type or assemble_fn",
+        ));
     }
     match (output, result_type, assemble_fn) {
         (MoleculeOutput::Single, _, Some(path)) => {
@@ -672,7 +740,17 @@ fn validate_molecule_relationships(
     Ok(())
 }
 
-fn validate_operation_defined(operation: &Ident, effects: &DerivedEffectFields) -> syn::Result<()> {
+fn validate_operation_defined(
+    operation: &Ident,
+    method: &Ident,
+    output: MoleculeOutput,
+    cip_state: CipStatePolicy,
+    effects: &DerivedEffectFields,
+    kind: OperationKind,
+    topology_edit: TopologyEditKind,
+    access: &AccessFields,
+    mapping: MappingRequirement,
+) -> syn::Result<()> {
     if effects.operation_defined.is_empty() {
         return Ok(());
     }
@@ -681,12 +759,68 @@ fn validate_operation_defined(operation: &Ident, effects: &DerivedEffectFields) 
         "without_hydrogens" | "without_hydrogens_with_params"
     );
     let valence_only = effects.operation_defined == [DerivedState::Valence];
-    if allowed_operation && valence_only {
+    // ROOT CK-474bdce explicitly approves this existing source cache transition.
+    // Keep the canonical AddHs identity, cardinality, edit and authority exact.
+    let add_hs = operation == "with_hydrogens"
+        && method == "with_hydrogens_with_params"
+        && output == MoleculeOutput::Single
+        && cip_state == CipStatePolicy::Clear
+        && kind == OperationKind::Strong
+        && topology_edit == TopologyEditKind::Expanding
+        && mapping == MappingRequirement::Required
+        && access.read.is_empty()
+        && access.write
+            == [
+                MoleculeBlock::Topology,
+                MoleculeBlock::Coordinates,
+                MoleculeBlock::Properties,
+                MoleculeBlock::DerivedCache,
+            ]
+        && valence_only;
+    // USER approval ROOT CK-4b988: these two exact Weak source transitions.
+    // Every other identity, authority and effect shape remains forbidden.
+    let weak_source = kind == OperationKind::Weak
+        && topology_edit == TopologyEditKind::Local
+        && output == MoleculeOutput::Single
+        && mapping == MappingRequirement::None
+        && access.read.is_empty()
+        && access.write
+            == [
+                MoleculeBlock::Topology,
+                MoleculeBlock::Properties,
+                MoleculeBlock::DerivedCache,
+            ]
+        && valence_only
+        && effects.recompute == [DerivedState::Rings]
+        && ((operation == "with_kekulized_bonds"
+            && method == "with_kekulized_bonds_with_params"
+            && cip_state == CipStatePolicy::Preserve
+            && effects.preserve == [DerivedState::RingFamilies, DerivedState::Coordinates]
+            && effects.invalidate
+                == [
+                    DerivedState::Aromaticity,
+                    DerivedState::Stereo,
+                    DerivedState::Drawing,
+                    DerivedState::Fingerprint,
+                ])
+            || (operation == "sanitize"
+                && method == "sanitize_with_params"
+                && cip_state == CipStatePolicy::Clear
+                && effects.preserve == [DerivedState::Coordinates]
+                && effects.invalidate
+                    == [
+                        DerivedState::RingFamilies,
+                        DerivedState::Aromaticity,
+                        DerivedState::Stereo,
+                        DerivedState::Drawing,
+                        DerivedState::Fingerprint,
+                    ]));
+    if (allowed_operation && valence_only) || add_hs || weak_source {
         return Ok(());
     }
     Err(syn::Error::new(
         operation.span(),
-        "operation_defined is permitted only for valence in the hydrogen-removal family; widening it requires explicit human-author approval",
+        "operation_defined is permitted only in the approved exact hydrogen and Weak source transitions; widening it requires explicit human-author approval",
     ))
 }
 
@@ -696,7 +830,51 @@ fn validate_cip_transition(
     output: MoleculeOutput,
     access: &AccessFields,
     cip_state: CipStatePolicy,
+    kind: OperationKind,
+    topology_edit: TopologyEditKind,
+    mapping: MappingRequirement,
+    may_mutate: &[MoleculeBlock],
 ) -> syn::Result<()> {
+    if cip_state == CipStatePolicy::StereoisomerSourceTransition {
+        let valid = matches!(
+            (operation.to_string().as_str(), method.to_string().as_str()),
+            (
+                "enumerate_stereoisomers",
+                "enumerate_stereoisomers_with_options"
+            ) | (
+                "enumerate_stereoisomers_with_random_bits",
+                "enumerate_stereoisomers_with_random_bits"
+            )
+        ) && output == MoleculeOutput::LazyMultiple
+            && kind == OperationKind::Weak
+            && topology_edit == TopologyEditKind::None
+            && mapping == MappingRequirement::None
+            && may_mutate.len() == 4
+            && [
+                MoleculeBlock::Topology,
+                MoleculeBlock::Coordinates,
+                MoleculeBlock::Properties,
+                MoleculeBlock::DerivedCache,
+            ]
+            .iter()
+            .all(|block| may_mutate.contains(block))
+            && access.read.is_empty()
+            && access.write
+                == [
+                    MoleculeBlock::Topology,
+                    MoleculeBlock::Coordinates,
+                    MoleculeBlock::Properties,
+                    MoleculeBlock::DerivedCache,
+                ];
+        return if valid {
+            Ok(())
+        } else {
+            Err(syn::Error::new(
+                operation.span(),
+                "stereoisomer source transition requires the exact lazy enumeration identity and four write-owned blocks",
+            ))
+        };
+    }
     if cip_state != CipStatePolicy::TautomerSourceTransition {
         return Ok(());
     }
@@ -1146,6 +1324,12 @@ fn validate_bio_relationships(
     parity: BioParity,
     parity_profile: Option<&LitStr>,
 ) -> syn::Result<()> {
+    if mapping == MappingRequirement::Reconstruction {
+        return Err(syn::Error::new(
+            operation.span(),
+            "reconstruction mapping is only available to molecule multiple-output operations",
+        ));
+    }
     for block in auto_remap {
         if !may_mutate.contains(block) {
             return Err(syn::Error::new(
@@ -1387,6 +1571,7 @@ fn parse_molecule_output(value: Option<&Ident>) -> syn::Result<MoleculeOutput> {
     match value.map(ToString::to_string).as_deref() {
         None | Some("single") => Ok(MoleculeOutput::Single),
         Some("multiple") => Ok(MoleculeOutput::Multiple),
+        Some("lazy_multiple") => Ok(MoleculeOutput::LazyMultiple),
         Some(other) => Err(syn::Error::new_spanned(
             value.expect("present value"),
             format!("unknown molecule output '{other}'"),
@@ -1423,6 +1608,7 @@ fn parse_topology_edit(value: Option<&Ident>) -> syn::Result<TopologyEditKind> {
         Some("compacting") => Ok(TopologyEditKind::Compacting),
         Some("expanding") => Ok(TopologyEditKind::Expanding),
         Some("reordering") => Ok(TopologyEditKind::Reordering),
+        Some("reconstruction") => Ok(TopologyEditKind::Reconstruction),
         Some(other) => Err(syn::Error::new_spanned(
             value.expect("present value"),
             format!("unknown topology edit kind '{other}'"),
@@ -1435,6 +1621,7 @@ fn parse_mapping_requirement(value: Option<&Ident>) -> syn::Result<MappingRequir
         None | Some("none") => Ok(MappingRequirement::None),
         Some("identity") => Ok(MappingRequirement::Identity),
         Some("required") => Ok(MappingRequirement::Required),
+        Some("reconstruction") => Ok(MappingRequirement::Reconstruction),
         Some(other) => Err(syn::Error::new_spanned(
             value.expect("present value"),
             format!("unknown mapping requirement '{other}'"),
@@ -1460,6 +1647,7 @@ fn parse_cip_state(value: &Ident) -> syn::Result<CipStatePolicy> {
         "clear" => Ok(CipStatePolicy::Clear),
         "recompute" => Ok(CipStatePolicy::Recompute),
         "tautomer_source_transition" => Ok(CipStatePolicy::TautomerSourceTransition),
+        "stereoisomer_source_transition" => Ok(CipStatePolicy::StereoisomerSourceTransition),
         other => Err(syn::Error::new_spanned(
             value,
             format!("unknown CIP state policy '{other}'"),

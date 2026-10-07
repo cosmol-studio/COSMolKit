@@ -11,6 +11,11 @@ pub(crate) fn data_params(params: &SdfReadParams) -> cosmolkit_io::SdfDataReadPa
         strict_parsing: params.strict_parsing,
         process_property_lists: params.process_property_lists,
         coordinate_mode: params.coordinate_mode,
+        mol_post: Some(cosmolkit_io::MolPostParams {
+            sanitize: params.sanitize,
+            remove_hs: params.remove_hydrogens,
+            expand_attachment_points: params.expand_attachment_points,
+        }),
     }
 }
 
@@ -32,7 +37,7 @@ impl<R: BufRead> SdfRecordStream<R> {
         let index = self.inner.records_consumed();
         self.inner
             .next_record()?
-            .map(|parsed| SdfRecord::from_parsed(parsed, &self.params, index))
+            .map(|parsed| SdfRecord::from_parsed(parsed, index))
             .transpose()
     }
     pub fn is_end(&self) -> bool {
@@ -120,7 +125,7 @@ impl SdfDataset {
         params: &SdfReadParams,
     ) -> Result<SdfRecord, SdfError> {
         let parsed = self.inner.record_with_params(index, data_params(params))?;
-        SdfRecord::from_parsed(parsed, params, index)
+        SdfRecord::from_parsed(parsed, index)
     }
     pub fn record_text(&self, index: usize) -> Result<String, SdfError> {
         Ok(self.inner.record_text(index)?)
@@ -180,36 +185,5 @@ impl SdfReader {
     }
     pub fn params(&self) -> &SdfReadParams {
         &self.params
-    }
-    #[cfg(feature = "cap-batch")]
-    pub fn batches(
-        &self,
-        size: usize,
-        mode: crate::BatchErrorMode,
-        n_jobs: Option<usize>,
-    ) -> Result<crate::SdfReaderBatchIterator<BufReader<File>>, crate::BatchValidationError> {
-        if size == 0 {
-            return Err(crate::BatchValidationError::parameter(
-                "size",
-                "size must be >= 1",
-            ));
-        }
-        if n_jobs == Some(0) {
-            return Err(crate::BatchValidationError::parameter(
-                "n_jobs",
-                "n_jobs must be >= 1",
-            ));
-        }
-        let file = File::open(&self.path).map_err(|source| {
-            crate::BatchValidationError::from_record_errors(vec![crate::BatchError::with_source(
-                0,
-                "SdfReader.open",
-                crate::MolecularIoError::Io {
-                    path: self.path.clone(),
-                    source,
-                },
-            )])
-        })?;
-        SdfRecordStream::with_params(BufReader::new(file), self.params).batches(size, mode, n_jobs)
     }
 }

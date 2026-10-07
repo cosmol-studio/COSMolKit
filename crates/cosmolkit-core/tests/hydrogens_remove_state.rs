@@ -347,11 +347,17 @@ fn empty_candidate_uses_identity_but_clears_only_computed_properties() {
     );
     assert_eq!(
         output.topology.atoms[0].prop("atom-user"),
-        Some(&PropertyValue::String("keep".to_owned()))
+        Some(&PropertyValue::String("keep".to_owned().into()))
     );
     assert_eq!(output.topology.atoms[0].prop("atom-cache"), None);
-    assert_eq!(output.properties.name(), Some("named"));
-    assert_eq!(output.properties.prop("user"), Some("keep"));
+    assert_eq!(
+        output.properties.name().map(|value| value.as_bytes()),
+        Some(b"named".as_slice())
+    );
+    assert_eq!(
+        output.properties.prop("user"),
+        Some(&PropertyValue::String("keep".into()))
+    );
     assert_eq!(output.properties.prop("cache"), None);
 }
 
@@ -491,8 +497,8 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
             )
             .with_prop("dim", "three"),
         ],
-        source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         source_conformer_order: None,
+        source_coordinate_dim: Some(CoordinateDimension::ThreeD),
     };
     let properties = MoleculeProperties::default()
         .with_name("named")
@@ -524,9 +530,9 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
     assert_eq!(
         output.coordinates.conformers_2d[0]
             .props()
-            .get("dim")
-            .map(String::as_str),
-        Some("two")
+            .get(b"dim".as_slice())
+            .map(|value| value.as_bytes()),
+        Some(b"two".as_slice())
     );
     assert_eq!(
         output.coordinates.conformers_2d[0].coordinates(),
@@ -540,8 +546,14 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
         output.coordinates.source_coordinate_dim,
         Some(CoordinateDimension::ThreeD)
     );
-    assert_eq!(output.properties.name(), Some("named"));
-    assert_eq!(output.properties.prop("user"), Some("keep"));
+    assert_eq!(
+        output.properties.name().map(|value| value.as_bytes()),
+        Some(b"named".as_slice())
+    );
+    assert_eq!(
+        output.properties.prop("user"),
+        Some(&PropertyValue::String("keep".into()))
+    );
     assert_eq!(output.properties.prop("cache"), None);
     assert_eq!(
         output.properties.sdf_data_fields(),
@@ -557,16 +569,16 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
     );
     assert_eq!(
         output.topology.atoms[0].prop("atom-user"),
-        Some(&PropertyValue::String("c".to_owned()))
+        Some(&PropertyValue::String("c".to_owned().into()))
     );
     assert_eq!(output.topology.atoms[0].prop("atom-cache"), None);
     assert_eq!(
         output.topology.atoms[1].prop("atom-user"),
-        Some(&PropertyValue::String("o".to_owned()))
+        Some(&PropertyValue::String("o".to_owned().into()))
     );
     assert_eq!(
         output.topology.bonds[0].prop("bond-user"),
-        Some(&PropertyValue::String("co".to_owned()))
+        Some(&PropertyValue::String("co".to_owned().into()))
     );
     assert_eq!(output.topology.bonds[0].prop("bond-cache"), None);
 }
@@ -679,9 +691,14 @@ fn post_removal_chiral_explicit_h_normalization_respects_no_implicit() {
         )
         .unwrap();
         assert_eq!(output.topology.atoms[0].explicit_hydrogens(), expected);
-        // CK-VALENCE-001: intermediate chiral-H normalization remains active,
-        // but sanitize=false must not manufacture a final cache assignment.
-        assert!(output.final_valence.is_none());
+        // Source AddHs.cpp refreshes only the normalized noImplicit=false
+        // atom; noImplicit=true retains its pre-removal cached scalar pair.
+        let valence = output.final_valence.as_ref().unwrap();
+        assert_eq!(valence.explicit_valence, [if no_implicit { 3 } else { 0 }]);
+        assert_eq!(
+            valence.implicit_hydrogens,
+            [if no_implicit { 0 } else { 4 }]
+        );
     }
 }
 
@@ -825,17 +842,27 @@ fn stereo_overflow_and_sanitize_errors_propagate_without_partial_output() {
         vec![single(0, 1)],
     );
     let snapshot = overflow_source.clone();
+    // Pinned AddHs.cpp molRemoveH + Atom.h uint8 setter: 255 + 1 wraps to 0.
+    // Retain the original input and identity; only the nonsource overflow
+    // expectation is withdrawn. The source peer remains unchanged.
+    let result = remove_hydrogens_with_params(
+        overflow_source.clone(),
+        CoordinateBlock::default(),
+        MoleculeProperties::default(),
+        &no_sanitize(),
+    )
+    .unwrap();
+    assert_eq!(result.topology.atoms.len(), 1);
+    assert!(result.topology.bonds.is_empty());
+    assert_eq!(result.topology.atoms[0].explicit_hydrogens(), 0);
+    assert!(result.topology.atoms[0].no_implicit());
     assert_eq!(
-        remove_hydrogens_with_params(
-            overflow_source.clone(),
-            CoordinateBlock::default(),
-            MoleculeProperties::default(),
-            &no_sanitize(),
-        ),
-        Err(HydrogenError::ExplicitHydrogenOverflow {
-            atom: atom(0),
-            current: u8::MAX,
-        })
+        result.final_valence.as_ref().unwrap().explicit_valence,
+        vec![0]
+    );
+    assert_eq!(
+        result.final_valence.as_ref().unwrap().implicit_hydrogens,
+        vec![0]
     );
     assert_eq!(overflow_source, snapshot);
 

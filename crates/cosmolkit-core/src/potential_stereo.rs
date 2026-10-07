@@ -41,6 +41,7 @@ pub enum PotentialStereoType {
     AtomOctahedral,
     BondDouble,
     BondCumuleneEven,
+    BondAtropisomer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -57,6 +58,8 @@ pub enum PotentialStereoDescriptor {
     TetrahedralCounterclockwise,
     BondCis,
     BondTrans,
+    BondAtropCw,
+    BondAtropCcw,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -172,12 +175,18 @@ fn validate_topology_and_valence(
                 atom_count,
             });
         }
-        if let Some((index, value)) = rows
-            .iter()
-            .copied()
-            .enumerate()
-            .find(|(_, value)| *value < 0)
-        {
+        if let Some((index, value)) = rows.iter().copied().enumerate().find(|(index, _)| {
+            // RDKit✔️✔️:   return df_noImplicit ? 0 : d_implicitValence;
+            // Source initialization/getter semantics belong to the unique
+            // valence and hcount owners. Unused NoImplicit I is retained.
+            // Two O(1) indexed getters preserve the existing O(V) validation.
+            let atom = &topology.atoms[*index];
+            if field == "explicit_valence" {
+                crate::valence::cached_explicit_valence(atom, Some(valence)).is_err()
+            } else {
+                crate::hcount::implicit_hydrogen_count(atom, valence).is_err()
+            }
+        }) {
             return Err(PotentialStereoError::InvalidValenceValue {
                 field,
                 atom: AtomId::new(index),
@@ -201,7 +210,10 @@ fn validate_ring_rows(
         });
     }
     let atom_count = topology.atoms.len();
-    if rings.atom_row_count() != atom_count {
+    let preserved_prefix = (rings.atom_row_count() != atom_count
+        || rings.bond_row_count() != topology.bonds.len())
+        && crate::rings::preserves_appended_terminal_hydrogen_ring_prefix(topology, rings);
+    if rings.atom_row_count() != atom_count && !preserved_prefix {
         return Err(PotentialStereoError::InvalidRingInfo {
             reason: "atom membership row count mismatch",
             row: 0,
@@ -209,7 +221,7 @@ fn validate_ring_rows(
             limit: atom_count,
         });
     }
-    if rings.bond_row_count() != topology.bonds.len() {
+    if rings.bond_row_count() != topology.bonds.len() && !preserved_prefix {
         return Err(PotentialStereoError::InvalidRingInfo {
             reason: "bond membership row count mismatch",
             row: 0,
@@ -277,11 +289,6 @@ fn validate_inputs(
         });
     }
     validate_ring_rows(topology, rings)?;
-    for bond in &topology.bonds {
-        if matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw) {
-            return Err(PotentialStereoError::AtropisomerDependencyUnavailable { bond: bond.id() });
-        }
-    }
     Ok(())
 }
 
@@ -320,26 +327,11 @@ pub(crate) fn total_degree(
     // RDKit❗✔️:   return res;
     // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION Atom::getTotalDegree
-    let value = &topology.atoms[atom.index()];
-    let implicit_hydrogens = valence
-        .implicit_hydrogens
-        .get(atom.index())
-        .copied()
-        .ok_or(PotentialStereoError::InvalidValence {
-            field: "implicit_hydrogens",
-            actual: valence.implicit_hydrogens.len(),
-            atom_count: topology.atoms.len(),
-        })?;
-    let implicit_hydrogens = usize::try_from(implicit_hydrogens).map_err(|_| {
-        PotentialStereoError::InvalidValenceValue {
-            field: "implicit_hydrogens",
-            atom,
-            value: implicit_hydrogens,
-        }
-    })?;
-    // The indexed valence read and adjacency length are constant time, as are
-    // the corresponding RDKit getters; this helper does not allocate or clone.
-    Ok(graph_degree(topology, atom) + usize::from(value.explicit_hydrogens()) + implicit_hydrogens)
+    // The source GetTotalNumHs read includes NoImplicit and signed field width.
+    // Reuse its unique owner rather than interpreting detached rows directly.
+    // O(1): includeNeighbors=false and adjacency length do not scan the graph.
+    Ok(graph_degree(topology, atom)
+        + total_hydrogen_count_from_validated(topology, valence, atom, false)? as usize)
 }
 
 fn has_protium_neighbor(topology: &TopologyBlock, atom: AtomId) -> bool {
@@ -434,11 +426,16 @@ fn is_potential_tetrahedral(
         if hydrogens == 1 {
             return Ok(!has_protium_neighbor(topology, atom));
         }
-        if matches!(value.atomic_number(), 16 | 34)
-            && (valence.explicit_valence[atom.index()] == 4
-                || (valence.explicit_valence[atom.index()] == 3 && value.formal_charge() == 1))
-        {
-            return Ok(true);
+        if matches!(value.atomic_number(), 16 | 34) {
+            // RDKit✔️✔️:         if ((atom->getAtomicNum() == 16 || atom->getAtomicNum() == 34) &&
+            // RDKit✔️✔️:             (atom->getValence(Atom::ValenceType::EXPLICIT) == 4 ||
+            // RDKit✔️✔️:              (atom->getValence(Atom::ValenceType::EXPLICIT) == 3 &&
+            // RDKit✔️✔️:               atom->getFormalCharge() == 1))) {
+            // Reuse the actual source getter, with O(1) signed-width reads.
+            let explicit = crate::valence::cached_explicit_valence(value, Some(valence))?;
+            if explicit == 4 || (explicit == 3 && value.formal_charge() == 1) {
+                return Ok(true);
+            }
         }
         if value.atomic_number() == 7
             && value.hybridization() == Hybridization::Sp3
@@ -603,56 +600,21 @@ pub(crate) fn is_potential_bond(
     rings: &RingInfo,
     bond: &Bond,
 ) -> Result<bool, PotentialStereoError> {
-    // BEGIN RDKIT CPP FUNCTION isBondPotentialStereoBond
-    // RDKit✔️❌: if (bond->getBondType() != Bond::DOUBLE) return false;
-    // RDKit✔️❌: if (begDegree > 1 && begDegree < 4 && endDegree > 1 && endDegree < 4 &&
-    // RDKit✔️❌:     beginAtom->getTotalNumHs(true) < 2 && endAtom->getTotalNumHs(true) < 2) {
-    // RDKit✔️❌:   for (const auto &bring : ri->bondRings()) {
-    // RDKit✔️❌:     if (bring.size() < minRingSizeForDoubleBondStereo && contains(bring, bidx))
-    // RDKit✔️❌:       return false;
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return true;
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION isBondPotentialStereoBond
-    if bond.order() != BondOrder::Double {
-        return Ok(false);
-    }
-    let begin_degree = total_degree(topology, valence, bond.begin())?;
-    let end_degree = total_degree(topology, valence, bond.end())?;
-    if !(2..4).contains(&begin_degree) || !(2..4).contains(&end_degree) {
-        return Ok(false);
-    }
-    if total_hydrogens(topology, valence, bond.begin(), true)? >= 2
-        || total_hydrogens(topology, valence, bond.end(), true)? >= 2
-    {
-        return Ok(false);
-    }
-    if !rings.is_initialized() {
-        return Err(PotentialStereoError::InvalidRingInfo {
-            reason: "ring information is not initialized",
-            row: 0,
-            value: 0,
-            limit: 0,
-        });
-    }
-    if rings.bond_row_count() != topology.bonds.len() {
-        return Err(PotentialStereoError::InvalidRingInfo {
-            reason: "bond membership row count mismatch",
-            row: 0,
-            value: rings.bond_row_count(),
-            limit: topology.bonds.len(),
-        });
-    }
-    Ok(!rings
-        .bond_ring_sizes(bond.id())
-        .into_iter()
-        .any(|size| size < 8))
+    // A standalone detached candidate check owns a fresh structural proof.
+    let mut preserved_prefix = None;
+    is_potential_bond_with_prefix_check(topology, valence, rings, bond, &mut preserved_prefix)
 }
 
 fn bond_info(
     topology: &TopologyBlock,
     bond: BondId,
 ) -> Result<PotentialStereoInfo, PotentialStereoError> {
+    let state = &topology.bonds[bond.index()];
+    if state.order() == BondOrder::Single
+        && matches!(state.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw)
+    {
+        return represented_atropisomer_info(topology, state);
+    }
     let source = double_bond_stereo_info(topology, bond)?;
     Ok(PotentialStereoInfo {
         stereo_type: PotentialStereoType::BondDouble,
@@ -840,30 +802,78 @@ fn initialize_bonds(
     symbols: &mut [String],
 ) -> Result<(), PotentialStereoError> {
     // BEGIN RDKIT CPP FUNCTION initBondInfo
-    // RDKit✔️❌: bondSymbols[bidx] = getBondSymbol(bond);
-    // RDKit✔️❌: if (detail::isBondPotentialStereoBond(bond)) {
-    // RDKit✔️❌:   auto sinfo = detail::getStereoInfo(bond);
-    // RDKit✔️❌:   switch (sinfo.specified) {
-    // RDKit✔️❌:   case Unknown: knownBonds.set(bidx); bondSymbols[bidx] += "_" + to_string(bidx); break;
-    // RDKit✔️❌:   case Chirality::StereoSpecified::Specified:
-    // RDKit✔️❌:     knownBonds.set(bidx);
-    // RDKit✔️❌:     if (sinfo.descriptor == StereoDescriptor::Bond_Cis) {
-    // RDKit✔️❌:       bondSymbols[bidx] += "_cis";
-    // RDKit✔️❌:     } else if (sinfo.descriptor == StereoDescriptor::Bond_Trans) {
-    // RDKit✔️❌:       bondSymbols[bidx] += "_trans";
+    // RDKit✔️❌: void initBondInfo(ROMol &mol, bool flagPossible, bool cleanIt,
+    // RDKit✔️❌:                   boost::dynamic_bitset<> &knownBonds,
+    // RDKit✔️❌:                   std::vector<std::string> &bondSymbols,
+    // RDKit✔️❌:                   boost::dynamic_bitset<> &possibleBonds) {
+    // RDKit✔️❌:   for (const auto bond : mol.bonds()) {
+    // RDKit✔️❌:     auto bidx = bond->getIdx();
+    // RDKit✔️❌:     bondSymbols[bidx] = getBondSymbol(bond);
+    // RDKit✔️❌:     if (detail::isBondPotentialStereoBond(bond)) {
+    // RDKit✔️❌:       auto sinfo = detail::getStereoInfo(bond);
+    // RDKit✔️❌:       switch (sinfo.specified) {
+    // RDKit✔️❌:         case Chirality::StereoSpecified::Unknown:
+    // RDKit✔️❌:           knownBonds.set(bidx);
+    // RDKit✔️❌:           bondSymbols[bidx] += "_" + std::to_string(bidx);
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case Chirality::StereoSpecified::Specified:
+    // RDKit✔️❌:           knownBonds.set(bidx);
+    // RDKit✔️❌:           if (sinfo.descriptor == StereoDescriptor::Bond_Cis) {
+    // RDKit✔️❌:             bondSymbols[bidx] += "_cis";
+    // RDKit✔️❌:           } else if (sinfo.descriptor == StereoDescriptor::Bond_Trans) {
+    // RDKit✔️❌:             bondSymbols[bidx] += "_trans";
+    // RDKit✔️❌:           } else {
+    // RDKit✔️❌:             bondSymbols[bidx] += "_STEREO";
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case Chirality::StereoSpecified::Unspecified:
+    // RDKit✔️❌:           if (flagPossible) {
+    // RDKit✔️❌:             possibleBonds.set(bidx);
+    // RDKit✔️❌:             if (!cleanIt) {
+    // RDKit✔️❌:               bondSymbols[bidx] += "_" + std::to_string(bidx);
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         default:
+    // RDKit✔️❌:           throw ValueErrorException("bad StereoInfo.specified type");
+    // RDKit✔️❌:       }
     // RDKit✔️❌:     } else {
-    // RDKit✔️❌:       bondSymbols[bidx] += "_STEREO";
+    // RDKit✔️❌:       auto currentStereo = bond->getStereo();
+    // RDKit✔️❌:       if (currentStereo != Bond::BondStereo::STEREOATROPCW &&
+    // RDKit✔️❌:           currentStereo != Bond::BondStereo::STEREOATROPCCW) {
+    // RDKit✔️❌:         if (cleanIt) {
+    // RDKit✔️❌:           bond->setStereo(Bond::BondStereo::STEREONONE);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         knownBonds.set(bidx);
+    // RDKit✔️❌:         if (currentStereo == Bond::BondStereo::STEREOATROPCW) {
+    // RDKit✔️❌:           bondSymbols[bidx] += "_atropcw";
+    // RDKit✔️❌:         } else if (currentStereo == Bond::BondStereo::STEREOATROPCCW) {
+    // RDKit✔️❌:           bondSymbols[bidx] += "_atropccw";
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
     // RDKit✔️❌:     }
-    // RDKit✔️❌:     break;
-    // RDKit✔️❌:   case Unspecified: if (flagPossible) possibleBonds.set(bidx); break;
     // RDKit✔️❌:   }
-    // RDKit✔️❌: } else if (cleanIt) bond->setStereo(STEREONONE);
+    // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION initBondInfo
+    // The source loop changes stereo values only: atomic numbers, bond order,
+    // endpoints, adjacency and RingInfo are fixed for this invocation. Share
+    // its one lazily checked structural fact; do not rescan A+B+membership
+    // for each eligible bond. Standalone calls never reuse this local scratch.
+    // Constant space, one linear proof at most; fully sized/early-return paths
+    // retain no proof. All source degree/H/init/error ordering stays below.
+    let mut preserved_prefix = None;
     for index in 0..topology.bonds.len() {
         symbols[index] = bond_symbol(&topology.bonds[index]).to_owned();
         let candidate = {
             let bond = &topology.bonds[index];
-            is_potential_bond(topology, valence, rings, bond)?
+            is_potential_bond_with_prefix_check(
+                topology,
+                valence,
+                rings,
+                bond,
+                &mut preserved_prefix,
+            )?
         };
         if candidate {
             let info = bond_info(topology, BondId::new(index))?;
@@ -890,8 +900,35 @@ fn initialize_bonds(
                 }
                 PotentialStereoSpecified::Unspecified => {}
             }
-        } else if params.clean {
-            clear_bond_stereo_value(&mut topology.bonds[index])?;
+        } else {
+            // RDKit✔️✔️:     } else {
+            // RDKit✔️✔️:       auto currentStereo = bond->getStereo();
+            // RDKit✔️✔️:       if (currentStereo != Bond::BondStereo::STEREOATROPCW &&
+            // RDKit✔️✔️:           currentStereo != Bond::BondStereo::STEREOATROPCCW) {
+            // RDKit✔️✔️:         if (cleanIt) {
+            // RDKit✔️✔️:           bond->setStereo(Bond::BondStereo::STEREONONE);
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:       } else {
+            // RDKit✔️✔️:         knownBonds.set(bidx);
+            // RDKit✔️✔️:         if (currentStereo == Bond::BondStereo::STEREOATROPCW) {
+            // RDKit✔️✔️:           bondSymbols[bidx] += "_atropcw";
+            // RDKit✔️✔️:         } else if (currentStereo == Bond::BondStereo::STEREOATROPCCW) {
+            // RDKit✔️✔️:           bondSymbols[bidx] += "_atropccw";
+            // RDKit✔️✔️:         }
+            // RDKit✔️✔️:       }
+            // RDKit✔️✔️:     }
+            match topology.bonds[index].stereo() {
+                BondStereo::AtropCw => {
+                    known[index] = true;
+                    symbols[index].push_str("_atropcw");
+                }
+                BondStereo::AtropCcw => {
+                    known[index] = true;
+                    symbols[index].push_str("_atropccw");
+                }
+                _ if params.clean => clear_bond_stereo_value(&mut topology.bonds[index])?,
+                _ => {}
+            }
         }
     }
     Ok(())
@@ -1242,6 +1279,16 @@ fn update_bonds(
             continue;
         }
         let bond_id = BondId::new(index);
+        // RDKit✔️✔️:       if (sinfo.type == Chirality::StereoType::Unspecified) {
+        // RDKit✔️✔️:         continue;  // not a double bond nor an atropisomer bond
+        // RDKit✔️✔️:       }
+        let bond = &topology.bonds[index];
+        if bond.order() != BondOrder::Double
+            && !(bond.order() == BondOrder::Single
+                && matches!(bond.stereo(), BondStereo::AtropCw | BondStereo::AtropCcw))
+        {
+            continue;
+        }
         let mut info = bond_info(topology, bond_id)?;
         if info.controlling_atoms.len() != 4 {
             return Err(PotentialStereoError::InvalidStereoReferences {
@@ -2705,5 +2752,236 @@ mod uint_complete_source_condition_cells {
             assert!(order.is_empty());
             assert_eq!(g, before);
         }
+    }
+}
+
+fn is_potential_bond_with_prefix_check(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    bond: &Bond,
+    preserved_prefix: &mut Option<bool>,
+) -> Result<bool, PotentialStereoError> {
+    // BEGIN RDKIT CPP FUNCTION isBondPotentialStereoBond
+    // RDKit✔️❌: bool isBondPotentialStereoBond(const Bond *bond) {
+    // RDKit✔️❌:   PRECONDITION(bond, "bond is null");
+    // RDKit✔️❌:   if (bond->getBondType() != Bond::BondType::DOUBLE) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // at the moment the condition for being a potential stereo bond is that
+    // RDKit✔️❌:   // each of the beginning and end neighbors must have at least 2 explicit
+    // RDKit✔️❌:   // neighbors but no more than 3 total neighbors.
+    // RDKit✔️❌:   // if it's a ring bond, the smallest ring it's in must have at least 8
+    // RDKit✔️❌:   // members
+    // RDKit✔️❌:   //  (this is common with InChI)
+    // RDKit✔️❌:   const auto beginAtom = bond->getBeginAtom();
+    // RDKit✔️❌:   auto begDegree = beginAtom->getTotalDegree();
+    // RDKit✔️❌:   const auto endAtom = bond->getEndAtom();
+    // RDKit✔️❌:   auto endDegree = endAtom->getTotalDegree();
+    // RDKit✔️❌:   if (begDegree > 1 && begDegree < 4 && endDegree > 1 && endDegree < 4 &&
+    // RDKit✔️❌:       beginAtom->getTotalNumHs(true) < 2 && endAtom->getTotalNumHs(true) < 2) {
+    // RDKit✔️❌:     // check rings
+    // RDKit✔️❌:     const auto ri = bond->getOwningMol().getRingInfo();
+    // RDKit✔️❌:     for (const auto &bring : ri->bondRings()) {
+    // RDKit✔️❌:       if (bring.size() < minRingSizeForDoubleBondStereo &&
+    // RDKit✔️❌:           std::find(bring.begin(), bring.end(), bond->getIdx()) !=
+    // RDKit✔️❌:               bring.end()) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     return true;
+    // RDKit✔️❌:   } else {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END RDKIT CPP FUNCTION isBondPotentialStereoBond
+    if bond.order() != BondOrder::Double {
+        return Ok(false);
+    }
+    let begin_degree = total_degree(topology, valence, bond.begin())?;
+    let end_degree = total_degree(topology, valence, bond.end())?;
+    if !(2..4).contains(&begin_degree) || !(2..4).contains(&end_degree) {
+        return Ok(false);
+    }
+    if total_hydrogens(topology, valence, bond.begin(), true)? >= 2
+        || total_hydrogens(topology, valence, bond.end(), true)? >= 2
+    {
+        return Ok(false);
+    }
+    if !rings.is_initialized() {
+        return Err(PotentialStereoError::InvalidRingInfo {
+            reason: "ring information is not initialized",
+            row: 0,
+            value: 0,
+            limit: 0,
+        });
+    }
+    if rings.bond_row_count() != topology.bonds.len()
+        && !*preserved_prefix.get_or_insert_with(|| {
+            crate::rings::preserves_appended_terminal_hydrogen_ring_prefix(topology, rings)
+        })
+    {
+        return Err(PotentialStereoError::InvalidRingInfo {
+            reason: "bond membership row count mismatch",
+            row: 0,
+            value: rings.bond_row_count(),
+            limit: topology.bonds.len(),
+        });
+    }
+    Ok(!rings
+        .bond_ring_sizes(bond.id())
+        .into_iter()
+        .any(|size| size < 8))
+}
+
+fn represented_atropisomer_info(
+    topology: &TopologyBlock,
+    bond: &Bond,
+) -> Result<PotentialStereoInfo, PotentialStereoError> {
+    // RDKit✔️✔️:   } else if (bond->getBondType() == Bond::BondType::SINGLE &&
+    // RDKit✔️✔️:              (bond->getStereo() == Bond::BondStereo::STEREOATROPCCW ||
+    // RDKit✔️✔️:               bond->getStereo() == Bond::BondStereo::STEREOATROPCW)) {
+    // RDKit✔️✔️:     if (beginAtom->getDegree() < 2 || endAtom->getDegree() < 2 ||
+    // RDKit✔️✔️:         beginAtom->getDegree() > 3 || endAtom->getDegree() > 3) {
+    // RDKit✔️✔️:       throw ValueErrorException("invalid atom degree in getStereoInfo(bond)");
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     sinfo.type = StereoType::Bond_Atropisomer;
+    // RDKit✔️✔️:     sinfo.centeredOn = bond->getIdx();
+    // RDKit✔️✔️:     sinfo.controllingAtoms.reserve(4);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     const auto &mol = bond->getOwningMol();
+    // RDKit✔️✔️:     for (const auto nbr : mol.atomBonds(beginAtom)) {
+    // RDKit✔️✔️:       if (nbr->getIdx() != bond->getIdx()) {
+    // RDKit✔️✔️:         sinfo.controllingAtoms.push_back(
+    // RDKit✔️✔️:             nbr->getOtherAtomIdx(beginAtom->getIdx()));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (beginAtom->getDegree() == 2) {
+    // RDKit✔️✔️:       sinfo.controllingAtoms.push_back(Atom::NOATOM);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     for (const auto nbr : mol.atomBonds(endAtom)) {
+    // RDKit✔️✔️:       if (nbr->getIdx() != bond->getIdx()) {
+    // RDKit✔️✔️:         sinfo.controllingAtoms.push_back(
+    // RDKit✔️✔️:             nbr->getOtherAtomIdx(endAtom->getIdx()));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (endAtom->getDegree() == 2) {
+    // RDKit✔️✔️:       sinfo.controllingAtoms.push_back(Atom::NOATOM);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     Bond::BondStereo stereo = bond->getStereo();
+    // RDKit✔️✔️:     sinfo.specified = Chirality::StereoSpecified::Specified;
+    // RDKit✔️✔️:     switch (stereo) {
+    // RDKit✔️✔️:       case Bond::BondStereo::STEREOATROPCW:
+    // RDKit✔️✔️:         sinfo.descriptor = Chirality::StereoDescriptor::Bond_AtropCW;
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       case Bond::BondStereo::STEREOATROPCCW:
+    // RDKit✔️✔️:         sinfo.descriptor = Chirality::StereoDescriptor::Bond_AtropCCW;
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       default:
+    // RDKit✔️✔️:         UNDER_CONSTRUCTION("unrecognized bond stereo type");
+    // RDKit✔️✔️:     }
+    // Degree lookup is O(1); both source and detached carriers visit at most
+    // three bonds at each end and allocate the same four controlling slots.
+    for (endpoint, atom) in [("begin", bond.begin()), ("end", bond.end())] {
+        let degree = graph_degree(topology, atom);
+        if !(2..=3).contains(&degree) {
+            return Err(PotentialStereoError::InvalidBondDegree {
+                bond: bond.id(),
+                endpoint,
+                degree,
+            });
+        }
+    }
+    let mut controlling_atoms = Vec::with_capacity(4);
+    for atom in [bond.begin(), bond.end()] {
+        for neighbor in topology.adjacency.neighbors_of(atom.index()) {
+            if neighbor.bond != bond.id() {
+                controlling_atoms.push(Some(AtomId::new(neighbor.atom_index)));
+            }
+        }
+        if graph_degree(topology, atom) == 2 {
+            controlling_atoms.push(None);
+        }
+    }
+    Ok(PotentialStereoInfo {
+        stereo_type: PotentialStereoType::BondAtropisomer,
+        specified: PotentialStereoSpecified::Specified,
+        centered_on: PotentialStereoCenter::Bond(bond.id()),
+        descriptor: match bond.stereo() {
+            BondStereo::AtropCw => PotentialStereoDescriptor::BondAtropCw,
+            BondStereo::AtropCcw => PotentialStereoDescriptor::BondAtropCcw,
+            _ => {
+                return Err(PotentialStereoError::InvalidStereoReferences {
+                    bond: bond.id(),
+                    reason: "represented atropisomer requires CW or CCW stereo",
+                });
+            }
+        },
+        permutation: 0,
+        controlling_atoms,
+    })
+}
+
+#[cfg(test)]
+mod source_cached_getter_conditions {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, Element};
+    #[test]
+    fn no_implicit_and_signed_width_use_source_counts_without_changing_rows() {
+        for (no_implicit, implicit, expected) in [
+            (true, -1, 2),
+            (true, 128, 2),
+            (false, 256, 2),
+            (false, -256, 2),
+            (false, 1, 3),
+        ] {
+            let topology = TopologyBlock::try_from_parts(
+                vec![Atom::from_spec(
+                    AtomId::new(0),
+                    AtomSpec::new(Element::C)
+                        .with_no_implicit(no_implicit)
+                        .with_explicit_hydrogens(2),
+                )],
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap();
+            let valence = ValenceAssignment {
+                explicit_valence: vec![2],
+                implicit_hydrogens: vec![implicit],
+            };
+            let before = valence.clone();
+            validate_topology_and_valence(&topology, &valence).unwrap();
+            assert_eq!(
+                total_degree(&topology, &valence, AtomId::new(0)).unwrap(),
+                expected
+            );
+            assert_eq!(valence, before);
+        }
+        let topology = TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(
+            validate_topology_and_valence(
+                &topology,
+                &ValenceAssignment {
+                    explicit_valence: vec![0],
+                    implicit_hydrogens: vec![-1]
+                }
+            ),
+            Err(PotentialStereoError::InvalidValenceValue {
+                field: "implicit_hydrogens",
+                atom: AtomId::new(0),
+                value: -1
+            })
+        );
     }
 }

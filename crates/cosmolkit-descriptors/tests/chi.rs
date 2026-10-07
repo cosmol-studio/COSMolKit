@@ -419,23 +419,98 @@ fn chi_noimplicit_and_prepared_implicit_plus_explicit() {
 }
 #[test]
 fn chi_signed_total_h_boundary_preserves_owner_cause() {
+    // Atom.h stores d_implicitValence in int8_t. Atom::getNumImplicitHs
+    // checks that stored value before getTotalNumHs performs its sum.
+    // Retain both original i32::MAX inputs as exact source getter failures.
     let mut f = graph(&[6], &[0], &[]);
     f.topology.atoms[0].set_no_implicit(false);
-    f.valence.implicit_hydrogens[0] = i32::MAX;
+    let assert_missing = |f: &Fixture| {
+        let before = f.clone();
+        let names = [
+            "chi_0_v", "chi_1_v", "chi_2_v", "chi_3_v", "chi_4_v", "chi_0_n", "chi_1_n", "chi_2_n",
+            "chi_3_n", "chi_4_n",
+        ];
+        for (entry, function) in V.into_iter().chain(N).zip(names) {
+            let failure = entry(&f.input()).unwrap_err();
+            let cause = ValenceError::ImplicitValenceCacheNotInitialized {
+                atom: AtomId::new(0),
+            };
+            assert_eq!(
+                failure,
+                DescriptorError::Valence {
+                    function,
+                    source: cause.clone()
+                }
+            );
+            assert_eq!(
+                std::error::Error::source(&failure)
+                    .unwrap()
+                    .downcast_ref::<ValenceError>(),
+                Some(&cause)
+            );
+            assert_eq!(f, &before);
+        }
+        for order in 2..=4 {
+            for (actual, function) in [
+                (chi_n_v(&f.input(), order), "chi_n_v"),
+                (chi_n_n(&f.input(), order), "chi_n_n"),
+            ] {
+                assert_eq!(
+                    actual.unwrap_err(),
+                    DescriptorError::Valence {
+                        function,
+                        source: ValenceError::ImplicitValenceCacheNotInitialized {
+                            atom: AtomId::new(0)
+                        }
+                    }
+                );
+                assert_eq!(f, &before);
+            }
+        }
+    };
+    for explicit in [0, 1] {
+        f.topology.atoms[0].set_explicit_hydrogens(explicit);
+        f.valence.implicit_hydrogens[0] = i32::MAX;
+        assert_missing(&f);
+    }
+    for cached in [128, 255, -1] {
+        f.valence.implicit_hydrogens[0] = cached;
+        assert_missing(&f);
+    }
+    // Independent source arithmetic: unsigned (4 - 127), then sqrt/reciprocal.
+    // Both calculation-width values have the same stored signed-byte value.
+    f.topology.atoms[0].set_explicit_hydrogens(0);
+    for cached in [127, i32::MAX - 128] {
+        f.valence.implicit_hydrogens[0] = cached;
+        check(
+            &f,
+            [0.000015258789280991895, 0.0, 0.0, 0.0, 0.0],
+            [0.000015258789280991895, 0.0, 0.0, 0.0, 0.0],
+        );
+        for entry in [chi_0_v as Entry, chi_0_n as Entry] {
+            assert_eq!(
+                entry(&f.input()).unwrap().to_bits(),
+                0.000015258789280991895_f64.to_bits()
+            );
+        }
+    }
+    f.topology.atoms[0].set_explicit_hydrogens(255);
     check(
         &f,
-        [0.000021579186412456263, 0.0, 0.0, 0.0, 0.0],
-        [0.000021579186412456263, 0.0, 0.0, 0.0, 0.0],
+        [0.00001525878973396293, 0.0, 0.0, 0.0, 0.0],
+        [0.00001525878973396293, 0.0, 0.0, 0.0, 0.0],
     );
-    f.topology.atoms[0].set_explicit_hydrogens(1);
-    errors_preserve(&f);
-    assert!(matches!(
-        chi_0_v(&f.input()),
-        Err(DescriptorError::Valence {
-            source: ValenceError::HydrogenCountOverflow { .. },
-            ..
-        })
-    ));
+    for entry in [chi_0_v as Entry, chi_0_n as Entry] {
+        assert_eq!(
+            entry(&f.input()).unwrap().to_bits(),
+            0.00001525878973396293_f64.to_bits()
+        );
+    }
+    f.topology.atoms[0].set_explicit_hydrogens(0);
+    for cached in [0, 256] {
+        f.valence.implicit_hydrogens[0] = cached;
+        check(&f, [0.5, 0.0, 0.0, 0.0, 0.0], [0.5, 0.0, 0.0, 0.0, 0.0]);
+    }
 }
 #[test]
 fn chi_prepared_dimensions_and_invalid_topology() {

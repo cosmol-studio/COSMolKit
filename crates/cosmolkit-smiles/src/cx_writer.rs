@@ -11,36 +11,38 @@ use cosmolkit_core::{
     pick_bonds_to_wedge_with_ring_info, property_value_to_string, wedge_bonds_from_atropisomers,
 };
 use cosmolkit_model::{
-    AtomId, Bond, BondId, Conformer2D, Conformer3D, PropertyValue, SGroupConnection, StereoGroup,
-    StereoGroupKind, SubstanceGroup, SubstanceGroupKind, ordered_atom_properties,
+    AtomId, Bond, BondId, Conformer2D, Conformer3D, PropertyText, PropertyValue, SGroupConnection,
+    StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupKind, ordered_atom_properties,
     set_stereo_group_write_id, stereo_group_write_id,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
 use crate::{SmilesParseError, SmilesRecord, SmilesWriteParams, writer::write_smiles_for_cx};
 
-fn source_string_property<'a>(
-    value: &'a PropertyValue,
+fn source_string_property(
+    value: Option<&PropertyValue>,
     _name: &str,
-) -> Result<std::borrow::Cow<'a, str>, SmilesParseError> {
-    // RDKit✔️✔️: bool getValIfPresent(const std::string_view what, std::string &res) const {
-    // RDKit✔️✔️:   for (const auto &i : _data) {
-    // RDKit✔️✔️:     if (i.key == what) {
-    // RDKit✔️✔️:       rdvalue_tostring(i.val, res);
-    // RDKit✔️✔️:       return true;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return false;
-    // RDKit✔️✔️: }
-    // Dict's string specialization converts scalar tags, unlike bad_any_cast
-    // for an incompatible numeric target. Borrow String bytes and delegate
-    // scalar formatting to the one core owner; no second formatter or map.
-    match value {
-        PropertyValue::String(value) => Ok(std::borrow::Cow::Borrowed(value)),
-        _ => property_value_to_string(value)
-            .map(std::borrow::Cow::Owned)
-            .map_err(SmilesParseError::WriterProperty),
-    }
+) -> Result<Option<cosmolkit_model::PropertyText>, SmilesParseError> {
+    // RDKit✔️🔝: bool getValIfPresent(const std::string_view what, std::string &res) const {
+    // RDKit✔️🔝:     for (const auto &i : _data) {
+    // RDKit✔️🔝:       if (i.key == what) {
+    // RDKit✔️🔝:         rdvalue_tostring(i.val, res);
+    // RDKit✔️🔝:         return true;
+    // RDKit✔️🔝:       }
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:     return false;
+    // RDKit✔️🔝:   }
+    // Behavior: MODEL's canonical lookup supplies absence separately from a
+    // present tagged value. Absence returns false/None without formatting.
+    // Every present value reaches the single independently compared SF379
+    // rdvalue_tostring owner; empty String is Some(empty), never absent. No
+    // as_string/UTF8 checks, second formatter, silent error-to-None or fallback.
+    // Complexity: source lookup is replaced by the canonical O(log P) tree
+    // lookup at callers; one owning converted byte buffer for a present value.
+    value
+        .map(property_value_to_string)
+        .transpose()
+        .map_err(SmilesParseError::WriterProperty)
 }
 
 fn source_unsigned_property(value: &PropertyValue, name: &str) -> Result<u32, SmilesParseError> {
@@ -57,15 +59,31 @@ fn source_unsigned_property(value: &PropertyValue, name: &str) -> Result<u32, Sm
     // RDKit❗✔️: }
     // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
 
-    let parsed = match value {
-        PropertyValue::Int(value) => u32::try_from(*value).ok(),
-        PropertyValue::UInt(value) => Some(*value),
-        PropertyValue::String(value) => value.parse::<u32>().ok(),
-        PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
-    };
-    parsed.ok_or_else(|| {
-        SmilesParseError::WriterStereo(format!("bad_any_cast reading {name} as unsigned int"))
-    })
+    // RDKit❗✔️: template <class T>
+    // RDKit❗✔️: typename boost::enable_if<boost::is_arithmetic<T>, T>::type from_rdvalue(
+    // RDKit❗✔️:     RDValue_cast_t arg) {
+    // RDKit❗✔️:   T res;
+    // RDKit❗✔️:   if (arg.getTag() == RDTypeTag::StringTag) {
+    // RDKit❗✔️:     Utils::LocaleSwitcher ls;
+    // RDKit❗✔️:     try {
+    // RDKit❗✔️:       res = rdvalue_cast<T>(arg);
+    // RDKit❗✔️:     } catch (const std::bad_any_cast &exc) {
+    // RDKit❗✔️:       try {
+    // RDKit❗✔️: 	std::string val = rdvalue_cast<std::string>(arg);
+    // RDKit❗✔️: 	// trim only the right characters, this mimics how SD values
+    // RDKit❗✔️: 	//  work on read, they will be trimmed by the MolFile parser
+    // RDKit❗✔️: 	boost::trim_right(val);
+    // RDKit❗✔️:         res = boost::lexical_cast<T>(val);
+    // RDKit❗✔️:       } catch (...) {
+    // RDKit❗✔️:         throw exc;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     res = rdvalue_cast<T>(arg);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    let _ = name;
+    cosmolkit_core::property_value_to_uint(value).map_err(SmilesParseError::WriterNumeric)
 }
 
 /// CXSMILES extension families selected for writing.
@@ -142,7 +160,7 @@ impl Default for CxSmilesWriteParams {
 /// Writes canonical CXSMILES with every modeled extension family enabled.
 pub fn write_cx_smiles<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     write_cx_smiles_with_params(record, &CxSmilesWriteParams::default())
 }
@@ -151,7 +169,7 @@ pub fn write_cx_smiles<'record>(
 pub fn write_cx_smiles_with_params<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     params: &CxSmilesWriteParams,
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     record
         .coordinates
@@ -230,7 +248,7 @@ pub fn write_cx_smiles_with_params<'record>(
             if bond.direction() != BondDirection::None {
                 bond.set_direction(BondDirection::None);
             }
-            bond.clear_prop("_MolFileBondCfg");
+            bond.clear_prop("_MolFileBondCfg")?;
         }
     }
 
@@ -268,7 +286,12 @@ pub fn write_cx_smiles_with_params<'record>(
     } else if output.text.is_empty() {
         Ok(extension)
     } else {
-        Ok(format!("{} {}", output.text, extension))
+        {
+            let mut text = output.text;
+            text.push_byte(b' ');
+            text.extend_bytes(extension.as_bytes());
+            Ok(text)
+        }
     }
 }
 
@@ -337,7 +360,7 @@ fn apply_cx_post_base_stereochemistry(
         // END RDKIT CPP FUNCTION Chirality.cpp::legacyStereoPerception molecule property effect
         prepared_record
             .properties
-            .clear_prop("_needsDetectBondStereo");
+            .clear_prop("_needsDetectBondStereo")?;
         let rings = fast_find_rings_from_parts(
             prepared_record.topology.atoms.len(),
             &prepared_record.topology.bonds,
@@ -351,25 +374,26 @@ fn apply_cx_post_base_stereochemistry(
         .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
         prepared_record
             .properties
-            .set_computed_prop("_StereochemDone", "1")
+            .set_computed_prop("_StereochemDone", cosmolkit_model::PropertyValue::Int(1))
             .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     }
     cosmolkit_core::cleanup_stereo_groups(&mut prepared_record.topology);
     Ok(())
 }
 
-fn append_extension(addition: String, output: &mut String) {
+fn append_extension(addition: impl AsRef<[u8]>, output: &mut PropertyText) {
     // RDKit✔️✔️: void appendToCXExtension(const std::string &addition, std::string &base) {
     // RDKit✔️✔️:   if (!addition.empty()) {
     // RDKit✔️✔️:     if (base.size() > 1) { base += ","; }
     // RDKit✔️✔️:     base += addition;
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
+    let addition = addition.as_ref();
     if !addition.is_empty() {
         if output.len() > 1 {
-            output.push(',');
+            output.push_byte(b',');
         }
-        output.push_str(&addition);
+        output.extend_bytes(addition);
     }
 }
 
@@ -380,7 +404,7 @@ pub(crate) fn write_cx_extensions<'record>(
     bond_order: &[BondId],
     post_base_valence: Option<ValenceAssignment>,
     coordinate_selection: CxCoordinateSelection,
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION SmilesWrite::getCXExtensions field order
     // RDKit✔️✔️: if ((flags & SmilesWrite::CXSmilesFields::CX_COORDS) &&
@@ -454,7 +478,7 @@ pub(crate) fn write_cx_extensions<'record>(
     // RDKit✔️✔️: }
     // RDKit✔️✔️: if (res.size() > 1) { res += "|"; } else { res = ""; }
     // END RDKIT CPP FUNCTION SmilesWrite::getCXExtensions field order
-    let mut result = String::from("|");
+    let mut result = PropertyText::from("|");
 
     // BEGIN RDKIT CPP FUNCTION getCXExtensions field-data preflight
     // RDKit✔️✔️:   bool needLabels = false;
@@ -485,7 +509,7 @@ pub(crate) fn write_cx_extensions<'record>(
         if atom.prop("atomLabel").is_some()
             || atom.prop("_QueryAtomGenericLabel").is_some()
             || atom.prop("dummyLabel").is_some()
-            || atom.prop("_fromAttachPoint").is_some()
+            || atom.prop("_fromAttchpt").is_some()
         {
             need_labels = true;
         }
@@ -500,19 +524,25 @@ pub(crate) fn write_cx_extensions<'record>(
         None
     };
     if let Some(coords) = write_coordinates(selected_source, atom_order) {
-        result.push('(');
-        result.push_str(&coords);
-        result.push(')');
+        result.push_byte(b'(');
+        result.extend_bytes((&coords).as_ref());
+        result.push_byte(b')');
     }
     if fields.contains(CxSmilesFields::ATOM_LABELS) && need_labels {
         let labels = write_atom_labels(record, atom_order)?;
         if !labels.is_empty() {
-            append_extension(format!("${labels}$"), &mut result);
+            let mut framed = PropertyText::from("$");
+            framed.extend_bytes(labels.as_bytes());
+            framed.push_byte(b'$');
+            append_extension(framed, &mut result);
         }
     }
     if fields.contains(CxSmilesFields::MOLFILE_VALUES) && need_values {
         let values = write_atom_values(record, atom_order)?;
-        append_extension(format!("$_AV:{values}$"), &mut result);
+        let mut framed = PropertyText::from("$_AV:");
+        framed.extend_bytes(values.as_bytes());
+        framed.push_byte(b'$');
+        append_extension(framed, &mut result);
     }
     if fields.contains(CxSmilesFields::RADICALS) {
         append_extension(write_radicals(record, atom_order)?, &mut result);
@@ -645,7 +675,7 @@ pub(crate) fn write_cx_extensions<'record>(
         );
     }
     if fields.contains(CxSmilesFields::SGROUPS) {
-        append_extension(write_data_sgroups(record, atom_order), &mut result);
+        append_extension(write_data_sgroups(record, atom_order)?, &mut result);
     }
     if fields.contains(CxSmilesFields::POLYMER) {
         append_extension(
@@ -659,15 +689,15 @@ pub(crate) fn write_cx_extensions<'record>(
                 record,
                 fields.contains(CxSmilesFields::SGROUPS),
                 fields.contains(CxSmilesFields::POLYMER),
-            ),
+            )?,
             &mut result,
         );
     }
 
     if result.len() == 1 {
-        Ok(String::new())
+        Ok(PropertyText::new())
     } else {
-        result.push('|');
+        result.push_byte(b'|');
         Ok(result)
     }
 }
@@ -795,8 +825,15 @@ fn format_general(value: f64) -> String {
     text
 }
 
+/// The canonical SOURCE coordinate number conversion, shared by query output.
+#[doc(hidden)]
+pub fn format_cx_coordinate(value: f64) -> String {
+    format_general(zero_small(value))
+}
+
 #[derive(Clone, Copy)]
-enum CoordinateSource<'a> {
+#[doc(hidden)]
+pub enum CoordinateSource<'a> {
     ThreeD(&'a Conformer3D),
     TwoD(&'a Conformer2D),
 }
@@ -805,7 +842,28 @@ fn coordinate_source<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     selection: CxCoordinateSelection,
 ) -> Result<Option<CoordinateSource<'record>>, SmilesParseError> {
-    let record = record.into();
+    select_cx_coordinates(record.into().coordinates, selection)
+}
+
+#[doc(hidden)]
+pub fn select_cx_coordinates<'record>(
+    coordinates: &'record cosmolkit_model::CoordinateBlock,
+    selection: CxCoordinateSelection,
+) -> Result<Option<CoordinateSource<'record>>, SmilesParseError> {
+    select_cx_coordinates_from_sets(
+        &coordinates.conformers_2d,
+        &coordinates.conformers_3d,
+        selection,
+    )
+}
+
+/// Borrow canonical split conformer storage using the same sole selector.
+#[doc(hidden)]
+pub fn select_cx_coordinates_from_sets<'record>(
+    conformers_2d: &'record [Conformer2D],
+    conformers_3d: &'record [Conformer3D],
+    selection: CxCoordinateSelection,
+) -> Result<Option<CoordinateSource<'record>>, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION CXSmilesOps.cpp::get_coords_block conformer selection
     // RDKit❗✔️:   const auto &conf = mol.getConformer();
     // END RDKIT CPP FUNCTION CXSmilesOps.cpp::get_coords_block conformer selection
@@ -844,16 +902,12 @@ fn coordinate_source<'record>(
     // matching ROMol's explicit-ID scan and without allocating a new set.
     match selection {
         CxCoordinateSelection::Auto => {
-            let two_d_count = record.coordinates.conformers_2d.len();
-            let three_d_count = record.coordinates.conformers_3d.len();
+            let two_d_count = conformers_2d.len();
+            let three_d_count = conformers_3d.len();
             match (two_d_count, three_d_count) {
                 (0, 0) => Ok(None),
-                (1, 0) => Ok(Some(CoordinateSource::TwoD(
-                    &record.coordinates.conformers_2d[0],
-                ))),
-                (0, 1) => Ok(Some(CoordinateSource::ThreeD(
-                    &record.coordinates.conformers_3d[0],
-                ))),
+                (1, 0) => Ok(Some(CoordinateSource::TwoD(&conformers_2d[0]))),
+                (0, 1) => Ok(Some(CoordinateSource::ThreeD(&conformers_3d[0]))),
                 (two_d_count, three_d_count) => {
                     Err(SmilesParseError::AmbiguousCoordinateSelection {
                         two_d_count,
@@ -863,18 +917,14 @@ fn coordinate_source<'record>(
             }
         }
         CxCoordinateSelection::TwoD { id } => {
-            let conformer = record
-                .coordinates
-                .conformers_2d
+            let conformer = conformers_2d
                 .iter()
                 .find(|conformer| conformer.id() == id)
                 .ok_or(SmilesParseError::MissingCoordinateSelection { selection })?;
             Ok(Some(CoordinateSource::TwoD(conformer)))
         }
         CxCoordinateSelection::ThreeD { id } => {
-            let conformer = record
-                .coordinates
-                .conformers_3d
+            let conformer = conformers_3d
                 .iter()
                 .find(|conformer| conformer.id() == id)
                 .ok_or(SmilesParseError::MissingCoordinateSelection { selection })?;
@@ -934,7 +984,7 @@ fn write_coordinates(
 fn write_atom_labels<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     atom_order: &[AtomId],
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION get_atomlabel_block
     // RDKit❗🔝: std::string res = "";
@@ -989,50 +1039,60 @@ fn write_atom_labels<'record>(
     // bytes once, matching source O(atoms + output bytes); this avoids the
     // old Vec<String> and per-label formatting allocations and is expected
     // to allocate less on label-heavy molecules.
-    const PSEUDOATOMS: [&str; 2] = ["Pol", "Mod"];
+    const PSEUDOATOMS: [&[u8]; 2] = [b"Pol", b"Mod"];
     let Some(first_atom) = atom_order.first().copied() else {
-        return Ok(String::new());
+        return Ok(PropertyText::new());
     };
 
-    let mut labels = String::new();
+    let mut labels = PropertyText::new();
     for atom_id in atom_order {
         if *atom_id != first_atom {
-            labels.push(';');
+            labels.push_byte(b';');
         }
         let atom = &record.topology.atoms[atom_id.index()];
         if let Some(label) = atom.prop("_QueryAtomGenericLabel") {
-            let label = source_string_property(label, "_QueryAtomGenericLabel")?;
-            labels.push_str(&label);
-            labels.push_str("_p");
+            let label = source_string_property(Some(label), "_QueryAtomGenericLabel")?
+                .expect("present canonical property conversion preserves presence");
+            labels.extend_bytes((&label).as_ref());
+            labels.extend_bytes(("_p").as_ref());
         } else if atom.atomic_number() == 0 {
-            let dummy_label = atom
-                .prop("dummyLabel")
-                .map(|value| source_string_property(value, "dummyLabel"))
-                .transpose()?;
+            let dummy_label = source_string_property(atom.prop("dummyLabel"), "dummyLabel")?;
             if dummy_label
-                .as_deref()
-                .is_some_and(|label| PSEUDOATOMS.contains(&label))
+                .as_ref()
+                .is_some_and(|label| PSEUDOATOMS.contains(&label.as_bytes()))
             {
-                labels.push_str(&dummy_label.expect("checked above"));
-                labels.push_str("_p");
-            } else if let Some(value) = atom.prop("_fromAttachPoint") {
-                let value = source_unsigned_property(value, "_fromAttachPoint")?;
+                labels.extend_bytes((&dummy_label.expect("checked above")).as_ref());
+                labels.extend_bytes(("_p").as_ref());
+            } else if let Some(value) = atom.prop("_fromAttchpt") {
+                let value = source_unsigned_property(value, "_fromAttchpt")?;
                 if matches!(value, 1 | 2) {
-                    labels.push_str("_AP");
-                    labels.push_str(&value.to_string());
+                    labels.extend_bytes(("_AP").as_ref());
+                    labels.extend_bytes((&value.to_string()).as_ref());
                 } else if let Some(label) = atom.prop("atomLabel") {
-                    labels.push_str(&source_string_property(label, "atomLabel")?);
+                    labels.extend_bytes(
+                        (&source_string_property(Some(label), "atomLabel")?
+                            .expect("present canonical property conversion preserves presence"))
+                            .as_ref(),
+                    );
                 }
             } else if let Some(label) = atom.prop("atomLabel") {
-                labels.push_str(&source_string_property(label, "atomLabel")?);
+                labels.extend_bytes(
+                    (&source_string_property(Some(label), "atomLabel")?
+                        .expect("present canonical property conversion preserves presence"))
+                        .as_ref(),
+                );
             }
         } else if let Some(label) = atom.prop("atomLabel") {
-            labels.push_str(&source_string_property(label, "atomLabel")?);
+            labels.extend_bytes(
+                (&source_string_property(Some(label), "atomLabel")?
+                    .expect("present canonical property conversion preserves presence"))
+                    .as_ref(),
+            );
         }
     }
 
-    if labels.bytes().all(|byte| byte == b';') {
-        Ok(String::new())
+    if labels.as_bytes().iter().all(|byte| *byte == b';') {
+        Ok(PropertyText::new())
     } else {
         Ok(labels)
     }
@@ -1041,7 +1101,7 @@ fn write_atom_labels<'record>(
 fn write_atom_values<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     atom_order: &[AtomId],
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION get_value_block
     // RDKit❗✔️: std::string res = "";
@@ -1070,16 +1130,20 @@ fn write_atom_values<'record>(
     // empty values and punctuation; do not collapse empty slot sequences.
     // Complexity review: one atom-order pass and one output String are
     // source-shaped O(atoms + emitted bytes) with no per-slot String vector.
-    let mut values = String::new();
+    let mut values = PropertyText::new();
     let mut first = true;
     for atom_id in atom_order {
         if !first {
-            values.push(';');
+            values.push_byte(b';');
         } else {
             first = false;
         }
         if let Some(value) = record.topology.atoms[atom_id.index()].prop("molFileValue") {
-            values.push_str(&source_string_property(value, "molFileValue")?);
+            values.extend_bytes(
+                (&source_string_property(Some(value), "molFileValue")?
+                    .expect("present canonical property conversion preserves presence"))
+                    .as_ref(),
+            );
         }
     }
     Ok(values)
@@ -1157,7 +1221,7 @@ fn write_radicals<'record>(
     Ok(block)
 }
 
-fn quote_atom_property(text: &str) -> String {
+fn quote_atom_property(text: &[u8]) -> PropertyText {
     // BEGIN RDKIT CPP FUNCTION quote_atomprop_string
     // RDKit❗✔️: std::string quote_atomprop_string(const std::string &txt) {
     // RDKit❗✔️:   // at a bare minimum, . needs to be escaped
@@ -1176,13 +1240,21 @@ fn quote_atom_property(text: &str) -> String {
     // empty text and every other UTF-8 sequence remain unchanged.
     // Complexity review: one linear string replacement creates one output
     // buffer, matching the source's linear scan and output construction.
-    text.replace('.', "&#46;")
+    let mut result = PropertyText::new();
+    for &byte in text {
+        if byte == b'.' {
+            result.extend_bytes(b"&#46;");
+        } else {
+            result.push_byte(byte);
+        }
+    }
+    result
 }
 
 fn write_atom_properties<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     atom_order: &[AtomId],
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION get_atom_props_block
     // RDKit❗✔️: std::string get_atom_props_block(const ROMol &mol,
@@ -1234,35 +1306,42 @@ fn write_atom_properties<'record>(
         "molParity",
         "molAtomMapNumber",
         "molStereoCare",
-        "molRxnExactChange",
+        "molRxnExachg",
         "molInversionFlag",
     ];
-    const PSEUDOATOMS: [&str; 2] = ["Pol", "Mod"];
-    let mut result = String::new();
+    const PSEUDOATOMS: [&[u8]; 2] = [b"Pol", b"Mod"];
+    let mut result = PropertyText::new();
     for (position, atom_id) in atom_order.iter().copied().enumerate() {
         let atom = &record.topology.atoms[atom_id.index()];
-        let attachment = atom.atomic_number() == 0 && atom.prop("_fromAttachPoint").is_some();
-        for (name, value) in ordered_atom_properties(atom) {
-            if name.starts_with('_') || atom.is_prop_computed(name) || SKIP.contains(&name) {
+        let attachment = atom.atomic_number() == 0 && atom.prop("_fromAttchpt").is_some();
+        for (name, _stored_value) in atom.property_records(false, false).map_err(|source| {
+            SmilesParseError::WriterPropertyList {
+                atom: atom_id,
+                source,
+            }
+        })? {
+            if SKIP.iter().any(|skip| skip.as_bytes() == name.as_bytes()) {
                 continue;
             }
-            let value =
-                property_value_to_string(value).map_err(SmilesParseError::WriterProperty)?;
-            if name == "dummyLabel"
-                && (attachment || value == "*" || PSEUDOATOMS.contains(&value.as_str()))
+            let value = cosmolkit_core::required_property_value_to_string(atom.prop_required(name))
+                .map_err(|source| SmilesParseError::WriterRequiredProperty {
+                    atom: atom_id,
+                    source,
+                })?;
+            if name.as_bytes() == b"dummyLabel"
+                && (attachment
+                    || value.as_bytes() == b"*"
+                    || PSEUDOATOMS.contains(&value.as_bytes()))
             {
                 continue;
             }
             if result.is_empty() {
-                result.push_str("atomProp");
+                result.extend_bytes(("atomProp").as_ref());
             }
-            write!(
-                &mut result,
-                ":{position}.{}.{}",
-                quote_atom_property(name),
-                quote_atom_property(&value)
-            )
-            .expect("formatting atom properties into String cannot fail");
+            write!(&mut result, ":{position}.").expect("byte output formatting cannot fail");
+            result.extend_bytes(quote_atom_property(name.as_bytes()).as_bytes());
+            result.push_byte(b'.');
+            result.extend_bytes(quote_atom_property(value.as_bytes()).as_bytes());
         }
     }
     Ok(result)
@@ -1898,7 +1977,8 @@ fn stereo_kind_order(kind: StereoGroupKind) -> u8 {
     }
 }
 
-fn assign_stereo_group_ids(groups: &mut [(StereoGroup, Vec<usize>)]) {
+#[doc(hidden)]
+pub fn assign_stereo_group_ids(groups: &mut [(StereoGroup, Vec<usize>)]) {
     // BEGIN RDKIT CPP FUNCTION StereoGroup.cpp::storeIdsInUse
     // RDKit✔️✔️: void storeIdsInUse(boost::dynamic_bitset<> &ids, StereoGroup &sg) {
     // RDKit✔️✔️:   const auto groupId = sg.getWriteId();
@@ -1961,8 +2041,7 @@ fn assign_stereo_group_ids(groups: &mut [(StereoGroup, Vec<usize>)]) {
     // Behavior review: use independent packed ID bitmaps, retain the first
     // unique nonzero write ID in each type, zero later duplicates, then fill
     // missing IDs in a separate source-order pass. Read IDs are never read.
-    // The upstream duplicate-ID warning uses RDKit's logger, which this
-    // detached value-only writer does not expose; output ID behavior is kept.
+    // The duplicate-ID warning is emitted in the same source branch.
     // Complexity review: two O(n) group passes, direct bit lookups, and
     // dynamic bit storage proportional to the largest explicit ID, matching
     // the source's dynamic_bitset rather than a sparse-map substitute.
@@ -1984,6 +2063,9 @@ fn assign_stereo_group_ids(groups: &mut [(StereoGroup, Vec<usize>)]) {
             used_ids.resize(index + 1, false);
         }
         if used_ids[index] {
+            eprintln!(
+                "StereoGroup ID {write_id} is used by more than one group, and will be reassined"
+            );
             set_stereo_group_write_id(group, 0);
         } else {
             used_ids[index] = true;
@@ -2318,22 +2400,24 @@ fn write_link_nodes<'record>(
     // checks scans only the center's adjacency list, matching the source graph
     // edge lookup's degree-bounded work. Output is buffered once per accepted
     // record and joined once, with no repeated whole-graph scans or clones.
-    let Some(raw) = record.properties.prop("_MolFileLinkNodes") else {
+    let Some(raw) = record.properties.prop("_molLinkNodes") else {
         return Ok(String::new());
     };
 
-    let parse_unsigned = |token: &str| -> Option<u32> {
-        let (negative, digits) = match token.as_bytes().first() {
-            Some(b'-') => (true, &token[1..]),
-            Some(b'+') => (false, &token[1..]),
-            _ => (false, token),
-        };
-        let magnitude = digits.parse::<u32>().ok()?;
-        Some(if negative {
-            0u32.wrapping_sub(magnitude)
-        } else {
-            magnitude
-        })
+    let raw = property_value_to_string(raw).map_err(SmilesParseError::WriterProperty)?;
+    let parse_unsigned = |token: &[u8]| -> Option<u32> {
+        // Boost's lexical_cast has no whitespace trimming. Guard the only
+        // from_rdvalue difference before reusing its decimal/sign owner.
+        if token
+            .iter()
+            .any(|byte| matches!(*byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+        {
+            return None;
+        }
+        cosmolkit_core::property_value_to_uint(&PropertyValue::String(PropertyText::from_bytes(
+            token,
+        )))
+        .ok()
     };
     let atom_count = record.topology.atoms.len();
     let has_declared_bond = |endpoint: u32, center: u32| -> Result<bool, SmilesParseError> {
@@ -2353,9 +2437,14 @@ fn write_link_nodes<'record>(
     };
 
     let mut entries = Vec::new();
-    for item in raw.split('|').filter(|item| !item.trim().is_empty()) {
+    for item in raw
+        .as_bytes()
+        .split(|byte| *byte == b'|')
+        .filter(|item| !item.is_empty())
+    {
         let values = item
-            .split_whitespace()
+            .split(|byte| *byte == b' ')
+            .filter(|token| !token.is_empty())
             .map(parse_unsigned)
             .collect::<Option<Vec<_>>>();
         let Some(mut values) = values else { continue };
@@ -2404,30 +2493,75 @@ fn write_link_nodes<'record>(
     }
 }
 
-fn is_data_sgroup(group: &SubstanceGroup) -> bool {
-    matches!(group.kind(), SubstanceGroupKind::Data)
-        || group
-            .props()
-            .get("TYPE")
-            .is_some_and(|value| value == "DAT")
+fn is_data_sgroup(group: &SubstanceGroup) -> Result<bool, SmilesParseError> {
+    // BEGIN COMPLETE RDProps::getPropIfPresent
+    // RDKit✔️❌: bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️❌:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️❌:   }
+    // END COMPLETE RDProps::getPropIfPresent
+
+    // A present source property is read through the sole CORE conversion;
+    // wrong supported types/conversions propagate. The typed detached kind
+    // supplies TYPE only when no explicit source property was supplied.
+    if let Some(value) = group.props().get(b"TYPE".as_slice()) {
+        return Ok(cosmolkit_core::property_value_to_string(value)
+            .map_err(SmilesParseError::WriterProperty)?
+            .as_bytes()
+            == b"DAT");
+    }
+    Ok(matches!(group.kind(), SubstanceGroupKind::Data))
 }
 
-fn data_sgroup_value<'a>(group: &'a SubstanceGroup, key: &str) -> &'a str {
-    let typed = group.data().and_then(|data| match key {
-        "FIELDNAME" => data.field_name.as_deref(),
-        "QUERYOP" => data.query_op.as_deref(),
-        "FIELDINFO" => data.field_info.as_deref(),
-        _ => None,
-    });
-    typed
-        .or_else(|| group.props().get(key).map(String::as_str))
-        .unwrap_or_default()
+fn data_sgroup_value(group: &SubstanceGroup, key: &str) -> Result<PropertyText, SmilesParseError> {
+    // BEGIN COMPLETE RDProps::getPropIfPresent
+    // RDKit✔️❌: bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️❌:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️❌:   }
+    // END COMPLETE RDProps::getPropIfPresent
+
+    // Scalar source getProp<string> uses canonical RDValue conversion. This
+    // helper is never used to reinterpret DATAFIELDS as a scalar string.
+    if let Some(value) = group.props().get(key.as_bytes()) {
+        return cosmolkit_core::property_value_to_string(value)
+            .map_err(SmilesParseError::WriterProperty);
+    }
+    Ok(group
+        .data()
+        .and_then(|data| match key {
+            "FIELDNAME" => data.field_name.as_ref(),
+            "QUERYOP" => data.query_op.as_ref(),
+            "FIELDINFO" => data.field_info.as_ref(),
+            _ => None,
+        })
+        .cloned()
+        .unwrap_or_default())
+}
+
+fn data_sgroup_values(group: &SubstanceGroup) -> Result<&[PropertyText], SmilesParseError> {
+    // BEGIN COMPLETE RDProps::getPropIfPresent
+    // RDKit✔️❌: bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️❌:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️❌:   }
+    // END COMPLETE RDProps::getPropIfPresent
+
+    // Source DATAFIELDS is vector<string>: exact tag, bytes and element order.
+    // A present scalar is a native cast failure, never split or inferred.
+    if let Some(value) = group.props().get(b"DATAFIELDS".as_slice()) {
+        return value
+            .as_string_vector()
+            .map_err(SmilesParseError::WriterPropertyKind);
+    }
+    Ok(group
+        .data()
+        .map(|data| data.values.as_slice())
+        .filter(|values| !values.is_empty())
+        .unwrap_or_else(|| group.data_fields()))
 }
 
 fn write_data_sgroups<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     atom_order: &[AtomId],
-) -> String {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION get_sgroup_data_block
     // RDKit✔️✔️: std::string get_sgroup_data_block(const ROMol &mol,
@@ -2513,18 +2647,18 @@ fn write_data_sgroups<'record>(
     // O(atom count + output bytes) storage. Typed values are borrowed and
     // written once; no group, field, or full output clone is introduced.
     let positions = atom_positions(atom_order, record.topology.atoms.len());
-    let mut output = String::new();
+    let mut output = PropertyText::new();
     for group in &record.topology.substance_groups {
-        if !is_data_sgroup(group) {
+        if !is_data_sgroup(group)? {
             continue;
         }
         if !output.is_empty() {
-            output.push(',');
+            output.push_byte(b',');
         }
-        output.push_str("SgD:");
+        output.extend_bytes(("SgD:").as_ref());
         for (member_index, atom) in group.atoms().iter().enumerate() {
             if member_index != 0 {
-                output.push(',');
+                output.push_byte(b',');
             }
             // The pinned source reverse vector is zero-initialized, so an
             // SGroup atom omitted from a selected fragment maps to row zero.
@@ -2532,39 +2666,32 @@ fn write_data_sgroups<'record>(
             write!(&mut output, "{position}").expect("writing to String cannot fail");
         }
         if !group.atoms().is_empty() {
-            output.push(':');
+            output.push_byte(b':');
         }
-        output.push_str(data_sgroup_value(group, "FIELDNAME"));
-        output.push(':');
+        output.extend_bytes((data_sgroup_value(group, "FIELDNAME")?).as_ref());
+        output.push_byte(b':');
 
-        let typed_values = group
-            .data()
-            .map(|data| data.values.as_slice())
-            .filter(|values| !values.is_empty());
-        let values = typed_values
-            .or_else(|| (!group.data_fields().is_empty()).then_some(group.data_fields()));
-        if let Some(values) = values {
+        let values = data_sgroup_values(group)?;
+        {
             for (value_index, value) in values.iter().enumerate() {
                 if value_index != 0 {
-                    output.push(',');
+                    output.push_byte(b',');
                 }
-                output.push_str(value);
+                output.extend_bytes((value).as_ref());
             }
-        } else {
-            output.push_str(data_sgroup_value(group, "DATAFIELDS"));
         }
-        output.push(':');
-        output.push_str(data_sgroup_value(group, "QUERYOP"));
-        output.push(':');
-        output.push_str(data_sgroup_value(group, "FIELDINFO"));
-        output.push(':');
-        output.push_str(data_sgroup_value(group, "FIELDTAG"));
-        output.push(':');
+        output.push_byte(b':');
+        output.extend_bytes((data_sgroup_value(group, "QUERYOP")?).as_ref());
+        output.push_byte(b':');
+        output.extend_bytes((data_sgroup_value(group, "FIELDINFO")?).as_ref());
+        output.push_byte(b':');
+        output.extend_bytes((data_sgroup_value(group, "FIELDTAG")?).as_ref());
+        output.push_byte(b':');
     }
-    output
+    Ok(output)
 }
 
-fn polymer_type(group: &SubstanceGroup) -> Option<&'static str> {
+fn polymer_type(group: &SubstanceGroup) -> Result<Option<&'static str>, SmilesParseError> {
     // BEGIN RDKIT CPP VALUE sgroupTypemap
     // RDKit✔️🔝: const std::map<std::string, std::string> sgroupTypemap = {
     // RDKit✔️🔝:     {"n", "SRU"},   {"mon", "MON"}, {"mer", "MER"}, {"co", "COP"},
@@ -2596,19 +2723,32 @@ fn polymer_type(group: &SubstanceGroup) -> Option<&'static str> {
     // END RDKIT CPP FUNCTION get_sgroup_polymer_block (type selection)
     // A fixed enum match removes both source tree maps while preserving their
     // lexicographically first reverse spelling, including COP -> "alt".
-    match group.kind() {
+    Ok(match group.kind() {
         SubstanceGroupKind::StructuralRepeatUnit => Some("n"),
         SubstanceGroupKind::Monomer => Some("mon"),
         SubstanceGroupKind::Mer => Some("mer"),
-        SubstanceGroupKind::Copolymer => match group
-            .subtype()
-            .or_else(|| group.props().get("SUBTYPE").map(String::as_str))
-        {
-            Some("ALT") => Some("alt"),
-            Some("RAN") => Some("ran"),
-            Some("BLO") => Some("blk"),
-            _ => Some("alt"),
-        },
+        SubstanceGroupKind::Copolymer => {
+            let raw_subtype = if group.subtype().is_none() {
+                group
+                    .props()
+                    .get(b"SUBTYPE".as_slice())
+                    .map(cosmolkit_core::property_value_to_string)
+                    .transpose()
+                    .map_err(SmilesParseError::WriterProperty)?
+            } else {
+                None
+            };
+            match group
+                .subtype()
+                .map(PropertyText::as_bytes)
+                .or_else(|| raw_subtype.as_ref().map(PropertyText::as_bytes))
+            {
+                Some(b"ALT") => Some("alt"),
+                Some(b"RAN") => Some("ran"),
+                Some(b"BLO") => Some("blk"),
+                _ => Some("alt"),
+            }
+        }
         SubstanceGroupKind::Crosslink => Some("xl"),
         SubstanceGroupKind::Modification => Some("mod"),
         SubstanceGroupKind::Mixture => Some("mix"),
@@ -2616,13 +2756,13 @@ fn polymer_type(group: &SubstanceGroup) -> Option<&'static str> {
         SubstanceGroupKind::Formulation => Some("f"),
         SubstanceGroupKind::AnyPolymer => Some("any"),
         SubstanceGroupKind::Graft => Some("grf"),
-        SubstanceGroupKind::Generic(value) if value == "GEN" => Some("gen"),
-        SubstanceGroupKind::Generic(value) if value == "COM" => Some("c"),
+        SubstanceGroupKind::Generic(value) if value.as_bytes() == b"GEN" => Some("gen"),
+        SubstanceGroupKind::Generic(value) if value.as_bytes() == b"COM" => Some("c"),
         _ => None,
-    }
+    })
 }
 
-fn connection_text(group: &SubstanceGroup) -> String {
+fn connection_text(group: &SubstanceGroup) -> Result<PropertyText, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION get_sgroup_polymer_block (connectivity)
     // RDKit✔️✔️: std::string connect;
     // RDKit✔️✔️: if (sg.getPropIfPresent("CONNECT", connect)) {
@@ -2630,28 +2770,32 @@ fn connection_text(group: &SubstanceGroup) -> String {
     // RDKit✔️✔️:   res << connect;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION get_sgroup_polymer_block (connectivity)
-    group
-        .connection()
-        .map(|connection| match connection {
-            SGroupConnection::HeadToHead => "hh".to_owned(),
-            SGroupConnection::HeadToTail => "ht".to_owned(),
-            SGroupConnection::Either => "eu".to_owned(),
-            SGroupConnection::Unknown(value) => value.to_ascii_lowercase(),
-        })
-        .or_else(|| {
-            group
-                .props()
-                .get("CONNECT")
-                .map(|value| value.to_ascii_lowercase())
-        })
-        .unwrap_or_default()
+    if let Some(connection) = group.connection() {
+        return Ok(match connection {
+            SGroupConnection::HeadToHead => PropertyText::from("hh"),
+            SGroupConnection::HeadToTail => PropertyText::from("ht"),
+            SGroupConnection::Either => PropertyText::from("eu"),
+            SGroupConnection::Unknown(value) => {
+                PropertyText::from(value.as_bytes().to_ascii_lowercase())
+            }
+        });
+    }
+    let raw = group
+        .props()
+        .get(b"CONNECT".as_slice())
+        .map(cosmolkit_core::property_value_to_string)
+        .transpose()
+        .map_err(SmilesParseError::WriterProperty)?;
+    Ok(raw
+        .map(|value| PropertyText::from(value.as_bytes().to_ascii_lowercase()))
+        .unwrap_or_default())
 }
 
 fn write_polymer_sgroups<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     atom_order: &[AtomId],
     bond_order: &[BondId],
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION get_sgroup_polymer_block (field order)
     // RDKit✔️❌: for (const auto &sg : sgs) {
@@ -2686,7 +2830,7 @@ fn write_polymer_sgroups<'record>(
     let atom_positions = atom_positions(atom_order, record.topology.atoms.len());
     let mut blocks = Vec::new();
     for group in &record.topology.substance_groups {
-        let Some(kind) = polymer_type(group) else {
+        let Some(kind) = polymer_type(group)? else {
             continue;
         };
         let atoms = group
@@ -2765,32 +2909,61 @@ fn write_polymer_sgroups<'record>(
         } else {
             String::new()
         };
-        blocks.push(format!(
-            "Sg:{kind}:{}:{}:{}:{head_text}:{tail_text}:",
-            atoms.join(","),
+        let mut block = PropertyText::new();
+        write!(&mut block, "Sg:{kind}:{}:", atoms.join(","))
+            .expect("byte output formatting cannot fail");
+        let raw_label = if group.label().is_none() {
             group
-                .label()
-                .or_else(|| group.props().get("LABEL").map(String::as_str))
-                .unwrap_or_default(),
-            connection_text(group)
-        ));
+                .props()
+                .get(b"LABEL".as_slice())
+                .map(cosmolkit_core::property_value_to_string)
+                .transpose()
+                .map_err(SmilesParseError::WriterProperty)?
+        } else {
+            None
+        };
+        if let Some(label) = group.label().or(raw_label.as_ref()) {
+            block.extend_bytes(label.as_bytes());
+        }
+        block.push_byte(b':');
+        block.extend_bytes(connection_text(group)?.as_bytes());
+        write!(&mut block, ":{head_text}:{tail_text}:")
+            .expect("byte output formatting cannot fail");
+        blocks.push(block);
     }
-    Ok(blocks.join(","))
+    let mut output = PropertyText::new();
+    for (index, block) in blocks.into_iter().enumerate() {
+        if index != 0 {
+            output.push_byte(b',');
+        }
+        output.extend_bytes(block.as_bytes());
+    }
+    Ok(output)
 }
 
-fn sgroup_index(group: &SubstanceGroup) -> usize {
+fn sgroup_index(group: &SubstanceGroup) -> Result<usize, SmilesParseError> {
+    // RDKit❗❌: unsigned int sgidx = sg.getIndexInMol();
+    // RDKit❗❌: sg.getPropIfPresent("index", sgidx);
+    // String-only detached SGroup metadata requires one temporary tagged copy;
+    // conversion still uses the canonical from_rdvalue owner and propagates errors.
     group
         .props()
-        .get("index")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or_else(|| group.id().index())
+        .get(b"index".as_slice())
+        .map(|value| cosmolkit_core::property_value_to_uint(value))
+        .transpose()
+        .map_err(SmilesParseError::WriterNumeric)
+        .map(|value| {
+            value
+                .map(|value| value as usize)
+                .unwrap_or_else(|| group.id().index())
+        })
 }
 
 fn write_sgroup_hierarchy<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     include_data: bool,
     include_polymer: bool,
-) -> String {
+) -> Result<String, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION get_sgroup_hierarchy_block
     // RDKit✔️✔️: std::string get_sgroup_hierarchy_block(const ROMol &mol) {
@@ -2854,23 +3027,23 @@ fn write_sgroup_hierarchy<'record>(
     let mut next = 0;
     if include_data {
         for group in &record.topology.substance_groups {
-            if is_data_sgroup(group) {
-                output_indices.insert(sgroup_index(group), next);
+            if is_data_sgroup(group)? {
+                output_indices.insert(sgroup_index(group)?, next);
                 next += 1;
             }
         }
     }
     if include_polymer {
         for group in &record.topology.substance_groups {
-            if polymer_type(group).is_some() {
-                output_indices.insert(sgroup_index(group), next);
+            if polymer_type(group)?.is_some() {
+                output_indices.insert(sgroup_index(group)?, next);
                 next += 1;
             }
         }
     }
     let mut hierarchy = BTreeMap::<usize, Vec<usize>>::new();
     for group in &record.topology.substance_groups {
-        let Some(child) = output_indices.get(&sgroup_index(group)).copied() else {
+        let Some(child) = output_indices.get(&sgroup_index(group)?).copied() else {
             continue;
         };
         // RDKit resolves the parent through the `PARENT` property, which
@@ -2881,21 +3054,22 @@ fn write_sgroup_hierarchy<'record>(
         // fixes each SubstanceGroupId to its row position, so direct indexing
         // avoids an additional tree map. Fall back to the preserved `PARENT`
         // property when only that is available.
-        let parent_key = group
-            .parent()
-            .and_then(|parent_id| {
-                record
-                    .topology
-                    .substance_groups
-                    .get(parent_id.index())
-                    .map(sgroup_index)
-            })
-            .or_else(|| {
-                group
-                    .props()
-                    .get("PARENT")
-                    .and_then(|value| value.parse::<usize>().ok())
-            });
+        let parent_key = if let Some(parent_id) = group.parent() {
+            record
+                .topology
+                .substance_groups
+                .get(parent_id.index())
+                .map(sgroup_index)
+                .transpose()?
+        } else {
+            group
+                .props()
+                .get(b"PARENT".as_slice())
+                .map(|value| cosmolkit_core::property_value_to_uint(value))
+                .transpose()
+                .map_err(SmilesParseError::WriterNumeric)?
+                .map(|value| value as usize)
+        };
         let Some(parent) = parent_key.and_then(|parent| output_indices.get(&parent).copied())
         else {
             continue;
@@ -2903,7 +3077,7 @@ fn write_sgroup_hierarchy<'record>(
         hierarchy.entry(parent).or_default().push(child);
     }
     if hierarchy.is_empty() {
-        String::new()
+        Ok(String::new())
     } else {
         // Complexity review: like the source, this uses one ordered map for
         // source-to-output indices, one ordered parent accumulator, and one
@@ -2923,7 +3097,7 @@ fn write_sgroup_hierarchy<'record>(
                 write!(&mut output, "{child}").expect("writing to String cannot fail");
             }
         }
-        output
+        Ok(output)
     }
 }
 
@@ -2951,6 +3125,7 @@ mod tests {
                 ..Default::default()
             },
         )
+        .map(|value| fixed_property_text(&value).to_owned())
         .expect("write CXSMILES")
     }
 
@@ -3045,8 +3220,8 @@ mod tests {
             assert!(matches!(
                 coordinate_source(&record, CxCoordinateSelection::Auto),
                 Err(SmilesParseError::AmbiguousCoordinateSelection {
-                    two_d_count: 1,
-                    three_d_count: 1
+                    two_d_count: 0,
+                    three_d_count: 2
                 })
             ));
             assert_eq!(record, before, "selection must preserve {input}");
@@ -3196,21 +3371,20 @@ mod tests {
         let fields = CxSmilesFields::COORDS | CxSmilesFields::BOND_CFG;
 
         assert_eq!(
-            write_cx_smiles_with_params(
+            (write_cx_smiles_with_params(
                 &record,
                 &coordinate_consumer_params(CxCoordinateSelection::TwoD { id: 101 }, fields),
             )
-            .unwrap(),
-            "C[C@H](O)Cl |(3.9163,5.4767,;3.9163,3.9367,;2.5826,3.1667,;5.25,3.1667,),wU:1.0|"
+            .unwrap())
+            .as_bytes(),
+            ("C[C@H](O)Cl |(3.9163,5.4767,;3.9163,3.9367,;2.5826,3.1667,;5.25,3.1667,),wU:1.0|")
+                .as_bytes()
         );
-        assert_eq!(
-            write_cx_smiles_with_params(
+        assert_eq!( (write_cx_smiles_with_params(
                 &record,
                 &coordinate_consumer_params(CxCoordinateSelection::ThreeD { id: 202 }, fields),
             )
-            .unwrap(),
-            "C[C@H](O)Cl |(-3.9163,5.4767,;-3.9163,3.9367,1;-2.5826,3.1667,2;-5.25,3.1667,3),wD:1.0|"
-        );
+            .unwrap()).as_bytes(), ("C[C@H](O)Cl |(-3.9163,5.4767,;-3.9163,3.9367,1;-2.5826,3.1667,2;-5.25,3.1667,3),wD:1.0|").as_bytes());
         assert_eq!(
             record, before,
             "coordinate consumers must preserve the input"
@@ -3244,15 +3418,16 @@ mod tests {
         let record = coordinate_consumer_record();
         let before = record.clone();
         assert_eq!(
-            write_cx_smiles_with_params(
+            (write_cx_smiles_with_params(
                 &record,
                 &coordinate_consumer_params(
                     CxCoordinateSelection::TwoD { id: 999 },
                     CxSmilesFields::BOND_CFG,
                 ),
             )
-            .unwrap(),
-            "C[C@H](O)Cl"
+            .unwrap())
+            .as_bytes(),
+            ("C[C@H](O)Cl").as_bytes()
         );
         assert_eq!(
             record, before,
@@ -3312,6 +3487,7 @@ mod tests {
             None,
             CxCoordinateSelection::Auto,
         )
+        .map(|value| fixed_property_text(&value).to_owned())
     }
 
     fn atrop_record(stereo: BondStereo, reverse_carrier_bonds: bool) -> SmilesRecord {
@@ -3424,7 +3600,11 @@ mod tests {
             ("CC |H:0.0|", "CC |H:0.0|"),
             ("CC |Z:0|", "C~C |Z:0|"),
         ] {
-            assert_eq!(write_cx_smiles(&parse(input)).unwrap(), expected, "{input}");
+            assert_eq!(
+                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
+                (expected).as_bytes(),
+                "{input}"
+            );
         }
     }
 
@@ -3432,8 +3612,8 @@ mod tests {
     fn writes_enhanced_stereo_with_source_sorting_and_fresh_write_ids() {
         let input = "F[C@H](Cl)Br.O[C@@H](N)I |&7:1,o2:5|";
         assert_eq!(
-            write_cx_smiles(&parse(input)).unwrap(),
-            "F[C@H](Cl)Br.N[C@H](O)I |o1:5,&1:1|"
+            (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
+            ("F[C@H](Cl)Br.N[C@H](O)I |o1:5,&1:1|").as_bytes()
         );
         assert_eq!(
             write_noncanonical(input),
@@ -3604,11 +3784,15 @@ mod tests {
                 "C[C@H](O)Cl |(-3.9163,5.4767,;-3.9163,3.9367,;-2.5826,3.1667,;-5.25,3.1667,),wD:1.0|",
             ),
         ] {
-            assert_eq!(write_cx_smiles(&parse(input)).unwrap(), expected, "{input}");
+            assert_eq!(
+                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
+                (expected).as_bytes(),
+                "{input}"
+            );
         }
         assert_eq!(
-            write_cx_smiles(&parse("CC |(0,0,;1,0,),wU:0.0|")).unwrap(),
-            "CC |(0,0,;1,0,)|"
+            (write_cx_smiles(&parse("CC |(0,0,;1,0,),wU:0.0|")).unwrap()).as_bytes(),
+            ("CC |(0,0,;1,0,)|").as_bytes()
         );
     }
 
@@ -3708,7 +3892,11 @@ mod tests {
                 "CCO |SgD:2:a:b::::,Sg:n:1,0::ht:::,SgH:1:0|",
             ),
         ] {
-            assert_eq!(write_cx_smiles(&parse(input)).unwrap(), expected, "{input}");
+            assert_eq!(
+                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
+                (expected).as_bytes(),
+                "{input}"
+            );
         }
     }
 
@@ -3725,9 +3913,10 @@ mod tests {
             BondId::new(0),
         ];
         assert_eq!(
-            write_polymer_sgroups(&record, &atom_order, &bond_order)
-                .expect("typed crossings map through traversal order"),
-            "Sg:n:1,2,3:repeat:ht:3,3,0:0,0,3:"
+            (write_polymer_sgroups(&record, &atom_order, &bond_order)
+                .expect("typed crossings map through traversal order"))
+            .as_bytes(),
+            ("Sg:n:1,2,3:repeat:ht:3,3,0:0,0,3:").as_bytes()
         );
     }
 
@@ -3748,10 +3937,13 @@ mod tests {
         );
         parent.set_prop("index", "900");
         record.topology.substance_groups = vec![child, sibling, parent];
-        assert_eq!(write_sgroup_hierarchy(&record, true, true), "SgH:2:0.1");
-        assert_eq!(write_sgroup_hierarchy(&record, true, false), "");
-        assert_eq!(write_sgroup_hierarchy(&record, false, true), "");
-        assert_eq!(write_sgroup_hierarchy(&record, false, false), "");
+        assert_eq!(
+            write_sgroup_hierarchy(&record, true, true).unwrap(),
+            "SgH:2:0.1"
+        );
+        assert_eq!(write_sgroup_hierarchy(&record, true, false).unwrap(), "");
+        assert_eq!(write_sgroup_hierarchy(&record, false, true).unwrap(), "");
+        assert_eq!(write_sgroup_hierarchy(&record, false, false).unwrap(), "");
     }
 
     #[test]
@@ -3776,7 +3968,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join(".");
         assert_eq!(
-            write_sgroup_hierarchy(&record, true, false),
+            write_sgroup_hierarchy(&record, true, false).unwrap(),
             format!("SgH:{}:{children}", count - 1)
         );
     }
@@ -3793,7 +3985,11 @@ mod tests {
             ("C1CCCCC=CCCC1 |c:5|", "C1=CCCCCCCCC1"),
             ("C1=CCCCCCCCC1 |ctu:0|", "C1=CCCCCCCCC1 |ctu:0|"),
         ] {
-            assert_eq!(write_cx_smiles(&parse(input)).unwrap(), expected, "{input}");
+            assert_eq!(
+                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
+                (expected).as_bytes(),
+                "{input}"
+            );
         }
     }
 
@@ -3807,7 +4003,11 @@ mod tests {
             ),
             ("C1OCCC1C |LN:0:1.5,1:1.3|", "CC1CCOC1 |LN:5:1.5,4:1.3|"),
         ] {
-            assert_eq!(write_cx_smiles(&parse(input)).unwrap(), expected, "{input}");
+            assert_eq!(
+                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
+                (expected).as_bytes(),
+                "{input}"
+            );
         }
     }
 
@@ -3822,7 +4022,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(result, "CC |$_AV:left;right$|");
+        assert_eq!((result).as_bytes(), ("CC |$_AV:left;right$|").as_bytes());
     }
 
     #[test]
@@ -3894,7 +4094,10 @@ mod tests {
             ..Default::default()
         };
         let input = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).expect("parse raw ring CXSMILES");
-        assert_eq!(input.properties.prop("_needsDetectBondStereo"), Some("1"));
+        assert_eq!(
+            input.properties.prop("_needsDetectBondStereo"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
         assert_eq!(input.properties.prop("_StereochemDone"), None);
         let input_before = input.clone();
         let mut prepared_record = input.clone();
@@ -3911,17 +4114,19 @@ mod tests {
         );
         assert_eq!(
             prepared_record.properties.prop("_StereochemDone"),
-            Some("1")
+            Some(&cosmolkit_model::PropertyValue::Int(1))
         );
         assert!(
             prepared_record
                 .properties
                 .is_prop_computed("_StereochemDone")
+                .unwrap()
         );
         assert!(
             !prepared_record
                 .properties
                 .is_prop_computed("_needsDetectBondStereo")
+                .unwrap()
         );
         assert_eq!(
             input, input_before,
@@ -3961,16 +4166,17 @@ mod tests {
 
         assert_eq!(
             prepared_record.properties.prop("_StereochemDone"),
-            Some("0")
+            Some(&cosmolkit_model::PropertyValue::String("0".into()))
         );
         assert!(
             !prepared_record
                 .properties
                 .is_prop_computed("_StereochemDone")
+                .unwrap()
         );
         assert_eq!(
             prepared_record.properties.prop("_needsDetectBondStereo"),
-            Some("1"),
+            Some(&cosmolkit_model::PropertyValue::String("1".into())),
             "the legacy perception clear occurs only when assignment runs"
         );
         assert_eq!(
@@ -4029,7 +4235,10 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(write_cx_smiles_with_params(&record, &params).unwrap(), "");
+        assert_eq!(
+            (write_cx_smiles_with_params(&record, &params).unwrap()).as_bytes(),
+            ("").as_bytes()
+        );
         assert_eq!(record, before, "empty CX writing must preserve its caller");
     }
 
@@ -4069,8 +4278,11 @@ mod uint_cx_proposed_tests {
                 Ok(value)
             );
             assert_eq!(
-                source_string_property(&PropertyValue::UInt(value), "atomLabel").unwrap(),
-                text
+                (source_string_property(Some(&PropertyValue::UInt(value)), "atomLabel")
+                    .unwrap()
+                    .unwrap())
+                .as_bytes(),
+                (text).as_bytes()
             );
         }
     }
@@ -4123,7 +4335,13 @@ mod uint_complete_source_condition_cells {
     fn uint_cell_text_consumer_smiles_cxtext_0_cx_writer() {
         let g = graph(vec![PropertyValue::UInt(0_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
-        assert_eq!(source_string_property(v, "_cxsmilesBondIdx").unwrap(), "0");
+        assert_eq!(
+            (source_string_property(Some(v), "_cxsmilesBondIdx")
+                .unwrap()
+                .unwrap())
+            .as_bytes(),
+            ("0").as_bytes()
+        );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_1
     #[test]
@@ -4140,7 +4358,13 @@ mod uint_complete_source_condition_cells {
     fn uint_cell_text_consumer_smiles_cxtext_1_cx_writer() {
         let g = graph(vec![PropertyValue::UInt(1_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
-        assert_eq!(source_string_property(v, "_cxsmilesBondIdx").unwrap(), "1");
+        assert_eq!(
+            (source_string_property(Some(v), "_cxsmilesBondIdx")
+                .unwrap()
+                .unwrap())
+            .as_bytes(),
+            ("1").as_bytes()
+        );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483646
     #[test]
@@ -4158,8 +4382,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(2147483646_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            source_string_property(v, "_cxsmilesBondIdx").unwrap(),
-            "2147483646"
+            (source_string_property(Some(v), "_cxsmilesBondIdx")
+                .unwrap()
+                .unwrap())
+            .as_bytes(),
+            ("2147483646").as_bytes()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483647
@@ -4178,8 +4405,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(2147483647_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            source_string_property(v, "_cxsmilesBondIdx").unwrap(),
-            "2147483647"
+            (source_string_property(Some(v), "_cxsmilesBondIdx")
+                .unwrap()
+                .unwrap())
+            .as_bytes(),
+            ("2147483647").as_bytes()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483648
@@ -4198,8 +4428,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(2147483648_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            source_string_property(v, "_cxsmilesBondIdx").unwrap(),
-            "2147483648"
+            (source_string_property(Some(v), "_cxsmilesBondIdx")
+                .unwrap()
+                .unwrap())
+            .as_bytes(),
+            ("2147483648").as_bytes()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_4294967295
@@ -4218,8 +4451,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(4294967295_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            source_string_property(v, "_cxsmilesBondIdx").unwrap(),
-            "4294967295"
+            (source_string_property(Some(v), "_cxsmilesBondIdx")
+                .unwrap()
+                .unwrap())
+            .as_bytes(),
+            ("4294967295").as_bytes()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CFG_0
@@ -4661,4 +4897,9 @@ mod uint_complete_source_condition_cells {
         );
         assert_eq!(record.topology, g);
     }
+}
+
+#[cfg(test)]
+fn fixed_property_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("original fixed fixture text is UTF8")
 }

@@ -59,13 +59,6 @@ fn validate_adjust_hs_valence(
                 expected,
             });
         }
-        if let Some((row, &value)) = rows.iter().enumerate().find(|(_, value)| **value < 0) {
-            return Err(AdjustHsError::InvalidValenceRow {
-                atom: AtomId::new(row),
-                field,
-                value,
-            });
-        }
     }
     Ok(())
 }
@@ -133,7 +126,11 @@ pub fn adjust_hs(
 
     for atom_row in 0..working.atoms.len() {
         let atom = AtomId::new(atom_row);
-        let original_implicit_valence = original_valence.implicit_hydrogens[atom_row];
+        // Source reads only the old implicit field at this point. Use the
+        // existing signed-width getter and its noImplicit branch, in atom
+        // order; an old explicit sentinel is overwritten without being read.
+        let original_implicit_valence =
+            implicit_hydrogen_count(&working.atoms[atom_row], original_valence)? as i32;
         let current_explicit_valence = assign_explicit_valence_for_atom_from_parts(
             &working.atoms,
             &working.bonds,
@@ -153,23 +150,15 @@ pub fn adjust_hs(
             )?;
 
         let final_explicit_valence = if recalculated_implicit_valence < original_implicit_valence {
-            let lost = original_implicit_valence
-                .checked_sub(recalculated_implicit_valence)
-                .ok_or(AdjustHsError::ExplicitHydrogenOverflow {
-                    atom,
-                    original_explicit_hydrogens,
-                    original_implicit_valence,
-                    recalculated_implicit_valence,
-                })?;
-            let adjusted = i32::from(original_explicit_hydrogens)
-                .checked_add(lost)
-                .and_then(|value| u8::try_from(value).ok())
-                .ok_or(AdjustHsError::ExplicitHydrogenOverflow {
-                    atom,
-                    original_explicit_hydrogens,
-                    original_implicit_valence,
-                    recalculated_implicit_valence,
-                })?;
+            // RDKit✔️✔️: void setNumExplicitHs(unsigned int what) { d_numExplicitHs = what; }
+            // RDKit✔️✔️: std::uint8_t d_numExplicitHs;
+            // Both implicit fields have signed int8 source width, so this
+            // promoted sum fits i32. The setter stores its low eight bits,
+            // including wraparound; source defines no overflow rejection.
+            // O(1) arithmetic, no allocation or fallback.
+            let adjusted = (i32::from(original_explicit_hydrogens)
+                + (original_implicit_valence - recalculated_implicit_valence))
+                as u8;
             working.atoms[atom_row].set_explicit_hydrogens(adjusted);
             assign_explicit_valence_for_atom_from_parts(
                 &working.atoms,
@@ -205,7 +194,10 @@ fn explicit_hydrogen_count(atom: &Atom) -> u32 {
     u32::from(atom.explicit_hydrogens())
 }
 
-fn implicit_hydrogen_count(atom: &Atom, valence: &ValenceAssignment) -> Result<u32, ValenceError> {
+pub(crate) fn implicit_hydrogen_count(
+    atom: &Atom,
+    valence: &ValenceAssignment,
+) -> Result<u32, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION Atom::getNumImplicitHs
     // RDKit✔️✔️: unsigned int Atom::getNumImplicitHs() const {
     // RDKit✔️✔️:   if (df_noImplicit) {
@@ -221,10 +213,15 @@ fn implicit_hydrogen_count(atom: &Atom, valence: &ValenceAssignment) -> Result<u
     if atom.no_implicit() {
         return Ok(0);
     }
+    // RDKit✔️✔️: std::int8_t d_implicitValence, d_explicitValence;
+    // Caller-supplied assignments can carry calculation-width i32 values; the source cached getter
+    // observes the signed eight-bit field before its initialization check.
+    // One indexed read and cast, with no allocation or repeated graph scan.
     let implicit = valence
         .implicit_hydrogens
         .get(atom.id().index())
         .copied()
+        .map(|value| i32::from(value as i8))
         .filter(|value| *value >= 0)
         .ok_or(ValenceError::ImplicitValenceCacheNotInitialized { atom: atom.id() })?;
     Ok(implicit as u32)

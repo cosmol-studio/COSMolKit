@@ -11,10 +11,25 @@ pub struct SpecialRegression {
 }
 #[derive(Clone, Copy)]
 pub enum SpecialRegressionSchema {
+    BioMmcifSwitches,
     StructureTags,
     TautomerBranches,
+    TautomerFocused,
+    MolAlign,
 }
 pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[
+    SpecialRegression {
+        key: "bio_mmcif_switches",
+        fixture: "special/bio_mmcif_switches.json",
+        rows: 128,
+        schema: SpecialRegressionSchema::BioMmcifSwitches,
+    },
+    SpecialRegression {
+        key: "molalign_focused",
+        fixture: "special/molalign_focused.json",
+        rows: 14,
+        schema: SpecialRegressionSchema::MolAlign,
+    },
     SpecialRegression {
         key: "structure_tags",
         fixture: "special/structure_tags.json",
@@ -26,6 +41,12 @@ pub const SPECIAL_REGRESSIONS: &[SpecialRegression] = &[
         fixture: "special/tautomer_long_conjugated.json",
         rows: 1,
         schema: SpecialRegressionSchema::TautomerBranches,
+    },
+    SpecialRegression {
+        key: "tautomer_focused",
+        fixture: "special/tautomer_focused.json",
+        rows: 18,
+        schema: SpecialRegressionSchema::TautomerFocused,
     },
 ];
 
@@ -42,11 +63,13 @@ pub enum Operation {
     MmffCoverage,
     MmffOptimization,
     MmffConformerOptimization,
+    MolAlign,
 }
 
 impl Operation {
     pub fn name(self) -> &'static str {
         match self {
+            Self::MolAlign => "molalign",
             Self::Fingerprint(kind) => kind.name(),
             Self::SmilesWrite => "smiles_write",
             Self::SubstructureMatch => "substructure_match",
@@ -94,6 +117,7 @@ pub struct Task {
 macro_rules! corpus_tasks {
     ($apply:ident) => {
         $apply! {
+            (molalign_smiles, Operation::MolAlign, CorpusType::Smiles, "generate_molalign"),
             (bio_pdb_output_pdb, Operation::BioPdbOutput, CorpusType::Pdb, "generate_bio_pdb_output_pdb"),
             (bio_pdb_output_cif, Operation::BioPdbOutput, CorpusType::Cif, "generate_bio_pdb_output_cif"),
             (smiles_read_smiles, Operation::Molecular(molecule_plan::TaskId::SmilesRead), CorpusType::Smiles, "generate_smiles_read"),
@@ -232,6 +256,7 @@ pub struct SmilesCase {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input {
+    MolAlign(crate::molalign::Input),
     Fingerprint(crate::fingerprints::FingerprintInput),
     SmilesWrite(crate::smiles_write::WriteInput),
     Search(crate::search::SearchInput),
@@ -332,6 +357,7 @@ impl BioPdbOutputProfile {
 impl Input {
     pub fn task_name(&self) -> &'static str {
         match self {
+            Self::MolAlign(_) => "molalign",
             Self::Fingerprint(row) => row.task_name(),
             Self::SmilesWrite(_) => "smiles_write",
             Self::Mmff(row) => row.profile.task_name(),
@@ -462,6 +488,7 @@ impl Input {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
+    MolAlign(serde_json::Value),
     Fingerprint(crate::fingerprints::Observation),
     SmilesWrite(crate::smiles_write::Outcome),
     Search(crate::search::Outcome),
@@ -528,7 +555,9 @@ impl Task {
         prepared: &Input,
         output: &Value,
     ) -> Result<(), String> {
-        if !matches!(recipe, Input::Uff(_) | Input::Mmff(_)) && recipe != prepared {
+        if !matches!(recipe, Input::Uff(_) | Input::Mmff(_) | Input::MolAlign(_))
+            && recipe != prepared
+        {
             return Err("reference case/parameter mismatch".into());
         }
         if recipe.task_name() != self.operation.name()
@@ -537,6 +566,9 @@ impl Task {
             return Err("reference task/input mismatch".into());
         }
         match (recipe, prepared, output) {
+            (Input::MolAlign(recipe), Input::MolAlign(prepared), Value::MolAlign(output)) => {
+                crate::molalign::validate_reference(recipe, prepared, output)
+            }
             (Input::SmilesWrite(recipe), Input::SmilesWrite(prepared), Value::SmilesWrite(_))
                 if recipe == prepared =>
             {
@@ -579,6 +611,7 @@ impl Task {
     }
     pub fn count(&self, cases: &Corpus) -> usize {
         match self.operation {
+            Operation::MolAlign => cases.molecules.len(),
             Operation::Fingerprint(_) => cases.molecules.len(),
             Operation::SmilesWrite => cases.molecules.len() * crate::smiles_write::profiles().len(),
             Operation::SubstructureMatch => cases.molecules.len() * crate::search::profiles().len(),
@@ -634,6 +667,20 @@ pub fn validate(corpus: &Corpus, tasks: &[&Task]) -> Result<(), String> {
 }
 
 pub fn expand(cases: &Corpus, task: &Task) -> Vec<Input> {
+    if task.operation == Operation::MolAlign {
+        return cases
+            .molecules
+            .iter()
+            .enumerate()
+            .map(|(row, case)| {
+                Input::MolAlign(crate::molalign::Input {
+                    case: case.clone(),
+                    row,
+                    preparation: None,
+                })
+            })
+            .collect();
+    }
     if let Operation::Fingerprint(kind) = task.operation {
         return crate::fingerprints::inputs(&cases.molecules, kind);
     }

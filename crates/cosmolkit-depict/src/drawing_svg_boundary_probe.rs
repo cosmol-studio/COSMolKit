@@ -24,10 +24,10 @@ fn value(property: &source::NativeProperty) -> Result<Option<PropertyValue>, Str
         source::NativeValue::Int(n) => Some(PropertyValue::Int(
             i32::try_from(n).map_err(|e| e.to_string())?,
         )),
-        source::NativeValue::Str(s) => Some(PropertyValue::String(s.to_owned())),
-        // Native bookkeeping remains in the fixed source inventory, not a
-        // model property. This is an explicit representation qualification.
-        source::NativeValue::Strings(_) => None,
+        source::NativeValue::Str(s) => Some(PropertyValue::String(s.to_owned().into())),
+        source::NativeValue::Strings(values) => Some(PropertyValue::StringVector(
+            values.iter().map(|value| (*value).into()).collect(),
+        )),
     })
 }
 
@@ -53,7 +53,7 @@ fn literal(snapshot: &source::Snapshot) -> Result<PreparedDrawing, String> {
             .with_chiral_tag(ChiralTag::from_rdkit_code(i64::from(row.chiral)).ok_or("chiral")?);
         for property in row.props {
             if let Some(value) = value(property)? {
-                spec = if property.computed {
+                spec = if property.computed && property.key != "__computedProps" {
                     spec.with_computed_prop(property.key, value)
                 } else {
                     spec.with_prop(property.key, value)
@@ -88,7 +88,7 @@ fn literal(snapshot: &source::Snapshot) -> Result<PreparedDrawing, String> {
         }
         for property in row.props {
             if let Some(value) = value(property)? {
-                spec = if property.computed {
+                spec = if property.computed && property.key != "__computedProps" {
                     spec.with_computed_prop(property.key, value)
                 } else {
                     spec.with_prop(property.key, value)
@@ -113,16 +113,11 @@ fn literal(snapshot: &source::Snapshot) -> Result<PreparedDrawing, String> {
     }
     let mut properties = MoleculeProperties::default();
     for property in snapshot.props {
-        let text = match property.value {
-            source::NativeValue::Int(n) => n.to_string(),
-            source::NativeValue::Str(s) => s.to_owned(),
-            source::NativeValue::Strings(_) if property.key == "__computedProps" => continue,
-            _ => return Err("unmodeled molecule vector property".into()),
-        };
-        properties = if property.computed {
-            properties.with_computed_prop(property.key, text)
+        let native = value(property)?.ok_or("missing fixed native value")?;
+        properties = if property.computed && property.key != "__computedProps" {
+            properties.with_computed_prop(property.key, native)
         } else {
-            properties.with_prop(property.key, text)
+            properties.with_prop(property.key, native)
         }
         .map_err(|e| e.to_string())?;
     }
@@ -551,11 +546,12 @@ fn drawing_svg_boundary_renderer_product() {
         let label = format!("case{}", case.id);
         match result {
             Ok(svg) => {
+                let svg = std::str::from_utf8(svg.as_ref()).expect("fixed source SVG UTF8");
                 println!(
                     "S2_CASE {} SVG_BEGIN\n{svg}S2_CASE {} SVG_END",
                     case.id, case.id
                 );
-                let actual = namespace_projection(&svg);
+                let actual = namespace_projection(svg);
                 let expected = namespace_projection(case.svg);
                 let first = actual
                     .bytes()

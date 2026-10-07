@@ -31,11 +31,16 @@ pub(crate) fn assign_cip_labels_impl(options: &CipLabelOptions) -> Result<(), Op
 
 impl crate::Molecule {
     /// Reports the source computed marker; its string projection uses BoolTag.
-    pub fn cip_computed(&self) -> bool {
+    pub fn cip_computed(&self) -> Result<bool, crate::PropertyValueError> {
         // RDKit❗✔️: mol.setProp(common_properties::_CIPComputed, true, computed);
-        // RDKit❗✔️: res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
-        // One immutable property lookup plus computed-key lookup; no cache effects.
-        self.properties().is_prop_computed("_CIPComputed")
-            && self.property("_CIPComputed") == Some("1")
+        // The canonical property owner checks StringVector computed metadata
+        // and retains the BoolTag getter error. Neither state is rendered text.
+        if !self.properties().is_prop_computed("_CIPComputed")? {
+            return Ok(false);
+        }
+        self.property("_CIPComputed")
+            .map(crate::PropertyValue::as_bool)
+            .transpose()
+            .map(|value| value.unwrap_or(false))
     }
 }

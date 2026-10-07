@@ -3,8 +3,8 @@
 use std::num::ParseFloatError;
 
 use cosmolkit_model::{
-    AdjacencyList, Atom, AtomId, AtomSpec, Conformer3D, CoordinateBlock, MoleculeProperties,
-    TopologyBlock,
+    AdjacencyList, Atom, AtomId, AtomSpec, Conformer3D, CoordinateBlock, CoordinateDimension,
+    CoordinateSourceConformer, MoleculeProperties, PropertyText, TopologyBlock,
 };
 use cosmolkit_types::Element;
 
@@ -45,6 +45,8 @@ pub enum XyzWriteError {
     Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
     #[error("XYZ conformer id {id} was not found")]
     ConformerNotFound { id: usize },
+    #[error("XYZ name property conversion failed: {0}")]
+    Property(#[from] cosmolkit_core::PropertyStringError),
 }
 
 /// Controls RDKit-aligned XYZ conformer selection and coordinate precision.
@@ -356,7 +358,7 @@ pub fn write_xyz_detached(
     topology: &TopologyBlock,
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
-) -> Result<String, XyzWriteError> {
+) -> Result<PropertyText, XyzWriteError> {
     write_xyz_detached_with_params(topology, coordinates, properties, XyzWriteParams::default())
 }
 
@@ -366,7 +368,7 @@ pub fn write_xyz_detached_with_params(
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
     params: XyzWriteParams,
-) -> Result<String, XyzWriteError> {
+) -> Result<PropertyText, XyzWriteError> {
     topology.validate()?;
     coordinates.validate_for_atom_count(topology.atoms.len())?;
 
@@ -377,7 +379,7 @@ pub fn write_xyz_detached_with_params(
     // RDKit✔️✔️:   return "";
     // RDKit✔️✔️: }
     if coordinates.conformers_3d.is_empty() && coordinates.conformers_2d.is_empty() {
-        return Ok(String::new());
+        return Ok(PropertyText::new());
     }
 
     // RDKit✔️✔️: const auto &conf = mol.getConformer(confId);
@@ -386,31 +388,91 @@ pub fn write_xyz_detached_with_params(
         TwoD(&'a [[f64; 2]]),
         ThreeD(&'a [[f64; 3]]),
     }
-    let points = match params.conformer_id {
-        Some(id) => coordinates
-            .conformers_3d
+    // RDKit❗✔️: const Conformer &ROMol::getConformer(int id) const {
+    // RDKit❗✔️:   // make sure we have more than one conformation
+    // RDKit❗✔️:   if (d_confs.size() == 0) {
+    // RDKit❗✔️:     throw ConformerException("No conformations available on the molecule");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (id < 0) {
+    // RDKit❗✔️:     return *(d_confs.front());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   auto cid = (unsigned int)id;
+    // RDKit❗✔️:   for (auto conf : d_confs) {
+    // RDKit❗✔️:     if (conf->getId() == cid) {
+    // RDKit❗✔️:       return *conf;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // we did not find a conformation with the specified ID
+    // RDKit❗✔️:   std::string mesg = "Can't find conformation with ID: ";
+    // RDKit❗✔️:   mesg += id;
+    // RDKit❗✔️:   throw ConformerException(mesg);
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // Source default is actual first occurrence; explicit IDs select the first
+    // matching occurrence, even when IDs repeat across dimensions. Counted
+    // mixed order is existing MODEL state, not inferred from ID or geometry.
+    // O(C) source-order validation, then O(C) explicit-ID scan or O(1)
+    // default selection. No payload clone or extra store.
+    if let Some(order) = &coordinates.source_conformer_order {
+        let two = order
             .iter()
-            .find(|conformer| conformer.id() == id)
-            .map(|conformer| Points::ThreeD(conformer.coordinates()))
-            .or_else(|| {
+            .filter(|&&d| d == CoordinateDimension::TwoD)
+            .count();
+        if two != coordinates.conformers_2d.len()
+            || order.len() - two != coordinates.conformers_3d.len()
+        {
+            return Err(
+                cosmolkit_model::CoordinateValidationError::SourceConformerOrder {
+                    two_d: two,
+                    three_d: order.len() - two,
+                    expected_two_d: coordinates.conformers_2d.len(),
+                    expected_three_d: coordinates.conformers_3d.len(),
+                }
+                .into(),
+            );
+        }
+    }
+    let points = match params.conformer_id {
+        None => match coordinates.first_source_conformer()? {
+            Some(CoordinateSourceConformer::TwoD(c)) => Points::TwoD(c.coordinates()),
+            Some(CoordinateSourceConformer::ThreeD(c)) => Points::ThreeD(c.coordinates()),
+            None => return Ok(PropertyText::new()),
+        },
+        Some(id) => {
+            let selected = if let Some(order) = &coordinates.source_conformer_order {
+                let (mut two, mut three) = (0, 0);
+                order.iter().find_map(|dimension| match dimension {
+                    CoordinateDimension::TwoD => {
+                        let c = &coordinates.conformers_2d[two];
+                        two += 1;
+                        (c.id() == id).then_some(Points::TwoD(c.coordinates()))
+                    }
+                    CoordinateDimension::ThreeD => {
+                        let c = &coordinates.conformers_3d[three];
+                        three += 1;
+                        (c.id() == id).then_some(Points::ThreeD(c.coordinates()))
+                    }
+                })
+            } else if coordinates.conformers_2d.is_empty() {
+                coordinates
+                    .conformers_3d
+                    .iter()
+                    .find(|c| c.id() == id)
+                    .map(|c| Points::ThreeD(c.coordinates()))
+            } else if coordinates.conformers_3d.is_empty() {
                 coordinates
                     .conformers_2d
                     .iter()
-                    .find(|conformer| conformer.id() == id)
-                    .map(|conformer| Points::TwoD(conformer.coordinates()))
-            })
-            .ok_or(XyzWriteError::ConformerNotFound { id })?,
-        None => coordinates
-            .conformers_3d
-            .first()
-            .map(|conformer| Points::ThreeD(conformer.coordinates()))
-            .or_else(|| {
-                coordinates
-                    .conformers_2d
-                    .first()
-                    .map(|conformer| Points::TwoD(conformer.coordinates()))
-            })
-            .expect("the empty conformer case returned above"),
+                    .find(|c| c.id() == id)
+                    .map(|c| Points::TwoD(c.coordinates()))
+            } else {
+                return Err(
+                    cosmolkit_model::CoordinateValidationError::MissingSourceConformerOrder.into(),
+                );
+            };
+            selected.ok_or(XyzWriteError::ConformerNotFound { id })?
+        }
     };
 
     // RDKit✔️✔️: std::stringstream ss;
@@ -422,17 +484,66 @@ pub fn write_xyz_detached_with_params(
     // RDKit✔️✔️:              << precision << "f\n";
     let precision = params.precision as usize;
     let field_width = precision.saturating_add(5);
-    let mut output = format!("{}\n", topology.atoms.len());
+    let mut output = PropertyText::from(format!("{}\n", topology.atoms.len()));
 
+    // BEGIN RDKIT FULL FUNCTION MolToXYZBlock
+    // RDKit❗✔️: std::string MolToXYZBlock(const ROMol &mol, int confId,
+    // RDKit❗✔️:                           unsigned int precision) {
+    // RDKit❗✔️:   if (!mol.getNumConformers()) {
+    // RDKit❗✔️:     BOOST_LOG(rdErrorLog)
+    // RDKit❗✔️:         << "Cannot write molecules with no conformers to XYZ block\n";
+    // RDKit❗✔️:     return "";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   const auto &conf = mol.getConformer(confId);
+    // RDKit❗✔️:   const unsigned int nAtoms = mol.getNumAtoms();
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::stringstream ss;
+    // RDKit❗✔️:   ss << nAtoms << '\n';
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned fieldWidth = 5 + precision;
+    // RDKit❗✔️:   std::stringstream formatString;
+    // RDKit❗✔️:   formatString << "%-3s %" << fieldWidth << "." << precision << "f %"
+    // RDKit❗✔️:                << fieldWidth << "." << precision << "f %" << fieldWidth << "."
+    // RDKit❗✔️:                << precision << "f\n";
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string name;
+    // RDKit❗✔️:   if (mol.getPropIfPresent(common_properties::_Name, name)) {
+    // RDKit❗✔️:     ss << name.substr(0, name.find_first_of('\n'));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ss << '\n';
+    // RDKit❗✔️:
+    // RDKit❗✔️:   for (unsigned int i = 0; i < nAtoms; i++) {
+    // RDKit❗✔️:     const auto &symbol = mol.getAtomWithIdx(i)->getSymbol();
+    // RDKit❗✔️:     const auto &pos = conf.getAtomPos(i);
+    // RDKit❗✔️:     ss << boost::format{formatString.str()} % symbol % pos.x % pos.y % pos.z;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return ss.str();
+    // RDKit❗✔️: }
+    // END RDKIT FULL FUNCTION MolToXYZBlock
+    // Actual _Name is read through the source string getter before the
+    // independent detached name field. Present empty values remain present;
+    // seven modeled tags preserve canonical projection and errors.
+    // O(L) owning source projection plus first-LF scan; no decoding/retagging.
     // RDKit✔️✔️: std::string name;
     // RDKit✔️✔️: if (mol.getPropIfPresent(common_properties::_Name, name)) {
     // RDKit✔️✔️:   ss << name.substr(0, name.find_first_of('\n'));
     // RDKit✔️✔️: }
     // RDKit✔️✔️: ss << '\n';
-    if let Some(name) = properties.name() {
-        output.push_str(name.split_once('\n').map_or(name, |(first, _)| first));
+    let source_name = properties
+        .prop(b"_Name")
+        .map(cosmolkit_core::property_value_to_string)
+        .transpose()?;
+    if let Some(name) = source_name.as_ref().or_else(|| properties.name()) {
+        let bytes = name.as_bytes();
+        output.extend_bytes(
+            &bytes[..bytes
+                .iter()
+                .position(|&byte| byte == b'\n')
+                .unwrap_or(bytes.len())],
+        );
     }
-    output.push('\n');
+    output.push_byte(b'\n');
 
     // RDKit✔️✔️: for (unsigned int i = 0; i < nAtoms; i++) {
     // RDKit✔️✔️:   const auto &symbol = mol.getAtomWithIdx(i)->getSymbol();
@@ -445,15 +556,18 @@ pub fn write_xyz_detached_with_params(
             Points::TwoD(values) => [values[index][0], values[index][1], 0.0],
             Points::ThreeD(values) => values[index],
         };
-        output.push_str(&format!(
-            "{:<3} {:>width$.precision$} {:>width$.precision$} {:>width$.precision$}\n",
-            atom.element().symbol(),
-            point[0],
-            point[1],
-            point[2],
-            width = field_width,
-            precision = precision,
-        ));
+        output.extend_bytes(
+            format!(
+                "{:<3} {:>width$.precision$} {:>width$.precision$} {:>width$.precision$}\n",
+                atom.element().symbol(),
+                point[0],
+                point[1],
+                point[2],
+                width = field_width,
+                precision = precision,
+            )
+            .as_bytes(),
+        );
     }
     // END RDKIT CPP FUNCTION
     Ok(output)
@@ -481,7 +595,10 @@ mod tests {
             coordinates.conformers_3d[0].coordinates()[1],
             [0.0, 0.0, 1.0]
         );
-        assert_eq!(properties.prop("_FileComments"), Some("water"));
+        assert_eq!(
+            properties.prop("_FileComments"),
+            Some(&cosmolkit_model::PropertyValue::String("water".into()))
+        );
     }
 
     #[test]
@@ -524,7 +641,9 @@ mod tests {
     fn detached_xyz_writer_round_trips_coordinates_and_comment() {
         let input = "2\nwater\nO 0.0 0.0 0.0\nH 0.0 0.0 1.0\n";
         let (topology, coordinates, properties) = read_xyz_detached(input).expect("read");
-        let output = write_xyz_detached(&topology, &coordinates, &properties).expect("write");
+        let output = write_xyz_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
+            .expect("write");
         let (roundtrip, coords, props) = read_xyz_detached(&output).expect("roundtrip");
         assert_eq!(roundtrip.atoms.len(), 2);
         assert_eq!(coords.conformers_3d[0].coordinates()[1], [0.0, 0.0, 1.0]);
@@ -567,7 +686,9 @@ mod tests {
     #[test]
     fn writer_matches_rdkit_default_format_and_name_rule() {
         let (topology, coordinates, properties) = methane_parts();
-        let output = write_xyz_detached(&topology, &coordinates, &properties).expect("write");
+        let output = write_xyz_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
+            .expect("write");
         assert_eq!(
             output,
             "5\nmethane\nC      0.000000    0.000000    0.000000\nH     -0.635000   -0.635000    0.635000\nH     -0.635000    0.635000   -0.635000\nH      0.635000   -0.635000   -0.635000\nH      0.635000    0.635000    0.635000\n"
@@ -589,6 +710,7 @@ mod tests {
                 precision: 2,
             },
         )
+        .map(super::fixture_writer_text)
         .expect("selected write");
         assert!(output.contains("C      1.25   -2.50    3.75\n"));
 
@@ -601,6 +723,7 @@ mod tests {
                 precision: 6,
             },
         )
+        .map(super::fixture_writer_text)
         .expect_err("missing conformer");
         assert!(error.to_string().contains("conformer id 8"));
     }
@@ -610,6 +733,7 @@ mod tests {
         let (topology, _, properties) = methane_parts();
         assert_eq!(
             write_xyz_detached(&topology, &CoordinateBlock::default(), &properties)
+                .map(super::fixture_writer_text)
                 .expect("empty output"),
             ""
         );
@@ -618,7 +742,9 @@ mod tests {
             conformers_2d: vec![Conformer2D::new(3, vec![[1.0, 2.0]; 5])],
             ..CoordinateBlock::default()
         };
-        let output = write_xyz_detached(&topology, &coordinates, &properties).expect("2D write");
+        let output = write_xyz_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
+            .expect("2D write");
         assert!(output.contains("C      1.000000    2.000000    0.000000\n"));
     }
 
@@ -631,4 +757,15 @@ mod tests {
         assert!(coordinates.conformers_3d.is_empty());
         assert_eq!(properties.prop("_FileComments"), None);
     }
+}
+
+#[cfg(test)]
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+#[cfg(test)]
+fn fixture_writer_text(value: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(value.into_bytes())
+        .expect("original writer fixture must retain exact UTF-8 bytes")
 }

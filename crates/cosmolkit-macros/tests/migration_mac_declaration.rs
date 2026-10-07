@@ -1108,3 +1108,198 @@ fn current_cosmolkit_operations_have_disjoint_access_for_every_cfg_gate() {
     );
     assert_eq!(potential.fields.may_mutate, potential.fields.access.write);
 }
+
+#[test]
+fn source_add_hs_operation_defined_guard_requires_exact_canonical_contract() {
+    let source = r#"op with_hydrogens(params: crate::AddHsParams) {
+        method: with_hydrogens_with_params, impl_fn: crate::add_hydrogens_impl,
+        kind: strong, topology_edit: expanding,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
+        auto_remap: [coordinates, properties],
+        derived_effects: { recompute: [], preserve: [rings, ring_families], invalidate: [aromaticity, stereo, drawing, fingerprint], operation_defined: [valence] },
+        cip_state: clear, requires_mapping: required, feature: crate::HYDROGEN_FEATURE,
+        parity: required_now, parity_profile: "add_hydrogens_rdkit", invariant_profile: "strong_topology_with_coordinates",
+    }"#;
+    assert_eq!(
+        parse_molecule(source).operations[0]
+            .fields
+            .derived_effects
+            .operation_defined,
+        [DerivedState::Valence]
+    );
+    for (a, z) in [
+        ("op with_hydrogens(", "op sanitize("),
+        (
+            "method: with_hydrogens_with_params",
+            "method: another_operation",
+        ),
+        ("cip_state: clear", "cip_state: preserve"),
+        ("kind: strong", "kind: weak"),
+        ("topology_edit: expanding", "topology_edit: compacting"),
+        (
+            "operation_defined: [valence]",
+            "operation_defined: [coordinates]",
+        ),
+        ("requires_mapping: required", "requires_mapping: none"),
+    ] {
+        let bad = replace(source, a, z);
+        assert!(
+            molecule_error(&bad).contains("explicit human-author approval"),
+            "{a}"
+        );
+    }
+    let bad = replace(
+        source,
+        "method: with_hydrogens_with_params,",
+        "method: with_hydrogens_with_params, output: multiple,",
+    );
+    assert!(molecule_error(&bad).contains("explicit human-author approval"));
+}
+
+#[test]
+fn weak_source_valence_guard_requires_both_exact_approved_shapes() {
+    for (operation, method, cip, preserve, invalidate) in [
+        (
+            "with_kekulized_bonds",
+            "with_kekulized_bonds_with_params",
+            "preserve",
+            "ring_families, coordinates",
+            "aromaticity, stereo, drawing, fingerprint",
+        ),
+        (
+            "sanitize",
+            "sanitize_with_params",
+            "clear",
+            "coordinates",
+            "ring_families, aromaticity, stereo, drawing, fingerprint",
+        ),
+    ] {
+        let source = format!(
+            r#"op {operation}(params: crate::Params) {{
+            method: {method}, impl_fn: crate::source_impl, kind: weak, topology_edit: local,
+            access: {{ read: [], write: [topology, properties, derived_cache] }},
+            may_mutate: [topology, properties, derived_cache], auto_remap: [],
+            derived_effects: {{ recompute: [rings], preserve: [{preserve}], invalidate: [{invalidate}], operation_defined: [valence] }},
+            cip_state: {cip}, requires_mapping: none, feature: crate::FEATURE,
+            parity: required_now, parity_profile: "source_valence", invariant_profile: "weak_source",
+        }}"#
+        );
+        assert_eq!(
+            parse_molecule(&source).operations[0]
+                .fields
+                .derived_effects
+                .operation_defined,
+            [DerivedState::Valence]
+        );
+        for (from, to) in [
+            (format!("op {operation}("), "op other(".into()),
+            (format!("method: {method}"), "method: other".into()),
+            ("kind: weak".into(), "kind: strong".into()),
+            ("topology_edit: local".into(), "topology_edit: none".into()),
+            (
+                format!("cip_state: {cip}"),
+                format!(
+                    "cip_state: {}",
+                    if cip == "clear" { "preserve" } else { "clear" }
+                ),
+            ),
+            (
+                "requires_mapping: none".into(),
+                "requires_mapping: required".into(),
+            ),
+            (
+                "method: ".to_owned() + method + ",",
+                "method: ".to_owned() + method + ", output: multiple,",
+            ),
+            ("recompute: [rings]".into(), "recompute: []".into()),
+            (format!("preserve: [{preserve}]"), "preserve: []".into()),
+            (
+                format!("invalidate: [{invalidate}]"),
+                "invalidate: []".into(),
+            ),
+            (
+                "operation_defined: [valence]".into(),
+                "operation_defined: [drawing]".into(),
+            ),
+            ("read: []".into(), "read: [coordinates]".into()),
+            (
+                "write: [topology, properties, derived_cache]".into(),
+                "write: [topology, coordinates, properties, derived_cache]".into(),
+            ),
+        ] {
+            let bad = replace(&source, &from, &to);
+            let error = molecule_error(&bad);
+            let expected = if from == "operation_defined: [valence]" {
+                "appears in more than one effect category"
+            } else {
+                "explicit human-author approval"
+            };
+            assert!(error.contains(expected), "{operation}: {from}: {error}");
+        }
+    }
+}
+
+#[test]
+fn stereoisomer_lazy_source_transition_requires_exact_identity_and_authority() {
+    let source = r#"op enumerate_stereoisomers(options:&crate::StereoisomerOptions) {
+        method:enumerate_stereoisomers_with_options,impl_fn:crate::enumerate_impl,
+        output:lazy_multiple,kind:weak,topology_edit:none,
+        access:{read:[],write:[topology,coordinates,properties,derived_cache]},
+        may_mutate:[topology,coordinates,properties,derived_cache],
+        derived_effects:{recompute:[rings,valence],preserve:[],invalidate:[],operation_defined:[]},
+        cip_state:stereoisomer_source_transition,requires_mapping:none,
+        feature:crate::STEREO_FEATURE,parity:not_applicable,invariant_profile:"source-lazy"
+    }"#;
+    let fields = &parse_molecule(source).operations[0].fields;
+    assert_eq!(fields.output, MoleculeOutput::LazyMultiple);
+    assert_eq!(
+        fields.cip_state,
+        CipStatePolicy::StereoisomerSourceTransition
+    );
+    let callback = source
+        .replace(
+            "op enumerate_stereoisomers(",
+            "op enumerate_stereoisomers_with_random_bits(",
+        )
+        .replace(
+            "method:enumerate_stereoisomers_with_options",
+            "method:enumerate_stereoisomers_with_random_bits",
+        );
+    assert!(syn::parse_str::<MoleculeRegistry>(&callback).is_ok());
+    for (from, to) in [
+        ("op enumerate_stereoisomers(", "op other_operation("),
+        (
+            "method:enumerate_stereoisomers_with_options",
+            "method:other_operation",
+        ),
+        ("output:lazy_multiple", "output:single"),
+        ("output:lazy_multiple", "output:multiple"),
+        ("kind:weak", "kind:strong"),
+        ("topology_edit:none", "topology_edit:local"),
+        ("requires_mapping:none", "requires_mapping:identity"),
+        ("read:[]", "read:[topology]"),
+        (
+            "write:[topology,coordinates,properties,derived_cache]",
+            "write:[topology,properties,derived_cache]",
+        ),
+        (
+            "may_mutate:[topology,coordinates,properties,derived_cache]",
+            "may_mutate:[coordinates,properties,derived_cache]",
+        ),
+        (
+            "may_mutate:[topology,coordinates,properties,derived_cache]",
+            "may_mutate:[topology,coordinates,derived_cache]",
+        ),
+        ("invariant_profile:", "inplace:true,invariant_profile:"),
+        (
+            "invariant_profile:",
+            "result_type:crate::Result,invariant_profile:",
+        ),
+    ] {
+        assert!(
+            syn::parse_str::<MoleculeRegistry>(&source.replace(from, to)).is_err(),
+            "accepted illegal {from} -> {to}"
+        );
+    }
+}

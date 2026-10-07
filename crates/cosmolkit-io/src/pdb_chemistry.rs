@@ -24,6 +24,8 @@ const HASHZ: i32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PdbPostprocessError {
+    #[error("PDB residue atom property operation failed: {0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
     #[error("detached PDB postprocessing does not support {0}")]
     Unsupported(&'static str),
     #[error("invalid detached PDB postprocess state: {0}")]
@@ -1234,7 +1236,7 @@ pub fn apply_standard_pdb_residue_chirality_detached(
     topology: &mut TopologyBlock,
 ) -> Result<(), PdbPostprocessError> {
     topology.validate()?;
-    standard_pdb_residue_chirality_like_rdkit(topology);
+    standard_pdb_residue_chirality_like_rdkit(topology)?;
     topology.validate()?;
     Ok(())
 }
@@ -1313,7 +1315,9 @@ fn standard_pdb_chiral_atom_like_rdkit(residue_name: &str, atom_name: &str) -> b
     }
 }
 
-fn standard_pdb_residue_chirality_like_rdkit(topology: &mut TopologyBlock) {
+fn standard_pdb_residue_chirality_like_rdkit(
+    topology: &mut TopologyBlock,
+) -> Result<(), PdbPostprocessError> {
     // BEGIN RDKIT CPP FUNCTION StandardPDBResidueChirality
     // RDKit✔️✔️: void StandardPDBResidueChirality(RWMol *mol) {
     // RDKit✔️✔️:   for (ROMol::AtomIterator atomIt = mol->beginAtoms();
@@ -1344,9 +1348,12 @@ fn standard_pdb_residue_chirality_like_rdkit(topology: &mut TopologyBlock) {
         });
         if should_clear {
             atom.set_chiral_tag(ChiralTag::Unspecified);
-            atom.clear_prop("_CIPCode");
+            if atom.prop("_CIPCode").is_some() {
+                atom.clear_prop("_CIPCode")?;
+            }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1390,10 +1397,116 @@ mod tests {
         assert_eq!(topology.atoms[0].chiral_tag(), ChiralTag::TetrahedralCw);
         assert_eq!(
             topology.atoms[0].prop("_CIPCode"),
-            Some(&PropertyValue::String("R".to_owned()))
+            Some(&PropertyValue::String("R".into()))
         );
         assert_eq!(topology.atoms[1].chiral_tag(), ChiralTag::Unspecified);
         assert_eq!(topology.atoms[1].prop("_CIPCode"), None);
         assert_eq!(topology.atoms[2].chiral_tag(), ChiralTag::TetrahedralCw);
+    }
+}
+
+#[cfg(test)]
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+#[cfg(test)]
+fn fixture_writer_text(value: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(value.into_bytes())
+        .expect("original writer fixture must retain exact UTF-8 bytes")
+}
+
+#[cfg(test)]
+mod residue_property_failure_tests {
+    use super::*;
+    use cosmolkit_model::{AtomPdbResidueInfo, AtomSpec, PropertyValue};
+    use cosmolkit_types::Element;
+
+    fn residue(atom_name: &str, hetero: bool, chiral: ChiralTag) -> TopologyBlock {
+        let atom = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C)
+                .with_chiral_tag(chiral)
+                .with_pdb_residue_info(AtomPdbResidueInfo::new(
+                    atom_name, 1, "ALA", 1, "A", hetero,
+                )),
+        );
+        TopologyBlock::try_from_parts(vec![atom], Vec::new(), Vec::new(), Vec::new()).unwrap()
+    }
+
+    #[test]
+    fn residue_property_clear_failure_retains_typed_cause_and_source_prefix() {
+        let mut topology = residue(" CB ", false, ChiralTag::TetrahedralCw);
+        topology.atoms[0].set_prop("_CIPCode", "R").unwrap();
+        topology.atoms[0]
+            .set_prop("__computedProps", PropertyValue::Int(7))
+            .unwrap();
+        let mut prefix = topology.clone();
+        prefix.atoms[0].set_chiral_tag(ChiralTag::Unspecified);
+        let error = apply_standard_pdb_residue_chirality_detached(&mut topology).unwrap_err();
+        assert!(matches!(
+            &error,
+            PdbPostprocessError::AtomProperty(
+                cosmolkit_model::AtomPropertyError::ComputedListKind(_)
+            )
+        ));
+        assert!(
+            std::error::Error::source(&error)
+                .unwrap()
+                .downcast_ref::<cosmolkit_model::AtomPropertyError>()
+                .is_some()
+        );
+        assert_eq!(
+            topology, prefix,
+            "source clears the chiral tag before failing to clear CIP"
+        );
+
+        topology.atoms[0].set_chiral_tag(ChiralTag::TetrahedralCw);
+        topology.atoms[0]
+            .set_prop(
+                "__computedProps",
+                PropertyValue::StringVector(vec!["_CIPCode".into()]),
+            )
+            .unwrap();
+        apply_standard_pdb_residue_chirality_detached(&mut topology).unwrap();
+        assert_eq!(topology.atoms[0].chiral_tag(), ChiralTag::Unspecified);
+        assert_eq!(topology.atoms[0].prop("_CIPCode"), None);
+        assert_eq!(
+            topology.atoms[0].prop("__computedProps"),
+            Some(&PropertyValue::StringVector(Vec::new()))
+        );
+    }
+
+    #[test]
+    fn residue_chirality_does_not_clear_absent_cip_property() {
+        let mut topology = residue(" CB ", false, ChiralTag::TetrahedralCw);
+        topology.atoms[0]
+            .set_prop("__computedProps", PropertyValue::Int(7))
+            .unwrap();
+        let mut expected = topology.clone();
+        expected.atoms[0].set_chiral_tag(ChiralTag::Unspecified);
+        apply_standard_pdb_residue_chirality_detached(&mut topology).unwrap();
+        assert_eq!(
+            topology, expected,
+            "source hasProp guard skips even malformed computed metadata"
+        );
+    }
+
+    #[test]
+    fn residue_chirality_keeps_unreached_property_errors_unread() {
+        for (name, hetero, chiral) in [
+            (" CA ", false, ChiralTag::TetrahedralCw),
+            (" CB ", true, ChiralTag::TetrahedralCw),
+            (" CB ", false, ChiralTag::Unspecified),
+        ] {
+            let mut topology = residue(name, hetero, chiral);
+            topology.atoms[0].set_prop("_CIPCode", "R").unwrap();
+            topology.atoms[0]
+                .set_prop("__computedProps", PropertyValue::Int(7))
+                .unwrap();
+            let before = topology.clone();
+            apply_standard_pdb_residue_chirality_detached(&mut topology).unwrap();
+            assert_eq!(topology, before);
+        }
     }
 }

@@ -1507,7 +1507,10 @@ mod tests {
             let graph = QueryGraph::from_parts(
                 vec![atom],
                 vec![],
-                Default::default(),
+                Vec::<(
+                    cosmolkit_model::PropertyText,
+                    cosmolkit_model::PropertyValue,
+                )>::new(),
                 vec![],
                 vec![],
                 vec![],

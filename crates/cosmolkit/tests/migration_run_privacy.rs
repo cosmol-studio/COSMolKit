@@ -226,9 +226,9 @@ fn compile_probe(cases: &[&str], strict: bool) -> Output {
         .and_then(|path| path.parent())
         .unwrap();
     let features = if strict {
-        "cap-hydrogens,cap-stereo,cap-fingerprints,cap-sanitize,op-contracts-strict"
+        "cap-hydrogens,cap-stereo,cap-stereoisomers,cap-fingerprints,cap-sanitize,op-contracts-strict"
     } else {
-        "cap-hydrogens,cap-stereo,cap-fingerprints,cap-sanitize"
+        "cap-hydrogens,cap-stereo,cap-stereoisomers,cap-fingerprints,cap-sanitize"
     };
     let mut command = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
     command

@@ -21,6 +21,14 @@ pub fn version() -> &'static str {
     cosmolkit::version()
 }
 
+// Decode counted chemical text only at the existing language projection.
+// Invalid UTF-8 is a binding error; bytes are never replaced or truncated.
+fn language_text(text: &cosmolkit::PropertyText) -> Result<String, String> {
+    std::str::from_utf8(text.as_bytes())
+        .map(str::to_owned)
+        .map_err(|error| format!("binding text encoding: {error}"))
+}
+
 #[derive(Clone)]
 pub struct Molecule {
     inner: cosmolkit::Molecule,
@@ -72,12 +80,13 @@ impl Molecule {
     }
 
     /// Returns the molecule name, or an empty string when no name is stored.
-    pub fn name_or_empty(&self) -> String {
+    pub fn name_or_empty(&self) -> Result<String, String> {
         self.inner
             .properties()
             .name()
-            .unwrap_or_default()
-            .to_owned()
+            .map(language_text)
+            .transpose()
+            .map(|text| text.unwrap_or_default())
     }
 
     /// Returns a molecule with its name replaced.
@@ -110,35 +119,50 @@ impl Molecule {
             .map_err(|error| error.to_string())
     }
 
-    /// Returns a property value, or an empty string when it is absent.
-    pub fn property_or_empty(&self, key: &str) -> String {
-        self.inner.property(key).unwrap_or_default().to_owned()
+    /// Returns a String-tag property, or an empty string when it is absent.
+    /// Wrong value kinds and invalid UTF-8 propagate as binding errors.
+    pub fn property_or_empty(&self, key: &str) -> Result<String, String> {
+        self.inner
+            .property(key)
+            .map(|value| {
+                value
+                    .as_string()
+                    .map_err(|error| error.to_string())
+                    .and_then(language_text)
+            })
+            .transpose()
+            .map(|text| text.unwrap_or_default())
     }
 
-    /// Returns user/computed property names in stable source order.
-    pub fn property_keys(&self) -> Vec<String> {
-        self.inner.properties().props().keys().cloned().collect()
+    /// Returns user/computed property names in stable source insertion order.
+    pub fn property_keys(&self) -> Result<Vec<String>, String> {
+        self.inner
+            .properties()
+            .ordered_props()
+            .map(|(key, _)| language_text(key))
+            .collect()
     }
 
-    /// Returns SDF data-field names in their source order.
-    pub fn sdf_data_field_names(&self) -> Vec<String> {
+    /// Returns SDF data-field names in their source order, including duplicates.
+    pub fn sdf_data_field_names(&self) -> Result<Vec<String>, String> {
         self.inner
             .properties()
             .sdf_data_fields()
             .iter()
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| language_text(name))
             .collect()
     }
 
     /// Returns the first SDF data-field value with `name`, or an empty string.
-    pub fn sdf_data_field_or_empty(&self, name: &str) -> String {
+    pub fn sdf_data_field_or_empty(&self, name: &str) -> Result<String, String> {
         self.inner
             .properties()
             .sdf_data_fields()
             .iter()
-            .find_map(|(field_name, value)| (field_name == name).then_some(value.as_str()))
-            .unwrap_or_default()
-            .to_owned()
+            .find(|(field_name, _)| field_name.as_bytes() == name.as_bytes())
+            .map(|(_, value)| language_text(value))
+            .transpose()
+            .map(|text| text.unwrap_or_default())
     }
 
     /// Returns atomic numbers in molecule atom order.
@@ -346,19 +370,33 @@ $$$$
     fn wrapper_round_trips_properties_through_builder() {
         let molecule = Molecule::from_smiles("CCO").expect("CCO parses");
         let named = molecule.with_name("ethanol").expect("name replacement");
-        assert_eq!(named.name_or_empty(), "ethanol");
+        assert_eq!(named.name_or_empty().unwrap(), "ethanol");
         let propertied = named
             .with_property("source", "binding-test")
             .expect("property replacement");
-        assert_eq!(propertied.property_or_empty("source"), "binding-test");
-        assert_eq!(propertied.property_or_empty("absent"), "");
-        assert!(propertied.property_keys().contains(&"source".to_owned()));
+        assert_eq!(
+            propertied.property_or_empty("source").unwrap(),
+            "binding-test"
+        );
+        assert_eq!(propertied.property_or_empty("absent").unwrap(), "");
+        assert!(
+            propertied
+                .property_keys()
+                .unwrap()
+                .contains(&"source".to_owned())
+        );
         let with_field = propertied
             .with_sdf_data_field("ID", "ethanol-1")
             .expect("SDF data field append");
-        assert_eq!(with_field.sdf_data_field_names(), vec!["ID".to_owned()]);
-        assert_eq!(with_field.sdf_data_field_or_empty("ID"), "ethanol-1");
-        assert_eq!(with_field.sdf_data_field_or_empty("absent"), "");
+        assert_eq!(
+            with_field.sdf_data_field_names().unwrap(),
+            vec!["ID".to_owned()]
+        );
+        assert_eq!(
+            with_field.sdf_data_field_or_empty("ID").unwrap(),
+            "ethanol-1"
+        );
+        assert_eq!(with_field.sdf_data_field_or_empty("absent").unwrap(), "");
         assert_eq!(named.num_atoms(), molecule.num_atoms());
     }
 
@@ -393,5 +431,72 @@ $$$$
             .with_assigned_ring_families()
             .expect("ring family defaults");
         molecule.with_assigned_radicals().expect("radical defaults");
+    }
+    #[test]
+    fn language_projection_preserves_nul_and_source_order() {
+        use cosmolkit::{MoleculeBuilder, MoleculeProperties};
+        let props = MoleculeProperties::default()
+            .with_name("na\0mé")
+            .with_prop("z", "v\0é")
+            .unwrap()
+            .with_prop("a", "second")
+            .unwrap()
+            .with_sdf_data_field("ID\0é", "first\0é")
+            .with_sdf_data_field("ID\0é", "second");
+        let molecule = Molecule {
+            inner: MoleculeBuilder::new()
+                .with_properties(props)
+                .build()
+                .unwrap(),
+        };
+        assert_eq!(molecule.name_or_empty().unwrap(), "na\0mé");
+        assert_eq!(molecule.property_or_empty("z").unwrap(), "v\0é");
+        assert_eq!(molecule.property_keys().unwrap(), ["z", "a"]);
+        assert_eq!(molecule.sdf_data_field_names().unwrap(), ["ID\0é", "ID\0é"]);
+        assert_eq!(
+            molecule.sdf_data_field_or_empty("ID\0é").unwrap(),
+            "first\0é"
+        );
+        assert_eq!(molecule.sdf_data_field_or_empty("ID").unwrap(), "");
+    }
+
+    #[test]
+    fn language_projection_rejects_opaque_bytes_and_wrong_property_kinds() {
+        use cosmolkit::{MoleculeBuilder, MoleculeProperties, PropertyText, PropertyValue};
+        let opaque = PropertyText::from_bytes(b"a\xff\0");
+        let props = MoleculeProperties::default()
+            .with_name(opaque.clone())
+            .with_prop("text", opaque.clone())
+            .unwrap()
+            .with_prop(opaque.clone(), "value")
+            .unwrap()
+            .with_prop("native", PropertyValue::Int(1))
+            .unwrap()
+            .with_sdf_data_field("ID", opaque.clone())
+            .with_sdf_data_field(opaque.clone(), "value");
+        let inner = MoleculeBuilder::new()
+            .with_properties(props)
+            .build()
+            .unwrap();
+        let before = inner.clone();
+        let molecule = Molecule { inner };
+        assert!(
+            molecule
+                .name_or_empty()
+                .unwrap_err()
+                .starts_with("binding text encoding:")
+        );
+        assert!(molecule.property_or_empty("text").is_err());
+        assert!(
+            molecule
+                .property_or_empty("native")
+                .unwrap_err()
+                .contains("Int")
+        );
+        assert!(molecule.property_keys().is_err());
+        assert!(molecule.sdf_data_field_names().is_err());
+        assert!(molecule.sdf_data_field_or_empty("ID").is_err());
+        assert_eq!(molecule.property_or_empty("absent").unwrap(), "");
+        assert_eq!(molecule.inner, before);
     }
 }

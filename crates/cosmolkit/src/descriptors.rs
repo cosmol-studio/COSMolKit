@@ -2392,6 +2392,7 @@ mod descriptor_public_storage_tests {
         // valence gate reports first.
         let raw_params = crate::SmilesParseParams {
             sanitize: false,
+            remove_hydrogens: false,
             ..Default::default()
         };
         let raw = Molecule::from_smiles_with_params("CCO", &raw_params).unwrap();
@@ -3666,10 +3667,17 @@ mod original_runtime_descriptor_conditions {
         );
         let hydrogenated = molecule.with_hydrogens().unwrap();
         assert_eq!(memo(&hydrogenated), Default::default());
-        assert!(matches!(
-            required_descriptor_input(&hydrogenated),
-            Err(DescriptorReadError::MissingPreparedValence)
-        ));
+        assert!(required_descriptor_input(&hydrogenated).is_ok());
+        let source_rows = cosmolkit_core::assign_valence_with_options_for_topology(
+            hydrogenated.topology(),
+            cosmolkit_core::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            hydrogenated.derived_cache_runtime().valence_assignment(),
+            Some(&source_rows)
+        );
         let hydrogenated = hydrogenated.with_assigned_valence().unwrap();
         assert_eq!(memo(&hydrogenated), Default::default());
         let output = owner_contribs(&hydrogenated, false);

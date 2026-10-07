@@ -20,6 +20,12 @@ fn untied_policy() -> CanonicalRankPolicy {
     }
 }
 
+// Original source-text fixtures decode only at this observation boundary.
+// Invalid UTF-8 fails; the complete byte payload is never substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
 #[test]
 fn source_rank_vectors_cover_chains_branches_rings_and_labels() {
     for (smiles, expected) in [
@@ -160,7 +166,13 @@ fn canonical_writer_uses_component_ranks_for_real_disconnected_inputs() {
     ] {
         let left = parse_smiles(left, &Default::default()).unwrap();
         let right = parse_smiles(right, &Default::default()).unwrap();
-        assert_eq!(write_smiles(&left).unwrap(), expected);
-        assert_eq!(write_smiles(&right).unwrap(), expected);
+        assert_eq!(
+            write_smiles(&left).map(fixture_writer_text).unwrap(),
+            expected
+        );
+        assert_eq!(
+            write_smiles(&right).map(fixture_writer_text).unwrap(),
+            expected
+        );
     }
 }

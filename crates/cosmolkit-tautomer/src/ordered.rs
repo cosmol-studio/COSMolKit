@@ -12,13 +12,14 @@ pub(crate) struct TautomerCandidate<M> {
     pub(crate) done: bool,
 }
 
-pub(crate) type SmilesTautomerMap<M> = BTreeMap<String, TautomerCandidate<M>>;
+pub(crate) type SmilesTautomerMap<M> =
+    BTreeMap<cosmolkit_model::PropertyText, TautomerCandidate<M>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct TautomerExpandedProduct<M> {
     pub(crate) tautomer: M,
     pub(crate) kekulized: M,
-    pub(crate) canonical_smiles: String,
+    pub(crate) canonical_smiles: cosmolkit_model::PropertyText,
     pub(crate) modified_atoms: BTreeSet<AtomId>,
     pub(crate) modified_bonds: BTreeSet<BondId>,
 }
@@ -30,7 +31,7 @@ pub(crate) enum TautomerExpansionAttempt<M> {
         modified_bonds: BTreeSet<BondId>,
     },
     Duplicate {
-        canonical_smiles: String,
+        canonical_smiles: cosmolkit_model::PropertyText,
         modified_atoms: BTreeSet<AtomId>,
         modified_bonds: BTreeSet<BondId>,
     },
@@ -59,18 +60,24 @@ pub(crate) struct TautomerPruningPass {
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum TautomerExpansionError<E> {
-    #[error("tautomer candidate {canonical_smiles} has no kekulized branch")]
-    MissingKekulizedBranch { canonical_smiles: String },
-    #[error("tautomer expansion attempted to replace existing canonical key {canonical_smiles}")]
-    DuplicateProductKey { canonical_smiles: String },
+    #[error("tautomer candidate {canonical_smiles:?} has no kekulized branch")]
+    MissingKekulizedBranch {
+        canonical_smiles: cosmolkit_model::PropertyText,
+    },
+    #[error("tautomer expansion attempted to replace existing canonical key {canonical_smiles:?}")]
+    DuplicateProductKey {
+        canonical_smiles: cosmolkit_model::PropertyText,
+    },
     #[error(transparent)]
     Backend(E),
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum TautomerPruningError<E> {
-    #[error("tautomer candidate {canonical_smiles} has no materialized branch")]
-    MissingTautomerBranch { canonical_smiles: String },
+    #[error("tautomer candidate {canonical_smiles:?} has no materialized branch")]
+    MissingTautomerBranch {
+        canonical_smiles: cosmolkit_model::PropertyText,
+    },
     #[error(transparent)]
     Backend(E),
 }
@@ -86,7 +93,7 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
         &SubstructMatchResult,
         &BTreeSet<AtomId>,
         &BTreeSet<BondId>,
-        &dyn Fn(&str) -> bool,
+        &dyn Fn(&cosmolkit_model::PropertyText) -> bool,
     ) -> Result<TautomerExpansionAttempt<M>, E>,
     mut callback: impl FnMut(&TautomerExpansionState<M>) -> Result<bool, E>,
 ) -> Result<TautomerExpansionPass, TautomerExpansionError<E>> {
@@ -107,12 +114,12 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
     // later keys are visible in this pass and earlier keys wait for the next.
     // Each BTreeMap cursor step seeks in O(log T), unlike the source
     // std::map iterator advance; that traversal overhead remains explicit.
-    let mut previous_key: Option<String> = None;
+    let mut previous_key: Option<cosmolkit_model::PropertyText> = None;
     loop {
-        let next_key = match previous_key.as_deref() {
+        let next_key = match previous_key.as_ref().map(|key| key.as_bytes()) {
             Some(key) => state
                 .candidates
-                .range::<str, _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
+                .range::<[u8], _>((std::ops::Bound::Excluded(key), std::ops::Bound::Unbounded))
                 .next()
                 .map(|(key, _)| key.clone()),
             None => state.candidates.keys().next().cloned(),
@@ -201,7 +208,8 @@ pub(crate) fn expand_tautomer_candidates_in_source_order<M: Clone, E>(
 
                 // Source res.d_tautomers.find(tsmiles) is one O(log T) lookup.
                 // Borrow the retained map through this lookup, without copying keys.
-                let contains_smiles = |key: &str| state.candidates.contains_key(key);
+                let contains_smiles =
+                    |key: &cosmolkit_model::PropertyText| state.candidates.contains_key(key);
                 let attempt = apply_match(
                     &kekulized,
                     transform,
@@ -285,7 +293,7 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
         &BTreeSet<AtomId>,
         &BTreeSet<BondId>,
     ) -> Result<bool, E>,
-    mut canonical_isomeric_smiles: impl FnMut(&M) -> Result<String, E>,
+    mut canonical_isomeric_smiles: impl FnMut(&M) -> Result<cosmolkit_model::PropertyText, E>,
 ) -> Result<TautomerPruningPass, TautomerPruningError<E>> {
     // RDKit✔️✔️:     completed = true;
     // RDKit✔️✔️:     size_t maxNumModifiedAtoms = res.d_modifiedAtoms.count();
@@ -357,8 +365,8 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
                 .expect("the current ordered-map entry exists while rekeying");
             let next_after_erased = state
                 .candidates
-                .range::<str, _>((
-                    std::ops::Bound::Excluded(key.as_str()),
+                .range::<[u8], _>((
+                    std::ops::Bound::Excluded(key.as_bytes()),
                     std::ops::Bound::Unbounded,
                 ))
                 .next()
@@ -385,8 +393,8 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
             // RDKit✔️✔️:       }
             current_key = state
                 .candidates
-                .range::<str, _>((
-                    std::ops::Bound::Excluded(key.as_str()),
+                .range::<[u8], _>((
+                    std::ops::Bound::Excluded(key.as_bytes()),
                     std::ops::Bound::Unbounded,
                 ))
                 .next()
@@ -416,7 +424,7 @@ pub(crate) fn prune_and_rekey_tautomer_candidates_in_source_order<M, E>(
 
 pub(crate) fn materialize_tautomer_candidates_in_source_order<M>(
     candidates: SmilesTautomerMap<M>,
-) -> Result<Vec<(String, M)>, TautomerEnumerationError> {
+) -> Result<Vec<(cosmolkit_model::PropertyText, M)>, TautomerEnumerationError> {
     // RDKit✔️✔️:   res.fillTautomersItVec();
     // RDKit✔️✔️:   void fillTautomersItVec() {
     // RDKit✔️✔️:     for (auto it = d_tautomers.begin(); it != d_tautomers.end(); ++it) {
@@ -483,12 +491,18 @@ impl<M> TautomerCandidate<M> {
 }
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum TautomerEnumerationError {
-    #[error("tautomer candidate {canonical_smiles} has no materialized value")]
-    MissingCandidateMolecule { canonical_smiles: String },
+    #[error("tautomer candidate {canonical_smiles:?} has no materialized value")]
+    MissingCandidateMolecule {
+        canonical_smiles: cosmolkit_model::PropertyText,
+    },
 }
 
 #[cfg(test)]
 mod tests {
+    fn fixed_key_text(key: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(key.as_bytes()).expect("original fixed ASCII test key")
+    }
+
     use super::*;
     fn query(text: &str) -> cosmolkit_model::QueryGraph {
         cosmolkit_search::parse_smarts(text, &Default::default()).expect("parse fixture")
@@ -523,7 +537,7 @@ mod tests {
         TautomerExpansionState {
             candidates: entries
                 .iter()
-                .map(|&(key, handle, done)| (key.to_owned(), expansion_candidate(handle, done)))
+                .map(|&(key, handle, done)| (key.into(), expansion_candidate(handle, done)))
                 .collect(),
             modified_atoms: BTreeSet::new(),
             modified_bonds: BTreeSet::new(),
@@ -543,7 +557,7 @@ mod tests {
         TautomerExpansionAttempt::Product(TautomerExpandedProduct {
             tautomer: format!("{key}-tautomer"),
             kekulized: key.to_owned(),
-            canonical_smiles: key.to_owned(),
+            canonical_smiles: key.into(),
             modified_atoms: BTreeSet::from([AtomId::new(tag)]),
             modified_bonds: BTreeSet::from([BondId::new(tag)]),
         })
@@ -583,13 +597,13 @@ mod tests {
             state
                 .candidates
                 .keys()
-                .map(String::as_str)
+                .map(fixed_key_text)
                 .collect::<Vec<_>>(),
             ["a", "m", "z"]
         );
-        assert!(!state.candidates["a"].done);
-        assert!(state.candidates["m"].done);
-        assert!(state.candidates["z"].done);
+        assert!(!state.candidates[b"a".as_slice()].done);
+        assert!(state.candidates[b"m".as_slice()].done);
+        assert!(state.candidates[b"z".as_slice()].done);
 
         visited.clear();
         let second = expand_tautomer_candidates_in_source_order(
@@ -634,9 +648,9 @@ mod tests {
                 if matched.bond_mapping[0] == 0 {
                     Ok::<_, &'static str>(expansion_product("z", 0))
                 } else {
-                    assert!(existing("z"));
+                    assert!(existing(&"z".into()));
                     Ok(TautomerExpansionAttempt::Duplicate {
-                        canonical_smiles: "z".to_owned(),
+                        canonical_smiles: "z".into(),
                         modified_atoms: modified_atoms
                             .union(&BTreeSet::from([AtomId::new(1)]))
                             .copied()
@@ -694,7 +708,7 @@ mod tests {
             );
             assert_eq!(callbacks, 0, "limit {limit}");
             assert_eq!(applications, 0, "limit {limit}");
-            assert!(state.candidates["m"].done, "limit {limit}");
+            assert!(state.candidates[b"m".as_slice()].done, "limit {limit}");
         }
 
         let transforms = [expansion_transform("first"), expansion_transform("second")];
@@ -706,9 +720,9 @@ mod tests {
             TautomerParams::default().with_max_transforms(2),
             |_, _| Ok::<_, &'static str>(vec![expansion_match(0)]),
             |_, transform, _, _, _, _| {
-                applied.push(transform.name().to_owned());
+                applied.push(fixed_key_text(transform.name()).to_owned());
                 Ok::<_, &'static str>(TautomerExpansionAttempt::Duplicate {
-                    canonical_smiles: "m".to_owned(),
+                    canonical_smiles: "m".into(),
                     modified_atoms: BTreeSet::new(),
                     modified_bonds: BTreeSet::new(),
                 })
@@ -811,14 +825,10 @@ mod tests {
         assert_eq!(first.0.status, TautomerEnumerationStatus::Canceled);
         assert_eq!(
             first.2,
-            [(
-                1,
-                vec!["m".to_owned()],
-                TautomerEnumerationStatus::Completed
-            )]
+            [(1, vec!["m".into()], TautomerEnumerationStatus::Completed)]
         );
         assert_eq!(first.3, 0);
-        assert!(first.0.candidates["m"].done);
+        assert!(first.0.candidates[b"m".as_slice()].done);
     }
 
     #[test]
@@ -842,9 +852,9 @@ mod tests {
         .expect("bail out in ordered traversal");
 
         assert_eq!(matched_handles, ["m"]);
-        assert!(state.candidates["a"].done);
-        assert!(state.candidates["m"].done);
-        assert!(state.candidates["z"].done);
+        assert!(state.candidates[b"a".as_slice()].done);
+        assert!(state.candidates[b"m".as_slice()].done);
+        assert!(state.candidates[b"z".as_slice()].done);
     }
 
     #[test]
@@ -871,7 +881,7 @@ mod tests {
             },
             |tautomer| {
                 key_calls += 1;
-                Ok::<_, &'static str>(tautomer.clone())
+                Ok::<_, &'static str>(tautomer.clone().into())
             },
         )
         .expect("prune changed and unchanged stereo branches");
@@ -880,11 +890,11 @@ mod tests {
         assert!(!pass.bailed_out);
         assert_eq!(stereo_calls, ["old-tautomer", "stable-tautomer"]);
         assert_eq!(key_calls, 1);
-        assert!(!state.candidates.contains_key("old"));
-        assert_eq!(state.candidates["new"].num_modified_atoms, 1);
-        assert_eq!(state.candidates["new"].num_modified_bonds, 0);
-        assert_eq!(state.candidates["stable"].num_modified_atoms, 0);
-        assert_eq!(state.candidates["stable"].num_modified_bonds, 0);
+        assert!(!state.candidates.contains_key(b"old".as_slice()));
+        assert_eq!(state.candidates[b"new".as_slice()].num_modified_atoms, 1);
+        assert_eq!(state.candidates[b"new".as_slice()].num_modified_bonds, 0);
+        assert_eq!(state.candidates[b"stable".as_slice()].num_modified_atoms, 0);
+        assert_eq!(state.candidates[b"stable".as_slice()].num_modified_bonds, 0);
     }
 
     #[test]
@@ -905,7 +915,7 @@ mod tests {
                     Ok(false)
                 }
             },
-            |tautomer| Ok::<_, &'static str>(tautomer.clone()),
+            |tautomer| Ok::<_, &'static str>(tautomer.clone().into()),
         )
         .expect("forward rekey traversal");
         assert!(forward_pass.completed);
@@ -914,7 +924,7 @@ mod tests {
             forward
                 .candidates
                 .keys()
-                .map(String::as_str)
+                .map(fixed_key_text)
                 .collect::<Vec<_>>(),
             ["b", "c", "z"]
         );
@@ -935,7 +945,7 @@ mod tests {
                     Ok(false)
                 }
             },
-            |tautomer| Ok::<_, &'static str>(tautomer.clone()),
+            |tautomer| Ok::<_, &'static str>(tautomer.clone().into()),
         )
         .expect("backward rekey traversal");
         assert!(backward_pass.completed);
@@ -947,7 +957,7 @@ mod tests {
             backward
                 .candidates
                 .keys()
-                .map(String::as_str)
+                .map(fixed_key_text)
                 .collect::<Vec<_>>(),
             ["a", "aa", "b"]
         );
@@ -957,7 +967,11 @@ mod tests {
     fn enumeration_pruning_collapses_duplicates_and_corrects_only_tautomer_limit_status() {
         let mut state = expansion_state(&[("a", "a", true), ("b", "b", true)]);
         state.modified_atoms = marked_atoms([0]);
-        state.candidates.get_mut("a").unwrap().num_modified_atoms = 1;
+        state
+            .candidates
+            .get_mut(b"a".as_slice())
+            .unwrap()
+            .num_modified_atoms = 1;
         state.status = TautomerEnumerationStatus::MaxTautomersReached;
 
         let pass = prune_and_rekey_tautomer_candidates_in_source_order(
@@ -969,7 +983,7 @@ mod tests {
                 *tautomer = "a".to_owned();
                 Ok::<_, &'static str>(true)
             },
-            |tautomer| Ok::<_, &'static str>(tautomer.clone()),
+            |tautomer| Ok::<_, &'static str>(tautomer.clone().into()),
         )
         .expect("collapse duplicate and correct status");
 
@@ -978,7 +992,7 @@ mod tests {
         assert_eq!(state.status, TautomerEnumerationStatus::Completed);
         assert_eq!(state.candidates.len(), 1);
         assert_eq!(
-            state.candidates["a"].tautomer.as_deref(),
+            state.candidates[b"a".as_slice()].tautomer.as_deref(),
             Some("a-tautomer")
         );
 
@@ -986,7 +1000,7 @@ mod tests {
         transform_limited.modified_atoms = marked_atoms([0]);
         transform_limited
             .candidates
-            .get_mut("a")
+            .get_mut(b"a".as_slice())
             .unwrap()
             .num_modified_atoms = 1;
         transform_limited.status = TautomerEnumerationStatus::MaxTransformsReached;
@@ -998,7 +1012,7 @@ mod tests {
                 *tautomer = "a".to_owned();
                 Ok::<_, &'static str>(true)
             },
-            |tautomer| Ok::<_, &'static str>(tautomer.clone()),
+            |tautomer| Ok::<_, &'static str>(tautomer.clone().into()),
         )
         .expect("retain non-tautomer limit status");
         assert!(pass.bailed_out);
@@ -1014,7 +1028,7 @@ mod tests {
         state.modified_atoms = marked_atoms([0]);
         state.modified_bonds = marked_bonds([0]);
         {
-            let candidate = state.candidates.get_mut("m").unwrap();
+            let candidate = state.candidates.get_mut(b"m".as_slice()).unwrap();
             candidate.num_modified_atoms = 1;
             candidate.num_modified_bonds = 1;
         }
@@ -1047,16 +1061,16 @@ mod tests {
                 tautomer.push_str("-updated");
                 Ok::<_, &'static str>(true)
             },
-            |_| Ok::<_, &'static str>("m".to_owned()),
+            |_| Ok::<_, &'static str>("m".into()),
         )
         .expect("prune after modified sets grow");
 
         assert!(second.completed);
         assert_eq!(calls, 1);
-        assert_eq!(state.candidates["m"].num_modified_atoms, 2);
-        assert_eq!(state.candidates["m"].num_modified_bonds, 2);
+        assert_eq!(state.candidates[b"m".as_slice()].num_modified_atoms, 2);
+        assert_eq!(state.candidates[b"m".as_slice()].num_modified_bonds, 2);
         assert_eq!(
-            state.candidates["m"].tautomer.as_deref(),
+            state.candidates[b"m".as_slice()].tautomer.as_deref(),
             Some("m-tautomer-updated")
         );
     }
@@ -1069,18 +1083,18 @@ mod tests {
         assert_eq!(
             entries,
             [
-                ("a".to_owned(), "a-tautomer".to_owned()),
-                ("m".to_owned(), "m-tautomer".to_owned()),
-                ("z".to_owned(), "z-tautomer".to_owned()),
+                ("a".into(), "a-tautomer".to_owned()),
+                ("m".into(), "m-tautomer".to_owned()),
+                ("z".into(), "z-tautomer".to_owned()),
             ]
         );
 
         let mut missing = expansion_state(&[("missing", "missing", true)]).candidates;
-        missing.get_mut("missing").unwrap().tautomer = None;
+        missing.get_mut(b"missing".as_slice()).unwrap().tautomer = None;
         assert!(matches!(
             materialize_tautomer_candidates_in_source_order(missing),
             Err(TautomerEnumerationError::MissingCandidateMolecule { canonical_smiles })
-                if canonical_smiles == "missing"
+                if canonical_smiles.as_bytes() == b"missing"
         ));
     }
 
@@ -1132,24 +1146,66 @@ mod tests {
             TautomerCandidate::new(molecule.clone(), molecule.clone(), modified_atoms, 0)
         };
         let mut candidates = SmilesTautomerMap::new();
-        candidates.insert("z".to_owned(), candidate(1));
-        candidates.insert("a".to_owned(), candidate(2));
-        candidates.insert("m".to_owned(), candidate(3));
-        let replaced = candidates.insert("a".to_owned(), candidate(9));
+        candidates.insert("z".into(), candidate(1));
+        candidates.insert("a".into(), candidate(2));
+        candidates.insert("m".into(), candidate(3));
+        let replaced = candidates.insert("a".into(), candidate(9));
 
         assert_eq!(replaced.expect("existing key").num_modified_atoms, 2);
         assert_eq!(
-            candidates.keys().map(String::as_str).collect::<Vec<_>>(),
+            candidates.keys().map(fixed_key_text).collect::<Vec<_>>(),
             ["a", "m", "z"]
         );
-        assert_eq!(candidates["a"].num_modified_atoms, 9);
+        assert_eq!(candidates[b"a".as_slice()].num_modified_atoms, 9);
     }
     #[test]
     fn enumeration_result_rejects_an_unmaterialized_candidate() {
         let mut candidates = SmilesTautomerMap::<String>::new();
         candidates.insert("C".into(), TautomerCandidate::empty());
         assert!(
-            matches!(materialize_tautomer_candidates_in_source_order(candidates),Err(TautomerEnumerationError::MissingCandidateMolecule{canonical_smiles}) if canonical_smiles=="C")
+            matches!(materialize_tautomer_candidates_in_source_order(candidates),Err(TautomerEnumerationError::MissingCandidateMolecule{canonical_smiles}) if canonical_smiles.as_bytes() == b"C")
+        );
+    }
+
+    #[test]
+    fn enumeration_byte_keys_preserve_nul_and_opaque_unsigned_order() {
+        use cosmolkit_model::PropertyText;
+        let mut candidates = SmilesTautomerMap::<String>::new();
+        for (bytes, value) in [
+            (b"a\xff".as_slice(), "opaque"),
+            (b"a\0".as_slice(), "nul"),
+            (b"a".as_slice(), "prefix"),
+            (b"a\x80".as_slice(), "high"),
+        ] {
+            candidates.insert(
+                PropertyText::from_bytes(bytes),
+                expansion_candidate(value, true),
+            );
+        }
+        let entries = materialize_tautomer_candidates_in_source_order(candidates).unwrap();
+        assert_eq!(
+            entries
+                .iter()
+                .map(|(key, _)| key.as_bytes())
+                .collect::<Vec<_>>(),
+            [
+                b"a".as_slice(),
+                b"a\0".as_slice(),
+                b"a\x80".as_slice(),
+                b"a\xff".as_slice()
+            ]
+        );
+        assert_eq!(
+            entries
+                .iter()
+                .map(|(_, value)| value.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "prefix-tautomer",
+                "nul-tautomer",
+                "high-tautomer",
+                "opaque-tautomer"
+            ]
         );
     }
 }

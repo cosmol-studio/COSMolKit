@@ -165,7 +165,7 @@ impl std::error::Error for UffParamError {}
 
 #[derive(Debug)]
 pub(crate) struct ParamCollection {
-    params: BTreeMap<String, AtomicParams>,
+    params: BTreeMap<cosmolkit_model::PropertyText, AtomicParams>,
 }
 
 impl ParamCollection {
@@ -208,7 +208,7 @@ impl ParamCollection {
         Ok(collection)
     }
 
-    pub(crate) fn get(&self, symbol: &str) -> Option<&AtomicParams> {
+    pub(crate) fn get(&self, symbol: impl AsRef<[u8]>) -> Option<&AtomicParams> {
         // RDKit❗✔️: const AtomicParams *operator()(const std::string &symbol) const {
         // RDKit❗✔️:   std::map<std::string, AtomicParams>::const_iterator res;
         // RDKit❗✔️:   res = d_params.find(symbol);
@@ -217,7 +217,11 @@ impl ParamCollection {
         // RDKit❗✔️:   }
         // RDKit❗✔️:   return nullptr;
         // RDKit❗✔️: }
-        self.params.get(symbol)
+        // Behavior: std::map string equality and ordering compare counted
+        // bytes. The canonical map key and borrowed query retain every byte;
+        // opaque keys miss only if the exact byte key is absent in source data.
+        // Complexity: one O(log P) borrowed tree lookup, no decoding or clone.
+        self.params.get(symbol.as_ref())
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -264,7 +268,9 @@ fn source_records(param_data: &str) -> impl Iterator<Item = (usize, &str)> {
         })
 }
 
-fn parse_param_data(param_data: &str) -> Result<BTreeMap<String, AtomicParams>, UffParamError> {
+fn parse_param_data(
+    param_data: &str,
+) -> Result<BTreeMap<cosmolkit_model::PropertyText, AtomicParams>, UffParamError> {
     // RDKit❗✔️: std::istringstream inStream(paramData);
     // RDKit❗✔️: while (!inStream.eof()) {
     // RDKit❗✔️:   if (inLine[0] != '#') {
@@ -324,7 +330,7 @@ fn parse_param_data(param_data: &str) -> Result<BTreeMap<String, AtomicParams>, 
         };
         // RDKit❗✔️:       d_params[label] = paramObj;
         // Unconsumed tokens intentionally follow the source and are ignored.
-        params.insert(label.to_owned(), params_for_label);
+        params.insert(cosmolkit_model::PropertyText::from(label), params_for_label);
     }
     Ok(params)
 }

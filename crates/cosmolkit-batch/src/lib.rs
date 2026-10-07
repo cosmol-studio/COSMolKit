@@ -1,8 +1,6 @@
 //! Detached batch records and processing boundaries.
 
 use cosmolkit_model::{CoordinateBlock, MoleculeProperties, TopologyBlock};
-mod scheduler;
-pub use scheduler::run_indexed;
 mod sdf;
 mod sdf_export;
 pub use sdf::{
@@ -32,3 +30,6 @@ pub fn process(records: Vec<BatchRecord>) -> Result<Vec<BatchRecord>, BatchError
     let _ = records;
     Err(BatchError::Unsupported)
 }
+
+mod scheduler;
+pub use scheduler::run_indexed;

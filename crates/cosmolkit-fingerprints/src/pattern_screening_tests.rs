@@ -47,7 +47,10 @@ impl Fixture {
                         QueryBond::from_carrier_parts(b, p)
                     })
                     .collect(),
-                Default::default(),
+                Vec::<(
+                    cosmolkit_model::PropertyText,
+                    cosmolkit_model::PropertyValue,
+                )>::new(),
                 vec![],
                 vec![],
                 t.stereo_groups.clone(),
@@ -74,7 +77,23 @@ fn mol_from_smarts(
 fn has_substruct_match(target: &Fixture, query: &Fixture) -> bool {
     let topo = target.graph().matching_topology().unwrap();
     let coords = CoordinateBlock::default();
-    let t = cosmolkit_search::SearchTarget::new(&topo, &coords, &topo.stereo_groups, None, None);
+    // Original owning Molecule fixtures already carried source query facts.
+    // Prepare them explicitly through their canonical owners for this detached
+    // test target; production Search retains its missing-cache preconditions.
+    let rings = cosmolkit_core::symmetrized_sssr(&topo, &Default::default()).unwrap();
+    let valence = cosmolkit_core::assign_valence_with_options_for_topology(
+        &topo,
+        cosmolkit_core::ValenceModel::RdkitLike,
+        false,
+    )
+    .unwrap();
+    let t = cosmolkit_search::SearchTarget::new(
+        &topo,
+        &coords,
+        &topo.stereo_groups,
+        Some(&rings),
+        Some(&valence),
+    );
     !cosmolkit_search::try_get_substruct_matches_with_params(
         &t,
         &query.as_query(),

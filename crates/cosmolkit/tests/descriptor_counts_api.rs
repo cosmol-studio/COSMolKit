@@ -335,10 +335,15 @@ fn descriptor_query_dq05_total_atom_count() {
     }
     assert_eq!(calls, 160, "exact 160-call census");
 
-    // All 40 unsanitized constructor states: exactly MissingPreparedValence
-    // — no silent cache preparation, even for empty/zero-carbon cases.
+    // SmilesParse.cpp runs assignStereochemistry when sanitize OR removeHs
+    // is true; Chirality.cpp fills a missing property cache non-strictly.
+    // Retain all 40 exact constructor inputs and both policies. Only the
+    // false/false branch lacks prepared valence. No query prepares a cache.
+    let mut constructor_calls = 0usize;
+    let mut prepared_calls = 0usize;
+    let mut constructor_error_calls = 0usize;
     let mut error_calls = 0usize;
-    for (smiles, _, _, _, _, _, _, _) in CASES {
+    for (smiles, _, _, _, expected, _, _, _) in CASES {
         for remove_hydrogens in [false, true] {
             let params = SmilesParseParams {
                 sanitize: false,
@@ -346,15 +351,64 @@ fn descriptor_query_dq05_total_atom_count() {
                 ..Default::default()
             };
             let raw = Molecule::from_smiles_with_params(smiles, &params).unwrap();
-            let err = raw.total_atom_count().unwrap_err();
+            let original = raw.to_builder();
+            let result = raw.total_atom_count();
+            constructor_calls += 1;
+            if remove_hydrogens {
+                assert_eq!(
+                    result.unwrap(),
+                    expected,
+                    "source-prepared raw {smiles} policy={remove_hydrogens}"
+                );
+                prepared_calls += 1;
+            } else {
+                let err = result.unwrap_err();
+                assert!(
+                    matches!(err, DescriptorReadError::MissingPreparedValence),
+                    "raw {smiles} policy={remove_hydrogens}: {err:?}"
+                );
+                constructor_error_calls += 1;
+            }
+            assert_eq!(
+                raw.to_builder(),
+                original,
+                "query preserves all detached blocks"
+            );
+
+            // Preserve all 40 original MissingPreparedValence controls on
+            // canonical builder values, which carry the exact semantic blocks
+            // and deliberately have no derived-cache installation authority.
+            let unprepared = original.clone().build().unwrap();
+            assert_eq!(unprepared.to_builder(), original);
+            let err = unprepared.total_atom_count().unwrap_err();
             error_calls += 1;
             assert!(
                 matches!(err, DescriptorReadError::MissingPreparedValence),
-                "raw {smiles} policy={remove_hydrogens}: expected MissingPreparedValence, got {err:?}"
+                "uncached {smiles} policy={remove_hydrogens}: {err:?}"
+            );
+            assert_eq!(
+                unprepared.to_builder(),
+                original,
+                "failed query preserves all detached blocks"
             );
         }
     }
-    assert_eq!(error_calls, 40, "all 40 unsanitized states typed-error");
+    assert_eq!(
+        constructor_calls, 40,
+        "all original constructor inputs retained"
+    );
+    assert_eq!(
+        prepared_calls, 20,
+        "source removeHs stereo preparation branch"
+    );
+    assert_eq!(
+        constructor_error_calls, 20,
+        "source false/false unprepared branch"
+    );
+    assert_eq!(
+        error_calls, 40,
+        "all 40 canonical uncached states typed-error"
+    );
 }
 
 #[test]
@@ -471,10 +525,15 @@ fn descriptor_query_dq07_lipinski_hbd() {
     }
     assert_eq!(calls, 160, "exact 160-call census");
 
-    // All 40 unsanitized states: exactly MissingPreparedValence (the
-    // hydrogen sum needs the prepared assignment; no silent preparation).
+    // SmilesParse.cpp runs assignStereochemistry when sanitize OR removeHs
+    // is true; Chirality.cpp fills a missing property cache non-strictly.
+    // Retain all 40 exact constructor inputs and both policies. Only the
+    // false/false branch lacks prepared valence. No query prepares a cache.
+    let mut constructor_calls = 0usize;
+    let mut prepared_calls = 0usize;
+    let mut constructor_error_calls = 0usize;
     let mut error_calls = 0usize;
-    for (smiles, _, _, _, _, _, _, _) in CASES {
+    for (smiles, _, _, _, _, _, expected, _) in CASES {
         for remove_hydrogens in [false, true] {
             let params = SmilesParseParams {
                 sanitize: false,
@@ -482,15 +541,64 @@ fn descriptor_query_dq07_lipinski_hbd() {
                 ..Default::default()
             };
             let raw = Molecule::from_smiles_with_params(smiles, &params).unwrap();
-            let err = raw.lipinski_hbd().unwrap_err();
+            let original = raw.to_builder();
+            let result = raw.lipinski_hbd();
+            constructor_calls += 1;
+            if remove_hydrogens {
+                assert_eq!(
+                    result.unwrap(),
+                    expected,
+                    "source-prepared raw {smiles} policy={remove_hydrogens}"
+                );
+                prepared_calls += 1;
+            } else {
+                let err = result.unwrap_err();
+                assert!(
+                    matches!(err, DescriptorReadError::MissingPreparedValence),
+                    "raw {smiles} policy={remove_hydrogens}: {err:?}"
+                );
+                constructor_error_calls += 1;
+            }
+            assert_eq!(
+                raw.to_builder(),
+                original,
+                "query preserves all detached blocks"
+            );
+
+            // Preserve all 40 original MissingPreparedValence controls on
+            // canonical builder values, which carry the exact semantic blocks
+            // and deliberately have no derived-cache installation authority.
+            let unprepared = original.clone().build().unwrap();
+            assert_eq!(unprepared.to_builder(), original);
+            let err = unprepared.lipinski_hbd().unwrap_err();
             error_calls += 1;
             assert!(
                 matches!(err, DescriptorReadError::MissingPreparedValence),
-                "raw {smiles} policy={remove_hydrogens}: expected MissingPreparedValence, got {err:?}"
+                "uncached {smiles} policy={remove_hydrogens}: {err:?}"
+            );
+            assert_eq!(
+                unprepared.to_builder(),
+                original,
+                "failed query preserves all detached blocks"
             );
         }
     }
-    assert_eq!(error_calls, 40, "all 40 unsanitized states typed-error");
+    assert_eq!(
+        constructor_calls, 40,
+        "all original constructor inputs retained"
+    );
+    assert_eq!(
+        prepared_calls, 20,
+        "source removeHs stereo preparation branch"
+    );
+    assert_eq!(
+        constructor_error_calls, 20,
+        "source false/false unprepared branch"
+    );
+    assert_eq!(
+        error_calls, 40,
+        "all 40 canonical uncached states typed-error"
+    );
 }
 
 #[test]
@@ -540,10 +648,15 @@ fn descriptor_query_dq08_fraction_csp3() {
     }
     assert_eq!(calls, 160, "exact 160-call census");
 
-    // All 40 unsanitized states: exactly MissingPreparedValence, including
-    // zero-carbon and charged-carbon cases.
+    // SmilesParse.cpp runs assignStereochemistry when sanitize OR removeHs
+    // is true; Chirality.cpp fills a missing property cache non-strictly.
+    // Retain all 40 exact constructor inputs and both policies. Only the
+    // false/false branch lacks prepared valence. No query prepares a cache.
+    let mut constructor_calls = 0usize;
+    let mut prepared_calls = 0usize;
+    let mut constructor_error_calls = 0usize;
     let mut error_calls = 0usize;
-    for (smiles, _, _, _, _, _, _, _) in CASES {
+    for (smiles, _, _, _, _, _, _, expected) in CASES {
         for remove_hydrogens in [false, true] {
             let params = SmilesParseParams {
                 sanitize: false,
@@ -551,13 +664,62 @@ fn descriptor_query_dq08_fraction_csp3() {
                 ..Default::default()
             };
             let raw = Molecule::from_smiles_with_params(smiles, &params).unwrap();
-            let err = raw.fraction_csp3().unwrap_err();
+            let original = raw.to_builder();
+            let result = raw.fraction_csp3().map(f64::to_bits);
+            constructor_calls += 1;
+            if remove_hydrogens {
+                assert_eq!(
+                    result.unwrap(),
+                    expected,
+                    "source-prepared raw {smiles} policy={remove_hydrogens}"
+                );
+                prepared_calls += 1;
+            } else {
+                let err = result.unwrap_err();
+                assert!(
+                    matches!(err, DescriptorReadError::MissingPreparedValence),
+                    "raw {smiles} policy={remove_hydrogens}: {err:?}"
+                );
+                constructor_error_calls += 1;
+            }
+            assert_eq!(
+                raw.to_builder(),
+                original,
+                "query preserves all detached blocks"
+            );
+
+            // Preserve all 40 original MissingPreparedValence controls on
+            // canonical builder values, which carry the exact semantic blocks
+            // and deliberately have no derived-cache installation authority.
+            let unprepared = original.clone().build().unwrap();
+            assert_eq!(unprepared.to_builder(), original);
+            let err = unprepared.fraction_csp3().unwrap_err();
             error_calls += 1;
             assert!(
                 matches!(err, DescriptorReadError::MissingPreparedValence),
-                "raw {smiles} policy={remove_hydrogens}: expected MissingPreparedValence, got {err:?}"
+                "uncached {smiles} policy={remove_hydrogens}: {err:?}"
+            );
+            assert_eq!(
+                unprepared.to_builder(),
+                original,
+                "failed query preserves all detached blocks"
             );
         }
     }
-    assert_eq!(error_calls, 40, "all 40 unsanitized states typed-error");
+    assert_eq!(
+        constructor_calls, 40,
+        "all original constructor inputs retained"
+    );
+    assert_eq!(
+        prepared_calls, 20,
+        "source removeHs stereo preparation branch"
+    );
+    assert_eq!(
+        constructor_error_calls, 20,
+        "source false/false unprepared branch"
+    );
+    assert_eq!(
+        error_calls, 40,
+        "all 40 canonical uncached states typed-error"
+    );
 }

@@ -2,6 +2,7 @@ use super::registry::{Input, Record, Value};
 
 pub fn run(input: &Input) -> Result<Record, String> {
     match input {
+        Input::MolAlign(row) => crate::molalign::run(row),
         Input::Fingerprint(row) => crate::fingerprints::run(row),
         Input::SmilesWrite(row) => crate::smiles_write::run(row),
         Input::Search(row) => crate::search::run(row),

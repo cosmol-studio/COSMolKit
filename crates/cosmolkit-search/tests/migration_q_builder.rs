@@ -325,7 +325,10 @@ fn recursive_query_keeps_its_owned_graph_default_and_explicit_serials() {
         assert!(!atom.predicate_is_carrier_derived());
 
         let recursive = recursive_query(&graph);
-        assert_eq!(recursive.source_smarts(), Some("$(C=O)"));
+        assert_eq!(
+            recursive.source_smarts().map(|text| text.as_bytes()),
+            Some(b"$(C=O)".as_slice())
+        );
         assert_eq!(recursive.serial_number(), expected_serial);
         let inner = recursive.query_graph().expect("owned recursive graph");
         assert_eq!((inner.num_atoms(), inner.num_bonds()), (2, 1));
@@ -342,7 +345,10 @@ fn recursive_query_keeps_its_owned_graph_default_and_explicit_serials() {
         let copied_recursive = recursive_query(&copied);
         assert_eq!(copied_recursive.serial_number(), expected_serial);
         assert_eq!(copied_recursive.query_graph(), Some(inner));
-        assert_eq!(copied_recursive.source_smarts(), Some("$(C=O)"));
+        assert_eq!(
+            copied_recursive.source_smarts().map(|text| text.as_bytes()),
+            Some(b"$(C=O)".as_slice())
+        );
     }
 }
 
@@ -545,7 +551,10 @@ fn widened_query_predicates_match_and_write_without_narrowing() {
                 predicate,
             )],
             Vec::new(),
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -608,8 +617,9 @@ fn widened_query_predicates_match_and_write_without_narrowing() {
     ] {
         assert_eq!(
             write_smarts(&parse(smarts), &SmartsWriteParams::default())
-                .expect("write full-width predicate value"),
-            expected,
+                .expect("write full-width predicate value")
+                .as_bytes(),
+            expected.as_bytes(),
             "{smarts}"
         );
     }
@@ -636,6 +646,18 @@ fn q07d_primitive_targets_match_and_write_without_narrowing() {
     )
     .expect("one no-implicit detached carbon with zero query counts");
     let target_before = zero_target.clone();
+    let coordinates = cosmolkit_model::CoordinateBlock::default();
+    let zero_valence = cosmolkit_core::ValenceAssignment {
+        explicit_valence: vec![0],
+        implicit_hydrogens: vec![0],
+    };
+    let prepared_zero = cosmolkit_search::SearchTarget::new(
+        &zero_target,
+        &coordinates,
+        &zero_target.stereo_groups,
+        None,
+        Some(&zero_valence),
+    );
 
     for (primitive, source_256) in [
         ("D", "[C&D256]"),
@@ -649,7 +671,7 @@ fn q07d_primitive_targets_match_and_write_without_narrowing() {
         let widened = parse(source_256);
         let widened_before = widened.clone();
         assert!(
-            match_query(&widened, &zero_target)
+            cosmolkit_search::match_query_target(&widened, &prepared_zero)
                 .expect("evaluate full-width source target")
                 .is_empty(),
             "{source_256} must not wrap to target 0"
@@ -658,7 +680,7 @@ fn q07d_primitive_targets_match_and_write_without_narrowing() {
         let zero_source = format!("[C&{primitive}0]");
         let zero_query = parse(&zero_source);
         assert_eq!(
-            match_query(&zero_query, &zero_target)
+            cosmolkit_search::match_query_target(&zero_query, &prepared_zero)
                 .expect("evaluate ordinary zero target")
                 .len(),
             1,
@@ -666,8 +688,9 @@ fn q07d_primitive_targets_match_and_write_without_narrowing() {
         );
         assert_eq!(
             write_smarts(&widened, &SmartsWriteParams::default())
-                .expect("write full-width source target"),
-            source_256,
+                .expect("write full-width source target")
+                .as_bytes(),
+            source_256.as_bytes(),
             "writer must retain the complete target"
         );
         assert_eq!(
@@ -680,25 +703,25 @@ fn q07d_primitive_targets_match_and_write_without_narrowing() {
     // degree in that order. Thus D{-1} matches degree zero (1 >= 0), while
     // D{-0} is its exact-bound control; D{1-} rejects degree zero (1 <= 0).
     assert_eq!(
-        match_query(&parse("[C&D{0-}]"), &zero_target)
+        cosmolkit_search::match_query_target(&parse("[C&D{0-}]"), &prepared_zero)
             .expect("evaluate explicit-degree upper range")
             .len(),
         1
     );
     assert_eq!(
-        match_query(&parse("[C&D{-1}]"), &zero_target)
+        cosmolkit_search::match_query_target(&parse("[C&D{-1}]"), &prepared_zero)
             .expect("evaluate source GreaterEqual threshold")
             .len(),
         1
     );
     assert_eq!(
-        match_query(&parse("[C&D{-0}]"), &zero_target)
+        cosmolkit_search::match_query_target(&parse("[C&D{-0}]"), &prepared_zero)
             .expect("evaluate zero threshold")
             .len(),
         1
     );
     assert!(
-        match_query(&parse("[C&D{1-}]"), &zero_target)
+        cosmolkit_search::match_query_target(&parse("[C&D{1-}]"), &prepared_zero)
             .expect("evaluate source LessEqual threshold")
             .is_empty()
     );

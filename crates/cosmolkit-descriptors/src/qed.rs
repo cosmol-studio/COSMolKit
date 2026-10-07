@@ -838,7 +838,7 @@ mod original_qed_source_conditions {
                     )
                     .unwrap();
                     let expected = record["result_smiles"].as_str().unwrap();
-                    if actual != expected {
+                    if actual.as_bytes() != expected.as_bytes() {
                         failures.push(format!(
                             "{label}: SMILES actual{actual:?} expected{expected:?}"
                         ));

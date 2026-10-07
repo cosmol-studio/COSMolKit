@@ -259,6 +259,7 @@ impl TautomerMoleculeView {
         self.inner
             .to_smiles()
             .map_err(|error| run_pyerr(py, &error))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
     fn tautomer_score(&self, py: Python<'_>) -> PyResult<TautomerScore> {
         self.inner
@@ -309,16 +310,16 @@ impl TautomerProgress {
             .map(|id| id.index())
             .collect()
     }
-    fn entries(&self) -> Vec<(String, TautomerMoleculeView)> {
+    fn entries(&self, py: Python<'_>) -> PyResult<Vec<(String, TautomerMoleculeView)>> {
         self.inner
             .entries()
             .map(|(key, value)| {
-                (
-                    key.to_owned(),
+                Ok((
+                    crate::canonical_sdf::decode_source_text(py, key)?,
                     TautomerMoleculeView {
                         inner: value.to_owned(),
                     },
-                )
+                ))
             })
             .collect()
     }
@@ -678,11 +679,11 @@ impl TautomerEnumeration {
             .map(|id| id.index())
             .collect()
     }
-    fn canonical_smiles(&self) -> Vec<String> {
+    fn canonical_smiles(&self, py: Python<'_>) -> PyResult<Vec<String>> {
         self.inner
             .canonical_smiles()
             .into_iter()
-            .map(str::to_owned)
+            .map(|text| crate::canonical_sdf::decode_source_text(py, text))
             .collect()
     }
     fn get(&self, index: usize) -> Option<Molecule> {
@@ -708,16 +709,16 @@ impl TautomerEnumeration {
         self.get(index as usize)
             .ok_or_else(|| PyIndexError::new_err("index out of bounds"))
     }
-    fn entries(&self) -> Vec<(String, Molecule)> {
+    fn entries(&self, py: Python<'_>) -> PyResult<Vec<(String, Molecule)>> {
         self.inner
             .entries()
             .map(|(key, inner)| {
-                (
-                    key.to_owned(),
+                Ok((
+                    crate::canonical_sdf::decode_source_text(py, key)?,
                     Molecule {
                         inner: inner.clone(),
                     },
-                )
+                ))
             })
             .collect()
     }

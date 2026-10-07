@@ -281,10 +281,19 @@ fn value_forms_assign_tetrahedral_state_preserve_props_and_keep_weak_mapping() {
         Some(&cosmolkit_model::PropertyValue::from("kept"))
     );
     assert_eq!(source.property("_CIPComputed"), None);
-    assert_eq!(short.property("_CIPComputed"), Some("1"));
-    assert!(short.properties().is_prop_computed("_CIPComputed"));
-    assert_eq!(source.property("source"), Some("preserved"));
-    assert_eq!(short.property("source"), Some("preserved"));
+    assert_eq!(
+        short.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::Bool(true))
+    );
+    assert!(short.properties().is_prop_computed("_CIPComputed").unwrap());
+    assert_eq!(
+        source.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
+    assert_eq!(
+        short.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert!(format!("{source:?}").contains("derived_cache_is_empty: false"));
     assert!(format!("{short:?}").contains("derived_cache_is_empty: false"));
 
@@ -333,7 +342,10 @@ fn selection_and_repeated_assignment_preserve_unselected_state_exactly() {
             .prop("_CIPNeighborOrder"),
         Some(&cosmolkit_model::PropertyValue::from("[0]"))
     );
-    assert_eq!(none_selected.property("_CIPComputed"), Some("1"));
+    assert_eq!(
+        none_selected.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::Bool(true))
+    );
 
     let selected = none_selected
         .with_cip_labels_with_options(
@@ -489,12 +501,20 @@ fn typed_failures_are_atomic_for_value_and_inplace_entrypoints() {
     coordinate_views::assert_shared_coordinates(&unsupported, &labeled);
     let mut expected_properties = unsupported.properties().clone();
     expected_properties
-        .set_computed_prop("_CIPComputed", "1")
+        .set_computed_prop("_CIPComputed", cosmolkit::PropertyValue::Bool(true))
         .unwrap();
     assert_eq!(labeled.properties(), &expected_properties);
     assert_eq!(unsupported.property("_CIPComputed"), None);
-    assert_eq!(labeled.property("_CIPComputed"), Some("1"));
-    assert!(labeled.properties().is_prop_computed("_CIPComputed"));
+    assert_eq!(
+        labeled.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::Bool(true))
+    );
+    assert!(
+        labeled
+            .properties()
+            .is_prop_computed("_CIPComputed")
+            .unwrap()
+    );
     let mut inplace = unsupported.clone();
     inplace.assign_cip_labels_().unwrap();
     assert_eq!(inplace, labeled);

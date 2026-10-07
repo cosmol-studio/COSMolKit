@@ -1319,7 +1319,8 @@ fn pol_atom_matcher(_mol: &SearchTarget<'_>, atom: usize, mut ignore: Vec<bool>)
     if atom
         .prop("atomLabel")
         .and_then(|value| value.as_string().ok())
-        == Some("Pol")
+        .map(|value| value.as_bytes())
+        == Some(b"Pol".as_slice())
     {
         if let Some(bit) = ignore.get_mut(atom.id().index()) {
             *bit = true;
@@ -1341,7 +1342,7 @@ fn r_atom_matcher(mol: &SearchTarget<'_>, atom: usize, ignore: Vec<bool>) -> boo
 
 type GenericMatcher = for<'a> fn(&SearchTarget<'a>, usize, Vec<bool>) -> bool;
 
-fn generic_matcher_for_label(label: &str) -> Option<GenericMatcher> {
+fn generic_matcher_for_label(label: &[u8]) -> Option<GenericMatcher> {
     // RDKit✔️✔️: const static std::map<
     // RDKit✔️✔️:     std::string,
     // RDKit✔️✔️:     std::function<bool(const ROMol &, const Atom &, boost::dynamic_bitset<>)>>
@@ -1417,40 +1418,40 @@ fn generic_matcher_for_label(label: &str) -> Option<GenericMatcher> {
     // Complexity review: lookup has bounded constant work over the same fixed
     // label table and returns a plain function pointer without allocation.
     match label {
-        "Group" | "G" => Some(group_atom_matcher),
-        "GroupH" | "GH" => Some(group_h_atom_matcher),
-        "Group*" | "G*" => Some(group_star_atom_matcher),
-        "GroupH*" | "GH*" => Some(group_star_h_atom_matcher),
-        "Alkyl" | "ALK" => Some(alkyl_atom_matcher),
-        "AlkylH" | "ALH" => Some(alkyl_h_atom_matcher),
-        "Alkenyl" | "AEL" => Some(alkenyl_atom_matcher),
-        "AlkenylH" | "AEH" => Some(alkenyl_h_atom_matcher),
-        "Alkynyl" | "AYL" => Some(alkynyl_atom_matcher),
-        "AlkynylH" | "AYH" => Some(alkynyl_h_atom_matcher),
-        "Carbocyclic" | "CBC" => Some(carbocyclic_atom_matcher),
-        "CarbocyclicH" | "CBH" => Some(carbocyclic_h_atom_matcher),
-        "Carbocycloalkyl" | "CAL" => Some(carbocycloalkyl_atom_matcher),
-        "CarbocycloalkylH" | "CAH" => Some(carbocycloalkyl_h_atom_matcher),
-        "Carbocycloalkenyl" | "CEL" => Some(carbocycloalkenyl_atom_matcher),
-        "CarbocycloalkenylH" | "CEH" => Some(carbocycloalkenyl_h_atom_matcher),
-        "Carboaryl" | "ARY" => Some(carboaryl_atom_matcher),
-        "CarboarylH" | "ARH" => Some(carboaryl_h_atom_matcher),
-        "Cyclic" | "CYC" => Some(cyclic_atom_matcher),
-        "CyclicH" | "CYH" => Some(cyclic_h_atom_matcher),
-        "Acyclic" | "ACY" => Some(acyclic_atom_matcher),
-        "AcyclicH" | "ACH" => Some(acyclic_h_atom_matcher),
-        "Carboacyclic" | "ABC" => Some(carboacyclic_atom_matcher),
-        "CarboacyclicH" | "ABH" => Some(carboacyclic_h_atom_matcher),
-        "Heteroacyclic" | "AHC" => Some(heteroacyclic_atom_matcher),
-        "HeteroacyclicH" | "AHH" => Some(heteroacyclic_h_atom_matcher),
-        "Alkoxy" | "AOX" => Some(alkoxyacyclic_atom_matcher),
-        "AlkoxyH" | "AOH" => Some(alkoxyacyclic_h_atom_matcher),
-        "Heterocyclic" | "CHC" => Some(heterocyclic_atom_matcher),
-        "HeterocyclicH" | "CHH" => Some(heterocyclic_h_atom_matcher),
-        "Heteroaryl" | "HAR" => Some(heteroaryl_atom_matcher),
-        "HeteroarylH" | "HAH" => Some(heteroaryl_h_atom_matcher),
-        "NoCarbonRing" | "CXX" => Some(no_carbon_ring_atom_matcher),
-        "NoCarbonRingH" | "CXH" => Some(no_carbon_ring_h_atom_matcher),
+        b"Group" | b"G" => Some(group_atom_matcher),
+        b"GroupH" | b"GH" => Some(group_h_atom_matcher),
+        b"Group*" | b"G*" => Some(group_star_atom_matcher),
+        b"GroupH*" | b"GH*" => Some(group_star_h_atom_matcher),
+        b"Alkyl" | b"ALK" => Some(alkyl_atom_matcher),
+        b"AlkylH" | b"ALH" => Some(alkyl_h_atom_matcher),
+        b"Alkenyl" | b"AEL" => Some(alkenyl_atom_matcher),
+        b"AlkenylH" | b"AEH" => Some(alkenyl_h_atom_matcher),
+        b"Alkynyl" | b"AYL" => Some(alkynyl_atom_matcher),
+        b"AlkynylH" | b"AYH" => Some(alkynyl_h_atom_matcher),
+        b"Carbocyclic" | b"CBC" => Some(carbocyclic_atom_matcher),
+        b"CarbocyclicH" | b"CBH" => Some(carbocyclic_h_atom_matcher),
+        b"Carbocycloalkyl" | b"CAL" => Some(carbocycloalkyl_atom_matcher),
+        b"CarbocycloalkylH" | b"CAH" => Some(carbocycloalkyl_h_atom_matcher),
+        b"Carbocycloalkenyl" | b"CEL" => Some(carbocycloalkenyl_atom_matcher),
+        b"CarbocycloalkenylH" | b"CEH" => Some(carbocycloalkenyl_h_atom_matcher),
+        b"Carboaryl" | b"ARY" => Some(carboaryl_atom_matcher),
+        b"CarboarylH" | b"ARH" => Some(carboaryl_h_atom_matcher),
+        b"Cyclic" | b"CYC" => Some(cyclic_atom_matcher),
+        b"CyclicH" | b"CYH" => Some(cyclic_h_atom_matcher),
+        b"Acyclic" | b"ACY" => Some(acyclic_atom_matcher),
+        b"AcyclicH" | b"ACH" => Some(acyclic_h_atom_matcher),
+        b"Carboacyclic" | b"ABC" => Some(carboacyclic_atom_matcher),
+        b"CarboacyclicH" | b"ABH" => Some(carboacyclic_h_atom_matcher),
+        b"Heteroacyclic" | b"AHC" => Some(heteroacyclic_atom_matcher),
+        b"HeteroacyclicH" | b"AHH" => Some(heteroacyclic_h_atom_matcher),
+        b"Alkoxy" | b"AOX" => Some(alkoxyacyclic_atom_matcher),
+        b"AlkoxyH" | b"AOH" => Some(alkoxyacyclic_h_atom_matcher),
+        b"Heterocyclic" | b"CHC" => Some(heterocyclic_atom_matcher),
+        b"HeterocyclicH" | b"CHH" => Some(heterocyclic_h_atom_matcher),
+        b"Heteroaryl" | b"HAR" => Some(heteroaryl_atom_matcher),
+        b"HeteroarylH" | b"HAH" => Some(heteroaryl_h_atom_matcher),
+        b"NoCarbonRing" | b"CXX" => Some(no_carbon_ring_atom_matcher),
+        b"NoCarbonRingH" | b"CXH" => Some(no_carbon_ring_h_atom_matcher),
         _ => None,
     }
 }
@@ -1459,7 +1460,7 @@ pub(super) fn generic_atom_matcher(
     mol: &SearchTarget<'_>,
     query: &QueryGraph,
     atom_match: &[usize],
-) -> bool {
+) -> Result<bool, cosmolkit_core::PropertyStringError> {
     // RDKit✔️✔️: bool genericAtomMatcher(const ROMol &mol, const ROMol &query,
     // RDKit✔️✔️:                         const std::span<const unsigned int> &match) {
     // RDKit✔️✔️:   boost::dynamic_bitset<> ignore(mol.getNumAtoms());
@@ -1501,15 +1502,13 @@ pub(super) fn generic_atom_matcher(
         let Some(label) = atom.prop("_QueryAtomGenericLabel") else {
             continue;
         };
-        let Ok(label) = label.as_string() else {
-            continue;
-        };
-        let matcher = generic_matcher_for_label(label);
+        let label = cosmolkit_core::property_value_to_string(label)?;
+        let matcher = generic_matcher_for_label(label.as_bytes());
         if matcher.is_some_and(|matches| !matches(mol, atom_match[query_index], ignore.clone())) {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
 #[cfg(test)]

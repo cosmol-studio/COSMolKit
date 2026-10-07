@@ -2,6 +2,7 @@ use cosmolkit_cx::{
     CxCoordinateBondKind, CxCountConstraint, CxDoubleBondStereoKind, CxParseError, CxRecord,
     CxStereoGroupKind, CxWedgeDirection, parse_cx_extensions,
 };
+use cosmolkit_model::PropertyText;
 
 fn assert_error(input: &str, offset: usize, message: &str) {
     assert_eq!(
@@ -27,7 +28,7 @@ fn empty_blocks_pipe_contract_and_suffix_consumption_are_exact() {
     assert_eq!(utf8.consumed(), "|$é$|".len());
     assert_eq!(
         utf8.records(),
-        &[CxRecord::AtomLabels(vec![Some("é".to_owned())])]
+        &[CxRecord::AtomLabels(vec![Some(PropertyText::from("é"))])]
     );
 
     assert_error("u:0|", 0, "CXSMILES extension does not start with |");
@@ -78,13 +79,17 @@ fn labels_and_values_preserve_slots_whitespace_and_decoded_entities() {
         parsed.records(),
         &[
             CxRecord::AtomLabels(vec![
-                Some("a".to_owned()),
+                Some(PropertyText::from("a")),
                 None,
-                Some("b,c".to_owned()),
-                Some(" space ".to_owned()),
+                Some(PropertyText::from("b,c")),
+                Some(PropertyText::from(" space ")),
             ]),
-            CxRecord::Unknown(",".to_owned()),
-            CxRecord::AtomValues(vec![Some("x:y".to_owned()), None, Some("z".to_owned()),]),
+            CxRecord::Unknown(PropertyText::from(",")),
+            CxRecord::AtomValues(vec![
+                Some(PropertyText::from("x:y")),
+                None,
+                Some(PropertyText::from("z")),
+            ]),
         ]
     );
 }
@@ -99,11 +104,14 @@ fn atom_properties_keep_two_structural_dots_and_value_dot_content() {
     };
     assert_eq!(properties.len(), 2);
     assert_eq!(properties[0].atom, 0);
-    assert_eq!(properties[0].name, "na.me");
-    assert_eq!(properties[0].value, "value.with.dots,x");
+    assert_eq!(properties[0].name.as_bytes(), "na.me".as_bytes());
+    assert_eq!(
+        properties[0].value.as_bytes(),
+        "value.with.dots,x".as_bytes()
+    );
     assert_eq!(properties[1].atom, 2);
-    assert_eq!(properties[1].name, "k");
-    assert_eq!(properties[1].value, "v");
+    assert_eq!(properties[1].name.as_bytes(), "k".as_bytes());
+    assert_eq!(properties[1].value.as_bytes(), "v".as_bytes());
     assert!(matches!(parsed.records()[1], CxRecord::Unsaturation(ref rows) if rows == &[3]));
 
     let empty_name = parse_cx_extensions("|atomProp:0..ignored|").unwrap();
@@ -244,17 +252,20 @@ fn data_and_hierarchy_sgroups_preserve_all_fields_and_order() {
         panic!("expected data SGroup");
     };
     assert_eq!(data.atoms, vec![3, 2, 1, 0]);
-    assert_eq!(data.field_name, "name");
-    assert_eq!(data.data, "data:x");
-    assert_eq!(data.query_op, "like");
-    assert_eq!(data.field_info, "unit");
-    assert_eq!(data.field_tag, "t");
-    assert_eq!(data.coordinates.as_deref(), Some("(1.,1."));
+    assert_eq!(data.field_name.as_bytes(), "name".as_bytes());
+    assert_eq!(data.data.as_bytes(), "data:x".as_bytes());
+    assert_eq!(data.query_op.as_bytes(), "like".as_bytes());
+    assert_eq!(data.field_info.as_bytes(), "unit".as_bytes());
+    assert_eq!(data.field_tag.as_bytes(), "t".as_bytes());
+    assert_eq!(
+        data.coordinates.as_ref().map(PropertyText::as_bytes),
+        Some(b"(1.,1.".as_slice())
+    );
 
     let CxRecord::Unknown(separator) = &parsed.records()[1] else {
         panic!("expected source-advanced separator byte");
     };
-    assert_eq!(separator, ",");
+    assert_eq!(separator.as_bytes(), ",".as_bytes());
     let CxRecord::SGroupHierarchy(hierarchy) = &parsed.records()[2] else {
         panic!("expected SGroup hierarchy");
     };
@@ -285,7 +296,10 @@ fn polymer_sgroups_cover_absent_partial_and_complete_optional_fields() {
         panic!("expected polymer SGroup");
     };
     assert_eq!(absent.atoms, vec![4, 1, 2, 3]);
-    assert_eq!((absent.label.as_str(), absent.connect.as_str()), ("", ""));
+    assert_eq!(
+        (absent.label.as_bytes(), absent.connect.as_bytes()),
+        (b"".as_slice(), b"".as_slice())
+    );
     assert!(absent.head_crossings.is_empty());
     assert!(absent.tail_crossings.is_empty());
 
@@ -293,15 +307,15 @@ fn polymer_sgroups_cover_absent_partial_and_complete_optional_fields() {
     let CxRecord::PolymerSGroup(partial) = &partial.records()[0] else {
         panic!("expected polymer SGroup");
     };
-    assert_eq!(partial.type_code, "alt");
-    assert_eq!(partial.label, "n");
-    assert_eq!(partial.connect, "");
+    assert_eq!(partial.type_code.as_bytes(), "alt".as_bytes());
+    assert_eq!(partial.label.as_bytes(), "n".as_bytes());
+    assert_eq!(partial.connect.as_bytes(), "".as_bytes());
 
     let complete = parse_cx_extensions("|Sg:ran:0,1:n:ht:2,3:4,5|").unwrap();
     let CxRecord::PolymerSGroup(complete) = &complete.records()[0] else {
         panic!("expected polymer SGroup");
     };
-    assert_eq!(complete.connect, "ht");
+    assert_eq!(complete.connect.as_bytes(), "ht".as_bytes());
     assert_eq!(complete.head_crossings, vec![2, 3]);
     assert_eq!(complete.tail_crossings, vec![4, 5]);
 }
@@ -369,10 +383,10 @@ fn mixed_every_family_block_preserves_complete_dispatch_order() {
             .records()
             .iter()
             .filter_map(|record| match record {
-                CxRecord::Unknown(raw) => Some(raw.as_str()),
+                CxRecord::Unknown(raw) => Some(raw.as_bytes()),
                 _ => None,
             })
-            .all(|raw| raw == ",")
+            .all(|raw| raw == b",")
     );
     assert!(matches!(typed_records[0], CxRecord::Coordinates(_)));
     assert!(matches!(typed_records[1], CxRecord::AtomLabels(_)));
@@ -406,9 +420,13 @@ fn unknown_records_are_lossless_interleaved_and_always_make_progress() {
     let parsed = parse_cx_extensions(input).unwrap();
     assert_eq!(parsed.consumed(), input.find("tail").unwrap());
     assert_eq!(parsed.records().len(), 4);
-    assert!(matches!(parsed.records()[0], CxRecord::Unknown(ref raw) if raw == "###:α,"));
+    assert!(
+        matches!(parsed.records()[0], CxRecord::Unknown(ref raw) if raw.as_bytes() == "###:α,".as_bytes())
+    );
     assert!(matches!(parsed.records()[1], CxRecord::RingBonds(_)));
-    assert!(matches!(parsed.records()[2], CxRecord::Unknown(ref raw) if raw == "???,z,"));
+    assert!(
+        matches!(parsed.records()[2], CxRecord::Unknown(ref raw) if raw.as_bytes() == "???,z,".as_bytes())
+    );
     assert!(matches!(parsed.records()[3], CxRecord::Substitution(_)));
     assert_error(
         "|vendor:α,rb:0:2|",

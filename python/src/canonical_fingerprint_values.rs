@@ -1346,6 +1346,7 @@ impl MorganFingerprintGenerator {
         self.inner
             .to_json()
             .map_err(|e| crate::canonical_values::morgan_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
     fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
         Ok(format!(

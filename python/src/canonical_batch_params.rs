@@ -10,6 +10,59 @@ use std::sync::{Arc, Mutex};
 pub(crate) struct BatchParams {
     pub(crate) inner: ck::BatchParams,
 }
+
+#[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
+#[pyclass(module = "cosmolkit", frozen)]
+pub(crate) struct BatchExportParams {
+    pub(crate) inner: ck::BatchExportParams,
+}
+#[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[pymethods]
+impl BatchExportParams {
+    #[new]
+    #[pyo3(signature=(*,format=None,errors=None,n_jobs=None,progress_bar=None))]
+    fn new(
+        format: Option<&str>,
+        errors: Option<&Bound<'_, PyAny>>,
+        n_jobs: Option<usize>,
+        progress_bar: Option<bool>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            inner: ck::BatchExportParams {
+                format: crate::canonical_batch::write_params(format, true, true)?.format,
+                errors: crate::canonical_batch::error_mode(errors)?,
+                n_jobs: crate::canonical_batch::n_jobs(n_jobs)?,
+                progress_bar,
+            },
+        })
+    }
+    #[getter]
+    fn format(&self) -> &'static str {
+        match self.inner.format {
+            ck::SdfFormat::V2000 => "v2000",
+            ck::SdfFormat::V3000 => "v3000",
+        }
+    }
+    #[getter]
+    fn errors(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        BatchParams {
+            inner: ck::BatchParams {
+                errors: self.inner.errors,
+                n_jobs: self.inner.n_jobs,
+                progress_bar: self.inner.progress_bar,
+            },
+        }
+        .errors(py)
+    }
+    #[getter]
+    fn n_jobs(&self) -> Option<usize> {
+        self.inner.n_jobs
+    }
+    #[getter]
+    fn progress_bar(&self) -> Option<bool> {
+        self.inner.progress_bar
+    }
+}
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchParams {
@@ -200,6 +253,7 @@ impl BatchImageParams {
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_class::<BatchExportParams>()?;
     module.add_class::<BatchParams>()?;
     module.add_class::<BatchQueryParams>()?;
     module.add_class::<BatchImageParams>()?;

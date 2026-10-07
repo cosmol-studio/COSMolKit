@@ -490,7 +490,7 @@ enum SGroupKindRecord {
     #[musli(Binary, name = 13)]
     Formulation,
     #[musli(Binary, name = 14, packed)]
-    Generic(String),
+    Generic(Vec<u8>),
 }
 impl From<&SubstanceGroupKind> for SGroupKindRecord {
     fn from(value: &SubstanceGroupKind) -> Self {
@@ -509,7 +509,7 @@ impl From<&SubstanceGroupKind> for SGroupKindRecord {
             SubstanceGroupKind::MixtureComponent => Self::MixtureComponent,
             SubstanceGroupKind::Mixture => Self::Mixture,
             SubstanceGroupKind::Formulation => Self::Formulation,
-            SubstanceGroupKind::Generic(value) => Self::Generic(value.clone()),
+            SubstanceGroupKind::Generic(value) => Self::Generic(value.as_bytes().to_vec()),
         }
     }
 }
@@ -530,7 +530,7 @@ impl From<SGroupKindRecord> for SubstanceGroupKind {
             SGroupKindRecord::MixtureComponent => Self::MixtureComponent,
             SGroupKindRecord::Mixture => Self::Mixture,
             SGroupKindRecord::Formulation => Self::Formulation,
-            SGroupKindRecord::Generic(value) => Self::Generic(value),
+            SGroupKindRecord::Generic(value) => Self::Generic(value.into()),
         }
     }
 }
@@ -545,7 +545,7 @@ enum ConnectionRecord {
     #[musli(Binary, name = 2)]
     Either,
     #[musli(Binary, name = 3, packed)]
-    Unknown(String),
+    Unknown(Vec<u8>),
 }
 impl From<&SGroupConnection> for ConnectionRecord {
     fn from(value: &SGroupConnection) -> Self {
@@ -553,7 +553,7 @@ impl From<&SGroupConnection> for ConnectionRecord {
             SGroupConnection::HeadToHead => Self::HeadToHead,
             SGroupConnection::HeadToTail => Self::HeadToTail,
             SGroupConnection::Either => Self::Either,
-            SGroupConnection::Unknown(value) => Self::Unknown(value.clone()),
+            SGroupConnection::Unknown(value) => Self::Unknown(value.as_bytes().to_vec()),
         }
     }
 }
@@ -563,7 +563,7 @@ impl From<ConnectionRecord> for SGroupConnection {
             ConnectionRecord::HeadToHead => Self::HeadToHead,
             ConnectionRecord::HeadToTail => Self::HeadToTail,
             ConnectionRecord::Either => Self::Either,
-            ConnectionRecord::Unknown(value) => Self::Unknown(value),
+            ConnectionRecord::Unknown(value) => Self::Unknown(value.into()),
         }
     }
 }
@@ -578,7 +578,7 @@ enum BracketRecord {
     #[musli(Binary, name = 2)]
     None,
     #[musli(Binary, name = 3, packed)]
-    Unknown(String),
+    Unknown(Vec<u8>),
 }
 impl From<&SGroupBracketStyle> for BracketRecord {
     fn from(value: &SGroupBracketStyle) -> Self {
@@ -586,7 +586,7 @@ impl From<&SGroupBracketStyle> for BracketRecord {
             SGroupBracketStyle::Bracket => Self::Bracket,
             SGroupBracketStyle::Parenthesis => Self::Parenthesis,
             SGroupBracketStyle::None => Self::None,
-            SGroupBracketStyle::Unknown(value) => Self::Unknown(value.clone()),
+            SGroupBracketStyle::Unknown(value) => Self::Unknown(value.as_bytes().to_vec()),
         }
     }
 }
@@ -596,7 +596,7 @@ impl From<BracketRecord> for SGroupBracketStyle {
             BracketRecord::Bracket => Self::Bracket,
             BracketRecord::Parenthesis => Self::Parenthesis,
             BracketRecord::None => Self::None,
-            BracketRecord::Unknown(value) => Self::Unknown(value),
+            BracketRecord::Unknown(value) => Self::Unknown(value.into()),
         }
     }
 }
@@ -617,6 +617,8 @@ enum Value {
     Double(u64),
     #[musli(Binary, name = 5, packed)]
     Bool(bool),
+    #[musli(Binary, name = 6, packed)]
+    StringVector(Vec<Vec<u8>>),
 }
 impl From<&PropertyValue> for Value {
     fn from(value: &PropertyValue) -> Self {
@@ -627,18 +629,24 @@ impl From<&PropertyValue> for Value {
             PropertyValue::IntVector(v) => Self::IntVector(v.clone()),
             PropertyValue::Double(v) => Self::Double(v.to_bits()),
             PropertyValue::Bool(v) => Self::Bool(*v),
+            PropertyValue::StringVector(v) => {
+                Self::StringVector(v.iter().map(|s| s.as_bytes().to_vec()).collect())
+            }
         }
     }
 }
 impl Value {
     fn into_model(self) -> Result<PropertyValue, PickleError> {
         Ok(match self {
-            Self::String(v) => PropertyValue::String(text(v)?),
+            Self::String(v) => PropertyValue::String(v.into()),
             Self::Int(v) => PropertyValue::Int(v),
             Self::UInt(v) => PropertyValue::UInt(v),
             Self::IntVector(v) => PropertyValue::IntVector(v),
             Self::Double(v) => PropertyValue::Double(f64::from_bits(v)),
             Self::Bool(v) => PropertyValue::Bool(v),
+            Self::StringVector(v) => {
+                PropertyValue::StringVector(v.into_iter().map(Into::into).collect())
+            }
         })
     }
 }
@@ -662,16 +670,6 @@ struct Property {
     key: Vec<u8>,
     #[musli(Binary, name = 1)]
     value: Value,
-    #[musli(Binary, name = 2)]
-    computed: bool,
-}
-#[derive(Debug, Clone, Encode, Decode)]
-#[musli(Binary, name(type = u32))]
-struct TextProperty {
-    #[musli(Binary, name = 0)]
-    key: String,
-    #[musli(Binary, name = 1)]
-    value: String,
     #[musli(Binary, name = 2)]
     computed: bool,
 }
@@ -791,7 +789,7 @@ struct Conformer2 {
     #[musli(Binary, name = 1)]
     coordinates: Vec<[u64; 2]>,
     #[musli(Binary, name = 2)]
-    properties: Vec<(String, String)>,
+    properties: Vec<(Vec<u8>, Vec<u8>)>,
 }
 #[derive(Debug, Clone, Encode, Decode)]
 #[musli(Binary, name(type = u32))]
@@ -803,7 +801,7 @@ struct Conformer3 {
     #[musli(Binary, name = 2)]
     is_3d: bool,
     #[musli(Binary, name = 3)]
-    properties: Vec<(String, String)>,
+    properties: Vec<(Vec<u8>, Vec<u8>)>,
 }
 #[derive(Debug, Clone, Encode, Decode)]
 #[musli(Binary, name(type = u32))]
@@ -813,27 +811,27 @@ struct GroupDisplay {
     #[musli(Binary, name = 1)]
     field_position: Option<[u64; 2]>,
     #[musli(Binary, name = 2)]
-    tag: Option<String>,
+    tag: Option<Vec<u8>>,
 }
 #[derive(Debug, Clone, Encode, Decode)]
 #[musli(Binary, name(type = u32))]
 struct GroupData {
     #[musli(Binary, name = 0)]
-    field_name: Option<String>,
+    field_name: Option<Vec<u8>>,
     #[musli(Binary, name = 1)]
-    field_type: Option<String>,
+    field_type: Option<Vec<u8>>,
     #[musli(Binary, name = 2)]
-    field_info: Option<String>,
+    field_info: Option<Vec<u8>>,
     #[musli(Binary, name = 3)]
-    field_display: Option<String>,
+    field_display: Option<Vec<u8>>,
     #[musli(Binary, name = 4)]
-    units: Option<String>,
+    units: Option<Vec<u8>>,
     #[musli(Binary, name = 5)]
-    query_type: Option<String>,
+    query_type: Option<Vec<u8>>,
     #[musli(Binary, name = 6)]
-    query_op: Option<String>,
+    query_op: Option<Vec<u8>>,
     #[musli(Binary, name = 7)]
-    values: Vec<String>,
+    values: Vec<Vec<u8>>,
 }
 #[derive(Debug, Clone, Encode, Decode)]
 #[musli(Binary, name(type = u32))]
@@ -843,7 +841,7 @@ struct AttachPoint {
     #[musli(Binary, name = 1)]
     leaving: Option<u64>,
     #[musli(Binary, name = 2)]
-    label: Option<String>,
+    label: Option<Vec<u8>>,
     #[musli(Binary, name = 3)]
     order: Option<u32>,
 }
@@ -877,17 +875,17 @@ struct SGroup {
     #[musli(Binary, name = 9)]
     parent: Option<u64>,
     #[musli(Binary, name = 10)]
-    label: Option<String>,
+    label: Option<Vec<u8>>,
     #[musli(Binary, name = 11)]
     connection: Option<ConnectionRecord>,
     #[musli(Binary, name = 12)]
-    subtype: Option<String>,
+    subtype: Option<Vec<u8>>,
     #[musli(Binary, name = 13)]
     bracket_style: Option<BracketRecord>,
     #[musli(Binary, name = 14)]
-    expansion: Option<String>,
+    expansion: Option<Vec<u8>>,
     #[musli(Binary, name = 15)]
-    class: Option<String>,
+    class: Option<Vec<u8>>,
     #[musli(Binary, name = 16)]
     component_number: Option<u32>,
     #[musli(Binary, name = 17)]
@@ -899,9 +897,9 @@ struct SGroup {
     #[musli(Binary, name = 20)]
     cstates: Vec<CState>,
     #[musli(Binary, name = 21)]
-    properties: Vec<(String, String)>,
+    properties: Vec<(Vec<u8>, Value)>,
     #[musli(Binary, name = 22)]
-    data_fields: Vec<String>,
+    data_fields: Vec<Vec<u8>>,
     #[musli(Binary, name = 23)]
     head_crossing: Vec<u64>,
     #[musli(Binary, name = 24)]
@@ -927,7 +925,7 @@ struct PropertyList {
     #[musli(Binary, name = 0)]
     target: PropertyTargetRecord,
     #[musli(Binary, name = 1)]
-    name: String,
+    name: Vec<u8>,
     #[musli(Binary, name = 2)]
     values: Vec<Option<Value>>,
 }
@@ -952,11 +950,11 @@ struct MoleculeState {
     #[musli(Binary, name = 7)]
     stereo_groups: Vec<StereoRecord>,
     #[musli(Binary, name = 8)]
-    name: Option<String>,
+    name: Option<Vec<u8>>,
     #[musli(Binary, name = 9)]
-    properties: Vec<TextProperty>,
+    properties: Vec<Property>,
     #[musli(Binary, name = 10)]
-    sdf_fields: Vec<(String, String)>,
+    sdf_fields: Vec<(Vec<u8>, Vec<u8>)>,
     #[musli(Binary, name = 11)]
     sdf_lists: Vec<PropertyList>,
 }
@@ -1036,23 +1034,22 @@ fn bond_ids(values: Vec<u64>) -> Result<Vec<BondId>, PickleError> {
         .map(|v| index(v).map(BondId::new))
         .collect()
 }
-fn props<'a>(
-    values: impl Iterator<Item = (&'a str, &'a PropertyValue)>,
-    computed: &BTreeSet<String>,
-) -> Vec<Property> {
+fn props<'a>(values: impl Iterator<Item = (&'a PropertyText, &'a PropertyValue)>) -> Vec<Property> {
     values
         .map(|(key, value)| Property {
             key: key.as_bytes().to_vec(),
             value: value.into(),
-            computed: computed.contains(key),
+            computed: false,
         })
         .collect()
 }
-fn checked_props(values: Vec<Property>) -> Result<Vec<(String, PropertyValue, bool)>, PickleError> {
+fn checked_props(
+    values: Vec<Property>,
+) -> Result<Vec<(PropertyText, PropertyValue, bool)>, PickleError> {
     let values = values
         .into_iter()
         .map(|p| {
-            let key = text(p.key)?;
+            let key = PropertyText::from(p.key);
             Ok((key, p.value.into_model()?, p.computed))
         })
         .collect::<Result<Vec<_>, PickleError>>()?;
@@ -1064,7 +1061,9 @@ fn checked_props(values: Vec<Property>) -> Result<Vec<(String, PropertyValue, bo
     }
     Ok(values)
 }
-fn checked_text_props(values: Vec<(String, String)>) -> Result<Vec<(String, String)>, PickleError> {
+fn checked_text_props(
+    values: Vec<(Vec<u8>, Vec<u8>)>,
+) -> Result<Vec<(Vec<u8>, Vec<u8>)>, PickleError> {
     let mut seen = BTreeSet::new();
     for (key, _) in &values {
         if !seen.insert(key) {
@@ -1133,7 +1132,7 @@ impl From<&Atom> for AtomRecord {
             implicit_hydrogen: a.implicit_hydrogen(),
             explicit_hydrogens: a.explicit_hydrogens(),
             tracked_isotopes: a.tracked_isotopic_hydrogens().to_vec(),
-            properties: props(ordered_atom_properties(a), a.computed_prop_names()),
+            properties: props(ordered_atom_properties(a)),
             temporary_flags: a.temporary_flags(),
             pdb: a.pdb_residue_info().map(Into::into),
             attachment_order: a.template_attachment_order().map(|order| {
@@ -1225,7 +1224,7 @@ impl From<&Bond> for BondRecord {
             conjugated: b.is_conjugated(),
             stereo_atoms: b.stereo_atoms().map(|v| v.map(|id| id.index() as u64)),
             unknown_stereo: b.unknown_stereo(),
-            properties: props(ordered_bond_properties(b), b.computed_prop_names()),
+            properties: props(ordered_bond_properties(b)),
             temporary_flags: b.temporary_flags(),
         }
     }
@@ -1275,12 +1274,12 @@ impl From<&SubstanceGroup> for SGroup {
                 .collect(),
             parent_atoms: ids(g.parent_atoms(), AtomId::index),
             parent: g.parent().map(|p| p.index() as u64),
-            label: g.label().map(Into::into),
+            label: g.label().map(|v| v.as_bytes().to_vec()),
             connection: g.connection().map(Into::into),
-            subtype: g.subtype().map(Into::into),
+            subtype: g.subtype().map(|v| v.as_bytes().to_vec()),
             bracket_style: g.bracket_style().map(Into::into),
-            expansion: g.expansion_state().map(Into::into),
-            class: g.class().map(Into::into),
+            expansion: g.expansion_state().map(|v| v.as_bytes().to_vec()),
+            class: g.class().map(|v| v.as_bytes().to_vec()),
             component_number: g.component_number(),
             display: g.display().map(|d| GroupDisplay {
                 brackets: d
@@ -1289,17 +1288,17 @@ impl From<&SubstanceGroup> for SGroup {
                     .map(|b| b.points.map(|p| p.map(f64::to_bits)))
                     .collect(),
                 field_position: d.field_position.map(|p| p.map(f64::to_bits)),
-                tag: d.display_tag.clone(),
+                tag: d.display_tag.as_ref().map(|v| v.as_bytes().to_vec()),
             }),
             data: g.data().map(|d| GroupData {
-                field_name: d.field_name.clone(),
-                field_type: d.field_type.clone(),
-                field_info: d.field_info.clone(),
-                field_display: d.field_display.clone(),
-                units: d.units.clone(),
-                query_type: d.query_type.clone(),
-                query_op: d.query_op.clone(),
-                values: d.values.clone(),
+                field_name: d.field_name.as_ref().map(|v| v.as_bytes().to_vec()),
+                field_type: d.field_type.as_ref().map(|v| v.as_bytes().to_vec()),
+                field_info: d.field_info.as_ref().map(|v| v.as_bytes().to_vec()),
+                field_display: d.field_display.as_ref().map(|v| v.as_bytes().to_vec()),
+                units: d.units.as_ref().map(|v| v.as_bytes().to_vec()),
+                query_type: d.query_type.as_ref().map(|v| v.as_bytes().to_vec()),
+                query_op: d.query_op.as_ref().map(|v| v.as_bytes().to_vec()),
+                values: d.values.iter().map(|v| v.as_bytes().to_vec()).collect(),
             }),
             attachments: g
                 .attach_points()
@@ -1307,7 +1306,7 @@ impl From<&SubstanceGroup> for SGroup {
                 .map(|a| AttachPoint {
                     atom: a.atom.index() as u64,
                     leaving: a.leaving_atom.map(|v| v.index() as u64),
-                    label: a.label.clone(),
+                    label: a.label.as_ref().map(|v| v.as_bytes().to_vec()),
                     order: a.order,
                 })
                 .collect(),
@@ -1320,11 +1319,14 @@ impl From<&SubstanceGroup> for SGroup {
                 })
                 .collect(),
             properties: g
-                .props()
-                .iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
+                .property_records()
+                .map(|(k, v)| (k.as_bytes().to_vec(), v.into()))
                 .collect(),
-            data_fields: g.data_fields().to_vec(),
+            data_fields: g
+                .data_fields()
+                .iter()
+                .map(|v| v.as_bytes().to_vec())
+                .collect(),
             head_crossing: ids(g.head_crossing_bonds(), BondId::index),
             correspondence: ids(g.crossing_bond_correspondence(), BondId::index),
         }
@@ -1376,19 +1378,19 @@ impl SGroup {
                     .map(|p| SGroupBracket::new(p.map(|p| p.map(f64::from_bits))))
                     .collect(),
                 field_position: d.field_position.map(|p| p.map(f64::from_bits)),
-                display_tag: d.tag,
+                display_tag: d.tag.map(Into::into),
             });
         }
         if let Some(d) = self.data {
             g = g.with_data(SGroupData {
-                field_name: d.field_name,
-                field_type: d.field_type,
-                field_info: d.field_info,
-                field_display: d.field_display,
-                units: d.units,
-                query_type: d.query_type,
-                query_op: d.query_op,
-                values: d.values,
+                field_name: d.field_name.map(Into::into),
+                field_type: d.field_type.map(Into::into),
+                field_info: d.field_info.map(Into::into),
+                field_display: d.field_display.map(Into::into),
+                units: d.units.map(Into::into),
+                query_type: d.query_type.map(Into::into),
+                query_op: d.query_op.map(Into::into),
+                values: d.values.into_iter().map(Into::into).collect(),
             });
         }
 
@@ -1399,7 +1401,7 @@ impl SGroup {
                     Ok(SGroupAttachPoint {
                         atom: AtomId::new(index(a.atom)?),
                         leaving_atom: a.leaving.map(index).transpose()?.map(AtomId::new),
-                        label: a.label,
+                        label: a.label.map(Into::into),
                         order: a.order,
                     })
                 })
@@ -1427,8 +1429,10 @@ impl SGroup {
             }
             g = g.with_bond_role(bond, tag.into());
         }
-        for (k, v) in checked_text_props(self.properties)? {
-            g = g.with_prop(k, v);
+        for (k, v) in self.properties {
+            g = g
+                .with_prop(PropertyText::from(k), v.into_model()?)
+                .map_err(invalid)?;
         }
         for v in self.data_fields {
             g = g.with_data_field(v);
@@ -1554,7 +1558,7 @@ impl MoleculeState {
                     properties: c
                         .props()
                         .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .map(|(k, v)| (k.as_bytes().to_vec(), v.as_bytes().to_vec()))
                         .collect(),
                 })
                 .collect(),
@@ -1573,7 +1577,7 @@ impl MoleculeState {
                     properties: c
                         .props()
                         .iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .map(|(k, v)| (k.as_bytes().to_vec(), v.as_bytes().to_vec()))
                         .collect(),
                 })
                 .collect(),
@@ -1596,25 +1600,21 @@ impl MoleculeState {
                     bonds: ids(s.bonds(), BondId::index),
                 })
                 .collect(),
-            name: m.properties.name().map(Into::into),
-            properties: m
+            name: m.properties.name().map(|v| v.as_bytes().to_vec()),
+            properties: props(m.properties.ordered_props()),
+            sdf_fields: m
                 .properties
-                .props()
+                .sdf_data_fields()
                 .iter()
-                .map(|(k, v)| TextProperty {
-                    key: k.clone(),
-                    value: v.clone(),
-                    computed: m.properties.is_prop_computed(k),
-                })
+                .map(|(k, v)| (k.as_bytes().to_vec(), v.as_bytes().to_vec()))
                 .collect(),
-            sdf_fields: m.properties.sdf_data_fields().to_vec(),
             sdf_lists: m
                 .properties
                 .sdf_property_lists()
                 .iter()
                 .map(|p| PropertyList {
                     target: p.target().into(),
-                    name: p.name().into(),
+                    name: p.name().as_bytes().to_vec(),
                     values: p
                         .values()
                         .iter()
@@ -1727,9 +1727,9 @@ impl MoleculeState {
         }
         for p in self.properties {
             properties = if p.computed {
-                properties.with_computed_prop(p.key, p.value)
+                properties.with_computed_prop(PropertyText::from(p.key), p.value.into_model()?)
             } else {
-                properties.with_prop(p.key, p.value)
+                properties.with_prop(PropertyText::from(p.key), p.value.into_model()?)
             }
             .map_err(invalid)?;
         }
@@ -2024,7 +2024,7 @@ mod tests {
     }
 
     #[test]
-    fn archive20_sparse_roles_and_legacy_computed_collision_are_lossless() {
+    fn archive20_sparse_roles_and_reserved_property_states_are_lossless() {
         for explicit in [
             None,
             Some(SGroupBondRole::Crossing),
@@ -2042,13 +2042,11 @@ mod tests {
             r.properties = r
                 .properties
                 .with_prop("__computedProps", "opaque\0value")
-                .unwrap()
-                .with_computed_prop("rank", "12")
                 .unwrap();
             r.topology.atoms[0]
                 .set_prop("__computedProps", "opaque")
                 .unwrap();
-            r.topology.atoms[0].set_computed_prop("rank", 12).unwrap();
+            assert!(r.topology.atoms[0].set_computed_prop("rank", 12).is_err());
             let data = encode_molecule_binary(&input(&r)).unwrap();
             let restored = decode_molecule_binary(&data).unwrap();
             assert_eq!(restored.topology, r.topology, "{explicit:?}");
@@ -2194,16 +2192,16 @@ mod tests {
                 }
                 4 => {
                     s.atoms[0].properties = vec![Property {
-                        key: vec![0xff],
+                        key: vec![],
                         value: Value::Bool(true),
                         computed: false,
                     }]
                 }
                 _ => {
                     s.properties = vec![
-                        TextProperty {
+                        Property {
                             key: "duplicate".into(),
-                            value: "value".into(),
+                            value: Value::String(b"value".to_vec()),
                             computed: false,
                         };
                         2
@@ -2486,7 +2484,7 @@ mod tests {
             ],
             4,
         );
-        assert!(musli::storage::from_slice::<Value>(&[6, 0]).is_err());
+        assert!(musli::storage::from_slice::<Value>(&[7, 0]).is_err());
     }
 
     #[test]
@@ -2494,6 +2492,7 @@ mod tests {
         let mut r = fixture();
         let values = [
             PropertyValue::String("a\0中".into()),
+            PropertyValue::StringVector(vec![vec![0xff, 0].into(), "rank".into()]),
             PropertyValue::Int(i32::MIN),
             PropertyValue::UInt(u32::MAX),
             PropertyValue::IntVector(vec![i32::MIN, 0, i32::MAX]),
@@ -2503,7 +2502,7 @@ mod tests {
         ];
         for (i, v) in values.into_iter().enumerate() {
             r.topology.atoms[0]
-                .set_prop(format!("key\0{i}"), v)
+                .set_prop(PropertyText::from(vec![0xff, 0, i as u8]), v)
                 .unwrap();
         }
         let data = encode_molecule_binary(&input(&r)).unwrap();

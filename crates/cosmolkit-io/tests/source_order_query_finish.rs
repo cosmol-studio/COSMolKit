@@ -11,7 +11,7 @@ fn query_finish_retains_actual_first_and_complete_source_order() {
     let mut query = QueryGraph::from_parts(
         vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))],
         vec![],
-        Default::default(),
+        Vec::new(),
         vec![Conformer2D::new(9, vec![[3.0, 4.0]])],
         vec![
             Conformer3D::new(9, vec![[1.0, 2.0, -0.0]], false),

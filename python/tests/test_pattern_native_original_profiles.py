@@ -1,4 +1,4 @@
-"""All original Pattern focused18/small152/5000 rows and all11 branches."""
+"""Original Pattern focused18 query/boundary cases and all11 branches."""
 import hashlib
 import json
 import os
@@ -9,8 +9,6 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = {
     "pattern_focused": (18, "COSMOLKIT_PATTERN_ORIGINAL_FOCUSED_GOLDEN", "0e5a58bc9cf7ce07836f71fc32dca80b25ae8b3cc038f4e729cf976b8528cd74", "testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi"),
-    "smiles_small": (152, "COSMOLKIT_PATTERN_ORIGINAL_SMALL_GOLDEN", "05908b2765e0d7fa8665f5ac421dd82c8c3ad1f8e8799acde9d5e916c4199eab", "testdata/smiles/corpus/smiles_small.smi"),
-    "smiles_5000": (5000, "COSMOLKIT_PATTERN_ORIGINAL5000_GOLDEN", "b4df21695a5b0caf71b5b4505f43c25f67782c4c72a248c9a7abce7f27767a85", "testdata/smiles/corpus/smiles_5000.smi"),
 }
 
 

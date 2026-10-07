@@ -2723,10 +2723,10 @@ fn remove_extra_rings(
 
 fn rdkit_std_sort_rings_by_size(rings: &mut [Vec<usize>]) {
     // BEGIN RDKIT CPP FUNCTION FindRings::removeExtraRings
-    // RDKit✔️✔️: auto compRingSize = [](const auto &v1, const auto &v2) {
-    // RDKit✔️✔️:   return v1.size() < v2.size();
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: std::sort(res.begin(), res.end(), compRingSize);
+    // RDKit❗✔️: auto compRingSize = [](const auto &v1, const auto &v2) {
+    // RDKit❗✔️:   return v1.size() < v2.size();
+    // RDKit❗✔️: };
+    // RDKit❗✔️: std::sort(res.begin(), res.end(), compRingSize);
     // END RDKIT CPP FUNCTION FindRings::removeExtraRings
     crate::source_sort::sort_by(rings, |left, right| left.len() < right.len());
 }
@@ -3442,6 +3442,499 @@ mod selected_row_tests {
                 bond: 3,
                 bond_count: 3,
             })
+        );
+    }
+}
+
+pub(crate) fn preserves_appended_terminal_hydrogen_ring_prefix(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+) -> bool {
+    // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8:
+    // AddHs.cpp preserves ring state, then appends single-bond terminal H.
+    // RDKit✔️❌:   mol.clearComputedProps(false);
+    // RDKit✔️❌:   unsigned int stopIdx = mol.getNumAtoms();
+    // RDKit✔️❌:   for (unsigned int aidx = 0; aidx < stopIdx; ++aidx) {
+    // RDKit✔️❌:       newIdx = mol.addAtom(new Atom(1), false, true);
+    // RDKit✔️❌:       mol.addBond(aidx, newIdx, Bond::SINGLE);
+    // RingInfo.cpp source getters, already implemented by RingInfo above:
+    // RDKit✔️❌: const RingInfo::INT_VECT &RingInfo::atomMembers(unsigned int idx) const {
+    // RDKit✔️❌:   PRECONDITION(df_init, "RingInfo not initialized");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   static const INT_VECT emptyVect;
+    // RDKit✔️❌:   if (idx < d_atomMembers.size()) {
+    // RDKit✔️❌:     return d_atomMembers[idx];
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return emptyVect;
+    // RDKit✔️❌: }
+    // RDKit✔️❌: const RingInfo::INT_VECT &RingInfo::bondMembers(unsigned int idx) const {
+    // RDKit✔️❌:   PRECONDITION(df_init, "RingInfo not initialized");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   static const INT_VECT emptyVect;
+    // RDKit✔️❌:   if (idx < d_bondMembers.size()) {
+    // RDKit✔️❌:     return d_bondMembers[idx];
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return emptyVect;
+    // RDKit✔️❌: }
+    // This Rust-only detached input proof does not infer rings or chemistry.
+    // Exact suffix degree and neighbor-bond identity give a bijection of new
+    // atoms to new edges; no allocation or mutation is needed. Table/member
+    // IDs remain within the old source prefix. Complexity O(A+B+membership),
+    // constant extra space; source getter is O(1), hence the cost-gap marker.
+    let old_atoms = rings.atom_row_count();
+    let old_bonds = rings.bond_row_count();
+    let atom_count = topology.atoms.len();
+    let bond_count = topology.bonds.len();
+    if !rings.is_initialized()
+        || old_atoms >= atom_count
+        || old_bonds >= bond_count
+        || atom_count - old_atoms != bond_count - old_bonds
+    {
+        return false;
+    }
+    if topology.bonds[..old_bonds]
+        .iter()
+        .any(|bond| bond.begin().index() >= old_atoms || bond.end().index() >= old_atoms)
+    {
+        return false;
+    }
+    for atom in &topology.atoms[old_atoms..] {
+        let neighbors = topology.adjacency.neighbors_of(atom.id().index());
+        if atom.atomic_number() != 1 || neighbors.len() != 1 {
+            return false;
+        }
+        let neighbor = &neighbors[0];
+        if neighbor.atom_index >= old_atoms
+            || neighbor.bond.index() < old_bonds
+            || neighbor.bond.index() >= bond_count
+        {
+            return false;
+        }
+        let edge = &topology.bonds[neighbor.bond.index()];
+        if edge.order() != BondOrder::Single
+            || !((edge.begin() == atom.id() && edge.end().index() == neighbor.atom_index)
+                || (edge.end() == atom.id() && edge.begin().index() == neighbor.atom_index))
+        {
+            return false;
+        }
+    }
+    if topology.bonds[old_bonds..].iter().any(|bond| {
+        bond.order() != BondOrder::Single
+            || (bond.begin().index() >= old_atoms) == (bond.end().index() >= old_atoms)
+    }) {
+        return false;
+    }
+    let ring_count = rings.atom_rings.len();
+    if ring_count != rings.bond_rings.len()
+        || rings
+            .atom_rings
+            .iter()
+            .zip(&rings.bond_rings)
+            .any(|(atoms, bonds)| {
+                atoms.len() != bonds.len()
+                    || atoms.iter().any(|atom| atom.index() >= old_atoms)
+                    || bonds.iter().any(|bond| bond.index() >= old_bonds)
+            })
+        || rings
+            .atom_members
+            .iter()
+            .chain(&rings.bond_members)
+            .any(|row| row.iter().any(|member| *member >= ring_count))
+        || rings
+            .atom_ring_families
+            .iter()
+            .flatten()
+            .any(|atom| atom.index() >= old_atoms)
+        || rings
+            .bond_ring_families
+            .iter()
+            .flatten()
+            .any(|bond| bond.index() >= old_bonds)
+    {
+        return false;
+    }
+    true
+}
+
+#[cfg(test)]
+mod preserved_terminal_hydrogen_prefix_tests {
+    use super::*;
+    use crate::{DoubleBondStereoError, PotentialStereoError, ValenceAssignment};
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec, Element};
+
+    fn topology(elements: &[Element], edges: &[(usize, usize, BondOrder)]) -> TopologyBlock {
+        let atoms = elements
+            .iter()
+            .enumerate()
+            .map(|(id, element)| {
+                let mut atom = Atom::from_spec(AtomId::new(id), AtomSpec::new(*element));
+                atom.set_no_implicit(true);
+                atom
+            })
+            .collect();
+        let bonds = edges
+            .iter()
+            .enumerate()
+            .map(|(id, (begin, end, order))| {
+                Bond::from_spec(
+                    BondId::new(id),
+                    BondSpec::new(AtomId::new(*begin), AtomId::new(*end), *order),
+                )
+            })
+            .collect();
+        TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap()
+    }
+    fn alkene() -> TopologyBlock {
+        topology(
+            &[
+                Element::F,
+                Element::C,
+                Element::C,
+                Element::F,
+                Element::H,
+                Element::H,
+            ],
+            &[
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (1, 4, BondOrder::Single),
+                (2, 5, BondOrder::Single),
+            ],
+        )
+    }
+    fn scalar(t: &TopologyBlock) -> ValenceAssignment {
+        ValenceAssignment {
+            explicit_valence: vec![0; t.atoms.len()],
+            implicit_hydrogens: vec![0; t.atoms.len()],
+        }
+    }
+    fn rejected_by_all_three_guards(t: &TopologyBlock, r: &RingInfo) {
+        let before = r.clone();
+        let value = scalar(t);
+        let (reason, actual, expected) = if r.atom_row_count() != t.atoms.len() {
+            (
+                "atom membership row count mismatch",
+                r.atom_row_count(),
+                t.atoms.len(),
+            )
+        } else {
+            (
+                "bond membership row count mismatch",
+                r.bond_row_count(),
+                t.bonds.len(),
+            )
+        };
+        assert_eq!(
+            crate::potential_stereo(&mut t.clone(), &value, r, &Default::default()).unwrap_err(),
+            PotentialStereoError::InvalidRingInfo {
+                reason,
+                row: 0,
+                value: actual,
+                limit: expected
+            }
+        );
+        assert_eq!(
+            crate::set_double_bond_neighbor_directions(t.clone(), r, None).unwrap_err(),
+            DoubleBondStereoError::RingRowCount {
+                dimension: if reason.starts_with("atom") {
+                    "atom"
+                } else {
+                    "bond"
+                },
+                actual,
+                expected
+            }
+        );
+        // The internal bond candidate reaches the original bond guard after
+        // the same valid degree and used-H checks; earlier returns stay intact.
+        assert_eq!(
+            crate::potential_stereo::is_potential_bond(t, &value, r, &t.bonds[1]).unwrap_err(),
+            PotentialStereoError::InvalidRingInfo {
+                reason: "bond membership row count mismatch",
+                row: 0,
+                value: r.bond_row_count(),
+                limit: t.bonds.len()
+            }
+        );
+        assert_eq!(r, &before);
+    }
+
+    #[test]
+    fn all_three_existing_consumers_read_preserved_prefix_without_mutation() {
+        let t = alkene();
+        let r = RingInfo::new(RingFindType::SymmSssr, 4, 3);
+        let before = r.clone();
+        let value = scalar(&t);
+        assert!(preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
+        assert!(crate::potential_stereo(&mut t.clone(), &value, &r, &Default::default()).is_ok());
+        assert!(crate::potential_stereo::is_potential_bond(&t, &value, &r, &t.bonds[1]).unwrap());
+        assert!(crate::set_double_bond_neighbor_directions(t.clone(), &r, None).is_ok());
+        assert_eq!(r, before);
+        assert!(r.atom_members(AtomId::new(4)).is_empty());
+        assert!(r.bond_members(BondId::new(3)).is_empty());
+    }
+
+    #[test]
+    fn preserved_cycle_and_family_tables_keep_complete_source_carrier_identity() {
+        let t = topology(
+            &[Element::C, Element::C, Element::C, Element::H],
+            &[
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Single),
+                (2, 0, BondOrder::Single),
+                (0, 3, BondOrder::Single),
+            ],
+        );
+        let mut r = RingInfo::new(RingFindType::SymmSssr, 3, 3);
+        r.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
+        r.atom_ring_families = vec![vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]];
+        r.bond_ring_families = vec![vec![BondId::new(0), BondId::new(1), BondId::new(2)]];
+        let before = r.clone();
+        assert!(preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
+        assert!(
+            crate::potential_stereo(&mut t.clone(), &scalar(&t), &r, &Default::default()).is_ok()
+        );
+        assert!(crate::set_double_bond_neighbor_directions(t, &r, None).is_ok());
+        assert_eq!(r, before);
+    }
+
+    #[test]
+    fn malformed_heavy_and_oversized_rows_retain_all_original_guard_errors() {
+        let t = alkene();
+        for (atoms, bonds) in [(3, 3), (7, 3), (4, 6), (6, 4)] {
+            let r = RingInfo::new(RingFindType::SymmSssr, atoms, bonds);
+            assert!(!preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
+            rejected_by_all_three_guards(&t, &r);
+        }
+    }
+
+    #[test]
+    fn source_table_and_membership_indices_must_stay_in_original_prefix() {
+        let t = alkene();
+        let source = RingInfo::new(RingFindType::SymmSssr, 4, 3);
+        let mut suffix_atom = source.clone();
+        suffix_atom.atom_rings = vec![vec![AtomId::new(4)]];
+        suffix_atom.bond_rings = vec![vec![BondId::new(0)]];
+        let mut suffix_bond = source.clone();
+        suffix_bond.atom_rings = vec![vec![AtomId::new(0)]];
+        suffix_bond.bond_rings = vec![vec![BondId::new(3)]];
+        let mut bad_member = source.clone();
+        bad_member.atom_members[0].push(0);
+        let mut table_length = source.clone();
+        table_length.atom_rings.push(vec![]);
+        let mut table_size = source.clone();
+        table_size.atom_rings.push(vec![AtomId::new(0)]);
+        table_size.bond_rings.push(vec![]);
+        let mut suffix_family = source.clone();
+        suffix_family.atom_ring_families = vec![vec![AtomId::new(4)]];
+        let mut suffix_bond_family = source.clone();
+        suffix_bond_family.bond_ring_families = vec![vec![BondId::new(3)]];
+        for r in [
+            suffix_atom,
+            suffix_bond,
+            bad_member,
+            table_length,
+            table_size,
+            suffix_family,
+            suffix_bond_family,
+        ] {
+            assert!(!preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
+            rejected_by_all_three_guards(&t, &r);
+        }
+    }
+
+    #[test]
+    fn terminal_suffix_requires_exact_old_neighbor_and_appended_edge_accounting() {
+        let elements = [
+            Element::F,
+            Element::C,
+            Element::C,
+            Element::F,
+            Element::H,
+            Element::H,
+        ];
+        let r = RingInfo::new(RingFindType::SymmSssr, 4, 3);
+        let cases = [
+            // A suffix H-H component has no old-prefix neighbor.
+            vec![
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (4, 5, BondOrder::Single),
+                (0, 3, BondOrder::Single),
+            ],
+            // Degree-two suffix H and isolated suffix H have no bijection.
+            vec![
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (1, 4, BondOrder::Single),
+                (2, 4, BondOrder::Single),
+            ],
+            // Existing prefix edge touches suffix, even with terminal leaves.
+            vec![
+                (1, 4, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (0, 1, BondOrder::Single),
+                (2, 5, BondOrder::Single),
+            ],
+            // Extra appended old-old edge violates suffix row accounting.
+            vec![
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (1, 4, BondOrder::Single),
+                (2, 5, BondOrder::Single),
+                (0, 3, BondOrder::Single),
+            ],
+            // Source AddHs always appends SINGLE bonds.
+            vec![
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (1, 4, BondOrder::Double),
+                (2, 5, BondOrder::Single),
+            ],
+        ];
+        for edges in cases {
+            let t = topology(&elements, &edges);
+            assert!(!preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
+            let before = r.clone();
+            assert!(matches!(
+                crate::set_double_bond_neighbor_directions(t.clone(), &r, None),
+                Err(DoubleBondStereoError::RingRowCount {
+                    dimension: "atom",
+                    actual: 4,
+                    expected: 6
+                })
+            ));
+            assert!(matches!(
+                crate::potential_stereo(&mut t.clone(), &scalar(&t), &r, &Default::default()),
+                Err(PotentialStereoError::InvalidRingInfo {
+                    reason: "atom membership row count mismatch",
+                    value: 4,
+                    limit: 6,
+                    ..
+                })
+            ));
+            assert_eq!(r, before);
+        }
+        let mut heavy = elements;
+        heavy[4] = Element::C;
+        let t = topology(
+            &heavy,
+            &[
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (1, 4, BondOrder::Single),
+                (2, 5, BondOrder::Single),
+            ],
+        );
+        assert!(!preserves_appended_terminal_hydrogen_ring_prefix(&t, &r));
+        rejected_by_all_three_guards(&t, &r);
+    }
+
+    #[test]
+    fn multiple_double_bonds_preserve_exact_source_prefix_and_full_row_results() {
+        let t = topology(
+            &[
+                Element::F,
+                Element::C,
+                Element::C,
+                Element::C,
+                Element::C,
+                Element::F,
+                Element::H,
+                Element::H,
+                Element::H,
+                Element::H,
+            ],
+            &[
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Double),
+                (2, 3, BondOrder::Single),
+                (3, 4, BondOrder::Double),
+                (4, 5, BondOrder::Single),
+                (1, 6, BondOrder::Single),
+                (2, 7, BondOrder::Single),
+                (3, 8, BondOrder::Single),
+                (4, 9, BondOrder::Single),
+            ],
+        );
+        let fields = crate::assign_valence(&t, &Default::default()).unwrap();
+        let prefix = RingInfo::new(RingFindType::SymmSssr, 6, 5);
+        let full = RingInfo::new(RingFindType::SymmSssr, t.atoms.len(), t.bonds.len());
+        let before = prefix.clone();
+        let actual =
+            crate::potential_stereo(&mut t.clone(), &fields, &prefix, &Default::default()).unwrap();
+        let fully_sized =
+            crate::potential_stereo(&mut t.clone(), &fields, &full, &Default::default()).unwrap();
+        assert_eq!(actual, fully_sized);
+        assert_eq!(actual.stereo.len(), 2);
+        assert!(
+            actual
+                .stereo
+                .iter()
+                .all(|item| item.stereo_type == crate::PotentialStereoType::BondDouble)
+        );
+        for bond in [BondId::new(1), BondId::new(3)] {
+            assert!(
+                crate::potential_stereo::is_potential_bond(
+                    &t,
+                    &fields,
+                    &prefix,
+                    &t.bonds[bond.index()]
+                )
+                .unwrap()
+            );
+        }
+        assert_eq!(prefix, before);
+        assert_eq!(prefix.atom_row_count(), 6);
+        assert_eq!(prefix.bond_row_count(), 5);
+    }
+
+    #[test]
+    fn fully_sized_carriers_and_initialization_order_remain_unchanged() {
+        let t = alkene();
+        let full = RingInfo::new(RingFindType::SymmSssr, 6, 5);
+        assert!(!preserves_appended_terminal_hydrogen_ring_prefix(&t, &full));
+        assert!(
+            crate::potential_stereo(&mut t.clone(), &scalar(&t), &full, &Default::default())
+                .is_ok()
+        );
+        assert!(
+            crate::potential_stereo::is_potential_bond(&t, &scalar(&t), &full, &t.bonds[1])
+                .unwrap()
+        );
+        assert!(crate::set_double_bond_neighbor_directions(t.clone(), &full, None).is_ok());
+        let mut uninitialized = RingInfo::new(RingFindType::SymmSssr, 4, 3);
+        uninitialized.reset();
+        assert!(!preserves_appended_terminal_hydrogen_ring_prefix(
+            &t,
+            &uninitialized
+        ));
+        assert_eq!(
+            crate::set_double_bond_neighbor_directions(t.clone(), &uninitialized, None)
+                .unwrap_err(),
+            DoubleBondStereoError::RingInfoNotInitialized
+        );
+        assert_eq!(
+            crate::potential_stereo::is_potential_bond(
+                &t,
+                &scalar(&t),
+                &uninitialized,
+                &t.bonds[1]
+            )
+            .unwrap_err(),
+            PotentialStereoError::InvalidRingInfo {
+                reason: "ring information is not initialized",
+                row: 0,
+                value: 0,
+                limit: 0
+            }
         );
     }
 }

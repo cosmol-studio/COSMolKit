@@ -1,3 +1,10 @@
+// Test-only projection of unchanged UTF-8 spelling fixtures. Raw byte
+// boundaries are asserted without conversion in smarts_counted_bytes.rs.
+fn fixture_written_text(value: cosmolkit_model::PropertyText) -> String {
+    std::str::from_utf8(value.as_bytes())
+        .expect("unchanged UTF-8 writer fixture bytes")
+        .to_owned()
+}
 use std::collections::BTreeMap;
 
 use cosmolkit_model::{
@@ -23,7 +30,9 @@ fn typed_query_properties_keep_source_order_and_string_projection() {
     let query = QueryGraph::from_parts(vec![atom], vec![], BTreeMap::new(), vec![], vec![], vec![])
         .unwrap();
     assert_eq!(
-        query_graph_to_cx_smarts(&query, &Default::default()).unwrap(),
+        query_graph_to_cx_smarts(&query, &Default::default())
+            .map(fixture_written_text)
+            .unwrap(),
         "[#6] |$12$,atomProp:0.z.9:0.a.-0:0.flag.1|"
     );
 }
@@ -40,7 +49,7 @@ fn write_atom_node_with_params(
         Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
         predicate,
     );
-    query_atom_to_smarts(&atom, params)
+    query_atom_to_smarts(&atom, params).map(fixture_written_text)
 }
 
 fn write_atom(predicate: AtomQueryPredicate) -> String {
@@ -62,6 +71,7 @@ fn write_bond_node(
         params,
         atom_to_left_idx,
     )
+    .map(fixture_written_text)
 }
 
 fn write_bond(predicate: BondQueryPredicate) -> String {
@@ -355,7 +365,9 @@ fn q95_atom_recursion_dispatch_reuses_children_and_rejects_unwritten_leaves() {
         .set_prop("smilesSymbol", "C")
         .expect("fixed source writer property is valid");
     assert_eq!(
-        query_atom_to_smarts(&symbol_atom, &SmartsWriteParams::default()).unwrap(),
+        query_atom_to_smarts(&symbol_atom, &SmartsWriteParams::default())
+            .map(fixture_written_text)
+            .unwrap(),
         "[C]"
     );
 }
@@ -624,7 +636,9 @@ fn q98_query_traversal_classification_preserves_roots_components_and_ring_edges(
     )
     .expect("fixed disconnected query is valid");
     assert_eq!(
-        query_graph_to_smarts(&disconnected, &SmartsWriteParams::default()).unwrap(),
+        query_graph_to_smarts(&disconnected, &SmartsWriteParams::default())
+            .map(fixture_written_text)
+            .unwrap(),
         "[#8].[#6@@]"
     );
     let rooted = SmartsWriteParams {
@@ -632,7 +646,9 @@ fn q98_query_traversal_classification_preserves_roots_components_and_ring_edges(
         ..SmartsWriteParams::default()
     };
     assert_eq!(
-        query_graph_to_smarts(&disconnected, &rooted).unwrap(),
+        query_graph_to_smarts(&disconnected, &rooted)
+            .map(fixture_written_text)
+            .unwrap(),
         "[#6@@].[#8]"
     );
 
@@ -664,7 +680,9 @@ fn q98_query_traversal_classification_preserves_roots_components_and_ring_edges(
     )
     .expect("fixed ring query is valid");
     assert_eq!(
-        query_graph_to_smarts(&ring_and_component, &SmartsWriteParams::default()).unwrap(),
+        query_graph_to_smarts(&ring_and_component, &SmartsWriteParams::default())
+            .map(fixture_written_text)
+            .unwrap(),
         "[#6]1-[#8]-[#7]-1.[#9]"
     );
     let rooted_ring = SmartsWriteParams {
@@ -672,7 +690,9 @@ fn q98_query_traversal_classification_preserves_roots_components_and_ring_edges(
         ..SmartsWriteParams::default()
     };
     assert_eq!(
-        query_graph_to_smarts(&ring_and_component, &rooted_ring).unwrap(),
+        query_graph_to_smarts(&ring_and_component, &rooted_ring)
+            .map(fixture_written_text)
+            .unwrap(),
         "[#7]1-[#6]-[#8]-1.[#9]"
     );
 }
@@ -681,14 +701,18 @@ fn q98_query_traversal_classification_preserves_roots_components_and_ring_edges(
 fn q99_ring_numbering_preserves_source_closure_order_reuse_and_label_boundary() {
     let crossing_at_atom = carbon_query_graph(5, &[(0, 1), (1, 2), (2, 3), (3, 4), (2, 0), (4, 2)]);
     assert_eq!(
-        query_graph_to_smarts(&crossing_at_atom, &SmartsWriteParams::default()).unwrap(),
+        query_graph_to_smarts(&crossing_at_atom, &SmartsWriteParams::default())
+            .map(fixture_written_text)
+            .unwrap(),
         "[#6]1-[#6]-[#6]-12-[#6]-[#6]-2"
     );
 
     let separate_triangles =
         carbon_query_graph(6, &[(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)]);
     assert_eq!(
-        query_graph_to_smarts(&separate_triangles, &SmartsWriteParams::default()).unwrap(),
+        query_graph_to_smarts(&separate_triangles, &SmartsWriteParams::default())
+            .map(fixture_written_text)
+            .unwrap(),
         "[#6]1-[#6]-[#6]-1.[#6]1-[#6]-[#6]-1"
     );
 
@@ -696,7 +720,9 @@ fn q99_ring_numbering_preserves_source_closure_order_reuse_and_label_boundary() 
     boundary_edges.extend((0..10).map(|index| (11, index)));
     let ten_open_rings = carbon_query_graph(12, &boundary_edges);
     assert_eq!(
-        query_graph_to_smarts(&ten_open_rings, &SmartsWriteParams::default()).unwrap(),
+        query_graph_to_smarts(&ten_open_rings, &SmartsWriteParams::default())
+            .map(fixture_written_text)
+            .unwrap(),
         "[#6]1-[#6]2-[#6]3-[#6]4-[#6]5-[#6]6-[#6]7-[#6]8-[#6]9-[#6]%10-[#6]-[#6]-1-2-3-4-5-6-7-8-9-%10"
     );
 }
@@ -735,7 +761,9 @@ fn q100_graph_emission_preserves_branches_components_and_output_identity() {
     .expect("fixed branched query is valid");
 
     assert_eq!(
-        query_graph_to_smarts(&branched, &SmartsWriteParams::default()).unwrap(),
+        query_graph_to_smarts(&branched, &SmartsWriteParams::default())
+            .map(fixture_written_text)
+            .unwrap(),
         "[#6:10](-[#8:11])(-[#7:12])-[#9:13].[#17:14]"
     );
     let rooted = SmartsWriteParams {
@@ -743,7 +771,9 @@ fn q100_graph_emission_preserves_branches_components_and_output_identity() {
         ..SmartsWriteParams::default()
     };
     assert_eq!(
-        query_graph_to_smarts(&branched, &rooted).unwrap(),
+        query_graph_to_smarts(&branched, &rooted)
+            .map(fixture_written_text)
+            .unwrap(),
         "[#9:13]-[#6:10](-[#8:11])-[#7:12].[#17:14]"
     );
 }
@@ -777,7 +807,10 @@ fn q101_fragment_selection_validates_indices_and_retains_query_state() {
     let query = QueryGraph::from_parts(
         atoms,
         bonds,
-        BTreeMap::from([("source".to_owned(), "retained".to_owned())]),
+        Vec::from([(
+            cosmolkit_model::PropertyText::from("source"),
+            cosmolkit_model::PropertyValue::from("retained"),
+        )]),
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -796,6 +829,7 @@ fn q101_fragment_selection_validates_indices_and_retains_query_state() {
             &[AtomId::new(2), AtomId::new(0), AtomId::new(1)],
             Some(&[BondId::new(1)]),
         )
+        .map(fixture_written_text)
         .unwrap(),
         "[#6&-].[#8]-[#7]"
     );
@@ -806,20 +840,27 @@ fn q101_fragment_selection_validates_indices_and_retains_query_state() {
             &[AtomId::new(0), AtomId::new(1)],
             Some(&[BondId::new(1)]),
         )
+        .map(fixture_written_text)
         .unwrap(),
         "[#6&-].[#8]"
     );
 
     assert_eq!(
-        query_graph_fragment_to_smarts(&query, &rooted, &[], None).unwrap_err(),
+        query_graph_fragment_to_smarts(&query, &rooted, &[], None)
+            .map(fixture_written_text)
+            .unwrap_err(),
         SmartsWriteError::EmptyAtomSelection
     );
     assert_eq!(
-        query_graph_fragment_to_smarts(&query, &rooted, &[AtomId::new(0)], Some(&[]),).unwrap_err(),
+        query_graph_fragment_to_smarts(&query, &rooted, &[AtomId::new(0)], Some(&[]),)
+            .map(fixture_written_text)
+            .unwrap_err(),
         SmartsWriteError::EmptyBondSelection
     );
     assert_eq!(
-        query_graph_fragment_to_smarts(&query, &rooted, &[AtomId::new(3)], None,).unwrap_err(),
+        query_graph_fragment_to_smarts(&query, &rooted, &[AtomId::new(3)], None,)
+            .map(fixture_written_text)
+            .unwrap_err(),
         SmartsWriteError::FragmentAtomOutOfRange { atom: 3 }
     );
     assert_eq!(
@@ -828,7 +869,7 @@ fn q101_fragment_selection_validates_indices_and_retains_query_state() {
             &rooted,
             &[AtomId::new(0)],
             Some(&[BondId::new(2)]),
-        )
+        ).map(fixture_written_text)
         .unwrap_err(),
         SmartsWriteError::FragmentBondOutOfRange { bond: 2 }
     );
@@ -892,7 +933,9 @@ fn q102_cx_query_output_maps_properties_coordinates_stereo_and_supported_bonds()
     };
 
     assert_eq!(
-        query_graph_to_cx_smarts(&query, &rooted).unwrap(),
+        query_graph_to_cx_smarts(&query, &rooted)
+            .map(fixture_written_text)
+            .unwrap(),
         "[#7]~[#8]-[#6] |(3,4,5;1.25,2.5,;0,0,),$;;left$,$_AV:;mid;$,^2:0,atomProp:2.a&#46;b.v&#46;x,C:2.1,Z:0,a:0,2,o1:1|"
     );
     assert_eq!(
@@ -902,8 +945,132 @@ fn q102_cx_query_output_maps_properties_coordinates_stereo_and_supported_bonds()
             &[AtomId::new(0), AtomId::new(1)],
             Some(&[BondId::new(0)]),
         )
+        .map(fixture_written_text)
         .unwrap(),
         "[#6]->[#8] |(0,0,;1.25,2.5,),$left;$,$_AV:;mid$,atomProp:0.a&#46;b.v&#46;x,C:0.0,a:0,0,o1:1|"
     );
     assert_eq!(query, before);
+}
+
+#[test]
+fn source_cx_coordinates_follow_actual_mixed_conformer_order() {
+    use cosmolkit_model::{Conformer2D, CoordinateDimension};
+    let mut query = QueryGraph::from_parts(
+        vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))],
+        vec![],
+        BTreeMap::new(),
+        vec![Conformer2D::new(9, vec![[1.0, 2.0]])],
+        vec![Conformer3D::new(4, vec![[3.0, 4.0, 9.0]], true)],
+        vec![],
+    )
+    .unwrap();
+    query
+        .set_source_conformer_order(Some(vec![
+            CoordinateDimension::TwoD,
+            CoordinateDimension::ThreeD,
+        ]))
+        .unwrap();
+    let before = query.clone();
+    assert_eq!(
+        query_graph_to_cx_smarts(&query, &Default::default())
+            .map(fixture_written_text)
+            .unwrap(),
+        "[#6] |(1,2,)|"
+    );
+    assert_eq!(query, before);
+    query
+        .set_source_conformer_order(Some(vec![
+            CoordinateDimension::ThreeD,
+            CoordinateDimension::TwoD,
+        ]))
+        .unwrap();
+    assert_eq!(
+        query_graph_to_cx_smarts(&query, &Default::default())
+            .map(fixture_written_text)
+            .unwrap(),
+        "[#6] |(3,4,9)|"
+    );
+}
+
+#[test]
+fn source_cx_false_is3d_omits_z_without_discarding_xyz_storage() {
+    use cosmolkit_model::{Conformer2D, CoordinateDimension};
+    let mut query = QueryGraph::from_parts(
+        vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))],
+        vec![],
+        BTreeMap::new(),
+        vec![Conformer2D::new(9, vec![[1.0, 2.0]])],
+        vec![Conformer3D::new(4, vec![[3.0, 4.0, 9.0]], false)],
+        vec![],
+    )
+    .unwrap();
+    query
+        .set_source_conformer_order(Some(vec![
+            CoordinateDimension::ThreeD,
+            CoordinateDimension::TwoD,
+        ]))
+        .unwrap();
+    let before = query.clone();
+    assert_eq!(
+        query_graph_to_cx_smarts(&query, &Default::default())
+            .map(fixture_written_text)
+            .unwrap(),
+        "[#6] |(3,4,)|"
+    );
+    assert_eq!(query, before);
+    assert_eq!(query.conformers_3d()[0].coordinates(), &[[3.0, 4.0, 9.0]]);
+}
+
+#[test]
+fn source_cx_missing_mixed_conformer_order_is_a_typed_failure() {
+    use cosmolkit_model::{Conformer2D, CoordinateValidationError};
+    let query = QueryGraph::from_parts(
+        vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))],
+        vec![],
+        BTreeMap::new(),
+        vec![Conformer2D::new(9, vec![[1.0, 2.0]])],
+        vec![Conformer3D::new(4, vec![[3.0, 4.0, 9.0]], true)],
+        vec![],
+    )
+    .unwrap();
+    let error = query_graph_to_cx_smarts(&query, &Default::default()).unwrap_err();
+    assert!(matches!(
+        error,
+        SmartsWriteError::CxCoordinates(CoordinateValidationError::MissingSourceConformerOrder)
+    ));
+    assert!(
+        std::error::Error::source(&error)
+            .unwrap()
+            .downcast_ref::<CoordinateValidationError>()
+            .is_some()
+    );
+}
+
+#[test]
+fn concrete_smarts_valence_failure_keeps_native_cause_and_input() {
+    use cosmolkit_model::{CoordinateBlock, MoleculeProperties, ValenceError};
+    use std::error::Error;
+    let record = cosmolkit_smiles::parse_smiles("CC", &Default::default()).unwrap();
+    let mut topology = record.topology;
+    topology.bonds[0].set_order(BondOrder::Other);
+    let before = topology.clone();
+    let error = cosmolkit_search::topology_to_smarts(
+        &topology,
+        &CoordinateBlock::default(),
+        &MoleculeProperties::default(),
+        &Default::default(),
+        false,
+    )
+    .unwrap_err();
+    let SmartsWriteError::Traversal(ref traversal) = error else {
+        panic!("wrong error: {error:?}");
+    };
+    assert!(
+        matches!(traversal, cosmolkit_smiles::SmartsTraversalError::Valence(ValenceError::BadBondType { bond: Some(bond), order: BondOrder::Other }) if *bond == BondId::new(0))
+    );
+    assert!(matches!(
+        traversal.source().unwrap().downcast_ref::<ValenceError>(),
+        Some(ValenceError::BadBondType { .. })
+    ));
+    assert_eq!(topology, before);
 }

@@ -10,41 +10,55 @@ fn parse(input: &str) -> cosmolkit_smiles::SmilesRecord {
     })
 }
 
+fn fixture_property_text(text: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(text.as_bytes()).expect("original property fixture UTF-8 bytes")
+}
+
 fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
-    match value {
-        Some(PropertyValue::String(value)) => Some(value),
-        _ => None,
-    }
+    value.map(|value| {
+        fixture_property_text(value.as_string().expect("original String property kind"))
+    })
+}
+
+// These original fixtures compare UTF-8 source strings. Decode only at the
+// test observation boundary: invalid bytes fail instead of being substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
 }
 
 #[test]
 fn coordinates_lower_into_dimension_specific_typed_conformers() {
     let record = parse("CCC |(0,0;1,2,0.001;3,4)(5,6,0.0011)|");
-    assert_eq!(record.coordinates.conformers_2d.len(), 1);
-    assert_eq!(record.coordinates.conformers_3d.len(), 1);
+    // Pinned parse_coords always allocates Point3D; set3D(false) retains z.
+    assert_eq!(record.coordinates.conformers_2d.len(), 0);
+    assert_eq!(record.coordinates.conformers_3d.len(), 2);
     assert_eq!(
         record.coordinates.source_coordinate_dim,
         Some(CoordinateDimension::ThreeD)
     );
-    assert_eq!(record.coordinates.conformers_2d[0].id(), 0);
-    assert_eq!(
-        record.coordinates.conformers_2d[0].coordinates(),
-        &[[0.0, 0.0], [1.0, 2.0], [3.0, 4.0]]
-    );
-    assert_eq!(record.coordinates.conformers_3d[0].id(), 1);
+    assert_eq!(record.coordinates.conformers_3d[0].id(), 0);
+    assert!(!record.coordinates.conformers_3d[0].is_3d());
     assert_eq!(
         record.coordinates.conformers_3d[0].coordinates(),
+        &[[0.0, 0.0, 0.0], [1.0, 2.0, 0.001], [3.0, 4.0, 0.0]]
+    );
+    assert_eq!(record.coordinates.conformers_3d[1].id(), 1);
+    assert!(record.coordinates.conformers_3d[1].is_3d());
+    assert_eq!(
+        record.coordinates.conformers_3d[1].coordinates(),
         &[[5.0, 6.0, 0.0011], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
     );
 
     let truncated = parse("CC |(1,2;3,4;5,6)|");
+    assert_eq!(truncated.coordinates.conformers_2d.len(), 0);
+    assert!(!truncated.coordinates.conformers_3d[0].is_3d());
     assert_eq!(
-        truncated.coordinates.conformers_2d[0].coordinates(),
-        &[[1.0, 2.0], [3.0, 4.0]]
+        truncated.coordinates.conformers_3d[0].coordinates(),
+        &[[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]]
     );
     assert_eq!(
         truncated.coordinates.source_coordinate_dim,
-        Some(CoordinateDimension::TwoD)
+        Some(CoordinateDimension::ThreeD)
     );
 
     let error = parse_smiles("C |(1e309,0)|", &Default::default()).unwrap_err();
@@ -56,10 +70,15 @@ fn coordinates_lower_into_dimension_specific_typed_conformers() {
 #[test]
 fn coordinates_preserve_explicit_source_infinity_and_nan_tokens() {
     let record = parse("C |(inf,-nan)|");
-    let point = record.coordinates.conformers_2d[0].coordinates()[0];
+    // CX uses source Point3D storage even when the conformer is marked 2D.
+    assert!(record.coordinates.conformers_2d.is_empty());
+    assert_eq!(record.coordinates.conformers_3d.len(), 1);
+    assert!(!record.coordinates.conformers_3d[0].is_3d());
+    let point = record.coordinates.conformers_3d[0].coordinates()[0];
     assert_eq!(point[0], f64::INFINITY);
     assert!(point[1].is_nan());
     assert!(point[1].is_sign_negative());
+    assert_eq!(point[2].to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]
@@ -163,8 +182,8 @@ fn wedges_cover_all_directions_duplicate_rejection_and_cleanup() {
         assert_eq!(record.topology.bonds[0].begin(), AtomId::new(1));
         assert_eq!(record.topology.bonds[0].direction(), direction);
         assert_eq!(
-            string_property(record.topology.bonds[0].prop("_MolFileBondCfg")),
-            Some(cfg)
+            record.topology.bonds[0].prop("_MolFileBondCfg"),
+            Some(&PropertyValue::UInt(cfg.parse().unwrap()))
         );
         assert_eq!(record.properties.prop("_needsDetectAtomStereo"), None);
     }
@@ -175,8 +194,8 @@ fn wedges_cover_all_directions_duplicate_rejection_and_cleanup() {
     let terminal = parse("C=C |wU:0.0|");
     assert_eq!(terminal.topology.bonds[0].order(), BondOrder::Double);
     assert_eq!(
-        string_property(terminal.topology.bonds[0].prop("_MolFileBondCfg")),
-        Some("1")
+        terminal.topology.bonds[0].prop("_MolFileBondCfg"),
+        Some(&PropertyValue::UInt(1))
     );
     assert_eq!(terminal.properties.prop("_needsDetectAtomStereo"), None);
 }
@@ -219,7 +238,7 @@ fn radicals_link_nodes_and_variable_attachments_preserve_order_and_errors() {
 
     let link = parse("C1CC1.CCC |LN:1:1.3,4:2.5.3.5|");
     assert_eq!(
-        link.properties.prop("_MolFileLinkNodes"),
+        string_property(link.properties.prop("_molLinkNodes")),
         Some("1 3 2 2 1 2 3|2 5 2 5 4 5 6")
     );
     assert!(matches!(
@@ -248,11 +267,41 @@ fn data_polymer_and_hierarchy_records_install_typed_sgroups() {
     let group = &data.topology.substance_groups[0];
     assert_eq!(group.kind(), &SubstanceGroupKind::Data);
     assert_eq!(group.atoms(), &[AtomId::new(2), AtomId::new(1)]);
-    assert_eq!(group.data().unwrap().field_name.as_deref(), Some("FIELD"));
-    assert_eq!(group.data().unwrap().field_info.as_deref(), Some("unit"));
-    assert_eq!(group.data().unwrap().query_op.as_deref(), Some("like"));
-    assert_eq!(group.data().unwrap().values, ["value"]);
-    assert_eq!(group.data_fields(), &["value"]);
+    assert_eq!(
+        group
+            .data()
+            .unwrap()
+            .field_name
+            .as_ref()
+            .map(fixture_property_text),
+        Some("FIELD")
+    );
+    assert_eq!(
+        group
+            .data()
+            .unwrap()
+            .field_info
+            .as_ref()
+            .map(fixture_property_text),
+        Some("unit")
+    );
+    assert_eq!(
+        group
+            .data()
+            .unwrap()
+            .query_op
+            .as_ref()
+            .map(fixture_property_text),
+        Some("like")
+    );
+    assert_eq!(
+        group.data().unwrap().values,
+        [cosmolkit_model::PropertyText::from("value")]
+    );
+    assert_eq!(
+        group.data_fields(),
+        &[cosmolkit_model::PropertyText::from("value")]
+    );
 
     let expected_kinds = [
         ("n", SubstanceGroupKind::StructuralRepeatUnit),
@@ -264,8 +313,8 @@ fn data_polymer_and_hierarchy_records_install_typed_sgroups() {
         ("mix", SubstanceGroupKind::MixtureComponent),
         ("f", SubstanceGroupKind::Formulation),
         ("any", SubstanceGroupKind::AnyPolymer),
-        ("gen", SubstanceGroupKind::Generic("GEN".to_owned())),
-        ("c", SubstanceGroupKind::Generic("COM".to_owned())),
+        ("gen", SubstanceGroupKind::Generic("GEN".into())),
+        ("c", SubstanceGroupKind::Generic("COM".into())),
         ("grf", SubstanceGroupKind::Graft),
         ("alt", SubstanceGroupKind::Copolymer),
         ("ran", SubstanceGroupKind::Copolymer),
@@ -276,16 +325,20 @@ fn data_polymer_and_hierarchy_records_install_typed_sgroups() {
         let record = parse(&input);
         let group = &record.topology.substance_groups[0];
         assert_eq!(group.kind(), &expected, "{code}");
-        assert_eq!(group.label(), Some("label"), "{code}");
+        assert_eq!(
+            group.label().map(fixture_property_text),
+            Some("label"),
+            "{code}"
+        );
         assert_eq!(
             group.connection(),
             Some(&SGroupConnection::HeadToTail),
             "{code}"
         );
         match code {
-            "alt" => assert_eq!(group.subtype(), Some("ALT")),
-            "ran" => assert_eq!(group.subtype(), Some("RAN")),
-            "blk" => assert_eq!(group.subtype(), Some("BLO")),
+            "alt" => assert_eq!(group.subtype().map(fixture_property_text), Some("ALT")),
+            "ran" => assert_eq!(group.subtype().map(fixture_property_text), Some("RAN")),
+            "blk" => assert_eq!(group.subtype().map(fixture_property_text), Some("BLO")),
             _ => {}
         }
     }
@@ -303,9 +356,8 @@ fn data_polymer_and_hierarchy_records_install_typed_sgroups() {
     assert_eq!(
         hierarchy.topology.substance_groups[1]
             .props()
-            .get("PARENT")
-            .map(String::as_str),
-        Some("1")
+            .get("PARENT".as_bytes()),
+        Some(&PropertyValue::UInt(1))
     );
     assert!(
         hierarchy
@@ -313,7 +365,10 @@ fn data_polymer_and_hierarchy_records_install_typed_sgroups() {
             .substance_groups
             .iter()
             .enumerate()
-            .all(|(index, group)| group.props().get("_cxsmilesindex") == Some(&index.to_string()))
+            .all(
+                |(index, group)| group.props().get("_cxsmilesindex".as_bytes())
+                    == Some(&PropertyValue::UInt(index as u32))
+            )
     );
 
     let missing_child = parse("CC |SgD:9:SKIP:x::::,SgD:0:PARENT:p::::,SgH:1:0|");
@@ -374,21 +429,32 @@ fn cx_polymer_crossings_lower_and_write_as_ordered_typed_references() {
             BondId::new(0),
         ]
     );
-    assert_eq!(group.props().get("XBHEAD"), None);
-    assert_eq!(group.props().get("XBCORR"), None);
-    assert_eq!(group.props().get("_headCrossings"), None);
-    assert_eq!(group.props().get("_tailCrossings"), None);
+    assert_eq!(group.props().get("XBHEAD".as_bytes()), None);
+    assert_eq!(group.props().get("XBCORR".as_bytes()), None);
+    assert_eq!(group.props().get("_headCrossings".as_bytes()), None);
+    assert_eq!(group.props().get("_tailCrossings".as_bytes()), None);
     assert_eq!(
-        group.props().get("LABEL").map(String::as_str),
+        group
+            .props()
+            .get("LABEL".as_bytes())
+            .map(|value| fixture_property_text(value.as_string().expect("source String metadata"))),
         Some("repeat")
     );
-    assert_eq!(group.props().get("CONNECT").map(String::as_str), Some("HT"));
+    assert_eq!(
+        group
+            .props()
+            .get("CONNECT".as_bytes())
+            .map(|value| fixture_property_text(value.as_string().expect("source String metadata"))),
+        Some("HT")
+    );
     assert_eq!(
         string_property(record.topology.atoms[4].prop("keep")),
         Some("value")
     );
 
-    let output = write_cx_smiles(&record).expect("typed crossings write through CXSMILES");
+    let output = write_cx_smiles(&record)
+        .map(fixture_writer_text)
+        .expect("typed crossings write through CXSMILES");
     assert!(
         output.contains("Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:"),
         "{output}"
@@ -421,11 +487,15 @@ fn cx_polymer_crossings_follow_batch_bond_remap_and_fail_structurally_if_stale()
         ]
     );
     record.topology = remapped;
-    let output = write_cx_smiles(&record).expect("remapped crossings remain writable");
+    let output = write_cx_smiles(&record)
+        .map(fixture_writer_text)
+        .expect("remapped crossings remain writable");
     assert!(output.contains("Sg:n:"), "{output}");
 
     record.topology.substance_groups[0].push_head_crossing_bond(BondId::new(99));
-    let error = write_cx_smiles(&record).expect_err("stale typed reference must be rejected");
+    let error = write_cx_smiles(&record)
+        .map(fixture_writer_text)
+        .expect_err("stale typed reference must be rejected");
     assert!(
         matches!(error, SmilesParseError::Model(ref message)
             if message == "substance group SubstanceGroupId(0) references bond 99, out of range for 4 bonds"),
@@ -451,7 +521,10 @@ fn query_only_and_late_lowering_failures_are_atomic_in_both_parser_modes() {
         .unwrap();
         assert_eq!(recovered.topology.atoms[0].prop("atomLabel"), None);
         assert_eq!(recovered.topology.atoms[1].prop("atomLabel"), None);
-        assert_eq!(recovered.properties.prop("_CXSMILES_Data"), Some(""));
+        assert_eq!(
+            recovered.properties.prop("_CXSMILES_Data"),
+            Some(&PropertyValue::from(""))
+        );
         assert_eq!(recovered.properties.name(), None);
     }
 
@@ -476,7 +549,10 @@ fn query_only_and_late_lowering_failures_are_atomic_in_both_parser_modes() {
             .all(|atom| atom.prop("atomLabel").is_none())
     );
     assert_eq!(recovered.topology.bonds[0].order(), BondOrder::Single);
-    assert_eq!(recovered.properties.prop("_CXSMILES_Data"), Some(""));
+    assert_eq!(
+        recovered.properties.prop("_CXSMILES_Data"),
+        Some(&PropertyValue::from(""))
+    );
 }
 
 #[test]
@@ -505,6 +581,9 @@ fn unknown_records_are_ignored_and_parser_only_indices_are_removed() {
             .substance_groups
             .iter()
             .enumerate()
-            .all(|(index, group)| group.props().get("_cxsmilesindex") == Some(&index.to_string()))
+            .all(
+                |(index, group)| group.props().get("_cxsmilesindex".as_bytes())
+                    == Some(&PropertyValue::UInt(index as u32))
+            )
     );
 }

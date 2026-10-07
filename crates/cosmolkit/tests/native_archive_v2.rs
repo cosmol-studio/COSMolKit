@@ -4,12 +4,35 @@ use cosmolkit::{
 };
 
 #[test]
+fn wrong_kind_computed_list_is_rejected_like_rdkit_without_mutation() {
+    // RDKit 2026.03.1: SetProp("__computedProps", "opaque") followed by
+    // Mol.SetIntProp("rank", 12, true) throws bad_any_cast. A native archive
+    // roundtrip fixture must not manufacture that invalid computed operation.
+    let mut properties = MoleculeProperties::default()
+        .with_prop("__computedProps", "opaque")
+        .unwrap();
+    let before = properties.clone();
+    assert!(matches!(
+        properties.set_computed_prop("rank", PropertyValue::Int(12)),
+        Err(cosmolkit::MoleculePropertyError::ComputedListKind(_))
+    ));
+    assert_eq!(properties, before);
+    let atom = AtomSpec::new(Element::C)
+        .with_prop("__computedProps", "opaque")
+        .unwrap();
+    assert!(matches!(
+        atom.with_computed_prop("rank", PropertyValue::Int(12)),
+        Err(cosmolkit::AtomPropertyError::ComputedListKind(_))
+    ));
+}
+
+#[test]
 fn public_archive20_roundtrip_preserves_state_and_does_not_detach_input() {
     let topology = TopologyBlock::try_from_parts(
         vec![Atom::from_spec(
             AtomId::new(0),
             AtomSpec::new(Element::C)
-                .with_prop("__computedProps", "opaque")
+                .with_prop("opaque", "kept\0exact")
                 .unwrap()
                 .with_computed_prop("rank", PropertyValue::Int(12))
                 .unwrap(),
@@ -26,7 +49,7 @@ fn public_archive20_roundtrip_preserves_state_and_does_not_detach_input() {
         ..Default::default()
     };
     let properties = MoleculeProperties::default()
-        .with_prop("__computedProps", "opaque\0value")
+        .with_prop("opaque", "opaque\0value")
         .unwrap()
         .with_computed_prop("mass", "12")
         .unwrap()

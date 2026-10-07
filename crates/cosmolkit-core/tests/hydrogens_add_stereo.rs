@@ -217,9 +217,9 @@ fn skipped_query_parent_retains_explicit_count_tracking_and_computed_state() {
     );
     assert_eq!(
         source.atoms[0].prop("query-cache"),
-        Some(&PropertyValue::String("keep".to_owned()))
+        Some(&PropertyValue::String("keep".into()))
     );
-    assert!(source.atoms[0].is_prop_computed("query-cache"));
+    assert!(source.atoms[0].is_prop_computed("query-cache").unwrap());
     assert_eq!(source.atoms[0].explicit_hydrogens(), 1);
     assert_eq!(source.atoms[0].tracked_isotopic_hydrogens(), &[2]);
     let source_snapshot = source.clone();
@@ -250,7 +250,13 @@ fn skipped_query_parent_retains_explicit_count_tracking_and_computed_state() {
     // AddHs.cpp:532-642 clears computed properties before skipQueries;
     // ROMol.cpp:588-603 applies that clear to ALL atoms and bonds.
     assert_eq!(output.topology.atoms[0].prop("query-cache"), None);
-    assert!(output.topology.atoms[0].computed_prop_names().is_empty());
+    assert!(
+        output.topology.atoms[0]
+            .computed_prop_names()
+            .unwrap()
+            .expect("cleared computed StringVector exists")
+            .is_empty()
+    );
     assert!(output.warnings.is_empty());
 }
 
@@ -284,14 +290,27 @@ fn molecule_properties_are_preserved_cleared_and_projected_through_append_mappin
     )
     .unwrap();
 
-    assert_eq!(output.properties.name(), Some("named"));
+    assert_eq!(
+        output.properties.name().map(|v| v.as_bytes()),
+        Some(b"named".as_slice())
+    );
     assert_eq!(
         output.properties.sdf_data_fields(),
         &[("raw".into(), "field".into())]
     );
-    assert_eq!(output.properties.prop("ordinary"), Some("keep"));
+    assert_eq!(
+        output.properties.prop("ordinary"),
+        Some(&PropertyValue::String("keep".into()))
+    );
     assert_eq!(output.properties.prop("computed"), None);
-    assert!(output.properties.computed_prop_names().is_empty());
+    assert!(
+        output
+            .properties
+            .computed_prop_names()
+            .unwrap()
+            .expect("cleared computed StringVector exists")
+            .is_empty()
+    );
     let lists = output.properties.sdf_property_lists();
     assert_eq!(lists[0].values(), &[Some("a0".into()), None, None]);
     assert_eq!(lists[1].values(), &[Some("b0".into()), None]);
@@ -384,11 +403,11 @@ fn chiral_state_stereo_groups_sgroups_and_old_bond_properties_are_preserved() {
     assert_eq!(output.topology.atoms[0].chiral_permutation(), Some(4));
     assert_eq!(
         output.topology.atoms[0].prop("atom-ordinary"),
-        Some(&PropertyValue::String("keep".to_owned()))
+        Some(&PropertyValue::String("keep".into()))
     );
     assert_eq!(
         output.topology.bonds[0].prop("bond-ordinary"),
-        Some(&PropertyValue::String("keep".to_owned()))
+        Some(&PropertyValue::String("keep".into()))
     );
     assert!(
         output

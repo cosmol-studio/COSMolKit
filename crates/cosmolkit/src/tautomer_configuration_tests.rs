@@ -129,8 +129,13 @@ fn canonicalization_and_factories_honor_options_without_mutating_configuration_o
         .with_reassign_stereo(true);
     let options = p.policy;
     let selected = source.canonical_tautomer_with_params(&p).unwrap();
-    assert_eq!(selected.to_smiles().unwrap(), "CC(C)=O");
-    assert_eq!(selected.property("source_id"), Some("canonical-options"));
+    assert_eq!(selected.to_smiles().unwrap().as_bytes(), b"CC(C)=O");
+    assert_eq!(
+        selected.property("source_id"),
+        Some(&cosmolkit_model::PropertyValue::String(
+            "canonical-options".into()
+        ))
+    );
     assert_eq!(p.policy, options);
     assert!(p.reassign_stereo());
     assert_eq!(source, before);
@@ -141,8 +146,12 @@ fn canonicalization_and_factories_custom_scorer_selects_from_the_sole_enumeratio
     impl TautomerScorer for Scorer {
         fn score(&self, m: TautomerMoleculeView<'_>) -> Result<i32, TautomerRunError> {
             let key = m.to_smiles()?;
-            self.0.lock().unwrap().push(key.clone());
-            Ok(if key == "C=C(C)O" { 100 } else { -100 })
+            self.0.lock().unwrap().push(fixed_key_text(&key).to_owned());
+            Ok(if key.as_bytes() == b"C=C(C)O" {
+                100
+            } else {
+                -100
+            })
         }
     }
     let source = Molecule::from_smiles("CC(C)=O").unwrap();
@@ -154,8 +163,11 @@ fn canonicalization_and_factories_custom_scorer_selects_from_the_sole_enumeratio
     let mut calls = scorer.0.lock().unwrap().clone();
     calls.sort();
     assert_eq!(calls, ["C=C(C)O", "CC(C)=O"]);
-    assert_eq!(selected.to_smiles().unwrap(), "C=C(C)O");
-    assert_eq!(selected.property("_StereochemDone"), Some("1"));
+    assert_eq!(selected.to_smiles().unwrap().as_bytes(), b"C=C(C)O");
+    assert_eq!(
+        selected.property("_StereochemDone"),
+        Some(&cosmolkit_model::PropertyValue::Int(1))
+    );
     assert_eq!(source, before);
 }
 #[test]
@@ -169,7 +181,7 @@ fn canonicalization_and_factories_are_independent_of_input_tautomer_and_atom_ord
             .unwrap()
     });
     assert!(endpoints.iter().all(|s| s == &endpoints[0]));
-    assert_eq!(endpoints[0], "CC(C)=O");
+    assert_eq!(endpoints[0].as_bytes(), b"CC(C)=O");
 }
 #[test]
 fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state() {
@@ -190,7 +202,10 @@ fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state
             true,
         )],
         source_coordinate_dim: None,
-        source_conformer_order: None,
+        source_conformer_order: Some(vec![
+            cosmolkit_model::CoordinateDimension::TwoD,
+            cosmolkit_model::CoordinateDimension::ThreeD,
+        ]),
     };
     let props = molecule
         .properties()
@@ -210,7 +225,7 @@ fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state
     let original_coordinates = source.coordinate_block_runtime().clone();
     let original_properties = source.properties().clone();
     let selected = source.canonical_tautomer().unwrap();
-    assert_eq!(selected.to_smiles().unwrap(), "CC(C)=O");
+    assert_eq!(selected.to_smiles().unwrap().as_bytes(), b"CC(C)=O");
     assert_ne!(selected.bonds(), source.bonds());
     let enumeration = source.enumerate_tautomers().unwrap();
     assert_eq!(enumeration.len(), 2);
@@ -219,6 +234,17 @@ fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state
     let candidates = enumeration.iter().cloned().collect::<Vec<_>>();
     let candidates_before = candidates.clone();
     let from_iterable = canonical_tautomer_from_molecules(&candidates).unwrap();
+    // Source sanitize clears computed entries before recreating numArom,
+    // and source assignStereochemistry appends its Int(1) success marker.
+    // Preserve every native value, metadata vector, and insertion position.
+    let mut expected_properties = original_properties.clone();
+    expected_properties.clear_computed_props().unwrap();
+    expected_properties
+        .set_computed_prop("numArom", 0_i32)
+        .unwrap();
+    expected_properties
+        .set_computed_prop("_StereochemDone", 1_i32)
+        .unwrap();
     for replacement in [&selected, &from_enumeration, &from_iterable] {
         assert_eq!(replacement.atoms(), selected.atoms());
         assert_eq!(replacement.bonds(), selected.bonds());
@@ -226,7 +252,7 @@ fn canonicalization_and_factories_canonical_selection_paths_preserve_outer_state
             replacement.coordinate_block_runtime(),
             &original_coordinates
         );
-        assert_eq!(replacement.properties(), &original_properties);
+        assert_eq!(replacement.properties(), &expected_properties);
         assert!(
             replacement
                 .derived_cache_runtime()
@@ -271,4 +297,8 @@ fn enumeration_matches_pcs_fused_ring_max_transform_boundary() {
         result.status(),
         TautomerEnumerationStatus::MaxTransformsReached
     );
+}
+
+fn fixed_key_text(key: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(key.as_bytes()).expect("original fixed ASCII test observation")
 }

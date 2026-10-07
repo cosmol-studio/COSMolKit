@@ -103,7 +103,7 @@ pub(crate) fn prepare_morgan_environment<'a>(
     let assigned_topology =
         assign_legacy_stereochemistry_for_depiction(topology.clone(), valence, rings)?;
     let mut assigned_properties = properties.clone();
-    assigned_properties.set_computed_prop("_StereochemDone", "1")?;
+    assigned_properties.set_computed_prop("_StereochemDone", 1_i32)?;
 
     Ok(PreparedMorganEnvironment {
         topology: Cow::Owned(assigned_topology),
@@ -142,9 +142,15 @@ mod tests {
     }
 
     fn cip_code(topology: &TopologyBlock, atom_index: usize) -> Option<&str> {
-        topology.atoms[atom_index]
-            .prop("_CIPCode")
-            .map(|value| value.as_string().expect("fixed CIP label is a string"))
+        topology.atoms[atom_index].prop("_CIPCode").map(|value| {
+            std::str::from_utf8(
+                value
+                    .as_string()
+                    .expect("fixed CIP label is a string")
+                    .as_bytes(),
+            )
+            .expect("fixed CIP label is UTF8")
+        })
     }
 
     #[test]
@@ -189,18 +195,37 @@ mod tests {
                         input_cip
                     };
                     assert_eq!(
-                        prepared.topology.atoms[1]
-                            .prop("_CIPCode")
-                            .map(|value| value.as_string().unwrap()),
+                        prepared.topology.atoms[1].prop("_CIPCode").map(|value| {
+                            std::str::from_utf8(value.as_string().unwrap().as_bytes())
+                                .expect("fixed CIP label is UTF8")
+                        }),
                         expected_cip,
                         "include_chirality={include_chirality}, done={done_value:?}, cip={input_cip:?}: CIP"
                     );
                     if source_assigns {
-                        assert_eq!(prepared.properties().prop("_StereochemDone"), Some("1"));
-                        assert!(prepared.properties().is_prop_computed("_StereochemDone"));
+                        assert_eq!(
+                            prepared.properties().prop("_StereochemDone"),
+                            Some(&cosmolkit_model::PropertyValue::Int(1))
+                        );
+                        assert!(
+                            prepared
+                                .properties()
+                                .is_prop_computed("_StereochemDone")
+                                .unwrap()
+                        );
                     } else {
-                        assert_eq!(prepared.properties().prop("_StereochemDone"), done_value);
-                        assert!(!prepared.properties().is_prop_computed("_StereochemDone"));
+                        assert_eq!(
+                            prepared.properties().prop("_StereochemDone"),
+                            done_value
+                                .map(|value| cosmolkit_model::PropertyValue::String(value.into()))
+                                .as_ref()
+                        );
+                        assert!(
+                            !prepared
+                                .properties()
+                                .is_prop_computed("_StereochemDone")
+                                .unwrap()
+                        );
                     }
                     assert_eq!(record.topology, original_topology);
                     assert_eq!(record.properties, original_properties);
@@ -218,7 +243,10 @@ mod tests {
             assert_eq!(
                 prepared.topology.atoms[1]
                     .prop("_CIPCode")
-                    .map(|value| value.as_string().unwrap()),
+                    .map(
+                        |value| std::str::from_utf8(value.as_string().unwrap().as_bytes())
+                            .expect("fixed CIP label is UTF8")
+                    ),
                 Some(expected_cip),
                 "pinned legacy label for {smiles}"
             );

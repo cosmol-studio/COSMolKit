@@ -1,10 +1,18 @@
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+}
+fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+    fixture_text(value.as_string().expect("original string fixture kind"))
+}
 use cosmolkit_model::{
     AtomId, Bond, BondDirection, BondId, BondOrder, BondSpec, BondStereo, BondValueError,
     PropertyValue,
 };
 
 fn string_prop(value: Option<&PropertyValue>) -> Option<&str> {
-    value.and_then(|value| value.as_string().ok())
+    value
+        .and_then(|value| value.as_string().ok())
+        .map(fixture_text)
 }
 
 fn full_spec() -> BondSpec {
@@ -44,7 +52,7 @@ fn bond_spec_covers_defaults_builders_validation_and_remapping() {
     assert_eq!(default.stereo_atoms(), None);
     assert!(!default.unknown_stereo());
     assert!(default.props().is_empty());
-    assert!(default.computed_prop_names().is_empty());
+    assert!(default.computed_prop_names().unwrap().is_none());
     assert_eq!(default.validate(), Ok(()));
 
     let full = full_spec();
@@ -58,7 +66,7 @@ fn bond_spec_covers_defaults_builders_validation_and_remapping() {
     assert_eq!(full.stereo_atoms(), Some([AtomId::new(0), AtomId::new(4)]));
     assert!(full.unknown_stereo());
     assert_eq!(string_prop(full.prop("ordinary")), Some("kept"));
-    assert!(full.is_prop_computed("computed"));
+    assert!(full.is_prop_computed("computed").unwrap());
     assert_eq!(full.validate(), Ok(()));
 
     let remapped = full.remapped_endpoints(
@@ -89,7 +97,7 @@ fn bond_from_spec_preserves_facts_and_all_detached_mutators() {
     assert_eq!(bond.stereo_atoms(), Some([AtomId::new(0), AtomId::new(4)]));
     assert!(bond.unknown_stereo());
     assert_eq!(string_prop(bond.prop("ordinary")), Some("kept"));
-    assert!(bond.is_prop_computed("computed"));
+    assert!(bond.is_prop_computed("computed").unwrap());
     assert_eq!(bond.validate(), Ok(()));
 
     bond = bond.remapped(BondId::new(2), AtomId::new(5), AtomId::new(8), None);
@@ -181,7 +189,13 @@ fn checked_bond_properties_cover_empty_overwrite_membership_and_clear() {
         .unwrap();
     assert_eq!(string_prop(spec.prop("cache")), Some("second"));
     assert_eq!(string_prop(spec.prop("ordinary")), Some("second"));
-    assert_eq!(spec.computed_prop_names().len(), 1);
+    assert_eq!(
+        spec.computed_prop_names()
+            .unwrap()
+            .expect("computed list exists")
+            .len(),
+        1
+    );
 
     let mut bond = Bond::from_spec(BondId::new(0), spec);
     assert_eq!(
@@ -193,18 +207,29 @@ fn checked_bond_properties_cover_empty_overwrite_membership_and_clear() {
         Err(BondValueError::EmptyPropertyKey)
     );
     bond.set_prop("cache", "ordinary overwrite").unwrap();
-    assert!(bond.is_prop_computed("cache"));
+    assert!(bond.is_prop_computed("cache").unwrap());
     bond.set_computed_prop("cache", "computed overwrite")
         .unwrap();
-    assert_eq!(bond.computed_prop_names().len(), 1);
+    assert_eq!(
+        bond.computed_prop_names()
+            .unwrap()
+            .expect("computed list exists")
+            .len(),
+        1
+    );
 
     bond.clear_prop("missing");
     bond.clear_prop("cache");
     assert_eq!(bond.prop("cache"), None);
-    assert!(!bond.is_prop_computed("cache"));
+    assert!(!bond.is_prop_computed("cache").unwrap());
     bond.set_computed_prop("temporary", "gone").unwrap();
     bond.clear_computed_props();
     assert_eq!(bond.prop("temporary"), None);
     assert_eq!(string_prop(bond.prop("ordinary")), Some("second"));
-    assert!(bond.computed_prop_names().is_empty());
+    assert!(
+        bond.computed_prop_names()
+            .unwrap()
+            .expect("computed marker retained")
+            .is_empty()
+    );
 }

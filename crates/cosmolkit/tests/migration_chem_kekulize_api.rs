@@ -160,8 +160,9 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.derived_effects.preserve.bits(), (1 << 1) | (1 << 5));
     assert_eq!(
         spec.derived_effects.invalidate.bits(),
-        (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
+        (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
     );
+    assert_eq!(spec.derived_effects.operation_defined.bits(), 1 << 2);
     assert_eq!(format!("{:?}", spec.cip_state), "Preserve");
     assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
@@ -211,7 +212,10 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
     coordinate_views::assert_shared_coordinates(&source, &output);
     assert_eq!(source.coordinates_2d(), output.coordinates_2d());
     assert_eq!(source.conformers_3d(), output.conformers_3d());
-    assert_eq!(output.property("source"), Some("preserved"));
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(
         output.atoms()[0].prop("atom-note"),
         Some(&cosmolkit_model::PropertyValue::from("atom-0"))
@@ -220,7 +224,10 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
         output.bonds()[0].prop("bond-note"),
         Some(&cosmolkit_model::PropertyValue::from("bond-0"))
     );
-    assert_eq!(output.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        output.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
     assert_eq!(
         output.atoms()[0].prop("_CIPCode"),
         Some(&cosmolkit_model::PropertyValue::from("R"))
@@ -246,7 +253,10 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
 
     assert!(source.atoms().iter().all(Atom::is_aromatic));
     assert!(source.bonds().iter().all(Bond::is_aromatic));
-    assert_eq!(source.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        source.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
     assert!(!std::ptr::eq(source.topology(), output.topology()));
     assert!(std::ptr::eq(source.properties(), output.properties()));
 }
@@ -309,7 +319,10 @@ fn typed_algorithm_failure_is_atomic_for_value_and_inplace_wrappers() {
     assert!(std::ptr::eq(target.topology(), observer.topology()));
     coordinate_views::assert_shared_coordinates(&target, &observer);
     assert!(std::ptr::eq(target.properties(), observer.properties()));
-    assert_eq!(target.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        target.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
 }
 
 #[test]

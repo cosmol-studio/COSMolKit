@@ -1,7 +1,7 @@
 //! Legacy drawing primitives inherited from frozen COSMolKit 0.3.0 draw.rs.
 //! Source blocks and two-axis markers are inherited, not newly certified.
 //! DRAW-LEGACY1-68 permits this Rust copy; arithmetic and draw order are preserved.
-use cosmolkit_model::{Atom, Bond, BondDirection, BondOrder, TopologyBlock};
+use cosmolkit_model::{Atom, Bond, BondDirection, BondOrder, PropertyText, TopologyBlock};
 use glam::DVec2;
 use std::sync::{Arc, OnceLock};
 
@@ -141,7 +141,7 @@ enum TextDrawType {
 /// Per-character layout rectangle.
 #[derive(Debug, Clone)]
 struct StringRect {
-    ch: char,
+    ch: u8,
     draw_mode: TextDrawType,
     trans: DVec2,
     offset: DVec2,
@@ -243,7 +243,7 @@ impl StringRect {
 /// A fully built atom label ready for drawing.
 #[derive(Debug, Clone)]
 struct AtomLabel {
-    symbol: String,
+    symbol: PropertyText,
     atom_idx: usize,
     atomic_num: u8,
     orient: OrientType,
@@ -254,7 +254,7 @@ struct AtomLabel {
 
 impl AtomLabel {
     fn new(
-        symbol: impl Into<String>,
+        symbol: impl Into<PropertyText>,
         atom_idx: usize,
         atomic_num: u8,
         orient: OrientType,
@@ -271,8 +271,8 @@ impl AtomLabel {
         // RDKit✔️✔️:                            false, TextAlignType::MIDDLE);
         // RDKit✔️✔️: adjustColons();
         // END RDKIT CPP FUNCTION AtomSymbol::AtomSymbol
-        let mut rects = get_string_rects(&symbol, orient, font_size);
-        adjust_colons(&symbol, &mut rects);
+        let mut rects = get_string_rects(symbol.as_bytes(), orient, font_size);
+        adjust_colons(symbol.as_bytes(), &mut rects);
         Self {
             symbol,
             atom_idx,
@@ -295,8 +295,8 @@ impl AtomLabel {
         // RDKit✔️✔️:                            false, TextAlignType::MIDDLE);
         // RDKit✔️✔️: adjustColons();
         // END RDKIT CPP FUNCTION AtomSymbol::recalculateRects
-        self.rects = get_string_rects(&self.symbol, self.orient, font_size);
-        adjust_colons(&self.symbol, &mut self.rects);
+        self.rects = get_string_rects(self.symbol.as_bytes(), self.orient, font_size);
+        adjust_colons(self.symbol.as_bytes(), &mut self.rects);
     }
 
     fn find_extremes(&self, xmin: &mut f64, xmax: &mut f64, ymin: &mut f64, ymax: &mut f64) {
@@ -347,7 +347,7 @@ impl AtomLabel {
     }
 }
 
-fn adjust_colons(symbol: &str, rects: &mut [StringRect]) {
+fn adjust_colons(symbol: &[u8], rects: &mut [StringRect]) {
     // BEGIN RDKIT CPP FUNCTION AtomSymbol::adjustColons (AtomSymbol.cpp)
     // RDKit✔️✔️: if (symbol_.empty()) {
     // RDKit✔️✔️:   return;  // but probably it's always got something in it.
@@ -380,14 +380,14 @@ fn adjust_colons(symbol: &str, rects: &mut [StringRect]) {
     if symbol.is_empty() {
         return;
     }
-    let mut tmp_sym = symbol.to_string();
-    while let Some(lt_pos) = tmp_sym.find('<') {
-        let Some(gt_pos) = tmp_sym.find('>') else {
+    let mut tmp_sym = symbol.to_vec();
+    while let Some(lt_pos) = tmp_sym.iter().position(|&byte| byte == b'<') {
+        let Some(gt_pos) = tmp_sym.iter().position(|&byte| byte == b'>') else {
             break;
         };
-        tmp_sym = tmp_sym[..lt_pos].to_string() + &tmp_sym[gt_pos + 1..];
+        tmp_sym = [&tmp_sym[..lt_pos], &tmp_sym[gt_pos + 1..]].concat();
     }
-    let Some(colon_pos) = tmp_sym.find(':') else {
+    let Some(colon_pos) = tmp_sym.iter().position(|&byte| byte == b':') else {
         return;
     };
     if colon_pos >= rects.len() {
@@ -501,7 +501,7 @@ struct DrawRadical {
 /// pre-computes rects from font metrics and stores them inline.
 #[derive(Debug, Clone)]
 struct DrawAnnotation {
-    text: String,
+    text: PropertyText,
     align: TextAlignType,
     class_: String,
     font_scale: f64,
@@ -514,7 +514,7 @@ struct DrawAnnotation {
 impl DrawAnnotation {
     /// RDKit❗✔️: DrawAnnotation::DrawAnnotation(note, align, cls, relFontScale, pos, colour, textDrawer)
     fn new(
-        text: String,
+        text: impl Into<PropertyText>,
         align: TextAlignType,
         class_: String,
         rel_font_scale: f64,
@@ -561,7 +561,7 @@ impl DrawAnnotation {
         // script references remains unresolved; existing safe guards stay.
         // Complexity: one linear glyph extraction/alignment, as in the source.
         let mut annotation = Self {
-            text,
+            text: text.into(),
             align,
             class_,
             font_scale: rel_font_scale * text_font_scale,
@@ -629,7 +629,7 @@ impl DrawAnnotation {
         // vector; old cached rects are not cloned or geometrically rescaled.
         self.base_font_size = base_font_size;
         self.rects = annotation_string_rects(
-            &self.text,
+            self.text.as_bytes(),
             self.align,
             self.font_scale * self.base_font_size,
         );
@@ -807,7 +807,7 @@ fn format_svg_font_size_px(value: f64) -> String {
     format!("{}", value as u32)
 }
 
-fn xml_escape(text: &str) -> String {
+fn xml_escape(text: &[u8]) -> Vec<u8> {
     // BEGIN RDKIT CPP FUNCTION escape_xhtml (DrawTextSVG.cpp:43-50)
     // RDKit✔️✔️: boost::algorithm::replace_all(data, "&", "&amp;");
     // RDKit✔️✔️: boost::algorithm::replace_all(data, "\"", "&quot;");
@@ -815,13 +815,20 @@ fn xml_escape(text: &str) -> String {
     // RDKit✔️✔️: boost::algorithm::replace_all(data, "<", "&lt;");
     // RDKit✔️✔️: boost::algorithm::replace_all(data, ">", "&gt;");
     // END RDKIT CPP FUNCTION escape_xhtml
-    // The replacements after ampersand do not overlap. Five linear passes have
-    // the source's linear complexity; each emitted glyph has bounded size.
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
+    // Replacements never reinterpret other bytes. A single linear pass emits
+    // the same final escapes as the five source passes, with one output buffer.
+    let mut out = Vec::with_capacity(text.len());
+    for &byte in text {
+        match byte {
+            b'&' => out.extend_from_slice(b"&amp;"),
+            b'"' => out.extend_from_slice(b"&quot;"),
+            b'\'' => out.extend_from_slice(b"&apos;"),
+            b'<' => out.extend_from_slice(b"&lt;"),
+            b'>' => out.extend_from_slice(b"&gt;"),
+            _ => out.push(byte),
+        }
+    }
+    out
 }
 
 // ──────────────────────────────────────────────
@@ -1164,22 +1171,21 @@ const RDKIT_CHAR_WIDTHS: [i32; 256] = [
 ];
 // END RDKIT CONSTANT MolDraw2D_detail::char_widths
 
-fn char_width(ch: char) -> i32 {
-    let code = ch as u32;
-    if code < 256 {
-        RDKIT_CHAR_WIDTHS[code as usize]
-    } else {
-        0
-    }
+fn char_width(ch: u8) -> i32 {
+    // RDKit❗✔️: char_widths[(int)text[i]]
+    // Existing pinned table entries are retained byte-for-byte. The source's
+    // signed-char high-bit indexing is unresolved; this safe table access does
+    // not certify high-bit layout or introduce replacement glyph widths.
+    RDKIT_CHAR_WIDTHS[usize::from(ch)]
 }
 
 /// RDKit✔️✔️: DrawText::selectScaleFactor()
-fn select_scale_factor(ch: char, draw_type: TextDrawType) -> f64 {
+fn select_scale_factor(ch: u8, draw_type: TextDrawType) -> f64 {
     match draw_type {
         TextDrawType::Normal => 1.0,
         TextDrawType::Subscript => 0.66,
         TextDrawType::Superscript => {
-            if ch == '+' || ch == '-' {
+            if ch == b'+' || ch == b'-' {
                 0.66
             } else {
                 0.66
@@ -1189,29 +1195,35 @@ fn select_scale_factor(ch: char, draw_type: TextDrawType) -> f64 {
 }
 
 /// Parse the four drawing script tags; other text remains literal.
-fn parse_draw_chars(text: &str) -> (Vec<char>, Vec<TextDrawType>) {
-    // BEGIN RDKIT CPP FUNCTION setStringDrawMode (DrawText.cpp:465-492)
-    // RDKit✔️✔️: std::string bit1 = instring.substr(i, 5);
-    // RDKit✔️✔️: std::string bit2 = instring.substr(i, 6);
-    // RDKit✔️✔️: if (std::string("<sub>") == bit1) {
-    // RDKit✔️✔️:   draw_mode = TextDrawType::TextDrawSubscript;
-    // RDKit✔️✔️:   i += 4;
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: } else if (std::string("<sup>") == bit1) {
-    // RDKit✔️✔️:   draw_mode = TextDrawType::TextDrawSuperscript;
-    // RDKit✔️✔️:   i += 4;
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: } else if (std::string("</sub>") == bit2) {
-    // RDKit✔️✔️:   draw_mode = TextDrawType::TextDrawNormal;
-    // RDKit✔️✔️:   i += 5;
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: } else if (std::string("</sup>") == bit2) {
-    // RDKit✔️✔️:   draw_mode = TextDrawType::TextDrawNormal;
-    // RDKit✔️✔️:   i += 5;
-    // RDKit✔️✔️:   return true;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: return false;
-    // END RDKIT CPP FUNCTION setStringDrawMode
+fn parse_draw_chars(text: &[u8]) -> (Vec<u8>, Vec<TextDrawType>) {
+    // BEGIN RDKIT PINNED COMPLETE CPP FUNCTION setStringDrawMode (351f8f3)
+    // RDKit❗✔️: bool setStringDrawMode(const std::string &instring, TextDrawType &draw_mode,
+    // RDKit❗✔️:                        size_t &i) {
+    // RDKit❗✔️:   std::string bit1 = instring.substr(i, 5);
+    // RDKit❗✔️:   std::string bit2 = instring.substr(i, 6);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // could be markup for super- or sub-script
+    // RDKit❗✔️:   if (std::string("<sub>") == bit1) {
+    // RDKit❗✔️:     draw_mode = TextDrawType::TextDrawSubscript;
+    // RDKit❗✔️:     i += 4;
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   } else if (std::string("<sup>") == bit1) {
+    // RDKit❗✔️:     draw_mode = TextDrawType::TextDrawSuperscript;
+    // RDKit❗✔️:     i += 4;
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   } else if (std::string("</sub>") == bit2) {
+    // RDKit❗✔️:     draw_mode = TextDrawType::TextDrawNormal;
+    // RDKit❗✔️:     i += 5;
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   } else if (std::string("</sup>") == bit2) {
+    // RDKit❗✔️:     draw_mode = TextDrawType::TextDrawNormal;
+    // RDKit❗✔️:     i += 5;
+    // RDKit❗✔️:     return true;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return false;
+    // RDKit❗✔️: }
+    // END RDKIT PINNED COMPLETE CPP FUNCTION setStringDrawMode
     // BEGIN RDKIT CPP FUNCTION DrawTextSVG::getStringRects (character scan)
     // RDKit✔️✔️: TextDrawType draw_mode = TextDrawType::TextDrawNormal;
     // RDKit✔️✔️: for (size_t i = 0; i < text.length(); ++i) {
@@ -1221,8 +1233,8 @@ fn parse_draw_chars(text: &str) -> (Vec<char>, Vec<TextDrawType>) {
     // RDKit✔️✔️:   draw_modes.push_back(draw_mode);
     // RDKit✔️✔️:   draw_chars.push_back(text[i]);
     // END RDKIT CPP FUNCTION DrawTextSVG::getStringRects (character scan)
-    // ASCII matches the source byte scan. Retain existing UTF-8 scalar handling
-    // without claiming parity with upstream's byte-indexed character metrics.
+    // Counted bytes follow the source scan; NUL and high-bit bytes remain data.
+    // This scan does not establish signed-char high-bit metric equivalence.
     // Both scans are linear, with two amortized-linear output vectors and no
     // intermediate strings. Bounded prefix checks replace source substr copies.
     // Literal-wrapper removal belongs to atom_label_to_pieces; XML escaping
@@ -1234,25 +1246,25 @@ fn parse_draw_chars(text: &str) -> (Vec<char>, Vec<TextDrawType>) {
 
     while i < text.len() {
         let rest = &text[i..];
-        if rest.starts_with('<') {
-            if rest.starts_with("<sup>") {
+        if rest.starts_with(b"<") {
+            if rest.starts_with(b"<sup>") {
                 current_mode = TextDrawType::Superscript;
                 i += 5;
                 continue;
-            } else if rest.starts_with("<sub>") {
+            } else if rest.starts_with(b"<sub>") {
                 current_mode = TextDrawType::Subscript;
                 i += 5;
                 continue;
-            } else if rest.starts_with("</sup>") || rest.starts_with("</sub>") {
+            } else if rest.starts_with(b"</sup>") || rest.starts_with(b"</sub>") {
                 current_mode = TextDrawType::Normal;
                 i += 6;
                 continue;
             }
         }
-        let ch = rest.chars().next().unwrap();
+        let ch = rest[0];
         chars.push(ch);
         modes.push(current_mode);
-        i += ch.len_utf8();
+        i += 1;
     }
 
     (chars, modes)
@@ -1301,7 +1313,7 @@ fn adjust_string_rects_for_super_subscript(draw_modes: &[TextDrawType], rects: &
     }
 }
 
-fn get_string_rects_unsplit(text: &str, act_font_size: f64) -> Vec<StringRect> {
+fn get_string_rects_unsplit(text: &[u8], act_font_size: f64) -> Vec<StringRect> {
     let (draw_chars, draw_modes) = parse_draw_chars(text);
     let mut rects = Vec::with_capacity(draw_chars.len());
     let mut running_x = 0.0;
@@ -1309,44 +1321,79 @@ fn get_string_rects_unsplit(text: &str, act_font_size: f64) -> Vec<StringRect> {
     for &ch in &draw_chars {
         max_width = max_width.max(char_width(ch) as f64);
     }
-    if max_width <= 0.0 {
-        return rects;
-    }
+    // Pinned source proceeds for zero max_width: retain each rectangle and
+    // its IEEE width/max_width NaN instead of discarding counted glyphs.
 
-    // BEGIN RDKIT CPP FUNCTION DrawTextSVG::getStringRects (DrawTextSVG.cpp)
-    // RDKit✔️✔️: double running_x = 0.0;
-    // RDKit✔️✔️: double act_font_size = fontSize();
-    // RDKit✔️✔️: double char_height;
-    // RDKit✔️✔️: double max_width = 0.0;
-    // RDKit✔️✔️: ...
-    // RDKit✔️✔️: double char_width =
-    // RDKit✔️✔️:     0.6 * act_font_size * char_widths[(int)draw_chars[i]] / max_width;
-    // RDKit✔️✔️: if (draw_chars[i] == '+') { char_height = 0.6 * act_font_size; }
-    // RDKit✔️✔️: else if (draw_chars[i] == '-') { char_height = 0.4 * act_font_size; }
-    // RDKit✔️✔️: else { char_height = 0.8 * act_font_size; }
-    // RDKit✔️✔️: double cscale = selectScaleFactor(draw_chars[i], draw_modes[i]);
-    // RDKit✔️✔️: char_height *= cscale; char_width *= cscale;
-    // RDKit✔️✔️: Point2D offset(char_width / 2, char_height / 2);
-    // RDKit✔️✔️: if (draw_chars[i] == '+' || draw_chars[i] == '-') { offset.y /= 2.0; }
-    // RDKit✔️✔️: Point2D g_centre(char_width / 2, char_height / 2);
-    // RDKit✔️✔️: rects.push_back(...);
-    // RDKit✔️✔️: rects.back()->trans_.x += running_x;
-    // RDKit✔️✔️: if (draw_modes[i] != TextDrawType::TextDrawNormal) {
-    // RDKit✔️✔️:   running_x += char_width * 1.05;
-    // RDKit✔️✔️: } else { running_x += char_width * 1.15; }
-    // RDKit✔️✔️: ...
-    // RDKit✔️✔️: for (auto r : rects) {
-    // RDKit✔️✔️:   r->g_centre_.y = act_font_size - r->g_centre_.y;
-    // RDKit✔️✔️:   r->offset_.y = act_font_size / 2.0;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: adjustStringRectsForSuperSubScript(draw_modes, rects);
-    // END RDKIT CPP FUNCTION DrawTextSVG::getStringRects
+    // BEGIN RDKIT PINNED COMPLETE CPP FUNCTION DrawTextSVG::getStringRects (351f8f3)
+    // RDKit❗✔️: void DrawTextSVG::getStringRects(
+    // RDKit❗✔️:     const std::string &text, std::vector<std::shared_ptr<StringRect>> &rects,
+    // RDKit❗✔️:     std::vector<TextDrawType> &draw_modes,
+    // RDKit❗✔️:     std::vector<char> &draw_chars) const {
+    // RDKit❗✔️:   double running_x = 0.0;
+    // RDKit❗✔️:   double act_font_size = fontSize();
+    // RDKit❗✔️:   double char_height;
+    // RDKit❗✔️:   double max_width = 0.0;
+    // RDKit❗✔️:   TextDrawType draw_mode = TextDrawType::TextDrawNormal;
+    // RDKit❗✔️:   for (size_t i = 0; i < text.length(); ++i) {
+    // RDKit❗✔️:     // setStringDrawMode moves i along to the end of any <sub> or <sup>
+    // RDKit❗✔️:     // markup
+    // RDKit❗✔️:     if ('<' == text[i] && setStringDrawMode(text, draw_mode, i)) {
+    // RDKit❗✔️:       continue;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     draw_modes.push_back(draw_mode);
+    // RDKit❗✔️:     draw_chars.push_back(text[i]);
+    // RDKit❗✔️:
+    // RDKit❗✔️:     max_width = std::max(
+    // RDKit❗✔️:         max_width,
+    // RDKit❗✔️:         static_cast<double>(MolDraw2D_detail::char_widths[(int)text[i]]));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   for (size_t i = 0; i < draw_chars.size(); ++i) {
+    // RDKit❗✔️:     double char_width =
+    // RDKit❗✔️:         0.6 * act_font_size *
+    // RDKit❗✔️:         static_cast<double>(MolDraw2D_detail::char_widths[(int)draw_chars[i]]) /
+    // RDKit❗✔️:         max_width;
+    // RDKit❗✔️:     // Absent a proper set of font metrics (we don't know what font we'll be
+    // RDKit❗✔️:     // using, for starters) this is something of an empirical bodge.
+    // RDKit❗✔️:     if (draw_chars[i] == '+') {
+    // RDKit❗✔️:       char_height = 0.6 * act_font_size;
+    // RDKit❗✔️:     } else if (draw_chars[i] == '-') {
+    // RDKit❗✔️:       char_height = 0.4 * act_font_size;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       char_height = 0.8 * act_font_size;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     double cscale = selectScaleFactor(draw_chars[i], draw_modes[i]);
+    // RDKit❗✔️:     char_height *= cscale;
+    // RDKit❗✔️:     char_width *= cscale;
+    // RDKit❗✔️:     Point2D offset(char_width / 2, char_height / 2);
+    // RDKit❗✔️:     if (draw_chars[i] == '+' || draw_chars[i] == '-') {
+    // RDKit❗✔️:       offset.y /= 2.0;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     Point2D g_centre(char_width / 2, char_height / 2);
+    // RDKit❗✔️:     rects.push_back(std::shared_ptr<StringRect>(
+    // RDKit❗✔️:         new StringRect(offset, g_centre, char_width, char_height)));
+    // RDKit❗✔️:     rects.back()->trans_.x += running_x;
+    // RDKit❗✔️:     // empirical spacing.
+    // RDKit❗✔️:     if (draw_modes[i] != TextDrawType::TextDrawNormal) {
+    // RDKit❗✔️:       running_x += char_width * 1.05;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       running_x += char_width * 1.15;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   for (auto r : rects) {
+    // RDKit❗✔️:     r->g_centre_.y = act_font_size - r->g_centre_.y;
+    // RDKit❗✔️:     r->offset_.y = act_font_size / 2.0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   adjustStringRectsForSuperSubScript(draw_modes, rects);
+    // RDKit❗✔️: }
+    // END RDKIT PINNED COMPLETE CPP FUNCTION DrawTextSVG::getStringRects
     for (idx, &ch) in draw_chars.iter().enumerate() {
         let mode = draw_modes[idx];
         let mut width = 0.6 * act_font_size * (char_width(ch) as f64) / max_width;
-        let mut height = if ch == '+' {
+        let mut height = if ch == b'+' {
             0.6 * act_font_size
-        } else if ch == '-' {
+        } else if ch == b'-' {
             0.4 * act_font_size
         } else {
             0.8 * act_font_size
@@ -1355,7 +1402,7 @@ fn get_string_rects_unsplit(text: &str, act_font_size: f64) -> Vec<StringRect> {
         width *= cscale;
         height *= cscale;
         let mut offset = DVec2::new(width / 2.0, height / 2.0);
-        if ch == '+' || ch == '-' {
+        if ch == b'+' || ch == b'-' {
             offset.y /= 2.0;
         }
         let g_centre = DVec2::new(width / 2.0, height / 2.0);
@@ -1384,7 +1431,7 @@ fn get_string_rects_unsplit(text: &str, act_font_size: f64) -> Vec<StringRect> {
     rects
 }
 
-fn annotation_string_rects(text: &str, align: TextAlignType, font_size: f64) -> Vec<StringRect> {
+fn annotation_string_rects(text: &[u8], align: TextAlignType, font_size: f64) -> Vec<StringRect> {
     // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawText.cpp
     // RDKit❗✔️: void DrawText::getStringRects(const std::string &text, OrientType orient,
     // RDKit❗✔️:                               std::vector<std::shared_ptr<StringRect>> &rects,
@@ -1460,50 +1507,67 @@ fn align_string(align: TextAlignType, draw_modes: &[TextDrawType], rects: &mut [
     if rects.is_empty() {
         return;
     }
-    // BEGIN RDKIT CPP FUNCTION DrawTextNotFT::alignString (DrawTextNotFT.cpp)
-    // RDKit✔️✔️: if (talign == TextAlignType::MIDDLE) {
-    // RDKit✔️✔️:   size_t num_norm = count(draw_modes.begin(), draw_modes.end(),
-    // RDKit✔️✔️:                           TextDrawType::TextDrawNormal);
-    // RDKit✔️✔️:   if (num_norm == 1) {
-    // RDKit✔️✔️:     talign = TextAlignType::START;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: Point2D align_trans, align_offset;
-    // RDKit✔️✔️: if (talign == TextAlignType::START || talign == TextAlignType::END) {
-    // RDKit✔️✔️:   size_t align_char = 0;
-    // RDKit✔️✔️:   for (size_t i = 0; i < rects.size(); ++i) {
-    // RDKit✔️✔️:     if (draw_modes[i] == TextDrawType::TextDrawNormal) {
-    // RDKit✔️✔️:       align_char = i;
-    // RDKit✔️✔️:       if (talign == TextAlignType::START) {
-    // RDKit✔️✔️:         break;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   align_trans = rects[align_char]->trans_;
-    // RDKit✔️✔️:   align_offset = rects[align_char]->offset_;
-    // RDKit✔️✔️: } else {
-    // RDKit✔️✔️:   double x_min = std::numeric_limits<double>::max();
-    // RDKit✔️✔️:   double x_max = std::numeric_limits<double>::lowest();
-    // RDKit✔️✔️:   align_offset.x = align_offset.y = 0.0;
-    // RDKit✔️✔️:   int num_norm = 0;
-    // RDKit✔️✔️:   for (size_t i = 0; i < rects.size(); ++i) {
-    // RDKit✔️✔️:     if (draw_modes[i] == TextDrawType::TextDrawNormal) {
-    // RDKit✔️✔️:       rects[i]->calcCorners(...);
-    // RDKit✔️✔️:       x_min = std::min({bl.x, tr.x, x_min});
-    // RDKit✔️✔️:       x_max = std::max({bl.x, tr.x, x_max});
-    // RDKit✔️✔️:       align_offset += rects[i]->offset_;
-    // RDKit✔️✔️:       ++num_norm;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   align_trans.x = (x_max - x_min) / 2.0;
-    // RDKit✔️✔️:   align_trans.y = 0.0;
-    // RDKit✔️✔️:   align_offset /= num_norm;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: for (auto r : rects) {
-    // RDKit✔️✔️:   r->trans_ -= align_trans;
-    // RDKit✔️✔️:   r->offset_ = align_offset;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION DrawTextNotFT::alignString
+    // BEGIN RDKIT PINNED COMPLETE CPP FUNCTION DrawTextNotFT::alignString (351f8f3)
+    // RDKit❗✔️: void DrawTextNotFT::alignString(
+    // RDKit❗✔️:     TextAlignType talign, const std::vector<TextDrawType> &draw_modes,
+    // RDKit❗✔️:     std::vector<std::shared_ptr<StringRect>> &rects) const {
+    // RDKit❗✔️:   // std::string comes in with rects aligned with first char with its
+    // RDKit❗✔️:   // left hand and bottom edges at 0 on y and x respectively.
+    // RDKit❗✔️:   // Adjust relative to that so that the relative alignment point is at
+    // RDKit❗✔️:   // (0,0).
+    // RDKit❗✔️:   if (talign == TextAlignType::MIDDLE) {
+    // RDKit❗✔️:     size_t num_norm = count(draw_modes.begin(), draw_modes.end(),
+    // RDKit❗✔️:                             TextDrawType::TextDrawNormal);
+    // RDKit❗✔️:     if (num_norm == 1) {
+    // RDKit❗✔️:       talign = TextAlignType::START;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   Point2D align_trans, align_offset;
+    // RDKit❗✔️:   if (talign == TextAlignType::START || talign == TextAlignType::END) {
+    // RDKit❗✔️:     size_t align_char = 0;
+    // RDKit❗✔️:     for (size_t i = 0; i < rects.size(); ++i) {
+    // RDKit❗✔️:       if (draw_modes[i] == TextDrawType::TextDrawNormal) {
+    // RDKit❗✔️:         align_char = i;
+    // RDKit❗✔️:         if (talign == TextAlignType::START) {
+    // RDKit❗✔️:           break;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     align_trans = rects[align_char]->trans_;
+    // RDKit❗✔️:     align_offset = rects[align_char]->offset_;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     // centre on the middle of the Normal text.  The super- or subscripts
+    // RDKit❗✔️:     // should be at the ends.
+    // RDKit❗✔️:     double x_min = std::numeric_limits<double>::max();
+    // RDKit❗✔️:     double x_max = std::numeric_limits<double>::lowest();
+    // RDKit❗✔️:     align_offset.x = align_offset.y = 0.0;
+    // RDKit❗✔️:     int num_norm = 0;
+    // RDKit❗✔️:     for (size_t i = 0; i < rects.size(); ++i) {
+    // RDKit❗✔️:       if (draw_modes[i] == TextDrawType::TextDrawNormal) {
+    // RDKit❗✔️:         Point2D tl, tr, br, bl;
+    // RDKit❗✔️:         rects[i]->calcCorners(tl, tr, br, bl, 0.0);
+    // RDKit❗✔️:         // sometimes the rect is in a coordinate frame where +ve y is down,
+    // RDKit❗✔️:         // sometimes it's up.  For these purposes, we don't care so long as
+    // RDKit❗✔️:         // the y_max is larger than the y_min.  We probably don't need to do
+    // RDKit❗✔️:         // all the tests for x_min and x_max;
+    // RDKit❗✔️:         x_min = std::min({bl.x, tr.x, x_min});
+    // RDKit❗✔️:         x_max = std::max({bl.x, tr.x, x_max});
+    // RDKit❗✔️:         align_offset += rects[i]->offset_;
+    // RDKit❗✔️:         ++num_norm;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     align_trans.x = (x_max - x_min) / 2.0;
+    // RDKit❗✔️:     align_trans.y = 0.0;
+    // RDKit❗✔️:     align_offset /= num_norm;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   for (auto r : rects) {
+    // RDKit❗✔️:     r->trans_ -= align_trans;
+    // RDKit❗✔️:     r->offset_ = align_offset;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT PINNED COMPLETE CPP FUNCTION DrawTextNotFT::alignString
     let mut talign = align;
     if talign == TextAlignType::Middle
         && draw_modes
@@ -1536,17 +1600,34 @@ fn align_string(align: TextAlignType, draw_modes: &[TextDrawType], rects: &mut [
         for (i, rect) in rects.iter().enumerate() {
             if draw_modes[i] == TextDrawType::Normal {
                 let (_tl, tr, _br, bl) = rect.calc_corners(0.0);
-                x_min = x_min.min(bl.x).min(tr.x);
-                x_max = x_max.max(bl.x).max(tr.x);
+                // Source initializer lists begin with bl.x, then compare
+                // tr.x and the prior extreme in that order. Ordered `<`
+                // comparisons preserve a first NaN and signed-zero ties;
+                // Rust f64::min/max would discard NaN operands.
+                let mut next_min = bl.x;
+                if tr.x < next_min {
+                    next_min = tr.x;
+                }
+                if x_min < next_min {
+                    next_min = x_min;
+                }
+                x_min = next_min;
+                let mut next_max = bl.x;
+                if next_max < tr.x {
+                    next_max = tr.x;
+                }
+                if next_max < x_max {
+                    next_max = x_max;
+                }
+                x_max = next_max;
                 align_offset += rect.offset;
                 num_norm += 1;
             }
         }
         align_trans.x = (x_max - x_min) / 2.0;
         align_trans.y = 0.0;
-        if num_norm > 0 {
-            align_offset /= num_norm as f64;
-        }
+        // Source division is unconditional, preserving IEEE zero/zero.
+        align_offset /= num_norm as f64;
     }
     for rect in rects.iter_mut() {
         rect.trans -= align_trans;
@@ -1555,33 +1636,108 @@ fn align_string(align: TextAlignType, draw_modes: &[TextDrawType], rects: &mut [
 }
 
 /// RDKit✔️✔️: split an atom label into orientation-aligned pieces.
-fn atom_label_to_pieces(label: &str, orient: OrientType) -> Vec<String> {
-    // BEGIN RDKIT CPP FUNCTION atomLabelToPieces (DrawText.cpp)
-    // RDKit✔️✔️: if (label.substr(0, 5) == "<lit>") { ... }
-    // RDKit✔️✔️: while (true) {
-    // RDKit✔️✔️:   if (i == label.length()) { ... }
-    // RDKit✔️✔️:   if (label.substr(i, 2) == "<s" || label[i] == ':' || isupper(label[i])) {
-    // RDKit✔️✔️:     if (!next_piece.empty()) { label_pieces.emplace_back(next_piece); next_piece.clear(); }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   next_piece += label[i++];
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: if (label_pieces.size() < 2) { return label_pieces; }
-    // RDKit✔️✔️: if (orient == OrientType::E || orient == OrientType::S) { ... move <sup>+</sup>/<sup>-</sup> to end ... }
-    // RDKit✔️✔️: for (const auto &p : label_pieces) {
-    // RDKit✔️✔️:   if (!isupper(p[0])) { curr_piece += p; }
-    // RDKit✔️✔️:   else { ... group symbol with adjacent sub/sup pieces ... }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION atomLabelToPieces
-    if let Some(mut lit_sym) = label.strip_prefix("<lit>") {
-        if let Some(idx) = lit_sym.find("</lit>") {
+fn atom_label_to_pieces(label: &[u8], orient: OrientType) -> Vec<Vec<u8>> {
+    // BEGIN RDKIT PINNED COMPLETE CPP FUNCTION atomLabelToPieces (351f8f3)
+    // RDKit❗✔️: std::vector<std::string> atomLabelToPieces(const std::string &label,
+    // RDKit❗✔️:                                            OrientType orient) {
+    // RDKit❗✔️:   // std::cout << "splitting " << label << " : " << orient << std::endl;
+    // RDKit❗✔️:   std::vector<std::string> label_pieces;
+    // RDKit❗✔️:   if (label.empty()) {
+    // RDKit❗✔️:     return label_pieces;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // if we have the mark-up <lit>XX</lit> the symbol is to be used
+    // RDKit❗✔️:   // without modification
+    // RDKit❗✔️:   if (label.substr(0, 5) == "<lit>") {
+    // RDKit❗✔️:     std::string lit_sym = label.substr(5);
+    // RDKit❗✔️:     size_t idx = lit_sym.find("</lit>");
+    // RDKit❗✔️:     if (idx != std::string::npos) {
+    // RDKit❗✔️:       lit_sym = lit_sym.substr(0, idx);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     label_pieces.emplace_back(lit_sym);
+    // RDKit❗✔️:     return label_pieces;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string next_piece;
+    // RDKit❗✔️:   size_t i = 0;
+    // RDKit❗✔️:   while (true) {
+    // RDKit❗✔️:     if (i == label.length()) {
+    // RDKit❗✔️:       if (!next_piece.empty()) {
+    // RDKit❗✔️:         label_pieces.emplace_back(next_piece);
+    // RDKit❗✔️:         break;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (label.substr(i, 2) == "<s" || label[i] == ':' || isupper(label[i])) {
+    // RDKit❗✔️:       // save the old piece, start a new one
+    // RDKit❗✔️:       if (!next_piece.empty()) {
+    // RDKit❗✔️:         label_pieces.emplace_back(next_piece);
+    // RDKit❗✔️:         next_piece.clear();
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     next_piece += label[i++];
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (label_pieces.size() < 2) {
+    // RDKit❗✔️:     return label_pieces;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // if the orientation is S or E, any charge flag needs to be at the end.
+    // RDKit❗✔️:   if (orient == OrientType::E || orient == OrientType::S) {
+    // RDKit❗✔️:     for (size_t i = 0; i < label_pieces.size(); ++i) {
+    // RDKit❗✔️:       if (label_pieces[i] == "<sup>+</sup>" ||
+    // RDKit❗✔️:           label_pieces[i] == "<sup>-</sup>") {
+    // RDKit❗✔️:         label_pieces.push_back(label_pieces[i]);
+    // RDKit❗✔️:         label_pieces[i].clear();
+    // RDKit❗✔️:         break;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // Now group some together.  This relies on the order that
+    // RDKit❗✔️:   // getAtomLabel built them in the first place.  Each atom symbol
+    // RDKit❗✔️:   // needs to be flanked by any <sub> and <super> pieces.
+    // RDKit❗✔️:   std::vector<std::string> final_pieces;
+    // RDKit❗✔️:   std::string curr_piece;
+    // RDKit❗✔️:   bool had_symbol = false;
+    // RDKit❗✔️:   for (const auto &p : label_pieces) {
+    // RDKit❗✔️:     if (p.empty()) {
+    // RDKit❗✔️:       continue;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (!isupper(p[0])) {
+    // RDKit❗✔️:       curr_piece += p;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       if (had_symbol) {
+    // RDKit❗✔️:         final_pieces.push_back(curr_piece);
+    // RDKit❗✔️:         curr_piece = p;
+    // RDKit❗✔️:         had_symbol = true;
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         curr_piece += p;
+    // RDKit❗✔️:         had_symbol = true;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!curr_piece.empty()) {
+    // RDKit❗✔️:     final_pieces.push_back(curr_piece);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // cout << "Final pieces : " << endl;
+    // RDKit❗✔️:   // for(auto l: final_pieces) {
+    // RDKit❗✔️:   //   cout << l << endl;
+    // RDKit❗✔️:   // }
+    // RDKit❗✔️:   // cout << endl;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return final_pieces;
+    // RDKit❗✔️: }
+    // END RDKIT PINNED COMPLETE CPP FUNCTION atomLabelToPieces
+    if let Some(mut lit_sym) = label.strip_prefix(b"<lit>") {
+        if let Some(idx) = lit_sym.windows(6).position(|part| part == b"</lit>") {
             lit_sym = &lit_sym[..idx];
         }
-        return vec![lit_sym.to_string()];
+        return vec![lit_sym.to_vec()];
     }
 
-    let bytes = label.as_bytes();
+    let bytes = label;
     let mut label_pieces = Vec::new();
-    let mut next_piece = String::new();
+    let mut next_piece = Vec::new();
     let mut i = 0usize;
     loop {
         if i == bytes.len() {
@@ -1590,13 +1746,13 @@ fn atom_label_to_pieces(label: &str, orient: OrientType) -> Vec<String> {
             }
             break;
         }
-        let split_here = (i + 2 <= bytes.len() && &label[i..i + 2] == "<s")
+        let split_here = (i + 2 <= bytes.len() && &label[i..i + 2] == b"<s")
             || bytes[i] == b':'
             || bytes[i].is_ascii_uppercase();
         if split_here && !next_piece.is_empty() {
             label_pieces.push(std::mem::take(&mut next_piece));
         }
-        next_piece.push(bytes[i] as char);
+        next_piece.push(bytes[i]);
         i += 1;
     }
     if label_pieces.len() < 2 {
@@ -1606,7 +1762,7 @@ fn atom_label_to_pieces(label: &str, orient: OrientType) -> Vec<String> {
     if orient == OrientType::E || orient == OrientType::S {
         if let Some(pos) = label_pieces
             .iter()
-            .position(|piece| piece == "<sup>+</sup>" || piece == "<sup>-</sup>")
+            .position(|piece| piece == b"<sup>+</sup>" || piece == b"<sup>-</sup>")
         {
             let charge = label_pieces.remove(pos);
             label_pieces.push(charge);
@@ -1614,20 +1770,20 @@ fn atom_label_to_pieces(label: &str, orient: OrientType) -> Vec<String> {
     }
 
     let mut final_pieces = Vec::new();
-    let mut curr_piece = String::new();
+    let mut curr_piece = Vec::new();
     let mut had_symbol = false;
     for piece in label_pieces {
         if piece.is_empty() {
             continue;
         }
-        if !piece.as_bytes()[0].is_ascii_uppercase() {
-            curr_piece.push_str(&piece);
+        if !piece[0].is_ascii_uppercase() {
+            curr_piece.extend_from_slice(&piece);
         } else if had_symbol {
             final_pieces.push(std::mem::take(&mut curr_piece));
             curr_piece = piece;
             had_symbol = true;
         } else {
-            curr_piece.push_str(&piece);
+            curr_piece.extend_from_slice(&piece);
             had_symbol = true;
         }
     }
@@ -1638,16 +1794,75 @@ fn atom_label_to_pieces(label: &str, orient: OrientType) -> Vec<String> {
 }
 
 /// RDKit✔️✔️: compute string rects for a label at a given orientation.
-fn get_string_rects(text: &str, orient: OrientType, font_size: f64) -> Vec<StringRect> {
-    // BEGIN RDKIT CPP FUNCTION DrawText::getStringRects (DrawText.cpp)
-    // RDKit✔️✔️: text_bits = atomLabelToPieces(text, orient);
-    // RDKit✔️✔️: if (orient == OrientType::W) { ... reverse pieces, getStringRects(new_lab), alignString(END) ... }
-    // RDKit✔️✔️: else if (orient == OrientType::E) { ... forward pieces, getStringRects(new_lab), alignString(START) ... }
-    // RDKit✔️✔️: else { ... per-piece rects, alignString(ta), y_shift_ += running_y ... }
-    // END RDKIT CPP FUNCTION DrawText::getStringRects
+fn get_string_rects(text: &[u8], orient: OrientType, font_size: f64) -> Vec<StringRect> {
+    // BEGIN RDKIT PINNED COMPLETE CPP FUNCTION DrawText::getStringRects (351f8f3)
+    // RDKit❗✔️: void DrawText::getStringRects(const std::string &text, OrientType orient,
+    // RDKit❗✔️:                               std::vector<std::shared_ptr<StringRect>> &rects,
+    // RDKit❗✔️:                               std::vector<TextDrawType> &draw_modes,
+    // RDKit❗✔️:                               std::vector<char> &draw_chars, bool dontSplit,
+    // RDKit❗✔️:                               TextAlignType textAlign) const {
+    // RDKit❗✔️:   PRECONDITION(!text.empty(), "empty string");
+    // RDKit❗✔️:   std::vector<std::string> text_bits;
+    // RDKit❗✔️:   if (!dontSplit) {
+    // RDKit❗✔️:     text_bits = atomLabelToPieces(text, orient);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     text_bits.push_back(text);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   TextAlignType ta =
+    // RDKit❗✔️:       orient == OrientType::C ? textAlign : TextAlignType::MIDDLE;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (orient == OrientType::W) {
+    // RDKit❗✔️:     // stick the pieces together again backwards and draw as one so there
+    // RDKit❗✔️:     // aren't ugly splits in the string.
+    // RDKit❗✔️:     std::string new_lab;
+    // RDKit❗✔️:     for (auto i = text_bits.rbegin(); i != text_bits.rend(); ++i) {
+    // RDKit❗✔️:       new_lab += *i;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     getStringRects(new_lab, rects, draw_modes, draw_chars);
+    // RDKit❗✔️:     alignString(TextAlignType::END, draw_modes, rects);
+    // RDKit❗✔️:   } else if (orient == OrientType::E) {
+    // RDKit❗✔️:     // likewise, but forwards
+    // RDKit❗✔️:     std::string new_lab;
+    // RDKit❗✔️:     for (const auto &lab : text_bits) {
+    // RDKit❗✔️:       new_lab += lab;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     getStringRects(new_lab, rects, draw_modes, draw_chars);
+    // RDKit❗✔️:     alignString(TextAlignType::START, draw_modes, rects);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     double running_y = 0;
+    // RDKit❗✔️:     for (const auto &tb : text_bits) {
+    // RDKit❗✔️:       std::vector<std::shared_ptr<StringRect>> t_rects;
+    // RDKit❗✔️:       std::vector<TextDrawType> t_draw_modes;
+    // RDKit❗✔️:       std::vector<char> t_draw_chars;
+    // RDKit❗✔️:       getStringRects(tb, t_rects, t_draw_modes, t_draw_chars);
+    // RDKit❗✔️:       alignString(ta, t_draw_modes, t_rects);
+    // RDKit❗✔️:       double max_height = std::numeric_limits<double>::lowest();
+    // RDKit❗✔️:       for (auto r : t_rects) {
+    // RDKit❗✔️:         max_height = std::max(r->height_, max_height);
+    // RDKit❗✔️:         r->y_shift_ = running_y;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       rects.insert(rects.end(), t_rects.begin(), t_rects.end());
+    // RDKit❗✔️:       draw_modes.insert(draw_modes.end(), t_draw_modes.begin(),
+    // RDKit❗✔️:                         t_draw_modes.end());
+    // RDKit❗✔️:       draw_chars.insert(draw_chars.end(), t_draw_chars.begin(),
+    // RDKit❗✔️:                         t_draw_chars.end());
+    // RDKit❗✔️:       if (orient == OrientType::N) {
+    // RDKit❗✔️:         running_y -= 1.1 * max_height;
+    // RDKit❗✔️:       } else if (orient == OrientType::S) {
+    // RDKit❗✔️:         running_y += 1.1 * max_height;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // END RDKIT PINNED COMPLETE CPP FUNCTION DrawText::getStringRects
     let text_bits = atom_label_to_pieces(text, orient);
     if orient == OrientType::W {
-        let new_label = text_bits.iter().rev().cloned().collect::<String>();
+        let new_label = text_bits
+            .iter()
+            .rev()
+            .flat_map(|piece| piece.iter().copied())
+            .collect::<Vec<u8>>();
         let mut rects = get_string_rects_unsplit(&new_label, font_size);
         let draw_modes: Vec<TextDrawType> = rects.iter().map(|r| r.draw_mode).collect();
         align_string(TextAlignType::End, &draw_modes, &mut rects);
@@ -2334,12 +2549,30 @@ pub enum DrawingError {
     },
     #[error("invalid drawing dimensions {width}x{height}")]
     InvalidDimensions { width: u32, height: u32 },
+    #[error("SVG text projection failed: {0}")]
+    SvgTextProjection(#[from] std::string::FromUtf8Error),
     #[error("SVG parse failed: {0}")]
     SvgParse(#[from] usvg::Error),
     #[error("PNG pixmap allocation failed for {width}x{height}")]
     PixmapAllocation { width: u32, height: u32 },
     #[error("PNG encoding failed: {0}")]
     PngEncode(#[source] Box<dyn std::error::Error + Send + Sync>),
+    #[error("drawing string property: {0}")]
+    PropertyString(#[from] cosmolkit_core::PropertyStringError),
+
+    #[error("drawing variation point array: {0}")]
+    VariationArray(#[from] cosmolkit_core::UnsignedStreamArrayError),
+
+    #[error("Bad variation point index {index} for {atom_count} atoms")]
+    VariationIndex { index: u32, atom_count: usize },
+
+    #[error("drawing SGroup {group} {field} numeric value: {source}")]
+    DataFieldDouble {
+        group: usize,
+        field: &'static str,
+        #[source]
+        source: cosmolkit_core::DoubleLexicalReadError,
+    },
 }
 
 impl DrawMol {
@@ -2593,8 +2826,8 @@ impl DrawMol {
                 draw.extract_stereo_groups(mol);
                 draw.extract_bond_notes(mol)?;
                 draw.extract_radicals(mol);
-                draw.extract_sgroup_data(mol);
-                draw.extract_brackets(mol);
+                draw.extract_sgroup_data(mol)?;
+                draw.extract_brackets(mol)?;
                 draw.extract_link_nodes(mol)?;
                 Ok(())
             };
@@ -2645,7 +2878,7 @@ impl DrawMol {
             }
         }
         out.change_to_draw_coords();
-        out.extract_mol_notes(mol);
+        out.extract_mol_notes(mol)?;
         out.extract_close_contacts();
         if Self::debug_svg_row_active(12) {
             for idx in [0usize, 1usize] {
@@ -2699,7 +2932,7 @@ impl DrawMol {
                 match self.atom_labels.get(idx).and_then(|l| l.as_ref()) {
                     Some(label) => {
                         eprintln!(
-                            "COSMOL_ROW142_LABEL_EXTRACT atom={} symbol={} cds=({:.17},{:.17}) orient={:?} rects={}",
+                            "COSMOL_ROW142_LABEL_EXTRACT atom={} symbol={:?} cds=({:.17},{:.17}) orient={:?} rects={}",
                             idx,
                             label.symbol,
                             label.cds.x,
@@ -4519,7 +4752,7 @@ impl DrawMol {
         };
         if Self::debug_svg_row_active(142) && at_idx == 59 {
             eprintln!(
-                "COSMOL_ROW142_ORIENT_START atom=59 symbol={} cds=({:.17},{:.17}) orient={:?} rects={}",
+                "COSMOL_ROW142_ORIENT_START atom=59 symbol={:?} cds=({:.17},{:.17}) orient={:?} rects={}",
                 orig_label.symbol,
                 orig_label.cds.x,
                 orig_label.cds.y,
@@ -4832,10 +5065,13 @@ impl DrawMol {
             let idx = atom.id().index();
             if let Some(cip) = atom
                 .prop("_CIPCode")
-                .map(|value| value.as_string())
+                .map(cosmolkit_core::property_value_to_string)
                 .transpose()?
             {
-                let cip = format!("({})", cip);
+                let mut text = PropertyText::from("(");
+                text.extend_bytes(cip.as_bytes());
+                text.push_byte(b')');
+                let cip = text;
                 let mut annot = DrawAnnotation::new(
                     cip,
                     TextAlignType::Middle,
@@ -4856,26 +5092,28 @@ impl DrawMol {
             let idx = bond.id().index();
             let mut cip_code = bond
                 .prop("_CIPCode")
-                .map(|value| value.as_string())
-                .transpose()?
-                .map(|s| s.to_string());
+                .map(cosmolkit_core::property_value_to_string)
+                .transpose()?;
             if cip_code.is_none() {
                 // infer from bond stereo if possible
                 // COSMolKit stores E/Z in bond stereo props — check direction
                 if let Some(stereo_prop) = bond
                     .prop("_BondStereo")
-                    .map(|value| value.as_string())
+                    .map(cosmolkit_core::property_value_to_string)
                     .transpose()?
                 {
-                    cip_code = match stereo_prop {
-                        "E" | "STEREOE" => Some("E".to_string()),
-                        "Z" | "STEREOZ" => Some("Z".to_string()),
+                    cip_code = match stereo_prop.as_bytes() {
+                        b"E" | b"STEREOE" => Some(PropertyText::from("E")),
+                        b"Z" | b"STEREOZ" => Some(PropertyText::from("Z")),
                         _ => None,
                     };
                 }
             }
             if let Some(cip) = cip_code {
-                let cip = format!("({})", cip);
+                let mut text = PropertyText::from("(");
+                text.extend_bytes(cip.as_bytes());
+                text.push_byte(b')');
+                let cip = text;
                 let mut annot = DrawAnnotation::new(
                     cip,
                     TextAlignType::Middle,
@@ -4932,12 +5170,12 @@ impl DrawMol {
         for atom in &mol.topology.atoms {
             if let Some(note) = atom
                 .prop("atomNote")
-                .map(|value| value.as_string())
+                .map(cosmolkit_core::property_value_to_string)
                 .transpose()?
             {
                 if !note.is_empty() {
                     let mut annot = DrawAnnotation::new(
-                        note.to_string(),
+                        note,
                         TextAlignType::Middle,
                         "note".to_string(),
                         self.options.annotation_font_scale,
@@ -4993,12 +5231,12 @@ impl DrawMol {
         for bond in &mol.topology.bonds {
             if let Some(note) = bond
                 .prop("bondNote")
-                .map(|value| value.as_string())
+                .map(cosmolkit_core::property_value_to_string)
                 .transpose()?
             {
                 if !note.is_empty() {
                     let mut annot = DrawAnnotation::new(
-                        note.to_string(),
+                        note,
                         TextAlignType::Middle,
                         "note".to_string(),
                         self.options.annotation_font_scale,
@@ -5042,7 +5280,7 @@ impl DrawMol {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractMolNotes
-    fn extract_mol_notes(&mut self, mol: &PreparedDrawingInput<'_>) {
+    fn extract_mol_notes(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
         // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:397
         // RDKit❗✔️: void DrawMol::extractMolNotes() {
         // RDKit❗✔️:   std::string note;
@@ -5108,11 +5346,16 @@ impl DrawMol {
 
         // includeChiralFlagLabel defaults false; _MolFileChiralFlag typed/enabled path
         // requires a separate model/condition HOLD decision before any expansion.
-        let Some(note) = mol.properties.prop("molNote") else {
-            return;
+        let Some(note) = mol
+            .properties
+            .prop("molNote")
+            .map(cosmolkit_core::property_value_to_string)
+            .transpose()?
+        else {
+            return Ok(());
         };
         if note.is_empty() {
-            return;
+            return Ok(());
         }
         let tmp = DrawAnnotation::new(
             note.to_owned(),
@@ -5126,7 +5369,7 @@ impl DrawMol {
         );
         // Preserve existing safe empty-rectangle control; source tag-only input is undefined.
         let Some(first) = tmp.rects.first() else {
-            return;
+            return Ok(());
         };
         let mut xmin = f64::MAX;
         let mut xmax = f64::MIN;
@@ -5156,7 +5399,7 @@ impl DrawMol {
             );
             if self.does_note_clash(&annot) == 0 {
                 self.legends.push(annot);
-                return;
+                return Ok(());
             }
         }
         self.legends.push(DrawAnnotation::new(
@@ -5169,6 +5412,7 @@ impl DrawMol {
             self.font_size,
             self.font_scale,
         ));
+        Ok(())
     }
 
     // BEGIN RDKIT CPP FUNCTION DrawMol::extractStereoGroups (DrawMol.cpp:531-568)
@@ -5243,7 +5487,7 @@ impl DrawMol {
                 .prop("_highlight")
                 .map(|value| value.as_string())
                 .transpose()?
-                .is_some_and(|v| v == "1" || v == "true");
+                .is_some_and(|v| v.as_bytes() == b"1" || v.as_bytes() == b"true");
             if !is_highlighted {
                 continue;
             }
@@ -5278,7 +5522,7 @@ impl DrawMol {
                 .prop("_highlight")
                 .map(|value| value.as_string())
                 .transpose()?
-                .is_some_and(|v| v == "1" || v == "true");
+                .is_some_and(|v| v.as_bytes() == b"1" || v.as_bytes() == b"true");
             if !is_highlighted {
                 continue;
             }
@@ -5303,7 +5547,7 @@ impl DrawMol {
                 .prop("_highlight")
                 .map(|value| value.as_string())
                 .transpose()?
-                .is_some_and(|v| v == "1" || v == "true");
+                .is_some_and(|v| v.as_bytes() == b"1" || v.as_bytes() == b"true");
             if !is_highlighted {
                 continue;
             }
@@ -5349,7 +5593,7 @@ impl DrawMol {
                 .prop("_highlight")
                 .map(|value| value.as_string())
                 .transpose()?
-                .is_some_and(|v| v == "1" || v == "true");
+                .is_some_and(|v| v.as_bytes() == b"1" || v.as_bytes() == b"true");
             if !is_highlighted {
                 continue;
             }
@@ -5523,15 +5767,15 @@ impl DrawMol {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractSGroupData
-    fn extract_sgroup_data(&mut self, mol: &PreparedDrawingInput<'_>) {
+    fn extract_sgroup_data(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
         // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
         // RDKit❗✔️: void DrawMol::extractSGroupData() {
         // RDKit❗✔️:   if (!includeAnnotations_) {
-        // RDKit❗✔️:     return;
+        // RDKit❗✔️:     return Ok(());
         // RDKit❗✔️:   }
         // RDKit❗✔️:   const auto &sgs = getSubstanceGroups(*drawMol_);
         // RDKit❗✔️:   if (sgs.empty()) {
-        // RDKit❗✔️:     return;
+        // RDKit❗✔️:     return Ok(());
         // RDKit❗✔️:   }
         // RDKit❗✔️:
         // RDKit❗✔️:   // details of this transformation are in extractAtomCoords
@@ -5622,26 +5866,32 @@ impl DrawMol {
         // RDKit❗✔️: }
 
         if !self.options.include_annotations {
-            return;
+            return Ok(());
         }
         let sgs = &mol.topology.substance_groups;
         if sgs.is_empty() {
-            return;
+            return Ok(());
         }
         let font_size = self.font_size * self.font_scale;
 
         for sg in sgs {
-            let typ = sg.props().get("TYPE").cloned();
-            if typ.as_deref() == Some("DAT") {
-                let mut text = String::new();
+            let typ = sg
+                .props()
+                .get(b"TYPE".as_slice())
+                .map(cosmolkit_core::property_value_to_string)
+                .transpose()?;
+            if typ.as_ref().is_some_and(|text| text.as_bytes() == b"DAT") {
+                let mut text = PropertyText::new();
                 // Build text from data_fields
                 let data_fields = sg.data_fields();
                 for df in data_fields {
-                    text.push_str(df);
-                    text.push('|');
+                    text.extend_bytes(df.as_bytes());
+                    text.push_byte(b'|');
                 }
                 if !text.is_empty() {
-                    text.pop();
+                    let mut bytes = text.into_bytes();
+                    bytes.pop();
+                    text = PropertyText::from(bytes);
                 }
                 if text.is_empty() {
                     continue;
@@ -5655,12 +5905,28 @@ impl DrawMol {
                 let mut orig_loc = DVec2::ZERO;
 
                 // Check for FIELDDISP property in sg.props
-                if let Some(field_disp) = sg.props().get("FIELDDISP") {
+                if let Some(field_disp) = sg
+                    .props()
+                    .get(b"FIELDDISP".as_slice())
+                    .map(cosmolkit_core::property_value_to_string)
+                    .transpose()?
+                {
                     if field_disp.len() >= 26 {
-                        if let (Ok(xp), Ok(yp)) = (
-                            field_disp[0..10].trim().parse::<f64>(),
-                            field_disp[10..20].trim().parse::<f64>(),
-                        ) {
+                        {
+                            let xp =
+                                cosmolkit_core::source_field_double(&field_disp.as_bytes()[0..10])
+                                    .map_err(|source| DrawingError::DataFieldDouble {
+                                        group: sg.id().index(),
+                                        field: "x",
+                                        source,
+                                    })?;
+                            let yp =
+                                cosmolkit_core::source_field_double(&field_disp.as_bytes()[10..20])
+                                    .map_err(|source| DrawingError::DataFieldDouble {
+                                        group: sg.id().index(),
+                                        field: "y",
+                                        source,
+                                    })?;
                             orig_loc = DVec2::new(xp, -yp);
                             if field_disp.as_bytes().get(25) == Some(&b'R') {
                                 if let Some(ai) = atom_idx {
@@ -5695,6 +5961,7 @@ impl DrawMol {
                 self.annotations.push(annot);
             }
         }
+        Ok(())
     }
 
     // BEGIN RDKIT CPP FUNCTION DrawMol::extractVariableBonds (DrawMol.cpp:698-773)
@@ -5742,24 +6009,84 @@ impl DrawMol {
         &mut self,
         mol: &PreparedDrawingInput<'_>,
     ) -> Result<(), DrawingError> {
+        // RDKit❗✔️: void DrawMol::extractVariableBonds() {
+        // RDKit❗✔️:   boost::dynamic_bitset<> atomsInvolved(drawMol_->getNumAtoms());
+        // RDKit❗✔️:   for (const auto bond : drawMol_->bonds()) {
+        // RDKit❗✔️:     std::string endpts;
+        // RDKit❗✔️:     std::string attach;
+        // RDKit❗✔️:     if (bond->getPropIfPresent(common_properties::_MolFileBondEndPts, endpts) &&
+        // RDKit❗✔️:         bond->getPropIfPresent(common_properties::_MolFileBondAttach, attach)) {
+        // RDKit❗✔️:       // FIX: maybe distinguish between "ANY" and "ALL" values of attach here?
+        // RDKit❗✔️:       std::vector<unsigned int> oats =
+        // RDKit❗✔️:           RDKit::SGroupParsing::ParseV3000Array<unsigned int>(endpts);
+        // RDKit❗✔️:       atomsInvolved.reset();
+        // RDKit❗✔️:       // decrement the indices and do error checking:
+        // RDKit❗✔️:       for (auto &oat : oats) {
+        // RDKit❗✔️:         if (oat == 0 || oat > drawMol_->getNumAtoms()) {
+        // RDKit❗✔️:           throw ValueErrorException("Bad variation point index");
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:         --oat;
+        // RDKit❗✔️:         atomsInvolved.set(oat);
+        // RDKit❗✔️:         auto center = atCds_[oat];
+        // RDKit❗✔️:         Point2D offset{drawOptions_.variableAtomRadius,
+        // RDKit❗✔️:                        drawOptions_.variableAtomRadius};
+        // RDKit❗✔️:         std::vector<Point2D> points{center, offset};
+        // RDKit❗✔️:         DrawShapeEllipse *ell = new DrawShapeEllipse(
+        // RDKit❗✔️:             points, 1, true, drawOptions_.variableAttachmentColour, true, oat);
+        // RDKit❗✔️:         preShapes_.emplace_back(ell);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:
+        // RDKit❗✔️:       for (const auto bond : drawMol_->bonds()) {
+        // RDKit❗✔️:         if (atomsInvolved[bond->getBeginAtomIdx()] &&
+        // RDKit❗✔️:             atomsInvolved[bond->getEndAtomIdx()]) {
+        // RDKit❗✔️:           std::vector<Point2D> points{atCds_[bond->getBeginAtomIdx()],
+        // RDKit❗✔️:                                       atCds_[bond->getEndAtomIdx()]};
+        // RDKit❗✔️:           DrawShapeSimpleLine *sl = new DrawShapeSimpleLine(
+        // RDKit❗✔️:               points, drawOptions_.variableBondWidthMultiplier, true,
+        // RDKit❗✔️:               drawOptions_.variableAttachmentColour,
+        // RDKit❗✔️:               bond->getBeginAtomIdx() + activeAtmIdxOffset_,
+        // RDKit❗✔️:               bond->getEndAtomIdx() + activeAtmIdxOffset_,
+        // RDKit❗✔️:               bond->getIdx() + activeBndIdxOffset_);
+        // RDKit❗✔️:           preShapes_.emplace_back(sl);
+        // RDKit❗✔️:         }
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:       // correct the symbol of the end atom (remove the *):
+        // RDKit❗✔️:       if (!bond->getBeginAtom()->getAtomicNum()) {
+        // RDKit❗✔️:         atomSyms_[bond->getBeginAtomIdx()] = std::make_pair("", OrientType::C);
+        // RDKit❗✔️:         atomLabels_[bond->getBeginAtomIdx()].reset();
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   }
+        // RDKit❗✔️: }
         let n_atoms = mol.topology.atoms.len();
         for bond in &mol.topology.bonds {
             let endpts = bond
                 .prop("_MolFileBondEndPts")
-                .map(|value| value.as_string())
+                .map(cosmolkit_core::property_value_to_string)
                 .transpose()?;
             let attach = bond
                 .prop("_MolFileBondAttach")
-                .map(|value| value.as_string())
+                .map(cosmolkit_core::property_value_to_string)
                 .transpose()?;
             if let (Some(endpts), Some(_attach)) = (endpts, attach) {
                 // Parse the V3000 array of unsigned integers (space-separated)
-                let oat_strs: Vec<&str> = endpts.split_whitespace().collect();
+                let (oat_values, first, last) =
+                    cosmolkit_core::source_unsigned_stream_array(endpts.as_bytes())?;
+                if !first {
+                    eprintln!("WARNING: first character of V3000 array is not '('");
+                }
+                if !last {
+                    eprintln!("WARNING: final character of V3000 array is not ')'");
+                }
                 let mut atoms_involved = vec![false; n_atoms];
-                for oat_str in &oat_strs {
-                    if let Ok(mut oat) = oat_str.parse::<usize>() {
+                for value in oat_values {
+                    {
+                        let mut oat = value as usize;
                         if oat == 0 || oat > n_atoms {
-                            continue; // Bad variation point index, skip
+                            return Err(DrawingError::VariationIndex {
+                                index: value,
+                                atom_count: n_atoms,
+                            });
                         }
                         oat -= 1; // Convert to 0-based
                         atoms_involved[oat] = true;
@@ -5846,12 +6173,12 @@ impl DrawMol {
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION DrawMol::extractBrackets
-    fn extract_brackets(&mut self, mol: &PreparedDrawingInput<'_>) {
+    fn extract_brackets(&mut self, mol: &PreparedDrawingInput<'_>) -> Result<(), DrawingError> {
         // PROPOSAL complete source caller anchor; no marker acceptance upgrade.
         // RDKit❗✔️: void DrawMol::extractBrackets() {
         // RDKit❗✔️:   auto &sgs = getSubstanceGroups(*drawMol_);
         // RDKit❗✔️:   if (sgs.empty()) {
-        // RDKit❗✔️:     return;
+        // RDKit❗✔️:     return Ok(());
         // RDKit❗✔️:   }
         // RDKit❗✔️:   // details of this transformation are in extractAtomCoords
         // RDKit❗✔️:   double rot = drawOptions_.rotate * M_PI / 180.0;
@@ -5989,7 +6316,7 @@ impl DrawMol {
         // RDKit❗✔️:                                   textDrawer_, horizontal);
         // RDKit❗✔️:         annotations_.emplace_back(da);
         // RDKit❗✔️:       } else if (sg.getPropIfPresent("TYPE", label)) {
-        // RDKit❗✔️:         if (label == "GEN") {
+        // RDKit❗✔️:         if (label.as_bytes() == b"GEN") {
         // RDKit❗✔️:           // ChemDraw doesn't draw the GEN (type=generic) label.
         // RDKit❗✔️:           continue;
         // RDKit❗✔️:         }
@@ -6005,7 +6332,7 @@ impl DrawMol {
 
         let sgs = &mol.topology.substance_groups;
         if sgs.is_empty() {
-            return;
+            return Ok(());
         }
         let font_size = self.font_size * self.font_scale;
 
@@ -6117,7 +6444,12 @@ impl DrawMol {
                 }
 
                 // CONNECT annotation
-                if let Some(connect) = sg.props().get("CONNECT") {
+                if let Some(connect) = sg
+                    .props()
+                    .get(b"CONNECT".as_slice())
+                    .map(cosmolkit_core::property_value_to_string)
+                    .transpose()?
+                {
                     let brk_shp = &self.post_shapes[label_brk];
                     let mut bot_pt = brk_shp.points[2];
                     let mut brk_pt = brk_shp.points[3];
@@ -6146,17 +6478,24 @@ impl DrawMol {
                 // LABEL or TYPE annotation
                 let label = sg
                     .props()
-                    .get("LABEL")
-                    .or_else(|| sg.props().get("TYPE"))
-                    .cloned();
+                    .get(b"LABEL".as_slice())
+                    .or_else(|| sg.props().get(b"TYPE".as_slice()))
+                    .map(cosmolkit_core::property_value_to_string)
+                    .transpose()?;
                 if let Some(mut label) = label {
-                    if label == "GEN" {
+                    if label.as_bytes() == b"GEN" {
                         // ChemDraw doesn't draw GEN label
                         continue;
                     }
                     // For TYPE (not LABEL), show lowercase
-                    if sg.props().get("LABEL").is_none() {
-                        label = label.to_lowercase();
+                    if sg.props().get(b"LABEL".as_slice()).is_none() {
+                        label = PropertyText::from(
+                            label
+                                .into_bytes()
+                                .into_iter()
+                                .map(|byte| byte.to_ascii_lowercase())
+                                .collect::<Vec<_>>(),
+                        );
                     }
                     let brk_shp = &self.post_shapes[label_brk];
                     let top_pt = brk_shp.points[1];
@@ -6192,6 +6531,7 @@ impl DrawMol {
                 }
             }
         }
+        Ok(())
     }
 
     // BEGIN RDKIT CPP FUNCTION DrawMol::extractLinkNodes (DrawMol.cpp:930-987)
@@ -6263,7 +6603,7 @@ impl DrawMol {
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
 
-        if mol.properties.prop("molFileLinkNodes").is_none() {
+        if mol.properties.prop("_molLinkNodes").is_none() {
             return Ok(());
         }
         let font_size = self.font_size * self.font_scale;
@@ -7232,7 +7572,7 @@ impl DrawMol {
                 let mut ly_max = f64::MIN;
                 label.find_extremes(&mut lx_min, &mut lx_max, &mut ly_min, &mut ly_max);
                 eprintln!(
-                    "COSMOL_LABEL_EXTREME atom={} symbol={} xmin={:.17} xmax={:.17} ymin={:.17} ymax={:.17}",
+                    "COSMOL_LABEL_EXTREME atom={} symbol={:?} xmin={:.17} xmax={:.17} ymin={:.17} ymax={:.17}",
                     label.atom_idx, label.symbol, lx_min, lx_max, ly_min, ly_max
                 );
             }
@@ -7746,7 +8086,7 @@ pub(crate) fn render_prepared_svg(
     input: &PreparedDrawingInput<'_>,
     width: u32,
     height: u32,
-) -> Result<String, DrawingError> {
+) -> Result<Vec<u8>, DrawingError> {
     render_prepared_svg_with_identity(input, width, height, SvgIdentity::PinnedSource)
 }
 
@@ -7755,7 +8095,7 @@ pub(crate) fn render_prepared_svg_with_identity(
     width: u32,
     height: u32,
     identity: SvgIdentity,
-) -> Result<String, DrawingError> {
+) -> Result<Vec<u8>, DrawingError> {
     // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawMol.cpp:1286
     // RDKit❗✔️: void DrawMol::draw(MolDraw2D &drawer) const {
     // RDKit❗✔️:   PRECONDITION(drawingInitialised_,
@@ -7802,7 +8142,7 @@ pub(crate) fn render_prepared_svg_with_identity(
 
     let draw_mol = DrawMol::from_prepared(input, width, height, DrawOptions::default())?;
 
-    let mut out = String::new();
+    let mut out = Vec::new();
     init_drawing_with_identity(&mut out, width, height, identity);
 
     let bg = draw_mol.options.background_colour;
@@ -7865,7 +8205,7 @@ pub(crate) fn render_prepared_svg_with_identity(
         draw_annotation_svg(&mut out, legend, base_font_size);
     }
 
-    out.push_str("</svg>\n");
+    out.extend_from_slice(("</svg>\n").as_bytes());
     Ok(out)
 }
 
@@ -8116,11 +8456,19 @@ mod drawing_aromatic_source_tests {
                                 0
                             };
                             check(
-                                svg.matches("stroke-dasharray:").count() == expected,
+                                std::str::from_utf8(svg)
+                                    .expect("fixed source SVG UTF8")
+                                    .matches("stroke-dasharray:")
+                                    .count()
+                                    == expected,
                                 format!("SVG dash attributes expected {expected}"),
                             );
                             check(
-                                svg.matches("stroke-dasharray:6,4").count() == expected,
+                                std::str::from_utf8(svg)
+                                    .expect("fixed source SVG UTF8")
+                                    .matches("stroke-dasharray:6,4")
+                                    .count()
+                                    == expected,
                                 "SVG exact source dash pattern".into(),
                             );
                         }
@@ -8382,7 +8730,11 @@ mod drawing_render_legacy_tests {
             .join(reference_dir)
             .join(format!("{label}.svg"));
         let expected = std::fs::read_to_string(path).unwrap();
-        assert_eq!(actual, expected, "frozen {reference_dir} SVG: {label}");
+        assert_eq!(
+            actual.as_slice(),
+            expected.as_bytes(),
+            "frozen {reference_dir} SVG: {label}"
+        );
         assert_eq!(
             before,
             (topology, layout.clone(), properties.clone(), valence, rings),
@@ -8508,7 +8860,7 @@ fn is_linear_atom(mol: &TopologyBlock, at_cds: &[DVec2], atom_idx: usize) -> boo
 
 fn radical_rect_at(trans: DVec2, width: f64, height: f64) -> StringRect {
     StringRect {
-        ch: '\0',
+        ch: b'\0',
         draw_mode: TextDrawType::Normal,
         trans,
         offset: DVec2::ZERO,
@@ -8582,11 +8934,11 @@ fn element_symbol(atomic_num: u8) -> &'static str {
 // SVG rendering primitives
 // ──────────────────────────────────────────────
 
-fn init_drawing(out: &mut String, width: u32, height: u32) {
+fn init_drawing(out: &mut Vec<u8>, width: u32, height: u32) {
     init_drawing_with_identity(out, width, height, SvgIdentity::PinnedSource);
 }
 
-fn init_drawing_with_identity(out: &mut String, width: u32, height: u32, identity: SvgIdentity) {
+fn init_drawing_with_identity(out: &mut Vec<u8>, width: u32, height: u32, identity: SvgIdentity) {
     // BEGIN RDKIT CPP FUNCTION MolDraw2DSVG::initDrawing (MolDraw2DSVG.cpp:122-133)
     // RDKit✔️✔️: void MolDraw2DSVG::initDrawing() {
     // RDKit✔️✔️:   d_os << "<?xml version='1.0' encoding='iso-8859-1'?>\n";
@@ -8608,26 +8960,38 @@ fn init_drawing_with_identity(out: &mut String, width: u32, height: u32, identit
     // regressions retain the source identity. Geometry/text emission shares
     // this producer; bindings and the facade never rewrite completed SVG.
 
-    out.push_str("<?xml version='1.0' encoding='iso-8859-1'?>\n");
-    out.push_str(concat!(
-        "<svg version='1.1' baseProfile='full'\n",
-        "              xmlns='http://www.w3.org/2000/svg'\n",
-    ));
-    out.push_str(match identity {
-        SvgIdentity::PinnedSource => {
-            "                      xmlns:rdkit='http://www.rdkit.org/xml'\n"
-        }
-        SvgIdentity::Cosmolkit => "                      xmlns:ck='https://kit.cosmol.org/'\n",
-    });
-    out.push_str(concat!(
-        "                      xmlns:xlink='http://www.w3.org/1999/xlink'\n",
-        "                  xml:space='preserve'\n",
-    ));
-    out.push_str(&format!(
-        "width='{}px' height='{}px' viewBox='0 0 {} {}'>\n",
-        width, height, width, height
-    ));
-    out.push_str("<!-- END OF HEADER -->\n");
+    out.extend_from_slice(("<?xml version='1.0' encoding='iso-8859-1'?>\n").as_bytes());
+    out.extend_from_slice(
+        (concat!(
+            "<svg version='1.1' baseProfile='full'\n",
+            "              xmlns='http://www.w3.org/2000/svg'\n",
+        ))
+        .as_bytes(),
+    );
+    out.extend_from_slice(
+        (match identity {
+            SvgIdentity::PinnedSource => {
+                "                      xmlns:rdkit='http://www.rdkit.org/xml'\n"
+            }
+            SvgIdentity::Cosmolkit => "                      xmlns:ck='https://kit.cosmol.org/'\n",
+        })
+        .as_bytes(),
+    );
+    out.extend_from_slice(
+        (concat!(
+            "                      xmlns:xlink='http://www.w3.org/1999/xlink'\n",
+            "                  xml:space='preserve'\n",
+        ))
+        .as_bytes(),
+    );
+    out.extend_from_slice(
+        (&format!(
+            "width='{}px' height='{}px' viewBox='0 0 {} {}'>\n",
+            width, height, width, height
+        ))
+            .as_bytes(),
+    );
+    out.extend_from_slice(("<!-- END OF HEADER -->\n").as_bytes());
 }
 
 /// RDKit✔️✔️: background rectangle — equivalent to MolDraw2DSVG::clearDrawing().
@@ -8644,12 +9008,12 @@ fn init_drawing_with_identity(out: &mut String, width: u32, height: u32, identit
 // RDKit✔️✔️:   d_os << "> </rect>\n";
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION MolDraw2DSVG::clearDrawing
-fn clear_drawing(out: &mut String, width: u32, height: u32, colour: DrawColour) {
+fn clear_drawing(out: &mut Vec<u8>, width: u32, height: u32, colour: DrawColour) {
     let col = draw_colour_to_svg(colour);
-    out.push_str(&format!(
+    out.extend_from_slice((&format!(
         "<rect style='opacity:1.0;fill:{};stroke:none' width='{}.0' height='{}.0' x='0.0' y='0.0'> </rect>\n",
         col, width, height
-    ));
+    )).as_bytes());
 }
 
 // BEGIN RDKIT CPP FUNCTION MolDraw2DSVG::initTextDrawer (MolDraw2DSVG.cpp:136-163)
@@ -8662,7 +9026,7 @@ fn clear_drawing(out: &mut String, width: u32, height: u32, colour: DrawColour) 
 // END RDKIT CPP FUNCTION MolDraw2DSVG::initTextDrawer
 /// usvg handles fonts automatically — this is a no-op in COSMolKit.
 #[allow(unused_variables)]
-fn init_text_drawer(out: &mut String) {
+fn init_text_drawer(out: &mut Vec<u8>) {
     // usvg + embedded font handle all font rendering.
 }
 
@@ -8670,7 +9034,7 @@ fn init_text_drawer(out: &mut String) {
 /// emitted by the normal Python `PrepareAndDrawMolecule()` SVG path used by
 /// the RDKit golden data.
 #[allow(unused_variables)]
-fn add_molecule_metadata(out: &mut String, mol: &TopologyBlock, width: u32, height: u32) {
+fn add_molecule_metadata(out: &mut Vec<u8>, mol: &TopologyBlock, width: u32, height: u32) {
     let _ = (out, mol, width, height);
 }
 
@@ -8681,7 +9045,7 @@ fn add_molecule_metadata(out: &mut String, mol: &TopologyBlock, width: u32, heig
 /// separate data-atom-idx/data-bond-idx attributes.
 /// This function is a no-op wrapper kept for RDKit protocol compatibility.
 #[allow(unused_variables)]
-fn tag_atoms(out: &mut String, atom_labels: &[Option<AtomLabel>]) {
+fn tag_atoms(out: &mut Vec<u8>, atom_labels: &[Option<AtomLabel>]) {
     // Tagging is done inline in draw_atom_label_svg via:
     //   <g class='atom-{idx}' data-atom-idx='{idx}' data-atomic-num='{anum}'>
 }
@@ -8692,7 +9056,7 @@ fn tag_atoms(out: &mut String, atom_labels: &[Option<AtomLabel>]) {
 /// functions using the same visible class strings.
 /// This function is a no-op wrapper kept for RDKit protocol compatibility.
 #[allow(unused_variables)]
-fn output_classes(out: &mut String, class_name: &str) {
+fn output_classes(out: &mut Vec<u8>, class_name: &str) {
     // Class output is inline in the SVG drawing functions above.
 }
 
@@ -8717,7 +9081,7 @@ fn output_classes(out: &mut String, class_name: &str) {
 // RDKit✔️✔️:   d_os << " />\n";
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION MolDraw2DSVG::drawLine
-fn draw_line_svg(out: &mut String, line: &DrawLine, scale: f64) {
+fn draw_line_svg(out: &mut Vec<u8>, line: &DrawLine, scale: f64) {
     let col = draw_colour_to_svg(line.colour);
     let width = if line.scale_width {
         line.width * scale
@@ -8735,30 +9099,36 @@ fn draw_line_svg(out: &mut String, line: &DrawLine, scale: f64) {
         format!(";stroke-dasharray:{}", parts.join(","))
     };
 
-    out.push_str("<path ");
-    out.push_str("class='");
-    out.push_str(&format!("bond-{}", line.bond_idx));
+    out.extend_from_slice(("<path ").as_bytes());
+    out.extend_from_slice(("class='").as_bytes());
+    out.extend_from_slice((&format!("bond-{}", line.bond_idx)).as_bytes());
     if line.atom1_idx != usize::MAX {
-        out.push_str(&format!(" atom-{}", line.atom1_idx));
+        out.extend_from_slice((&format!(" atom-{}", line.atom1_idx)).as_bytes());
     }
     if line.atom2_idx != usize::MAX && line.atom2_idx != line.atom1_idx {
-        out.push_str(&format!(" atom-{}", line.atom2_idx));
+        out.extend_from_slice((&format!(" atom-{}", line.atom2_idx)).as_bytes());
     }
-    out.push_str("' ");
-    out.push_str(&format!(
-        "d='M {},{} L {},{}' ",
-        format_double(line.begin.x),
-        format_double(line.begin.y),
-        format_double(line.end.x),
-        format_double(line.end.y),
-    ));
-    out.push_str(&format!(
-        "style='fill:none;fill-rule:evenodd;stroke:{};stroke-width:{}px;\
+    out.extend_from_slice(("' ").as_bytes());
+    out.extend_from_slice(
+        (&format!(
+            "d='M {},{} L {},{}' ",
+            format_double(line.begin.x),
+            format_double(line.begin.y),
+            format_double(line.end.x),
+            format_double(line.end.y),
+        ))
+            .as_bytes(),
+    );
+    out.extend_from_slice(
+        (&format!(
+            "style='fill:none;fill-rule:evenodd;stroke:{};stroke-width:{}px;\
          stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1{}' />\n",
-        col,
-        format_double(width),
-        dash_str
-    ));
+            col,
+            format_double(width),
+            dash_str
+        ))
+            .as_bytes(),
+    );
 }
 
 // BEGIN RDKIT CPP FUNCTION MolDraw2DSVG::drawWavyLine (MolDraw2DSVG.cpp:177-213)
@@ -8784,33 +9154,39 @@ fn draw_line_svg(out: &mut String, line: &DrawLine, scale: f64) {
 // RDKit✔️✔️:   d_os << " />\n";
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION MolDraw2DSVG::drawWavyLine
-fn draw_wavy_line_svg(out: &mut String, begin: DVec2, end: DVec2, col: DrawColour, width: f64) {
+fn draw_wavy_line_svg(out: &mut Vec<u8>, begin: DVec2, end: DVec2, col: DrawColour, width: f64) {
     let segments = get_wavy_line_segments(begin, end, 6, 0.15);
     let col_str = draw_colour_to_svg(col);
     if segments.is_empty() {
         return;
     }
     let (first, _, _, _) = segments[0];
-    out.push_str(&format!(
-        "<path d='M {} {}",
-        format_double(first.x),
-        format_double(first.y)
-    ));
+    out.extend_from_slice(
+        (&format!(
+            "<path d='M {} {}",
+            format_double(first.x),
+            format_double(first.y)
+        ))
+            .as_bytes(),
+    );
     for &(_, cpt1, cpt2, segpt) in &segments {
-        out.push_str(&format!(
-            " C {} {}, {} {}, {} {}",
-            format_double(cpt1.x),
-            format_double(cpt1.y),
-            format_double(cpt2.x),
-            format_double(cpt2.y),
-            format_double(segpt.x),
-            format_double(segpt.y),
-        ));
+        out.extend_from_slice(
+            (&format!(
+                " C {} {}, {} {}, {} {}",
+                format_double(cpt1.x),
+                format_double(cpt1.y),
+                format_double(cpt2.x),
+                format_double(cpt2.y),
+                format_double(segpt.x),
+                format_double(segpt.y),
+            ))
+                .as_bytes(),
+        );
     }
-    out.push_str(&format!(
+    out.extend_from_slice((&format!(
         "' style='fill:none;stroke:{};stroke-width:{}px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />\n",
         col_str, format_double(width),
-    ));
+    )).as_bytes());
 }
 
 // BEGIN RDKIT CPP FUNCTION MolDraw2DSVG::drawEllipse (MolDraw2DSVG.cpp:288-319)
@@ -8826,7 +9202,7 @@ fn draw_wavy_line_svg(out: &mut String, begin: DVec2, end: DVec2, col: DrawColou
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION MolDraw2DSVG::drawEllipse
 fn draw_ellipse_svg(
-    out: &mut String,
+    out: &mut Vec<u8>,
     centre: DVec2,
     rx: f64,
     ry: f64,
@@ -8834,23 +9210,26 @@ fn draw_ellipse_svg(
     width: f64,
 ) {
     let col_str = draw_colour_to_svg(col);
-    out.push_str(&format!(
-        "<ellipse cx='{}' cy='{}' rx='{}' ry='{}' ",
-        format_double(centre.x),
-        format_double(centre.y),
-        format_double(rx),
-        format_double(ry),
-    ));
-    out.push_str(&format!(
+    out.extend_from_slice(
+        (&format!(
+            "<ellipse cx='{}' cy='{}' rx='{}' ry='{}' ",
+            format_double(centre.x),
+            format_double(centre.y),
+            format_double(rx),
+            format_double(ry),
+        ))
+            .as_bytes(),
+    );
+    out.extend_from_slice((&format!(
         "style='fill:none;stroke:{};stroke-width:{}px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' />\n",
         col_str, format_double(width),
-    ));
+    )).as_bytes());
 }
 
 // RDKit❗❌: wedge dispatching — no direct C++ equivalent (DrawMol.cpp converts
 // bond data to DrawShape objects and DrawMol::finishCreateDrawObjects renders them.
 // COSMolKit renders wedges directly from DrawWedge data.
-fn draw_wedge_svg(out: &mut String, wedge: &DrawWedge) {
+fn draw_wedge_svg(out: &mut Vec<u8>, wedge: &DrawWedge) {
     match wedge.kind {
         WedgeKind::Solid => {
             draw_solid_wedge_polygon(out, wedge);
@@ -8863,7 +9242,7 @@ fn draw_wedge_svg(out: &mut String, wedge: &DrawWedge) {
 }
 
 fn draw_solid_wedge_path(
-    out: &mut String,
+    out: &mut Vec<u8>,
     wedge: &DrawWedge,
     points: &[DVec2],
     fill: DrawColour,
@@ -8871,36 +9250,43 @@ fn draw_solid_wedge_path(
 ) {
     let fill_col = draw_colour_to_svg(fill);
     let stroke_col = draw_colour_to_svg(stroke);
-    out.push_str("<path ");
-    out.push_str(&format!(
-        "class='bond-{} atom-{} atom-{}' ",
-        wedge.bond_idx, wedge.atom1_idx, wedge.atom2_idx
-    ));
-    out.push_str(&format!(
-        "d='M {},{}",
-        format_double(points[0].x),
-        format_double(points[0].y),
-    ));
+    out.extend_from_slice(("<path ").as_bytes());
+    out.extend_from_slice(
+        (&format!(
+            "class='bond-{} atom-{} atom-{}' ",
+            wedge.bond_idx, wedge.atom1_idx, wedge.atom2_idx
+        ))
+            .as_bytes(),
+    );
+    out.extend_from_slice(
+        (&format!(
+            "d='M {},{}",
+            format_double(points[0].x),
+            format_double(points[0].y),
+        ))
+            .as_bytes(),
+    );
     for pt in &points[1..] {
-        out.push_str(&format!(
-            " L {},{}",
-            format_double(pt.x),
-            format_double(pt.y)
-        ));
+        out.extend_from_slice(
+            (&format!(" L {},{}", format_double(pt.x), format_double(pt.y))).as_bytes(),
+        );
     }
-    out.push_str(" Z' ");
-    out.push_str(&format!(
-        "style='fill:{};fill-rule:evenodd;fill-opacity:{};stroke:{};stroke-width:{}px;\
+    out.extend_from_slice((" Z' ").as_bytes());
+    out.extend_from_slice(
+        (&format!(
+            "style='fill:{};fill-rule:evenodd;fill-opacity:{};stroke:{};stroke-width:{}px;\
          stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:{};' />\n",
-        fill_col,
-        fill.a,
-        stroke_col,
-        format_double(wedge.width / 2.0),
-        stroke.a
-    ));
+            fill_col,
+            fill.a,
+            stroke_col,
+            format_double(wedge.width / 2.0),
+            stroke.a
+        ))
+            .as_bytes(),
+    );
 }
 
-fn draw_solid_wedge_polygon(out: &mut String, wedge: &DrawWedge) {
+fn draw_solid_wedge_polygon(out: &mut Vec<u8>, wedge: &DrawWedge) {
     // BEGIN RDKIT CPP FUNCTION DrawShapeSolidWedge::myDraw (DrawShape.cpp)
     // RDKit✔️✔️: if (points_.size() == 3 || points_.size() == 9) { drawer.drawTriangle(points_[0], points_[1], points_[2], true); }
     // RDKit✔️✔️: if (points_.size() == 6) { std::vector<Point2D> quadPoints{points_[0], points_[1], points_[2], points_[5]}; drawer.drawPolygon(quadPoints, true); }
@@ -8930,7 +9316,7 @@ fn draw_solid_wedge_polygon(out: &mut String, wedge: &DrawWedge) {
     }
 }
 
-fn draw_dashed_wedge(out: &mut String, wedge: &DrawWedge, col: String) {
+fn draw_dashed_wedge(out: &mut Vec<u8>, wedge: &DrawWedge, col: String) {
     // BEGIN RDKIT CPP FUNCTION DrawShapeDashedWedge::buildLines + myDraw (DrawShape.cpp)
     // RDKit✔️✔️: PRECONDITION(points_.size() == 3, "dashed wedge wrong points");
     // RDKit✔️✔️: auto midend = (end1Cds_ + end2Cds_) * 0.5;
@@ -8976,21 +9362,24 @@ fn draw_dashed_wedge(out: &mut String, wedge: &DrawWedge, col: String) {
     }
     if n_dashes == 0 {
         let col = draw_colour_to_svg(wedge.col1);
-        out.push_str(&format!(
-            "<path class='bond-{} atom-{} atom-{}' d='M {},{} L {},{}' \
+        out.extend_from_slice(
+            (&format!(
+                "<path class='bond-{} atom-{} atom-{}' d='M {},{} L {},{}' \
              style='fill:none;fill-rule:evenodd;stroke:{};stroke-width:{}px;stroke-linecap:butt;\
              stroke-linejoin:miter;stroke-opacity:{}' />\n",
-            wedge.bond_idx,
-            wedge.atom1_idx,
-            wedge.atom2_idx,
-            format_double(end1_cds.x),
-            format_double(end1_cds.y),
-            format_double(end2_cds.x),
-            format_double(end2_cds.y),
-            col,
-            format_double(wedge.width),
-            wedge.col1.a
-        ));
+                wedge.bond_idx,
+                wedge.atom1_idx,
+                wedge.atom2_idx,
+                format_double(end1_cds.x),
+                format_double(end1_cds.y),
+                format_double(end2_cds.x),
+                format_double(end2_cds.y),
+                col,
+                format_double(wedge.width),
+                wedge.col1.a
+            ))
+                .as_bytes(),
+        );
         return;
     }
 
@@ -9013,25 +9402,28 @@ fn draw_dashed_wedge(out: &mut String, wedge: &DrawWedge, col: String) {
         let e11 = at1_cds + e1 * i as f64 * dash_sep;
         let e22 = at1_cds + e2 * i as f64 * dash_sep;
         let stroke = if i > n_dashes / 2 { &col2 } else { &col1 };
-        out.push_str(&format!(
-            "<path class='bond-{} atom-{} atom-{}' d='M {},{} L {},{}' \
+        out.extend_from_slice(
+            (&format!(
+                "<path class='bond-{} atom-{} atom-{}' d='M {},{} L {},{}' \
              style='fill:none;fill-rule:evenodd;stroke:{};stroke-width:{}px;stroke-linecap:butt;\
              stroke-linejoin:miter;stroke-opacity:{}' />\n",
-            wedge.bond_idx,
-            wedge.atom1_idx,
-            wedge.atom2_idx,
-            format_double(e11.x),
-            format_double(e11.y),
-            format_double(e22.x),
-            format_double(e22.y),
-            stroke,
-            format_double(wedge.width),
-            wedge.col1.a
-        ));
+                wedge.bond_idx,
+                wedge.atom1_idx,
+                wedge.atom2_idx,
+                format_double(e11.x),
+                format_double(e11.y),
+                format_double(e22.x),
+                format_double(e22.y),
+                stroke,
+                format_double(wedge.width),
+                wedge.col1.a
+            ))
+                .as_bytes(),
+        );
     }
 }
 
-fn draw_arrow_svg(out: &mut String, arrow: &DrawArrow, scale: f64) {
+fn draw_arrow_svg(out: &mut Vec<u8>, arrow: &DrawArrow, scale: f64) {
     // BEGIN RDKIT CPP FUNCTION DrawShapeArrow::myDraw + MolDraw2D::drawArrow +
     // BEGIN RDKIT CPP FUNCTION MolDraw2D_detail::calcArrowHead +
     // BEGIN RDKIT CPP FUNCTION MolDraw2DSVG::drawLine/drawPolygon
@@ -9058,59 +9450,71 @@ fn draw_arrow_svg(out: &mut String, arrow: &DrawArrow, scale: f64) {
     let (arrow_end, arrow1, arrow2) =
         calc_arrow_head(arrow.end, arrow.begin, arrow.frac, width, arrow.angle);
 
-    out.push_str("<path ");
-    out.push_str("class='");
-    out.push_str(&format!("bond-{}", arrow.bond_idx));
+    out.extend_from_slice(("<path ").as_bytes());
+    out.extend_from_slice(("class='").as_bytes());
+    out.extend_from_slice((&format!("bond-{}", arrow.bond_idx)).as_bytes());
     if arrow.atom1_idx != usize::MAX {
-        out.push_str(&format!(" atom-{}", arrow.atom1_idx));
+        out.extend_from_slice((&format!(" atom-{}", arrow.atom1_idx)).as_bytes());
     }
     if arrow.atom2_idx != usize::MAX && arrow.atom2_idx != arrow.atom1_idx {
-        out.push_str(&format!(" atom-{}", arrow.atom2_idx));
+        out.extend_from_slice((&format!(" atom-{}", arrow.atom2_idx)).as_bytes());
     }
-    out.push_str("' ");
-    out.push_str(&format!(
-        "d='M {},{} L {},{}' ",
-        format_double(arrow.begin.x),
-        format_double(arrow.begin.y),
-        format_double(arrow_end.x),
-        format_double(arrow_end.y),
-    ));
-    out.push_str(&format!(
-        "style='fill:none;fill-rule:evenodd;stroke:{};stroke-width:{}px;\
+    out.extend_from_slice(("' ").as_bytes());
+    out.extend_from_slice(
+        (&format!(
+            "d='M {},{} L {},{}' ",
+            format_double(arrow.begin.x),
+            format_double(arrow.begin.y),
+            format_double(arrow_end.x),
+            format_double(arrow_end.y),
+        ))
+            .as_bytes(),
+    );
+    out.extend_from_slice(
+        (&format!(
+            "style='fill:none;fill-rule:evenodd;stroke:{};stroke-width:{}px;\
          stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:{}' />\n",
-        col,
-        format_double(width),
-        arrow.colour.a
-    ));
+            col,
+            format_double(width),
+            arrow.colour.a
+        ))
+            .as_bytes(),
+    );
 
-    out.push_str("<path ");
-    out.push_str("class='");
-    out.push_str(&format!("bond-{}", arrow.bond_idx));
+    out.extend_from_slice(("<path ").as_bytes());
+    out.extend_from_slice(("class='").as_bytes());
+    out.extend_from_slice((&format!("bond-{}", arrow.bond_idx)).as_bytes());
     if arrow.atom1_idx != usize::MAX {
-        out.push_str(&format!(" atom-{}", arrow.atom1_idx));
+        out.extend_from_slice((&format!(" atom-{}", arrow.atom1_idx)).as_bytes());
     }
     if arrow.atom2_idx != usize::MAX && arrow.atom2_idx != arrow.atom1_idx {
-        out.push_str(&format!(" atom-{}", arrow.atom2_idx));
+        out.extend_from_slice((&format!(" atom-{}", arrow.atom2_idx)).as_bytes());
     }
-    out.push_str("' ");
-    out.push_str(&format!(
-        "d='M {},{} L {},{} L {},{} Z' ",
-        format_double(arrow1.x),
-        format_double(arrow1.y),
-        format_double(arrow_end.x),
-        format_double(arrow_end.y),
-        format_double(arrow2.x),
-        format_double(arrow2.y),
-    ));
-    out.push_str(&format!(
-        "style='fill:{};fill-rule:evenodd;fill-opacity:{};stroke:{};stroke-width:{}px;\
+    out.extend_from_slice(("' ").as_bytes());
+    out.extend_from_slice(
+        (&format!(
+            "d='M {},{} L {},{} L {},{} Z' ",
+            format_double(arrow1.x),
+            format_double(arrow1.y),
+            format_double(arrow_end.x),
+            format_double(arrow_end.y),
+            format_double(arrow2.x),
+            format_double(arrow2.y),
+        ))
+            .as_bytes(),
+    );
+    out.extend_from_slice(
+        (&format!(
+            "style='fill:{};fill-rule:evenodd;fill-opacity:{};stroke:{};stroke-width:{}px;\
          stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:10;stroke-opacity:{};' />\n",
-        col,
-        arrow.colour.a,
-        col,
-        format_double(width),
-        arrow.colour.a
-    ));
+            col,
+            arrow.colour.a,
+            col,
+            format_double(width),
+            arrow.colour.a
+        ))
+            .as_bytes(),
+    );
 }
 
 fn calc_arrow_head(
@@ -9174,7 +9578,7 @@ fn calc_arrow_head(
 // RDKit✔️✔️:   d_os << " />\n";
 // RDKit✔️✔️: }
 // END RDKIT CPP FUNCTION MolDraw2DSVG::drawPolygon
-fn draw_polyline_svg(out: &mut String, polyline: &DrawPolyline, scale: f64) {
+fn draw_polyline_svg(out: &mut Vec<u8>, polyline: &DrawPolyline, scale: f64) {
     if polyline.points.is_empty() {
         return;
     }
@@ -9185,45 +9589,52 @@ fn draw_polyline_svg(out: &mut String, polyline: &DrawPolyline, scale: f64) {
         polyline.width
     };
 
-    out.push_str("<path ");
+    out.extend_from_slice(("<path ").as_bytes());
     // RDKit✔️✔️: outputClasses() writes only class='...'; polygon paths do not
     // RDKit✔️✔️: emit separate data-atom-idx/data-bond-idx attributes here.
     if let Some(bond_idx) = polyline.bond_idx {
-        out.push_str(&format!("class='bond-{}' ", bond_idx));
+        out.extend_from_slice((&format!("class='bond-{}' ", bond_idx)).as_bytes());
     } else if let Some(atom_idx) = polyline.atom1_idx {
-        out.push_str(&format!("class='atom-{}' ", atom_idx));
+        out.extend_from_slice((&format!("class='atom-{}' ", atom_idx)).as_bytes());
     }
-    out.push_str(&format!(
-        "d='M {},{}",
-        format_double(polyline.points[0].x),
-        format_double(polyline.points[0].y),
-    ));
+    out.extend_from_slice(
+        (&format!(
+            "d='M {},{}",
+            format_double(polyline.points[0].x),
+            format_double(polyline.points[0].y),
+        ))
+            .as_bytes(),
+    );
     for pt in &polyline.points[1..] {
-        out.push_str(&format!(
-            " L {},{}",
-            format_double(pt.x),
-            format_double(pt.y)
-        ));
+        out.extend_from_slice(
+            (&format!(" L {},{}", format_double(pt.x), format_double(pt.y))).as_bytes(),
+        );
     }
     if polyline.fill_polys {
-        out.push_str(&format!(
-            " Z' style='fill:{};fill-rule:evenodd;fill-opacity:{};",
-            col, polyline.colour.a
-        ));
+        out.extend_from_slice(
+            (&format!(
+                " Z' style='fill:{};fill-rule:evenodd;fill-opacity:{};",
+                col, polyline.colour.a
+            ))
+                .as_bytes(),
+        );
     } else {
-        out.push_str("' style='fill:none;");
+        out.extend_from_slice(("' style='fill:none;").as_bytes());
     }
-    out.push_str(&format!(
-        "stroke:{};stroke-width:{}px;stroke-linecap:butt;stroke-linejoin:miter;\
+    out.extend_from_slice(
+        (&format!(
+            "stroke:{};stroke-width:{}px;stroke-linecap:butt;stroke-linejoin:miter;\
          stroke-miterlimit:10;stroke-opacity:{};' />\n",
-        col,
-        format_double(width),
-        polyline.colour.a,
-    ));
+            col,
+            format_double(width),
+            polyline.colour.a,
+        ))
+            .as_bytes(),
+    );
 }
 
 /// Private detached projection of DrawAnnotation::draw and text-aligned drawString.
-fn draw_annotation_svg(out: &mut String, annot: &DrawAnnotation, _base_font_size: f64) {
+fn draw_annotation_svg(out: &mut Vec<u8>, annot: &DrawAnnotation, _base_font_size: f64) {
     // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: third_party/rdkit/Code/GraphMol/MolDraw2D/DrawAnnotation.cpp:84
     // RDKit❗✔️: void DrawAnnotation::draw(MolDraw2D &molDrawer) const {
     // RDKit❗✔️:   std::string o_class = molDrawer.getActiveClass();
@@ -9278,7 +9689,7 @@ fn draw_annotation_svg(out: &mut String, annot: &DrawAnnotation, _base_font_size
     // Complexity: one source-shaped linear extraction/alignment and emission;
     // the cached extraction rects and caller input are neither mutated nor cloned.
     let font_size = annot.font_scale * annot.base_font_size;
-    let rects = annotation_string_rects(&annot.text, annot.align, font_size);
+    let rects = annotation_string_rects(annot.text.as_bytes(), annot.align, font_size);
     draw_text_rects_svg(
         out,
         &rects,
@@ -9289,7 +9700,7 @@ fn draw_annotation_svg(out: &mut String, annot: &DrawAnnotation, _base_font_size
     );
 }
 
-fn draw_atom_label_svg(out: &mut String, label: &AtomLabel, base_font_size: f64) {
+fn draw_atom_label_svg(out: &mut Vec<u8>, label: &AtomLabel, base_font_size: f64) {
     // Pinned RDKit 351f8f378f8ad6bbd517980c38896e66bf907af8: DrawText.cpp
     // RDKit❗✔️: void DrawText::drawString(const std::string &label, const Point2D &cds,
     // RDKit❗✔️:                           OrientType orient) {
@@ -9313,7 +9724,7 @@ fn draw_atom_label_svg(out: &mut String, label: &AtomLabel, base_font_size: f64)
 }
 
 fn draw_text_rects_svg(
-    out: &mut String,
+    out: &mut Vec<u8>,
     rects: &[StringRect],
     pos: DVec2,
     colour: DrawColour,
@@ -9381,23 +9792,28 @@ fn draw_text_rects_svg(
     for rect in rects {
         let x = format_double(pos.x + rect.trans.x - rect.offset.x);
         let y = format_double(pos.y - rect.trans.y + rect.offset.y - rect.rect_corr - rect.y_shift);
-        let ch_str = xml_escape(&rect.ch.to_string());
+        let ch_bytes = xml_escape(&[rect.ch]);
         let font_size =
             format_svg_font_size_px(base_font_size * select_scale_factor(rect.ch, rect.draw_mode));
-        out.push_str(&format!("<text x='{}' y='{}'", x, y));
+        out.extend_from_slice((&format!("<text x='{}' y='{}'", x, y)).as_bytes());
         if !class_.is_empty() {
-            out.push_str(&format!(" class='{}'", class_));
+            out.extend_from_slice((&format!(" class='{}'", class_)).as_bytes());
         }
-        out.push_str(&format!(
-            " style='font-size:{}px;font-style:normal;font-weight:normal;\
+        out.extend_from_slice(
+            (&format!(
+                " style='font-size:{}px;font-style:normal;font-weight:normal;\
              fill-opacity:1;stroke:none;font-family:sans-serif;\
-             text-anchor:start;fill:{}' >{}</text>\n",
-            font_size, col, ch_str,
-        ));
+             text-anchor:start;fill:{}' >",
+                font_size, col,
+            ))
+                .as_bytes(),
+        );
+        out.extend_from_slice(&ch_bytes);
+        out.extend_from_slice(b"</text>\n");
     }
 }
 
-fn draw_radical_svg(out: &mut String, radicals: &[DrawRadical], spot_rad: f64) {
+fn draw_radical_svg(out: &mut Vec<u8>, radicals: &[DrawRadical], spot_rad: f64) {
     for rad in radicals {
         let cx = rad.rect.trans.x;
         let cy = rad.rect.trans.y;
@@ -9487,7 +9903,7 @@ fn draw_radical_svg(out: &mut String, radicals: &[DrawRadical], spot_rad: f64) {
     }
 }
 
-fn draw_radical_spot_svg(out: &mut String, centre: DVec2, radius: f64, atom_idx: usize) {
+fn draw_radical_spot_svg(out: &mut Vec<u8>, centre: DVec2, radius: f64, atom_idx: usize) {
     let mut pts: Vec<DVec2> = Vec::new();
     let num_steps = 1 + ((360.0f64 - 0.0) / 5.0) as i32;
     let ang_incr = ((360.0f64 - 0.0) / num_steps as f64) * std::f64::consts::PI / 180.0;
@@ -9537,20 +9953,20 @@ mod drawing_helpers_legacy_tests {
 
     #[test]
     fn test_parse_draw_chars() {
-        let (chars, modes) = parse_draw_chars("C");
-        assert_eq!(chars, vec!['C']);
+        let (chars, modes) = parse_draw_chars(b"C");
+        assert_eq!(chars, vec![b'C']);
         assert_eq!(modes, vec![TextDrawType::Normal]);
 
-        let (chars, modes) = parse_draw_chars("<sup>3</sup>C");
-        assert_eq!(chars, vec!['3', 'C']);
+        let (chars, modes) = parse_draw_chars(b"<sup>3</sup>C");
+        assert_eq!(chars, vec![b'3', b'C']);
         assert_eq!(modes, vec![TextDrawType::Superscript, TextDrawType::Normal]);
     }
 
     #[test]
     fn test_bond_string_rects() {
-        let rects = get_string_rects("C", OrientType::C, 0.6);
+        let rects = get_string_rects(b"C", OrientType::C, 0.6);
         assert!(!rects.is_empty());
-        assert_eq!(rects[0].ch, 'C');
+        assert_eq!(rects[0].ch, b'C');
     }
 
     #[test]
@@ -9561,7 +9977,7 @@ mod drawing_helpers_legacy_tests {
     #[test]
     fn debug_row142_string_rect_intersection_matches_current_runtime() {
         let self_rect = StringRect {
-            ch: 'C',
+            ch: b'C',
             draw_mode: TextDrawType::Normal,
             trans: DVec2::new(5.11364365437029811, 2.85196889627227712),
             offset: DVec2::ZERO,
@@ -9572,7 +9988,7 @@ mod drawing_helpers_legacy_tests {
             rect_corr: 0.0,
         };
         let other_rect = StringRect {
-            ch: 'C',
+            ch: b'C',
             draw_mode: TextDrawType::Normal,
             trans: DVec2::new(5.07639897095288184, 3.19438069942302949),
             offset: DVec2::ZERO,

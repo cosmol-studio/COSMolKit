@@ -1,5 +1,6 @@
 //! MolBlock writer implementation.
 
+use cosmolkit_model::{PropertyText, PropertyValue};
 use std::borrow::Cow;
 
 use cosmolkit_core::{RingInfo, ValenceAssignment, WedgeAssignments};
@@ -63,7 +64,7 @@ impl MolWriteContext<'_> {
     fn properties(&self) -> &MoleculeProperties {
         self.properties
     }
-    fn prop(&self, key: &str) -> Option<&str> {
+    fn prop(&self, key: &str) -> Option<&PropertyValue> {
         self.properties.prop(key)
     }
     fn coordinates_2d(&self) -> Option<&[[f64; 2]]> {
@@ -82,7 +83,7 @@ impl MolWriteContext<'_> {
 pub fn write_mol_block_with_params(
     data: MolWriteInput<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let MolWriteInput {
         topology,
         coordinates,
@@ -104,7 +105,7 @@ pub fn write_mol_block_with_params(
 pub fn write_sdf_with_params(
     data: MolWriteInput<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let MolWriteInput {
         topology,
         coordinates,
@@ -126,7 +127,7 @@ pub fn write_sdf_with_params(
 pub fn write_sdf_3d_with_params(
     data: MolWriteInput<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let MolWriteInput {
         topology,
         coordinates,
@@ -201,7 +202,7 @@ fn query_write_context(data: QueryMolWriteInput<'_>) -> Result<MolWriteContext<'
 pub fn write_query_mol_block_with_params(
     data: QueryMolWriteInput<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let input = query_write_context(data)?;
     mol_to_mol_block_with_params(&input, params)
 }
@@ -209,7 +210,7 @@ pub fn write_query_mol_block_with_params(
 pub fn write_query_sdf_with_params(
     data: QueryMolWriteInput<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let input = query_write_context(data)?;
     mol_to_sdf_record_with_params(&input, params)
 }
@@ -258,6 +259,8 @@ pub enum MolWriteError {
     Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
     #[error(transparent)]
     Property(#[from] cosmolkit_model::PropertyValueError),
+    #[error(transparent)]
+    UnsignedProperty(#[from] cosmolkit_core::PropertyUIntReadError),
     #[error(transparent)]
     Detached(#[from] crate::SdfWriteError),
 }
@@ -346,7 +349,7 @@ struct SelectedCoordinates {
     selection: Option<MolCoordinateSelection>,
 }
 
-fn mol_to_v2000_2d_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWriteError> {
+fn mol_to_v2000_2d_block(molecule: &MolWriteContext<'_>) -> Result<PropertyText, MolWriteError> {
     let params = MolBlockWriteParams {
         format: SdfFormat::V2000,
         force_2d: true,
@@ -355,7 +358,7 @@ fn mol_to_v2000_2d_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWr
     mol_to_v2000_block_with_params(molecule, CoordinateSelection::TwoD(None), &params)
 }
 
-fn mol_to_v2000_3d_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWriteError> {
+fn mol_to_v2000_3d_block(molecule: &MolWriteContext<'_>) -> Result<PropertyText, MolWriteError> {
     let params = MolBlockWriteParams {
         format: SdfFormat::V2000,
         ..Default::default()
@@ -363,7 +366,7 @@ fn mol_to_v2000_3d_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWr
     mol_to_v2000_block_with_params(molecule, CoordinateSelection::ThreeD(None), &params)
 }
 
-fn mol_to_v2000_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWriteError> {
+fn mol_to_v2000_block(molecule: &MolWriteContext<'_>) -> Result<PropertyText, MolWriteError> {
     let params = MolBlockWriteParams {
         format: SdfFormat::V2000,
         ..Default::default()
@@ -371,7 +374,7 @@ fn mol_to_v2000_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWrite
     mol_to_v2000_block_with_params(molecule, CoordinateSelection::Auto, &params)
 }
 
-fn mol_to_v3000_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWriteError> {
+fn mol_to_v3000_block(molecule: &MolWriteContext<'_>) -> Result<PropertyText, MolWriteError> {
     let params = MolBlockWriteParams {
         format: SdfFormat::V3000,
         ..Default::default()
@@ -379,7 +382,7 @@ fn mol_to_v3000_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWrite
     mol_to_v3000_block_with_params(molecule, CoordinateSelection::Auto, &params)
 }
 
-fn mol_to_v3000_2d_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWriteError> {
+fn mol_to_v3000_2d_block(molecule: &MolWriteContext<'_>) -> Result<PropertyText, MolWriteError> {
     let params = MolBlockWriteParams {
         format: SdfFormat::V3000,
         force_2d: true,
@@ -388,7 +391,7 @@ fn mol_to_v3000_2d_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWr
     mol_to_v3000_block_with_params(molecule, CoordinateSelection::TwoD(None), &params)
 }
 
-fn mol_to_v3000_3d_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWriteError> {
+fn mol_to_v3000_3d_block(molecule: &MolWriteContext<'_>) -> Result<PropertyText, MolWriteError> {
     let params = MolBlockWriteParams {
         format: SdfFormat::V3000,
         ..Default::default()
@@ -399,7 +402,7 @@ fn mol_to_v3000_3d_block(molecule: &MolWriteContext<'_>) -> Result<String, MolWr
 fn mol_to_mol_block_with_params(
     molecule: &MolWriteContext<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let selection = export_selection(params, None)?;
     match params.format {
         SdfFormat::V2000 => mol_to_v2000_block_with_params(molecule, selection, params),
@@ -410,7 +413,7 @@ fn mol_to_mol_block_with_params(
 fn mol_to_2d_sdf_record(
     molecule: &MolWriteContext<'_>,
     format: SdfFormat,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let block = match format {
         SdfFormat::V2000 => mol_to_v2000_2d_block(molecule)?,
         SdfFormat::V3000 => mol_to_v3000_2d_block(molecule)?,
@@ -421,7 +424,7 @@ fn mol_to_2d_sdf_record(
 fn mol_to_sdf_record_with_params(
     molecule: &MolWriteContext<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let block = mol_to_mol_block_with_params(molecule, params)?;
     Ok(append_sdf_record_fields(block, molecule))
 }
@@ -429,7 +432,7 @@ fn mol_to_sdf_record_with_params(
 fn mol_to_3d_sdf_record(
     molecule: &MolWriteContext<'_>,
     format: SdfFormat,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let block = match format {
         SdfFormat::V2000 => mol_to_v2000_3d_block(molecule)?,
         SdfFormat::V3000 => mol_to_v3000_3d_block(molecule)?,
@@ -754,7 +757,7 @@ fn mol_to_v3000_block_with_params(
     molecule: &MolWriteContext<'_>,
     selection: CoordinateSelection,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
     // RDKit❗❌: std::string getV3000CTAB(const ROMol &tmol,
     // RDKit❗❌:                          const boost::dynamic_bitset<> &wasAromatic, int confId,
@@ -832,7 +835,7 @@ fn mol_to_v3000_block_with_params(
 fn render_v3000(
     prepared: &PreparedMol<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // RDKit❗❌: void GetMolFileAtomProperties(const Atom *atom, const Conformer *conf,
     // RDKit❗❌:                               int &totValence, int &atomMapNumber,
     // RDKit❗❌:                               unsigned int &parityFlag, double &x, double &y,
@@ -900,22 +903,38 @@ fn render_v3000(
         molecule.valence.as_deref().expect("prepared valence"),
     );
 
-    let mut out = String::new();
-    out.push_str(molecule.properties().name().unwrap_or_default());
-    out.push('\n');
-    out.push_str(&molfile_info_line(molecule, selected));
-    out.push('\n');
-    out.push_str(molecule.prop("_MolFileComments").unwrap_or_default());
-    out.push('\n');
-    out.push_str("  0  0  0  0  0  0  0  0  0  0999 V3000\n");
-    out.push_str("M  V30 BEGIN CTAB\n");
-    out.push_str(&format!(
-        "M  V30 COUNTS {} {} {} 0 {}\n",
-        molecule.num_atoms(),
-        molecule.num_bonds(),
-        molecule.substance_groups().len() + generated_sgroups.len(),
-        chiral_flag
-    ));
+    let mut out = PropertyText::new();
+    out.extend_bytes(
+        (molecule
+            .properties()
+            .name()
+            .map_or(&b""[..], PropertyText::as_bytes))
+        .as_ref(),
+    );
+    out.push_byte(b'\n');
+    out.extend_bytes((&molfile_info_line(molecule, selected)?).as_ref());
+    out.push_byte(b'\n');
+    out.extend_bytes(
+        (molecule
+            .prop("_MolFileComments")
+            .map(crate::sdf::model_string_property)
+            .transpose()?
+            .unwrap_or_default())
+        .as_ref(),
+    );
+    out.push_byte(b'\n');
+    out.extend_bytes(("  0  0  0  0  0  0  0  0  0  0999 V3000\n").as_ref());
+    out.extend_bytes(("M  V30 BEGIN CTAB\n").as_ref());
+    out.extend_bytes(
+        (&format!(
+            "M  V30 COUNTS {} {} {} 0 {}\n",
+            molecule.num_atoms(),
+            molecule.num_bonds(),
+            molecule.substance_groups().len() + generated_sgroups.len(),
+            chiral_flag
+        ))
+            .as_ref(),
+    );
     let v3k_parity_flags: Vec<u32> = if selected.is_3d {
         if let Some(ref coords_3d) = selected.coords {
             let valence = molblock_valence_assignment(molecule)?;
@@ -930,38 +949,38 @@ fn render_v3000(
     } else {
         vec![0u32; molecule.num_atoms()]
     };
-    out.push_str("M  V30 BEGIN ATOM\n");
+    out.extend_bytes(("M  V30 BEGIN ATOM\n").as_ref());
     for atom in molecule.atoms() {
         let coord = selected
             .coords
             .as_ref()
             .and_then(|coords| coords.get(atom.id().index()).copied())
             .unwrap_or([0.0, 0.0, 0.0]);
-        out.push_str(&v3000_atom_line(
-            molecule,
-            atom,
-            coord,
-            params.precision,
-            &v3k_parity_flags,
-        )?);
-        out.push('\n');
+        out.extend_bytes(
+            (&v3000_atom_line(molecule, atom, coord, params.precision, &v3k_parity_flags)?)
+                .as_ref(),
+        );
+        out.push_byte(b'\n');
     }
-    out.push_str("M  V30 END ATOM\n");
+    out.extend_bytes(("M  V30 END ATOM\n").as_ref());
     if molecule.num_bonds() != 0 {
-        out.push_str("M  V30 BEGIN BOND\n");
+        out.extend_bytes(("M  V30 BEGIN BOND\n").as_ref());
         for bond in molecule.bonds() {
-            out.push_str(&v3000_bond_line(
-                molecule,
-                bond,
-                params.include_stereo,
-                aromatic_bonds,
-                wedge_bonds,
-                selected.coords.as_deref(),
-                stereo_context,
-            )?);
-            out.push('\n');
+            out.extend_bytes(
+                (&v3000_bond_line(
+                    molecule,
+                    bond,
+                    params.include_stereo,
+                    aromatic_bonds,
+                    wedge_bonds,
+                    selected.coords.as_deref(),
+                    stereo_context,
+                )?)
+                    .as_ref(),
+            );
+            out.push_byte(b'\n');
         }
-        out.push_str("M  V30 END BOND\n");
+        out.extend_bytes(("M  V30 END BOND\n").as_ref());
     }
     append_v3000_sgroup_lines(&mut out, molecule, &generated_sgroups)?;
     // RDKit❗✔️:   appendEnhancedStereoGroups(res, tmol, wedgeBonds);
@@ -969,8 +988,8 @@ fn render_v3000(
     // This calls the same group formatter once, with no additional scan/copy.
     // Behavioral validation is proposed for independent p1 review.
     append_v3000_collection_lines(&mut out, molecule, &prepared.wedge_bonds)?;
-    out.push_str("M  V30 END CTAB\n");
-    out.push_str("M  END\n");
+    out.extend_bytes(("M  V30 END CTAB\n").as_ref());
+    out.extend_bytes(("M  END\n").as_ref());
     Ok(out)
 }
 
@@ -978,7 +997,7 @@ fn mol_to_v2000_block_with_params(
     molecule: &MolWriteContext<'_>,
     selection: CoordinateSelection,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
     // RDKit❗❌: std::string outputMolToMolBlock(const RWMol &tmol, int confId,
     // RDKit❗❌:                                 MolFileFormat whichFormat,
@@ -1157,7 +1176,7 @@ fn mol_to_v2000_block_with_params(
 fn render_v2000(
     prepared: &PreparedMol<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // RDKit❗❌: void GetMolFileAtomProperties(const Atom *atom, const Conformer *conf,
     // RDKit❗❌:                               int &totValence, int &atomMapNumber,
     // RDKit❗❌:                               unsigned int &parityFlag, double &x, double &y,
@@ -1222,26 +1241,42 @@ fn render_v2000(
     validate_v2000_coordinate_range(selected.coords.as_deref())?;
     let chiral_flag = molfile_chiral_flag(molecule)?;
 
-    let mut out = String::new();
-    out.push_str(molecule.properties().name().unwrap_or_default());
-    out.push('\n');
-    out.push_str(&molfile_info_line(molecule, selected));
-    out.push('\n');
-    out.push_str(molecule.prop("_MolFileComments").unwrap_or_default());
-    out.push('\n');
-    out.push_str(&format!(
-        "{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}999 V2000\n",
-        molecule.num_atoms(),
-        molecule.num_bonds(),
-        0,
-        molecule.substance_groups().len(),
-        chiral_flag,
-        0,
-        0,
-        0,
-        0,
-        0
-    ));
+    let mut out = PropertyText::new();
+    out.extend_bytes(
+        (molecule
+            .properties()
+            .name()
+            .map_or(&b""[..], PropertyText::as_bytes))
+        .as_ref(),
+    );
+    out.push_byte(b'\n');
+    out.extend_bytes((&molfile_info_line(molecule, selected)?).as_ref());
+    out.push_byte(b'\n');
+    out.extend_bytes(
+        (molecule
+            .prop("_MolFileComments")
+            .map(crate::sdf::model_string_property)
+            .transpose()?
+            .unwrap_or_default())
+        .as_ref(),
+    );
+    out.push_byte(b'\n');
+    out.extend_bytes(
+        (&format!(
+            "{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}999 V2000\n",
+            molecule.num_atoms(),
+            molecule.num_bonds(),
+            0,
+            molecule.substance_groups().len(),
+            chiral_flag,
+            0,
+            0,
+            0,
+            0,
+            0
+        ))
+            .as_ref(),
+    );
 
     let parity_flags: Vec<u32> = if selected.is_3d {
         if let Some(ref coords_3d) = selected.coords {
@@ -1263,20 +1298,23 @@ fn render_v2000(
             .as_ref()
             .and_then(|coords| coords.get(atom.id().index()).copied())
             .unwrap_or([0.0, 0.0, 0.0]);
-        out.push_str(&v2000_atom_line(atom, coord, molecule, &parity_flags)?);
-        out.push('\n');
+        out.extend_bytes((&v2000_atom_line(atom, coord, molecule, &parity_flags)?).as_ref());
+        out.push_byte(b'\n');
     }
     for bond in molecule.bonds() {
-        out.push_str(&v2000_bond_line(
-            molecule,
-            bond,
-            params.include_stereo,
-            aromatic_bonds,
-            wedge_bonds,
-            selected.coords.as_deref(),
-            stereo_context,
-        )?);
-        out.push('\n');
+        out.extend_bytes(
+            (&v2000_bond_line(
+                molecule,
+                bond,
+                params.include_stereo,
+                aromatic_bonds,
+                wedge_bonds,
+                selected.coords.as_deref(),
+                stereo_context,
+            )?)
+                .as_ref(),
+        );
+        out.push_byte(b'\n');
     }
     append_v2000_property_lines(&mut out, molecule)?;
     append_v2000_rgroup_lines(&mut out, molecule)?;
@@ -1289,23 +1327,19 @@ fn render_v2000(
     );
     append_v2000_pxa_lines(&mut out, molecule)?;
     append_v2000_sgroup_lines(&mut out, molecule)?;
-    out.push_str("M  END\n");
+    out.extend_bytes(("M  END\n").as_ref());
     Ok(out)
 }
 
 /// Validate that the molecule's query atoms/bonds can be written in
 /// the V2000/V3000 format. Rejects only unsupported recursive SMARTS,
 /// RGroupLabel, and MolFileAlias queries.
-fn molfile_chiral_flag(molecule: &MolWriteContext<'_>) -> Result<i32, MolWriteError> {
-    molecule
+fn molfile_chiral_flag(molecule: &MolWriteContext<'_>) -> Result<u32, MolWriteError> {
+    Ok(molecule
         .prop("_MolFileChiralFlag")
-        .map(|value| {
-            value.trim().parse::<i32>().map_err(|_| {
-                MolWriteError::Value(format!("invalid _MolFileChiralFlag value '{value}'"))
-            })
-        })
-        .transpose()
-        .map(|flag| flag.unwrap_or(0))
+        .map(cosmolkit_core::property_value_to_uint)
+        .transpose()?
+        .unwrap_or(0))
 }
 
 fn select_coordinates(
@@ -1493,7 +1527,10 @@ fn validate_v2000_coordinate_range(coords: Option<&[[f64; 3]]>) -> Result<(), Mo
     Ok(())
 }
 
-fn molfile_info_line(molecule: &MolWriteContext<'_>, selected: &SelectedCoordinates) -> String {
+fn molfile_info_line(
+    molecule: &MolWriteContext<'_>,
+    selected: &SelectedCoordinates,
+) -> Result<PropertyText, MolWriteError> {
     // RDKit❗❌: std::string outputMolToMolBlock(const RWMol &tmol, int confId,
     // RDKit❗❌:                                 MolFileFormat whichFormat,
     // RDKit❗❌:                                 unsigned int precision,
@@ -1673,16 +1710,16 @@ fn molfile_info_line(molecule: &MolWriteContext<'_>, selected: &SelectedCoordina
     if let Some(label) = label {
         let mut line = format!("  {:>8}{:>10}", "COSMolKit", "");
         line.push_str(label);
-        return line;
+        return Ok(line.into());
     }
     if let Some(info) = molecule.prop("_MolFileInfo") {
-        return info.to_string();
+        return Ok(crate::sdf::model_string_property(info)?);
     }
     if let Some(info) = molecule.prop("_MolFileInfoLine") {
-        return info.to_string();
+        return Ok(crate::sdf::model_string_property(info)?);
     }
     let mut line = format!("  {:>8}{:>10}", "COSMolKit", "");
-    line
+    Ok(line.into())
 }
 
 fn v2000_atom_line(
@@ -1690,7 +1727,7 @@ fn v2000_atom_line(
     coord: [f64; 3],
     molecule: &MolWriteContext<'_>,
     parity_flags: &[u32],
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
     // RDKit❗❌: const std::string GetMolFileAtomLine(const Atom *atom, const Conformer *conf,
     // RDKit❗❌:                                      boost::dynamic_bitset<> &queryListAtoms) {
@@ -1758,7 +1795,7 @@ fn v2000_atom_line(
     crate::sdf::format_v2000_atom_line(
         atom,
         coord,
-        symbol.trim_end(),
+        symbol.as_bytes(),
         parity_flag as i32,
         0,
         0,
@@ -2053,7 +2090,7 @@ fn v2000_bond_line(
     wedge_bonds: &WedgeAssignments,
     coords: Option<&[[f64; 3]]>,
     stereo_context: MolfileStereoContext<'_>,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
     // RDKit❗❌: const std::string GetMolFileBondLine(
     // RDKit❗❌:     const Bond *bond,
@@ -2120,7 +2157,7 @@ fn v2000_bond_line(
     if topology != 0 {
         line.push_str(&format!(" {:>2} {:>2}", 0, topology));
     }
-    Ok(line)
+    Ok(PropertyText::from(line))
 }
 
 fn v2000_bond_stereo_code(
@@ -2186,7 +2223,7 @@ fn v3000_atom_line(
     coord: [f64; 3],
     precision: usize,
     parity_flags: &[u32],
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
     // RDKit❗❌: const std::string GetV3000MolFileAtomLine(
     // RDKit❗❌:     const Atom *atom, const Conformer *conf,
@@ -2335,42 +2372,46 @@ fn v3000_atom_line(
     let symbol = v3000_atom_symbol(atom, molecule.query_atom(atom.id()))?;
     let parity_flag = parity_flags[atom.id().index()];
     let tot_valence = molfile_total_valence_field(molecule, atom)?;
-    let mut out = format!("M  V30 {} {}", atom.id().index() + 1, symbol);
-    out.push_str(&format!(
-        " {0:.1$} {2:.1$} {3:.1$} {4}",
-        coord[0],
-        precision,
-        coord[1],
-        coord[2],
-        atom.atom_map().unwrap_or(0)
-    ));
+    let mut out: PropertyText = format!("M  V30 {} ", atom.id().index() + 1).into();
+    out.extend_bytes(symbol.as_bytes());
+    out.extend_bytes(
+        (&format!(
+            " {0:.1$} {2:.1$} {3:.1$} {4}",
+            coord[0],
+            precision,
+            coord[1],
+            coord[2],
+            atom.atom_map().unwrap_or(0)
+        ))
+            .as_ref(),
+    );
     if parity_flag != 0 {
-        out.push_str(&format!(" CFG={parity_flag}"));
+        out.extend_bytes((&format!(" CFG={parity_flag}")).as_ref());
     }
     if atom.formal_charge() != 0 {
-        out.push_str(&format!(" CHG={}", atom.formal_charge()));
+        out.extend_bytes((&format!(" CHG={}", atom.formal_charge())).as_ref());
     }
     if let Some(isotope) = atom.isotope()
         && !is_atom_rgroup(atom)
     {
-        out.push_str(&format!(" MASS={isotope}"));
+        out.extend_bytes((&format!(" MASS={isotope}")).as_ref());
     }
     let electrons = atom.radical_electrons();
     let valence = molblock_valence_assignment(molecule)?;
     if electrons != 0 && molfile_total_degree(molecule, atom, &valence) != 0 {
         let code = if electrons % 2 == 1 { 2 } else { 3 };
-        out.push_str(&format!(" RAD={code}"));
+        out.extend_bytes((&format!(" RAD={code}")).as_ref());
     }
     if tot_valence != 0 {
         if tot_valence == 15 {
-            out.push_str(" VAL=-1");
+            out.extend_bytes((" VAL=-1").as_ref());
         } else {
-            out.push_str(&format!(" VAL={tot_valence}"));
+            out.extend_bytes((&format!(" VAL={tot_valence}")).as_ref());
         }
     }
     if atom.prop("_MolFileRLabel").is_some() {
         let label = molfile_rlabel(atom)?.expect("present label");
-        out.push_str(&format!(" RGROUPS=(1 {label})"));
+        out.extend_bytes((&format!(" RGROUPS=(1 {label})")).as_ref());
     }
     crate::sdf::append_v3000_atom_properties(&mut out, atom, true)?;
     Ok(out)
@@ -2426,37 +2467,14 @@ fn molfile_rlabel(atom: &Atom) -> Result<Option<u32>, MolWriteError> {
     let Some(value) = atom.prop("_MolFileRLabel") else {
         return Ok(None);
     };
-    let invalid = || {
-        MolWriteError::Detached(crate::SdfWriteError::Atom(
-            "_MolFileRLabel has an invalid unsigned integer value",
-        ))
-    };
-    let label = match value {
-        cosmolkit_model::PropertyValue::UInt(v) => *v,
-        cosmolkit_model::PropertyValue::Int(v) => u32::try_from(*v).map_err(|_| invalid())?,
-        cosmolkit_model::PropertyValue::String(text) => {
-            // Source trims only the right, then lexical_cast<unsigned>. Its
-            // optional negative string sign wraps the unsigned magnitude;
-            // negative stored integers instead fail numeric_cast above.
-            let text = text.trim_end();
-            if let Some(magnitude) = text.strip_prefix('-') {
-                magnitude
-                    .parse::<u32>()
-                    .map_err(|_| invalid())?
-                    .wrapping_neg()
-            } else {
-                text.parse::<u32>().map_err(|_| invalid())?
-            }
-        }
-        _ => return Err(invalid()),
-    };
+    let label = cosmolkit_core::property_value_to_uint(value)?;
     Ok(Some(label))
 }
 
 fn v3000_atom_symbol(
     atom: &Atom,
     query: Option<&cosmolkit_model::QueryAtom>,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // RDKit❗❌: const std::string GetV3000MolFileAtomLine(
     // RDKit❗❌:     const Atom *atom, const Conformer *conf,
     // RDKit❗❌:     boost::dynamic_bitset<> &queryListAtoms, unsigned int precision) {
@@ -2502,9 +2520,9 @@ fn v3000_atom_symbol(
             .collect::<Result<Vec<_>, _>>()?
             .join(",");
         return Ok(if negated {
-            format!("\"NOT [{values}]\"")
+            format!("\"NOT [{values}]\"").into()
         } else {
-            format!("[{values}]")
+            format!("[{values}]").into()
         });
     }
     v2000_atom_symbol(atom, false, query)
@@ -2518,7 +2536,7 @@ fn v3000_bond_line(
     wedge_bonds: &WedgeAssignments,
     coords: Option<&[[f64; 3]]>,
     stereo_context: MolfileStereoContext<'_>,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
     // RDKit❗❌: const std::string GetV3000MolFileBondLine(
     // RDKit❗❌:     const Bond *bond,
@@ -2593,13 +2611,14 @@ fn v3000_bond_line(
     let type_code = query_bond_type_code(molecule.query_bond(bond.id()))
         .filter(|code| *code != 0)
         .map_or_else(|| v3000_bond_type_code(bond), Ok)?;
-    let mut out = format!(
+    let mut out: PropertyText = format!(
         "M  V30 {} {} {} {}",
         bond.id().index() + 1,
         type_code,
         begin_idx + 1,
         end_idx + 1
-    );
+    )
+    .into();
     if aromatic_bonds.contains(&bond.id().index())
         && cfg == Some(2)
         && matches!(
@@ -2610,14 +2629,14 @@ fn v3000_bond_line(
         cfg = None;
     }
     if let Some(cfg) = cfg {
-        out.push_str(&format!(" CFG={cfg}"));
+        out.extend_bytes((&format!(" CFG={cfg}")).as_ref());
     }
 
     let topology = molecule
         .query_bond(bond.id())
         .map_or(0, |row| query_bond_topology(row.predicate()));
     if topology != 0 {
-        out.push_str(&format!(" TOPO={topology}"));
+        out.extend_bytes((&format!(" TOPO={topology}")).as_ref());
     }
     crate::sdf::append_v3000_bond_properties(&mut out, bond)?;
     Ok(out)
@@ -2658,7 +2677,7 @@ fn v3000_bond_type_code(bond: &Bond) -> Result<u32, MolWriteError> {
 }
 
 fn append_v3000_sgroup_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
     generated_sgroups: &[SubstanceGroup],
 ) -> Result<(), MolWriteError> {
@@ -2666,23 +2685,20 @@ fn append_v3000_sgroup_lines(
     if sgroups.is_empty() && generated_sgroups.is_empty() {
         return Ok(());
     }
-    out.push_str("M  V30 BEGIN SGROUP\n");
+    out.extend_bytes(("M  V30 BEGIN SGROUP\n").as_ref());
     for (idx, sgroup) in sgroups.iter().enumerate() {
-        out.push_str(&crate::sdf_sgroups::write_v3000_sgroup(
-            idx + 1,
-            sgroup,
-            molecule.bonds(),
-        )?);
+        out.extend_bytes(
+            (&crate::sdf_sgroups::write_v3000_sgroup(idx + 1, sgroup, molecule.bonds())?).as_ref(),
+        );
     }
     let offset = sgroups.len();
     for (idx, sgroup) in generated_sgroups.iter().enumerate() {
-        out.push_str(&crate::sdf_sgroups::write_v3000_sgroup(
-            offset + idx + 1,
-            sgroup,
-            molecule.bonds(),
-        )?);
+        out.extend_bytes(
+            (&crate::sdf_sgroups::write_v3000_sgroup(offset + idx + 1, sgroup, molecule.bonds())?)
+                .as_ref(),
+        );
     }
-    out.push_str("M  V30 END SGROUP\n");
+    out.extend_bytes(("M  V30 END SGROUP\n").as_ref());
     Ok(())
 }
 
@@ -2782,7 +2798,7 @@ fn v3000_generated_zbo_sgroups(
         .with_atoms(atoms.clone())
         .with_bonds(zero_bonds)
         .with_data(SGroupData {
-            field_name: Some("ZBO".to_string()),
+            field_name: Some(PropertyText::from("ZBO")),
             ..SGroupData::default()
         }),
         SubstanceGroup::new(
@@ -2791,8 +2807,8 @@ fn v3000_generated_zbo_sgroups(
         )
         .with_atoms(atoms.clone())
         .with_data(SGroupData {
-            field_name: Some("HYD".to_string()),
-            values: vec![hydrogens],
+            field_name: Some(PropertyText::from("HYD")),
+            values: vec![PropertyText::from(hydrogens)],
             ..SGroupData::default()
         }),
         SubstanceGroup::new(
@@ -2801,15 +2817,15 @@ fn v3000_generated_zbo_sgroups(
         )
         .with_atoms(atoms)
         .with_data(SGroupData {
-            field_name: Some("ZCH".to_string()),
-            values: vec![charges],
+            field_name: Some(PropertyText::from("ZCH")),
+            values: vec![PropertyText::from(charges)],
             ..SGroupData::default()
         }),
     ]
 }
 
 fn append_v3000_collection_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
     wedge_bonds: &WedgeAssignments,
 ) -> Result<(), MolWriteError> {
@@ -2867,15 +2883,15 @@ fn append_v3000_collection_lines(
         molecule.stereo_groups(),
         wedge_bonds,
     )?;
-    out.push_str(&crate::sdf_sgroups::write_v3000_collection_rows(
-        molecule.stereo_groups(),
-        &atoms,
-    ));
+    out.extend_bytes(
+        (&crate::sdf_sgroups::write_v3000_collection_rows(molecule.stereo_groups(), &atoms))
+            .as_ref(),
+    );
     Ok(())
 }
 
 fn append_v2000_property_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
 ) -> Result<(), MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
@@ -2981,7 +2997,7 @@ fn append_v2000_property_lines(
 }
 
 fn append_v2000_rgroup_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
 ) -> Result<(), MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
@@ -3016,17 +3032,17 @@ fn append_v2000_rgroup_lines(
         })
         .collect::<Result<Vec<_>, MolWriteError>>()?;
     if !entries.is_empty() {
-        out.push_str(&format!("M  RGP{:>3}", entries.len()));
+        out.extend_bytes((&format!("M  RGP{:>3}", entries.len())).as_ref());
         for (idx, label) in entries {
-            out.push_str(&format!(" {:>3} {:>3}", idx, label));
+            out.extend_bytes((&format!(" {:>3} {:>3}", idx, label)).as_ref());
         }
-        out.push('\n');
+        out.push_byte(b'\n');
     }
     Ok(())
 }
 
 fn append_v2000_value_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
 ) -> Result<(), MolWriteError> {
     // RDKit❗❌: const std::string GetMolFileQueryInfo(
@@ -3086,10 +3102,14 @@ fn append_v2000_value_lines(
                 query.expect("checked query"),
                 &Default::default(),
             )?;
-            out.push_str(&format!("V  {:>3} {sma}\n", atom.id().index() + 1));
+            out.extend_bytes(format!("V  {:>3} ", atom.id().index() + 1).as_bytes());
+            out.extend_bytes(sma.as_bytes());
+            out.push_byte(b'\n');
         } else if let Some(value) = atom.prop("molFileValue") {
             let value = crate::sdf::model_string_property(value)?;
-            out.push_str(&format!("V  {:>3} {value}\n", atom.id().index() + 1));
+            out.extend_bytes(format!("V  {:>3} ", atom.id().index() + 1).as_bytes());
+            out.extend_bytes(value.as_bytes());
+            out.push_byte(b'\n');
         }
     }
     for atom in molecule.atoms() {
@@ -3097,23 +3117,26 @@ fn append_v2000_value_lines(
             && query_atom_special_symbol(query).is_none()
             && let Some((numbers, negated)) = atom_list_query(query)
         {
-            out.push_str(&format!(
-                "M  ALS {:>3} {:>2} {} ",
-                atom.id().index() + 1,
-                numbers.len(),
-                if negated { "T" } else { "F" }
-            ));
+            out.extend_bytes(
+                (&format!(
+                    "M  ALS {:>3} {:>2} {} ",
+                    atom.id().index() + 1,
+                    numbers.len(),
+                    if negated { "T" } else { "F" }
+                ))
+                    .as_ref(),
+            );
             for n in numbers {
-                out.push_str(&format!("{:<4}", molfile_atom_symbol(n)?));
+                out.extend_bytes((&format!("{:<4}", molfile_atom_symbol(n)?)).as_ref());
             }
-            out.push('\n');
+            out.push_byte(b'\n');
         }
     }
     Ok(())
 }
 
 fn append_v2000_zbo_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
     valence: &ValenceAssignment,
 ) {
@@ -3221,7 +3244,7 @@ fn append_v2000_zbo_lines(
 }
 
 fn append_v2000_pxa_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
 ) -> Result<(), MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
@@ -3240,19 +3263,19 @@ fn append_v2000_pxa_lines(
     for atom in molecule.atoms() {
         if let Some(pxa) = atom.prop("_MolFile_PXA") {
             let pxa = crate::sdf::model_string_property(pxa)?;
-            out.push_str(&format!("M  PXA {:>3}{pxa}\n", atom.id().index() + 1));
+            out.extend_bytes(format!("M  PXA {:>3}", atom.id().index() + 1).as_bytes());
+            out.extend_bytes(pxa.as_bytes());
+            out.push_byte(b'\n');
         }
     }
     Ok(())
 }
 
 fn append_v2000_sgroup_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
 ) -> Result<(), MolWriteError> {
-    out.push_str(&crate::sdf_sgroups::write_v2000_sgroups(
-        &molecule.topology,
-    )?);
+    out.extend_bytes((&crate::sdf_sgroups::write_v2000_sgroups(&molecule.topology)?).as_ref());
     Ok(())
 }
 
@@ -3264,23 +3287,27 @@ fn v2000_double_field(value: f64) -> String {
     format!("{value:>10.4}")
 }
 
-fn v2000_string_field(value: &str, field_size: usize, pad: bool, add_separator: bool) -> String {
-    let mut out = String::new();
+fn v2000_string_field(
+    value: &[u8],
+    field_size: usize,
+    pad: bool,
+    add_separator: bool,
+) -> PropertyText {
+    let mut out = PropertyText::new();
     if add_separator {
-        out.push(' ');
+        out.push_byte(b' ');
     }
-    if value.len() >= field_size {
-        out.push_str(&value[..field_size]);
-    } else if pad {
-        out.push_str(&format!("{value:<field_size$}"));
-    } else {
-        out.push_str(value);
+    out.extend_bytes(&value[..value.len().min(field_size)]);
+    if pad {
+        for _ in value.len()..field_size {
+            out.push_byte(b' ');
+        }
     }
     out
 }
 
 fn append_v2000_alias_lines(
-    out: &mut String,
+    out: &mut PropertyText,
     molecule: &MolWriteContext<'_>,
 ) -> Result<(), MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
@@ -3305,19 +3332,21 @@ fn append_v2000_alias_lines(
             if alias.is_empty() {
                 continue;
             }
-            out.push_str(&format!("A  {:>3}\n{alias}\n", atom.id().index() + 1));
+            out.extend_bytes(format!("A  {:>3}\n", atom.id().index() + 1).as_bytes());
+            out.extend_bytes(alias.as_bytes());
+            out.push_byte(b'\n');
         }
     }
     Ok(())
 }
 
-fn append_v2000_counted_property(out: &mut String, label: &str, entries: &[(usize, i32)]) {
+fn append_v2000_counted_property(out: &mut PropertyText, label: &str, entries: &[(usize, i32)]) {
     for chunk in entries.chunks(8) {
-        out.push_str(&format!("M  {label}{:>3}", chunk.len()));
+        out.extend_bytes((&format!("M  {label}{:>3}", chunk.len())).as_ref());
         for (idx, value) in chunk {
-            out.push_str(&format!(" {:>3} {:>3}", idx, value));
+            out.extend_bytes((&format!(" {:>3} {:>3}", idx, value)).as_ref());
         }
-        out.push('\n');
+        out.push_byte(b'\n');
     }
 }
 
@@ -3329,7 +3358,10 @@ fn atom_degree(molecule: &MolWriteContext<'_>, atom_index: usize) -> usize {
         .count()
 }
 
-fn append_sdf_record_fields(mut block: String, molecule: &MolWriteContext<'_>) -> String {
+fn append_sdf_record_fields(
+    mut block: PropertyText,
+    molecule: &MolWriteContext<'_>,
+) -> PropertyText {
     // RDKit❗✔️: void _writePropToStream(std::ostream *dp_ostream, const ROMol &mol,
     // RDKit❗✔️:                         const std::string &name, int d_molid) {
     // RDKit❗✔️:   PRECONDITION(dp_ostream, "no output stream");
@@ -3421,16 +3453,19 @@ fn append_sdf_record_fields(mut block: String, molecule: &MolWriteContext<'_>) -
     // checks, amortized String appends; no per-field molecule clone or nested
     // field scan. Existing behavior and unsupported boundaries are unchanged.
     for (name, value) in molecule.properties().sdf_data_fields() {
-        if name.contains('\n') || value.contains("\r\n\r\n") || value.contains("\n\n") {
+        if name.as_bytes().contains(&b'\n')
+            || value.as_bytes().windows(4).any(|w| w == b"\r\n\r\n")
+            || value.as_bytes().windows(2).any(|w| w == b"\n\n")
+        {
             continue;
         }
-        block.push_str(">  <");
-        block.push_str(name);
-        block.push_str(">  \n");
-        block.push_str(value);
-        block.push_str("\n\n");
+        block.extend_bytes((">  <").as_ref());
+        block.extend_bytes((name).as_ref());
+        block.extend_bytes((">  \n").as_ref());
+        block.extend_bytes((value).as_ref());
+        block.extend_bytes(("\n\n").as_ref());
     }
-    block.push_str("$$$$\n");
+    block.extend_bytes(("$$$$\n").as_ref());
     block
 }
 
@@ -3438,7 +3473,7 @@ fn v2000_atom_symbol(
     atom: &Atom,
     pad_with_spaces: bool,
     query: Option<&cosmolkit_model::QueryAtom>,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     // Full pinned source; detached adaptation and acceptance remain under review.
     // RDKit❗❌: const std::string AtomGetMolFileSymbol(
     // RDKit❗❌:     const Atom *atom, bool padWithSpaces,
@@ -3546,42 +3581,43 @@ fn v2000_atom_symbol(
     // RDKit❗❌:   return res;
     // RDKit❗❌: }
 
-    let mut symbol = if atom.prop("_MolFileRLabel").is_some() {
-        "R#".to_string()
+    let mut symbol: PropertyText = if atom.prop("_MolFileRLabel").is_some() {
+        "R#".into()
     } else if atom.atomic_number() != 0 {
-        molfile_atom_symbol(atom.atomic_number())?.to_string()
+        molfile_atom_symbol(atom.atomic_number())?.into()
     } else if let Some(dummy_label) = atom.prop("dummyLabel") {
-        match dummy_label.as_string()? {
-            "*" | "X" => "R".to_string(),
-            "Xa" => "R1".to_string(),
-            "Xb" => "R2".to_string(),
-            "Xc" => "R3".to_string(),
-            "Xd" => "R4".to_string(),
-            "Xf" => "R5".to_string(),
-            "Xg" => "R6".to_string(),
-            "Xh" => "R7".to_string(),
-            "Xi" => "R8".to_string(),
-            "Xj" => "R9".to_string(),
-            other => other.to_string(),
+        let label = crate::sdf::model_string_property(dummy_label)?;
+        match label.as_bytes() {
+            b"*" | b"X" => "R".into(),
+            b"Xa" => "R1".into(),
+            b"Xb" => "R2".into(),
+            b"Xc" => "R3".into(),
+            b"Xd" => "R4".into(),
+            b"Xf" => "R5".into(),
+            b"Xg" => "R6".into(),
+            b"Xh" => "R7".into(),
+            b"Xi" => "R8".into(),
+            b"Xj" => "R9".into(),
+            _ => label,
         }
     } else if let Some(row) = query {
         if let Some(symbol) = query_atom_special_symbol(row) {
-            symbol.to_owned()
+            symbol.into()
         } else if has_complex_atom_query(row) {
             if atom_list_query(row).is_some() {
-                "L".to_owned()
+                "L".into()
             } else {
-                "*".to_owned()
+                "*".into()
             }
         } else {
-            "R".to_owned()
+            "R".into()
         }
     } else {
-        "R".to_owned()
+        "R".into()
     };
     if pad_with_spaces {
         while symbol.len() < 3 {
-            symbol.push(' ');
+            symbol.push_byte(b' ');
         }
     }
     Ok(symbol)
@@ -4213,7 +4249,7 @@ fn molfile_atom_symbol(atomic_number: u8) -> Result<&'static str, MolWriteError>
 pub fn write_sdf_2d_with_params(
     data: MolWriteInput<'_>,
     params: &MolBlockWriteParams,
-) -> Result<String, MolWriteError> {
+) -> Result<PropertyText, MolWriteError> {
     let MolWriteInput {
         topology,
         coordinates,

@@ -8,11 +8,19 @@ use cosmolkit_io::{
 use cosmolkit_model::{CoordinateDimension, PropertyValue, SdfPropertyListTarget};
 use cosmolkit_types::ChiralTag;
 
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+
 fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
-    match value {
-        Some(PropertyValue::String(value)) => Some(value),
-        _ => None,
-    }
+    value.map(|value| {
+        fixture_text(
+            value
+                .as_string()
+                .expect("source text property must have String tag"),
+        )
+    })
 }
 
 fn v2000_atom(x: f64, y: f64, z: f64, symbol: &str) -> String {
@@ -337,7 +345,14 @@ fn sdf_read_v2000_default_preserves_detected_2d_and_ordered_fields() {
             ("NOTE".to_owned(), "alpha\nbeta".to_owned()),
         ]
     );
-    assert_eq!(record.properties.sdf_data_fields(), record.data_fields);
+    assert_eq!(
+        record.properties.sdf_data_fields(),
+        record
+            .data_fields
+            .iter()
+            .map(|(key, value)| (key.into(), value.into()))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -467,7 +482,7 @@ fn sdf_read_property_lists_preserve_raw_fields_and_obey_processing_switch() {
     );
     assert_eq!(
         applied.properties.prop("atom.prop.Label"),
-        Some("left right")
+        Some(&PropertyValue::String("left right".into()))
     );
 
     let raw_only = read_sdf_record_detached_with_params(
@@ -480,7 +495,7 @@ fn sdf_read_property_lists_preserve_raw_fields_and_obey_processing_switch() {
     .expect("preserve raw lists without expansion");
     assert_eq!(
         raw_only.properties.prop("atom.prop.Label"),
-        Some("left right")
+        Some(&PropertyValue::String("left right".into()))
     );
     assert_eq!(
         string_property(raw_only.topology.atoms[0].prop("Label")),
@@ -536,7 +551,7 @@ fn sdf_read_stream_handles_empty_single_multiple_crlf_and_line_start_delimiters(
     let one = v2000_one_atom("one", "  COSMolKit         2D", 0.0, 0.0, 0.0);
     let only = read_sdf_records_detached(&one).expect("final record without delimiter");
     assert_eq!(only.len(), 1);
-    assert_eq!(only[0].properties.name(), Some("one"));
+    assert_eq!(only[0].properties.name().map(fixture_text), Some("one"));
 
     let first = format!("{one}>  <TEXT>\r\ninside $$$$ value\r\n\r\n$$$$ suffix\r\n");
     let second = format!(
@@ -550,7 +565,7 @@ fn sdf_read_stream_handles_empty_single_multiple_crlf_and_line_start_delimiters(
         records[0].data_fields,
         [("TEXT".to_owned(), "inside $$$$ value".to_owned())]
     );
-    assert_eq!(records[1].properties.name(), Some("two"));
+    assert_eq!(records[1].properties.name().map(fixture_text), Some("two"));
 }
 
 #[test]
@@ -584,7 +599,7 @@ fn sdf_graph_reader_consumes_failed_record_and_reports_stable_offsets() {
     let MolBlockRecord::Concrete { properties, .. } = recovered.mol_block else {
         panic!("ordinary record must be concrete");
     };
-    assert_eq!(properties.name(), Some("good"));
+    assert_eq!(properties.name().map(fixture_text), Some("good"));
     assert_eq!(reader.records_consumed(), 2);
     assert!(reader.next_record().expect("EOF").is_none());
     assert!(reader.is_end());

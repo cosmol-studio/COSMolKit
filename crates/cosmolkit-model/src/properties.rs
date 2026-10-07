@@ -1,6 +1,7 @@
 //! Molecule-level property values shared by parsers and algorithms.
 
-use std::collections::{BTreeMap, BTreeSet};
+use crate::PropertyText;
+use std::collections::BTreeMap;
 
 use crate::{AtomId, BondId, PropertyValue};
 
@@ -8,15 +9,16 @@ use crate::{AtomId, BondId, PropertyValue};
 pub enum MoleculePropertyError {
     #[error("property key must not be empty")]
     EmptyKey,
+    #[error("computed property list has the wrong value kind: {0}")]
+    ComputedListKind(crate::PropertyValueError),
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct MoleculeProperties {
-    name: Option<String>,
-    sdf_data_fields: Vec<(String, String)>,
+    name: Option<PropertyText>,
+    sdf_data_fields: Vec<(PropertyText, PropertyText)>,
     sdf_property_lists: Vec<SdfPropertyList>,
-    props: BTreeMap<String, String>,
-    computed_props: BTreeSet<String>,
+    props: crate::property_value::PropertyStore,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +30,7 @@ pub enum SdfPropertyListTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SdfPropertyList {
     target: SdfPropertyListTarget,
-    name: String,
+    name: PropertyText,
     values: Vec<Option<PropertyValue>>,
 }
 
@@ -36,7 +38,7 @@ impl SdfPropertyList {
     #[must_use]
     pub fn new(
         target: SdfPropertyListTarget,
-        name: impl Into<String>,
+        name: impl Into<PropertyText>,
         values: Vec<Option<PropertyValue>>,
     ) -> Self {
         Self {
@@ -52,7 +54,7 @@ impl SdfPropertyList {
     }
 
     #[must_use]
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &PropertyText {
         &self.name
     }
 
@@ -63,19 +65,34 @@ impl SdfPropertyList {
 }
 
 impl MoleculeProperties {
-    #[must_use]
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    /// Borrow property records using the source private/computed include flags.
+    #[doc(hidden)]
+    pub fn property_records(
+        &self,
+        include_private: bool,
+        include_computed: bool,
+    ) -> Result<
+        impl Iterator<Item = (&PropertyText, &crate::PropertyValue)> + '_,
+        MoleculePropertyError,
+    > {
+        self.props
+            .filtered_ordered(include_private, include_computed)
+            .map_err(MoleculePropertyError::from)
     }
 
     #[must_use]
-    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+    pub fn name(&self) -> Option<&PropertyText> {
+        self.name.as_ref()
+    }
+
+    #[must_use]
+    pub fn with_name(mut self, name: impl Into<PropertyText>) -> Self {
         self.name = Some(name.into());
         self
     }
 
     #[must_use]
-    pub fn sdf_data_fields(&self) -> &[(String, String)] {
+    pub fn sdf_data_fields(&self) -> &[(PropertyText, PropertyText)] {
         &self.sdf_data_fields
     }
 
@@ -85,30 +102,52 @@ impl MoleculeProperties {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.props
+    pub fn props(&self) -> &BTreeMap<PropertyText, PropertyValue> {
+        self.props.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.get(key).map(String::as_str)
+    /// Borrow the canonical property records in source insertion order.
+    #[doc(hidden)]
+    pub fn ordered_props(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&PropertyText, &PropertyValue)> + '_ {
+        self.props.ordered()
+    }
+
+    pub fn prop(&self, key: impl AsRef<[u8]>) -> Option<&PropertyValue> {
+        self.props.get(key.as_ref())
+    }
+
+    /// Read a required detached property without conversion.
+    #[doc(hidden)]
+    pub fn prop_required(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<&crate::PropertyValue, crate::MissingPropertyError> {
+        self.props.get_required(key)
     }
 
     /// Returns whether a property is registered as computed state.
     #[must_use]
-    pub fn is_prop_computed(&self, key: &str) -> bool {
-        self.computed_props.contains(key)
+    pub fn is_prop_computed(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<bool, crate::PropertyValueError> {
+        self.props.is_computed(key)
     }
 
     #[must_use]
-    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
-        &self.computed_props
+    pub fn computed_prop_names(
+        &self,
+    ) -> Result<Option<&[PropertyText]>, crate::PropertyValueError> {
+        self.props.computed_names()
     }
 
     pub fn with_prop(
         mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyValue>,
     ) -> Result<Self, MoleculePropertyError> {
         self.set_prop(key, value)?;
         Ok(self)
@@ -116,15 +155,19 @@ impl MoleculeProperties {
 
     pub fn with_computed_prop(
         mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyValue>,
     ) -> Result<Self, MoleculePropertyError> {
         self.set_computed_prop(key, value)?;
         Ok(self)
     }
 
     #[must_use]
-    pub fn with_sdf_data_field(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_sdf_data_field(
+        mut self,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyText>,
+    ) -> Self {
         self.sdf_data_fields.push((key.into(), value.into()));
         self
     }
@@ -137,84 +180,32 @@ impl MoleculeProperties {
 
     pub fn set_prop(
         &mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyValue>,
     ) -> Result<(), MoleculePropertyError> {
-        // RDKit✔️🔝:     if(key.empty()) {
-        // RDKit✔️🔝:       throw ValueErrorException("Cannot set property with empty key");
-        // RDKit✔️🔝:     }
-        // RDKit✔️🔝:     d_props.setVal(key, val);
-        // BTreeMap lookup and replacement are logarithmic, while the pinned
-        // RDKit Dict stores pairs in a vector and scans keys linearly. The
-        // modeled string-only state preserves replacement semantics.
-        let key = key.into();
-        if key.is_empty() {
-            return Err(MoleculePropertyError::EmptyKey);
-        }
-        // A non-computed write does not remove an existing computed marker.
-        self.props.insert(key, value.into());
-        Ok(())
+        self.props
+            .set(key.into(), value.into())
+            .map_err(MoleculePropertyError::from)
     }
 
     pub fn set_computed_prop(
         &mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyValue>,
     ) -> Result<(), MoleculePropertyError> {
-        // RDKit✔️🔝:     if(key.empty()) {
-        // RDKit✔️🔝:       throw ValueErrorException("Cannot set property with empty key");
-        // RDKit✔️🔝:     }
-        // RDKit✔️🔝:     if (computed) {
-        // RDKit✔️🔝:       STR_VECT compLst;
-        // RDKit✔️🔝:       getPropIfPresent(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝:       if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
-        // RDKit✔️🔝:         compLst.emplace_back(key);
-        // RDKit✔️🔝:         d_props.setVal(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝:       }
-        // RDKit✔️🔝:     }
-        // RDKit✔️🔝:     d_props.setVal(key, val);
-        // The ordered set preserves membership semantics while replacing the
-        // source vector's linear duplicate scan with logarithmic insertion.
-        let key = key.into();
-        if key.is_empty() {
-            return Err(MoleculePropertyError::EmptyKey);
-        }
-        self.props.insert(key.clone(), value.into());
-        self.computed_props.insert(key);
-        Ok(())
+        self.props
+            .set_computed(key.into(), value.into())
+            .map_err(MoleculePropertyError::from)
     }
 
-    pub fn clear_prop(&mut self, key: &str) {
-        // RDKit✔️🔝:     STR_VECT compLst;
-        // RDKit✔️🔝:     if (getPropIfPresent(RDKit::detail::computedPropName, compLst)) {
-        // RDKit✔️🔝:       auto svi = std::find(compLst.begin(), compLst.end(), key);
-        // RDKit✔️🔝:       if (svi != compLst.end()) {
-        // RDKit✔️🔝:         compLst.erase(svi);
-        // RDKit✔️🔝:         d_props.setVal(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝:       }
-        // RDKit✔️🔝:     }
-        // RDKit✔️🔝:     d_props.clearVal(key);
-        // BTreeSet removal preserves the source transition with logarithmic
-        // lookup instead of the source vector's linear search and erase.
-        self.props.remove(key);
-        self.computed_props.remove(key);
+    pub fn clear_prop(&mut self, key: impl AsRef<[u8]>) -> Result<(), MoleculePropertyError> {
+        self.props.clear(key).map_err(MoleculePropertyError::from)
     }
 
-    pub fn clear_computed_props(&mut self) {
-        // RDKit✔️🔝:     STR_VECT compLst;
-        // RDKit✔️🔝:     if (getPropIfPresent(RDKit::detail::computedPropName, compLst) &&
-        // RDKit✔️🔝:         !compLst.empty()) {
-        // RDKit✔️🔝:       for (const auto &sv : compLst) {
-        // RDKit✔️🔝:         d_props.clearVal(sv);
-        // RDKit✔️🔝:       }
-        // RDKit✔️🔝:       compLst.clear();
-        // RDKit✔️🔝:       d_props.setVal(RDKit::detail::computedPropName, compLst);
-        // RDKit✔️🔝:     }
-        // Moving the set avoids the source vector copy while preserving exact
-        // membership-based clearing.
-        for key in std::mem::take(&mut self.computed_props) {
-            self.props.remove(&key);
-        }
+    pub fn clear_computed_props(&mut self) -> Result<(), MoleculePropertyError> {
+        self.props
+            .clear_computed()
+            .map_err(MoleculePropertyError::from)
     }
 
     pub fn remap_topology(
@@ -254,6 +245,17 @@ impl SdfPropertyList {
             target: self.target,
             name: self.name.clone(),
             values,
+        }
+    }
+}
+
+impl From<crate::property_value::PropertyStoreError> for MoleculePropertyError {
+    fn from(error: crate::property_value::PropertyStoreError) -> Self {
+        match error {
+            crate::property_value::PropertyStoreError::EmptyKey => Self::EmptyKey,
+            crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                Self::ComputedListKind(source)
+            }
         }
     }
 }

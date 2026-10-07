@@ -241,7 +241,10 @@ fn empty_2d_conformer_is_present_and_3d_order_is_not_reinterpreted() {
 #[test]
 fn aggregate_and_keyed_property_views_preserve_absence_and_metadata() {
     let molecule = complete_molecule();
-    assert_eq!(molecule.properties().name(), Some("read-fixture"));
+    assert_eq!(
+        molecule.properties().name(),
+        Some(&cosmolkit::PropertyText::from("read-fixture"))
+    );
     assert_eq!(
         molecule.properties().sdf_data_fields(),
         &[
@@ -250,10 +253,19 @@ fn aggregate_and_keyed_property_views_preserve_absence_and_metadata() {
         ]
     );
     assert_eq!(molecule.properties().sdf_property_lists().len(), 1);
-    assert_eq!(molecule.property("empty"), Some(""));
-    assert_eq!(molecule.property("replace"), Some("new"));
-    assert_eq!(molecule.property("computed"), Some("cached"));
-    assert!(molecule.properties().is_prop_computed("computed"));
+    assert_eq!(
+        molecule.property("empty"),
+        Some(&cosmolkit::PropertyValue::from(""))
+    );
+    assert_eq!(
+        molecule.property("replace"),
+        Some(&cosmolkit::PropertyValue::from("new"))
+    );
+    assert_eq!(
+        molecule.property("computed"),
+        Some(&cosmolkit::PropertyValue::from("cached"))
+    );
+    assert!(molecule.properties().is_prop_computed("computed").unwrap());
     assert_eq!(molecule.property("missing"), None);
 }
 
@@ -276,7 +288,10 @@ fn detached_builder_changes_cannot_mutate_read_views_of_the_source() {
     assert_eq!(source.property("detached"), None);
     assert_eq!(source.num_atoms(), 3);
     assert_eq!(changed.num_atoms(), 3);
-    assert_eq!(changed.property("detached"), Some("builder-only"));
+    assert_eq!(
+        changed.property("detached"),
+        Some(&cosmolkit::PropertyValue::from("builder-only"))
+    );
 }
 
 #[test]

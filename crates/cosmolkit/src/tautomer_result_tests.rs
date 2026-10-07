@@ -2,7 +2,12 @@
 use super::*;
 fn enumeration_result_fixture(status: TautomerEnumerationStatus) -> TautomerEnumeration {
     let mut entries = [("z", "CCC"), ("a", "C"), ("m", "CC")]
-        .map(|(key, text)| (key.to_owned(), Molecule::from_smiles(text).unwrap()))
+        .map(|(key, text)| {
+            (
+                cosmolkit_model::PropertyText::from(key),
+                Molecule::from_smiles(text).unwrap(),
+            )
+        })
         .to_vec();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
     TautomerEnumeration {
@@ -34,7 +39,14 @@ fn enumeration_result_single_entry_supports_all_access_paths() {
 
     assert_eq!(result.len(), 1);
     assert!(!result.is_empty());
-    assert_eq!(result.canonical_smiles(), ["CCO"]);
+    assert_eq!(
+        result
+            .canonical_smiles()
+            .into_iter()
+            .map(fixed_key_text)
+            .collect::<Vec<_>>(),
+        ["CCO"]
+    );
     assert_eq!(result.get(0).unwrap().num_atoms(), 3);
 }
 
@@ -42,11 +54,18 @@ fn enumeration_result_single_entry_supports_all_access_paths() {
 fn enumeration_result_preserves_canonical_smiles_order_in_every_projection() {
     let result = enumeration_result_fixture(TautomerEnumerationStatus::Completed);
 
-    assert_eq!(result.canonical_smiles(), ["a", "m", "z"]);
+    assert_eq!(
+        result
+            .canonical_smiles()
+            .into_iter()
+            .map(fixed_key_text)
+            .collect::<Vec<_>>(),
+        ["a", "m", "z"]
+    );
     assert_eq!(
         result
             .entries()
-            .map(|(smiles, molecule)| (smiles, molecule.num_atoms()))
+            .map(|(smiles, molecule)| (fixed_key_text(smiles), molecule.num_atoms()))
             .collect::<Vec<_>>(),
         [("a", 1), ("m", 2), ("z", 3)]
     );
@@ -115,4 +134,8 @@ fn enumeration_result_exposes_every_source_status_without_reinterpretation() {
     ] {
         assert_eq!(enumeration_result_fixture(status).status(), status);
     }
+}
+
+fn fixed_key_text(key: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(key.as_bytes()).expect("original fixed ASCII test observation")
 }

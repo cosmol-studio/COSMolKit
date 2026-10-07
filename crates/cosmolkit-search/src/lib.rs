@@ -1,16 +1,22 @@
 //! SMARTS/search algorithms over detached query and topology values.
 
 mod cx_lowering;
+mod cx_offsets;
 mod generic_groups;
 mod matcher;
 mod mcs;
 mod query_behavior;
+mod query_fragments;
 mod query_graph_behavior;
 mod smarts_parse;
 mod smarts_write;
 mod target;
 
 pub use cx_lowering::{CxQueryLoweringError, apply_cx_to_query_graph};
+#[doc(hidden)]
+pub use cx_offsets::apply_cx_to_query_graph_with_offsets;
+#[doc(hidden)]
+pub use matcher::try_get_substruct_atom_matches_with_params_and_context;
 pub use matcher::{
     AtomCoordsMatchFunctor, ExtraAtomCheck, ExtraBondCheck, ExtraFinalCheck, QueryInput,
     SubstructMatchError, SubstructMatchOverload, SubstructMatchParams,
@@ -24,6 +30,8 @@ pub use mcs::{
     McsCandidateMatchError, McsError, McsParameters, McsParametersJsonError, McsProgressError,
     RingComparator, find_mcs, update_mcs_parameters_from_json,
 };
+#[doc(hidden)]
+pub use query_behavior::atom_total_degree_with_context;
 pub use query_behavior::{
     QUERY_SCAN_MAGIC_VALUE, QueryConstructionError, QueryMatchContext, QueryMatchContextError,
     SmartsParseError, atom_matches_query, atom_matches_query_with_context, atom_predicate_matches,
@@ -35,12 +43,22 @@ pub use query_behavior::{
     is_complex_concrete_bond_query, is_query_atom_aromatic, make_single_or_aromatic_bond_query,
     query_bond_min_ring_size, query_is_bond_in_ring,
 };
+#[doc(hidden)]
+pub use query_fragments::query_graph_fragments;
+#[doc(hidden)]
+pub use query_graph_behavior::cleanup_query_graph_parser_state;
 pub use smarts_parse::{SmartsParseParams, compile_query_fixture, parse_smarts};
+#[cfg(feature = "smiles-integration")]
+#[doc(hidden)]
+pub use smarts_write::topology_to_smarts;
 pub use smarts_write::{
     SmartsWriteError, SmartsWriteParams, atom_to_smarts, bond_to_smarts, query_atom_to_smarts,
-    query_bond_to_smarts, query_graph_fragment_to_cx_smarts, query_graph_fragment_to_smarts,
-    query_graph_to_cx_smarts, query_graph_to_smarts, write_smarts,
+    query_bond_to_smarts, query_graph_fragment_to_smarts, query_graph_to_smarts, write_smarts,
 };
+#[doc(hidden)]
+pub use smarts_write::{SmartsWriteOutput, query_graph_to_smarts_output};
+#[cfg(feature = "smiles-integration")]
+pub use smarts_write::{query_graph_fragment_to_cx_smarts, query_graph_to_cx_smarts};
 pub use target::{SearchTarget, SearchTargetAccess};
 
 use cosmolkit_model::{AtomId, BondId, CoordinateBlock, TopologyBlock};
@@ -204,7 +222,10 @@ impl<'a> QueryGraphOperator<'a> {
         match_query(self.inner, topology)
     }
 
-    pub fn to_smarts(self, params: &SmartsWriteParams) -> Result<String, SmartsWriteError> {
+    pub fn to_smarts(
+        self,
+        params: &SmartsWriteParams,
+    ) -> Result<cosmolkit_model::PropertyText, SmartsWriteError> {
         write_smarts(self.inner, params)
     }
 
@@ -212,11 +233,14 @@ impl<'a> QueryGraphOperator<'a> {
         self,
         atom_id: AtomId,
         params: &SmartsWriteParams,
-    ) -> Result<String, SmartsWriteError> {
+    ) -> Result<cosmolkit_model::PropertyText, SmartsWriteError> {
         atom_to_smarts(self.inner, atom_id, params)
     }
 
-    pub fn bond_to_smarts(self, bond_id: BondId) -> Result<String, SmartsWriteError> {
+    pub fn bond_to_smarts(
+        self,
+        bond_id: BondId,
+    ) -> Result<cosmolkit_model::PropertyText, SmartsWriteError> {
         bond_to_smarts(self.inner, bond_id)
     }
 }
@@ -245,8 +269,8 @@ pub struct McsResult {
     pub atom_count: usize,
     pub bond_count: usize,
     pub completed: bool,
-    pub smarts: String,
-    pub degenerate: std::collections::BTreeMap<String, QueryGraph>,
+    pub smarts: cosmolkit_model::PropertyText,
+    pub degenerate: std::collections::BTreeMap<cosmolkit_model::PropertyText, QueryGraph>,
 }
 
 impl McsResult {
@@ -257,7 +281,7 @@ impl McsResult {
             atom_count,
             bond_count,
             completed,
-            smarts: String::new(),
+            smarts: cosmolkit_model::PropertyText::new(),
             degenerate: std::collections::BTreeMap::new(),
         }
     }
@@ -327,7 +351,10 @@ mod tests {
         QueryGraph::from_parts(
             atoms,
             bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -422,7 +449,10 @@ mod tests {
         let query = QueryGraph::from_parts(
             atoms,
             Vec::new(),
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -476,9 +506,20 @@ mod tests {
     #[test]
     fn complete_matcher_handles_ring_and_range_predicates() {
         let topology = cyclopropane_topology();
+        let rings =
+            cosmolkit_core::find_sssr(&topology, &cosmolkit_core::RingSearchParams::default())
+                .expect("original ring target source state");
+        let coordinates = cosmolkit_model::CoordinateBlock::default();
+        let target = SearchTarget::new(
+            &topology,
+            &coordinates,
+            &topology.stereo_groups,
+            Some(&rings),
+            None,
+        );
         for smarts in ["[R]", "[r3]", "[D{2-3}]"] {
             let query = parse_smarts(smarts, &SmartsParseParams::default()).expect("parse query");
-            let matches = match_query(&query, &topology).expect("match query");
+            let matches = match_query_target(&query, &target).expect("match query");
             assert_eq!(matches.len(), 3, "{smarts}");
         }
     }
@@ -551,3 +592,9 @@ mod tests {
 pub use query_behavior::{
     build_ring_only_query_match_context, is_pattern_complex_query, is_tautomer_bond_query,
 };
+
+#[cfg(feature = "smiles-integration")]
+mod query_cx_composition;
+#[cfg(feature = "smiles-integration")]
+#[doc(hidden)]
+pub use query_cx_composition::{QueryCxComposition, compose_query_cx_templates};

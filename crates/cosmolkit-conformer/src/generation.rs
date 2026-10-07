@@ -5598,7 +5598,10 @@ pub fn generate_conformers(
             );
             (**bounds).clone()
         };
-        if !piece_properties.props().contains_key("_StereochemDone") {
+        if !piece_properties
+            .props()
+            .contains_key(b"_StereochemDone".as_slice())
+        {
             piece = cosmolkit_core::assign_legacy_stereochemistry_with_flags(
                 piece, &valence, &rings, false, false,
             )?;

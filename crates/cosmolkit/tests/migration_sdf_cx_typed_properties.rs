@@ -43,7 +43,7 @@ fn sdf_typed_atom_properties_flow_to_cx_with_source_order_and_projection() {
 
     assert_eq!(
         atom.prop("Text"),
-        Some(&PropertyValue::String("a.b".to_owned()))
+        Some(&PropertyValue::String("a.b".into()))
     );
     assert_eq!(atom.prop("Count"), Some(&PropertyValue::Int(7)));
     assert_eq!(atom.prop("Real"), Some(&PropertyValue::Double(-0.0)));
@@ -54,14 +54,14 @@ fn sdf_typed_atom_properties_flow_to_cx_with_source_order_and_projection() {
     assert_eq!(
         molecule.properties().sdf_data_fields(),
         &[
-            ("atom.prop.Text".to_owned(), "first".to_owned()),
-            ("atom.iprop.Count".to_owned(), "+007".to_owned()),
-            ("atom.dprop.Real".to_owned(), "-0".to_owned()),
-            ("atom.bprop.Active".to_owned(), "1".to_owned()),
-            ("atom.dprop.Scale".to_owned(), "1e2".to_owned()),
-            ("atom.prop.Text".to_owned(), "a.b".to_owned()),
-            ("atom.iprop.atomLabel".to_owned(), "9".to_owned()),
-            ("atom.dprop._private".to_owned(), "2.5".to_owned()),
+            ("atom.prop.Text".into(), "first".into()),
+            ("atom.iprop.Count".into(), "+007".into()),
+            ("atom.dprop.Real".into(), "-0".into()),
+            ("atom.bprop.Active".into(), "1".into()),
+            ("atom.dprop.Scale".into(), "1e2".into()),
+            ("atom.prop.Text".into(), "a.b".into()),
+            ("atom.iprop.atomLabel".into(), "9".into()),
+            ("atom.dprop._private".into(), "2.5".into()),
         ]
     );
 
@@ -72,7 +72,9 @@ fn sdf_typed_atom_properties_flow_to_cx_with_source_order_and_projection() {
         molecule
             .to_cx_smiles_with_params(&atom_property_params())
             .unwrap(),
-        "C |atomProp:0.Text.a&#46;b:0.Count.7:0.Real.-0:0.Active.1:0.Scale.100|"
+        cosmolkit::PropertyText::from(
+            "C |atomProp:0.Text.a&#46;b:0.Count.7:0.Real.-0:0.Active.1:0.Scale.100|"
+        )
     );
     assert_eq!(molecule.topology(), &topology_before);
     assert_eq!(molecule.properties(), &properties_before);

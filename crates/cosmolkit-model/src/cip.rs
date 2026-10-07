@@ -75,27 +75,33 @@ impl fmt::Display for CipDescriptor {
     }
 }
 
+impl CipDescriptor {
+    fn from_bytes(value: &[u8]) -> Result<Self, CipDescriptorError> {
+        match value {
+            b"R" => Ok(Self::R),
+            b"S" => Ok(Self::S),
+            b"r" => Ok(Self::LowerR),
+            b"s" => Ok(Self::LowerS),
+            b"E" => Ok(Self::E),
+            b"Z" => Ok(Self::Z),
+            b"e" => Ok(Self::LowerE),
+            b"z" => Ok(Self::LowerZ),
+            b"M" => Ok(Self::M),
+            b"P" => Ok(Self::P),
+            b"m" => Ok(Self::LowerM),
+            b"p" => Ok(Self::LowerP),
+            _ => Err(CipDescriptorError::InvalidStoredDescriptor {
+                value: value.into(),
+            }),
+        }
+    }
+}
+
 impl FromStr for CipDescriptor {
     type Err = CipDescriptorError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value {
-            "R" => Ok(Self::R),
-            "S" => Ok(Self::S),
-            "r" => Ok(Self::LowerR),
-            "s" => Ok(Self::LowerS),
-            "E" => Ok(Self::E),
-            "Z" => Ok(Self::Z),
-            "e" => Ok(Self::LowerE),
-            "z" => Ok(Self::LowerZ),
-            "M" => Ok(Self::M),
-            "P" => Ok(Self::P),
-            "m" => Ok(Self::LowerM),
-            "p" => Ok(Self::LowerP),
-            _ => Err(CipDescriptorError::InvalidStoredDescriptor {
-                value: value.to_owned(),
-            }),
-        }
+        Self::from_bytes(value.as_bytes())
     }
 }
 
@@ -103,19 +109,24 @@ impl FromStr for CipDescriptor {
 /// by the supported modern assignment dispatcher.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CipDescriptorError {
-    #[error("invalid stored CIP neighbor order `{value}`: {detail}")]
-    InvalidNeighborOrder { value: String, detail: String },
+    #[error("invalid stored CIP neighbor order {value:?}: {detail}")]
+    InvalidNeighborOrder {
+        value: crate::PropertyText,
+        detail: String,
+    },
     #[error(transparent)]
     Property(#[from] crate::PropertyValueError),
-    #[error("invalid stored modern CIP descriptor `{value}`")]
-    InvalidStoredDescriptor { value: String },
+    #[error("invalid stored modern CIP descriptor {value:?}")]
+    InvalidStoredDescriptor { value: crate::PropertyText },
 }
 
 /// Parse a stored `_CIPCode` property without depending on the CIP algorithm.
 pub(crate) fn descriptor_from_property(
-    value: Option<&str>,
+    value: Option<&crate::PropertyText>,
 ) -> Result<Option<CipDescriptor>, CipDescriptorError> {
-    value.map(str::parse).transpose()
+    value
+        .map(|value| CipDescriptor::from_bytes(value.as_bytes()))
+        .transpose()
 }
 
 /// Decode the existing modern owner's stored neighbor-order representation.
@@ -127,7 +138,7 @@ pub(crate) fn neighbor_order_from_property(
     value
         .map(|value| {
             if let crate::PropertyValue::String(text) = value {
-                serde_json::from_str(text).map_err(|error| {
+                serde_json::from_slice(text.as_bytes()).map_err(|error| {
                     CipDescriptorError::InvalidNeighborOrder {
                         value: text.clone(),
                         detail: error.to_string(),
@@ -140,7 +151,7 @@ pub(crate) fn neighbor_order_from_property(
                     .map(|&index| {
                         u32::try_from(index).map_err(|error| {
                             CipDescriptorError::InvalidNeighborOrder {
-                                value: index.to_string(),
+                                value: index.to_string().into(),
                                 detail: error.to_string(),
                             }
                         })

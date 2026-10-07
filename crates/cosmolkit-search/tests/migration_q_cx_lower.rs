@@ -9,6 +9,14 @@ use cosmolkit_model::{
 };
 use cosmolkit_search::{QueryGraph, SmartsParseParams, apply_cx_to_query_graph, parse_smarts};
 
+// Decode only the unchanged known UTF-8 expected fixtures at this test boundary.
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+}
+fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+    fixture_text(value.as_string().expect("original string fixture kind"))
+}
+
 fn parse_query(smarts: &str) -> QueryGraph {
     parse_smarts(smarts, &SmartsParseParams::default())
         .unwrap_or_else(|error| panic!("pinned CXSMARTS {smarts:?}: {error}"))
@@ -108,7 +116,10 @@ fn q27_cx_query_predicates_preserve_origin_and_raw_identity() {
     let mut graph = QueryGraph::from_parts(
         vec![carrier_atom, explicit_atom, null_query_atom],
         Vec::new(),
-        Default::default(),
+        Vec::<(
+            cosmolkit_model::PropertyText,
+            cosmolkit_model::PropertyValue,
+        )>::new(),
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -271,42 +282,69 @@ fn q30_data_sgroups_preserve_members_payload_and_source_indexes() {
         &[AtomId::new(1), AtomId::new(0), AtomId::new(1)]
     );
     assert_eq!(
-        group.props().get("_cxsmilesindex").map(String::as_str),
-        Some("1")
+        group
+            .props()
+            .get("_cxsmilesindex".as_bytes())
+            .map(|value| value.as_uint().expect("source unsigned property kind")),
+        Some(1_u32)
     );
-    assert_eq!(group.props().get("index").map(String::as_str), Some("1"));
     assert_eq!(
-        group.props().get("FIELDNAME").map(String::as_str),
+        group
+            .props()
+            .get("index".as_bytes())
+            .map(|value| value.as_uint().expect("source unsigned property kind")),
+        Some(1_u32)
+    );
+    assert_eq!(
+        group.props().get("FIELDNAME".as_bytes()).map(fixture_value),
         Some("FIELD")
     );
     assert_eq!(
-        group.props().get("DATAFIELDS").map(String::as_str),
-        Some("value,with,comma")
+        group.props().get("DATAFIELDS".as_bytes()).map(|value| value
+            .as_string_vector()
+            .expect("source vector string property kind")
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>()),
+        Some(vec!["value,with,comma"])
     );
-    assert_eq!(group.props().get("QUERYOP").map(String::as_str), Some("="));
     assert_eq!(
-        group.props().get("FIELDINFO").map(String::as_str),
+        group.props().get("QUERYOP".as_bytes()).map(fixture_value),
+        Some("=")
+    );
+    assert_eq!(
+        group.props().get("FIELDINFO".as_bytes()).map(fixture_value),
         Some("unit")
     );
     assert_eq!(
-        group.props().get("FIELDTAG").map(String::as_str),
+        group.props().get("FIELDTAG".as_bytes()).map(fixture_value),
         Some("tag")
     );
     assert_eq!(
-        group.props().get("COORDS").map(String::as_str),
+        group.props().get("COORDS".as_bytes()).map(fixture_value),
         Some("(1,2")
     );
-    assert_eq!(group.data_fields(), &["value,with,comma"]);
+    assert_eq!(
+        group
+            .data_fields()
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        &["value,with,comma"]
+    );
 
     let data = group.data().expect("typed data SGroup payload");
-    assert_eq!(data.field_name.as_deref(), Some("FIELD"));
-    assert_eq!(data.query_op.as_deref(), Some("="));
-    assert_eq!(data.field_info.as_deref(), Some("unit"));
+    assert_eq!(data.field_name.as_ref().map(fixture_text), Some("FIELD"));
+    assert_eq!(data.query_op.as_ref().map(fixture_text), Some("="));
+    assert_eq!(data.field_info.as_ref().map(fixture_text), Some("unit"));
     assert_eq!(
-        data.field_display.as_deref(),
+        data.field_display.as_ref().map(fixture_text),
         Some("    0.0000    0.0000    DR    ALL  0       0")
     );
-    assert_eq!(data.values, ["value,with,comma"]);
+    assert_eq!(
+        data.values.iter().map(fixture_text).collect::<Vec<_>>(),
+        ["value,with,comma"]
+    );
 }
 
 #[test]
@@ -324,7 +362,7 @@ fn q31_polymer_sgroups_preserve_crossings_hierarchy_and_source_order() {
     assert_eq!(parent.id(), SubstanceGroupId::new(0));
     assert_eq!(parent.rdkit_sequence_id(), Some(0));
     assert_eq!(parent.kind(), &SubstanceGroupKind::StructuralRepeatUnit);
-    assert_eq!(parent.label(), Some("parent"));
+    assert_eq!(parent.label().map(fixture_text), Some("parent"));
     assert_eq!(
         parent.atoms(),
         &[AtomId::new(1), AtomId::new(0), AtomId::new(1)]
@@ -354,16 +392,25 @@ fn q31_polymer_sgroups_preserve_crossings_hierarchy_and_source_order() {
     assert_eq!(parent.connection(), Some(&SGroupConnection::HeadToHead));
     assert_eq!(parent.parent(), None);
     assert_eq!(
-        parent.props().get("_cxsmilesindex").map(String::as_str),
-        Some("0")
+        parent
+            .props()
+            .get("_cxsmilesindex".as_bytes())
+            .map(|value| value.as_uint().expect("source unsigned property kind")),
+        Some(0_u32)
     );
-    assert_eq!(parent.props().get("index").map(String::as_str), Some("1"));
+    assert_eq!(
+        parent
+            .props()
+            .get("index".as_bytes())
+            .map(|value| value.as_uint().expect("source unsigned property kind")),
+        Some(1_u32)
+    );
 
     let child = &groups[1];
     assert_eq!(child.id(), SubstanceGroupId::new(1));
     assert_eq!(child.rdkit_sequence_id(), Some(1));
     assert_eq!(child.kind(), &SubstanceGroupKind::StructuralRepeatUnit);
-    assert_eq!(child.label(), Some("child"));
+    assert_eq!(child.label().map(fixture_text), Some("child"));
     assert_eq!(child.atoms(), &[AtomId::new(3), AtomId::new(2)]);
     assert_eq!(
         child.bonds(),
@@ -380,11 +427,26 @@ fn q31_polymer_sgroups_preserve_crossings_hierarchy_and_source_order() {
     assert_eq!(child.connection(), Some(&SGroupConnection::HeadToTail));
     assert_eq!(child.parent(), Some(SubstanceGroupId::new(0)));
     assert_eq!(
-        child.props().get("_cxsmilesindex").map(String::as_str),
-        Some("1")
+        child
+            .props()
+            .get("_cxsmilesindex".as_bytes())
+            .map(|value| value.as_uint().expect("source unsigned property kind")),
+        Some(1_u32)
     );
-    assert_eq!(child.props().get("index").map(String::as_str), Some("2"));
-    assert_eq!(child.props().get("PARENT").map(String::as_str), Some("1"));
+    assert_eq!(
+        child
+            .props()
+            .get("index".as_bytes())
+            .map(|value| value.as_uint().expect("source unsigned property kind")),
+        Some(2_u32)
+    );
+    assert_eq!(
+        child
+            .props()
+            .get("PARENT".as_bytes())
+            .map(|value| value.as_uint().expect("source unsigned property kind")),
+        Some(1_u32)
+    );
 }
 
 #[test]
@@ -394,7 +456,7 @@ fn q32_link_node_projection_keeps_source_atom_references_without_topology_rewrit
     assert_eq!(graph.num_atoms(), 3);
     assert_eq!(graph.num_bonds(), 2);
     assert_eq!(
-        graph.prop("molFileLinkNodes"),
+        graph.prop("_molLinkNodes").map(fixture_value),
         Some("1 3 2 2 1 2 3|2 4 2 1 9 1 10")
     );
 }

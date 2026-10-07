@@ -66,7 +66,11 @@ fn canonical_sgroup_xyz_and_typed_bond_references_are_observable_through_builder
         &[BondId::new(0), BondId::new(0), BondId::new(0)]
     );
     for raw_sidecar in ["XBHEAD", "XBCORR", "_headCrossings", "_tailCrossings"] {
-        assert_eq!(observed.props().get(raw_sidecar), None, "{raw_sidecar}");
+        assert_eq!(
+            observed.props().get(raw_sidecar.as_bytes()),
+            None,
+            "{raw_sidecar}"
+        );
     }
 }
 

@@ -135,14 +135,21 @@ impl SubstanceGroupKind {
     #[pyo3(name = "Generic")]
     fn generic(value: String) -> Self {
         Self {
-            inner: ck::SubstanceGroupKind::Generic(value),
+            inner: ck::SubstanceGroupKind::Generic(value.into()),
         }
     }
     #[getter]
-    fn generic_value(&self) -> Option<&str> {
+    fn generic_value(&self, py: Python<'_>) -> PyResult<Option<String>> {
         match &self.inner {
-            ck::SubstanceGroupKind::Generic(value) => Some(value),
-            _ => None,
+            ck::SubstanceGroupKind::Generic(value) => {
+                // Decode only at the Python str projection. The native decode
+                // error carries original bytes; no lossy chemistry conversion.
+                let text = pyo3::types::PyBytes::new(py, value.as_bytes())
+                    .call_method1("decode", ("utf-8", "strict"))?
+                    .extract::<String>()?;
+                Ok(Some(text))
+            }
+            _ => Ok(None),
         }
     }
     fn __eq__(&self, other: &Self) -> bool {

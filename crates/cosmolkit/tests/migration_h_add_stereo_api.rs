@@ -229,8 +229,9 @@ fn generated_registry_and_four_matrices_share_the_strong_append_operation() {
     assert_eq!(spec.derived_effects.preserve.bits(), (1 << 0) | (1 << 1));
     assert_eq!(
         spec.derived_effects.invalidate.bits(),
-        (1 << 2) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
+        (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7)
     );
+    assert_eq!(spec.derived_effects.operation_defined.bits(), 1 << 2);
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
     assert_eq!(spec.status, FunctionStatus::Experimental);
     assert_eq!(spec.parity, ParityPolicy::RequiredNow);
@@ -295,8 +296,14 @@ fn live_value_commit_preserves_state_projects_rows_and_detaches_written_blocks()
     assert_eq!(output.atoms()[0].prop("_CIPCode"), None);
     assert_eq!(output.bonds()[0].prop("_CIPCode"), None);
     assert_eq!(output.property("_CIPComputed"), None);
-    assert_eq!(output.property("ordinary"), Some("kept"));
-    assert_eq!(output.properties().name(), Some("hydrogens-public"));
+    assert_eq!(
+        output.property("ordinary"),
+        Some(&cosmolkit::PropertyValue::from("kept"))
+    );
+    assert_eq!(
+        output.properties().name(),
+        Some(&cosmolkit::PropertyText::from("hydrogens-public"))
+    );
     assert_eq!(
         output.properties().sdf_data_fields(),
         &[("field".into(), "kept".into())]
@@ -316,8 +323,8 @@ fn live_value_commit_preserves_state_projects_rows_and_detaches_written_blocks()
     assert_eq!(
         output.to_builder().coordinates().conformers_2d[0]
             .props()
-            .get("plane")
-            .map(String::as_str),
+            .get(b"plane".as_slice())
+            .map(|value| std::str::from_utf8(value.as_bytes()).expect("UTF8 fixture property")),
         Some("kept")
     );
     assert_eq!(output.to_builder().coordinates().conformers_3d[0].id(), 8);

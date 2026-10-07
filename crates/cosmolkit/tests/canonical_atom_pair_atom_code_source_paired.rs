@@ -2,7 +2,7 @@
 //! Fixed source-native guarded atom-code and COW effect regressions.
 use cosmolkit::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, ChiralTag, CoordinateBlock, Element,
-    Molecule, MoleculeProperties, TopologyBlock,
+    Molecule, MoleculeProperties, PropertyText, PropertyValue, TopologyBlock,
 };
 use serde_json::Value;
 
@@ -991,18 +991,34 @@ fn original_native_complete_guarded_code_and_effects_73_cases() {
             &result.molecule
         };
         let effects = &row["after"];
+        let computed = effects["marker_in_computed_list"].as_bool().unwrap()
+            && !effects["marker_in_ordinary_list"].as_bool().unwrap();
+        let expected_marker = effects["marker"].as_str().map(|value| {
+            if computed {
+                // assignCIPLabels stores source Bool true, whereas this
+                // fixture's preexisting ordinary markers are String 0/1.
+                assert_eq!(value, "1");
+                PropertyValue::Bool(true)
+            } else {
+                PropertyValue::from(value)
+            }
+        });
+        let expected_user = effects["user"].as_str().map(PropertyValue::from);
         assert_eq!(
             molecule.properties().prop("_CIPComputed"),
-            effects["marker"].as_str(),
+            expected_marker.as_ref(),
             "row{count}"
         );
         assert_eq!(
             molecule.property("user"),
-            effects["user"].as_str(),
+            expected_user.as_ref(),
             "row{count}"
         );
         assert_eq!(
-            molecule.properties().is_prop_computed("_CIPComputed"),
+            molecule
+                .properties()
+                .is_prop_computed("_CIPComputed")
+                .unwrap(),
             effects["marker_in_computed_list"].as_bool().unwrap()
                 && !effects["marker_in_ordinary_list"].as_bool().unwrap(),
             "row{count}"
@@ -1014,7 +1030,7 @@ fn original_native_complete_guarded_code_and_effects_73_cases() {
         {
             assert_eq!(
                 atom.prop("_CIPCode").map(|v| v.as_string().unwrap()),
-                expected.as_str(),
+                expected.as_str().map(PropertyText::from).as_ref(),
                 "row{count}"
             );
         }

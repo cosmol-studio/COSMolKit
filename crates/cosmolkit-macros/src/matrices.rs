@@ -259,6 +259,9 @@ fn molecule_result_type(operation: &MoleculeOperation) -> proc_macro2::TokenStre
         return quote!(stringify!(#result));
     }
     if let Some(report) = fields.report_type.as_ref() {
+        if let Some(result) = &fields.report_result_type {
+            return quote!(stringify!(#result));
+        }
         return quote!(stringify!((Molecule, #report)));
     }
     match (
@@ -269,6 +272,7 @@ fn molecule_result_type(operation: &MoleculeOperation) -> proc_macro2::TokenStre
         (MoleculeOutput::Single, None, None) => quote!("Molecule"),
         (MoleculeOutput::Single, Some(result), None) => quote!(stringify!(#result)),
         (MoleculeOutput::Multiple, None, None) => quote!("Vec<Molecule>"),
+        (MoleculeOutput::LazyMultiple, None, None) => quote!("StereoisomerIterator"),
         (MoleculeOutput::Multiple, Some(result), Some(_)) => quote!(stringify!(#result)),
         _ => unreachable!("molecule result/assembler shape was validated before matrix expansion"),
     }
@@ -278,6 +282,7 @@ fn molecule_output(value: MoleculeOutput) -> proc_macro2::TokenStream {
     match value {
         MoleculeOutput::Single => quote!(crate::ops::MoleculeOpOutput::Single),
         MoleculeOutput::Multiple => quote!(crate::ops::MoleculeOpOutput::Multiple),
+        MoleculeOutput::LazyMultiple => quote!(crate::ops::MoleculeOpOutput::LazyMultiple),
     }
 }
 
@@ -302,6 +307,7 @@ fn topology_edit(value: TopologyEditKind) -> proc_macro2::TokenStream {
         TopologyEditKind::Compacting => quote!(crate::ops::TopologyEditKind::Compacting),
         TopologyEditKind::Expanding => quote!(crate::ops::TopologyEditKind::Appending),
         TopologyEditKind::Reordering => quote!(crate::ops::TopologyEditKind::Renumbering),
+        TopologyEditKind::Reconstruction => quote!(crate::ops::TopologyEditKind::Reconstruction),
     }
 }
 
@@ -358,6 +364,9 @@ fn cip_state(value: CipStatePolicy) -> proc_macro2::TokenStream {
         CipStatePolicy::Preserve => quote!(crate::ops::CipStatePolicy::Preserve),
         CipStatePolicy::Clear => quote!(crate::ops::CipStatePolicy::ClearComputed),
         CipStatePolicy::Recompute => quote!(crate::ops::CipStatePolicy::Assign),
+        CipStatePolicy::StereoisomerSourceTransition => {
+            quote!(crate::ops::CipStatePolicy::StereoisomerSourceTransition)
+        }
         CipStatePolicy::TautomerSourceTransition => {
             quote!(crate::ops::CipStatePolicy::TautomerSourceTransition)
         }
@@ -412,6 +421,7 @@ fn mapping_requirement(value: MappingRequirement, bio: bool) -> proc_macro2::Tok
         MappingRequirement::None => quote!(None),
         MappingRequirement::Identity => quote!(Identity),
         MappingRequirement::Required => quote!(Required),
+        MappingRequirement::Reconstruction => quote!(Reconstruction),
     };
     if bio {
         quote!(crate::bio_ops::MappingRequirement::#variant)

@@ -1,3 +1,4 @@
+use crate::{MoleculePropertyError, PropertyText, PropertyValue};
 use std::collections::BTreeMap;
 
 use crate::{AtomId, BondId};
@@ -133,7 +134,7 @@ pub enum SubstanceGroupKind {
     MixtureComponent,
     Mixture,
     Formulation,
-    Generic(String),
+    Generic(PropertyText),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,7 +187,7 @@ impl SGroupCState {
 pub struct SGroupDisplay {
     pub brackets: Vec<SGroupBracket>,
     pub field_position: Option<[f64; 2]>,
-    pub display_tag: Option<String>,
+    pub display_tag: Option<PropertyText>,
 }
 
 impl SGroupDisplay {
@@ -198,14 +199,14 @@ impl SGroupDisplay {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SGroupData {
-    pub field_name: Option<String>,
-    pub field_type: Option<String>,
-    pub field_info: Option<String>,
-    pub field_display: Option<String>,
-    pub units: Option<String>,
-    pub query_type: Option<String>,
-    pub query_op: Option<String>,
-    pub values: Vec<String>,
+    pub field_name: Option<PropertyText>,
+    pub field_type: Option<PropertyText>,
+    pub field_info: Option<PropertyText>,
+    pub field_display: Option<PropertyText>,
+    pub units: Option<PropertyText>,
+    pub query_type: Option<PropertyText>,
+    pub query_op: Option<PropertyText>,
+    pub values: Vec<PropertyText>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,7 +214,7 @@ pub enum SGroupConnection {
     HeadToHead,
     HeadToTail,
     Either,
-    Unknown(String),
+    Unknown(PropertyText),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -221,14 +222,14 @@ pub enum SGroupBracketStyle {
     Bracket,
     Parenthesis,
     None,
-    Unknown(String),
+    Unknown(PropertyText),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SGroupAttachPoint {
     pub atom: AtomId,
     pub leaving_atom: Option<AtomId>,
-    pub label: Option<String>,
+    pub label: Option<PropertyText>,
     pub order: Option<u32>,
 }
 
@@ -245,19 +246,19 @@ pub struct SubstanceGroup {
     crossing_bond_correspondence: Vec<BondId>,
     parent_atoms: Vec<AtomId>,
     parent: Option<SubstanceGroupId>,
-    label: Option<String>,
+    label: Option<PropertyText>,
     connection: Option<SGroupConnection>,
-    subtype: Option<String>,
+    subtype: Option<PropertyText>,
     bracket_style: Option<SGroupBracketStyle>,
-    expansion_state: Option<String>,
-    class: Option<String>,
+    expansion_state: Option<PropertyText>,
+    class: Option<PropertyText>,
     component_number: Option<u32>,
     display: Option<SGroupDisplay>,
     data: Option<SGroupData>,
     attach_points: Vec<SGroupAttachPoint>,
     cstates: Vec<SGroupCState>,
-    props: BTreeMap<String, String>,
-    data_fields: Vec<String>,
+    props: crate::property_value::PropertyStore,
+    data_fields: Vec<PropertyText>,
 }
 
 impl SubstanceGroup {
@@ -286,7 +287,7 @@ impl SubstanceGroup {
             data: None,
             attach_points: Vec::new(),
             cstates: Vec::new(),
-            props: BTreeMap::new(),
+            props: crate::property_value::PropertyStore::new(),
             data_fields: Vec::new(),
         }
     }
@@ -335,6 +336,15 @@ impl SubstanceGroup {
         &self.crossing_bond_correspondence
     }
 
+    /// Actual sparse role entry; distinguishes absence from explicit Crossing.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn explicit_bond_role(&self, bond: BondId) -> Option<SGroupBondRole> {
+        // Detached read only, O(log R); constructors/setters/remapping keep
+        // entries restricted to existing member bonds. No runtime authority.
+        self.bond_roles.get(&bond).copied()
+    }
+
     #[must_use]
     pub fn bond_role(&self, bond: BondId) -> SGroupBondRole {
         self.bond_roles
@@ -360,18 +370,18 @@ impl SubstanceGroup {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.props
+    pub fn props(&self) -> &BTreeMap<PropertyText, PropertyValue> {
+        self.props.values()
     }
 
     #[must_use]
-    pub fn data_fields(&self) -> &[String] {
+    pub fn data_fields(&self) -> &[PropertyText] {
         &self.data_fields
     }
 
     #[must_use]
-    pub fn label(&self) -> Option<&str> {
-        self.label.as_deref()
+    pub fn label(&self) -> Option<&PropertyText> {
+        self.label.as_ref()
     }
 
     #[must_use]
@@ -380,8 +390,8 @@ impl SubstanceGroup {
     }
 
     #[must_use]
-    pub fn subtype(&self) -> Option<&str> {
-        self.subtype.as_deref()
+    pub fn subtype(&self) -> Option<&PropertyText> {
+        self.subtype.as_ref()
     }
 
     #[must_use]
@@ -395,13 +405,13 @@ impl SubstanceGroup {
     }
 
     #[must_use]
-    pub fn expansion_state(&self) -> Option<&str> {
-        self.expansion_state.as_deref()
+    pub fn expansion_state(&self) -> Option<&PropertyText> {
+        self.expansion_state.as_ref()
     }
 
     #[must_use]
-    pub fn class(&self) -> Option<&str> {
-        self.class.as_deref()
+    pub fn class(&self) -> Option<&PropertyText> {
+        self.class.as_ref()
     }
 
     #[must_use]
@@ -483,7 +493,7 @@ impl SubstanceGroup {
     }
 
     #[must_use]
-    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+    pub fn with_label(mut self, label: impl Into<PropertyText>) -> Self {
         self.label = Some(label.into());
         self
     }
@@ -495,7 +505,7 @@ impl SubstanceGroup {
     }
 
     #[must_use]
-    pub fn with_subtype(mut self, subtype: impl Into<String>) -> Self {
+    pub fn with_subtype(mut self, subtype: impl Into<PropertyText>) -> Self {
         self.subtype = Some(subtype.into());
         self
     }
@@ -513,13 +523,13 @@ impl SubstanceGroup {
     }
 
     #[must_use]
-    pub fn with_expansion_state(mut self, expansion_state: impl Into<String>) -> Self {
+    pub fn with_expansion_state(mut self, expansion_state: impl Into<PropertyText>) -> Self {
         self.expansion_state = Some(expansion_state.into());
         self
     }
 
     #[must_use]
-    pub fn with_class(mut self, class: impl Into<String>) -> Self {
+    pub fn with_class(mut self, class: impl Into<PropertyText>) -> Self {
         self.class = Some(class.into());
         self
     }
@@ -548,19 +558,22 @@ impl SubstanceGroup {
         self
     }
 
-    #[must_use]
-    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.props.insert(key.into(), value.into());
-        self
+    pub fn with_prop(
+        mut self,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyValue>,
+    ) -> Result<Self, MoleculePropertyError> {
+        self.set_prop(key, value)?;
+        Ok(self)
     }
 
     #[must_use]
-    pub fn with_data_field(mut self, value: impl Into<String>) -> Self {
+    pub fn with_data_field(mut self, value: impl Into<PropertyText>) -> Self {
         self.data_fields.push(value.into());
         self
     }
 
-    pub fn push_data_field(&mut self, value: impl Into<String>) {
+    pub fn push_data_field(&mut self, value: impl Into<PropertyText>) {
         self.data_fields.push(value.into());
     }
 
@@ -635,7 +648,7 @@ impl SubstanceGroup {
     }
 
     #[allow(dead_code)]
-    pub fn set_label(&mut self, label: impl Into<String>) {
+    pub fn set_label(&mut self, label: impl Into<PropertyText>) {
         self.label = Some(label.into());
     }
 
@@ -645,7 +658,7 @@ impl SubstanceGroup {
     }
 
     #[allow(dead_code)]
-    pub fn set_subtype(&mut self, subtype: impl Into<String>) {
+    pub fn set_subtype(&mut self, subtype: impl Into<PropertyText>) {
         self.subtype = Some(subtype.into());
     }
 
@@ -655,12 +668,12 @@ impl SubstanceGroup {
     }
 
     #[allow(dead_code)]
-    pub fn set_expansion_state(&mut self, expansion_state: impl Into<String>) {
+    pub fn set_expansion_state(&mut self, expansion_state: impl Into<PropertyText>) {
         self.expansion_state = Some(expansion_state.into());
     }
 
     #[allow(dead_code)]
-    pub fn set_class(&mut self, class: impl Into<String>) {
+    pub fn set_class(&mut self, class: impl Into<PropertyText>) {
         self.class = Some(class.into());
     }
 
@@ -689,12 +702,58 @@ impl SubstanceGroup {
         self.cstates.push(cstate);
     }
 
-    pub fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        self.props.insert(key.into(), value.into());
+    pub fn set_prop(
+        &mut self,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyValue>,
+    ) -> Result<(), MoleculePropertyError> {
+        // BEGIN COMPLETE RDProps::setProp
+        // RDKit✔️❌: void setProp(const std::string_view key, T val, bool computed = false) const {
+        // RDKit✔️❌:     if(key.empty()) {
+        // RDKit✔️❌:       throw ValueErrorException("Cannot set property with empty key");
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     if (computed) {
+        // RDKit✔️❌:       STR_VECT compLst;
+        // RDKit✔️❌:       getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️❌:       if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️❌:         compLst.emplace_back(key);
+        // RDKit✔️❌:         d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     d_props.setVal(key, val);
+        // RDKit✔️❌:   }
+        // END COMPLETE RDProps::setProp
+        // Source default computed=false; delegate the sole typed store, retain
+        // tag/bytes/order on replacement and propagate its empty-key failure.
+        // Computed assignment is a separate source capability, not inferred
+        // from an underscore key or the value kind. Store cost is tree-backed.
+        self.props
+            .set(key.into(), value.into())
+            .map_err(MoleculePropertyError::from)
     }
 
-    pub fn clear_prop(&mut self, key: &str) {
-        self.props.remove(key);
+    pub fn clear_prop(&mut self, key: impl AsRef<[u8]>) -> Result<(), MoleculePropertyError> {
+        // BEGIN COMPLETE RDProps::clearProp
+        // RDKit✔️❌: void clearProp(const std::string_view key) const {
+        // RDKit✔️❌:     STR_VECT compLst;
+        // RDKit✔️❌:     if (getPropIfPresent(RDKit::detail::computedPropName, compLst)) {
+        // RDKit✔️❌:       auto svi = std::find(compLst.begin(), compLst.end(), key);
+        // RDKit✔️❌:       if (svi != compLst.end()) {
+        // RDKit✔️❌:         compLst.erase(svi);
+        // RDKit✔️❌:         d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     d_props.clearVal(key);
+        // RDKit✔️❌:   }
+        // END COMPLETE RDProps::clearProp
+        // Delegate actual computed-list read/removal order and typed failure.
+        self.props.clear(key).map_err(MoleculePropertyError::from)
+    }
+
+    /// Borrow detached typed properties in source insertion order.
+    #[doc(hidden)]
+    pub fn property_records(&self) -> impl Iterator<Item = (&PropertyText, &PropertyValue)> + '_ {
+        self.props.ordered()
     }
 
     #[must_use]
@@ -774,6 +833,92 @@ impl SubstanceGroup {
                     .get(cstate.bond.index())
                     .is_some_and(Option::is_some)
             })
+    }
+
+    /// Source RWMol insertion offsets only explicit graph references. Raw
+    /// hierarchy/XBHEAD/XBCORR properties retain their source values.
+    #[doc(hidden)]
+    pub fn with_inserted_offsets(
+        mut self,
+        id: SubstanceGroupId,
+        atom_offset: usize,
+        bond_offset: usize,
+    ) -> Self {
+        // RDKit❗❌: void insertSubstanceGroups(RWMol &mol, const RWMol &other,
+        // RDKit❗❌:                            unsigned int origNumAtoms,
+        // RDKit❗❌:                            unsigned int origNumBonds) {
+        // RDKit❗❌:   for (auto sgroup : getSubstanceGroups(other)) {
+        // RDKit❗❌:     sgroup.setOwningMol(&mol);
+        // RDKit❗❌:
+        // RDKit❗❌:     // update the sgroup's atom and bond indices
+        // RDKit❗❌:     auto atom_indices = sgroup.getAtoms();
+        // RDKit❗❌:     std::transform(atom_indices.begin(), atom_indices.end(),
+        // RDKit❗❌:                    atom_indices.begin(),
+        // RDKit❗❌:                    [&origNumAtoms](unsigned int old_index) {
+        // RDKit❗❌:                      return origNumAtoms + old_index;
+        // RDKit❗❌:                    });
+        // RDKit❗❌:     sgroup.setAtoms(atom_indices);
+        // RDKit❗❌:
+        // RDKit❗❌:     auto bond_indices = sgroup.getBonds();
+        // RDKit❗❌:     std::transform(bond_indices.begin(), bond_indices.end(),
+        // RDKit❗❌:                    bond_indices.begin(),
+        // RDKit❗❌:                    [&origNumBonds](unsigned int old_index) {
+        // RDKit❗❌:                      return origNumBonds + old_index;
+        // RDKit❗❌:                    });
+        // RDKit❗❌:     sgroup.setBonds(bond_indices);
+        // RDKit❗❌:
+        // RDKit❗❌:     // patoms
+        // RDKit❗❌:     auto patom_indices = sgroup.getParentAtoms();
+        // RDKit❗❌:     std::transform(patom_indices.begin(), patom_indices.end(),
+        // RDKit❗❌:                    patom_indices.begin(),
+        // RDKit❗❌:                    [&origNumAtoms](unsigned int old_index) {
+        // RDKit❗❌:                      return origNumAtoms + old_index;
+        // RDKit❗❌:                    });
+        // RDKit❗❌:     sgroup.setParentAtoms(patom_indices);
+        // RDKit❗❌:
+        // RDKit❗❌:     // cstates (these are references, can be updated in place)
+        // RDKit❗❌:     for (auto &cstate : sgroup.getCStates()) {
+        // RDKit❗❌:       cstate.bondIdx = origNumBonds + cstate.bondIdx;
+        // RDKit❗❌:     }
+        // RDKit❗❌:
+        // RDKit❗❌:     // attachment points (can also be updated in place)
+        // RDKit❗❌:     for (auto &sap : sgroup.getAttachPoints()) {
+        // RDKit❗❌:       sap.aIdx = origNumAtoms + sap.aIdx;
+        // RDKit❗❌:       if (sap.lvIdx != -1) {
+        // RDKit❗❌:         sap.lvIdx = static_cast<int>(origNumAtoms + sap.lvIdx);
+        // RDKit❗❌:       }
+        // RDKit❗❌:     }
+        // RDKit❗❌:
+        // RDKit❗❌:     addSubstanceGroup(mol, sgroup);
+        // RDKit❗❌:   }
+        // RDKit❗❌: }
+        self.id = id;
+        for atom in self.atoms.iter_mut().chain(self.parent_atoms.iter_mut()) {
+            *atom = AtomId::new(atom.index() + atom_offset);
+        }
+        for bond in &mut self.bonds {
+            *bond = BondId::new(bond.index() + bond_offset);
+        }
+        // Ordered bond-role index reconstruction costs O(R log R); SOURCE
+        // directly offsets linear member vectors. This extra index is retained
+        // as canonical detached metadata, without claiming cost equivalence.
+        self.bond_roles = self
+            .bond_roles
+            .into_iter()
+            .map(|(bond, role)| (BondId::new(bond.index() + bond_offset), role))
+            .collect();
+        for state in &mut self.cstates {
+            state.bond = BondId::new(state.bond.index() + bond_offset);
+        }
+        for point in &mut self.attach_points {
+            point.atom = AtomId::new(point.atom.index() + atom_offset);
+            if let Some(atom) = point.leaving_atom {
+                point.leaving_atom = Some(AtomId::new(atom.index() + atom_offset));
+            }
+        }
+        // Explicit-reference loops remain linear. The extra ordered role
+        // index cost is stated above; unrelated generic properties stay raw.
+        self
     }
 
     pub fn remapped(
@@ -1229,4 +1374,173 @@ mod cf3d_sgids_model_1_tests {
             }
         }
     }
+}
+
+/// Source assignment merges multiple ABS groups, retaining non-ABS order and
+/// source's reverse concatenation of ABS members without sorting/deduplication.
+#[doc(hidden)]
+pub fn merge_absolute_stereo_groups(groups: Vec<StereoGroup>) -> Vec<StereoGroup> {
+    // RDKit❗✔️: void ROMol::setStereoGroups(std::vector<StereoGroup> stereo_groups) {
+    // RDKit❗✔️:   auto is_abs = [](const auto &sg) {
+    // RDKit❗✔️:     return sg.getGroupType() == StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗✔️:   };
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // if there's more than one ABS group, merge them
+    // RDKit❗✔️:   if (auto num_abs = std::ranges::count_if(stereo_groups, is_abs);
+    // RDKit❗✔️:       num_abs <= 1) {
+    // RDKit❗✔️:     d_stereo_groups = std::move(stereo_groups);
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     std::vector<Atom *> abs_atoms;
+    // RDKit❗✔️:     std::vector<Bond *> abs_bonds;
+    // RDKit❗✔️:     std::vector<StereoGroup> new_stereo_groups;
+    // RDKit❗✔️:     new_stereo_groups.reserve(stereo_groups.size() - num_abs + 1);
+    // RDKit❗✔️:     for (auto &&sg : stereo_groups) {
+    // RDKit❗✔️:       if (is_abs(sg)) {
+    // RDKit❗✔️:         auto &other_atoms = sg.getAtoms();
+    // RDKit❗✔️:         auto &other_bonds = sg.getBonds();
+    // RDKit❗✔️:         abs_atoms.insert(abs_atoms.begin(), other_atoms.begin(),
+    // RDKit❗✔️:                          other_atoms.end());
+    // RDKit❗✔️:         abs_bonds.insert(abs_bonds.begin(), other_bonds.begin(),
+    // RDKit❗✔️:                          other_bonds.end());
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         new_stereo_groups.push_back(std::move(sg));
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     new_stereo_groups.emplace_back(StereoGroupType::STEREO_ABSOLUTE,
+    // RDKit❗✔️:                                    std::move(abs_atoms), std::move(abs_bonds));
+    // RDKit❗✔️:     d_stereo_groups = std::move(new_stereo_groups);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // Same two linear group scans and source prepend-vector insertion cost.
+    // Owned groups preserve non-ABS IDs/bonds without extra deep clones.
+    let count = groups
+        .iter()
+        .filter(|g| g.kind == StereoGroupKind::Absolute)
+        .count();
+    if count <= 1 {
+        return groups;
+    }
+    let mut atoms = Vec::new();
+    let mut bonds = Vec::new();
+    let mut result = Vec::with_capacity(groups.len() - count + 1);
+    for group in groups {
+        if group.kind == StereoGroupKind::Absolute {
+            atoms.splice(0..0, group.atoms);
+            bonds.splice(0..0, group.bonds);
+        } else {
+            result.push(group);
+        }
+    }
+    result.push(StereoGroup::new(StereoGroupKind::Absolute, atoms, bonds));
+    result
+}
+
+/// Source graph insertion of enhanced groups, including ordered ABS merging.
+#[doc(hidden)]
+pub fn insert_stereo_groups(
+    existing: &[StereoGroup],
+    incoming: &[StereoGroup],
+    atom_offset: usize,
+    bond_offset: usize,
+) -> Vec<StereoGroup> {
+    // RDKit❗✔️: void insertStereoGroups(RWMol &mol, const ROMol &other,
+    // RDKit❗✔️:                         unsigned int origNumAtoms, unsigned int origNumBonds) {
+    // RDKit❗✔️:   if (other.getStereoGroups().empty()) {
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   std::vector<RDKit::Atom *> abs_atoms;
+    // RDKit❗✔️:   std::vector<RDKit::Bond *> abs_bonds;
+    // RDKit❗✔️:   std::vector<RDKit::StereoGroup> new_groups;
+    // RDKit❗✔️:   new_groups.reserve(mol.getStereoGroups().size());
+    // RDKit❗✔️:   for (const auto &sg : mol.getStereoGroups()) {
+    // RDKit❗✔️:     // The sdf specification forbids more than one ABS stereo group, but we
+    // RDKit❗✔️:     // don't enforce that in our code. But if we see more than one ABS groups
+    // RDKit❗✔️:     // here, just merge the atoms and bonds in them into one group. Other stereo
+    // RDKit❗✔️:     // groups are just forwarded.
+    // RDKit❗✔️:     if (sg.getGroupType() == RDKit::StereoGroupType::STEREO_ABSOLUTE) {
+    // RDKit❗✔️:       auto &atoms = sg.getAtoms();
+    // RDKit❗✔️:       auto &bonds = sg.getBonds();
+    // RDKit❗✔️:       abs_atoms.insert(abs_atoms.end(), atoms.begin(), atoms.end());
+    // RDKit❗✔️:       abs_bonds.insert(abs_bonds.end(), bonds.begin(), bonds.end());
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       new_groups.emplace_back(sg);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   for (const auto &sg : other.getStereoGroups()) {
+    // RDKit❗✔️:     // update the stereo group's atom and bond indices
+    // RDKit❗✔️:     std::vector<RDKit::Atom *> new_atoms;
+    // RDKit❗✔️:     std::vector<RDKit::Bond *> new_bonds;
+    // RDKit❗✔️:     for (auto atom : sg.getAtoms()) {
+    // RDKit❗✔️:       auto idx = atom->getIdx() + origNumAtoms;
+    // RDKit❗✔️:       new_atoms.push_back(mol.getAtomWithIdx(idx));
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     for (auto bond : sg.getBonds()) {
+    // RDKit❗✔️:       auto idx = bond->getIdx() + origNumBonds;
+    // RDKit❗✔️:       new_bonds.push_back(mol.getBondWithIdx(idx));
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     // Collect all ABS atoms and bonds so they are added as a single group
+    // RDKit❗✔️:     if (sg.getGroupType() == RDKit::StereoGroupType::STEREO_ABSOLUTE) {
+    // RDKit❗✔️:       abs_atoms.insert(abs_atoms.end(), new_atoms.begin(), new_atoms.end());
+    // RDKit❗✔️:       abs_bonds.insert(abs_bonds.end(), new_bonds.begin(), new_bonds.end());
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       RDKit::StereoGroup new_group(sg.getGroupType(), new_atoms, new_bonds,
+    // RDKit❗✔️:                                    sg.getReadId());
+    // RDKit❗✔️:       // default write ID to 0 to avoid id clashes. We can use
+    // RDKit❗✔️:       // assignStereoGroupIds() later on to assign new IDs
+    // RDKit❗✔️:       new_group.setWriteId(0);
+    // RDKit❗✔️:       new_groups.push_back(std::move(new_group));
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!abs_atoms.empty() || !abs_bonds.empty()) {
+    // RDKit❗✔️:     new_groups.emplace_back(RDKit::StereoGroupType::STEREO_ABSOLUTE, abs_atoms,
+    // RDKit❗✔️:                             abs_bonds);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   mol.setStereoGroups(new_groups);
+    // RDKit❗✔️: }
+    if incoming.is_empty() {
+        return existing.to_vec();
+    }
+    let mut abs_atoms = Vec::new();
+    let mut abs_bonds = Vec::new();
+    let mut result = Vec::with_capacity(existing.len());
+    for group in existing {
+        if group.kind == StereoGroupKind::Absolute {
+            abs_atoms.extend_from_slice(&group.atoms);
+            abs_bonds.extend_from_slice(&group.bonds);
+        } else {
+            result.push(group.clone());
+        }
+    }
+    for group in incoming {
+        let atoms: Vec<_> = group
+            .atoms
+            .iter()
+            .map(|a| AtomId::new(a.index() + atom_offset))
+            .collect();
+        let bonds: Vec<_> = group
+            .bonds
+            .iter()
+            .map(|b| BondId::new(b.index() + bond_offset))
+            .collect();
+        if group.kind == StereoGroupKind::Absolute {
+            abs_atoms.extend(atoms);
+            abs_bonds.extend(bonds);
+        } else {
+            let mut group_copy = StereoGroup::new(group.kind, atoms, bonds);
+            if let Some(id) = group.id {
+                group_copy = group_copy.with_id(id);
+            }
+            result.push(group_copy);
+        }
+    }
+    if !abs_atoms.is_empty() || !abs_bonds.is_empty() {
+        result.push(StereoGroup::new(
+            StereoGroupKind::Absolute,
+            abs_atoms,
+            abs_bonds,
+        ));
+    }
+    merge_absolute_stereo_groups(result)
 }

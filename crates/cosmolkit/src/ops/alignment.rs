@@ -13,7 +13,7 @@ pub(crate) fn with_alignment_to_impl(
     let mut coordinates = parts.checkout_coordinates()?;
     let outcome = (|| {
         let cache = parts.checkout_derived_cache()?;
-        let result = (|| {
+        let result: Result<AlignmentResult, OperationError> = (|| {
             let result = crate::alignment::alignment_transform_candidate(
                 parts.topology()?,
                 &coordinates,

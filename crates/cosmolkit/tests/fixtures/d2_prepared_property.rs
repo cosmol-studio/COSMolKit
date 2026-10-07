@@ -1,7 +1,7 @@
 //! Private fixed native literals, shared by the public and storage regressions.
 //! Provenance/qualification/license: prepared_property_presence.md/.LICENSE.
 
-use cosmolkit_model::{MoleculeProperties, PropertyValue, TopologyBlock};
+use cosmolkit_model::{MoleculeProperties, PropertyText, PropertyValue, TopologyBlock};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const CASES: [(usize, &str); 3] = [
@@ -116,9 +116,10 @@ pub fn check(
                 if fields[1] != owner || fields[2].parse::<usize>().unwrap() != index {
                     continue;
                 }
-                let key = unhex(fields[4]);
-                if key == "__computedProps" {
+                let key = PropertyText::from(unhex(fields[4]));
+                if key.as_bytes() == b"__computedProps" {
                     assert_eq!(fields[5], "12");
+                    expected.insert(key, native_computed_vector(&unhex(fields[7])));
                     continue;
                 }
                 let text = unhex(fields[7]);
@@ -132,7 +133,7 @@ pub fn check(
                 let value = match fields[5] {
                     "1" => PropertyValue::Int(text.parse().unwrap()),
                     "6" => PropertyValue::UInt(text.parse().unwrap()),
-                    "3" => PropertyValue::String(text),
+                    "3" => PropertyValue::String(text.into()),
                     other => panic!("unmodeled fixed native tag {other}"),
                 };
                 if fields[6] == "1" {
@@ -151,7 +152,16 @@ pub fn check(
                     topology.bonds[index].computed_prop_names(),
                 )
             };
-            if actual != &expected || markers != &computed {
+            if actual != &expected
+                || markers
+                    .as_ref()
+                    .unwrap()
+                    .unwrap_or(&[])
+                    .iter()
+                    .cloned()
+                    .collect::<BTreeSet<_>>()
+                    != computed
+            {
                 errors.push(format!("{label}: {owner}/{index} complete scalar properties/computed differ actual={actual:?}/{markers:?} expected={expected:?}/{computed:?}"));
             }
         }
@@ -160,18 +170,35 @@ pub fn check(
     let mut computed_mol = BTreeSet::new();
     for row in expected_properties.lines() {
         let fields = row.split('\t').collect::<Vec<_>>();
-        let key = unhex(fields[4]);
-        if key == "__computedProps" {
+        let key = PropertyText::from(unhex(fields[4]));
+        if key.as_bytes() == b"__computedProps" {
             assert_eq!(fields[5], "12");
+            expected_mol.insert(key, native_computed_vector(&unhex(fields[7])));
             continue;
         }
         assert!(matches!(fields[5], "1" | "3"));
         if fields[6] == "1" {
             computed_mol.insert(key.clone());
         }
-        expected_mol.insert(key, unhex(fields[7]));
+        expected_mol.insert(
+            key,
+            match fields[5] {
+                "1" => PropertyValue::Int(unhex(fields[7]).parse().unwrap()),
+                "3" => PropertyValue::String(unhex(fields[7]).into()),
+                _ => unreachable!(),
+            },
+        );
     }
-    if properties.props() != &expected_mol || properties.computed_prop_names() != &computed_mol {
+    if properties.props() != &expected_mol
+        || properties
+            .computed_prop_names()
+            .unwrap()
+            .unwrap_or(&[])
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            != computed_mol
+    {
         errors.push(format!("{label}: modeled MOL scalar properties/computed differ actual={properties:?} expected={expected_mol:?}/{computed_mol:?}"));
     }
     let rows = expected_xy.lines().collect::<Vec<_>>();
@@ -194,4 +221,13 @@ pub fn check(
         }
     }
     errors
+}
+
+fn native_computed_vector(fixed: &str) -> PropertyValue {
+    let contents = fixed.strip_prefix("[").unwrap().strip_suffix("]").unwrap();
+    PropertyValue::StringVector(if contents.is_empty() {
+        vec![]
+    } else {
+        contents.split(",").map(PropertyText::from).collect()
+    })
 }

@@ -55,7 +55,10 @@ pub(super) struct MmffConformerContext<'a> {
     pub(super) before: &'a [Conformer3D],
     pub(super) selected_id: usize,
     pub(super) selected_is_3d: bool,
-    pub(super) selected_props: &'a std::collections::BTreeMap<String, String>,
+    pub(super) selected_props: &'a std::collections::BTreeMap<
+        cosmolkit_model::PropertyText,
+        cosmolkit_model::PropertyText,
+    >,
     pub(super) after: &'a [Conformer3D],
     pub(super) source_dimension: Option<CoordinateDimension>,
     pub(super) source_order: Option<&'a [CoordinateDimension]>,

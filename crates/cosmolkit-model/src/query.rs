@@ -5,6 +5,7 @@
 //! to `cosmolkit-search`; query data is never lowered back to a concrete
 //! `Molecule`.
 
+use crate::PropertyText;
 use std::collections::{BTreeMap, BTreeSet};
 
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element, Hybridization};
@@ -264,7 +265,7 @@ pub enum BondQueryPredicate {
 #[derive(Debug, PartialEq)]
 pub struct RecursiveStructureQuery {
     query_graph: Option<Box<QueryGraph>>,
-    source_smarts: Option<String>,
+    source_smarts: Option<PropertyText>,
     atom_indices: BTreeSet<i32>,
     serial_number: u32,
 }
@@ -306,7 +307,7 @@ impl RecursiveStructureQuery {
     }
 
     #[must_use]
-    pub fn with_source_smarts(mut self, smarts: impl Into<String>) -> Self {
+    pub fn with_source_smarts(mut self, smarts: impl Into<PropertyText>) -> Self {
         self.source_smarts = Some(smarts.into());
         self
     }
@@ -334,8 +335,8 @@ impl RecursiveStructureQuery {
     }
 
     #[must_use]
-    pub fn source_smarts(&self) -> Option<&str> {
-        self.source_smarts.as_deref()
+    pub fn source_smarts(&self) -> Option<&PropertyText> {
+        self.source_smarts.as_ref()
     }
 
     #[doc(hidden)]
@@ -456,6 +457,20 @@ pub struct QueryAtom {
 }
 
 impl QueryAtom {
+    /// Borrow property records using the source private/computed include flags.
+    #[doc(hidden)]
+    pub fn property_records(
+        &self,
+        include_private: bool,
+        include_computed: bool,
+    ) -> Result<impl Iterator<Item = (&PropertyText, &crate::PropertyValue)> + '_, AtomPropertyError>
+    {
+        self.properties
+            .props
+            .filtered_ordered(include_private, include_computed)
+            .map_err(AtomPropertyError::from)
+    }
+
     #[must_use]
     pub fn new(id: AtomId, spec: crate::AtomSpec) -> Self {
         let (element, properties) = spec.into_query_parts();
@@ -689,23 +704,116 @@ impl QueryAtom {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, crate::PropertyValue> {
+    pub fn props(&self) -> &BTreeMap<PropertyText, crate::PropertyValue> {
         self.properties.props.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&crate::PropertyValue> {
-        self.properties.props.get(key)
+    pub fn prop(&self, key: impl AsRef<[u8]>) -> Option<&crate::PropertyValue> {
+        self.properties.props.get(key.as_ref())
+    }
+
+    /// Read a required detached property without conversion.
+    #[doc(hidden)]
+    pub fn prop_required(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<&crate::PropertyValue, crate::MissingPropertyError> {
+        self.properties.props.get_required(key)
     }
 
     #[must_use]
-    pub fn is_prop_computed(&self, key: &str) -> bool {
+    pub fn is_prop_computed(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<bool, crate::PropertyValueError> {
         self.properties.props.is_computed(key)
     }
 
     #[must_use]
-    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+    pub fn computed_prop_names(
+        &self,
+    ) -> Result<Option<&[PropertyText]>, crate::PropertyValueError> {
         self.properties.props.computed_names()
+    }
+
+    /// Copy the canonical source dictionary and its typed property carriers.
+    /// Atom members (including temporary flags and cached valences), identity,
+    /// predicate and monomer info remain those of the receiving atom.
+    #[doc(hidden)]
+    pub fn replace_source_properties_from(&mut self, source: &Self) {
+        // BEGIN RDKIT CPP FUNCTION RDProps::updateProps
+        // RDKit✔️❌: void updateProps(const RDProps &source, bool preserveExisting = false) {
+        // RDKit✔️❌:     d_props.update(source.getDict(), preserveExisting);
+        // RDKit✔️❌:   }
+        // END RDKIT CPP FUNCTION RDProps::updateProps
+        // RDKit✔️✔️: const Dict &getDict() const { return d_props; }
+        // BEGIN RDKIT CPP REUSED HELPER Dict::update
+        // RDKit✔️❌:   void update(const Dict &other, bool preserveExisting = false) {
+        // RDKit✔️❌:     if (!preserveExisting) {
+        // RDKit✔️❌:       *this = other;
+        // RDKit✔️❌:     } else {
+        // RDKit✔️❌:       if (other._hasNonPodData) {
+        // RDKit✔️❌:         _hasNonPodData = true;
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:       for (const auto &opair : other._data) {
+        // RDKit✔️❌:         Pair *target = nullptr;
+        // RDKit✔️❌:         for (auto &dpair : _data) {
+        // RDKit✔️❌:           if (dpair.key == opair.key) {
+        // RDKit✔️❌:             target = &dpair;
+        // RDKit✔️❌:             break;
+        // RDKit✔️❌:           }
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:
+        // RDKit✔️❌:         if (!target) {
+        // RDKit✔️❌:           // need to create blank entry and copy
+        // RDKit✔️❌:           _data.push_back(Pair(opair.key));
+        // RDKit✔️❌:           copy_rdvalue(_data.back().val, opair.val);
+        // RDKit✔️❌:         } else {
+        // RDKit✔️❌:           // just copy
+        // RDKit✔️❌:           copy_rdvalue(target->val, opair.val);
+        // RDKit✔️❌:         }
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // END RDKIT CPP REUSED HELPER Dict::update
+        // Behavior: this ReplaceAtom source call site uses preserveExisting=false.
+        // Delegate the entire ordered byte dictionary (including its actual
+        // __computedProps tagged entry) to PropertyStore::update_from, whose
+        // independent SF373 comparison implements both source branches. Do not
+        // inspect/cast that reserved value during a dictionary copy: wrong-kind
+        // payloads are copied unchanged, just as source ordinary entries are.
+        // Typed property carriers below are source dictionary facts. Receiving
+        // Atom members, cached valences, predicate, identity and monomer info
+        // are not assigned by RDProps::updateProps and remain untouched.
+        // Complexity: one deep dictionary copy plus typed property payloads.
+        // Source false-branch copying is linear in entries and bytes. The
+        // canonical tree/order representation adds tree allocations and an
+        // additional owning key index; record this explicit performance gap.
+        self.properties
+            .props
+            .update_from(&source.properties.props, false);
+        self.properties.chiral_permutation = source.properties.chiral_permutation;
+        self.properties.unknown_stereo = source.properties.unknown_stereo;
+        self.properties.mol_parity = source.properties.mol_parity;
+        self.properties.mol_inversion_flag = source.properties.mol_inversion_flag;
+        self.properties.implicit_hydrogen = source.properties.implicit_hydrogen;
+        self.properties.tracked_isotopic_hydrogens =
+            source.properties.tracked_isotopic_hydrogens.clone();
+        self.properties.atom_map = source.properties.atom_map;
+        self.properties.template_attachment_order =
+            source.properties.template_attachment_order.clone();
+    }
+
+    /// Read detached source storage without executing a chemistry getter.
+    #[doc(hidden)]
+    pub const fn source_valence_facts(&self) -> crate::SourceAtomValenceFacts {
+        self.properties.source_valence_facts
+    }
+
+    #[doc(hidden)]
+    pub fn set_source_valence_facts(&mut self, facts: crate::SourceAtomValenceFacts) {
+        self.properties.source_valence_facts = facts;
     }
 
     #[must_use]
@@ -796,7 +904,7 @@ impl QueryAtom {
     #[doc(hidden)]
     pub fn set_prop(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<crate::PropertyValue>,
     ) -> Result<(), AtomPropertyError> {
         self.properties.set_prop(key, value)
@@ -805,20 +913,20 @@ impl QueryAtom {
     #[doc(hidden)]
     pub fn set_computed_prop(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<crate::PropertyValue>,
     ) -> Result<(), AtomPropertyError> {
         self.properties.set_computed_prop(key, value)
     }
 
     #[doc(hidden)]
-    pub fn clear_prop(&mut self, key: &str) {
-        self.properties.clear_prop(key);
+    pub fn clear_prop(&mut self, key: impl AsRef<[u8]>) -> Result<(), AtomPropertyError> {
+        self.properties.clear_prop(key)
     }
 
     #[doc(hidden)]
-    pub fn clear_computed_props(&mut self) {
-        self.properties.clear_computed_props();
+    pub fn clear_computed_props(&mut self) -> Result<(), AtomPropertyError> {
+        self.properties.clear_computed_props()
     }
 
     #[doc(hidden)]
@@ -1258,6 +1366,21 @@ impl QueryBond {
         matches!(self.predicate_origin, QueryPredicateOrigin::CarrierDerived)
     }
 
+    /// Move a detached query bond while retaining its sole predicate identity.
+    #[doc(hidden)]
+    pub fn remapped(
+        self,
+        id: BondId,
+        begin: AtomId,
+        end: AtomId,
+        stereo_atoms: Option<[AtomId; 2]>,
+    ) -> Self {
+        Self {
+            bond: self.bond.remapped(id, begin, end, stereo_atoms),
+            ..self
+        }
+    }
+
     #[must_use]
     pub fn endpoints(&self) -> (usize, usize) {
         (self.bond.begin().index(), self.bond.end().index())
@@ -1288,7 +1411,7 @@ pub struct QueryGraph {
     atoms: Vec<QueryAtom>,
     bonds: Vec<QueryBond>,
     adjacency: Vec<Vec<(usize, usize)>>,
-    props: BTreeMap<String, String>,
+    props: crate::property_value::PropertyStore,
     conformers_2d: Vec<Conformer2D>,
     conformers_3d: Vec<Conformer3D>,
     source_conformer_order: Option<Vec<crate::CoordinateDimension>>,
@@ -1297,11 +1420,26 @@ pub struct QueryGraph {
 }
 
 impl QueryGraph {
+    /// Borrow property records using the source private/computed include flags.
+    #[doc(hidden)]
+    pub fn property_records(
+        &self,
+        include_private: bool,
+        include_computed: bool,
+    ) -> Result<
+        impl Iterator<Item = (&PropertyText, &crate::PropertyValue)> + '_,
+        crate::MoleculePropertyError,
+    > {
+        self.props
+            .filtered_ordered(include_private, include_computed)
+            .map_err(crate::MoleculePropertyError::from)
+    }
+
     #[must_use]
     pub fn from_parts(
         atoms: Vec<QueryAtom>,
         bonds: Vec<QueryBond>,
-        props: BTreeMap<String, String>,
+        props: impl IntoIterator<Item = (PropertyText, crate::PropertyValue)>,
         conformers_2d: Vec<Conformer2D>,
         conformers_3d: Vec<Conformer3D>,
         stereo_groups: Vec<StereoGroup>,
@@ -1320,7 +1458,7 @@ impl QueryGraph {
             atoms,
             bonds,
             adjacency,
-            props,
+            props: crate::property_value::PropertyStore::from_records(props),
             conformers_2d,
             conformers_3d,
             source_conformer_order: None,
@@ -1469,41 +1607,104 @@ impl QueryGraph {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
-        &self.props
+    pub fn props(&self) -> &BTreeMap<PropertyText, crate::PropertyValue> {
+        self.props.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&str> {
-        self.props.get(key).map(String::as_str)
+    /// Borrow the same dictionary's records in actual source insertion order.
+    #[doc(hidden)]
+    pub fn ordered_props(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&PropertyText, &crate::PropertyValue)> + '_ {
+        self.props.ordered()
+    }
+
+    pub fn prop(&self, key: impl AsRef<[u8]>) -> Option<&crate::PropertyValue> {
+        self.props.get(key.as_ref())
+    }
+
+    /// Read a required detached property without conversion.
+    #[doc(hidden)]
+    pub fn prop_required(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<&crate::PropertyValue, crate::MissingPropertyError> {
+        self.props.get_required(key)
     }
 
     /// Remove a parser/runtime property from this detached query value.
     #[doc(hidden)]
-    pub fn clear_prop(&mut self, key: &str) {
-        self.props.remove(key);
+    pub fn clear_prop(
+        &mut self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<(), crate::MoleculePropertyError> {
+        self.props
+            .clear(key)
+            .map_err(crate::MoleculePropertyError::from)
+    }
+
+    /// Borrow the source's ordered computed-list fact, including presence.
+    #[doc(hidden)]
+    pub fn computed_prop_names(
+        &self,
+    ) -> Result<Option<&[PropertyText]>, crate::PropertyValueError> {
+        self.props.computed_names()
+    }
+
+    /// Store an ordinary detached value and the source computed membership.
+    #[doc(hidden)]
+    pub fn set_computed_prop(
+        &mut self,
+        key: impl Into<PropertyText>,
+        value: impl Into<crate::PropertyValue>,
+    ) -> Result<(), crate::MoleculePropertyError> {
+        self.props
+            .set_computed(key.into(), value.into())
+            .map_err(crate::MoleculePropertyError::from)
     }
 
     #[must_use]
-    pub fn name(&self) -> Option<&str> {
+    pub fn name(&self) -> Result<Option<&PropertyText>, crate::PropertyValueError> {
         self.prop("_Name")
+            .map(crate::PropertyValue::as_string)
+            .transpose()
     }
 
     #[doc(hidden)]
-    pub fn with_name(mut self, name: impl Into<String>) -> Self {
-        self.props.insert("_Name".to_owned(), name.into());
+    pub fn with_name(mut self, name: impl Into<PropertyText>) -> Self {
+        self.props
+            .set("_Name".into(), crate::PropertyValue::String(name.into()))
+            .expect("fixed nonempty ordinary property key");
         self
     }
 
     #[doc(hidden)]
-    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.props.insert(key.into(), value.into());
-        self
+    pub fn with_prop(
+        mut self,
+        key: impl Into<PropertyText>,
+        value: impl Into<crate::PropertyValue>,
+    ) -> Result<Self, crate::MoleculePropertyError> {
+        self.set_prop(key, value)?;
+        Ok(self)
     }
 
     #[doc(hidden)]
-    pub fn set_prop(&mut self, key: impl Into<String>, value: impl Into<String>) {
-        self.props.insert(key.into(), value.into());
+    pub fn set_prop(
+        &mut self,
+        key: impl Into<PropertyText>,
+        value: impl Into<crate::PropertyValue>,
+    ) -> Result<(), crate::MoleculePropertyError> {
+        self.props
+            .set(key.into(), value.into())
+            .map_err(crate::MoleculePropertyError::from)
+    }
+
+    /// Borrow canonical 2D conformers without cloning the coordinate carrier.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn conformers_2d(&self) -> &[Conformer2D] {
+        &self.conformers_2d
     }
 
     #[must_use]
@@ -1525,6 +1726,19 @@ impl QueryGraph {
             source_coordinate_dim,
             source_conformer_order: self.source_conformer_order.clone(),
         }
+    }
+
+    /// Borrow the source's first conformer through the sole coordinate selector.
+    #[doc(hidden)]
+    pub fn first_source_conformer(
+        &self,
+    ) -> Result<Option<crate::CoordinateSourceConformer<'_>>, crate::CoordinateValidationError>
+    {
+        crate::coordinates::first_source_conformer_from_parts(
+            &self.conformers_2d,
+            &self.conformers_3d,
+            self.source_conformer_order.as_deref(),
+        )
     }
 
     #[doc(hidden)]
@@ -1625,6 +1839,12 @@ impl QueryGraph {
     pub fn add_stereo_group(&mut self, group: StereoGroup) {
         self.stereo_groups.push(group);
     }
+
+    /// Borrow existing detached groups without validation, merging or reordering.
+    #[doc(hidden)]
+    pub fn stereo_groups_mut(&mut self) -> &mut [StereoGroup] {
+        &mut self.stereo_groups
+    }
 }
 
 /// Replace a detached query graph's enhanced-stereo groups after validating
@@ -1652,7 +1872,7 @@ pub fn replace_query_stereo_groups(
         }
     }
 
-    graph.stereo_groups = groups;
+    graph.stereo_groups = crate::merge_absolute_stereo_groups(groups);
     Ok(())
 }
 
@@ -1765,7 +1985,7 @@ impl From<SubstanceGroupValidationError> for QueryGraphError {
 /// Borrow query-atom properties in the same source insertion order as atom properties.
 pub fn ordered_query_atom_properties(
     atom: &QueryAtom,
-) -> impl ExactSizeIterator<Item = (&str, &crate::PropertyValue)> + '_ {
+) -> impl ExactSizeIterator<Item = (&PropertyText, &crate::PropertyValue)> + '_ {
     // RDKit✔️✔️: for (const auto &item : _data) {
     // RDKit✔️✔️:   res.push_back(item.key);
     // RDKit✔️✔️: }
@@ -1776,6 +1996,13 @@ pub fn ordered_query_atom_properties(
 
 #[cfg(test)]
 mod tests {
+    // These original fixtures contain UTF-8 literals. Decode only their
+    // borrowed test projection; raw-byte controls assert as_bytes directly.
+    // Invalid bytes fail this assertion, never change a chemistry outcome.
+    fn fixture_text(value: &crate::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+
     use super::*;
     use crate::{
         AtomSpec, BondSpec, Element, PropertyValue, SGroupAttachPoint, SGroupBondRole,
@@ -1811,7 +2038,7 @@ mod tests {
         QueryGraph::from_parts(
             vec![atom0, atom1],
             vec![bond],
-            BTreeMap::from([("graph-note".to_owned(), "preserved".to_owned())]),
+            BTreeMap::from([("graph-note".into(), crate::PropertyValue::from("preserved"))]),
             vec![
                 Conformer2D::new(9, vec![[0.0, 1.0], [2.0, 3.0]]).with_prop("frame", "first"),
                 Conformer2D::new(11, vec![[4.0, 5.0], [6.0, 7.0]]).with_prop("frame", "second"),
@@ -1912,7 +2139,9 @@ mod tests {
         let mut rebuilt = QueryGraph::from_parts(
             original.atoms.clone(),
             original.bonds.clone(),
-            original.props.clone(),
+            original
+                .ordered_props()
+                .map(|(key, value)| (key.clone(), value.clone())),
             original.conformers_2d.clone(),
             original.conformers_3d.clone(),
             original.stereo_groups.clone(),
@@ -1960,18 +2189,19 @@ mod tests {
                 .with_external_id(40)
                 .with_atoms(vec![AtomId::new(0), AtomId::new(0)])
                 .with_data(SGroupData {
-                    field_name: Some("FIELD".to_owned()),
-                    field_type: Some("T".to_owned()),
-                    field_info: Some("typed data".to_owned()),
-                    field_display: Some("display specification".to_owned()),
-                    units: Some("ppm".to_owned()),
-                    query_type: Some("Q".to_owned()),
-                    query_op: Some("OP".to_owned()),
-                    values: vec!["first".to_owned(), "second".to_owned()],
+                    field_name: Some("FIELD".into()),
+                    field_type: Some("T".into()),
+                    field_info: Some("typed data".into()),
+                    field_display: Some("display specification".into()),
+                    units: Some("ppm".into()),
+                    query_type: Some("Q".into()),
+                    query_op: Some("OP".into()),
+                    values: vec!["first".into(), "second".into()],
                 })
                 .with_data_field("field row one")
                 .with_data_field("field row two")
-                .with_prop("custom", "retained"),
+                .with_prop("custom", "retained")
+                .unwrap(),
             SubstanceGroup::new(
                 SubstanceGroupId::new(1),
                 SubstanceGroupKind::StructuralRepeatUnit,
@@ -1992,7 +2222,7 @@ mod tests {
             .with_display(SGroupDisplay {
                 brackets: vec![bracket],
                 field_position: Some([10.5, 11.75]),
-                display_tag: Some("polymer-display".to_owned()),
+                display_tag: Some("polymer-display".into()),
             })
             .with_bracket_style(SGroupBracketStyle::Parenthesis)
             .with_connection(SGroupConnection::HeadToTail)
@@ -2047,15 +2277,29 @@ mod tests {
             vec![bracket]
         );
         assert_eq!(
-            query_substance_groups(&graph)[0].data().unwrap().values,
+            query_substance_groups(&graph)[0]
+                .data()
+                .unwrap()
+                .values
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
             ["first", "second"]
         );
         assert_eq!(
-            query_substance_groups(&graph)[0].data_fields(),
+            query_substance_groups(&graph)[0]
+                .data_fields()
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
             &["field row one", "field row two"]
         );
         assert_eq!(
-            query_substance_groups(&graph)[1].data_fields(),
+            query_substance_groups(&graph)[1]
+                .data_fields()
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
             &["polymer field"]
         );
         assert_eq!(graph.atoms, original_atoms);
@@ -2215,20 +2459,32 @@ mod tests {
         assert!(graph.bonds[0].predicate_is_carrier_derived());
         assert_eq!(graph.conformers_2d[0].id(), 9);
         assert_eq!(
-            graph.conformers_2d[0].props().get("frame").unwrap(),
+            graph.conformers_2d[0]
+                .props()
+                .get(b"frame".as_slice())
+                .map(fixture_text)
+                .unwrap(),
             "first"
         );
         assert_eq!(graph.conformers_2d[1].id(), 11);
         assert_eq!(graph.conformers_3d[0].id(), 17);
         assert!(graph.conformers_3d[0].is_3d());
         assert_eq!(
-            graph.conformers_3d[0].props().get("frame").unwrap(),
+            graph.conformers_3d[0]
+                .props()
+                .get(b"frame".as_slice())
+                .map(fixture_text)
+                .unwrap(),
             "three-dimensional"
         );
         assert_eq!(graph.conformers_3d[1].id(), 19);
         assert!(!graph.conformers_3d[1].is_3d());
         assert_eq!(
-            graph.conformers_3d[1].props().get("frame").unwrap(),
+            graph.conformers_3d[1]
+                .props()
+                .get(b"frame".as_slice())
+                .map(fixture_text)
+                .unwrap(),
             "two-dimensional"
         );
     }
@@ -2364,7 +2620,7 @@ mod tests {
                 BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
             )],
             adjacency: vec![Vec::new(), Vec::new()],
-            props: BTreeMap::new(),
+            props: crate::property_value::PropertyStore::default(),
             conformers_2d: Vec::new(),
             conformers_3d: Vec::new(),
             source_conformer_order: None,
@@ -2381,7 +2637,7 @@ mod tests {
             Atom::from_spec(
                 AtomId::new(0),
                 AtomSpec::new(Element::C)
-                    .with_prop("removed", PropertyValue::String("atom-0".to_owned()))
+                    .with_prop("removed", PropertyValue::String("atom-0".into()))
                     .unwrap(),
             ),
             Atom::from_spec(
@@ -2438,6 +2694,21 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
+        assert_eq!(
+            query_atoms[1].prop("computed"),
+            Some(&PropertyValue::Double(-0.0))
+        );
+        assert!(query_atoms[1].is_prop_computed("computed").unwrap());
+        assert_eq!(
+            query_bonds[1].bond().prop("bond-computed"),
+            Some(&PropertyValue::Bool(true))
+        );
+        assert!(
+            query_bonds[1]
+                .bond()
+                .is_prop_computed("bond-computed")
+                .unwrap()
+        );
         let topology_before = topology.clone();
         let query_atoms_before = query_atoms.clone();
         let query_bonds_before = query_bonds.clone();
@@ -2451,20 +2722,24 @@ mod tests {
         assert_eq!(topology, topology_before);
         assert_eq!(query_atoms, query_atoms_before);
         assert_eq!(query_bonds, query_bonds_before);
+        // RWMol::commitBatchEdit calls clearComputedProps(true) after removals.
         assert_eq!(mapped_atoms.len(), 2);
         assert_eq!(mapped_bonds.len(), 1);
         assert_eq!(
             mapped_atoms[0].prop("first"),
             Some(&PropertyValue::Bool(true))
         );
+        assert_eq!(mapped_atoms[0].prop("computed"), None);
+        assert!(!mapped_atoms[0].is_prop_computed("computed").unwrap());
         assert_eq!(
-            mapped_atoms[0].prop("computed"),
-            Some(&PropertyValue::Double(-0.0))
-        );
-        assert!(mapped_atoms[0].is_prop_computed("computed"));
-        assert_eq!(
-            mapped_atoms[0].properties.props.ordered_keys(),
-            &["first", "computed"]
+            mapped_atoms[0]
+                .properties
+                .props
+                .ordered_keys()
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
+            &["first", "__computedProps"]
         );
         assert_eq!(
             mapped_atoms[1].prop("last"),
@@ -2474,11 +2749,13 @@ mod tests {
             mapped_bonds[0].bond().prop("bond"),
             Some(&PropertyValue::Double(2.5))
         );
-        assert_eq!(
-            mapped_bonds[0].bond().prop("bond-computed"),
-            Some(&PropertyValue::Bool(true))
+        assert_eq!(mapped_bonds[0].bond().prop("bond-computed"), None);
+        assert!(
+            !mapped_bonds[0]
+                .bond()
+                .is_prop_computed("bond-computed")
+                .unwrap()
         );
-        assert!(mapped_bonds[0].bond().is_prop_computed("bond-computed"));
         assert!(
             mapped_atoms
                 .iter()

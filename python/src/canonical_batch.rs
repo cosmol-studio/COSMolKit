@@ -12,7 +12,6 @@ use pyo3::prelude::*;
 use pyo3::types::{PyAny, PyBool, PySlice, PySliceMethods, PyType};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
-pyo3::create_exception!(cosmolkit, MolecularIoError, PyValueError);
 pyo3::create_exception!(cosmolkit, BatchImageError, PyValueError);
 fn image_path_error(
     py: Python<'_>,
@@ -69,83 +68,7 @@ pub(crate) fn batch_image_error(py: Python<'_>, source: &ck::BatchImageError) ->
 }
 
 pub(crate) fn io_error(py: Python<'_>, source: ck::MolecularIoError) -> PyErr {
-    // Retain the legacy reader's ValueError family and the real typed source.
-    if let ck::MolecularIoError::Sdf(error) = source {
-        return sdf_error(py, error);
-    }
-    let kind = match &source {
-        ck::MolecularIoError::Io { .. } => "Io",
-        ck::MolecularIoError::XyzRead(_) => "XyzRead",
-        ck::MolecularIoError::XyzWrite(_) => "XyzWrite",
-        ck::MolecularIoError::MolWrite(_) => "MolWrite",
-        ck::MolecularIoError::Mol2Read(_) => "Mol2Read",
-        ck::MolecularIoError::Mol2Post(_) => "Mol2Post",
-        ck::MolecularIoError::Construction(_) => "Construction",
-        ck::MolecularIoError::NoRecord { .. } => "NoRecord",
-        ck::MolecularIoError::Parameter { .. } => "Parameter",
-        ck::MolecularIoError::Sdf(_) => unreachable!("handled above"),
-    };
-    let error = crate::canonical_values::annotate(
-        py,
-        MolecularIoError::new_err(source.to_string()),
-        "io",
-        kind,
-        &source,
-    );
-    if let ck::MolecularIoError::Io { path, source } = &source {
-        if let Err(e) = error
-            .value(py)
-            .setattr("filename", path.to_string_lossy().into_owned())
-            .and_then(|()| error.value(py).setattr("errno", source.raw_os_error()))
-        {
-            return e;
-        }
-    }
-    if let ck::MolecularIoError::MolWrite(cause) = &source {
-        let attrs = || -> PyResult<()> {
-            match cause {
-                ck::MolWriteError::AmbiguousCoordinates { two_d, three_d } => {
-                    error
-                        .value(py)
-                        .setattr("coordinate_kind", "AmbiguousCoordinates")?;
-                    error.value(py).setattr("two_d", *two_d)?;
-                    error.value(py).setattr("three_d", *three_d)?;
-                }
-                ck::MolWriteError::MissingCoordinate { dimension, id } => {
-                    error
-                        .value(py)
-                        .setattr("coordinate_kind", "MissingCoordinate")?;
-                    error.value(py).setattr(
-                        "dimension",
-                        match dimension {
-                            ck::CoordinateDimension::TwoD => "2d",
-                            ck::CoordinateDimension::ThreeD => "3d",
-                        },
-                    )?;
-                    error.value(py).setattr("coordinate_id", *id)?;
-                }
-                ck::MolWriteError::CoordinateDimensionMismatch => {
-                    error
-                        .value(py)
-                        .setattr("coordinate_kind", "CoordinateDimensionMismatch")?;
-                }
-                _ => {}
-            }
-            Ok(())
-        };
-        if let Err(e) = attrs() {
-            return e;
-        }
-    }
-    if let ck::MolecularIoError::Mol2Post(source) = &source {
-        if let Err(e) = error.value(py).setattr("stage", source.stage) {
-            return e;
-        }
-    }
-    if let ck::MolecularIoError::Construction(cause) = source {
-        error.set_cause(py, Some(crate::drawing_binding::operation_pyerr(py, cause)));
-    }
-    error
+    crate::canonical_molecular_io::error_pyerr(py, source)
 }
 pub(crate) fn coordinate_mode(value: &str) -> PyResult<ck::SdfCoordinateMode> {
     match value.to_ascii_lowercase().as_str() {
@@ -392,7 +315,7 @@ pub(crate) fn error_mode(value: Option<&Bound<'_, PyAny>>) -> PyResult<ck::Batch
         ))),
     }
 }
-fn n_jobs(value: Option<usize>) -> PyResult<Option<usize>> {
+pub(crate) fn n_jobs(value: Option<usize>) -> PyResult<Option<usize>> {
     if value == Some(0) {
         Err(PyValueError::new_err("n_jobs must be >= 1"))
     } else {
@@ -441,6 +364,153 @@ pub(crate) struct MoleculeBatch {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl MoleculeBatch {
+    #[staticmethod]
+    fn from_sdf_records_with_params(
+        py: Python<'_>,
+        text: &str,
+        read: &crate::canonical_sdf::SdfReadParams,
+        mode: &Bound<'_, PyAny>,
+        n_jobs: Option<usize>,
+    ) -> PyResult<Self> {
+        ck::MoleculeBatch::from_sdf_records_with_params(
+            text,
+            &read.inner,
+            error_mode(Some(mode))?,
+            n_jobs,
+        )
+        .map(|inner| Self { inner })
+        .map_err(|e| batch_error(py, e))
+    }
+    #[staticmethod]
+    #[pyo3(signature=(path,read,mode,n_jobs,progress_bar))]
+    fn read_sdf_with_params(
+        py: Python<'_>,
+        path: &str,
+        read: &crate::canonical_sdf::SdfReadParams,
+        mode: &Bound<'_, PyAny>,
+        n_jobs: Option<usize>,
+        progress_bar: bool,
+    ) -> PyResult<Self> {
+        ck::MoleculeBatch::read_sdf_with_params(
+            path,
+            &read.inner,
+            error_mode(Some(mode))?,
+            n_jobs,
+            progress_bar,
+        )
+        .map(|inner| Self { inner })
+        .map_err(|e| batch_error(py, e))
+    }
+    #[staticmethod]
+    fn from_dataset_indices(
+        py: Python<'_>,
+        dataset: &SdfDataset,
+        indices: Vec<usize>,
+        mode: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        ck::MoleculeBatch::from_dataset_indices(&dataset.inner, &indices, error_mode(Some(mode))?)
+            .map(|inner| Self { inner })
+            .map_err(|e| batch_error(py, e))
+    }
+    #[staticmethod]
+    fn from_records(
+        py: Python<'_>,
+        #[gen_stub(override_type(type_repr="typing.Sequence[Molecule | BatchError]",imports=("typing")))]
+        records: Vec<Py<PyAny>>,
+        mode: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let records = records
+            .iter()
+            .map(|record| {
+                if let Ok(molecule) = record.extract::<PyRef<'_, Molecule>>(py) {
+                    Ok(ck::BatchRecord::Molecule(molecule.inner.clone()))
+                } else if let Ok(error) = record.extract::<PyRef<'_, BatchError>>(py) {
+                    Ok(ck::BatchRecord::Error(error.inner.clone()))
+                } else {
+                    Err(pyo3::exceptions::PyTypeError::new_err(
+                        "records must contain Molecule or BatchError values",
+                    ))
+                }
+            })
+            .collect::<PyResult<Vec<_>>>()?;
+        ck::MoleculeBatch::from_records(records, error_mode(Some(mode))?)
+            .map(|inner| Self { inner })
+            .map_err(|e| batch_error(py, e))
+    }
+    #[gen_stub(override_return_type(type_repr = "Molecule | BatchError | None"))]
+    fn get(&self, py: Python<'_>, index: usize) -> PyResult<Option<Py<PyAny>>> {
+        self.inner
+            .get(index)
+            .map(|record| batch_record_object(py, record))
+            .transpose()
+    }
+    #[gen_stub(override_return_type(type_repr = "list[Molecule | BatchError]"))]
+    fn records(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
+        self.inner
+            .records()
+            .iter()
+            .map(|record| batch_record_object(py, record))
+            .collect()
+    }
+    #[pyo3(signature=(path,params,report_path))]
+    fn to_sdf_with_params(
+        &self,
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_batch_params::BatchExportParams,
+        report_path: Option<&str>,
+    ) -> PyResult<BatchExportReport> {
+        self.inner
+            .to_sdf_with_params(path, &params.inner, report_path)
+            .map(|inner| BatchExportReport { inner })
+            .map_err(|e| batch_error(py, e))
+    }
+    #[pyo3(signature=(directory,params,filenames,report_path))]
+    fn to_sdf_files_with_params(
+        &self,
+        py: Python<'_>,
+        directory: &str,
+        params: &crate::canonical_batch_params::BatchExportParams,
+        filenames: Option<Vec<Option<String>>>,
+        report_path: Option<&str>,
+    ) -> PyResult<BatchExportReport> {
+        self.inner
+            .to_sdf_files_with_params(directory, &params.inner, filenames.as_deref(), report_path)
+            .map(|inner| BatchExportReport { inner })
+            .map_err(|e| batch_error(py, e))
+    }
+    fn fingerprint_topological_torsion_list(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<Vec<Option<Fingerprint>>> {
+        self.inner
+            .fingerprint_topological_torsion_list()
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| Fingerprint { inner }))
+                    .collect()
+            })
+            .map_err(|e| batch_error(py, e))
+    }
+    fn fingerprint_topological_torsion_list_with_params(
+        &self,
+        py: Python<'_>,
+        options: &crate::canonical_fingerprint_values::TopologicalTorsionFingerprintParams,
+        params: &crate::canonical_batch_params::BatchQueryParams,
+    ) -> PyResult<Vec<Option<Fingerprint>>> {
+        params
+            .execute(py, |execution| {
+                self.inner
+                    .fingerprint_topological_torsion_list_with_params(&options.inner, execution)
+            })
+            .map(|values| {
+                values
+                    .into_iter()
+                    .map(|value| value.map(|inner| Fingerprint { inner }))
+                    .collect()
+            })
+    }
     fn fingerprint_atom_pair_list(&self, py: Python<'_>) -> PyResult<Vec<Option<Fingerprint>>> {
         self.inner
             .fingerprint_atom_pair_list()
@@ -1511,7 +1581,15 @@ impl MoleculeBatch {
     fn to_smiles_list(&self, py: Python<'_>) -> PyResult<Vec<Option<String>>> {
         self.inner
             .to_smiles_list()
-            .map_err(|source| batch_error(py, source))
+            .map_err(|source| batch_error(py, source))?
+            .iter()
+            .map(|value| {
+                value
+                    .as_ref()
+                    .map(|text| crate::canonical_sdf::decode_source_text(py, text))
+                    .transpose()
+            })
+            .collect()
     }
     fn to_smiles_list_with_params(
         &self,
@@ -1554,10 +1632,19 @@ impl MoleculeBatch {
         //             )
         //             .map_err(batch_validation_pyerr)
         //     }
-        params.execute(py, |execution| {
-            self.inner
-                .to_smiles_list_with_params(&options.inner, execution)
-        })
+        params
+            .execute(py, |execution| {
+                self.inner
+                    .to_smiles_list_with_params(&options.inner, execution)
+            })?
+            .iter()
+            .map(|value| {
+                value
+                    .as_ref()
+                    .map(|text| crate::canonical_sdf::decode_source_text(py, text))
+                    .transpose()
+            })
+            .collect()
     }
 
     #[gen_stub(override_return_type(type_repr="list[numpy.ndarray | None]",imports=("numpy")))]
@@ -1946,6 +2033,49 @@ pub(crate) struct SdfDataset {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl SdfDataset {
+    #[staticmethod]
+    fn open_with_params(
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_sdf::SdfReadParams,
+    ) -> PyResult<Self> {
+        ck::SdfDataset::open_with_params(path, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+    fn is_empty(&self) -> bool {
+        self.inner.is_empty()
+    }
+    fn record(&self, py: Python<'_>, index: usize) -> PyResult<SdfRecord> {
+        self.inner
+            .record(index)
+            .map(|inner| SdfRecord { inner })
+            .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
+    }
+    fn record_with_params(
+        &self,
+        py: Python<'_>,
+        index: usize,
+        params: &crate::canonical_sdf::SdfReadParams,
+    ) -> PyResult<SdfRecord> {
+        self.inner
+            .record_with_params(index, &params.inner)
+            .map(|inner| SdfRecord { inner })
+            .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
+    }
+    fn record_text(&self, py: Python<'_>, index: usize) -> PyResult<String> {
+        self.inner
+            .record_text(index)
+            .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
+    }
+    fn iter(&self) -> SdfDatasetIterator {
+        SdfDatasetIterator {
+            inner: self.inner.iter(),
+        }
+    }
     #[classmethod]
     #[pyo3(signature=(path,index=None,build=None,coordinate_dim="auto",*,sanitize=None,remove_hs=None,strict_parsing=None))]
     fn open(
@@ -2060,6 +2190,9 @@ pub(crate) struct SdfDatasetIterator {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl SdfDatasetIterator {
+    fn __length_hint__(&self) -> usize {
+        self.inner.len()
+    }
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -2081,6 +2214,12 @@ pub(crate) struct SdfBatchIterator {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl SdfBatchIterator {
+    fn next_batch(&mut self, py: Python<'_>) -> PyResult<Option<MoleculeBatch>> {
+        self.inner
+            .next_batch()
+            .map(|v| v.map(|inner| MoleculeBatch { inner }))
+            .map_err(|e| batch_error(py, e))
+    }
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -2101,6 +2240,24 @@ pub(crate) struct SdfReader {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SdfReader {
+    #[staticmethod]
+    fn open_with_params(
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_sdf::SdfReadParams,
+    ) -> PyResult<Self> {
+        ck::SdfReader::open_with_params(path, &params.inner)
+            .map(|inner| Self { inner })
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn path(&self) -> std::path::PathBuf {
+        self.inner.path().to_path_buf()
+    }
+    fn params(&self) -> crate::canonical_sdf::SdfReadParams {
+        crate::canonical_sdf::SdfReadParams {
+            inner: *self.inner.params(),
+        }
+    }
     #[classmethod]
     #[pyo3(signature=(path,coordinate_dim="auto",*,sanitize=None,remove_hs=None,strict_parsing=None))]
     fn open(
@@ -2147,12 +2304,18 @@ impl SdfReader {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit")]
 pub(crate) struct SdfReaderBatchIterator {
-    inner: ck::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,
+    pub(crate) inner: ck::SdfReaderBatchIterator<std::io::BufReader<std::fs::File>>,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl SdfReaderBatchIterator {
+    fn next_batch(&mut self, py: Python<'_>) -> PyResult<Option<MoleculeBatch>> {
+        self.inner
+            .next_batch()
+            .map(|v| v.map(|inner| MoleculeBatch { inner }))
+            .map_err(|e| batch_error(py, e))
+    }
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -2196,6 +2359,11 @@ pub(crate) struct BatchExportReport {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchExportReport {
+    fn write_report(&self, py: Python<'_>, path: &str) -> PyResult<()> {
+        self.inner
+            .write_report(std::path::Path::new(path))
+            .map_err(|e| batch_error(py, e))
+    }
     fn total(&self) -> usize {
         self.inner.total()
     }
@@ -2395,6 +2563,21 @@ fn bounds_values<'py>(
     }
     Ok(out)
 }
+fn batch_record_object(py: Python<'_>, record: &ck::BatchRecord) -> PyResult<Py<PyAny>> {
+    match record {
+        ck::BatchRecord::Molecule(molecule) => {
+            Ok(Py::new(py, Molecule::from_inner(molecule.clone()))?.into_any())
+        }
+        ck::BatchRecord::Error(error) => Ok(Py::new(
+            py,
+            BatchError {
+                inner: error.clone(),
+            },
+        )?
+        .into_any()),
+    }
+}
+
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add("BatchImageError", module.py().get_type::<BatchImageError>())?;
     module.add_class::<SdfRecordMetadata>()?;
@@ -2423,9 +2606,5 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         .call1((aliases,))?;
     module.add("BATCH_ERROR_MODE_MAP", readonly)?;
     module.add("BatchErrorMode", modes)?;
-    module.add(
-        "MolecularIoError",
-        module.py().get_type::<MolecularIoError>(),
-    )?;
     Ok(())
 }

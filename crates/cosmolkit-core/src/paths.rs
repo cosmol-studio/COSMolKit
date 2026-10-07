@@ -119,6 +119,12 @@ pub struct SubtopologyResult {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PathError {
+    #[error("molecule property operation failed: {0}")]
+    MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
+    #[error("bond property operation failed: {0}")]
+    BondProperty(#[from] cosmolkit_model::BondValueError),
+    #[error("atom property operation failed: {0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
     #[error(transparent)]
     InvalidTopology(TopologyValidationError),
     #[error("{role} atom {atom} is out of range for {atom_count} atoms")]
@@ -227,6 +233,18 @@ impl NeighborSource for TopologyBlock {
     }
 }
 
+impl NeighborSource for QueryGraph {
+    fn atom_count(&self) -> usize {
+        self.num_atoms()
+    }
+
+    fn visit_neighbors(&self, atom: usize, visitor: &mut dyn FnMut(usize)) {
+        for &(neighbor, _) in &self.adjacency()[atom] {
+            visitor(neighbor);
+        }
+    }
+}
+
 pub(crate) fn connected_components_from_source(
     source: &impl NeighborSource,
 ) -> ConnectedComponents {
@@ -283,6 +301,14 @@ pub(crate) fn connected_components_from_source(
 pub fn connected_components(topology: &TopologyBlock) -> Result<ConnectedComponents, PathError> {
     topology.validate().map_err(PathError::InvalidTopology)?;
     Ok(connected_components_from_source(topology))
+}
+
+/// Label query components using the canonical graph algorithm without
+/// materializing element-only topology or discarding query carrier identities.
+#[doc(hidden)]
+pub fn query_connected_components(query: &QueryGraph) -> Result<ConnectedComponents, PathError> {
+    query.validate().map_err(PathError::QueryGraph)?;
+    Ok(connected_components_from_source(query))
 }
 
 pub fn shortest_path(
@@ -814,7 +840,7 @@ pub fn subtopology_from_path(
         atom_old_to_new[atom.id().index()] = Some(new_id);
         atom_new_to_old.push(Some(atom.id()));
         let mut copied = atom.clone().with_id(new_id);
-        copied.clear_computed_props();
+        copied.clear_computed_props()?;
         copied_atoms.push(copied);
     }
 
@@ -847,7 +873,7 @@ pub fn subtopology_from_path(
             ])
         });
         let mut copied = bond.clone();
-        copied.clear_computed_props();
+        copied.clear_computed_props()?;
         if stereo_atoms.is_none() && matches!(copied.stereo(), BondStereo::Cis | BondStereo::Trans)
         {
             copied.set_stereo_atoms(None);

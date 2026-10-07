@@ -5565,7 +5565,7 @@ fn mcs_generate_result_smarts_and_query_graph(
     final_check: Option<
         &mut dyn FnMut(usize, &[(usize, usize)], &McsParameters) -> Result<bool, McsError>,
     >,
-) -> Result<(String, QueryGraph), McsCandidateMatchError> {
+) -> Result<(cosmolkit_model::PropertyText, QueryGraph), McsCandidateMatchError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/FMCS/MaximumCommonSubgraph.cpp :: MaximumCommonSubgraph::generateResultSMARTSAndQueryMol serialization
     // RDKit✔️✔️:   return std::make_pair(MolToSmarts(*mol, true), molSptr);
     // END RDKIT CPP FUNCTION
@@ -6000,7 +6000,7 @@ pub fn find_mcs(
         atom_count,
         bond_count,
         completed: !canceled,
-        smarts: String::new(),
+        smarts: cosmolkit_model::PropertyText::new(),
         degenerate: BTreeMap::new(),
     };
     if bond_count > 0 || query_single_matched_atom.is_some() {
@@ -12121,7 +12121,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(smarts, "[#8]=[#6]");
+        assert_eq!(smarts.as_bytes(), b"[#8]=[#6]");
         assert_eq!(
             smarts,
             crate::query_graph_to_smarts(&graph, &crate::SmartsWriteParams::default()).unwrap()

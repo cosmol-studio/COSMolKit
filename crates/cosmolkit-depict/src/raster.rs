@@ -2,13 +2,13 @@
 use crate::DrawingError;
 use crate::draw::{EMBEDDED_DRAW_FONT_FAMILY, embedded_draw_font_data};
 
-pub(crate) fn svg_to_png(svg: &str) -> Result<Vec<u8>, DrawingError> {
+pub(crate) fn svg_to_png(svg: &[u8]) -> Result<Vec<u8>, DrawingError> {
     let mut opt = usvg::Options::default();
     opt.font_family = EMBEDDED_DRAW_FONT_FAMILY.to_owned();
     let fontdb = opt.fontdb_mut();
     fontdb.load_font_source(usvg::fontdb::Source::Binary(embedded_draw_font_data()));
     fontdb.set_sans_serif_family(EMBEDDED_DRAW_FONT_FAMILY);
-    let tree = usvg::Tree::from_str(svg, &opt)?;
+    let tree = usvg::Tree::from_data(svg, &opt)?;
     let size = tree.size().to_int_size();
     let mut pixmap = tiny_skia::Pixmap::new(size.width(), size.height()).ok_or(
         DrawingError::PixmapAllocation {
@@ -43,7 +43,7 @@ mod tests {
         let svg = std::fs::read_to_string(base.join(format!("{label}.svg"))).unwrap();
         let expected_png = std::fs::read(base.join(format!("{label}.png"))).unwrap();
         let expected_rgba = std::fs::read(base.join(format!("{label}.rgba"))).unwrap();
-        let actual = svg_to_png(&svg).unwrap();
+        let actual = svg_to_png(svg.as_bytes()).unwrap();
         assert_eq!(&actual[..8], b"\x89PNG\r\n\x1a\n", "{label}");
         assert_eq!(actual, expected_png, "frozen encoded PNG: {label}");
         let decoded = tiny_skia::Pixmap::decode_png(&actual).unwrap();
@@ -96,7 +96,7 @@ mod tests {
                    font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;\
                    text-anchor:start;fill:#000000'>O</text>\
                    </svg>";
-        let png = svg_to_png(&svg).expect("text png rasterization");
+        let png = svg_to_png(svg.as_bytes()).expect("text png rasterization");
         let pixmap = tiny_skia::Pixmap::decode_png(&png).expect("decode rendered png");
         let text_pixels = pixmap
             .pixels()
@@ -122,14 +122,15 @@ mod tests {
     #[test]
     fn drawing_raster_malformed_svg_and_invalid_size_typed_causes() {
         use std::error::Error;
-        let malformed = svg_to_png("<svg").unwrap_err();
+        let malformed = svg_to_png(b"<svg").unwrap_err();
         assert!(matches!(
             malformed,
             DrawingError::SvgParse(usvg::Error::ParsingFailed(_))
         ));
         assert!(malformed.source().is_some());
-        let invalid = svg_to_png("<svg xmlns='http://www.w3.org/2000/svg' width='0' height='80'/>")
-            .unwrap_err();
+        let invalid =
+            svg_to_png(b"<svg xmlns='http://www.w3.org/2000/svg' width='0' height='80'/>")
+                .unwrap_err();
         assert!(matches!(
             invalid,
             DrawingError::SvgParse(usvg::Error::InvalidSize)

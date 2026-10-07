@@ -3,6 +3,7 @@
 //! These values are detached working state.  The live `Molecule` owner and
 //! topology/cache lifecycle remain in the runtime crate.
 
+use crate::PropertyText;
 use std::collections::BTreeMap;
 
 /// Locate the first non-finite value in row/column order for checked inputs.
@@ -63,7 +64,7 @@ pub enum CoordinateDimension {
 pub struct Conformer2D {
     id: usize,
     coords: Vec<[f64; 2]>,
-    props: BTreeMap<String, String>,
+    props: BTreeMap<PropertyText, PropertyText>,
 }
 
 impl Conformer2D {
@@ -129,12 +130,16 @@ impl Conformer2D {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
+    pub fn props(&self) -> &BTreeMap<PropertyText, PropertyText> {
         &self.props
     }
 
     #[must_use]
-    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_prop(
+        mut self,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyText>,
+    ) -> Self {
         self.props.insert(key.into(), value.into());
         self
     }
@@ -163,7 +168,7 @@ pub struct Conformer3D {
     id: usize,
     coords: Vec<[f64; 3]>,
     is_3d: bool,
-    props: BTreeMap<String, String>,
+    props: BTreeMap<PropertyText, PropertyText>,
 }
 
 impl Conformer3D {
@@ -249,12 +254,16 @@ impl Conformer3D {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, String> {
+    pub fn props(&self) -> &BTreeMap<PropertyText, PropertyText> {
         &self.props
     }
 
     #[must_use]
-    pub fn with_prop(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_prop(
+        mut self,
+        key: impl Into<PropertyText>,
+        value: impl Into<PropertyText>,
+    ) -> Self {
         self.props.insert(key.into(), value.into());
         self
     }
@@ -545,38 +554,11 @@ impl CoordinateBlock {
     pub fn first_source_conformer(
         &self,
     ) -> Result<Option<CoordinateSourceConformer<'_>>, CoordinateValidationError> {
-        // RDKit❗✔️: const Conformer &ROMol::getConformer(int id) const {
-        // RDKit❗✔️:   if (d_confs.size() == 0) {
-        // RDKit❗✔️:     throw ConformerException("No conformations available on the molecule");
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:   if (id < 0) {
-        // RDKit❗✔️:     return *(d_confs.front());
-        // RDKit❗✔️:   }
-        // The detached optional empty result is translated by each caller's
-        // source-defined empty branch. Nonempty lookup is O(1), like front().
-        let first = match self.source_conformer_order.as_deref() {
-            Some(order) => order.first().copied(),
-            None if self.conformers_2d.is_empty() => self
-                .conformers_3d
-                .first()
-                .map(|_| CoordinateDimension::ThreeD),
-            None if self.conformers_3d.is_empty() => self
-                .conformers_2d
-                .first()
-                .map(|_| CoordinateDimension::TwoD),
-            None => return Err(CoordinateValidationError::MissingSourceConformerOrder),
-        };
-        Ok(match first {
-            Some(CoordinateDimension::TwoD) => self
-                .conformers_2d
-                .first()
-                .map(CoordinateSourceConformer::TwoD),
-            Some(CoordinateDimension::ThreeD) => self
-                .conformers_3d
-                .first()
-                .map(CoordinateSourceConformer::ThreeD),
-            None => None,
-        })
+        first_source_conformer_from_parts(
+            &self.conformers_2d,
+            &self.conformers_3d,
+            self.source_conformer_order.as_deref(),
+        )
     }
 
     /// Record an actual append, before its row is pushed into typed storage.
@@ -635,6 +617,40 @@ pub(crate) fn record_source_append(
     Ok(())
 }
 
+pub(crate) fn first_source_conformer_from_parts<'a>(
+    conformers_2d: &'a [Conformer2D],
+    conformers_3d: &'a [Conformer3D],
+    source_conformer_order: Option<&[CoordinateDimension]>,
+) -> Result<Option<CoordinateSourceConformer<'a>>, CoordinateValidationError> {
+    // RDKit❗✔️: const Conformer &ROMol::getConformer(int id) const {
+    // RDKit❗✔️:   if (d_confs.size() == 0) {
+    // RDKit❗✔️:     throw ConformerException("No conformations available on the molecule");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (id < 0) {
+    // RDKit❗✔️:     return *(d_confs.front());
+    // RDKit❗✔️:   }
+    // The detached optional empty result is translated by each caller's
+    // source-defined empty branch. Nonempty lookup is O(1), like front().
+    let first = match source_conformer_order {
+        Some(order) => order.first().copied(),
+        None if conformers_2d.is_empty() => {
+            conformers_3d.first().map(|_| CoordinateDimension::ThreeD)
+        }
+        None if conformers_3d.is_empty() => {
+            conformers_2d.first().map(|_| CoordinateDimension::TwoD)
+        }
+        None => return Err(CoordinateValidationError::MissingSourceConformerOrder),
+    };
+    Ok(match first {
+        Some(CoordinateDimension::TwoD) => {
+            conformers_2d.first().map(CoordinateSourceConformer::TwoD)
+        }
+        Some(CoordinateDimension::ThreeD) => {
+            conformers_3d.first().map(CoordinateSourceConformer::ThreeD)
+        }
+        None => None,
+    })
+}
 #[cfg(test)]
 mod source_order_tests {
     use super::*;

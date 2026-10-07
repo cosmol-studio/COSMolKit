@@ -464,11 +464,11 @@ fn all_successful_models_preserve_row_identity_validate_and_are_deterministic() 
         );
         assert_eq!(
             first.topology.atoms[2].prop("atom-note"),
-            Some(&PropertyValue::String("kept".to_owned()))
+            Some(&PropertyValue::String("kept".into()))
         );
         assert_eq!(
             first.topology.bonds[4].prop("bond-note"),
-            Some(&PropertyValue::String("kept".to_owned()))
+            Some(&PropertyValue::String("kept".into()))
         );
     }
 }

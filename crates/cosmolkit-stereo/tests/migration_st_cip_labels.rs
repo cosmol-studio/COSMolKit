@@ -132,9 +132,20 @@ fn no_configuration_still_sets_computed_completion_and_preserves_user_props() {
     .unwrap();
 
     assert!(assignment.topology().atoms.is_empty());
-    assert_eq!(assignment.properties().prop("user"), Some("kept"));
-    assert_eq!(assignment.properties().prop("_CIPComputed"), Some("1"));
-    assert!(assignment.properties().is_prop_computed("_CIPComputed"));
+    assert_eq!(
+        assignment.properties().prop("user"),
+        Some(&cosmolkit_model::PropertyValue::String("kept".into()))
+    );
+    assert_eq!(
+        assignment.properties().prop("_CIPComputed"),
+        Some(&cosmolkit_model::PropertyValue::Bool(true))
+    );
+    assert!(
+        assignment
+            .properties()
+            .is_prop_computed("_CIPComputed")
+            .unwrap()
+    );
 }
 
 #[test]
@@ -155,8 +166,8 @@ fn full_tetrahedral_assignment_writes_exact_primary_and_neighbor_order_state() {
             center.prop("_CIPNeighborOrder"),
             Some(&PropertyValue::String("[4,3,2,1]".into()))
         );
-        assert!(!center.is_prop_computed("_CIPCode"));
-        assert!(center.is_prop_computed("_CIPNeighborOrder"));
+        assert!(!center.is_prop_computed("_CIPCode").unwrap());
+        assert!(center.is_prop_computed("_CIPNeighborOrder").unwrap());
     }
 }
 
@@ -210,7 +221,12 @@ fn selection_masks_are_exact_duplicates_are_idempotent_and_repeated_calls_preser
         all_again.topology().atoms[0].prop("_CIPCode"),
         Some(&PropertyValue::String("S".into()))
     );
-    assert!(all_again.properties().is_prop_computed("_CIPComputed"));
+    assert!(
+        all_again
+            .properties()
+            .is_prop_computed("_CIPComputed")
+            .unwrap()
+    );
 }
 
 #[test]
@@ -268,8 +284,8 @@ fn sp2_explicit_carriers_assign_uppercase_labels_and_normalize_source_stereo() {
         );
         assert_eq!(axis.stereo(), expected_stereo);
         assert_eq!(axis.stereo_atoms(), Some([AtomId::new(4), AtomId::new(5)]));
-        assert!(axis.is_prop_computed("_CIPNeighborOrder"));
-        assert!(!axis.is_prop_computed("_CIPCode"));
+        assert!(axis.is_prop_computed("_CIPNeighborOrder").unwrap());
+        assert!(!axis.is_prop_computed("_CIPCode").unwrap());
     }
 }
 
@@ -372,9 +388,20 @@ fn source_skipped_configurations_preserve_topology_properties_and_complete() {
         ] {
             let result = assign_cip_labels(input.clone(), properties.clone(), &options).unwrap();
             assert_eq!(result.topology(), &before, "{tag:?}");
-            assert_eq!(result.properties().prop("sentry"), Some("retained"));
-            assert_eq!(result.properties().prop("_CIPComputed"), Some("1"));
-            assert!(result.properties().is_prop_computed("_CIPComputed"));
+            assert_eq!(
+                result.properties().prop("sentry"),
+                Some(&cosmolkit_model::PropertyValue::String("retained".into()))
+            );
+            assert_eq!(
+                result.properties().prop("_CIPComputed"),
+                Some(&cosmolkit_model::PropertyValue::Bool(true))
+            );
+            assert!(
+                result
+                    .properties()
+                    .is_prop_computed("_CIPComputed")
+                    .unwrap()
+            );
         }
     }
 }

@@ -12,21 +12,51 @@ pub(crate) fn validate(
     schema: registry::SpecialRegressionSchema,
 ) -> Result<Snapshot> {
     let fixture: Value = serde_json::from_slice(input).map_err(|e| e.to_string())?;
+    if matches!(schema, registry::SpecialRegressionSchema::BioMmcifSwitches) {
+        let rows: Vec<Value> = std::str::from_utf8(reference)
+            .map_err(|e| e.to_string())?
+            .lines()
+            .map(|line| serde_json::from_str(line).map_err(|e| e.to_string()))
+            .collect::<Result<_>>()?;
+        crate::bio_mmcif::validate(&fixture, &rows, count)?;
+        return Ok(Snapshot { fixture, rows });
+    }
     // These are distinct pinned spellings, not a version-normalization rule:
     // rdBase reports 2026.03.1; Python distribution/fixture reports 2026.3.1.
     let pin: Value = serde_json::from_str(include_str!("../testdata/reference/rdkit.json"))
         .map_err(|e| e.to_string())?;
+    if matches!(schema, registry::SpecialRegressionSchema::MolAlign) {
+        if fixture["schema_version"] != 1
+            || fixture["reference"]["version"] != pin["python_distribution_version"]
+            || fixture["reference"]["source_revision"] != pin["source_revision"]
+        {
+            return Err("MolAlign fixture reference identity mismatch".into());
+        }
+        let rows: Vec<Value> = std::str::from_utf8(reference)
+            .map_err(|e| e.to_string())?
+            .lines()
+            .map(|line| serde_json::from_str(line).map_err(|e| e.to_string()))
+            .collect::<Result<_>>()?;
+        crate::molalign::validate_focused(&fixture, &rows, count)?;
+        return Ok(Snapshot { fixture, rows });
+    }
     if fixture["schema_version"] != 1
         || fixture["reference"]["version"] != pin["python_distribution_version"]
-        || (matches!(schema, registry::SpecialRegressionSchema::TautomerBranches)
-            && fixture["reference"]["source_revision"] != pin["source_revision"])
+        || (matches!(
+            schema,
+            registry::SpecialRegressionSchema::TautomerBranches
+                | registry::SpecialRegressionSchema::TautomerFocused
+        ) && fixture["reference"]["source_revision"] != pin["source_revision"])
     {
         return Err("special regression fixture schema/reference mismatch".into());
     }
     let mut ids = Vec::new();
     let tables: &[&str] = match schema {
+        registry::SpecialRegressionSchema::BioMmcifSwitches => unreachable!("validated above"),
+        registry::SpecialRegressionSchema::MolAlign => unreachable!("validated above"),
         registry::SpecialRegressionSchema::StructureTags => &["cases", "octahedral_switch_cases"],
-        registry::SpecialRegressionSchema::TautomerBranches => &["cases"],
+        registry::SpecialRegressionSchema::TautomerBranches
+        | registry::SpecialRegressionSchema::TautomerFocused => &["cases"],
     };
     for &field in tables {
         let cases = fixture[field]
@@ -53,8 +83,17 @@ pub(crate) fn validate(
         return Err("special regression reference row count mismatch".into());
     }
     for (id, row) in ids.iter().zip(&rows) {
-        if matches!(schema, registry::SpecialRegressionSchema::TautomerBranches) {
-            validate_tautomer_row(&fixture, id, row)?;
+        if matches!(
+            schema,
+            registry::SpecialRegressionSchema::TautomerBranches
+                | registry::SpecialRegressionSchema::TautomerFocused
+        ) {
+            validate_tautomer_row(
+                &fixture,
+                id,
+                row,
+                matches!(schema, registry::SpecialRegressionSchema::TautomerFocused),
+            )?;
             continue;
         }
         if row["case_id"].as_str() != Some(id)
@@ -73,7 +112,7 @@ pub(crate) fn validate(
     Ok(Snapshot { fixture, rows })
 }
 
-fn validate_tautomer_row(fixture: &Value, id: &str, row: &Value) -> Result<()> {
+fn validate_tautomer_row(fixture: &Value, id: &str, row: &Value, focused: bool) -> Result<()> {
     let fail = || format!("special regression tautomer identity/schema: {id}");
     let case = fixture["cases"]
         .as_array()
@@ -90,17 +129,30 @@ fn validate_tautomer_row(fixture: &Value, id: &str, row: &Value) -> Result<()> {
         || ["row", "smiles", "sanitize", "remove_hs", "source"]
             .iter()
             .any(|key| row[key] != case[key])
-        || row["parse"]["ok"] != true
-        || !row["parse"]["error"].is_null()
     {
         return Err(fail());
     }
     let branches = row["branches"].as_object().ok_or_else(fail)?;
+    if focused && row["parse"]["ok"] == false {
+        return if branches.is_empty()
+            && row["parse"]["error"]["type"].is_string()
+            && row["parse"]["error"]["message"].is_string()
+        {
+            Ok(())
+        } else {
+            Err(fail())
+        };
+    }
+    if row["parse"]["ok"] != true || !row["parse"]["error"].is_null() {
+        return Err(fail());
+    }
     let parameters = fixture["branches"].as_array().ok_or_else(fail)?;
-    if parameters.len() != 2
-        || branches.len() != 2
-        || parameters[0]["name"] != "default"
-        || parameters[1]["name"] != "v1"
+    if branches.len() != parameters.len()
+        || (focused && parameters.len() != 8)
+        || (!focused
+            && (parameters.len() != 2
+                || parameters[0]["name"] != "default"
+                || parameters[1]["name"] != "v1"))
     {
         return Err(fail());
     }
@@ -196,4 +248,32 @@ pub fn preflight(key: &str, _data: &std::path::Path) -> Result<Snapshot> {
         spec.rows,
         spec.schema,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn focused_parse_failure_requires_an_error_and_no_enumeration_branches() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../testdata/special/tautomer_focused.json"))
+                .unwrap();
+        let case = fixture["cases"].as_array().unwrap().last().unwrap();
+        let id = case["case_id"].as_str().unwrap();
+        let mut row = case.clone();
+        row["schema_version"] = json!(1);
+        row["parse"] = json!({"ok": false, "error": {
+            "type": "NullMolecule", "message": "MolFromSmiles returned None"
+        }});
+        row["branches"] = json!({});
+        assert!(validate_tautomer_row(&fixture, id, &row, true).is_ok());
+        assert!(validate_tautomer_row(&fixture, id, &row, false).is_err());
+        row["parse"]["error"] = Value::Null;
+        assert!(validate_tautomer_row(&fixture, id, &row, true).is_err());
+        row["parse"]["error"] = json!({"type": "NullMolecule", "message": "invalid"});
+        row["branches"] = json!({"default": {}});
+        assert!(validate_tautomer_row(&fixture, id, &row, true).is_err());
+    }
 }

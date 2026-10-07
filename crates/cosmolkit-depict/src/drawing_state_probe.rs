@@ -279,7 +279,7 @@ fn drawing_line22_probe_same_prepared_renderer() {
         )],
         conformers_3d: vec![],
         source_coordinate_dim: None,
-        source_conformer_order: None,
+        source_conformer_order: Some(vec![cosmolkit_model::CoordinateDimension::TwoD]),
     };
     let properties = MoleculeProperties::default();
     let valence = literal_valence();
@@ -335,10 +335,11 @@ fn drawing_line22_probe_same_prepared_renderer() {
         println!("S2_RENDER_ERROR {error:?} {error}");
     }
     let svg = result.expect("S2 actual independently same-prepared render result");
+    let svg = std::str::from_utf8(&svg).expect("fixed source SVG UTF8");
     println!("S2_SAME_PREPARED_SVG_BEGIN\n{svg}S2_SAME_PREPARED_SVG_END");
     let expected = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../testdata/depiction/expected/rdkit/drawing_state/line22.svg"
     ));
-    assert_eq!(namespace_projection(&svg), namespace_projection(expected));
+    assert_eq!(namespace_projection(svg), namespace_projection(expected));
 }

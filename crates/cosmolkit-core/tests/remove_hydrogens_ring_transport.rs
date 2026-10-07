@@ -113,8 +113,8 @@ fn coordinate_block(atom_count: usize) -> CoordinateBlock {
     CoordinateBlock {
         conformers_2d: vec![coordinates_2d(atom_count)],
         conformers_3d: vec![coordinates_3d(atom_count)],
-        source_coordinate_dim: None,
         source_conformer_order: None,
+        source_coordinate_dim: None,
     }
 }
 
@@ -205,24 +205,21 @@ fn remove_hydrogens_ring_public_sixteen_call_product() {
             assert!(result.coordinates.conformers_3d[0].coordinates().is_empty());
             assert_eq!(
                 result.properties.prop("ck-ordinary"),
-                Some("kept"),
+                Some(&cosmolkit_model::PropertyValue::String("kept".into())),
                 "{label}"
             );
             assert_eq!(
-                result
-                    .coordinates
-                    .conformers_2d
-                    .first()
-                    .and_then(|c| c.props().get("conf-ordinary").map(String::as_str)),
-                Some("2d-kept"),
+                result.coordinates.conformers_2d.first().and_then(|c| c
+                    .props()
+                    .get(b"conf-ordinary".as_slice())
+                    .map(|value| value.as_bytes())),
+                Some(b"2d-kept".as_slice()),
                 "{label}"
             );
-            // Valence/ring separation: final_valence Some IFF sanitize.
-            match (sanitize, &result.final_valence) {
-                (true, Some(_)) => {}
-                (false, None) => {}
-                _ => panic!("{label}: valence/ring separation"),
-            }
+            // The empty source preparation still materializes zero scalar rows.
+            let valence = result.final_valence.as_ref().expect("source scalar rows");
+            assert_eq!(valence.explicit_valence, Vec::<i32>::new(), "{label}");
+            assert_eq!(valence.implicit_hydrogens, Vec::<i32>::new(), "{label}");
         }
     }
     for (index, build, atom_count) in graphs {
@@ -362,25 +359,23 @@ fn remove_hydrogens_ring_public_sixteen_call_product() {
                 // Ordinary properties retained on the output.
                 assert_eq!(
                     result.properties.prop("ck-ordinary"),
-                    Some("kept"),
+                    Some(&cosmolkit_model::PropertyValue::String("kept".into())),
                     "{label}"
                 );
                 assert_eq!(
-                    result
-                        .coordinates
-                        .conformers_2d
-                        .first()
-                        .and_then(|c| c.props().get("conf-ordinary").map(String::as_str)),
-                    Some("2d-kept"),
+                    result.coordinates.conformers_2d.first().and_then(|c| c
+                        .props()
+                        .get(b"conf-ordinary".as_slice())
+                        .map(|value| value.as_bytes())),
+                    Some(b"2d-kept".as_slice()),
                     "{label}"
                 );
                 assert_eq!(
-                    result
-                        .coordinates
-                        .conformers_3d
-                        .first()
-                        .and_then(|c| c.props().get("conf-ordinary").map(String::as_str)),
-                    Some("3d-kept"),
+                    result.coordinates.conformers_3d.first().and_then(|c| c
+                        .props()
+                        .get(b"conf-ordinary".as_slice())
+                        .map(|value| value.as_bytes())),
+                    Some(b"3d-kept".as_slice()),
                     "{label}"
                 );
                 // Coordinates follow the frozen final original indices, by bits.
@@ -437,20 +432,19 @@ fn remove_hydrogens_ring_public_sixteen_call_product() {
                 assert_eq!(out3.id(), 19, "{label}: output 3D id");
                 assert!(out3.is_3d(), "{label}: 3D stored dimensionality");
                 assert_eq!(
-                    result
-                        .coordinates
-                        .conformers_3d
-                        .first()
-                        .and_then(|c| c.props().get("conf-ordinary").map(String::as_str)),
-                    Some("3d-kept"),
+                    result.coordinates.conformers_3d.first().and_then(|c| c
+                        .props()
+                        .get(b"conf-ordinary".as_slice())
+                        .map(|value| value.as_bytes())),
+                    Some(b"3d-kept".as_slice()),
                     "{label}"
                 );
-                // Frozen valence/ring separation: final_valence Some IFF
-                // sanitize, both field lengths equal final atoms; the
+                // Source scalar retention is independent of sanitation;
+                // both field lengths equal final atoms; the
                 // nonimplicit=false/sanitize=true cell keeps final_rings None
                 // even though valence is Some.
-                match (sanitize, &result.final_valence) {
-                    (true, Some(valence)) => {
+                match &result.final_valence {
+                    Some(valence) => {
                         assert_eq!(
                             valence.explicit_valence.len(),
                             result.topology.atoms.len(),
@@ -465,8 +459,7 @@ fn remove_hydrogens_ring_public_sixteen_call_product() {
                             assert!(result.final_rings.is_none(), "{label}: rings/valence split");
                         }
                     }
-                    (false, None) => {}
-                    _ => panic!("{label}: valence presence"),
+                    None => panic!("{label}: source scalar presence"),
                 }
             }
         }

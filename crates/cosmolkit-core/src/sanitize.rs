@@ -182,6 +182,12 @@ pub struct SanitizeAssignment {
 /// A sanitization failure with the exact active source stage and typed cause.
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum SanitizeError {
+    #[error("molecule property operation failed: {0}")]
+    MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
+    #[error("bond property operation failed: {0}")]
+    BondProperty(#[from] cosmolkit_model::BondValueError),
+    #[error("atom property operation failed: {0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
     #[error("invalid sanitize operation bits 0x{bits:08x}; unknown bits 0x{unknown_bits:08x}")]
     InvalidOperations { bits: u32, unknown_bits: u32 },
     #[error("sanitization failed at {stage:?}: invalid topology: {source}")]
@@ -357,13 +363,14 @@ pub fn assign_property_cache(
     Ok(PropertyCacheAssignment { valence })
 }
 
-fn clear_topology_computed_properties(topology: &mut TopologyBlock) {
+fn clear_topology_computed_properties(topology: &mut TopologyBlock) -> Result<(), SanitizeError> {
     for atom in &mut topology.atoms {
-        atom.clear_computed_props();
+        atom.clear_computed_props()?;
     }
     for bond in &mut topology.bonds {
-        bond.clear_computed_props();
+        bond.clear_computed_props()?;
     }
+    Ok(())
 }
 
 fn materialize_radicals(topology: &mut TopologyBlock, values: &[u8]) {
@@ -545,12 +552,12 @@ pub(crate) mod hybridizations_probe {
             .topology
             .atoms
             .first()
-            .is_none_or(|atom| !atom.props().contains_key(SENTINEL_KEY));
+            .is_none_or(|atom| !atom.props().contains_key(SENTINEL_KEY.as_bytes()));
         let bond_cleared = assignment
             .topology
             .bonds
             .first()
-            .is_none_or(|bond| !bond.props().contains_key(SENTINEL_KEY));
+            .is_none_or(|bond| !bond.props().contains_key(SENTINEL_KEY.as_bytes()));
         SELECTED_SENTINELS_CLEARED.with(|cell| cell.set(Some((atom_cleared, bond_cleared))));
         SELECTED_FINAL_RINGS_NONE.with(|cell| cell.set(Some(assignment.final_rings.is_none())));
     }
@@ -709,7 +716,7 @@ pub fn sanitize_topology_with_query_state(
 
     let operations = params.operations;
     let mut working = topology.clone();
-    clear_topology_computed_properties(&mut working);
+    clear_topology_computed_properties(&mut working)?;
 
     if operations.contains(SanitizeOperations::CLEANUP) {
         working = cleanup(
@@ -797,6 +804,7 @@ pub fn sanitize_topology_with_query_state(
             },
             query_state,
             rings.as_ref(),
+            Some(&valence),
         )
         .map_err(|source| SanitizeError::Kekulize {
             stage: SanitizeStage::Kekulize,
@@ -805,17 +813,13 @@ pub fn sanitize_topology_with_query_state(
         if let Some(update) = assignment.ring_update {
             rings = Some(update);
         }
+        // RDKit✔️✔️:   atom->calcImplicitValence(false);
         // RDKit✔️✔️:           atom->updatePropertyCache(false);
-        // Behavior: Kekulize refreshes only its neutral aromatic N/P-H rows.
-        // Retain that state for later consumers, particularly adjustHs; do
-        // not replace ordinary rows with an unsolicited full cache refresh.
-        // Complexity: indexed copies over just those source-refreshed rows;
-        // use the assignment already computed by the Kekulize owner.
+        // The owner updates this actual intermediate state, retaining E except
+        // source-selected N/P normalization and calculating selected I in order.
+        // Move complete returned rows; no unsolicited fresh cache or row replay.
         if let Some(updated) = assignment.final_valence {
-            for atom in assignment.refreshed_valence_atoms {
-                valence.explicit_valence[atom.index()] = updated.explicit_valence[atom.index()];
-                valence.implicit_hydrogens[atom.index()] = updated.implicit_hydrogens[atom.index()];
-            }
+            valence = updated;
         }
         working = assignment.topology;
     }
@@ -1156,7 +1160,7 @@ pub fn detect_chemistry_problems(
 
     let operations = params.operations;
     let mut working = topology.clone();
-    clear_topology_computed_properties(&mut working);
+    clear_topology_computed_properties(&mut working)?;
     let mut report = ChemistryProblemReport::default();
 
     if operations.contains(SanitizeOperations::CLEANUP) {

@@ -72,8 +72,13 @@ fn pinned_query_cleanup_preserves_original_sgroup_cx_index() {
         let groups = query_substance_groups(&query);
         assert_eq!(groups.len(), 1, "{text}");
         assert_eq!(
-            groups[0].props().get("_cxsmilesindex").unwrap().as_str(),
-            "0",
+            groups[0]
+                .props()
+                .get(b"_cxsmilesindex".as_slice())
+                .unwrap()
+                .as_uint()
+                .unwrap(),
+            0u32,
             "{text}"
         );
         assert!(

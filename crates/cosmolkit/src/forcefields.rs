@@ -209,12 +209,14 @@ mod tests {
     ) -> MoleculeProperties {
         let atom_values = (0..atom_count)
             .map(|row| {
-                (row % 2 == 0).then(|| PropertyValue::String(format!("atom-{fixture_id}-{row}")))
+                (row % 2 == 0)
+                    .then(|| PropertyValue::String(format!("atom-{fixture_id}-{row}").into()))
             })
             .collect();
         let bond_values = (0..bond_count)
             .map(|row| {
-                (row % 2 == 0).then(|| PropertyValue::String(format!("bond-{fixture_id}-{row}")))
+                (row % 2 == 0)
+                    .then(|| PropertyValue::String(format!("bond-{fixture_id}-{row}").into()))
             })
             .collect();
 
@@ -552,7 +554,7 @@ mod tests {
                     },
                 )
                 .expect("fixed carbon parses under both constructor policies");
-                if sanitize {
+                if sanitize || remove_hydrogens {
                     assert_eq!(
                         molecule.derived_cache_runtime().valence_assignment(),
                         Some(&ValenceAssignment {
@@ -560,7 +562,9 @@ mod tests {
                             implicit_hydrogens: vec![4]
                         })
                     );
-                    assert_query_does_not_change_prepared_state(&molecule, true);
+                    // Unsanitized carbon retains Unspecified hybridization: the
+                    // source UFF label has no matching parameter row.
+                    assert_query_does_not_change_prepared_state(&molecule, sanitize);
                 } else {
                     assert_uncached_query_fails_without_preparation(&molecule);
                 }

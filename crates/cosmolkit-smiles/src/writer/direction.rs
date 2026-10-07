@@ -54,7 +54,7 @@ pub(super) fn canonicalize_double_bond_directions_for_writer(
         &mut bond_dir_counts,
         &mut atom_dir_counts,
         stack,
-    );
+    )?;
     remove_unwanted_bond_dir_specs_for_writer(
         topology,
         stack,
@@ -79,7 +79,7 @@ pub(super) fn canonicalize_double_bonds_for_writer(
     bond_dir_counts: &mut [i8],
     atom_dir_counts: &mut [i8],
     stack: &[MolStackElem],
-) {
+) -> Result<(), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeDoubleBonds
     // RDKit✔️✔️: for (auto &msI : molStack) {
     // RDKit✔️✔️:   if (msI.type != MOL_STACK_BOND) { continue; }
@@ -104,7 +104,7 @@ pub(super) fn canonicalize_double_bonds_for_writer(
             if bond_ref.order() == BondOrder::Double {
                 let bond_mut = &mut topology.bonds[bond.index()];
                 bond_mut.set_stereo_atoms(None);
-                bond_mut.set_stereo(BondStereo::None);
+                bond_mut.set_stereo(BondStereo::None)?;
             }
             continue;
         }
@@ -146,6 +146,7 @@ pub(super) fn canonicalize_double_bonds_for_writer(
             }
         }
     }
+    Ok(())
 }
 
 pub(super) fn canonicalize_double_bond_for_writer(

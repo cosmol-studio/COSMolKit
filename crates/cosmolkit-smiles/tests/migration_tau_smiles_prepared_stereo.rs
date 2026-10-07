@@ -1,5 +1,11 @@
 use cosmolkit_smiles::{parse_smiles, write_smiles};
 use cosmolkit_types::{BondDirection, BondStereo};
+// Original source-text fixtures decode only at this observation boundary.
+// Invalid UTF-8 fails; the complete byte payload is never substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
 #[test]
 fn completed_stereo_marker_does_not_reperceive_a_new_double_bond_from_stale_slashes() {
     // Pinned source TAU case smiles_5000:1399, transform 1,3 (thio)keto/enol f,
@@ -26,7 +32,7 @@ fn completed_stereo_marker_does_not_reperceive_a_new_double_bond_from_stale_slas
     )));
     let before = record.clone();
     assert_eq!(
-        write_smiles(&record).unwrap(),
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
         "O=C(O)CCCCCCC/C=C\\C=C(O)/C=C(O)/C=C/CCO"
     );
     assert_eq!(record, before);

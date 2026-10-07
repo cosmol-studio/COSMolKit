@@ -74,7 +74,7 @@ fn mol_post_legacy_audit_isotope_zero_graph_hydrogen_is_protium() {
     assert_eq!(deuterium.atoms[0].chiral_tag(), ChiralTag::TetrahedralCw);
     assert!(matches!(
         deuterium.atoms[0].prop("_CIPCode"),
-        Some(PropertyValue::String(value)) if matches!(value.as_str(), "R" | "S")
+        Some(PropertyValue::String(value)) if matches!(value.as_bytes(), b"R" | b"S")
     ));
 }
 

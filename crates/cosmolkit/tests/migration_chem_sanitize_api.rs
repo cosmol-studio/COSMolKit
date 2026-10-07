@@ -268,12 +268,12 @@ fn generated_registry_and_all_four_matrices_share_one_exact_operation() {
     assert_eq!(spec.may_mutate, spec.access.write());
     assert_eq!(spec.auto_remap, BlockSet::NONE);
     assert_eq!(format!("{:?}", spec.requires_mapping), "None");
-    // L3: ordinary rings moved invalidate -> recompute (final_rings
-    // replacement-or-clear transport); every other effect is unchanged.
-    assert_eq!(spec.derived_effects.recompute.bits(), (1 << 2) | (1 << 0));
+    // ROOT CK-4b988 approved the exact Weak sanitize source transition:
+    // rings are recomputed; native valence rows use operation-defined handling.
+    assert_eq!(spec.derived_effects.recompute.bits(), 1 << 0);
+    assert_eq!(spec.derived_effects.operation_defined.bits(), 1 << 2);
     assert_eq!(spec.derived_effects.preserve.bits(), 1 << 5);
-    // The same downstream states remain invalidated; VALENCE alone is now
-    // recomputed or cleared from the detached owner's final stage result.
+    // Retain the exact downstream invalidation and coordinate preservation.
     assert_eq!(spec.derived_effects.invalidate.bits(), 0xda);
     assert_eq!(format!("{:?}", spec.cip_state), "ClearComputed");
     assert!(spec.io_roundtrip);
@@ -329,7 +329,10 @@ fn value_sanitize_preserves_identity_coordinates_and_ordinary_properties() {
     coordinate_views::assert_shared_coordinates(&source, &output);
     assert_eq!(source.coordinates_2d(), output.coordinates_2d());
     assert_eq!(source.conformers_3d(), output.conformers_3d());
-    assert_eq!(output.property("source"), Some("preserved"));
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit_model::PropertyValue::from("preserved"))
+    );
     assert_eq!(
         output.atoms()[0].prop("atom-note"),
         Some(&cosmolkit_model::PropertyValue::from("atom-0"))
@@ -348,7 +351,10 @@ fn value_sanitize_preserves_identity_coordinates_and_ordinary_properties() {
     assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
     assert!(!std::ptr::eq(source.topology(), output.topology()));
     assert!(!std::ptr::eq(source.properties(), output.properties()));
-    assert_eq!(source.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        source.property("_CIPComputed"),
+        Some(&cosmolkit_model::PropertyValue::from("true"))
+    );
 }
 
 #[test]
@@ -359,7 +365,10 @@ fn none_selection_still_clears_only_computed_topology_and_cip_properties() {
             operations: SanitizeOperations::NONE,
         })
         .unwrap();
-    assert_eq!(output.property("source"), Some("preserved"));
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit_model::PropertyValue::from("preserved"))
+    );
     assert_eq!(output.property("_CIPComputed"), None);
     assert_eq!(
         output.atoms()[0].prop("atom-note"),

@@ -46,7 +46,7 @@ fn assert_list(
 ) {
     let list = &properties.sdf_property_lists()[index];
     assert_eq!(list.target(), target);
-    assert_eq!(list.name(), name);
+    assert_eq!(list.name().as_bytes(), name.as_bytes());
     assert_eq!(list.values(), values);
 }
 
@@ -54,7 +54,7 @@ fn assert_typed_property(actual: Option<&PropertyValue>, expected: PropertyValue
     assert_eq!(actual, Some(&expected));
     assert_eq!(
         property_value_to_string(actual.expect("typed property must exist")),
-        Ok(projected.to_owned())
+        Ok(projected.into())
     );
 }
 
@@ -76,13 +76,13 @@ fn sdf_props_all_eight_prefixes_apply_typed_values_and_continue_after_bad_items(
 
     assert_typed_property(
         record.topology.atoms[0].prop("Text"),
-        PropertyValue::String("alpha".to_owned()),
+        PropertyValue::String("alpha".into()),
         "alpha",
     );
     assert_eq!(record.topology.atoms[1].prop("Text"), None);
     assert_typed_property(
         record.topology.atoms[2].prop("Text"),
-        PropertyValue::String("omega".to_owned()),
+        PropertyValue::String("omega".into()),
         "omega",
     );
     assert_typed_property(
@@ -125,12 +125,12 @@ fn sdf_props_all_eight_prefixes_apply_typed_values_and_continue_after_bad_items(
 
     assert_typed_property(
         record.topology.bonds[0].prop("Text"),
-        PropertyValue::String("left".to_owned()),
+        PropertyValue::String("left".into()),
         "left",
     );
     assert_typed_property(
         record.topology.bonds[1].prop("Text"),
-        PropertyValue::String("right".to_owned()),
+        PropertyValue::String("right".into()),
         "right",
     );
     assert_typed_property(
@@ -168,9 +168,9 @@ fn sdf_props_all_eight_prefixes_apply_typed_values_and_continue_after_bad_items(
         SdfPropertyListTarget::Atom,
         "Text",
         &[
-            Some(PropertyValue::String("alpha".to_owned())),
+            Some(PropertyValue::String("alpha".into())),
             None,
-            Some(PropertyValue::String("omega".to_owned())),
+            Some(PropertyValue::String("omega".into())),
         ],
     );
     assert_list(
@@ -212,8 +212,8 @@ fn sdf_props_all_eight_prefixes_apply_typed_values_and_continue_after_bad_items(
         SdfPropertyListTarget::Bond,
         "Text",
         &[
-            Some(PropertyValue::String("left".to_owned())),
-            Some(PropertyValue::String("right".to_owned())),
+            Some(PropertyValue::String("left".into())),
+            Some(PropertyValue::String("right".into())),
         ],
     );
     assert_list(
@@ -242,7 +242,7 @@ fn sdf_props_all_eight_prefixes_apply_typed_values_and_continue_after_bad_items(
     );
     assert_eq!(
         record.properties.prop("atom.iprop.Integer"),
-        Some("+7 invalid -3")
+        Some(&PropertyValue::String("+7 invalid -3".into()))
     );
 }
 
@@ -270,17 +270,17 @@ fn sdf_props_numeric_lexemes_retain_values_and_source_projection_separately() {
     }
     assert_eq!(
         record.properties.prop("atom.iprop.Number"),
-        Some("+7 007 -3")
+        Some(&PropertyValue::String("+7 007 -3".into()))
     );
     assert_eq!(
         record.properties.prop("atom.dprop.Real"),
-        Some("1.00 1e2 -5e-1")
+        Some(&PropertyValue::String("1.00 1e2 -5e-1".into()))
     );
     assert_eq!(
         record.properties.sdf_data_fields(),
         &[
-            ("atom.iprop.Number".to_owned(), "+7 007 -3".to_owned()),
-            ("atom.dprop.Real".to_owned(), "1.00 1e2 -5e-1".to_owned(),),
+            ("atom.iprop.Number".into(), "+7 007 -3".into()),
+            ("atom.dprop.Real".into(), "1.00 1e2 -5e-1".into(),),
         ]
     );
 }
@@ -299,9 +299,9 @@ fn sdf_props_custom_empty_markers_and_compressed_multiline_delimiters_preserve_r
         SdfPropertyListTarget::Atom,
         "Custom",
         &[
-            Some(PropertyValue::String("first".to_owned())),
+            Some(PropertyValue::String("first".into())),
             None,
-            Some(PropertyValue::String("third".to_owned())),
+            Some(PropertyValue::String("third".into())),
         ],
     );
     assert_list(
@@ -310,19 +310,19 @@ fn sdf_props_custom_empty_markers_and_compressed_multiline_delimiters_preserve_r
         SdfPropertyListTarget::Atom,
         "EmptyMarker",
         &[
-            Some(PropertyValue::String("one".to_owned())),
-            Some(PropertyValue::String("two".to_owned())),
-            Some(PropertyValue::String("three".to_owned())),
+            Some(PropertyValue::String("one".into())),
+            Some(PropertyValue::String("two".into())),
+            Some(PropertyValue::String("three".into())),
         ],
     );
     assert_typed_property(
         record.topology.atoms[2].prop("Custom"),
-        PropertyValue::String("third".to_owned()),
+        PropertyValue::String("third".into()),
         "third",
     );
     assert_eq!(
         record.properties.prop("atom.prop.Custom"),
-        Some("[?]\tfirst\t?\n third")
+        Some(&PropertyValue::String("[?]\tfirst\t?\n third".into()))
     );
 }
 
@@ -353,7 +353,7 @@ fn sdf_props_query_records_keep_query_carrier_and_apply_atom_and_bond_lists() {
 
     assert_typed_property(
         query.query.atoms()[0].prop("Text"),
-        PropertyValue::String("query".to_owned()),
+        PropertyValue::String("query".into()),
         "query",
     );
     assert_eq!(query.query.atoms()[1].prop("Text"), None);
@@ -381,7 +381,7 @@ fn sdf_props_query_records_keep_query_carrier_and_apply_atom_and_bond_lists() {
     );
     assert_typed_property(
         query.query.bonds()[0].bond().prop("Text"),
-        PropertyValue::String("edge".to_owned()),
+        PropertyValue::String("edge".into()),
         "edge",
     );
     assert_typed_property(
@@ -416,28 +416,39 @@ fn sdf_props_query_records_keep_query_carrier_and_apply_atom_and_bond_lists() {
     );
     assert_eq!(
         query.properties.prop("atom.iprop.Count"),
-        Some("+7 invalid")
+        Some(&PropertyValue::String("+7 invalid".into()))
     );
-    assert_eq!(query.properties.prop("bond.dprop.Weight"), Some("-5e-1"));
+    assert_eq!(
+        query.properties.prop("bond.dprop.Weight"),
+        Some(&PropertyValue::String("-5e-1".into()))
+    );
 }
 
 #[test]
 fn sdf_props_strict_count_mismatches_are_structured_for_atom_and_bond_targets() {
     let atom_short =
         concrete_record(">  <atom.prop.ValidBefore>\na b c\n\n>  <atom.iprop.Short>\n1 2\n\n");
-    // Source applyMolListProp warns and returns before assigning any item.
-    let record =
-        read_sdf_record_detached(&atom_short).expect("source count mismatch preserves raw field");
-    assert_eq!(record.properties.prop("atom.iprop.Short"), Some("1 2"));
+    // USER-approved strict count policy; frozen native recovery is checked below.
+    assert!(matches!(read_sdf_record_detached(&atom_short),
+        Err(SdfReadError::PropertyListCount { target: "atom", name, actual: 2, expected: 3 })
+            if name == "atom.iprop.Short"));
+    // Pinned FileParserUtils::applyMolListProp logs incompatible size and
+    // returns before setting any item, independently of strictParsing.
+    let atom_record = read_sdf_record_detached_with_params(
+        &atom_short,
+        SdfDataReadParams {
+            strict_parsing: false,
+            ..SdfDataReadParams::default()
+        },
+    )
+    .expect("source ignores short atom list");
     assert_eq!(
-        record.data_fields.last(),
-        Some(&("atom.iprop.Short".to_owned(), "1 2".to_owned()))
+        atom_record.properties.prop("atom.iprop.Short"),
+        Some(&PropertyValue::String("1 2".into()))
     );
-    assert_eq!(record.topology.atoms.len(), 3);
-    assert_eq!(record.topology.bonds.len(), 2);
-    assert_eq!(record.properties.sdf_property_lists().len(), 1);
+    assert_eq!(atom_record.properties.sdf_property_lists().len(), 1);
     assert_list(
-        &record.properties,
+        &atom_record.properties,
         0,
         SdfPropertyListTarget::Atom,
         "ValidBefore",
@@ -447,32 +458,39 @@ fn sdf_props_strict_count_mismatches_are_structured_for_atom_and_bond_targets() 
             Some(PropertyValue::String("c".into())),
         ],
     );
-    assert!(
-        record
-            .topology
-            .atoms
-            .iter()
-            .all(|item| item.prop("Short").is_none())
-    );
-
+    for (atom, expected) in atom_record.topology.atoms.iter().zip(["a", "b", "c"]) {
+        assert_eq!(
+            atom.prop("ValidBefore"),
+            Some(&PropertyValue::String(expected.into()))
+        );
+        assert_eq!(atom.prop("Short"), None);
+    }
+    assert_eq!(atom_record.topology.atoms.len(), 3);
     let bond_long = concrete_record(">  <bond.prop.Long>\na b c\n\n");
-    // Source applyMolListProp warns and returns before assigning any item.
-    let record =
-        read_sdf_record_detached(&bond_long).expect("source count mismatch preserves raw field");
-    assert_eq!(record.properties.prop("bond.prop.Long"), Some("a b c"));
+    // USER-approved strict count policy; frozen native recovery is checked below.
+    assert!(matches!(read_sdf_record_detached(&bond_long),
+        Err(SdfReadError::PropertyListCount { target: "bond", name, actual: 3, expected: 2 })
+            if name == "bond.prop.Long"));
+    let bond_record = read_sdf_record_detached_with_params(
+        &bond_long,
+        SdfDataReadParams {
+            strict_parsing: false,
+            ..SdfDataReadParams::default()
+        },
+    )
+    .expect("source ignores long bond list");
     assert_eq!(
-        record.data_fields.last(),
-        Some(&("bond.prop.Long".to_owned(), "a b c".to_owned()))
+        bond_record.properties.prop("bond.prop.Long"),
+        Some(&PropertyValue::String("a b c".into()))
     );
-    assert_eq!(record.topology.atoms.len(), 3);
-    assert_eq!(record.topology.bonds.len(), 2);
-    assert!(record.properties.sdf_property_lists().is_empty());
+    assert!(bond_record.properties.sdf_property_lists().is_empty());
+    assert_eq!(bond_record.topology.bonds.len(), 2);
     assert!(
-        record
+        bond_record
             .topology
             .bonds
             .iter()
-            .all(|item| item.prop("Long").is_none())
+            .all(|bond| bond.prop("Long").is_none())
     );
 }
 
@@ -493,9 +511,12 @@ fn sdf_props_nonstrict_count_mismatches_preserve_raw_fields_without_partial_expa
 
     assert_eq!(
         record.properties.prop("atom.prop.Short"),
-        Some("first second")
+        Some(&PropertyValue::String("first second".into()))
     );
-    assert_eq!(record.properties.prop("bond.iprop.Long"), Some("1 2 3"));
+    assert_eq!(
+        record.properties.prop("bond.iprop.Long"),
+        Some(&PropertyValue::String("1 2 3".into()))
+    );
     assert!(record.properties.sdf_property_lists().is_empty());
     assert!(
         record
@@ -516,71 +537,78 @@ fn sdf_props_nonstrict_count_mismatches_preserve_raw_fields_without_partial_expa
 #[test]
 fn sdf_props_zero_tables_and_boundary_empty_tokens_follow_count_rules() {
     let empty_value = zero_record(">  <atom.prop.Empty>\n\n");
-    // Source applyMolListProp warns and returns before assigning any item.
-    let record =
-        read_sdf_record_detached(&empty_value).expect("source count mismatch preserves raw field");
-    assert_eq!(record.properties.prop("atom.prop.Empty"), Some(""));
+    // USER-approved strict count policy; frozen native recovery is checked below.
+    assert!(matches!(read_sdf_record_detached(&empty_value),
+        Err(SdfReadError::PropertyListCount { target: "atom", name, actual: 1, expected: 0 })
+            if name == "atom.prop.Empty"));
+    // Source boost::split retains each boundary empty token; its size check
+    // rejects expansion and leaves the original raw property intact.
+    let empty = read_sdf_record_detached_with_params(
+        &empty_value,
+        SdfDataReadParams {
+            strict_parsing: false,
+            ..SdfDataReadParams::default()
+        },
+    )
+    .expect("source ignores zero-table list");
+    assert!(empty.topology.atoms.is_empty());
     assert_eq!(
-        record.data_fields.last(),
-        Some(&("atom.prop.Empty".to_owned(), "".to_owned()))
+        empty.properties.prop("atom.prop.Empty"),
+        Some(&PropertyValue::String("".into()))
     );
-    assert_eq!(record.topology.atoms.len(), 0);
-    assert_eq!(record.topology.bonds.len(), 0);
-    assert!(record.properties.sdf_property_lists().is_empty());
-    assert!(
-        record
-            .topology
-            .atoms
-            .iter()
-            .all(|item| item.prop("Empty").is_none())
-    );
-
-    // boost::split(token_compress_on) preserves boundary empty tokens. They
-    // therefore participate in the source count check instead of being trim.
+    assert!(empty.properties.sdf_property_lists().is_empty());
     let leading = concrete_record(">  <atom.prop.Leading>\n one two three\n\n");
-    // Source applyMolListProp warns and returns before assigning any item.
-    let record =
-        read_sdf_record_detached(&leading).expect("source count mismatch preserves raw field");
+    // USER-approved strict count policy; frozen native recovery is checked below.
+    assert!(matches!(read_sdf_record_detached(&leading),
+        Err(SdfReadError::PropertyListCount { target: "atom", name, actual: 4, expected: 3 })
+            if name == "atom.prop.Leading"));
+    let leading_record = read_sdf_record_detached_with_params(
+        &leading,
+        SdfDataReadParams {
+            strict_parsing: false,
+            ..SdfDataReadParams::default()
+        },
+    )
+    .expect("source ignores leading empty token size mismatch");
     assert_eq!(
-        record.properties.prop("atom.prop.Leading"),
-        Some(" one two three")
+        leading_record.properties.prop("atom.prop.Leading"),
+        Some(&PropertyValue::String(" one two three".into()))
     );
-    assert_eq!(
-        record.data_fields.last(),
-        Some(&("atom.prop.Leading".to_owned(), " one two three".to_owned()))
-    );
-    assert_eq!(record.topology.atoms.len(), 3);
-    assert_eq!(record.topology.bonds.len(), 2);
-    assert!(record.properties.sdf_property_lists().is_empty());
+    assert_eq!(leading_record.topology.atoms.len(), 3);
     assert!(
-        record
+        leading_record
             .topology
             .atoms
             .iter()
-            .all(|item| item.prop("Leading").is_none())
+            .all(|atom| atom.prop("Leading").is_none())
     );
+    assert!(leading_record.properties.sdf_property_lists().is_empty());
     let trailing = concrete_record(">  <bond.prop.Trailing>\none two \n\n");
-    // Source applyMolListProp warns and returns before assigning any item.
-    let record =
-        read_sdf_record_detached(&trailing).expect("source count mismatch preserves raw field");
+    // USER-approved strict count policy; frozen native recovery is checked below.
+    assert!(matches!(read_sdf_record_detached(&trailing),
+        Err(SdfReadError::PropertyListCount { target: "bond", name, actual: 3, expected: 2 })
+            if name == "bond.prop.Trailing"));
+    let trailing_record = read_sdf_record_detached_with_params(
+        &trailing,
+        SdfDataReadParams {
+            strict_parsing: false,
+            ..SdfDataReadParams::default()
+        },
+    )
+    .expect("source ignores trailing empty token size mismatch");
     assert_eq!(
-        record.properties.prop("bond.prop.Trailing"),
-        Some("one two ")
+        trailing_record.properties.prop("bond.prop.Trailing"),
+        Some(&PropertyValue::String("one two ".into()))
     );
-    assert_eq!(
-        record.data_fields.last(),
-        Some(&("bond.prop.Trailing".to_owned(), "one two ".to_owned()))
-    );
-    assert_eq!(record.topology.atoms.len(), 3);
-    assert_eq!(record.topology.bonds.len(), 2);
-    assert!(record.properties.sdf_property_lists().is_empty());
+    assert_eq!(trailing_record.topology.bonds.len(), 2);
     assert!(
-        record
+        trailing_record
             .topology
             .bonds
             .iter()
-            .all(|item| item.prop("Trailing").is_none())
+            .all(|bond| bond.prop("Trailing").is_none())
     );
+    assert!(trailing_record.properties.sdf_property_lists().is_empty());
 }
 
 #[test]
@@ -594,9 +622,18 @@ fn sdf_props_unrecognized_names_remain_raw_and_processing_can_be_disabled() {
     let input = concrete_record(fields);
     let record = read_sdf_record_detached(&input).expect("recognized and raw fields");
     assert_eq!(record.properties.sdf_property_lists().len(), 1);
-    assert_eq!(record.properties.prop("atom.prop."), Some("a b c"));
-    assert_eq!(record.properties.prop("Atom.prop.Case"), Some("a b c"));
-    assert_eq!(record.properties.prop("unrelated"), Some("value"));
+    assert_eq!(
+        record.properties.prop("atom.prop."),
+        Some(&PropertyValue::String("a b c".into()))
+    );
+    assert_eq!(
+        record.properties.prop("Atom.prop.Case"),
+        Some(&PropertyValue::String("a b c".into()))
+    );
+    assert_eq!(
+        record.properties.prop("unrelated"),
+        Some(&PropertyValue::String("value".into()))
+    );
 
     let raw = read_sdf_record_detached_with_params(
         &input,
@@ -616,7 +653,7 @@ fn sdf_props_unrecognized_names_remain_raw_and_processing_can_be_disabled() {
     assert_eq!(raw.properties.sdf_data_fields().len(), 4);
     assert_eq!(
         raw.properties.prop("atom.prop.Label"),
-        Some("first second third")
+        Some(&PropertyValue::String("first second third".into()))
     );
 }
 
@@ -636,9 +673,9 @@ fn sdf_props_repeated_lists_keep_encounter_order_and_replace_item_properties() {
         SdfPropertyListTarget::Atom,
         "Label",
         &[
-            Some(PropertyValue::String("one".to_owned())),
-            Some(PropertyValue::String("two".to_owned())),
-            Some(PropertyValue::String("three".to_owned())),
+            Some(PropertyValue::String("one".into())),
+            Some(PropertyValue::String("two".into())),
+            Some(PropertyValue::String("three".into())),
         ],
     );
     assert_list(
@@ -647,23 +684,23 @@ fn sdf_props_repeated_lists_keep_encounter_order_and_replace_item_properties() {
         SdfPropertyListTarget::Atom,
         "Label",
         &[
-            Some(PropertyValue::String("un".to_owned())),
-            Some(PropertyValue::String("deux".to_owned())),
-            Some(PropertyValue::String("trois".to_owned())),
+            Some(PropertyValue::String("un".into())),
+            Some(PropertyValue::String("deux".into())),
+            Some(PropertyValue::String("trois".into())),
         ],
     );
     assert_typed_property(
         record.topology.atoms[0].prop("Label"),
-        PropertyValue::String("un".to_owned()),
+        PropertyValue::String("un".into()),
         "un",
     );
     assert_typed_property(
         record.topology.atoms[2].prop("Label"),
-        PropertyValue::String("trois".to_owned()),
+        PropertyValue::String("trois".into()),
         "trois",
     );
     assert_eq!(
         record.properties.prop("atom.prop.Label"),
-        Some("un deux trois")
+        Some(&PropertyValue::String("un deux trois".into()))
     );
 }

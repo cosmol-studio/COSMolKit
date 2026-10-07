@@ -6,6 +6,7 @@ use crate::{
     CxProgressCheckpoint, CxProgressPhase, CxRadical, CxRecord, CxRingBond, CxSGroupHierarchy,
     CxStereoGroupKind, CxVariableAttachment, CxWedgeBond, CxWedgeDirection, ParsedCxExtensions,
 };
+use cosmolkit_model::PropertyText;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CxDispatch {
@@ -107,7 +108,7 @@ fn classify_cx_dispatch(bytes: &[u8], cursor: usize) -> CxDispatch {
 }
 
 /// Parse one CX extension block without referring to a destination graph.
-pub fn parse_cx_extensions(text: &str) -> Result<ParsedCxExtensions, CxParseError> {
+pub fn parse_cx_extensions(text: impl AsRef<[u8]>) -> Result<ParsedCxExtensions, CxParseError> {
     // RDKit source (verbatim; this is the strict API adapter):
     /*
     void parseCXExtensions(RDKit::RWMol &mol, const std::string &extText,
@@ -132,6 +133,7 @@ pub fn parse_cx_extensions(text: &str) -> Result<ParsedCxExtensions, CxParseErro
     }
         */
     let progress = parse_cx_extensions_progress(text);
+    progress.emit_source_warning();
     let (records, _, consumed, complete, error) = progress.into_parts();
     if !complete {
         return Err(error.unwrap_or_else(|| {
@@ -143,7 +145,55 @@ pub fn parse_cx_extensions(text: &str) -> Result<ParsedCxExtensions, CxParseErro
 
 /// Parse one CX block while retaining its source cursor and committed record
 /// checkpoints, including when a later helper fails.
-pub fn parse_cx_extensions_progress(text: &str) -> CxParseProgress {
+pub fn parse_cx_extensions_progress(text: impl AsRef<[u8]>) -> CxParseProgress {
+    parse_cx_extensions_progress_impl(text.as_ref(), None)
+}
+
+/// Parse global reaction CX syntax while converting coordinate components only
+/// inside the source VALID_ATIDX window. Other records retain global indices.
+/// This is syntax state only; graph lowering stays with representation owners.
+#[doc(hidden)]
+pub fn parse_cx_extensions_with_atom_window(
+    text: impl AsRef<[u8]>,
+    start_atom: usize,
+    atom_count: usize,
+) -> Result<ParsedCxExtensions, CxParseError> {
+    let start_atom = u32::try_from(start_atom)
+        .map_err(|_| CxParseError::new(0, "CX start atom exceeds source unsigned32 domain"))?;
+    let atom_count = u32::try_from(atom_count)
+        .map_err(|_| CxParseError::new(0, "CX atom count exceeds source unsigned32 domain"))?;
+    let progress = parse_cx_extensions_progress_with_atom_window(text, start_atom, atom_count);
+    progress.emit_source_warning();
+    let (records, _, consumed, complete, error) = progress.into_parts();
+    if !complete {
+        return Err(error.unwrap_or_else(|| {
+            CxParseError::new(consumed, "failure parsing CXSMILES extensions")
+        }));
+    }
+    Ok(ParsedCxExtensions::new(records, consumed))
+}
+
+/// Retain CX source progress with the caller's actual destination atom window.
+/// Counts are the source unsigned32 inputs; their upper bound wraps exactly
+/// like startAtomIdx + mol.getNumAtoms(), including an empty overflowed window.
+#[doc(hidden)]
+pub fn parse_cx_extensions_progress_with_atom_window(
+    text: impl AsRef<[u8]>,
+    start_atom: u32,
+    atom_count: u32,
+) -> CxParseProgress {
+    // RDKit✔️✔️: #define VALID_ATIDX(_atidx_) \
+    // RDKit✔️✔️:   ((_atidx_) >= startAtomIdx && (_atidx_) < startAtomIdx + mol.getNumAtoms())
+    parse_cx_extensions_progress_impl(
+        text.as_ref(),
+        Some(start_atom..start_atom.wrapping_add(atom_count)),
+    )
+}
+
+fn parse_cx_extensions_progress_impl(
+    text: &[u8],
+    atom_window: Option<std::ops::Range<u32>>,
+) -> CxParseProgress {
     // RDKit source (verbatim; graph-effect calls are lowering-owned):
     /*
     template <typename Iterator>
@@ -275,7 +325,7 @@ pub fn parse_cx_extensions_progress(text: &str) -> CxParseProgress {
     if text.is_empty() {
         return CxParseProgress::from_parts(Vec::new(), Vec::new(), 0, true, None);
     }
-    let bytes = text.as_bytes();
+    let bytes = text;
     if bytes.first().copied() != Some(b'|') {
         return CxParseProgress::from_parts(
             Vec::new(),
@@ -304,10 +354,7 @@ pub fn parse_cx_extensions_progress(text: &str) -> CxParseProgress {
                 // RDKit's default branch increments its iterator by one byte.
                 cursor += 1;
             }
-            let raw = text
-                .get(start..cursor)
-                .expect("an unknown CX span ends at a UTF-8 boundary")
-                .to_owned();
+            let raw = PropertyText::from_bytes(&text[start..cursor]);
             records.push(CxRecord::Unknown(raw));
             continue;
         }
@@ -320,6 +367,7 @@ pub fn parse_cx_extensions_progress(text: &str) -> CxParseProgress {
                 conformer_index,
                 &mut records,
                 &mut checkpoints,
+                atom_window.as_ref(),
             ) {
                 return CxParseProgress::from_parts(
                     records,
@@ -430,16 +478,22 @@ pub fn parse_cx_extensions_progress(text: &str) -> CxParseProgress {
             continue;
         }
         if dispatch == CxDispatch::RingBonds {
-            if let Err(error) =
-                parse_ring_bonds_progress(text, &mut cursor, &mut records, &mut checkpoints)
-            {
+            let mut warning = None;
+            if let Err(error) = parse_ring_bonds_progress(
+                text,
+                &mut cursor,
+                &mut records,
+                &mut checkpoints,
+                &mut warning,
+            ) {
                 return CxParseProgress::from_parts(
                     records,
                     checkpoints,
                     cursor,
                     false,
                     Some(error),
-                );
+                )
+                .with_source_warning(warning);
             }
             continue;
         }
@@ -654,87 +708,186 @@ pub fn parse_cx_extensions_progress(text: &str) -> CxParseProgress {
 }
 
 fn parse_coordinates_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     conformer: usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
+    atom_window: Option<&std::ops::Range<u32>>,
 ) -> Result<(), CxParseError> {
-    // RDKit source (verbatim; destination mutations are emitted as progress):
-    /*
-    template <typename Iterator>
-    bool parse_coords(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                      unsigned int startAtomIdx, unsigned int confIdx) {
-      if (first >= last || *first != '(') {
-        return false;
-      }
-
-      auto *conf = new Conformer(mol.getNumAtoms());
-      mol.addConformer(conf);
-      conf->setId(confIdx);
-      ++first;
-      unsigned int atIdx = 0;
-      bool is3D = false;
-      while (first <= last && *first != ')') {
-        RDGeom::Point3D pt;
-        std::string tkn = read_text_to(first, last, ";)");
-        if (VALID_ATIDX(atIdx)) {
-          if (!tkn.empty()) {
-            std::vector<std::string> tokens;
-            boost::split(tokens, tkn, boost::is_any_of(std::string(",")));
-            if (tokens.size() >= 1 && tokens[0].size()) {
-              pt.x = boost::lexical_cast<double>(tokens[0]);
-            }
-            if (tokens.size() >= 2 && tokens[1].size()) {
-              pt.y = boost::lexical_cast<double>(tokens[1]);
-            }
-            if (tokens.size() >= 3 && tokens[2].size()) {
-              pt.z = boost::lexical_cast<double>(tokens[2]);
-              is3D = true;
-            }
-          }
-
-          conf->setAtomPos(atIdx - startAtomIdx, pt);
-        }
-        ++atIdx;
-        if (first <= last && *first != ')') {
-          ++first;
-        }
-      }
-      // make sure that the conformer really is 3D!
-      if (is3D && hasNonZeroZCoords(*conf)) {
-        conf->set3D(true);
-      } else {
-        conf->set3D(false);
-      }
-      if (first >= last || *first != ')') {
-        return false;
-      }
-      ++first;
-      return true;
-    }
-
-    inline bool hasNonZeroZCoords(const Conformer &conf) {
-      constexpr double zeroTol = 1e-3;
-      for (auto p : conf.getPositions()) {
-        if (std::abs(p.z) > zeroTol) {
-          return true;
-        }
-      }
-      return false;
-    }
-        */
-    // RDKit❗✔️: a conformer begins before scanning; each completed coordinate
-    // row commits before its separator is consumed. The final dimensionality
-    // update precedes the closing-parenthesis check. The byte scan and row
-    // component visits are linear, with no prefix reparse or whole-input copy.
+    // BEGIN COMPLETE PINNED SF188
+    // RDKit✔️❌: bool parse_coords(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                   unsigned int startAtomIdx, unsigned int confIdx) {
+    // RDKit✔️❌:   if (first >= last || *first != '(') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   auto *conf = new Conformer(mol.getNumAtoms());
+    // RDKit✔️❌:   mol.addConformer(conf);
+    // RDKit✔️❌:   conf->setId(confIdx);
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   unsigned int atIdx = 0;
+    // RDKit✔️❌:   bool is3D = false;
+    // RDKit✔️❌:   while (first <= last && *first != ')') {
+    // RDKit✔️❌:     RDGeom::Point3D pt;
+    // RDKit✔️❌:     std::string tkn = read_text_to(first, last, ";)");
+    // RDKit✔️❌:     if (VALID_ATIDX(atIdx)) {
+    // RDKit✔️❌:       if (!tkn.empty()) {
+    // RDKit✔️❌:         std::vector<std::string> tokens;
+    // RDKit✔️❌:         boost::split(tokens, tkn, boost::is_any_of(std::string(",")));
+    // RDKit✔️❌:         if (tokens.size() >= 1 && tokens[0].size()) {
+    // RDKit✔️❌:           pt.x = boost::lexical_cast<double>(tokens[0]);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (tokens.size() >= 2 && tokens[1].size()) {
+    // RDKit✔️❌:           pt.y = boost::lexical_cast<double>(tokens[1]);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (tokens.size() >= 3 && tokens[2].size()) {
+    // RDKit✔️❌:           pt.z = boost::lexical_cast<double>(tokens[2]);
+    // RDKit✔️❌:           is3D = true;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:
+    // RDKit✔️❌:       conf->setAtomPos(atIdx - startAtomIdx, pt);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++atIdx;
+    // RDKit✔️❌:     if (first <= last && *first != ')') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   // make sure that the conformer really is 3D!
+    // RDKit✔️❌:   if (is3D && hasNonZeroZCoords(*conf)) {
+    // RDKit✔️❌:     conf->set3D(true);
+    // RDKit✔️❌:   } else {
+    // RDKit✔️❌:     conf->set3D(false);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (first >= last || *first != ')') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF188
+    // BEGIN COMPLETE Code/GraphMol/Conformer.h: inline bool hasNonZeroZCoords
+    // RDKit✔️✔️: inline bool hasNonZeroZCoords(const Conformer &conf) {
+    // RDKit✔️✔️:   constexpr double zeroTol = 1e-3;
+    // RDKit✔️✔️:   for (auto p : conf.getPositions()) {
+    // RDKit✔️✔️:     if (std::abs(p.z) > zeroTol) {
+    // RDKit✔️✔️:       return true;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return false;
+    // RDKit✔️✔️: }
+    // END COMPLETE Code/GraphMol/Conformer.h: inline bool hasNonZeroZCoords
+    // BEGIN COMPLETE Code/GraphMol/Conformer.h: Conformer(unsigned int numAtoms)
+    // RDKit✔️✔️:   Conformer(unsigned int numAtoms)
+    // RDKit✔️✔️:       : d_positions(numAtoms, RDGeom::Point3D(0.0, 0.0, 0.0)) {}
+    // END COMPLETE Code/GraphMol/Conformer.h: Conformer(unsigned int numAtoms)
+    // BEGIN COMPLETE Code/GraphMol/Conformer.h: inline void setAtomPos(unsigned int atomId
+    // RDKit✔️✔️:   inline void setAtomPos(unsigned int atomId, const RDGeom::Point3D &position) {
+    // RDKit✔️✔️:     if (atomId == std::numeric_limits<unsigned int>::max()) {
+    // RDKit✔️✔️:       throw ValueErrorException("atom index overflow");
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (atomId >= d_positions.size()) {
+    // RDKit✔️✔️:       d_positions.resize(atomId + 1, RDGeom::Point3D(0.0, 0.0, 0.0));
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     d_positions[atomId] = position;
+    // RDKit✔️✔️:   }
+    // END COMPLETE Code/GraphMol/Conformer.h: inline void setAtomPos(unsigned int atomId
+    // BEGIN COMPLETE Code/GraphMol/Conformer.h: inline void setId(unsigned int id)
+    // RDKit✔️✔️:   inline void setId(unsigned int id) { d_id = id; }
+    // END COMPLETE Code/GraphMol/Conformer.h: inline void setId(unsigned int id)
+    // BEGIN COMPLETE Code/GraphMol/Conformer.h: inline void set3D(bool v)
+    // RDKit✔️✔️:   inline void set3D(bool v) { df_is3D = v; }
+    // END COMPLETE Code/GraphMol/Conformer.h: inline void set3D(bool v)
+    // BEGIN COMPLETE Code/GraphMol/ROMol.cpp: unsigned int ROMol::addConformer
+    // RDKit✔️✔️: unsigned int ROMol::addConformer(Conformer *conf, bool assignId) {
+    // RDKit✔️✔️:   PRECONDITION(conf, "bad conformer");
+    // RDKit✔️✔️:   PRECONDITION(conf->getNumAtoms() == this->getNumAtoms(),
+    // RDKit✔️✔️:                "Number of atom mismatch");
+    // RDKit✔️✔️:   if (assignId) {
+    // RDKit✔️✔️:     int maxId = -1;
+    // RDKit✔️✔️:     for (auto cptr : d_confs) {
+    // RDKit✔️✔️:       maxId = std::max((int)(cptr->getId()), maxId);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     maxId++;
+    // RDKit✔️✔️:     conf->setId((unsigned int)maxId);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   conf->setOwningMol(this);
+    // RDKit✔️✔️:   CONFORMER_SPTR nConf(conf);
+    // RDKit✔️✔️:   d_confs.push_back(nConf);
+    // RDKit✔️✔️:   return conf->getId();
+    // RDKit✔️✔️: }
+    // END COMPLETE Code/GraphMol/ROMol.cpp: unsigned int ROMol::addConformer
+    // BEGIN COMPLETE Conformer default dimensional flag
+    // RDKit✔️✔️:   bool df_is3D{true};                // is this a 3D conformation?
+    // END COMPLETE Conformer default dimensional flag
+    // BEGIN COMPLETE REUSED SF181 read_text_to
+    // RDKit✔️✔️: std::string read_text_to(Iterator &first, Iterator last, std::string delims) {
+    // RDKit✔️✔️:   std::string res = "";
+    // RDKit✔️✔️:   Iterator start = first;
+    // RDKit✔️✔️:   // EFF: there are certainly faster ways to do this
+    // RDKit✔️✔️:   while (first <= last && delims.find_first_of(*first) == std::string::npos) {
+    // RDKit✔️✔️:     if (*first == '&' && std::distance(first, last) > 2 &&
+    // RDKit✔️✔️:         *(first + 1) == '#') {
+    // RDKit✔️✔️:       // escaped char
+    // RDKit✔️✔️:       if (start != first) {
+    // RDKit✔️✔️:         res += std::string(start, first);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       Iterator next = first + 2;
+    // RDKit✔️✔️:       while (next != last && *next >= '0' && *next <= '9') {
+    // RDKit✔️✔️:         ++next;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next == last || *next != ';') {
+    // RDKit✔️✔️:         throw RDKit::SmilesParseException(
+    // RDKit✔️✔️:             "failure parsing CXSMILES extensions: quoted block not terminated "
+    // RDKit✔️✔️:             "with ';'");
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next > first + 2) {
+    // RDKit✔️✔️:         std::string blk = std::string(first + 2, next);
+    // RDKit✔️✔️:         res += (char)(boost::lexical_cast<int>(blk));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       first = next + 1;
+    // RDKit✔️✔️:       start = first;
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       ++first;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (start != first) {
+    // RDKit✔️✔️:     res += std::string(start, first);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END COMPLETE REUSED SF181 read_text_to
+    // BEGIN COMPLETE Point3D zero fields/default constructor
+    // RDKit✔️✔️:   double x{0.0};
+    // RDKit✔️✔️:   double y{0.0};
+    // RDKit✔️✔️:   double z{0.0};
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   constexpr Point3D() {}
+    // RDKit✔️✔️:   constexpr Point3D(double xv, double yv, double zv) : x(xv), y(yv), z(zv) {}
+    // END COMPLETE Point3D zero fields/default constructor
+    // BEGIN COMPLETE VALID_ATIDX unsigned32 predicate
+    // RDKit✔️✔️: #define VALID_ATIDX(_atidx_) \
+    // RDKit✔️✔️:   ((_atidx_) >= startAtomIdx && (_atidx_) < startAtomIdx + mol.getNumAtoms())
+    // RDKit✔️✔️:
+    // END COMPLETE VALID_ATIDX unsigned32 predicate
+    // Behavior in the explicit source window: atIdx is unsigned32 and independent of the usize
+    // transport/checkpoint ordinal. Scan entities before VALID_ATIDX; convert
+    // and assign only valid rows. A blank row assigns the source zero Point3D.
+    // Constructor dimensionality stays true on component/entity failure; the
+    // final flag is set before a missing closing parenthesis reports failure.
+    // ROMol::addConformer is compared for this call's assignId=false only.
+    // The helper's independent assignId=true policy is outside this comparison.
+    // Cost: checkpoints and raw slots retain O(input) data, unlike the source
+    // graph-sized conformer. The final-z map retains last writes by native row,
+    // with hash allocation/lookup overhead. Record this explicit transport cost.
     let start = *cursor;
-    if *cursor >= text.len() || text.as_bytes()[*cursor] != b'(' {
+    if *cursor >= text.len() || text[*cursor] != b'(' {
         return Err(CxParseError::new(*cursor, "invalid CX coordinate record"));
     }
     let record_index = records.len();
     records.push(CxRecord::Coordinates(CxCoordinates {
-        conformer,
+        conformer: (conformer as u32) as usize,
         values: Vec::new(),
         // RDKit Conformer starts with df_is3D=true; parse_coords only resets
         // it after the row loop, so a component conversion failure keeps it.
@@ -748,14 +901,29 @@ fn parse_coordinates_progress(
     });
     *cursor += 1;
     let mut has_z_component = false;
-    while *cursor < text.len() && text.as_bytes()[*cursor] != b')' {
+    let mut atom_index = 0_u32;
+    let mut final_z = std::collections::HashMap::<u32, f64>::new();
+    while *cursor < text.len() && text[*cursor] != b')' {
         let field_start = *cursor;
-        while *cursor < text.len() && !matches!(text.as_bytes()[*cursor], b';' | b')') {
-            *cursor += 1;
-        }
-        let field = &text[field_start..*cursor];
-        let (value, has_z) = parse_coordinate_row(field, field_start)?;
+        // RDKit✔️✔️: std::string tkn = read_text_to(first, last, ";)");
+        // Character entities are decoded by the same source scanner even
+        // outside VALID_ATIDX; only the subsequent double conversion is gated.
+        let field = read_text_to(text, cursor, b";)")?;
+        let (value, has_z) = if atom_window.is_none_or(|window| window.contains(&atom_index)) {
+            parse_coordinate_row(&field, field_start)?
+        } else {
+            // RDKit✔️✔️: if (VALID_ATIDX(atIdx)) {
+            // RDKit✔️✔️:   if (!tkn.empty()) {
+            // Source skips numeric conversion for coordinates of other
+            // templates while retaining a consumed slot in global order.
+            (None, false)
+        };
         has_z_component |= has_z;
+        if atom_window.is_none_or(|window| window.contains(&atom_index)) {
+            // Empty valid rows overwrite any prior write after native wrapping.
+            final_z.insert(atom_index, value.map_or(0.0, |point| point[2]));
+        }
+        atom_index = atom_index.wrapping_add(1);
         let item_index = match &mut records[record_index] {
             CxRecord::Coordinates(coordinates) => {
                 let item_index = coordinates.values.len();
@@ -770,19 +938,14 @@ fn parse_coordinates_progress(
             cursor: *cursor,
             phase: CxProgressPhase::Item,
         });
-        if *cursor < text.len() && text.as_bytes()[*cursor] == b';' {
+        if *cursor < text.len() && text[*cursor] == b';' {
             *cursor += 1;
         }
     }
     if let CxRecord::Coordinates(coordinates) = &mut records[record_index] {
-        coordinates.is_3d = has_z_component
-            && coordinates
-                .values
-                .iter()
-                .flatten()
-                .any(|point| point[2].abs() > 1e-3);
+        coordinates.is_3d = has_z_component && final_z.values().any(|z| z.abs() > 1e-3);
     }
-    if *cursor >= text.len() || text.as_bytes()[*cursor] != b')' {
+    if *cursor >= text.len() || text[*cursor] != b')' {
         return Err(CxParseError::new(
             start,
             "unterminated CX coordinate record",
@@ -799,13 +962,361 @@ fn parse_coordinates_progress(
 }
 
 fn parse_coordinate_row(
-    field: &str,
+    field: &PropertyText,
     offset: usize,
 ) -> Result<(Option<[f64; 3]>, bool), CxParseError> {
+    // BEGIN COMPLETE PINNED SF188
+    // RDKit✔️❌: bool parse_coords(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                   unsigned int startAtomIdx, unsigned int confIdx) {
+    // RDKit✔️❌:   if (first >= last || *first != '(') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   auto *conf = new Conformer(mol.getNumAtoms());
+    // RDKit✔️❌:   mol.addConformer(conf);
+    // RDKit✔️❌:   conf->setId(confIdx);
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   unsigned int atIdx = 0;
+    // RDKit✔️❌:   bool is3D = false;
+    // RDKit✔️❌:   while (first <= last && *first != ')') {
+    // RDKit✔️❌:     RDGeom::Point3D pt;
+    // RDKit✔️❌:     std::string tkn = read_text_to(first, last, ";)");
+    // RDKit✔️❌:     if (VALID_ATIDX(atIdx)) {
+    // RDKit✔️❌:       if (!tkn.empty()) {
+    // RDKit✔️❌:         std::vector<std::string> tokens;
+    // RDKit✔️❌:         boost::split(tokens, tkn, boost::is_any_of(std::string(",")));
+    // RDKit✔️❌:         if (tokens.size() >= 1 && tokens[0].size()) {
+    // RDKit✔️❌:           pt.x = boost::lexical_cast<double>(tokens[0]);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (tokens.size() >= 2 && tokens[1].size()) {
+    // RDKit✔️❌:           pt.y = boost::lexical_cast<double>(tokens[1]);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (tokens.size() >= 3 && tokens[2].size()) {
+    // RDKit✔️❌:           pt.z = boost::lexical_cast<double>(tokens[2]);
+    // RDKit✔️❌:           is3D = true;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:
+    // RDKit✔️❌:       conf->setAtomPos(atIdx - startAtomIdx, pt);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++atIdx;
+    // RDKit✔️❌:     if (first <= last && *first != ')') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   // make sure that the conformer really is 3D!
+    // RDKit✔️❌:   if (is3D && hasNonZeroZCoords(*conf)) {
+    // RDKit✔️❌:     conf->set3D(true);
+    // RDKit✔️❌:   } else {
+    // RDKit✔️❌:     conf->set3D(false);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (first >= last || *first != ')') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF188
+    // BEGIN COMPLETE BOOST 1.81 split.hpp inline SequenceSequenceT& split(
+    // Boost✔️🔝:         inline SequenceSequenceT& split(
+    // Boost✔️🔝:             SequenceSequenceT& Result,
+    // Boost✔️🔝: #if !defined(BOOST_NO_CXX11_RVALUE_REFERENCES)
+    // Boost✔️🔝:             RangeT&& Input,
+    // Boost✔️🔝: #else
+    // Boost✔️🔝:             RangeT& Input,
+    // Boost✔️🔝: #endif
+    // Boost✔️🔝:             PredicateT Pred,
+    // Boost✔️🔝:             token_compress_mode_type eCompress=token_compress_off )
+    // Boost✔️🔝:         {
+    // Boost✔️🔝:             return ::boost::algorithm::iter_split(
+    // Boost✔️🔝:                 Result,
+    // Boost✔️🔝:                 Input,
+    // Boost✔️🔝:                 ::boost::algorithm::token_finder( Pred, eCompress ) );
+    // Boost✔️🔝:         }
+    // END COMPLETE BOOST 1.81 split.hpp inline SequenceSequenceT& split(
+    // BEGIN COMPLETE BOOST 1.81 iter_find.hpp iter_split(
+    // Boost✔️🔝:         iter_split(
+    // Boost✔️🔝:             SequenceSequenceT& Result,
+    // Boost✔️🔝: #if !defined(BOOST_NO_CXX11_RVALUE_REFERENCES)
+    // Boost✔️🔝:             RangeT&& Input,
+    // Boost✔️🔝: #else
+    // Boost✔️🔝:             RangeT& Input,
+    // Boost✔️🔝: #endif
+    // Boost✔️🔝:             FinderT Finder )
+    // Boost✔️🔝:         {
+    // Boost✔️🔝:             BOOST_CONCEPT_ASSERT((
+    // Boost✔️🔝:                 FinderConcept<FinderT,
+    // Boost✔️🔝:                 BOOST_STRING_TYPENAME range_iterator<RangeT>::type>
+    // Boost✔️🔝:                 ));
+    // Boost✔️🔝:
+    // Boost✔️🔝:             iterator_range<BOOST_STRING_TYPENAME range_iterator<RangeT>::type> lit_input(::boost::as_literal(Input));
+    // Boost✔️🔝:
+    // Boost✔️🔝:             typedef BOOST_STRING_TYPENAME
+    // Boost✔️🔝:                 range_iterator<RangeT>::type input_iterator_type;
+    // Boost✔️🔝:             typedef split_iterator<input_iterator_type> find_iterator_type;
+    // Boost✔️🔝:             typedef detail::copy_iterator_rangeF<
+    // Boost✔️🔝:                 BOOST_STRING_TYPENAME
+    // Boost✔️🔝:                     range_value<SequenceSequenceT>::type,
+    // Boost✔️🔝:                 input_iterator_type> copy_range_type;
+    // Boost✔️🔝:
+    // Boost✔️🔝:             input_iterator_type InputEnd=::boost::end(lit_input);
+    // Boost✔️🔝:
+    // Boost✔️🔝:             typedef transform_iterator<copy_range_type, find_iterator_type>
+    // Boost✔️🔝:                 transform_iter_type;
+    // Boost✔️🔝:
+    // Boost✔️🔝:             transform_iter_type itBegin=
+    // Boost✔️🔝:                 ::boost::make_transform_iterator(
+    // Boost✔️🔝:                     find_iterator_type( ::boost::begin(lit_input), InputEnd, Finder ),
+    // Boost✔️🔝:                     copy_range_type() );
+    // Boost✔️🔝:
+    // Boost✔️🔝:             transform_iter_type itEnd=
+    // Boost✔️🔝:                 ::boost::make_transform_iterator(
+    // Boost✔️🔝:                     find_iterator_type(),
+    // Boost✔️🔝:                     copy_range_type() );
+    // Boost✔️🔝:
+    // Boost✔️🔝:             SequenceSequenceT Tmp(itBegin, itEnd);
+    // Boost✔️🔝:
+    // Boost✔️🔝:             Result.swap(Tmp);
+    // Boost✔️🔝:             return Result;
+    // Boost✔️🔝:         }
+    // END COMPLETE BOOST 1.81 iter_find.hpp iter_split(
+    // BEGIN COMPLETE BOOST 1.81 detail/finder.hpp struct token_finderF
+    // Boost✔️✔️:             struct token_finderF
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 // Construction
+    // Boost✔️✔️:                 token_finderF(
+    // Boost✔️✔️:                     PredicateT Pred,
+    // Boost✔️✔️:                     token_compress_mode_type eCompress=token_compress_off ) :
+    // Boost✔️✔️:                         m_Pred(Pred), m_eCompress(eCompress) {}
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // Operation
+    // Boost✔️✔️:                 template< typename ForwardIteratorT >
+    // Boost✔️✔️:                 iterator_range<ForwardIteratorT>
+    // Boost✔️✔️:                 operator()(
+    // Boost✔️✔️:                     ForwardIteratorT Begin,
+    // Boost✔️✔️:                     ForwardIteratorT End ) const
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     typedef iterator_range<ForwardIteratorT> result_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                     ForwardIteratorT It=std::find_if( Begin, End, m_Pred );
+    // Boost✔️✔️:
+    // Boost✔️✔️:                     if( It==End )
+    // Boost✔️✔️:                     {
+    // Boost✔️✔️:                         return result_type( End, End );
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                     else
+    // Boost✔️✔️:                     {
+    // Boost✔️✔️:                         ForwardIteratorT It2=It;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                         if( m_eCompress==token_compress_on )
+    // Boost✔️✔️:                         {
+    // Boost✔️✔️:                             // Find first non-matching character
+    // Boost✔️✔️:                             while( It2!=End && m_Pred(*It2) ) ++It2;
+    // Boost✔️✔️:                         }
+    // Boost✔️✔️:                         else
+    // Boost✔️✔️:                         {
+    // Boost✔️✔️:                             // Advance by one position
+    // Boost✔️✔️:                             ++It2;
+    // Boost✔️✔️:                         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                         return result_type( It, It2 );
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:             private:
+    // Boost✔️✔️:                 PredicateT m_Pred;
+    // Boost✔️✔️:                 token_compress_mode_type m_eCompress;
+    // Boost✔️✔️:             }
+    // END COMPLETE BOOST 1.81 detail/finder.hpp
+    // BEGIN COMPLETE BOOST 1.81 find_iterator.hpp class split_iterator :
+    // Boost✔️✔️:         class split_iterator :
+    // Boost✔️✔️:             public iterator_facade<
+    // Boost✔️✔️:                 split_iterator<IteratorT>,
+    // Boost✔️✔️:                 const iterator_range<IteratorT>,
+    // Boost✔️✔️:                 forward_traversal_tag >,
+    // Boost✔️✔️:             private detail::find_iterator_base<IteratorT>
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:         private:
+    // Boost✔️✔️:             // facade support
+    // Boost✔️✔️:             friend class ::boost::iterator_core_access;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         private:
+    // Boost✔️✔️:         // typedefs
+    // Boost✔️✔️:
+    // Boost✔️✔️:             typedef detail::find_iterator_base<IteratorT> base_type;
+    // Boost✔️✔️:             typedef BOOST_STRING_TYPENAME
+    // Boost✔️✔️:                 base_type::input_iterator_type input_iterator_type;
+    // Boost✔️✔️:             typedef BOOST_STRING_TYPENAME
+    // Boost✔️✔️:                 base_type::match_type match_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         public:
+    // Boost✔️✔️:             //! Default constructor
+    // Boost✔️✔️:             /*!
+    // Boost✔️✔️:                 Construct null iterator. All null iterators are equal.
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 \post eof()==true
+    // Boost✔️✔️:             */
+    // Boost✔️✔️:             split_iterator() :
+    // Boost✔️✔️:                 m_Next(),
+    // Boost✔️✔️:                 m_End(),
+    // Boost✔️✔️:                 m_bEof(true)
+    // Boost✔️✔️:             {}
+    // Boost✔️✔️:
+    // Boost✔️✔️:             //! Copy constructor
+    // Boost✔️✔️:             /*!
+    // Boost✔️✔️:                 Construct a copy of the split_iterator
+    // Boost✔️✔️:             */
+    // Boost✔️✔️:             split_iterator( const split_iterator& Other ) :
+    // Boost✔️✔️:                 base_type(Other),
+    // Boost✔️✔️:                 m_Match(Other.m_Match),
+    // Boost✔️✔️:                 m_Next(Other.m_Next),
+    // Boost✔️✔️:                 m_End(Other.m_End),
+    // Boost✔️✔️:                 m_bEof(Other.m_bEof)
+    // Boost✔️✔️:             {}
+    // Boost✔️✔️:
+    // Boost✔️✔️:             //! Assignment operator
+    // Boost✔️✔️:             /*!
+    // Boost✔️✔️:                 Assigns a copy of the split_iterator
+    // Boost✔️✔️:             */
+    // Boost✔️✔️:             BOOST_DEFAULTED_FUNCTION(split_iterator& operator=( const split_iterator& Other ), {
+    // Boost✔️✔️:                 if (this == &Other) return *this;
+    // Boost✔️✔️:                 this->base_type::operator=(Other);
+    // Boost✔️✔️:                 m_Match = Other.m_Match;
+    // Boost✔️✔️:                 m_Next = Other.m_Next;
+    // Boost✔️✔️:                 m_End = Other.m_End;
+    // Boost✔️✔️:                 m_bEof = Other.m_bEof;
+    // Boost✔️✔️:                 return *this;
+    // Boost✔️✔️:             })
+    // Boost✔️✔️:
+    // Boost✔️✔️:             //! Constructor
+    // Boost✔️✔️:             /*!
+    // Boost✔️✔️:                 Construct new split_iterator for a given finder
+    // Boost✔️✔️:                 and a range.
+    // Boost✔️✔️:             */
+    // Boost✔️✔️:             template<typename FinderT>
+    // Boost✔️✔️:             split_iterator(
+    // Boost✔️✔️:                     IteratorT Begin,
+    // Boost✔️✔️:                     IteratorT End,
+    // Boost✔️✔️:                     FinderT Finder ) :
+    // Boost✔️✔️:                 detail::find_iterator_base<IteratorT>(Finder,0),
+    // Boost✔️✔️:                 m_Match(Begin,Begin),
+    // Boost✔️✔️:                 m_Next(Begin),
+    // Boost✔️✔️:                 m_End(End),
+    // Boost✔️✔️:                 m_bEof(false)
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 // force the correct behavior for empty sequences and yield at least one token
+    // Boost✔️✔️:                 if(Begin!=End)
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     increment();
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             //! Constructor
+    // Boost✔️✔️:             /*!
+    // Boost✔️✔️:                 Construct new split_iterator for a given finder
+    // Boost✔️✔️:                 and a collection.
+    // Boost✔️✔️:             */
+    // Boost✔️✔️:             template<typename FinderT, typename RangeT>
+    // Boost✔️✔️:             split_iterator(
+    // Boost✔️✔️:                     RangeT& Col,
+    // Boost✔️✔️:                     FinderT Finder ) :
+    // Boost✔️✔️:                 detail::find_iterator_base<IteratorT>(Finder,0),
+    // Boost✔️✔️:                 m_bEof(false)
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 iterator_range<BOOST_STRING_TYPENAME range_iterator<RangeT>::type> lit_col(::boost::as_literal(Col));
+    // Boost✔️✔️:                 m_Match=make_iterator_range(::boost::begin(lit_col), ::boost::begin(lit_col));
+    // Boost✔️✔️:                 m_Next=::boost::begin(lit_col);
+    // Boost✔️✔️:                 m_End=::boost::end(lit_col);
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // force the correct behavior for empty sequences and yield at least one token
+    // Boost✔️✔️:                 if(m_Next!=m_End)
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     increment();
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:
+    // Boost✔️✔️:         private:
+    // Boost✔️✔️:         // iterator operations
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // dereference
+    // Boost✔️✔️:             const match_type& dereference() const
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 return m_Match;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // increment
+    // Boost✔️✔️:             void increment()
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 match_type FindMatch=this->do_find( m_Next, m_End );
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 if(FindMatch.begin()==m_End && FindMatch.end()==m_End)
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     if(m_Match.end()==m_End)
+    // Boost✔️✔️:                     {
+    // Boost✔️✔️:                         // Mark iterator as eof
+    // Boost✔️✔️:                         m_bEof=true;
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 m_Match=match_type( m_Next, FindMatch.begin() );
+    // Boost✔️✔️:                 m_Next=FindMatch.end();
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // comparison
+    // Boost✔️✔️:             bool equal( const split_iterator& Other ) const
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 bool bEof=eof();
+    // Boost✔️✔️:                 bool bOtherEof=Other.eof();
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return bEof || bOtherEof ? bEof==bOtherEof :
+    // Boost✔️✔️:                     (
+    // Boost✔️✔️:                         m_Match==Other.m_Match &&
+    // Boost✔️✔️:                         m_Next==Other.m_Next &&
+    // Boost✔️✔️:                         m_End==Other.m_End
+    // Boost✔️✔️:                     );
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         public:
+    // Boost✔️✔️:         // operations
+    // Boost✔️✔️:
+    // Boost✔️✔️:             //! Eof check
+    // Boost✔️✔️:             /*!
+    // Boost✔️✔️:                 Check the eof condition. Eof condition means that
+    // Boost✔️✔️:                 there is nothing more to be searched i.e. find_iterator
+    // Boost✔️✔️:                 is after the last match.
+    // Boost✔️✔️:             */
+    // Boost✔️✔️:             bool eof() const
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 return this->is_null() || m_bEof;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         private:
+    // Boost✔️✔️:         // Attributes
+    // Boost✔️✔️:             match_type m_Match;
+    // Boost✔️✔️:             input_iterator_type m_Next;
+    // Boost✔️✔️:             input_iterator_type m_End;
+    // Boost✔️✔️:             bool m_bEof;
+    // Boost✔️✔️:         }
+    // END COMPLETE BOOST 1.81 find_iterator.hpp
+    // BEGIN COMPLETE BOOST 1.81 detail/classification.hpp bool operator()( Char2T Ch ) const
+    // Boost✔️✔️:                 bool operator()( Char2T Ch ) const
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     const set_value_type* Storage=
+    // Boost✔️✔️:                         (use_fixed_storage(m_Size))
+    // Boost✔️✔️:                         ? &m_Storage.m_fixSet[0]
+    // Boost✔️✔️:                         : m_Storage.m_dynSet;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                     return ::std::binary_search(Storage, Storage+m_Size, Ch);
+    // Boost✔️✔️:                 }
+    // END COMPLETE BOOST 1.81 detail/classification.hpp
+    // Boost split keeps empty tokens (token_compress_off); byte split visits
+    // the same comma-delimited first three components in x/y/z order. Extra
+    // tokens have no chemical effect. Borrowed slices avoid Boost's token
+    // vector and per-token string copies while preserving every conversion.
     if field.is_empty() {
         return Ok((None, false));
     }
-    let mut parts = field.split(',');
+    let mut parts = field.as_bytes().split(|&byte| byte == b',');
     let x = parse_coordinate_component(parts.next(), offset)?;
     let y = parse_coordinate_component(parts.next(), offset)?;
     let z = parse_coordinate_component(parts.next(), offset)?;
@@ -821,202 +1332,184 @@ fn parse_coordinate_row(
 }
 
 fn parse_coordinate_component(
-    value: Option<&str>,
+    value: Option<&[u8]>,
     offset: usize,
 ) -> Result<Option<f64>, CxParseError> {
-    // RDKit351f8f378f8ad6bbd517980c38896e66bf907af8 CXSmilesOps.cpp:
-    // RDKit✔️✔️:          pt.x = boost::lexical_cast<double>(tokens[0]);
-    // Boost lexical_cast pinned by dev/double_formatting_contract.md at
-    // 02e5821ab32c45fad719829e9644e5d681c9ba0b (these helpers also match 1.85).
-    // Boost✔️✔️: reproduce signed inf/nan keywords before numeric conversion;
-    // stream failures, including decimal overflow, remain syntax errors.
-    // Performance: borrowed keyword comparisons and one decimal conversion,
-    // O(n) time with no added string allocation or molecule-state cloning.
-    /*
-        template <class CharT>
-        bool lc_iequal(const CharT* val, const CharT* lcase, const CharT* ucase, unsigned int len) noexcept {
-            for( unsigned int i=0; i < len; ++i ) {
-                if ( val[i] != lcase[i] && val[i] != ucase[i] ) return false;
-            }
-
-            return true;
-        }
-    */
-    /*
-        template <class CharT, class T>
-        inline bool parse_inf_nan_impl(const CharT* begin, const CharT* end, T& value
-            , const CharT* lc_NAN, const CharT* lc_nan
-            , const CharT* lc_INFINITY, const CharT* lc_infinity
-            , const CharT opening_brace, const CharT closing_brace) noexcept
-        {
-            if (begin == end) return false;
-            const CharT minus = lcast_char_constants<CharT>::minus;
-            const CharT plus = lcast_char_constants<CharT>::plus;
-            const int inifinity_size = 8; // == sizeof("infinity") - 1
-
-            /* Parsing +/- */
-            bool const has_minus = (*begin == minus);
-            if (has_minus || *begin == plus) {
-                ++ begin;
-            }
-
-            if (end - begin < 3) return false;
-            if (lc_iequal(begin, lc_nan, lc_NAN, 3)) {
-                begin += 3;
-                if (end != begin) {
-                    /* It is 'nan(...)' or some bad input*/
-
-                    if (end - begin < 2) return false; // bad input
-                    -- end;
-                    if (*begin != opening_brace || *end != closing_brace) return false; // bad input
-                }
-
-                if( !has_minus ) value = std::numeric_limits<T>::quiet_NaN();
-                else value = boost::core::copysign(std::numeric_limits<T>::quiet_NaN(), static_cast<T>(-1));
-                return true;
-            } else if (
-                ( /* 'INF' or 'inf' */
-                  end - begin == 3      // 3 == sizeof('inf') - 1
-                  && lc_iequal(begin, lc_infinity, lc_INFINITY, 3)
-                )
-                ||
-                ( /* 'INFINITY' or 'infinity' */
-                  end - begin == inifinity_size
-                  && lc_iequal(begin, lc_infinity, lc_INFINITY, inifinity_size)
-                )
-             )
-            {
-                if( !has_minus ) value = std::numeric_limits<T>::infinity();
-                else value = -std::numeric_limits<T>::infinity();
-                return true;
-            }
-
-            return false;
-        }
-    */
-    /*
-        template <class T>
-        bool float_types_converter_internal(T& output) {
-            if (parse_inf_nan(start, finish, output)) return true;
-            bool const return_value = shr_using_base_class(output);
-
-            /* Some compilers and libraries successfully
-             * parse 'inf', 'INFINITY', '1.0E', '1.0E-'...
-             * We are trying to provide a unified behaviour,
-             * so we just forbid such conversions (as some
-             * of the most popular compilers/libraries do)
-             * */
-            CharT const minus = lcast_char_constants<CharT>::minus;
-            CharT const plus = lcast_char_constants<CharT>::plus;
-            CharT const capital_e = lcast_char_constants<CharT>::capital_e;
-            CharT const lowercase_e = lcast_char_constants<CharT>::lowercase_e;
-            if ( return_value &&
-                 (
-                    Traits::eq(*(finish-1), lowercase_e)                   // 1.0e
-                    || Traits::eq(*(finish-1), capital_e)                  // 1.0E
-                    || Traits::eq(*(finish-1), minus)                      // 1.0e- or 1.0E-
-                    || Traits::eq(*(finish-1), plus)                       // 1.0e+ or 1.0E+
-                 )
-            ) return false;
-
-            return return_value;
-        }
-    */
-    /*
-            template<typename InputStreamable>
-            bool shr_using_base_class(InputStreamable& output)
-            {
-                static_assert(
-                    !boost::is_pointer<InputStreamable>::value,
-                    "boost::lexical_cast can not convert to pointers"
-                );
-
-    #if defined(BOOST_NO_STRINGSTREAM) || defined(BOOST_NO_STD_LOCALE)
-                static_assert(boost::is_same<char, CharT>::value,
-                    "boost::lexical_cast can not convert, because your STL library does not "
-                    "support such conversions. Try updating it."
-                );
-    #endif
-
-    #if defined(BOOST_NO_STRINGSTREAM)
-                std::istrstream stream(start, static_cast<std::istrstream::streamsize>(finish - start));
-    #else
-                typedef detail::lcast::buffer_t<CharT, Traits> buffer_t;
-                buffer_t buf;
-                // Usually `istream` and `basic_istream` do not modify
-                // content of buffer; `buffer_t` assures that this is true
-                buf.setbuf(const_cast<CharT*>(start), static_cast<typename buffer_t::streamsize>(finish - start));
-    #if defined(BOOST_NO_STD_LOCALE)
-                std::istream stream(&buf);
-    #else
-                std::basic_istream<CharT, Traits> stream(&buf);
-    #endif // BOOST_NO_STD_LOCALE
-    #endif // BOOST_NO_STRINGSTREAM
-
-    #ifndef BOOST_NO_EXCEPTIONS
-                stream.exceptions(std::ios::badbit);
-                try {
-    #endif
-                stream.unsetf(std::ios::skipws);
-                lcast_set_precision(stream, static_cast<InputStreamable*>(0));
-
-                return (stream >> output)
-                    && (stream.get() == Traits::eof());
-
-    #ifndef BOOST_NO_EXCEPTIONS
-                } catch (const ::std::ios_base::failure& /*f*/) {
-                    return false;
-                }
-    #endif
-            }
-        */
+    // RDKit✔️❌: if (tokens.size() >= 1 && tokens[0].size()) {
+    // RDKit✔️❌:   pt.x = boost::lexical_cast<double>(tokens[0]);
+    // RDKit✔️❌: }
+    // The same source-defined absent/empty check applies to x, y and z.
+    // Reuse the sole foundational CORE counted-byte numeric owner, as in
+    // the previously installed acyclic CX-to-existing-CORE source closure.
+    // Keep raw NaN payload bytes, actual source rounding state, range errors
+    // and the existing CX field offset/category. No second float parser.
+    // The exact owner uses bounded rational comparisons and extra heap limbs
+    // instead of GNU extraction: retain that known constant-factor cost.
     let Some(value) = value else {
         return Ok(None);
     };
     if value.is_empty() {
         return Ok(None);
     }
-    let (negative, unsigned) = match value.as_bytes()[0] {
-        b'-' => (true, &value[1..]),
-        b'+' => (false, &value[1..]),
-        _ => (false, value),
-    };
-    if unsigned.eq_ignore_ascii_case("inf") || unsigned.eq_ignore_ascii_case("infinity") {
-        return Ok(Some(if negative {
-            f64::NEG_INFINITY
-        } else {
-            f64::INFINITY
-        }));
-    }
-    let keyword = unsigned.as_bytes();
-    if keyword
-        .get(..3)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"nan"))
-    {
-        let payload = &keyword[3..];
-        if payload.is_empty()
-            || (payload.len() >= 2
-                && payload.first() == Some(&b'(')
-                && payload.last() == Some(&b')'))
-        {
-            return Ok(Some(f64::NAN.copysign(if negative { -1.0 } else { 1.0 })));
-        }
-    }
-    // Boost's stream requires the entire non-whitespace token. Decimal overflow
-    // sets failbit; Rust instead returns infinity, which must be rejected here.
-    // Explicit infinity/nan already returned through the source keyword branch.
-    match value.parse::<f64>() {
-        Ok(parsed) if parsed.is_finite() => Ok(Some(parsed)),
-        _ => Err(CxParseError::new(offset, "invalid CX coordinate")),
-    }
+    cosmolkit_core::source_lexical_double(value)
+        .map(Some)
+        .map_err(|_| CxParseError::new(offset, "invalid CX coordinate"))
 }
 
 fn parse_labels_or_values_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
 ) -> Result<(), CxParseError> {
+    // BEGIN COMPLETE PINNED SF187
+    // RDKit✔️❌: bool parse_atom_labels(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                        unsigned int startAtomIdx) {
+    // RDKit✔️❌:   if (first >= last || *first != '$') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   unsigned int atIdx = 0;
+    // RDKit✔️❌:   while (first <= last && *first != '$') {
+    // RDKit✔️❌:     std::string tkn = read_text_to(first, last, ";$");
+    // RDKit✔️❌:     if (!tkn.empty() && VALID_ATIDX(atIdx)) {
+    // RDKit✔️❌:       mol.getAtomWithIdx(atIdx - startAtomIdx)
+    // RDKit✔️❌:           ->setProp(RDKit::common_properties::atomLabel, tkn);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++atIdx;
+    // RDKit✔️❌:     if (first <= last && *first != '$') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (first >= last || *first != '$') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF187
+    // Complete reached sole read_text_to byte scanner
+    // RDKit✔️✔️: std::string read_text_to(Iterator &first, Iterator last, std::string delims) {
+    // RDKit✔️✔️:   std::string res = "";
+    // RDKit✔️✔️:   Iterator start = first;
+    // RDKit✔️✔️:   // EFF: there are certainly faster ways to do this
+    // RDKit✔️✔️:   while (first <= last && delims.find_first_of(*first) == std::string::npos) {
+    // RDKit✔️✔️:     if (*first == '&' && std::distance(first, last) > 2 &&
+    // RDKit✔️✔️:         *(first + 1) == '#') {
+    // RDKit✔️✔️:       // escaped char
+    // RDKit✔️✔️:       if (start != first) {
+    // RDKit✔️✔️:         res += std::string(start, first);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       Iterator next = first + 2;
+    // RDKit✔️✔️:       while (next != last && *next >= '0' && *next <= '9') {
+    // RDKit✔️✔️:         ++next;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next == last || *next != ';') {
+    // RDKit✔️✔️:         throw RDKit::SmilesParseException(
+    // RDKit✔️✔️:             "failure parsing CXSMILES extensions: quoted block not terminated "
+    // RDKit✔️✔️:             "with ';'");
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next > first + 2) {
+    // RDKit✔️✔️:         std::string blk = std::string(first + 2, next);
+    // RDKit✔️✔️:         res += (char)(boost::lexical_cast<int>(blk));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       first = next + 1;
+    // RDKit✔️✔️:       start = first;
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       ++first;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (start != first) {
+    // RDKit✔️✔️:     res += std::string(start, first);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // Label-only SF187 comparison: opening '$' consumed, one raw/decoded slot
+    // per atom ordinal, empty fields skip source writes, nonempty fields emit
+    // item checkpoints at the delimiter cursor. Closing '$' consumed before
+    // completion; malformed later fields/termination retain earlier writes.
+    // The graph owner applies VALID_ATIDX and label-specific start subtraction;
+    // this syntax carrier keeps global slot order and raw payload unchanged.
+    // Both branches now have independent full source comparisons. Performance
+    // remains worse: retaining out-of-window slots/checkpoints costs O(input)
+    // storage where the source releases those temporary token bytes.
+    // BEGIN COMPLETE PINNED SF185
+    // RDKit✔️❌: bool parse_atom_values(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                        unsigned int startAtomIdx) {
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   unsigned int atIdx = 0;
+    // RDKit✔️❌:   while (first <= last && *first != '$') {
+    // RDKit✔️❌:     std::string tkn = read_text_to(first, last, ";$");
+    // RDKit✔️❌:     if (tkn != "" && VALID_ATIDX(atIdx)) {
+    // RDKit✔️❌:       mol.getAtomWithIdx(atIdx)->setProp(RDKit::common_properties::molFileValue,
+    // RDKit✔️❌:                                          tkn);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++atIdx;
+    // RDKit✔️❌:     if (first <= last && *first != '$') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (first >= last || *first != '$') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF185
+    // Complete reached counted-byte read_text_to, sole scanner owner in scan.rs
+    // RDKit✔️✔️: std::string read_text_to(Iterator &first, Iterator last, std::string delims) {
+    // RDKit✔️✔️:   std::string res = "";
+    // RDKit✔️✔️:   Iterator start = first;
+    // RDKit✔️✔️:   // EFF: there are certainly faster ways to do this
+    // RDKit✔️✔️:   while (first <= last && delims.find_first_of(*first) == std::string::npos) {
+    // RDKit✔️✔️:     if (*first == '&' && std::distance(first, last) > 2 &&
+    // RDKit✔️✔️:         *(first + 1) == '#') {
+    // RDKit✔️✔️:       // escaped char
+    // RDKit✔️✔️:       if (start != first) {
+    // RDKit✔️✔️:         res += std::string(start, first);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       Iterator next = first + 2;
+    // RDKit✔️✔️:       while (next != last && *next >= '0' && *next <= '9') {
+    // RDKit✔️✔️:         ++next;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next == last || *next != ';') {
+    // RDKit✔️✔️:         throw RDKit::SmilesParseException(
+    // RDKit✔️✔️:             "failure parsing CXSMILES extensions: quoted block not terminated "
+    // RDKit✔️✔️:             "with ';'");
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next > first + 2) {
+    // RDKit✔️✔️:         std::string blk = std::string(first + 2, next);
+    // RDKit✔️✔️:         res += (char)(boost::lexical_cast<int>(blk));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       first = next + 1;
+    // RDKit✔️✔️:       start = first;
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       ++first;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (start != first) {
+    // RDKit✔️✔️:     res += std::string(start, first);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // Values-only comparison SF185: the enclosing source dispatcher advances
+    // to ':' after $_AV; the value branch consumes exactly that colon. Every
+    // slot consumes through literal ';'/'$', decoded bytes stay raw, empty
+    // slots advance the source atom ordinal without a write, and each nonempty
+    // slot emits its item checkpoint before consuming the separator. A missing
+    // final '$' retains preceding item checkpoints and reports a cursor error;
+    // a present '$' is consumed before the complete checkpoint. Source graph
+    // VALID_ATIDX/property installation belong to the existing graph lowerers;
+    // this graph-independent syntax owner retains all slots for that boundary.
+    // The label branch is independently compared in its own later source pair;
+    // this values comparison does not upgrade that unreviewed behavior.
+    // Complexity: O(bytes) scan, but keeping all slots/checkpoints also keeps
+    // out-of-window payloads that source graph mutation discards. That is an
+    // explicit O(input) retained-storage overhead; performance is marked worse,
+    // not equivalent. No prefix reparse/graph clone/second entity parser.
     // RDKit source (verbatim; each property write is an item checkpoint):
     /*
     template <typename Iterator>
@@ -1071,13 +1564,13 @@ fn parse_labels_or_values_progress(
       return true;
     }
         */
-    // RDKit❗✔️: each nonempty decoded slot is retained and emitted at its
+    // RDKit✔️❌: the shared values/labels helper retains each decoded slot at its
     // source write cursor; empty slots advance the atom index without a write.
     // The parser makes one forward pass with no prefix reparse. Progress adds
     // an owned record vector and one checkpoint per nonempty slot.
     let value = text
         .get(*cursor..)
-        .is_some_and(|remaining| remaining.starts_with("$_AV:"));
+        .is_some_and(|remaining| remaining.starts_with(b"$_AV:"));
     if value {
         *cursor += 4;
         expect_byte(text, cursor, b':')?;
@@ -1091,7 +1584,7 @@ fn parse_labels_or_values_progress(
         CxRecord::AtomLabels(Vec::new())
     });
     let mut atom_index = 0;
-    while *cursor < text.len() && text.as_bytes()[*cursor] != b'$' {
+    while *cursor < text.len() && text[*cursor] != b'$' {
         let field = read_text_to(text, cursor, b";$")?;
         let written = !field.is_empty();
         match &mut records[record_index] {
@@ -1109,11 +1602,11 @@ fn parse_labels_or_values_progress(
             });
         }
         atom_index += 1;
-        if *cursor < text.len() && text.as_bytes()[*cursor] == b';' {
+        if *cursor < text.len() && text[*cursor] == b';' {
             *cursor += 1;
         }
     }
-    if *cursor >= text.len() || text.as_bytes()[*cursor] != b'$' {
+    if *cursor >= text.len() || text[*cursor] != b'$' {
         return Err(CxParseError::new(*cursor, "unterminated CX atom record"));
     }
     *cursor += 1;
@@ -1127,11 +1620,114 @@ fn parse_labels_or_values_progress(
 }
 
 fn parse_atom_properties_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
 ) -> Result<(), CxParseError> {
+    // BEGIN COMPLETE PINNED SF186
+    // RDKit✔️❌: bool parse_atom_props(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                       unsigned int startAtomIdx) {
+    // RDKit✔️❌:   if (first >= last) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   while (first <= last && *first != '|' && *first != ',') {
+    // RDKit✔️❌:     unsigned int atIdx;
+    // RDKit✔️❌:     if (read_int(first, last, atIdx)) {
+    // RDKit✔️❌:       if (first >= last || *first != '.') {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       std::string pname = read_text_to(first, last, ".");
+    // RDKit✔️❌:       if (!pname.empty()) {
+    // RDKit✔️❌:         if (first >= last || *first != '.') {
+    // RDKit✔️❌:           return false;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         ++first;
+    // RDKit✔️❌:         std::string pval = read_text_to(first, last, ":|,");
+    // RDKit✔️❌:         if (VALID_ATIDX(atIdx) && !pval.empty()) {
+    // RDKit✔️❌:           mol.getAtomWithIdx(atIdx - startAtomIdx)->setProp(pname, pval);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first <= last && *first != '|' && *first != ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (first <= last && *first != '|' && *first != ',') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (*first != '|') {
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF186
+    // Complete reached SF178
+    // RDKit✔️✔️: bool read_int(Iterator &first, Iterator last, unsigned int &res) {
+    // RDKit✔️✔️:   std::string num = "";
+    // RDKit✔️✔️:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit✔️✔️:     num += *first;
+    // RDKit✔️✔️:     ++first;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (num.empty()) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   res = boost::lexical_cast<unsigned int>(num);
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // Complete reached SF181
+    // RDKit✔️✔️: std::string read_text_to(Iterator &first, Iterator last, std::string delims) {
+    // RDKit✔️✔️:   std::string res = "";
+    // RDKit✔️✔️:   Iterator start = first;
+    // RDKit✔️✔️:   // EFF: there are certainly faster ways to do this
+    // RDKit✔️✔️:   while (first <= last && delims.find_first_of(*first) == std::string::npos) {
+    // RDKit✔️✔️:     if (*first == '&' && std::distance(first, last) > 2 &&
+    // RDKit✔️✔️:         *(first + 1) == '#') {
+    // RDKit✔️✔️:       // escaped char
+    // RDKit✔️✔️:       if (start != first) {
+    // RDKit✔️✔️:         res += std::string(start, first);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       Iterator next = first + 2;
+    // RDKit✔️✔️:       while (next != last && *next >= '0' && *next <= '9') {
+    // RDKit✔️✔️:         ++next;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next == last || *next != ';') {
+    // RDKit✔️✔️:         throw RDKit::SmilesParseException(
+    // RDKit✔️✔️:             "failure parsing CXSMILES extensions: quoted block not terminated "
+    // RDKit✔️✔️:             "with ';'");
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next > first + 2) {
+    // RDKit✔️✔️:         std::string blk = std::string(first + 2, next);
+    // RDKit✔️✔️:         res += (char)(boost::lexical_cast<int>(blk));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       first = next + 1;
+    // RDKit✔️✔️:       start = first;
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       ++first;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (start != first) {
+    // RDKit✔️✔️:     res += std::string(start, first);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // Behavior: caller-owned atomProp: prefix advancement precedes the source
+    // entry check. No-digit read_int returns false and advances one raw byte;
+    // numeric overflow advances the digit cursor then propagates its error.
+    // First dot/name are always consumed for a parsed atom; an empty name skips
+    // value scanning, otherwise the second dot is required. Nonempty values
+    // emit source write checkpoints, repeated keys preserve write order, comma
+    // is consumed while pipe remains for the outer dispatcher. Complete prior
+    // properties survive subsequent syntax/entity/numeric failure. Values and
+    // names stay raw counted bytes with the sole existing scanner. VALID_ATIDX
+    // and local property mutation remain in existing canonical graph lowerers.
+    // Complexity: scans remain O(bytes), but graph-neutral progress retains
+    // every decoded property/checkpoint, including duplicate keys or rows a
+    // graph lowerer later skips. This is an explicit O(input) retained-storage
+    // cost compared with the source's temporary token + overwritten graph
+    // property, so the source body performance marker is deliberately worse.
+    // No graph clone, prefix reparse or second numeric parser is introduced.
     // RDKit source (verbatim; each property write is an item checkpoint):
     /*
     template <typename Iterator>
@@ -1172,7 +1768,7 @@ fn parse_atom_properties_progress(
       return true;
     }
         */
-    // RDKit❗✔️: each complete nonempty property is retained at its source
+    // RDKit✔️❌: each complete nonempty property is retained at its source
     // write cursor; invalid nonnumeric bytes follow read_int's false branch
     // and one-byte source advance. The scan is linear with no prefix reparse.
     // Progress adds owned properties and one checkpoint per property write.
@@ -1182,7 +1778,7 @@ fn parse_atom_properties_progress(
     }
     let record_index = records.len();
     records.push(CxRecord::AtomProperties(Vec::new()));
-    while *cursor < text.len() && !matches!(text.as_bytes()[*cursor], b'|' | b',') {
+    while *cursor < text.len() && !matches!(text[*cursor], b'|' | b',') {
         let atom_offset = *cursor;
         let atom = match read_number(text, cursor) {
             Ok(atom) => Some(atom),
@@ -1213,11 +1809,11 @@ fn parse_atom_properties_progress(
                 }
             }
         }
-        if *cursor < text.len() && !matches!(text.as_bytes()[*cursor], b'|' | b',') {
+        if *cursor < text.len() && !matches!(text[*cursor], b'|' | b',') {
             *cursor += 1;
         }
     }
-    match text.as_bytes().get(*cursor) {
+    match text.get(*cursor) {
         Some(&b'|') => {}
         Some(&b',') => *cursor += 1,
         _ => {
@@ -1237,57 +1833,83 @@ fn parse_atom_properties_progress(
 }
 
 fn parse_coordinate_bonds_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
 ) -> Result<(), CxParseError> {
-    // RDKit source (verbatim; the downstream query consumer applies each pair):
-    /*
-    template <typename Iterator>
-    bool parse_coordinate_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                                Bond::BondType typ, unsigned int startAtomIdx,
-                                unsigned int startBondIdx) {
-      if (first >= last || (*first != 'C' && *first != 'H')) {
-        return false;
-      }
-      ++first;
-      if (first >= last || *first != ':') {
-        return false;
-      }
-      ++first;
-      while (first <= last && *first >= '0' && *first <= '9') {
-        unsigned int aidx;
-        unsigned int bidx;
-        if (read_int_pair(first, last, aidx, bidx)) {
-          if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
-            auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
-            if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
-                         bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
-              BOOST_LOG(rdWarningLog) << "BOND NOT FOUND! " << bidx
-                                      << " involving atom " << aidx << std::endl;
-              return false;
-            }
-            bnd->setBondType(typ);
-            if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
-              unsigned int tmp = bnd->getBeginAtomIdx();
-              bnd->setBeginAtomIdx(aidx - startAtomIdx);
-              bnd->setEndAtomIdx(tmp);
-            }
-          }
-        } else {
-          return false;
-        }
-        if (first < last && *first == ',') {
-          ++first;
-        }
-      }
-      return true;
-    }
-        */
-    // RDKit❗❌: pair scanning stays linear, while graph-neutral progress stores
-    // each source pair and its checkpoint for ordered downstream mutation.
-    let kind = match text.as_bytes().get(*cursor).copied() {
+    // BEGIN COMPLETE PINNED SF189
+    // RDKit✔️❌: bool parse_coordinate_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                             Bond::BondType typ, unsigned int startAtomIdx,
+    // RDKit✔️❌:                             unsigned int startBondIdx) {
+    // RDKit✔️❌:   if (first >= last || (*first != 'C' && *first != 'H')) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int aidx;
+    // RDKit✔️❌:     unsigned int bidx;
+    // RDKit✔️❌:     if (read_int_pair(first, last, aidx, bidx)) {
+    // RDKit✔️❌:       if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
+    // RDKit✔️❌:         auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
+    // RDKit✔️❌:         if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
+    // RDKit✔️❌:                      bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
+    // RDKit✔️❌:           BOOST_LOG(rdWarningLog) << "BOND NOT FOUND! " << bidx
+    // RDKit✔️❌:                                   << " involving atom " << aidx << std::endl;
+    // RDKit✔️❌:           return false;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         bnd->setBondType(typ);
+    // RDKit✔️❌:         if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
+    // RDKit✔️❌:           unsigned int tmp = bnd->getBeginAtomIdx();
+    // RDKit✔️❌:           bnd->setBeginAtomIdx(aidx - startAtomIdx);
+    // RDKit✔️❌:           bnd->setEndAtomIdx(tmp);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF189
+    // BEGIN COMPLETE PINNED SF179
+    // RDKit✔️✔️: bool read_int_list(Iterator &first, Iterator last,
+    // RDKit✔️✔️:                    std::vector<unsigned int> &res, char sep = ',') {
+    // RDKit✔️✔️:   while (1) {
+    // RDKit✔️✔️:     std::string num = "";
+    // RDKit✔️✔️:     while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit✔️✔️:       num += *first;
+    // RDKit✔️✔️:       ++first;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (!num.empty()) {
+    // RDKit✔️✔️:       res.push_back(boost::lexical_cast<unsigned int>(num));
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (first >= last || *first != sep) {
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     ++first;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END COMPLETE PINNED SF179
+    // Behavior: validate C/H before advancing, then the colon; visit every
+    // digit-led unsigned32 pair, preserving pair-error cursor and committed
+    // checkpoints before comma consumption. Out-of-range graph pairs are
+    // still scanned; the owning lowerer gates only lookup and mutation.
+    // C and H select exactly DATIVE and HYDROGEN. Incomplete/malformed later
+    // pairs retain earlier completed items. Graph failures stop ordered replay
+    // at the current pair checkpoint, before later source effects execute.
+    // Cost: one digit scan per pair, with reused unsigned byte primitive;
+    // O(input) reference/checkpoint retention is extra persistent storage vs
+    // upstream immediate writes. Query source-index lookup remains O(E).
+    let kind = match text.get(*cursor).copied() {
         Some(b'C') => CxCoordinateBondKind::Dative,
         Some(b'H') => CxCoordinateBondKind::Hydrogen,
         _ => return Err(CxParseError::new(*cursor, "invalid CX coordinate bond")),
@@ -1299,7 +1921,7 @@ fn parse_coordinate_bonds_progress(
         kind,
         bonds: Vec::new(),
     }));
-    while *cursor < text.len() && text.as_bytes()[*cursor].is_ascii_digit() {
+    while *cursor < text.len() && text[*cursor].is_ascii_digit() {
         let (atom, bond) = read_pair(text, cursor, b'.')?;
         let item_index = match &mut records[record_index] {
             CxRecord::CoordinateBonds(annotation) => {
@@ -1315,7 +1937,7 @@ fn parse_coordinate_bonds_progress(
             cursor: *cursor,
             phase: CxProgressPhase::Item,
         });
-        if *cursor < text.len() && text.as_bytes()[*cursor] == b',' {
+        if *cursor < text.len() && text[*cursor] == b',' {
             *cursor += 1;
         }
     }
@@ -1329,56 +1951,72 @@ fn parse_coordinate_bonds_progress(
 }
 
 fn parse_zero_bonds_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
 ) -> Result<(), CxParseError> {
-    // RDKit source (verbatim; each valid bond-type write is an item checkpoint):
-    /*
-    template <typename Iterator>
-    bool parse_zero_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                          unsigned int, unsigned int startBondIdx) {
-      // these look like: C1CCCCC~CCCC1 |Z:5|
-      if (first >= last || *first != 'Z') {
-        return false;
-      }
-      ++first;
-      if (first >= last || *first != ':') {
-        return false;
-      }
-      ++first;
-
-      while (first < last && *first >= '0' && *first <= '9') {
-        unsigned int bondIdx;
-        if (!read_int(first, last, bondIdx)) {
-          return false;
-        }
-        if (VALID_BNDIDX(bondIdx)) {
-          auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
-
-          if (!bond) {
-            BOOST_LOG(rdWarningLog)
-                << "bond " << bondIdx
-                << " not found, cannot mark as zero order bond." << std::endl;
-            return false;
-          }
-          bond->setBondType(Bond::ZERO);
-        }
-        if (first < last && *first == ',') {
-          ++first;
-        }
-      }
-      return true;
-    }
-    */
-    // RDKit❗❌: the scanner is linear; item retention and ordered checkpoints
-    // add per-index storage so the consumer can preserve partial writes.
+    // BEGIN COMPLETE PINNED SF190
+    // RDKit✔️❌: bool parse_zero_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                       unsigned int, unsigned int startBondIdx) {
+    // RDKit✔️❌:   // these look like: C1CCCCC~CCCC1 |Z:5|
+    // RDKit✔️❌:   if (first >= last || *first != 'Z') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int bondIdx;
+    // RDKit✔️❌:     if (!read_int(first, last, bondIdx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_BNDIDX(bondIdx)) {
+    // RDKit✔️❌:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+    // RDKit✔️❌:
+    // RDKit✔️❌:       if (!bond) {
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << "bond " << bondIdx
+    // RDKit✔️❌:             << " not found, cannot mark as zero order bond." << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       bond->setBondType(Bond::ZERO);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF190
+    // BEGIN COMPLETE PINNED SF178
+    // RDKit✔️🔝: bool read_int(Iterator &first, Iterator last, unsigned int &res) {
+    // RDKit✔️🔝:   std::string num = "";
+    // RDKit✔️🔝:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit✔️🔝:     num += *first;
+    // RDKit✔️🔝:     ++first;
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   if (num.empty()) {
+    // RDKit✔️🔝:     return false;
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   res = boost::lexical_cast<unsigned int>(num);
+    // RDKit✔️🔝:   return true;
+    // RDKit✔️🔝: }
+    // END COMPLETE PINNED SF178
+    // Behavior: Z/colon guards advance separately; every digit-led source
+    // unsigned32 index is scanned before range gating in the destination owner.
+    // Empty lists and a consumed trailing comma follow the native loop; later
+    // lexical failure preserves each earlier item and its before-comma cursor.
+    // Cost: one forward integer scan, constant conversion state; O(input)
+    // retained indices/checkpoints exceed source immediate-write storage.
     expect_byte(text, cursor, b'Z')?;
     expect_byte(text, cursor, b':')?;
     let record_index = records.len();
     records.push(CxRecord::ZeroBonds(Vec::new()));
-    while *cursor < text.len() && text.as_bytes()[*cursor].is_ascii_digit() {
+    while *cursor < text.len() && text[*cursor].is_ascii_digit() {
         let bond = read_number(text, cursor)?;
         let item_index = match &mut records[record_index] {
             CxRecord::ZeroBonds(indices) => {
@@ -1394,7 +2032,7 @@ fn parse_zero_bonds_progress(
             cursor: *cursor,
             phase: CxProgressPhase::Item,
         });
-        if *cursor < text.len() && text.as_bytes()[*cursor] == b',' {
+        if *cursor < text.len() && text[*cursor] == b',' {
             *cursor += 1;
         }
     }
@@ -1408,45 +2046,62 @@ fn parse_zero_bonds_progress(
 }
 
 fn parse_unsaturation_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
 ) -> Result<(), CxParseError> {
-    // RDKit source (verbatim; atom mutation is Search-lowering-owned):
-    /*
-    template <typename Iterator>
-    bool parse_unsaturation(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                            unsigned int startAtomIdx) {
-      if (first + 1 >= last || *first != 'u') {
-        return false;
-      }
-      ++first;
-      if (first >= last || *first != ':') {
-        return false;
-      }
-      ++first;
-      while (first < last && *first >= '0' && *first <= '9') {
-        unsigned int idx;
-        if (!read_int(first, last, idx)) {
-          return false;
-        }
-        if (VALID_ATIDX(idx)) {
-          auto atom = mol.getAtomWithIdx(idx - startAtomIdx);
-          if (!atom->hasQuery()) {
-            atom = QueryOps::replaceAtomWithQueryAtom(&mol, atom);
-          }
-          atom->expandQuery(makeAtomUnsaturatedQuery(), Queries::COMPOSITE_AND);
-        }
-        if (first < last && *first == ',') {
-          ++first;
-        }
-      }
-      return true;
-    }
-        */
-    // RDKit✔️❌: retain each parsed index and source cursor so Search can apply
-    // its query effect before a later index fails; checkpoints add linear storage.
+    // BEGIN COMPLETE PINNED SF191
+    // RDKit✔️❌: bool parse_unsaturation(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                         unsigned int startAtomIdx) {
+    // RDKit✔️❌:   if (first + 1 >= last || *first != 'u') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int idx;
+    // RDKit✔️❌:     if (!read_int(first, last, idx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_ATIDX(idx)) {
+    // RDKit✔️❌:       auto atom = mol.getAtomWithIdx(idx - startAtomIdx);
+    // RDKit✔️❌:       if (!atom->hasQuery()) {
+    // RDKit✔️❌:         atom = QueryOps::replaceAtomWithQueryAtom(&mol, atom);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       atom->expandQuery(makeAtomUnsaturatedQuery(), Queries::COMPOSITE_AND);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF191
+    // BEGIN COMPLETE PINNED SF178
+    // RDKit✔️🔝: bool read_int(Iterator &first, Iterator last, unsigned int &res) {
+    // RDKit✔️🔝:   std::string num = "";
+    // RDKit✔️🔝:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit✔️🔝:     num += *first;
+    // RDKit✔️🔝:     ++first;
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   if (num.empty()) {
+    // RDKit✔️🔝:     return false;
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   res = boost::lexical_cast<unsigned int>(num);
+    // RDKit✔️🔝:   return true;
+    // RDKit✔️🔝: }
+    // END COMPLETE PINNED SF178
+    // Behavior: preserve the two-byte availability guard before advancing u;
+    // scan all digit-led native unsigned32 indices, including out-of-window
+    // ones. Each item checkpoint precedes its comma and any later conversion
+    // failure. The owner alone applies actual graph range and query mutation.
+    // Cost: forward digit scan with reused byte-only integer primitive;
+    // retained source indices/checkpoints add O(input) persistent buffering
+    // over upstream immediate graph effects. No reparse or global UTF8 gate.
     if *cursor + 1 >= text.len() {
         return Err(CxParseError::new(*cursor, "unterminated CX index list"));
     }
@@ -1460,7 +2115,7 @@ fn parse_unsaturation_progress(
         cursor: *cursor,
         phase: CxProgressPhase::Begin,
     });
-    while *cursor < text.len() && text.as_bytes()[*cursor].is_ascii_digit() {
+    while *cursor < text.len() && text[*cursor].is_ascii_digit() {
         let atom = read_number(text, cursor)?;
         let item_index = match &mut records[record_index] {
             CxRecord::Unsaturation(indices) => {
@@ -1476,7 +2131,7 @@ fn parse_unsaturation_progress(
             cursor: *cursor,
             phase: CxProgressPhase::Item,
         });
-        if *cursor < text.len() && text.as_bytes()[*cursor] == b',' {
+        if *cursor < text.len() && text[*cursor] == b',' {
             *cursor += 1;
         } else {
             break;
@@ -1492,7 +2147,7 @@ fn parse_unsaturation_progress(
 }
 
 fn parse_radicals_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -1581,9 +2236,9 @@ fn parse_radicals_progress(
     // values and item checkpoints add per-assignment storage for partial writes.
     let record_index = records.len();
     records.push(CxRecord::Radicals(Vec::new()));
-    while *cursor < text.len() && text.as_bytes()[*cursor] == b'^' {
+    while *cursor < text.len() && text[*cursor] == b'^' {
         *cursor += 1;
-        let electrons = match text.as_bytes().get(*cursor).copied() {
+        let electrons = match text.get(*cursor).copied() {
             Some(b'1') => 1,
             Some(b'2'..=b'4') => 2,
             Some(b'5'..=b'7') => 3,
@@ -1608,9 +2263,9 @@ fn parse_radicals_progress(
             phase: CxProgressPhase::Item,
         });
 
-        while *cursor < text.len() && text.as_bytes()[*cursor] == b',' {
+        while *cursor < text.len() && text[*cursor] == b',' {
             *cursor += 1;
-            if *cursor < text.len() && !text.as_bytes()[*cursor].is_ascii_digit() {
+            if *cursor < text.len() && !text[*cursor].is_ascii_digit() {
                 break;
             }
             let atom = read_number(text, cursor)?;
@@ -1644,7 +2299,7 @@ fn parse_radicals_progress(
 }
 
 fn parse_enhanced_stereo_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -1733,7 +2388,7 @@ fn parse_enhanced_stereo_progress(
     // RDKit❗❌: the CX parser preserves each ordered member on failure; one
     // progress checkpoint per parsed index adds linear storage so Search can
     // defer the group effect until the pinned helper's completion point.
-    let kind = match text.as_bytes().get(*cursor).copied() {
+    let kind = match text.get(*cursor).copied() {
         Some(b'a') => CxStereoGroupKind::Absolute,
         Some(b'o') => CxStereoGroupKind::Or,
         Some(b'&') => CxStereoGroupKind::And,
@@ -1742,7 +2397,7 @@ fn parse_enhanced_stereo_progress(
     *cursor += 1;
     let group_id = if kind == CxStereoGroupKind::Absolute {
         0
-    } else if text.as_bytes().get(*cursor).is_some_and(u8::is_ascii_digit) {
+    } else if text.get(*cursor).is_some_and(u8::is_ascii_digit) {
         read_number(text, cursor)? as u32
     } else {
         0
@@ -1760,7 +2415,7 @@ fn parse_enhanced_stereo_progress(
         cursor: *cursor,
         phase: CxProgressPhase::Begin,
     });
-    while text.as_bytes().get(*cursor).is_some_and(u8::is_ascii_digit) {
+    while text.get(*cursor).is_some_and(u8::is_ascii_digit) {
         let atom = read_number(text, cursor)?;
         let item_index = match &mut records[record_index] {
             CxRecord::EnhancedStereo(stereo) => {
@@ -1776,7 +2431,7 @@ fn parse_enhanced_stereo_progress(
             cursor: *cursor,
             phase: CxProgressPhase::Item,
         });
-        if *cursor < text.len() && text.as_bytes()[*cursor] == b',' {
+        if *cursor < text.len() && text[*cursor] == b',' {
             *cursor += 1;
         }
     }
@@ -1790,83 +2445,89 @@ fn parse_enhanced_stereo_progress(
 }
 
 fn parse_ring_bonds_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
+    source_warning: &mut Option<Vec<u8>>,
 ) -> Result<(), CxParseError> {
-    // RDKit source (verbatim; query construction is Search-lowering-owned):
-    /*
-    template <typename Iterator>
-    bool parse_ring_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                          unsigned int startAtomIdx) {
-      if (first >= last || *first != 'r' || first + 1 >= last ||
-          *(first + 1) != 'b' || first + 2 >= last || *(first + 2) != ':') {
-        return false;
-      }
-      first += 3;
-      while (first < last && *first >= '0' && *first <= '9') {
-        unsigned int n1;
-        if (!read_int(first, last, n1)) {
-          return false;
-        }
-        // check that we can read at least two more characters:
-        if (first + 1 >= last || *first != ':') {
-          return false;
-        }
-        ++first;
-        unsigned int n2;
-        bool gt = false;
-        if (*first == '*') {
-          ++first;
-          n2 = 0xDEADBEEF;
-          if (VALID_ATIDX(n1)) {
-            mol.setProp(common_properties::_NeedsQueryScan, 1);
-          }
-        } else {
-          if (!read_int(first, last, n2)) {
-            return false;
-          }
-          switch (n2) {
-            case 0:
-            case 2:
-            case 3:
-              break;
-            case 4:
-              gt = true;
-              break;
-            default:
-              BOOST_LOG(rdWarningLog)
-                  << "unrecognized rb value: " << n2 << std::endl;
-              return false;
-          }
-        }
-        if (VALID_ATIDX(n1)) {
-          auto atom = mol.getAtomWithIdx(n1 - startAtomIdx);
-          if (!atom->hasQuery()) {
-            atom = QueryOps::replaceAtomWithQueryAtom(&mol, atom);
-          }
-          if (!gt) {
-            atom->expandQuery(makeAtomRingBondCountQuery(n2),
-                              Queries::COMPOSITE_AND);
-          } else {
-            auto q = static_cast<ATOM_EQUALS_QUERY *>(new ATOM_LESSEQUAL_QUERY);
-            q->setVal(n2);
-            q->setDescription("AtomRingBondCount");
-            q->setDataFunc(queryAtomRingBondCount);
-            atom->expandQuery(q, Queries::COMPOSITE_AND);
-          }
-        }
-        if (first < last && *first == ',') {
-          ++first;
-        }
-      }
-      return true;
-    }
-        */
-    // RDKit✔️❌: retain complete ordered pairs on later parse failure; each pair
-    // checkpoint adds linear storage before Search applies its query effect.
-    if text.as_bytes().get(*cursor..*cursor + 3) != Some(b"rb:") {
+    // BEGIN COMPLETE PINNED SF192
+    // RDKit✔️❌: bool parse_ring_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                       unsigned int startAtomIdx) {
+    // RDKit✔️❌:   if (first >= last || *first != 'r' || first + 1 >= last ||
+    // RDKit✔️❌:       *(first + 1) != 'b' || first + 2 >= last || *(first + 2) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 3;
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int n1;
+    // RDKit✔️❌:     if (!read_int(first, last, n1)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     // check that we can read at least two more characters:
+    // RDKit✔️❌:     if (first + 1 >= last || *first != ':') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int n2;
+    // RDKit✔️❌:     bool gt = false;
+    // RDKit✔️❌:     if (*first == '*') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       n2 = 0xDEADBEEF;
+    // RDKit✔️❌:       if (VALID_ATIDX(n1)) {
+    // RDKit✔️❌:         mol.setProp(common_properties::_NeedsQueryScan, 1);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       if (!read_int(first, last, n2)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       switch (n2) {
+    // RDKit✔️❌:         case 0:
+    // RDKit✔️❌:         case 2:
+    // RDKit✔️❌:         case 3:
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case 4:
+    // RDKit✔️❌:           gt = true;
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         default:
+    // RDKit✔️❌:           BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:               << "unrecognized rb value: " << n2 << std::endl;
+    // RDKit✔️❌:           return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_ATIDX(n1)) {
+    // RDKit✔️❌:       auto atom = mol.getAtomWithIdx(n1 - startAtomIdx);
+    // RDKit✔️❌:       if (!atom->hasQuery()) {
+    // RDKit✔️❌:         atom = QueryOps::replaceAtomWithQueryAtom(&mol, atom);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if (!gt) {
+    // RDKit✔️❌:         atom->expandQuery(makeAtomRingBondCountQuery(n2),
+    // RDKit✔️❌:                           Queries::COMPOSITE_AND);
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         auto q = static_cast<ATOM_EQUALS_QUERY *>(new ATOM_LESSEQUAL_QUERY);
+    // RDKit✔️❌:         q->setVal(n2);
+    // RDKit✔️❌:         q->setDescription("AtomRingBondCount");
+    // RDKit✔️❌:         q->setDataFunc(queryAtomRingBondCount);
+    // RDKit✔️❌:         atom->expandQuery(q, Queries::COMPOSITE_AND);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF192
+    // Behavior: rb: guard precedes cursor advancement; every atom index and
+    // numeric count are converted before graph range checking. Require colon
+    // plus one available following byte, retain source '*' magic/count kind,
+    // accept exactly 0/2/3 equality or 4 source LessEqualQuery. Unrecognized
+    // values capture the native failure warning even outside the graph window;
+    // output is delayed until earlier source effects replay successfully.
+    // Earlier item checkpoints commit before comma consumption/later failure.
+    // Cost: one digit scan, O(input) retained constraints/checkpoints exceed
+    // source immediate writes; no inferred count, prefix reparse or UTF8 gate.
+    if text.get(*cursor..*cursor + 3) != Some(b"rb:") {
         return Err(CxParseError::new(*cursor, "invalid CX ring-bond record"));
     }
     *cursor += 3;
@@ -1878,7 +2539,7 @@ fn parse_ring_bonds_progress(
         cursor: *cursor,
         phase: CxProgressPhase::Begin,
     });
-    while *cursor < text.len() && text.as_bytes()[*cursor].is_ascii_digit() {
+    while *cursor < text.len() && text[*cursor].is_ascii_digit() {
         let atom = read_number(text, cursor)?;
         if (*cursor).saturating_add(1) >= text.len() {
             return Err(CxParseError::new(
@@ -1887,7 +2548,7 @@ fn parse_ring_bonds_progress(
             ));
         }
         expect_byte(text, cursor, b':')?;
-        let constraint = if text.as_bytes().get(*cursor) == Some(&b'*') {
+        let constraint = if text.get(*cursor) == Some(&b'*') {
             *cursor += 1;
             CxCountConstraint::QueryScan
         } else {
@@ -1896,6 +2557,14 @@ fn parse_ring_bonds_progress(
                 0 | 2 | 3 => CxCountConstraint::Exact(value),
                 4 => CxCountConstraint::LessEqual(value),
                 _ => {
+                    // RDKit✔️✔️:           BOOST_LOG(rdWarningLog)
+                    // RDKit✔️✔️:               << "unrecognized rb value: " << n2 << std::endl;
+                    // Capture only this reached failure's exact ASCII source
+                    // payload and converted u32. The progress owner emits it
+                    // after earlier graph effects succeed; an earlier graph
+                    // failure must suppress an unreachable later warning.
+                    *source_warning =
+                        Some(format!("unrecognized rb value: {}\n", value).into_bytes());
                     return Err(CxParseError::new(
                         *cursor,
                         "unrecognized CX ring-bond count",
@@ -1917,7 +2586,7 @@ fn parse_ring_bonds_progress(
             cursor: *cursor,
             phase: CxProgressPhase::Item,
         });
-        if *cursor < text.len() && text.as_bytes()[*cursor] == b',' {
+        if *cursor < text.len() && text[*cursor] == b',' {
             *cursor += 1;
         } else {
             break;
@@ -1933,7 +2602,7 @@ fn parse_ring_bonds_progress(
 }
 
 fn parse_substitution_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -1987,7 +2656,7 @@ fn parse_substitution_progress(
         */
     // RDKit✔️❌: retain only complete atom/value pairs before failure; each pair
     // checkpoint adds linear storage before Search applies its query effect.
-    if text.as_bytes().get(*cursor..*cursor + 2) != Some(b"s:") {
+    if text.get(*cursor..*cursor + 2) != Some(b"s:") {
         return Err(CxParseError::new(*cursor, "invalid CX substitution record"));
     }
     *cursor += 1;
@@ -2000,7 +2669,7 @@ fn parse_substitution_progress(
         cursor: *cursor,
         phase: CxProgressPhase::Begin,
     });
-    while *cursor < text.len() && text.as_bytes()[*cursor].is_ascii_digit() {
+    while *cursor < text.len() && text[*cursor].is_ascii_digit() {
         let atom = read_number(text, cursor)?;
         if (*cursor).saturating_add(1) >= text.len() {
             return Err(CxParseError::new(
@@ -2009,7 +2678,7 @@ fn parse_substitution_progress(
             ));
         }
         expect_byte(text, cursor, b':')?;
-        let constraint = if text.as_bytes().get(*cursor) == Some(&b'*') {
+        let constraint = if text.get(*cursor) == Some(&b'*') {
             *cursor += 1;
             CxCountConstraint::QueryScan
         } else {
@@ -2029,7 +2698,7 @@ fn parse_substitution_progress(
             cursor: *cursor,
             phase: CxProgressPhase::Item,
         });
-        if *cursor < text.len() && text.as_bytes()[*cursor] == b',' {
+        if *cursor < text.len() && text[*cursor] == b',' {
             *cursor += 1;
         } else {
             break;
@@ -2045,99 +2714,114 @@ fn parse_substitution_progress(
 }
 
 fn parse_link_nodes_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
 ) -> Result<(), CxParseError> {
-    // RDKit source (verbatim; degree inference/property installation is lowering-owned):
-    /*
-    template <typename Iterator>
-    bool parse_linknodes(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                         unsigned int startAtomIdx) {
-      // these look like: |LN:1:1.3.2.6,4:1.4.3.6|
-      // that's two records:
-      //   1:1.3.2.6: 1-3 repeats, atom 1-2, 1-6
-      //   4:1.4.3.6: 1-4 repeats, atom 4-3, 4-6
-      // which maps to the property value "1 3 2 2 3 2 7|1 4 2 5 4 5 7"
-      // If the linking atom only has two neighbors then the outer atom
-      // specification (the last two digits) can be left out. So for a molecule
-      // where atom 1 has bonds only to atoms 2 and 6 we could have
-      // |LN:1:1.3|
-      // instead of
-      // |LN:1:1.3.2.6|
-      if (first >= last || *first != 'L' || first + 1 >= last ||
-          *(first + 1) != 'N' || first + 2 >= last || *(first + 2) != ':') {
-        return false;
-      }
-      first += 3;
-      std::string accum = "";
-      while (first < last && *first >= '0' && *first <= '9') {
-        unsigned int atidx;
-        if (!read_int(first, last, atidx)) {
-          return false;
-        }
-        // check that we can read at least two more characters:
-        if (first + 1 >= last || *first != ':') {
-          return false;
-        }
-        ++first;
-        unsigned int startReps;
-        if (!read_int(first, last, startReps)) {
-          return false;
-        }
-        if (first + 1 >= last || *first != '.') {
-          return false;
-        }
-        ++first;
-        unsigned int endReps;
-        if (!read_int(first, last, endReps)) {
-          return false;
-        }
-        unsigned int idx1;
-        unsigned int idx2;
-        if (first < last && *first == '.') {
-          ++first;
-          if (!read_int(first, last, idx1)) {
-            return false;
-          }
-          ++first;
-          if (!read_int(first, last, idx2)) {
-            return false;
-          }
-        } else if (VALID_ATIDX(atidx) &&
-                   mol.getAtomWithIdx(atidx - startAtomIdx)->getDegree() == 2) {
-          auto nbrs =
-              mol.getAtomNeighbors(mol.getAtomWithIdx(atidx - startAtomIdx));
-          idx1 = *nbrs.first;
-          nbrs.first++;
-          idx2 = *nbrs.first;
-        } else if (VALID_ATIDX(atidx)) {
-          return false;
-        }
-        if (first < last && *first == ',') {
-          ++first;
-        }
-        if (VALID_ATIDX(atidx)) {
-          if (!accum.empty()) {
-            accum += "|";
-          }
-          accum += (boost::format("%d %d 2 %d %d %d %d") % startReps % endReps %
-                    (atidx - startAtomIdx + 1) % (idx1 - startAtomIdx + 1) %
-                    (atidx - startAtomIdx + 1) % (idx2 - startAtomIdx + 1))
-                       .str();
-        }
-      }
-      if (!accum.empty()) {
-        mol.setProp(common_properties::molFileLinkNodes, accum);
-      }
-      return true;
-    }
-        */
-    // RDKit❗❌: retain each parsed item and source cursor, but defer the
-    // whole-helper destination effect until Complete; per-item detached
-    // records and checkpoints add allocation beyond the source accumulator.
-    if text.as_bytes().get(*cursor..*cursor + 3) != Some(b"LN:") {
+    // BEGIN COMPLETE PINNED SF193
+    // RDKit✔️❌: bool parse_linknodes(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                      unsigned int startAtomIdx) {
+    // RDKit✔️❌:   // these look like: |LN:1:1.3.2.6,4:1.4.3.6|
+    // RDKit✔️❌:   // that's two records:
+    // RDKit✔️❌:   //   1:1.3.2.6: 1-3 repeats, atom 1-2, 1-6
+    // RDKit✔️❌:   //   4:1.4.3.6: 1-4 repeats, atom 4-3, 4-6
+    // RDKit✔️❌:   // which maps to the property value "1 3 2 2 3 2 7|1 4 2 5 4 5 7"
+    // RDKit✔️❌:   // If the linking atom only has two neighbors then the outer atom
+    // RDKit✔️❌:   // specification (the last two digits) can be left out. So for a molecule
+    // RDKit✔️❌:   // where atom 1 has bonds only to atoms 2 and 6 we could have
+    // RDKit✔️❌:   // |LN:1:1.3|
+    // RDKit✔️❌:   // instead of
+    // RDKit✔️❌:   // |LN:1:1.3.2.6|
+    // RDKit✔️❌:   if (first >= last || *first != 'L' || first + 1 >= last ||
+    // RDKit✔️❌:       *(first + 1) != 'N' || first + 2 >= last || *(first + 2) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 3;
+    // RDKit✔️❌:   std::string accum = "";
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int atidx;
+    // RDKit✔️❌:     if (!read_int(first, last, atidx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     // check that we can read at least two more characters:
+    // RDKit✔️❌:     if (first + 1 >= last || *first != ':') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int startReps;
+    // RDKit✔️❌:     if (!read_int(first, last, startReps)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first + 1 >= last || *first != '.') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int endReps;
+    // RDKit✔️❌:     if (!read_int(first, last, endReps)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     unsigned int idx1;
+    // RDKit✔️❌:     unsigned int idx2;
+    // RDKit✔️❌:     if (first < last && *first == '.') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       if (!read_int(first, last, idx1)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       if (!read_int(first, last, idx2)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else if (VALID_ATIDX(atidx) &&
+    // RDKit✔️❌:                mol.getAtomWithIdx(atidx - startAtomIdx)->getDegree() == 2) {
+    // RDKit✔️❌:       auto nbrs =
+    // RDKit✔️❌:           mol.getAtomNeighbors(mol.getAtomWithIdx(atidx - startAtomIdx));
+    // RDKit✔️❌:       idx1 = *nbrs.first;
+    // RDKit✔️❌:       nbrs.first++;
+    // RDKit✔️❌:       idx2 = *nbrs.first;
+    // RDKit✔️❌:     } else if (VALID_ATIDX(atidx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_ATIDX(atidx)) {
+    // RDKit✔️❌:       if (!accum.empty()) {
+    // RDKit✔️❌:         accum += "|";
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       accum += (boost::format("%d %d 2 %d %d %d %d") % startReps % endReps %
+    // RDKit✔️❌:                 (atidx - startAtomIdx + 1) % (idx1 - startAtomIdx + 1) %
+    // RDKit✔️❌:                 (atidx - startAtomIdx + 1) % (idx2 - startAtomIdx + 1))
+    // RDKit✔️❌:                    .str();
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (!accum.empty()) {
+    // RDKit✔️❌:     mol.setProp(common_properties::molFileLinkNodes, accum);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF193
+    // BEGIN COMPLETE PINNED SF178
+    // RDKit✔️✔️: bool read_int(Iterator &first, Iterator last, unsigned int &res) {
+    // RDKit✔️✔️:   std::string num = "";
+    // RDKit✔️✔️:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit✔️✔️:     num += *first;
+    // RDKit✔️✔️:     ++first;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (num.empty()) {
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   res = boost::lexical_cast<unsigned int>(num);
+    // RDKit✔️✔️:   return true;
+    // RDKit✔️✔️: }
+    // END COMPLETE PINNED SF178
+    // Behavior: native numeric reads precede destination checks. The explicit
+    // outer pair skips exactly one byte without a separator-value check.
+    // An omitted pair checks the source degree before comma consumption;
+    // preserve that cursor for replay, and defer the property until Complete.
+    // Cost: constraints/checkpoints retain O(input) beyond source accumulator;
+    // byte grammar has one pass and uses the canonical source u32 reader.
+    if text.get(*cursor..*cursor + 3) != Some(b"LN:") {
         return Err(CxParseError::new(*cursor, "invalid CX link-node record"));
     }
     *cursor += 3;
@@ -2150,7 +2834,7 @@ fn parse_link_nodes_progress(
         phase: CxProgressPhase::Begin,
     });
 
-    let bytes = text.as_bytes();
+    let bytes = text;
     while bytes.get(*cursor).is_some_and(u8::is_ascii_digit) {
         let atom = read_number(text, cursor)?;
         if cursor.saturating_add(1) >= bytes.len() || bytes.get(*cursor) != Some(&b':') {
@@ -2163,7 +2847,7 @@ fn parse_link_nodes_progress(
         }
         *cursor += 1;
         let end_repetitions = read_number(text, cursor)?;
-        let outer_atoms = if text.as_bytes().get(*cursor) == Some(&b'.') {
+        let outer_atoms = if text.get(*cursor) == Some(&b'.') {
             *cursor += 1;
             let first = read_number(text, cursor)?;
             // RDKit increments past one separator byte here without checking
@@ -2176,6 +2860,7 @@ fn parse_link_nodes_progress(
             None
         };
 
+        let source_degree_cursor = *cursor;
         if bytes.get(*cursor) == Some(&b',') {
             *cursor += 1;
         }
@@ -2196,7 +2881,7 @@ fn parse_link_nodes_progress(
         checkpoints.push(CxProgressCheckpoint {
             record_index,
             item_index: Some(item_index),
-            cursor: *cursor,
+            cursor: source_degree_cursor,
             phase: CxProgressPhase::Item,
         });
     }
@@ -2210,7 +2895,7 @@ fn parse_link_nodes_progress(
 }
 
 fn parse_data_sgroup_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -2300,7 +2985,7 @@ fn parse_data_sgroup_progress(
         */
     // RDKit❗✔️: retain each source field mutation and cursor on failure while
     // deferring the destination SGroup effect until this helper completes.
-    if text.as_bytes().get(*cursor..*cursor + 4) != Some(b"SgD:") {
+    if text.get(*cursor..*cursor + 4) != Some(b"SgD:") {
         return Err(CxParseError::new(*cursor, "invalid CX data SGroup record"));
     }
     *cursor += 4;
@@ -2308,11 +2993,11 @@ fn parse_data_sgroup_progress(
     let record_index = records.len();
     records.push(CxRecord::DataSGroup(CxDataSGroup {
         atoms,
-        field_name: String::new(),
-        data: String::new(),
-        query_op: String::new(),
-        field_info: String::new(),
-        field_tag: String::new(),
+        field_name: PropertyText::new(),
+        data: PropertyText::new(),
+        query_op: PropertyText::new(),
+        field_info: PropertyText::new(),
+        field_tag: PropertyText::new(),
         coordinates: None,
     }));
     checkpoints.push(CxProgressCheckpoint {
@@ -2359,7 +3044,7 @@ fn parse_data_sgroup_progress(
         });
     }
 
-    if text.as_bytes().get(*cursor) == Some(&b'(') {
+    if text.get(*cursor) == Some(&b'(') {
         let coordinates = read_text_to(text, cursor, b")")?;
         // The source increments after read_text_to without validating that a
         // closing parenthesis was found. Cap the end-iterator case safely.
@@ -2387,15 +3072,80 @@ fn parse_data_sgroup_progress(
     Ok(())
 }
 
-fn read_data_sgroup_attr(text: &str, cursor: &mut usize) -> Result<Option<String>, CxParseError> {
-    // RDKit source (verbatim; delimiter and advancement from
-    // parse_data_sgroup_attr):
-    /*
-      if (first != last && *first != '|') {
-        std::string data = read_text_to(first, last, ":");
-        ++first;
-    */
-    if *cursor >= text.len() || text.as_bytes().get(*cursor) == Some(&b'|') {
+fn read_data_sgroup_attr(
+    text: &[u8],
+    cursor: &mut usize,
+) -> Result<Option<PropertyText>, CxParseError> {
+    // BEGIN COMPLETE PINNED SF194
+    // RDKit❗❌: void parse_data_sgroup_attr(Iterator &first, Iterator last,
+    // RDKit❗❌:                             SubstanceGroup &sgroup, bool keepSGroup,
+    // RDKit❗❌:                             std::string fieldName, bool fieldIsArray = false) {
+    // RDKit❗❌:   PRECONDITION(first < last, "parse_data_sgroup_attr: first >= last");
+    // RDKit❗❌:   if (first != last && *first != '|') {
+    // RDKit❗❌:     std::string data = read_text_to(first, last, ":");
+    // RDKit❗❌:     ++first;
+    // RDKit❗❌:     if (!data.empty() && keepSGroup) {
+    // RDKit❗❌:       if (fieldIsArray) {
+    // RDKit❗❌:         std::vector<std::string> dataFields = {data};
+    // RDKit❗❌:         sgroup.setProp(fieldName, dataFields);
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         sgroup.setProp(fieldName, data);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END COMPLETE PINNED SF194
+    // BEGIN COMPLETE PINNED SF181
+    // RDKit✔️✔️: std::string read_text_to(Iterator &first, Iterator last, std::string delims) {
+    // RDKit✔️✔️:   std::string res = "";
+    // RDKit✔️✔️:   Iterator start = first;
+    // RDKit✔️✔️:   // EFF: there are certainly faster ways to do this
+    // RDKit✔️✔️:   while (first <= last && delims.find_first_of(*first) == std::string::npos) {
+    // RDKit✔️✔️:     if (*first == '&' && std::distance(first, last) > 2 &&
+    // RDKit✔️✔️:         *(first + 1) == '#') {
+    // RDKit✔️✔️:       // escaped char
+    // RDKit✔️✔️:       if (start != first) {
+    // RDKit✔️✔️:         res += std::string(start, first);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       Iterator next = first + 2;
+    // RDKit✔️✔️:       while (next != last && *next >= '0' && *next <= '9') {
+    // RDKit✔️✔️:         ++next;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next == last || *next != ';') {
+    // RDKit✔️✔️:         throw RDKit::SmilesParseException(
+    // RDKit✔️✔️:             "failure parsing CXSMILES extensions: quoted block not terminated "
+    // RDKit✔️✔️:             "with ';'");
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (next > first + 2) {
+    // RDKit✔️✔️:         std::string blk = std::string(first + 2, next);
+    // RDKit✔️✔️:         res += (char)(boost::lexical_cast<int>(blk));
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       first = next + 1;
+    // RDKit✔️✔️:       start = first;
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       ++first;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (start != first) {
+    // RDKit✔️✔️:     res += std::string(start, first);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END COMPLETE PINNED SF181
+    // Source PRECONDITION is checked even if no destination group is kept.
+    // A literal bar leaves the cursor unchanged. Read exactly raw counted
+    // bytes via the sole entity scanner, then advance one separator byte.
+    // Property writes are deferred to owning SGroup consumers. Their current
+    // DATAFIELDS now retains native StringVector in the sole MODEL store.
+    // Complete SF194 delivery still awaits the dependent IO boundary review.
+    // Cost: one source byte scan plus detached transport allocation overhead.
+    if *cursor >= text.len() {
+        return Err(CxParseError::new(
+            *cursor,
+            "parse_data_sgroup_attr: first >= last",
+        ));
+    }
+    if text.get(*cursor) == Some(&b'|') {
         return Ok(None);
     }
     let value = read_text_to(text, cursor, b":")?;
@@ -2406,7 +3156,7 @@ fn read_data_sgroup_attr(text: &str, cursor: &mut usize) -> Result<Option<String
 }
 
 fn parse_sgroup_hierarchy_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -2473,7 +3223,7 @@ fn parse_sgroup_hierarchy_progress(
     // RDKit❗✔️: retain incomplete parent relationships and parsed child values;
     // emit child checkpoints only after the entire source child list parses,
     // when the pinned helper begins its mutation loop.
-    if text.as_bytes().get(*cursor..*cursor + 4) != Some(b"SgH:") {
+    if text.get(*cursor..*cursor + 4) != Some(b"SgH:") {
         return Err(CxParseError::new(
             *cursor,
             "invalid CX SGroup hierarchy record",
@@ -2505,7 +3255,7 @@ fn parse_sgroup_hierarchy_progress(
         expect_byte(text, cursor, b':')?;
         let first_item_index = next_item_index;
         loop {
-            if text.as_bytes().get(*cursor).is_some_and(u8::is_ascii_digit) {
+            if text.get(*cursor).is_some_and(u8::is_ascii_digit) {
                 let child = read_number(text, cursor)?;
                 let CxRecord::SGroupHierarchy(hierarchies) = &mut records[record_index] else {
                     unreachable!("SGroup hierarchy progress record changed kind");
@@ -2513,7 +3263,7 @@ fn parse_sgroup_hierarchy_progress(
                 hierarchies[hierarchy_index].children.push(child);
                 next_item_index += 1;
             }
-            if text.as_bytes().get(*cursor) != Some(&b'.') {
+            if text.get(*cursor) != Some(&b'.') {
                 break;
             }
             *cursor += 1;
@@ -2528,7 +3278,7 @@ fn parse_sgroup_hierarchy_progress(
             });
         }
 
-        if text.as_bytes().get(*cursor) == Some(&b',') {
+        if text.get(*cursor) == Some(&b',') {
             *cursor += 1;
         } else {
             break;
@@ -2551,7 +3301,7 @@ enum PolymerSGroupIndexField {
 }
 
 fn parse_polymer_index_list_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     separator: u8,
     field: PolymerSGroupIndexField,
@@ -2596,7 +3346,7 @@ fn parse_polymer_index_list_progress(
     // Each parsed number is retained in its partial CX record and receives an
     // ordered checkpoint; the source list accepts empty slots and trailing separators.
     loop {
-        if text.as_bytes().get(*cursor).is_some_and(u8::is_ascii_digit) {
+        if text.get(*cursor).is_some_and(u8::is_ascii_digit) {
             let value = read_number(text, cursor)?;
             let CxRecord::PolymerSGroup(polymer) = &mut records[record_index] else {
                 unreachable!("polymer progress record changed kind");
@@ -2614,7 +3364,7 @@ fn parse_polymer_index_list_progress(
             });
             *next_item_index += 1;
         }
-        if text.as_bytes().get(*cursor) != Some(&separator) {
+        if text.get(*cursor) != Some(&separator) {
             break;
         }
         *cursor += 1;
@@ -2623,7 +3373,7 @@ fn parse_polymer_index_list_progress(
 }
 
 fn parse_polymer_sgroup_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -2689,7 +3439,7 @@ fn parse_polymer_sgroup_progress(
     // The progress record retains the source's partial local SGroup state; the
     // Search owner installs it only at Complete, matching the source helper's
     // single destination commit point.
-    if text.as_bytes().get(*cursor..*cursor + 3) != Some(b"Sg:") {
+    if text.get(*cursor..*cursor + 3) != Some(b"Sg:") {
         return Err(CxParseError::new(
             *cursor,
             "invalid CX polymer SGroup record",
@@ -2701,21 +3451,21 @@ fn parse_polymer_sgroup_progress(
         *cursor += 1;
     }
     if !matches!(
-        type_code.as_str(),
-        "n" | "mon"
-            | "mer"
-            | "co"
-            | "xl"
-            | "mod"
-            | "mix"
-            | "f"
-            | "any"
-            | "gen"
-            | "c"
-            | "grf"
-            | "alt"
-            | "ran"
-            | "blk"
+        type_code.as_bytes(),
+        b"n" | b"mon"
+            | b"mer"
+            | b"co"
+            | b"xl"
+            | b"mod"
+            | b"mix"
+            | b"f"
+            | b"any"
+            | b"gen"
+            | b"c"
+            | b"grf"
+            | b"alt"
+            | b"ran"
+            | b"blk"
     ) {
         return Err(CxParseError::new(*cursor, "unknown CX polymer SGroup type"));
     }
@@ -2724,8 +3474,8 @@ fn parse_polymer_sgroup_progress(
     records.push(CxRecord::PolymerSGroup(CxPolymerSGroup {
         type_code,
         atoms: Vec::new(),
-        label: String::new(),
-        connect: String::new(),
+        label: PropertyText::new(),
+        connect: PropertyText::new(),
         head_crossings: Vec::new(),
         tail_crossings: Vec::new(),
     }));
@@ -2747,7 +3497,7 @@ fn parse_polymer_sgroup_progress(
         checkpoints,
     )?;
 
-    if text.as_bytes().get(*cursor) == Some(&b':') {
+    if text.get(*cursor) == Some(&b':') {
         *cursor += 1;
         let label = read_text_to(text, cursor, b":|")?;
         if !label.is_empty() {
@@ -2763,7 +3513,7 @@ fn parse_polymer_sgroup_progress(
             });
             next_item_index += 1;
         }
-        if text.as_bytes().get(*cursor) == Some(&b':') {
+        if text.get(*cursor) == Some(&b':') {
             *cursor += 1;
             let connect = read_text_to(text, cursor, b":|,")?;
             if !connect.is_empty() {
@@ -2779,7 +3529,7 @@ fn parse_polymer_sgroup_progress(
                 });
                 next_item_index += 1;
             }
-            if text.as_bytes().get(*cursor) == Some(&b':') {
+            if text.get(*cursor) == Some(&b':') {
                 *cursor += 1;
                 parse_polymer_index_list_progress(
                     text,
@@ -2791,7 +3541,7 @@ fn parse_polymer_sgroup_progress(
                     records,
                     checkpoints,
                 )?;
-                if text.as_bytes().get(*cursor) == Some(&b':') {
+                if text.get(*cursor) == Some(&b':') {
                     *cursor += 1;
                     parse_polymer_index_list_progress(
                         text,
@@ -2817,7 +3567,7 @@ fn parse_polymer_sgroup_progress(
 }
 
 fn parse_variable_attachments_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -2889,7 +3639,7 @@ fn parse_variable_attachments_progress(
     // RDKit❗❌: }
     // RDKit❗❌: Primary atom checkpoints precede colon/degree-sensitive source
     // behavior; completed-row checkpoints precede source comma consumption.
-    if text.as_bytes().get(*cursor..*cursor + 2) != Some(b"m:") {
+    if text.get(*cursor..*cursor + 2) != Some(b"m:") {
         return Err(CxParseError::new(
             *cursor,
             "invalid CX variable-attachment record",
@@ -2905,7 +3655,7 @@ fn parse_variable_attachments_progress(
         phase: CxProgressPhase::Begin,
     });
     let mut next_item_index = 0;
-    while text.as_bytes().get(*cursor).is_some_and(u8::is_ascii_digit) {
+    while text.get(*cursor).is_some_and(u8::is_ascii_digit) {
         let atom = read_number(text, cursor)?;
         let attachment_index = match &mut records[record_index] {
             CxRecord::VariableAttachments(attachments) => {
@@ -2926,18 +3676,18 @@ fn parse_variable_attachments_progress(
         });
         next_item_index += 1;
 
-        if text.as_bytes().get(*cursor) == Some(&b':') {
+        if text.get(*cursor) == Some(&b':') {
             *cursor += 1;
         } else {
             return Err(CxParseError::new(*cursor, "improperly formatted m: block"));
         }
-        while text.as_bytes().get(*cursor).is_some_and(u8::is_ascii_digit) {
+        while text.get(*cursor).is_some_and(u8::is_ascii_digit) {
             let endpoint = read_number(text, cursor)?;
             let CxRecord::VariableAttachments(attachments) = &mut records[record_index] else {
                 unreachable!("variable-attachment progress record changed kind");
             };
             attachments[attachment_index].endpoints.push(endpoint);
-            if text.as_bytes().get(*cursor) == Some(&b'.') {
+            if text.get(*cursor) == Some(&b'.') {
                 *cursor += 1;
             }
         }
@@ -2948,7 +3698,7 @@ fn parse_variable_attachments_progress(
             phase: CxProgressPhase::Item,
         });
         next_item_index += 1;
-        if text.as_bytes().get(*cursor) == Some(&b',') {
+        if text.get(*cursor) == Some(&b',') {
             *cursor += 1;
         }
     }
@@ -2962,7 +3712,7 @@ fn parse_variable_attachments_progress(
 }
 
 fn parse_wedge_bonds_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -3076,7 +3826,7 @@ fn parse_wedge_bonds_progress(
         */
     // RDKit❗❌: parser checkpoints add one record and one row marker while
     // retaining the pinned cursor and per-pair mutation boundary.
-    let bytes = text.as_bytes();
+    let bytes = text;
     let last = bytes
         .iter()
         .enumerate()
@@ -3087,7 +3837,7 @@ fn parse_wedge_bonds_progress(
         return Err(CxParseError::new(*cursor, "invalid CX wedge record"));
     }
     *cursor += 1;
-    let (direction, configuration) = match text.as_bytes().get(*cursor).copied() {
+    let (direction, configuration) = match text.get(*cursor).copied() {
         Some(b':') => (CxWedgeDirection::Unknown, 2),
         Some(b'U') => {
             *cursor += 1;
@@ -3146,7 +3896,7 @@ fn parse_wedge_bonds_progress(
 }
 
 fn parse_double_bond_stereo_progress(
-    text: &str,
+    text: &[u8],
     cursor: &mut usize,
     records: &mut Vec<CxRecord>,
     checkpoints: &mut Vec<CxProgressCheckpoint>,
@@ -3196,7 +3946,7 @@ fn parse_double_bond_stereo_progress(
         */
     // RDKit❗❌: item checkpoints are emitted at each parsed source bond index,
     // before source comma consumption, so earlier target effects survive errors.
-    let bytes = text.as_bytes();
+    let bytes = text;
     let last = bytes
         .iter()
         .enumerate()
@@ -3262,11 +4012,12 @@ mod tests {
         classify_cx_dispatch, parse_coordinate_component, parse_cx_extensions,
         parse_cx_extensions_progress,
     };
+    use cosmolkit_model::PropertyText;
 
     #[test]
     fn cx_coordinate_component_decimal_range_and_signed_zero_follow_source_conversion() {
         assert_eq!(parse_coordinate_component(None, 17), Ok(None));
-        assert_eq!(parse_coordinate_component(Some(""), 17), Ok(None));
+        assert_eq!(parse_coordinate_component(Some(b""), 17), Ok(None));
         for (text, expected) in [
             ("1.7976931348623157e308", f64::MAX),
             ("1.7976931348623158e308", f64::MAX),
@@ -3276,12 +4027,14 @@ mod tests {
             ("1e-9999", 0.0),
             ("-1e-9999", -0.0),
         ] {
-            let actual = parse_coordinate_component(Some(text), 17).unwrap().unwrap();
+            let actual = parse_coordinate_component(Some(text.as_bytes()), 17)
+                .unwrap()
+                .unwrap();
             assert_eq!(actual.to_bits(), expected.to_bits(), "{text}");
         }
         for text in ["1e309", "-1e309", "+1e309", "1.7976931348623159e308"] {
             assert_eq!(
-                parse_coordinate_component(Some(text), 17),
+                parse_coordinate_component(Some(text.as_bytes()), 17),
                 Err(super::CxParseError::new(17, "invalid CX coordinate")),
                 "{text}"
             );
@@ -3291,7 +4044,9 @@ mod tests {
     #[test]
     fn cx_coordinate_component_explicit_inf_nan_keywords_keep_source_sign_and_payload_policy() {
         for text in ["inf", "INF", "InFiNiTy", "+infinity", "-iNf", "-INFINITY"] {
-            let value = parse_coordinate_component(Some(text), 17).unwrap().unwrap();
+            let value = parse_coordinate_component(Some(text.as_bytes()), 17)
+                .unwrap()
+                .unwrap();
             assert!(value.is_infinite(), "{text}");
             assert_eq!(value.is_sign_negative(), text.starts_with('-'), "{text}");
         }
@@ -3304,7 +4059,9 @@ mod tests {
             "NaN(payload)",
             "-NaN(any!é)tail)",
         ] {
-            let value = parse_coordinate_component(Some(text), 17).unwrap().unwrap();
+            let value = parse_coordinate_component(Some(text.as_bytes()), 17)
+                .unwrap()
+                .unwrap();
             assert!(value.is_nan(), "{text}");
             assert_eq!(value.is_sign_negative(), text.starts_with('-'), "{text}");
         }
@@ -3316,7 +4073,7 @@ mod tests {
             "x", "+", "-", "1e", "1e+", "1.0E-", " inf", "inf ", "nanx", "nan(", "nan)x", "--inf",
         ] {
             assert_eq!(
-                parse_coordinate_component(Some(text), 23),
+                parse_coordinate_component(Some(text.as_bytes()), 23),
                 Err(super::CxParseError::new(23, "invalid CX coordinate")),
                 "{text}"
             );
@@ -3404,9 +4161,13 @@ mod tests {
         assert!(!progress.is_complete());
         assert_eq!(progress.consumed(), text.find('?').expect("failure marker"));
         assert_eq!(progress.records().len(), 3);
-        assert!(matches!(&progress.records()[0], CxRecord::Unknown(raw) if raw == "☃,"));
+        assert!(
+            matches!(&progress.records()[0], CxRecord::Unknown(raw) if raw.as_bytes() == "☃,".as_bytes())
+        );
         assert!(matches!(progress.records()[1], CxRecord::AtomLabels(_)));
-        assert!(matches!(&progress.records()[2], CxRecord::Unknown(raw) if raw == " "));
+        assert!(
+            matches!(&progress.records()[2], CxRecord::Unknown(raw) if raw.as_bytes() == " ".as_bytes())
+        );
         assert_eq!(progress.checkpoints().len(), 2);
         assert_eq!(progress.checkpoints()[0].record_index, 1);
         assert_eq!(progress.checkpoints()[0].phase, CxProgressPhase::Item);
@@ -3558,7 +4319,11 @@ mod tests {
         };
         assert_eq!(
             values,
-            &vec![Some("aAb".to_owned()), None, Some("line;break".to_owned())]
+            &vec![
+                Some(PropertyText::from("aAb")),
+                None,
+                Some(PropertyText::from("line;break"))
+            ]
         );
         assert_eq!(labels.checkpoints().len(), 3);
         assert_eq!(labels.checkpoints()[0].phase, CxProgressPhase::Item);
@@ -3579,7 +4344,11 @@ mod tests {
         };
         assert_eq!(
             values,
-            &vec![Some("value0".to_owned()), None, Some("value2".to_owned())]
+            &vec![
+                Some(PropertyText::from("value0")),
+                None,
+                Some(PropertyText::from("value2"))
+            ]
         );
         assert_eq!(parsed_values.checkpoints()[0].item_index, Some(0));
         assert_eq!(parsed_values.checkpoints()[1].item_index, Some(2));
@@ -3606,7 +4375,10 @@ mod tests {
             };
             assert_eq!(
                 values,
-                &vec![Some("first".to_owned()), Some("second".to_owned())]
+                &vec![
+                    Some(PropertyText::from("first")),
+                    Some(PropertyText::from("second"))
+                ]
             );
             assert_eq!(progress.checkpoints().len(), 2);
             assert_eq!(progress.checkpoints()[0].item_index, Some(0));
@@ -3636,7 +4408,7 @@ mod tests {
                 CxRecord::AtomLabels(values) | CxRecord::AtomValues(values) => values,
                 other => panic!("unexpected CX slot record: {other:?}"),
             };
-            assert_eq!(values, &vec![Some("first".to_owned())]);
+            assert_eq!(values, &vec![Some(PropertyText::from("first"))]);
             assert_eq!(progress.checkpoints().len(), 1);
             assert_eq!(progress.checkpoints()[0].phase, CxProgressPhase::Item);
             assert_eq!(progress.checkpoints()[0].item_index, Some(0));
@@ -3692,8 +4464,8 @@ mod tests {
         match typed_records[1] {
             CxRecord::DataSGroup(group) => {
                 assert_eq!(group.atoms, vec![2, 1]);
-                assert_eq!(group.field_name, "FIELD");
-                assert_eq!(group.data, "info");
+                assert_eq!(group.field_name.as_bytes(), b"FIELD");
+                assert_eq!(group.data.as_bytes(), b"info");
             }
             other => panic!("unexpected record: {other:?}"),
         }
@@ -3714,13 +4486,13 @@ mod tests {
             &vec![
                 CxAtomProperty {
                     atom: 0,
-                    name: "first".to_owned(),
-                    value: "one".to_owned(),
+                    name: PropertyText::from("first"),
+                    value: PropertyText::from("one"),
                 },
                 CxAtomProperty {
                     atom: 1,
-                    name: "second".to_owned(),
-                    value: "two".to_owned(),
+                    name: PropertyText::from("second"),
+                    value: PropertyText::from("two"),
                 },
             ]
         );
@@ -3753,8 +4525,8 @@ mod tests {
             properties,
             &[CxAtomProperty {
                 atom: 2,
-                name: "good".to_owned(),
-                value: "kept".to_owned(),
+                name: PropertyText::from("good"),
+                value: PropertyText::from("kept"),
             }]
         );
         assert_eq!(progress.checkpoints().len(), 2);
@@ -3789,8 +4561,8 @@ mod tests {
             panic!("expected partial atomProp record");
         };
         assert_eq!(properties.len(), 1);
-        assert_eq!(properties[0].name, "first");
-        assert_eq!(properties[0].value, "kept");
+        assert_eq!(properties[0].name.as_bytes(), b"first");
+        assert_eq!(properties[0].value.as_bytes(), b"kept");
         assert_eq!(progress.checkpoints().len(), 1);
         assert_eq!(progress.checkpoints()[0].phase, CxProgressPhase::Item);
         assert_eq!(
@@ -3811,7 +4583,7 @@ mod tests {
             panic!("expected partial atomProp record");
         };
         assert_eq!(properties.len(), 1);
-        assert_eq!(properties[0].name, "first");
+        assert_eq!(properties[0].name.as_bytes(), b"first");
         assert_eq!(progress.checkpoints().len(), 1);
 
         let missing_close = "|atomProp:0.first.kept";
@@ -3826,7 +4598,7 @@ mod tests {
             panic!("expected partial atomProp record");
         };
         assert_eq!(properties.len(), 1);
-        assert_eq!(properties[0].value, "kept");
+        assert_eq!(properties[0].value.as_bytes(), b"kept");
         assert_eq!(progress.checkpoints().len(), 1);
         assert_eq!(progress.checkpoints()[0].cursor, missing_close.len());
     }
@@ -4276,7 +5048,8 @@ mod tests {
         assert_eq!(checkpoints[1].phase, CxProgressPhase::Item);
         assert_eq!(
             checkpoints[1].cursor,
-            text.find(',').expect("first link-node separator") + 1
+            text.find(',')
+                .expect("source degree-check cursor before separator")
         );
         assert_eq!(checkpoints[2].item_index, Some(1));
         assert_eq!(checkpoints[2].phase, CxProgressPhase::Item);
@@ -4585,12 +5358,15 @@ mod tests {
             panic!("expected one data SGroup");
         };
         assert_eq!(group.atoms, vec![2, 0]);
-        assert_eq!(group.field_name, "NAME");
-        assert_eq!(group.data, "value,with,comma:embedded");
-        assert_eq!(group.query_op, "op");
-        assert_eq!(group.field_info, "unit");
-        assert_eq!(group.field_tag, "tag");
-        assert_eq!(group.coordinates.as_deref(), Some("(1,2"));
+        assert_eq!(group.field_name.as_bytes(), b"NAME");
+        assert_eq!(group.data.as_bytes(), b"value,with,comma:embedded");
+        assert_eq!(group.query_op.as_bytes(), b"op");
+        assert_eq!(group.field_info.as_bytes(), b"unit");
+        assert_eq!(group.field_tag.as_bytes(), b"tag");
+        assert_eq!(
+            group.coordinates.as_ref().map(PropertyText::as_bytes),
+            Some(b"(1,2".as_slice())
+        );
 
         let expected = [
             (None, CxProgressPhase::Begin, text.find(":NAME").unwrap()),
@@ -4722,7 +5498,10 @@ mod tests {
         let [CxRecord::DataSGroup(group)] = progress.records() else {
             panic!("expected completed data SGroup syntax");
         };
-        assert_eq!(group.coordinates.as_deref(), Some("(raw|"));
+        assert_eq!(
+            group.coordinates.as_ref().map(PropertyText::as_bytes),
+            Some(b"(raw|".as_slice())
+        );
         assert!(progress.checkpoints().iter().any(|checkpoint| {
             checkpoint.phase == CxProgressPhase::Complete && checkpoint.cursor == text.len()
         }));
@@ -4739,10 +5518,10 @@ mod tests {
         let [CxRecord::PolymerSGroup(polymer)] = progress.records() else {
             panic!("expected one polymer SGroup");
         };
-        assert_eq!(polymer.type_code, "n");
+        assert_eq!(polymer.type_code.as_bytes(), b"n");
         assert_eq!(polymer.atoms, [2, 0, 2]);
-        assert_eq!(polymer.label, "repeat");
-        assert_eq!(polymer.connect, "hh,f");
+        assert_eq!(polymer.label.as_bytes(), b"repeat");
+        assert_eq!(polymer.connect.as_bytes(), b"hh,f");
         assert_eq!(polymer.head_crossings, [1, 0]);
         assert_eq!(polymer.tail_crossings, [2]);
 
@@ -4787,7 +5566,7 @@ mod tests {
             assert!(progress.is_complete(), "{input:?}");
             assert!(matches!(
                 progress.records(),
-                [CxRecord::PolymerSGroup(polymer)] if polymer.type_code == type_code
+                [CxRecord::PolymerSGroup(polymer)] if polymer.type_code.as_bytes() == type_code.as_bytes()
             ));
             assert_eq!(
                 parse_cx_extensions(&input)
@@ -4844,13 +5623,20 @@ mod tests {
         );
 
         for (text, bad_number, expected_atoms, expected_head, expected_tail, committed_items) in [
-            ("|Sg:n:4294967296|", "4294967296", vec![], vec![], vec![], 0),
+            (
+                "|Sg:n:4294967296|",
+                "4294967296",
+                Vec::<usize>::new(),
+                Vec::<usize>::new(),
+                Vec::<usize>::new(),
+                0,
+            ),
             (
                 "|Sg:n:0:lab:eu:4294967296|",
                 "4294967296",
                 vec![0],
-                vec![],
-                vec![],
+                Vec::<usize>::new(),
+                Vec::<usize>::new(),
                 3,
             ),
             (
@@ -4858,7 +5644,7 @@ mod tests {
                 "4294967296",
                 vec![0],
                 vec![1],
-                vec![],
+                Vec::<usize>::new(),
                 4,
             ),
         ] {
@@ -4936,7 +5722,7 @@ mod tests {
         assert!(matches!(
             progress.records(),
             [CxRecord::PolymerSGroup(polymer)]
-                if polymer.atoms == [0] && polymer.label == "repeat" && polymer.connect == "hh"
+                if polymer.atoms == [0] && polymer.label.as_bytes() == b"repeat" && polymer.connect.as_bytes() == b"hh"
         ));
         assert!(progress.checkpoints().iter().any(|checkpoint| {
             checkpoint.phase == CxProgressPhase::Complete

@@ -30,10 +30,9 @@ fn pinned_smiles_cleanup_preserves_original_sgroup_cx_index() {
         assert_eq!(
             record.topology.substance_groups[0]
                 .props()
-                .get("_cxsmilesindex")
-                .unwrap()
-                .as_str(),
-            "0",
+                .get("_cxsmilesindex".as_bytes())
+                .unwrap(),
+            &cosmolkit_model::PropertyValue::UInt(0),
             "{text}"
         );
     }

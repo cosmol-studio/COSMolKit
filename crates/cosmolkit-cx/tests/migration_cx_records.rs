@@ -140,8 +140,8 @@ fn scanner_decodes_source_decimal_entities_in_every_text_family() {
     let CxRecord::DataSGroup(sgroup) = &sgroup.records()[0] else {
         panic!("expected data SGroup")
     };
-    assert_eq!(sgroup.field_name, "FIELD");
-    assert_eq!(sgroup.data, "d;x");
+    assert_eq!(sgroup.field_name.as_bytes(), "FIELD".as_bytes());
+    assert_eq!(sgroup.data.as_bytes(), "d;x".as_bytes());
 }
 
 #[test]
@@ -155,9 +155,9 @@ fn scanner_reproduces_pinned_int_to_char_narrowing_and_string_lift() {
             Some("x\0y".into()),
             Some("x\0y".into()),
             Some("xAy".into()),
-            Some("\u{80}".into()),
-            Some("\u{ff}".into()),
-            Some("\u{ff}".into()),
+            Some(b"\x80".into()),
+            Some(b"\xff".into()),
+            Some(b"\xff".into()),
             None,
         ])]
     );
@@ -180,8 +180,8 @@ fn scanner_applies_entity_conversion_in_property_and_sgroup_text_consumers() {
     let CxRecord::DataSGroup(sgroup) = &sgroup.records()[0] else {
         panic!("expected data SGroup")
     };
-    assert_eq!(sgroup.field_name, "F\u{ff}");
-    assert_eq!(sgroup.data, "dAta");
+    assert_eq!(sgroup.field_name.as_bytes(), b"F\xff");
+    assert_eq!(sgroup.data.as_bytes(), "dAta".as_bytes());
 }
 
 #[test]
@@ -276,21 +276,59 @@ fn byte_offsets_and_consumption_remain_valid_around_utf8_payloads() {
 fn dependency_direction_keeps_cx_below_both_real_consumers() {
     let cx_manifest = include_str!("../Cargo.toml");
     let dependencies = cx_manifest.split_once("[dependencies]").unwrap().1.trim();
-    assert!(
-        dependencies.is_empty(),
-        "unexpected CX dependency: {dependencies}"
+    // Canonical byte storage belongs to MODEL; the sole numeric source
+    // kernel belongs to CORE. Preserve exactly these two authorized downward
+    // edges and reject every other dependency, including a reverse CORE edge.
+    let expected_dependencies = format!(
+        "cosmolkit-model = {{ version = \"{}\", path = \"../cosmolkit-model\" }}\ncosmolkit-core = {{ version = \"{}\", path = \"../cosmolkit-core\" }}",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION")
     );
+    assert_eq!(dependencies, expected_dependencies);
+    let core_manifest = include_str!("../../cosmolkit-core/Cargo.toml");
+    assert!(!core_manifest.contains("cosmolkit-cx"));
 
     let smiles_manifest = include_str!("../../cosmolkit-smiles/Cargo.toml");
     let search_manifest = include_str!("../../cosmolkit-search/Cargo.toml");
     assert!(smiles_manifest.contains("cosmolkit-cx ="));
     assert!(search_manifest.contains("cosmolkit-cx ="));
-    for forbidden in [
-        "cosmolkit-smiles",
-        "cosmolkit-search",
-        "cosmolkit-core",
-        "cosmolkit-model",
-    ] {
+    for forbidden in ["cosmolkit-smiles", "cosmolkit-search", "cosmolkit-macros"] {
         assert!(!dependencies.contains(forbidden));
     }
+}
+
+#[test]
+fn raw_byte_regression_payloads_entities_and_unknown_spans_keep_exact_identity() {
+    let input = b"|$\xff;\0;&#195;&#169;;&#128;;&#255;$|";
+    let parsed = parse_cx_extensions(input).unwrap();
+    assert_eq!(parsed.consumed(), input.len());
+    assert_eq!(
+        parsed.records(),
+        &[CxRecord::AtomLabels(vec![
+            Some(b"\xff".into()),
+            Some(b"\0".into()),
+            Some(b"\xc3\xa9".into()),
+            Some(b"\x80".into()),
+            Some(b"\xff".into()),
+        ])]
+    );
+    let unknown = parse_cx_extensions(b"|\xff\0###,u:0|").unwrap();
+    assert!(
+        matches!(unknown.records()[0], CxRecord::Unknown(ref raw) if raw.as_bytes() == b"\xff\0###,")
+    );
+}
+
+#[test]
+fn raw_byte_regression_numeric_special_payload_survives_entity_scan_and_conversion() {
+    // Source read_text_to decodes the quoted parentheses before splitting the
+    // coordinate field; Boost receives an opaque high-byte NaN payload.
+    let parsed = parse_cx_extensions(b"|(nan&#40;\xff&#41;,0)|").unwrap();
+    let CxRecord::Coordinates(row) = &parsed.records()[0] else {
+        panic!("coordinate record");
+    };
+    let point = row.values[0].unwrap();
+    assert_eq!(point[0].to_bits(), 0x7ff8_0000_0000_0000);
+    assert_eq!(point[1].to_bits(), 0);
+    assert_eq!(point[2].to_bits(), 0);
+    assert!(!row.is_3d);
 }

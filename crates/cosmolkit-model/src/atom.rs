@@ -1,3 +1,4 @@
+use crate::PropertyText;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
@@ -35,6 +36,8 @@ impl fmt::Display for AtomId {
 pub enum AtomPropertyError {
     #[error("atom property key cannot be empty")]
     EmptyKey,
+    #[error("computed property list has the wrong value kind: {0}")]
+    ComputedListKind(crate::PropertyValueError),
 }
 
 /// One ordered template-attachment entry carried by an atom.
@@ -433,6 +436,7 @@ pub(crate) struct AtomProperties {
     pub(crate) no_implicit: bool,
     pub(crate) radical_electrons: u8,
     pub(crate) hybridization: Hybridization,
+    pub(crate) source_valence_facts: crate::SourceAtomValenceFacts,
     // BEGIN RDKIT CPP FUNCTION Atom::initFromOther temporary flags
     // RDKit❗✔️: d_flags = other.d_flags;
     // END RDKIT CPP FUNCTION Atom::initFromOther temporary flags
@@ -462,6 +466,7 @@ impl AtomProperties {
             no_implicit: false,
             radical_electrons: 0,
             hybridization: Hybridization::Unspecified,
+            source_valence_facts: crate::SourceAtomValenceFacts::UNINITIALIZED,
             // BEGIN RDKIT CPP MEMBER Atom::d_flags default
             // RDKit✔️✔️: std::uint64_t d_flags = 0ul;
             // END RDKIT CPP MEMBER Atom::d_flags default
@@ -474,19 +479,26 @@ impl AtomProperties {
 
     pub(crate) fn set_prop(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<(), AtomPropertyError> {
         let key = key.into();
         validate_property_key(&key)?;
         // A non-computed write does not remove an existing computed marker.
-        self.props.set(key, value.into());
+        self.props
+            .set(key, value.into())
+            .map_err(|error| match error {
+                crate::property_value::PropertyStoreError::EmptyKey => AtomPropertyError::EmptyKey,
+                crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                    AtomPropertyError::ComputedListKind(source)
+                }
+            })?;
         Ok(())
     }
 
     pub(crate) fn set_computed_prop(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<(), AtomPropertyError> {
         // RDKit✔️🔝: if (computed) {
@@ -498,15 +510,21 @@ impl AtomProperties {
         // RDKit✔️🔝:   }
         // RDKit✔️🔝: }
         // RDKit✔️🔝: d_props.setVal(key, val);
-        // The ordered set and canonical tree replace the source linear scans
-        // with logarithmic operations; the key index records first insertion.
+        // Delegate to the canonical ordered dictionary and real computed vector.
         let key = key.into();
         validate_property_key(&key)?;
-        self.props.set_computed(key, value.into());
+        self.props
+            .set_computed(key, value.into())
+            .map_err(|error| match error {
+                crate::property_value::PropertyStoreError::EmptyKey => AtomPropertyError::EmptyKey,
+                crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                    AtomPropertyError::ComputedListKind(source)
+                }
+            })?;
         Ok(())
     }
 
-    pub(crate) fn clear_prop(&mut self, key: &str) {
+    pub(crate) fn clear_prop(&mut self, key: impl AsRef<[u8]>) -> Result<(), AtomPropertyError> {
         // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
         // RDKit✔️🔝: if (svi != compLst.end()) {
         // RDKit✔️🔝:   compLst.erase(svi);
@@ -525,17 +543,17 @@ impl AtomProperties {
         // END RDKIT CPP FUNCTION Dict::clearVal
         // Tree/set removal plus the ordered-index erase preserves the source
         // transition with logarithmic value lookup and one linear key erase.
-        self.props.clear(key);
+        self.props.clear(key).map_err(AtomPropertyError::from)
     }
 
-    pub(crate) fn clear_computed_props(&mut self) {
+    pub(crate) fn clear_computed_props(&mut self) -> Result<(), AtomPropertyError> {
         // RDKit✔️🔝: for (const auto &key : compLst) {
         // RDKit✔️🔝:   d_props.clearVal(key);
         // RDKit✔️🔝: }
         // Moving the set avoids the source vector copy. Tree removal followed
         // by one ordered-index retain improves on repeated source vector erases
         // while preserving exact membership-based clearing.
-        self.props.clear_computed();
+        self.props.clear_computed().map_err(AtomPropertyError::from)
     }
 
     pub(crate) fn remap_template_attachment_order(
@@ -708,7 +726,7 @@ impl AtomSpec {
     #[must_use]
     pub fn with_prop(
         mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<Self, AtomPropertyError> {
         self.properties.set_prop(key, value)?;
@@ -718,7 +736,7 @@ impl AtomSpec {
     #[must_use]
     pub fn with_computed_prop(
         mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<Self, AtomPropertyError> {
         self.properties.set_computed_prop(key, value)?;
@@ -830,22 +848,36 @@ impl AtomSpec {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, PropertyValue> {
+    pub fn props(&self) -> &BTreeMap<PropertyText, PropertyValue> {
         self.properties.props.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&PropertyValue> {
-        self.properties.props.get(key)
+    pub fn prop(&self, key: impl AsRef<[u8]>) -> Option<&PropertyValue> {
+        self.properties.props.get(key.as_ref())
+    }
+
+    /// Read a required detached property without conversion.
+    #[doc(hidden)]
+    pub fn prop_required(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<&crate::PropertyValue, crate::MissingPropertyError> {
+        self.properties.props.get_required(key)
     }
 
     #[must_use]
-    pub fn is_prop_computed(&self, key: &str) -> bool {
+    pub fn is_prop_computed(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<bool, crate::PropertyValueError> {
         self.properties.props.is_computed(key)
     }
 
     #[must_use]
-    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+    pub fn computed_prop_names(
+        &self,
+    ) -> Result<Option<&[PropertyText]>, crate::PropertyValueError> {
         self.properties.props.computed_names()
     }
 
@@ -864,7 +896,7 @@ impl AtomSpec {
     }
 }
 
-fn validate_property_key(key: &str) -> Result<(), AtomPropertyError> {
+fn validate_property_key(key: &PropertyText) -> Result<(), AtomPropertyError> {
     // BEGIN RDKIT CPP FUNCTION RDProps::setProp empty-key precondition
     // RDKit✔️✔️: if(key.empty()) {
     // RDKit✔️✔️:   throw ValueErrorException("Cannot set property with empty key");
@@ -891,7 +923,7 @@ pub struct Atom {
 /// property formats. Mutation remains owned by [`Atom`].
 pub fn ordered_atom_properties(
     atom: &Atom,
-) -> impl ExactSizeIterator<Item = (&str, &PropertyValue)> + '_ {
+) -> impl ExactSizeIterator<Item = (&PropertyText, &PropertyValue)> + '_ {
     // BEGIN RDKIT CPP FUNCTION Dict::keys / RDProps::getPropList
     // RDKit❗✔️: for (const auto &item : _data) {
     // RDKit❗✔️:   res.push_back(item.key);
@@ -922,6 +954,39 @@ pub fn replace_atom_template_attachment_order(
 }
 
 impl Atom {
+    /// Replace detached canonical records atomically; no live storage access.
+    #[doc(hidden)]
+    pub fn replace_property_records(
+        &mut self,
+        records: impl IntoIterator<Item = (PropertyText, PropertyValue)>,
+    ) -> Result<(), AtomPropertyError> {
+        // ROOT CK-a88d982c9d33462896acbb759460e4e8: necessary codec carrier
+        // transport. Replay ordinary set into a fresh store; reserved entries
+        // retain their tag and position without invoking computed operations.
+        let mut replacement = crate::property_value::PropertyStore::new();
+        for (key, value) in records {
+            replacement
+                .set(key, value)
+                .map_err(AtomPropertyError::from)?;
+        }
+        self.properties.props = replacement;
+        Ok(())
+    }
+
+    /// Borrow property records using the source private/computed include flags.
+    #[doc(hidden)]
+    pub fn property_records(
+        &self,
+        include_private: bool,
+        include_computed: bool,
+    ) -> Result<impl Iterator<Item = (&PropertyText, &crate::PropertyValue)> + '_, AtomPropertyError>
+    {
+        self.properties
+            .props
+            .filtered_ordered(include_private, include_computed)
+            .map_err(AtomPropertyError::from)
+    }
+
     pub fn from_spec(id: AtomId, spec: AtomSpec) -> Self {
         let (element, properties) = spec.into_query_parts();
         Self {
@@ -993,6 +1058,18 @@ impl Atom {
         // RDKit✔️✔️: void setFlags(std::uint64_t flags) { d_flags = flags; }
         // END RDKIT CPP FUNCTION Atom::setFlags
         self.properties.temporary_flags = flags;
+    }
+
+    /// Borrow the source's stored values without invoking a valence getter.
+    #[doc(hidden)]
+    pub const fn source_valence_facts(&self) -> crate::SourceAtomValenceFacts {
+        self.properties.source_valence_facts
+    }
+
+    /// Transport actual producer values; MODEL performs no calculation.
+    #[doc(hidden)]
+    pub fn set_source_valence_facts(&mut self, facts: crate::SourceAtomValenceFacts) {
+        self.properties.source_valence_facts = facts;
     }
 
     #[must_use]
@@ -1084,13 +1161,22 @@ impl Atom {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, PropertyValue> {
+    pub fn props(&self) -> &BTreeMap<PropertyText, PropertyValue> {
         self.properties.props.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&PropertyValue> {
-        self.properties.props.get(key)
+    pub fn prop(&self, key: impl AsRef<[u8]>) -> Option<&PropertyValue> {
+        self.properties.props.get(key.as_ref())
+    }
+
+    /// Read a required detached property without conversion.
+    #[doc(hidden)]
+    pub fn prop_required(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<&crate::PropertyValue, crate::MissingPropertyError> {
+        self.properties.props.get_required(key)
     }
 
     /// Return the exact unsigned legacy CIP rank stored by its sole owner.
@@ -1114,12 +1200,17 @@ impl Atom {
 
     /// Returns whether a property is registered as computed state.
     #[must_use]
-    pub fn is_prop_computed(&self, key: &str) -> bool {
+    pub fn is_prop_computed(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<bool, crate::PropertyValueError> {
         self.properties.props.is_computed(key)
     }
 
     #[must_use]
-    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+    pub fn computed_prop_names(
+        &self,
+    ) -> Result<Option<&[PropertyText]>, crate::PropertyValueError> {
         self.properties.props.computed_names()
     }
 
@@ -1236,7 +1327,7 @@ impl Atom {
     #[doc(hidden)]
     pub fn set_prop(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<(), AtomPropertyError> {
         self.properties.set_prop(key, value)
@@ -1245,20 +1336,20 @@ impl Atom {
     #[doc(hidden)]
     pub fn set_computed_prop(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<(), AtomPropertyError> {
         self.properties.set_computed_prop(key, value)
     }
 
     #[doc(hidden)]
-    pub fn clear_prop(&mut self, key: &str) {
-        self.properties.clear_prop(key);
+    pub fn clear_prop(&mut self, key: impl AsRef<[u8]>) -> Result<(), AtomPropertyError> {
+        self.properties.clear_prop(key)
     }
 
     #[doc(hidden)]
-    pub fn clear_computed_props(&mut self) {
-        self.properties.clear_computed_props();
+    pub fn clear_computed_props(&mut self) -> Result<(), AtomPropertyError> {
+        self.properties.clear_computed_props()
     }
 
     #[doc(hidden)]
@@ -1273,35 +1364,36 @@ impl Atom {
     }
 }
 
+impl From<crate::property_value::PropertyStoreError> for AtomPropertyError {
+    fn from(error: crate::property_value::PropertyStoreError) -> Self {
+        match error {
+            crate::property_value::PropertyStoreError::EmptyKey => Self::EmptyKey,
+            crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                Self::ComputedListKind(source)
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    // These original fixtures contain UTF-8 literals. Decode only their
+    // borrowed test projection; raw-byte controls assert as_bytes directly.
+    // Invalid bytes fail this assertion, never change a chemistry outcome.
+    fn fixture_text(value: &crate::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+
     use super::*;
     use crate::{AtomQueryPredicate, QueryAtom, QueryNode};
 
     fn assert_property_order_invariant(properties: &AtomProperties, expected: &[&str]) {
-        let actual = properties
-            .props
-            .ordered_keys()
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        assert_eq!(actual, expected);
-        assert_eq!(
-            properties.props.ordered_keys().len(),
-            properties.props.values().len()
-        );
-
-        let unique = properties
-            .props
-            .ordered_keys()
-            .iter()
-            .collect::<BTreeSet<_>>();
-        assert_eq!(unique.len(), properties.props.ordered_keys().len());
+        let keys = properties.props.ordered_keys();
+        assert_eq!(keys.iter().map(fixture_text).collect::<Vec<_>>(), expected);
+        assert_eq!(keys.len(), properties.props.values().len());
+        assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), keys.len());
         assert!(
-            properties
-                .props
-                .ordered_keys()
-                .iter()
+            keys.iter()
                 .all(|key| properties.props.values().contains_key(key))
         );
         assert!(
@@ -1309,7 +1401,7 @@ mod tests {
                 .props
                 .values()
                 .keys()
-                .all(|key| properties.props.ordered_keys().contains(key))
+                .all(|key| keys.contains(key))
         );
     }
 
@@ -1328,8 +1420,8 @@ mod tests {
         assert_eq!(
             properties
                 .props
-                .get("z")
-                .and_then(|value| value.as_string().ok()),
+                .get("z".as_bytes())
+                .map(|value| fixture_text(value.as_string().unwrap())),
             Some("updated")
         );
 
@@ -1348,31 +1440,38 @@ mod tests {
         properties.set_prop("z", "ordinary").unwrap();
         assert_property_order_invariant(&properties, &["z"]);
         properties.set_computed_prop("c", "computed").unwrap();
-        assert_property_order_invariant(&properties, &["z", "c"]);
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "c"]);
         properties.set_prop("a", "ordinary").unwrap();
-        assert_property_order_invariant(&properties, &["z", "c", "a"]);
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "c", "a"]);
 
         properties.set_prop("c", "overwritten").unwrap();
-        assert_property_order_invariant(&properties, &["z", "c", "a"]);
-        assert!(properties.props.is_computed("c"));
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "c", "a"]);
+        assert!(properties.props.is_computed("c").unwrap());
         properties.set_computed_prop("z", "now-computed").unwrap();
-        assert_property_order_invariant(&properties, &["z", "c", "a"]);
-        assert!(properties.props.is_computed("z"));
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "c", "a"]);
+        assert!(properties.props.is_computed("z").unwrap());
 
         properties.clear_prop("c");
-        assert_property_order_invariant(&properties, &["z", "a"]);
-        assert!(!properties.props.is_computed("c"));
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "a"]);
+        assert!(!properties.props.is_computed("c").unwrap());
         properties.set_computed_prop("c", "reinserted").unwrap();
-        assert_property_order_invariant(&properties, &["z", "a", "c"]);
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "a", "c"]);
 
         properties.clear_computed_props();
-        assert_property_order_invariant(&properties, &["a"]);
-        assert!(properties.props.computed_names().is_empty());
+        assert_property_order_invariant(&properties, &["__computedProps", "a"]);
+        assert!(
+            properties
+                .props
+                .computed_names()
+                .unwrap()
+                .expect("computed list retained")
+                .is_empty()
+        );
         assert_eq!(
             properties
                 .props
-                .get("a")
-                .and_then(|value| value.as_string().ok()),
+                .get("a".as_bytes())
+                .map(|value| fixture_text(value.as_string().unwrap())),
             Some("ordinary")
         );
     }
@@ -1382,7 +1481,7 @@ mod tests {
         let mut properties = AtomProperties::new();
         properties.set_prop("z", "last").unwrap();
         properties.set_computed_prop("a", "first").unwrap();
-        assert_property_order_invariant(&properties, &["z", "a"]);
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "a"]);
 
         let before_invalid = properties.clone();
         assert_eq!(
@@ -1390,33 +1489,33 @@ mod tests {
             Err(AtomPropertyError::EmptyKey)
         );
         assert_eq!(properties, before_invalid);
-        assert_property_order_invariant(&properties, &["z", "a"]);
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "a"]);
         assert_eq!(
             properties.set_computed_prop("", "invalid"),
             Err(AtomPropertyError::EmptyKey)
         );
         assert_eq!(properties, before_invalid);
-        assert_property_order_invariant(&properties, &["z", "a"]);
+        assert_property_order_invariant(&properties, &["z", "__computedProps", "a"]);
 
         let spec = AtomSpec {
             element: Element::C,
             properties,
         };
         let cloned_spec = spec.clone();
-        assert_property_order_invariant(&spec.properties, &["z", "a"]);
-        assert_property_order_invariant(&cloned_spec.properties, &["z", "a"]);
+        assert_property_order_invariant(&spec.properties, &["z", "__computedProps", "a"]);
+        assert_property_order_invariant(&cloned_spec.properties, &["z", "__computedProps", "a"]);
 
         let atom = Atom::from_spec(AtomId::new(0), spec);
         let cloned_atom = atom.clone();
-        assert_property_order_invariant(&atom.properties, &["z", "a"]);
-        assert_property_order_invariant(&cloned_atom.properties, &["z", "a"]);
+        assert_property_order_invariant(&atom.properties, &["z", "__computedProps", "a"]);
+        assert_property_order_invariant(&cloned_atom.properties, &["z", "__computedProps", "a"]);
 
         let query = QueryAtom::from_parts(
             atom,
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
         );
         let round_tripped = query.try_to_atom().unwrap();
-        assert_property_order_invariant(&round_tripped.properties, &["z", "a"]);
+        assert_property_order_invariant(&round_tripped.properties, &["z", "__computedProps", "a"]);
     }
 
     #[test]
@@ -1429,10 +1528,13 @@ mod tests {
             .with_prop("first", PropertyValue::Bool(true))
             .unwrap();
         let source_spec = spec.clone();
-        assert_property_order_invariant(&spec.properties, &["first", "computed"]);
+        assert_property_order_invariant(
+            &spec.properties,
+            &["first", "__computedProps", "computed"],
+        );
         assert_eq!(spec.prop("first"), Some(&PropertyValue::Bool(true)));
         assert_eq!(spec.prop("computed"), Some(&PropertyValue::Double(-0.0)));
-        assert!(spec.is_prop_computed("computed"));
+        assert!(spec.is_prop_computed("computed").unwrap());
 
         let atom = Atom::from_spec(AtomId::new(0), spec);
         let source_atom = atom.clone();
@@ -1445,10 +1547,13 @@ mod tests {
         assert_eq!(source_spec.prop("first"), Some(&PropertyValue::Bool(true)));
         assert_eq!(atom, source_atom);
         assert_eq!(round_tripped, source_atom);
-        assert_property_order_invariant(&round_tripped.properties, &["first", "computed"]);
+        assert_property_order_invariant(
+            &round_tripped.properties,
+            &["first", "__computedProps", "computed"],
+        );
         assert_eq!(query.prop("first"), Some(&PropertyValue::Bool(true)));
         assert_eq!(query.prop("computed"), Some(&PropertyValue::Double(-0.0)));
-        assert!(query.is_prop_computed("computed"));
+        assert!(query.is_prop_computed("computed").unwrap());
     }
 }
 
@@ -1504,11 +1609,17 @@ mod flags_tests {
         clone.clear_computed_props();
         assert_eq!(clone.temporary_flags(), 0xFEDC_BA98_7654_3210);
         assert_eq!(clone.prop("derived"), None);
-        assert!(clone.computed_prop_names().is_empty());
+        assert!(
+            clone
+                .computed_prop_names()
+                .unwrap()
+                .expect("computed list retained")
+                .is_empty()
+        );
         assert_eq!(source.temporary_flags(), 0x8123_4567_89AB_CDEF);
         assert_eq!(
             source.prop("derived"),
-            Some(&PropertyValue::String("value".to_owned()))
+            Some(&PropertyValue::String("value".into()))
         );
     }
 }

@@ -17,6 +17,7 @@ pub struct UnsupportedFeatureError {
 pub enum MoleculeOpOutput {
     Single,
     Multiple,
+    LazyMultiple,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,6 +39,8 @@ pub enum TopologyEditKind {
     Compacting,
     Appending,
     Renumbering,
+    /// Complete detached products validated against typed row origins.
+    Reconstruction,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -205,6 +208,7 @@ pub enum CipStatePolicy {
     ClearComputed,
     Assign,
     TautomerSourceTransition,
+    StereoisomerSourceTransition,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -241,6 +245,8 @@ pub enum MappingRequirement {
     None,
     Identity,
     Required,
+    /// Source rows may have multiple descendants, or none for a new row.
+    Reconstruction,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -43,6 +43,11 @@ pub(crate) fn drawing_pyerr(
         E::Wedge(..) => "Wedge",
         E::Valence(..) => "Valence",
         E::CoordinateGeneration(..) => "CoordinateGeneration",
+        E::SvgTextProjection(..) => "SvgTextProjection",
+        E::PropertyString(..) => "PropertyString",
+        E::VariationArray(..) => "VariationArray",
+        E::VariationIndex { .. } => "VariationIndex",
+        E::DataFieldDouble { .. } => "DataFieldDouble",
         E::SvgParse(..) => "SvgParse",
         E::PngEncode(..) => "PngEncode",
         E::StateRows { .. } => "StateRows",
@@ -94,6 +99,7 @@ pub(crate) fn operation_pyerr(
     use ck::OperationError as E;
     let kind = match source {
         E::Alignment(..) => "Alignment",
+        E::Enumeration(..) => "Enumeration",
         E::UnsupportedFeature { .. } => "UnsupportedFeature",
         E::Unsupported { .. } => "Unsupported",
         E::OutputMismatch { .. } => "OutputMismatch",
@@ -117,6 +123,9 @@ pub(crate) fn operation_pyerr(
         E::InvalidTopology(..) => "InvalidTopology",
         E::InvalidTopologyEdit(..) => "InvalidTopologyEdit",
         E::InvalidCoordinates(..) => "InvalidCoordinates",
+        E::AtomProperty(..) => "AtomProperty",
+        E::BondProperty(..) => "BondProperty",
+        E::InvalidReconstructionOrigin { .. } => "InvalidReconstructionOrigin",
         E::InvalidProperty(..) => "InvalidProperty",
         E::Valence(..) => "Valence",
         E::Radical(..) => "Radical",
@@ -151,6 +160,7 @@ pub(crate) fn operation_pyerr(
             E::UffOptimization(cause) => Some(crate::uff_binding::optimization_pyerr(py, cause)),
             E::MmffOptimization(cause) => Some(crate::mmff_binding::optimization_pyerr(py, cause)),
             E::Tautomer(cause) => Some(crate::tautomer_binding::run_pyerr(py, cause)),
+            E::Enumeration(cause) => Some(crate::canonical_stereoisomers::run_pyerr(py, cause)),
             E::Alignment(cause) => {
                 Some(crate::alignment_binding::alignment_pyerr(py, cause.clone()))
             }
@@ -354,24 +364,315 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
-    #[staticmethod]
-    fn from_sdf(py: Python<'_>, input: &str) -> PyResult<Self> {
-        ck::Molecule::from_sdf(input)
-            .map(Self::from_inner)
-            .map_err(|error| crate::canonical_sdf::sdf_pyerr(py, error))
+    fn atom_property_string(
+        &self,
+        py: Python<'_>,
+        id: usize,
+        key: &str,
+    ) -> PyResult<Option<String>> {
+        self.inner
+            .atom_property_string(ck::AtomId::new(id), key)
+            .map_err(|source| crate::canonical_property_values::property_string_pyerr(py, source))?
+            .map(|text| crate::canonical_sdf::decode_source_text(py, &text))
+            .transpose()
     }
 
+    fn bond_property_string(
+        &self,
+        py: Python<'_>,
+        id: usize,
+        key: &str,
+    ) -> PyResult<Option<String>> {
+        self.inner
+            .bond_property_string(ck::BondId::new(id), key)
+            .map_err(|source| crate::canonical_property_values::property_string_pyerr(py, source))?
+            .map(|text| crate::canonical_sdf::decode_source_text(py, &text))
+            .transpose()
+    }
+    fn enumerate_stereoisomers(
+        &self,
+        py: Python<'_>,
+    ) -> PyResult<crate::canonical_stereoisomers::StereoisomerIterator> {
+        crate::canonical_stereoisomers::enumerate_stereoisomers(self, py)
+    }
+    fn enumerate_stereoisomers_with_options(
+        &self,
+        py: Python<'_>,
+        options: &crate::canonical_stereoisomers::StereoisomerOptions,
+    ) -> PyResult<crate::canonical_stereoisomers::StereoisomerIterator> {
+        crate::canonical_stereoisomers::enumerate_stereoisomers_with_options(self, py, options)
+    }
+    fn enumerate_stereoisomers_with_random_bits(
+        &self,
+        py: Python<'_>,
+        options: &crate::canonical_stereoisomers::StereoisomerOptions,
+        callback: Py<PyAny>,
+    ) -> PyResult<crate::canonical_stereoisomers::StereoisomerIterator> {
+        crate::canonical_stereoisomers::enumerate_stereoisomers_with_random_bits(
+            self, py, options, callback,
+        )
+    }
+    #[gen_stub(override_return_type(type_repr = "builtins.int", imports = ("builtins")))]
+    fn stereoisomer_count(&self, py: Python<'_>) -> PyResult<num_bigint::BigUint> {
+        crate::canonical_stereoisomers::stereoisomer_count(self, py)
+    }
+    #[gen_stub(override_return_type(type_repr = "builtins.int", imports = ("builtins")))]
+    fn stereoisomer_count_with_options(
+        &self,
+        py: Python<'_>,
+        options: &crate::canonical_stereoisomers::StereoisomerOptions,
+    ) -> PyResult<num_bigint::BigUint> {
+        crate::canonical_stereoisomers::stereoisomer_count_with_options(self, py, options)
+    }
+
+    /// Parse XYZ without inferring bonds; preserve raw source coordinate values.
+    #[staticmethod]
+    fn from_xyz_block(py: Python<'_>, text: &str) -> PyResult<Self> {
+        ck::Molecule::from_xyz_block(text)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn read_xyz(py: Python<'_>, path: &str) -> PyResult<Self> {
+        ck::Molecule::read_xyz(path)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_xyz(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_xyz()
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_xyz_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_molecular_io::XyzWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_xyz_with_params(&params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn write_xyz(&self, py: Python<'_>, path: &str) -> PyResult<()> {
+        self.inner
+            .write_xyz(path)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn write_xyz_with_params(
+        &self,
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_molecular_io::XyzWriteParams,
+    ) -> PyResult<()> {
+        self.inner
+            .write_xyz_with_params(path, &params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+
+    #[staticmethod]
+    fn from_mol(py: Python<'_>, text: &str) -> PyResult<Self> {
+        ck::Molecule::from_mol(text)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn from_mol_with_params(
+        py: Python<'_>,
+        text: &str,
+        params: &crate::canonical_sdf::SdfReadParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::from_mol_with_params(text, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn from_sdf(py: Python<'_>, text: &str) -> PyResult<Self> {
+        ck::Molecule::from_sdf(text)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
+    }
     #[staticmethod]
     fn from_sdf_with_params(
         py: Python<'_>,
-        input: &str,
+        text: &str,
         params: &crate::canonical_sdf::SdfReadParams,
     ) -> PyResult<Self> {
-        ck::Molecule::from_sdf_with_params(input, &params.inner)
+        ck::Molecule::from_sdf_with_params(text, &params.inner)
             .map(Self::from_inner)
-            .map_err(|error| crate::canonical_sdf::sdf_pyerr(py, error))
+            .map_err(|e| crate::canonical_sdf::sdf_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn read_mol(py: Python<'_>, path: &str) -> PyResult<Self> {
+        ck::Molecule::read_mol(path)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn read_mol_with_params(
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_sdf::SdfReadParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::read_mol_with_params(path, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn read_sdf(py: Python<'_>, path: &str) -> PyResult<Self> {
+        ck::Molecule::read_sdf(path)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn read_sdf_with_params(
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_sdf::SdfReadParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::read_sdf_with_params(path, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn from_mol2(py: Python<'_>, text: &str) -> PyResult<Self> {
+        ck::Molecule::from_mol2(text)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn from_mol2_with_params(
+        py: Python<'_>,
+        text: &str,
+        params: &crate::canonical_molecular_io::Mol2ReadParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::from_mol2_with_params(text, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn read_mol2(py: Python<'_>, path: &str) -> PyResult<Self> {
+        ck::Molecule::read_mol2(path)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[staticmethod]
+    fn read_mol2_with_params(
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_molecular_io::Mol2ReadParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::read_mol2_with_params(path, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_mol(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_mol()
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_mol_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_mol_with_params(&params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_sdf(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_sdf()
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_sdf_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_sdf_with_params(&params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_sdf_2d(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_sdf_2d()
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_sdf_2d_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_sdf_2d_with_params(&params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_sdf_3d(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_sdf_3d()
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_sdf_3d_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_sdf_3d_with_params(&params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn write_mol(&self, py: Python<'_>, path: &str) -> PyResult<()> {
+        self.inner
+            .write_mol(path)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn write_mol_with_params(
+        &self,
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<()> {
+        self.inner
+            .write_mol_with_params(path, &params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
     }
 
+    fn write_sdf(&self, py: Python<'_>, path: &str) -> PyResult<()> {
+        self.inner
+            .write_sdf(path)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn write_sdf_with_params(
+        &self,
+        py: Python<'_>,
+        path: &str,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<()> {
+        self.inner
+            .write_sdf_with_params(path, &params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    #[pyo3(signature=(directory, file_name=None))]
+    fn write_sdf_files(
+        &self,
+        py: Python<'_>,
+        directory: &str,
+        file_name: Option<&str>,
+    ) -> PyResult<std::path::PathBuf> {
+        self.inner
+            .write_sdf_files(directory, file_name)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn write_sdf_files_with_params(
+        &self,
+        py: Python<'_>,
+        directory: &str,
+        file_name: Option<&str>,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<std::path::PathBuf> {
+        self.inner
+            .write_sdf_files_with_params(directory, file_name, &params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
     fn pattern_fingerprint(
         &self,
         py: Python<'_>,
@@ -1268,8 +1569,11 @@ impl Molecule {
             .map(|inner| crate::canonical_atom_bond::Bond { inner })
     }
 
-    fn property(&self, key: &str) -> Option<&str> {
-        self.inner.property(key)
+    fn property(&self, key: &str) -> Option<crate::canonical_property_values::PropertyValue> {
+        self.inner
+            .property(key)
+            .cloned()
+            .map(|inner| crate::canonical_property_values::PropertyValue { inner })
     }
 
     fn bonds(&self) -> Vec<crate::canonical_atom_bond::Bond> {
@@ -1369,8 +1673,10 @@ impl Molecule {
             .map(|inner| crate::canonical_potential_stereo::PotentialStereoResult { inner })
             .map_err(|e| operation_pyerr(py, e))
     }
-    fn cip_computed(&self) -> bool {
-        self.inner.cip_computed()
+    fn cip_computed(&self, py: Python<'_>) -> PyResult<bool> {
+        self.inner
+            .cip_computed()
+            .map_err(|error| crate::canonical_atom_bond::property_pyerr(py, error))
     }
 
     fn uff_energy_gradient(
@@ -2251,6 +2557,42 @@ impl Molecule {
             .map_err(|e| operation_pyerr(py, e))
     }
 
+    fn to_smarts(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_smarts()
+            .map_err(|error| crate::canonical_search::write_pyerr(py, error))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
+    }
+
+    fn to_smarts_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_search::SmartsWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_smarts_with_params(&params.inner)
+            .map_err(|error| crate::canonical_search::write_pyerr(py, error))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
+    }
+
+    fn to_cx_smarts(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_cx_smarts()
+            .map_err(|error| crate::canonical_search::write_pyerr(py, error))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
+    }
+
+    fn to_cx_smarts_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_search::SmartsWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_cx_smarts_with_params(&params.inner)
+            .map_err(|error| crate::canonical_search::write_pyerr(py, error))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
+    }
+
     fn substruct_match(
         &self,
         py: Python<'_>,
@@ -2376,6 +2718,7 @@ impl Molecule {
         self.inner
             .to_smiles()
             .map_err(|error| smiles_write_pyerr(py, error))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
 
     fn to_smiles_with_params(
@@ -2386,24 +2729,28 @@ impl Molecule {
         self.inner
             .to_smiles_with_params(&params.inner)
             .map_err(|e| smiles_write_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
 
     fn to_cx_smiles(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .to_cx_smiles()
             .map_err(|e| smiles_write_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
     fn to_fragment_smiles(&self, py: Python<'_>, atoms: Vec<usize>) -> PyResult<String> {
         let atoms = atoms.into_iter().map(ck::AtomId::new).collect::<Vec<_>>();
         self.inner
             .to_fragment_smiles(&atoms)
             .map_err(|e| smiles_write_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
     fn to_fragment_cx_smiles(&self, py: Python<'_>, atoms: Vec<usize>) -> PyResult<String> {
         let atoms = atoms.into_iter().map(ck::AtomId::new).collect::<Vec<_>>();
         self.inner
             .to_fragment_cx_smiles(&atoms)
             .map_err(|e| smiles_write_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
     fn to_cx_smiles_with_params(
         &self,
@@ -2413,6 +2760,7 @@ impl Molecule {
         self.inner
             .to_cx_smiles_with_params(&params.inner)
             .map_err(|e| smiles_write_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
     fn to_fragment_smiles_with_params(
         &self,
@@ -2422,6 +2770,7 @@ impl Molecule {
         self.inner
             .to_fragment_smiles_with_params(&params.inner)
             .map_err(|e| smiles_write_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
     fn to_fragment_cx_smiles_with_params(
         &self,
@@ -2431,11 +2780,15 @@ impl Molecule {
         self.inner
             .to_fragment_cx_smiles_with_params(&params.inner)
             .map_err(|e| smiles_write_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
     }
     fn to_random_smiles(&self, py: Python<'_>, count: u32, seed: u32) -> PyResult<Vec<String>> {
         self.inner
             .to_random_smiles(count, seed)
-            .map_err(|e| smiles_write_pyerr(py, e))
+            .map_err(|e| smiles_write_pyerr(py, e))?
+            .iter()
+            .map(|text| crate::canonical_sdf::decode_source_text(py, text))
+            .collect()
     }
     fn to_random_smiles_with_params(
         &self,
@@ -2446,7 +2799,10 @@ impl Molecule {
     ) -> PyResult<Vec<String>> {
         self.inner
             .to_random_smiles_with_params(count, seed, &params.inner)
-            .map_err(|e| smiles_write_pyerr(py, e))
+            .map_err(|e| smiles_write_pyerr(py, e))?
+            .iter()
+            .map(|text| crate::canonical_sdf::decode_source_text(py, text))
+            .collect()
     }
     fn atom_pair_fingerprint(&self, py: Python<'_>) -> PyResult<Fingerprint> {
         self.inner
@@ -3683,9 +4039,15 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_batch::register(module)?;
     crate::canonical_batch_params::register(module)?;
     crate::canonical_batch_fingerprint_values::register(module)?;
+    crate::canonical_stereoisomers::register(module)?;
     crate::canonical_atom_bond::register(module)?;
     crate::canonical_potential_stereo::register(module)?;
     crate::canonical_binary::register(module)?;
+    crate::canonical_molecular_io::register(module)?;
+    crate::canonical_group_values::register(module)?;
+    crate::canonical_sdf::register(module)?;
+    crate::canonical_batch::register(module)?;
+    crate::canonical_sdf_supplier::register(module)?;
     crate::canonical_molecular_hash::register(module)?;
     crate::canonical_builder::register(module)?;
     crate::canonical_detached_blocks::register(module)?;

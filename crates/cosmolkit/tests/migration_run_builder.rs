@@ -300,9 +300,15 @@ fn to_builder_edits_detached_state_without_mutating_the_source() {
     builder.add_atom(AtomSpec::new(Element::C));
     let changed = builder.with_name("changed".into()).build().unwrap();
     assert_eq!(source.num_atoms(), 0);
-    assert_eq!(source.properties().name(), Some("source"));
+    assert_eq!(
+        source.properties().name(),
+        Some(&cosmolkit::PropertyText::from("source"))
+    );
     assert_eq!(changed.num_atoms(), 1);
-    assert_eq!(changed.properties().name(), Some("changed"));
+    assert_eq!(
+        changed.properties().name(),
+        Some(&cosmolkit::PropertyText::from("changed"))
+    );
 }
 
 #[test]
@@ -343,4 +349,104 @@ fn builder_binding_and_source_guards_expose_no_bypass_or_domain_branch() {
             "forbidden domain token: {forbidden}"
         );
     }
+}
+
+#[test]
+fn explicit_coordinate_errors_leave_complete_builder_unchanged() {
+    let mut builder = MoleculeBuilder::new();
+    builder.add_atom(AtomSpec::new(Element::C));
+    builder.add_3d_conformer(vec![[1.0, 2.0, 3.0]]).unwrap();
+    builder.add_2d_conformer(vec![[4.0, 5.0]]).unwrap();
+    let before = builder.clone();
+    assert!(matches!(
+        builder.set_2d_coordinates(vec![[f64::NAN, 0.0]]),
+        Err(OperationError::InvalidCoordinates(
+            CoordinateValidationError::NonFiniteCoordinate {
+                dimension: "2D",
+                conformer: 0,
+                atom: 0,
+                axis: "x"
+            }
+        ))
+    ));
+    assert_eq!(builder, before);
+    assert!(matches!(
+        builder.add_2d_conformer(vec![[0.0, f64::INFINITY]]),
+        Err(OperationError::InvalidCoordinates(
+            CoordinateValidationError::NonFiniteCoordinate {
+                dimension: "2D",
+                conformer: 1,
+                atom: 0,
+                axis: "y"
+            }
+        ))
+    ));
+    assert_eq!(builder, before);
+    assert!(matches!(
+        builder.add_3d_conformer(vec![[0.0, 0.0, f64::NEG_INFINITY]]),
+        Err(OperationError::InvalidCoordinates(
+            CoordinateValidationError::NonFiniteCoordinate {
+                dimension: "3D",
+                conformer: 1,
+                atom: 0,
+                axis: "z"
+            }
+        ))
+    ));
+    assert_eq!(builder, before);
+    assert!(matches!(
+        builder.add_3d_conformer(vec![[f64::NAN, 0.0, 0.0]; 2]),
+        Err(OperationError::InvalidCoordinates(
+            CoordinateValidationError::RowCount {
+                dimension: "3D",
+                conformer: 1,
+                rows: 2,
+                atom_count: 1
+            }
+        ))
+    ));
+    assert_eq!(builder, before);
+}
+
+#[test]
+fn checked_coordinate_replacement_preserves_other_dimension_and_actual_order() {
+    let mut builder = MoleculeBuilder::new();
+    builder.add_atom(AtomSpec::new(Element::C));
+    assert_eq!(builder.add_3d_conformer(vec![[1.0, 2.0, 3.0]]), Ok(0));
+    assert_eq!(builder.add_2d_conformer(vec![[4.0, 5.0]]), Ok(0));
+    assert_eq!(builder.add_3d_conformer(vec![[6.0, 7.0, 8.0]]), Ok(1));
+    assert_eq!(builder.add_2d_conformer(vec![[9.0, 10.0]]), Ok(1));
+    assert_eq!(
+        builder.coordinates().source_conformer_order.as_deref(),
+        Some(
+            [
+                CoordinateDimension::ThreeD,
+                CoordinateDimension::TwoD,
+                CoordinateDimension::ThreeD,
+                CoordinateDimension::TwoD
+            ]
+            .as_slice()
+        )
+    );
+    let original_3d = builder.coordinates().conformers_3d.clone();
+    builder.set_2d_coordinates(vec![[-0.0, 11.0]]).unwrap();
+    assert_eq!(builder.coordinates().conformers_3d, original_3d);
+    assert_eq!(builder.coordinates().conformers_2d.len(), 1);
+    assert_eq!(builder.coordinates().conformers_2d[0].id(), 0);
+    assert_eq!(
+        builder.coordinates().conformers_2d[0].coordinates()[0][0].to_bits(),
+        (-0.0_f64).to_bits()
+    );
+    assert_eq!(
+        builder.coordinates().source_conformer_order.as_deref(),
+        Some(
+            [
+                CoordinateDimension::ThreeD,
+                CoordinateDimension::ThreeD,
+                CoordinateDimension::TwoD
+            ]
+            .as_slice()
+        )
+    );
+    builder.build().unwrap();
 }

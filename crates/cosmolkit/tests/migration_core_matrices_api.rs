@@ -187,7 +187,10 @@ fn topological_queries_match_full_detached_rows_and_do_not_mutate_live_state() {
     assert_eq!(weighted.get(0, 2), Some(1.5));
 
     assert_eq!(source, before);
-    assert_eq!(source.property("source"), Some("preserved"));
+    assert_eq!(
+        source.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(
         source.topology().stereo_groups,
         before.topology().stereo_groups

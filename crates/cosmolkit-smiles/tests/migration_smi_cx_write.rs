@@ -111,6 +111,12 @@ fn cx_polymer_params(canonical: bool) -> CxSmilesWriteParams {
     }
 }
 
+// These original fixtures compare UTF-8 source strings. Decode only at the
+// test observation boundary: invalid bytes fail instead of being substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
 #[test]
 fn cx_writer_kekulizes_before_wedge_work_on_a_private_copy() {
     // Pinned RDKit 2026.03.1 direct MolToCXSmiles profile: sanitized
@@ -122,7 +128,9 @@ fn cx_writer_kekulizes_before_wedge_work_on_a_private_copy() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &kekule_cx_params(CxSmilesFields::NONE)).unwrap(),
+        write_cx_smiles_with_params(&record, &kekule_cx_params(CxSmilesFields::NONE))
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1=CC=CC=C1"
     );
     assert_eq!(record, before, "CX writing must not mutate its caller");
@@ -141,6 +149,7 @@ fn cx_writer_kekulize_error_preserves_typed_core_source_before_stereo_work() {
     let before = record.clone();
 
     let error = write_cx_smiles_with_params(&record, &kekule_cx_params(CxSmilesFields::NONE))
+        .map(fixture_writer_text)
         .expect_err("CX Kekulize runs before writer stereo/property processing");
     assert!(matches!(
         &error,
@@ -167,7 +176,9 @@ fn cx_writer_returns_empty_before_extensions_for_an_empty_molecule() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &kekule_cx_params(CxSmilesFields::ALL)).unwrap(),
+        write_cx_smiles_with_params(&record, &kekule_cx_params(CxSmilesFields::ALL))
+            .map(fixture_writer_text)
+            .unwrap(),
         ""
     );
     assert_eq!(record, before, "empty CX writing must preserve its caller");
@@ -187,7 +198,9 @@ fn cx_writer_default_clear_preserves_wiggly_cfg_after_pre_kekulization() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ALL, true, true)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ALL, true, true))
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1=CC=CC=C1 |w:2.1|"
     );
     assert_eq!(record, before, "CX preprocessing must preserve its caller");
@@ -207,7 +220,9 @@ fn cx_writer_default_clear_removes_nonwiggly_bond_config_and_direction() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ALL, true, false)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ALL, true, false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CC(O)Cl"
     );
     assert_eq!(record, before, "CX preprocessing must preserve its caller");
@@ -228,6 +243,7 @@ fn cx_writer_nonisomeric_profile_masks_wiggly_bond_config() {
 
     assert_eq!(
         write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ALL, false, false))
+            .map(fixture_writer_text)
             .unwrap(),
         "CC(O)Cl"
     );
@@ -262,6 +278,7 @@ fn cx_writer_bond_config_serializes_prepared_wedges_wiggly_indices_and_field_gat
                     false
                 ),
             )
+            .map(fixture_writer_text)
             .unwrap(),
             expected
         );
@@ -272,11 +289,13 @@ fn cx_writer_bond_config_serializes_prepared_wedges_wiggly_indices_and_field_gat
     let before = wiggly.clone();
     assert_eq!(
         write_cx_smiles_with_params(&wiggly, &cx_params(CxSmilesFields::BOND_CFG, true, false),)
+            .map(fixture_writer_text)
             .unwrap(),
         "CO |w:1.0|"
     );
     assert_eq!(
         write_cx_smiles_with_params(&wiggly, &cx_params(CxSmilesFields::NONE, true, false))
+            .map(fixture_writer_text)
             .unwrap(),
         "CO"
     );
@@ -300,7 +319,9 @@ fn cx_writer_coordinate_and_hydrogen_bonds_use_directed_begin_and_exact_type() {
         let before = record.clone();
 
         assert_eq!(
-            write_cx_smiles_with_params(&record, &cx_params(fields, true, false)).unwrap(),
+            write_cx_smiles_with_params(&record, &cx_params(fields, true, false))
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "source bond type {order:?}"
         );
@@ -321,6 +342,7 @@ fn cx_writer_zero_bonds_use_final_bond_positions_in_source_order() {
 
     assert_eq!(
         write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ZERO_BONDS, true, false),)
+            .map(fixture_writer_text)
             .unwrap(),
         "N~OC~F |Z:0,2|"
     );
@@ -360,7 +382,9 @@ fn cx_writer_ring_stereo_filters_nonring_small_ring_and_non_double_bonds() {
         let before = record.clone();
 
         assert_eq!(
-            write_cx_smiles_with_params(&record, &ring_stereo_params(false)).unwrap(),
+            write_cx_smiles_with_params(&record, &ring_stereo_params(false))
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "ring eligibility row {input:?}"
         );
@@ -393,7 +417,9 @@ fn cx_writer_ring_stereo_concatenates_cis_trans_and_unknown_source_blocks() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &ring_stereo_params(false)).unwrap(),
+        write_cx_smiles_with_params(&record, &ring_stereo_params(false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1=C\\CCCCCCCC/1.C1=C/CCCCCCCC/1.C1=CCCCCCCCC1 |c:0t:10ctu:20|"
     );
     assert_eq!(record, before, "ring stereo writing must be immutable");
@@ -425,7 +451,9 @@ fn cx_writer_ring_stereo_preserves_boolean_atom_order_subscripts() {
         let before = record.clone();
 
         assert_eq!(
-            write_cx_smiles_with_params(&record, &ring_stereo_params(true)).unwrap(),
+            write_cx_smiles_with_params(&record, &ring_stereo_params(true))
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "stereo references {references:?}"
         );
@@ -439,7 +467,9 @@ fn cx_writer_ring_stereo_preserves_boolean_atom_order_subscripts() {
         .set_stereo(BondStereo::Cis)
         .expect("set source CIS state");
     assert_eq!(
-        write_cx_smiles_with_params(&cis, &ring_stereo_params(true)).unwrap(),
+        write_cx_smiles_with_params(&cis, &ring_stereo_params(true))
+            .map(fixture_writer_text)
+            .unwrap(),
         "F/C1=C(/Cl)CCCCCCCC1 |c:1|"
     );
 }
@@ -491,7 +521,9 @@ fn cx_writer_clean_stereo_guard_and_group_cleanup_match_legacy_oracle() {
         };
 
         assert_eq!(
-            write_cx_smiles_with_params(&record, &params).unwrap(),
+            write_cx_smiles_with_params(&record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "cleanStereo={clean_stereo}, done marker present={done_marker}"
         );
@@ -544,7 +576,9 @@ fn cx_writer_stereo_group_ids_keep_type_namespaces_holes_and_tie_order() {
     };
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         concat!(
             "F[C@](Cl)(Br)I.F[C@](Cl)(Br)I.F[C@](Cl)(Br)I.F[C@](Cl)(Br)I.",
             "F[C@](Cl)(Br)I.F[C@](Cl)(Br)I.F[C@](Cl)(Br)I.F[C@](Cl)(Br)I ",
@@ -597,7 +631,9 @@ fn cx_writer_enhanced_stereo_maps_atom_and_atrop_bond_members_in_group_order() {
     };
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "c1ccc(-c2ccccc2)cc1 |wU:3.2,a:10,o1:3,&1:9|"
     );
     assert_eq!(
@@ -669,7 +705,9 @@ fn cx_writer_enhanced_stereo_preserves_overlapping_groups_with_atrop_wedge_map()
     };
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "c1ccc(-c2ccccc2)cc1 |wD:4.4,a:9,10,o1:3,10,o2:4,&1:3,9,&2:6|"
     );
     assert_eq!(
@@ -706,7 +744,9 @@ fn cx_writer_nonisomeric_mask_removes_stereo_extensions_but_keeps_base_write() {
     };
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "FC(Cl)(Br)I.FC(Cl)(Br)I"
     );
     assert_eq!(
@@ -729,7 +769,10 @@ fn cx_writer_clean_stereo_matches_pinned_raw_large_ring_cis_output() {
         ..Default::default()
     };
     let record = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).expect("parse raw ring CXSMILES");
-    assert_eq!(record.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        record.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
     assert_eq!(record.properties.prop("_StereochemDone"), None);
     assert_eq!(
         record.topology.bonds[5].stereo(),
@@ -754,7 +797,9 @@ fn cx_writer_clean_stereo_matches_pinned_raw_large_ring_cis_output() {
     };
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1=CCCCCCCCC1"
     );
     assert_eq!(record, before, "raw CX writing must preserve its caller");
@@ -771,7 +816,9 @@ fn cx_writer_multiple_component_coordinates_follow_base_output_maps() {
     let params = cx_params(CxSmilesFields::COORDS, true, false);
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "CO.CO |(1,0,;0,0,;2,0,;3,0,)|"
     );
     assert_eq!(
@@ -797,6 +844,7 @@ fn cx_writer_emits_selected_coordinate_dimension_and_rejects_invalid_rows() {
     let three_d_before = three_d.clone();
     assert_eq!(
         write_cx_smiles_with_params(&three_d, &cx_coordinate_params(CxCoordinateSelection::Auto))
+            .map(fixture_writer_text)
             .unwrap(),
         "CC |(1,2,9;3,4,)|"
     );
@@ -817,6 +865,7 @@ fn cx_writer_emits_selected_coordinate_dimension_and_rejects_invalid_rows() {
             &xy_only_3d,
             &cx_coordinate_params(CxCoordinateSelection::Auto)
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "CC |(1,2,;3,4,)|"
     );
@@ -835,6 +884,7 @@ fn cx_writer_emits_selected_coordinate_dimension_and_rejects_invalid_rows() {
             &short_2d,
             &cx_coordinate_params(CxCoordinateSelection::Auto)
         )
+        .map(fixture_writer_text)
         .unwrap_err(),
         SmilesParseError::Model("2D conformer 19 has 1 coordinate rows, expected 2".to_owned())
     );
@@ -852,6 +902,7 @@ fn cx_writer_emits_selected_coordinate_dimension_and_rejects_invalid_rows() {
     let long_3d_before = long_3d.clone();
     assert_eq!(
         write_cx_smiles_with_params(&long_3d, &cx_coordinate_params(CxCoordinateSelection::Auto))
+            .map(fixture_writer_text)
             .unwrap_err(),
         SmilesParseError::Model("3D conformer 20 has 3 coordinate rows, expected 2".to_owned())
     );
@@ -892,6 +943,7 @@ fn cx_writer_coordinate_numbers_follow_percent_g_precision_rounding_and_sign_rul
                 &record,
                 &cx_coordinate_params(CxCoordinateSelection::Auto)
             )
+            .map(fixture_writer_text)
             .unwrap(),
             expected
         );
@@ -922,6 +974,7 @@ fn cx_writer_zero_small_uses_strict_threshold_for_both_signs() {
 
     assert_eq!(
         write_cx_smiles_with_params(&record, &cx_coordinate_params(CxCoordinateSelection::Auto))
+            .map(fixture_writer_text)
             .unwrap(),
         "CC |(0,0.0001,0.0001001;0,-0.0001,-0.0001001)|"
     );
@@ -944,10 +997,11 @@ fn cx_writer_bad_bond_config_propagates_source_typed_error_immutably() {
     let params = cx_params(CxSmilesFields::BOND_CFG, true, false);
 
     let error = write_cx_smiles_with_params(&record, &params)
+        .map(fixture_writer_text)
         .expect_err("source unsigned-int property read must fail visibly");
     assert!(matches!(
         error,
-        SmilesParseError::WriterStereo(message) if message.contains("bad_any_cast")
+        SmilesParseError::WriterNumeric(cosmolkit_core::PropertyUIntReadError::Lexical { value, .. }) if value.as_bytes() == b"bad"
     ));
     assert_eq!(record, before, "failed CX writing must preserve its caller");
 }
@@ -1015,7 +1069,9 @@ fn cx_writer_each_source_field_mask_dispatches_its_block() {
             .unwrap_or_else(|error| panic!("parse source fixture {input:?}: {error}"));
         let before = record.clone();
         assert_eq!(
-            write_cx_smiles_with_params(&record, &cx_params(fields, true, false)).unwrap(),
+            write_cx_smiles_with_params(&record, &cx_params(fields, true, false))
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "CX field mask {} for {input:?}",
             fields.bits()
@@ -1047,6 +1103,7 @@ fn cx_writer_each_source_field_mask_dispatches_its_block() {
             &atrop,
             &cx_params(CxSmilesFields::BOND_ATROPISOMER, true, false),
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "c1ccc(-c2ccccc2)cc1 |wU:3.10|"
     );
@@ -1113,11 +1170,13 @@ fn cx_writer_link_nodes_apply_source_validation_and_degree_shapes() {
             .unwrap_or_else(|error| panic!("parse {name} fixture: {error}"));
         record
             .properties
-            .set_prop("_MolFileLinkNodes", link_nodes)
+            .set_prop("_molLinkNodes", link_nodes)
             .expect("set source link-node property");
         let before = record.clone();
         assert_eq!(
-            write_cx_smiles_with_params(&record, &params).unwrap(),
+            write_cx_smiles_with_params(&record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "{name}"
         );
@@ -1159,11 +1218,11 @@ fn cx_writer_link_nodes_propagate_source_range_failures() {
             .unwrap_or_else(|error| panic!("parse {name} fixture: {error}"));
         record
             .properties
-            .set_prop("_MolFileLinkNodes", link_nodes)
+            .set_prop("_molLinkNodes", link_nodes)
             .expect("set source link-node property");
         let before = record.clone();
         assert_eq!(
-            write_cx_smiles_with_params(&record, &params),
+            write_cx_smiles_with_params(&record, &params).map(fixture_writer_text),
             Err(SmilesParseError::Cx(expected_message.to_owned())),
             "{name}"
         );
@@ -1182,6 +1241,7 @@ fn cx_writer_link_nodes_preserve_direct_canonical_atom_order_mapping() {
 
     assert_eq!(
         write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::LINKNODES, true, false),)
+            .map(fixture_writer_text)
             .unwrap(),
         "OC1CCC(F)C1 |LN:4:1.3.3.6,1:1.4.2.6|"
     );
@@ -1197,25 +1257,27 @@ fn cx_writer_data_sgroups_preserve_typed_members_fields_and_group_order() {
     let mut first = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
         .with_atoms(vec![AtomId::new(2), AtomId::new(0)])
         .with_data(SGroupData {
-            field_name: Some("first".to_owned()),
-            field_info: Some("i,n".to_owned()),
-            query_op: Some("q:o".to_owned()),
-            values: vec!["v1".to_owned()],
+            field_name: Some("first".into()),
+            field_info: Some("i,n".into()),
+            query_op: Some("q:o".into()),
+            values: vec!["v1".into()],
             ..SGroupData::default()
         });
     first.set_prop("FIELDTAG", "t|g");
     let second = SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
         .with_atoms(vec![AtomId::new(1)])
         .with_data(SGroupData {
-            field_name: Some("second".to_owned()),
-            values: vec!["v2".to_owned()],
+            field_name: Some("second".into()),
+            values: vec!["v2".into()],
             ..SGroupData::default()
         });
     record.topology.substance_groups = vec![first, second];
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_data_sgroup_params(true)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_data_sgroup_params(true))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CCO |SgD:0,2:first:v1:q:o:i,n:t|g:,SgD:1:second:v2::::|"
     );
     assert_eq!(record, before, "DAT writing must preserve its caller");
@@ -1231,16 +1293,18 @@ fn cx_writer_data_sgroups_emit_all_typed_values_and_empty_members() {
         SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
             .with_atoms(vec![AtomId::new(1), AtomId::new(0)])
             .with_data(SGroupData {
-                field_name: Some("FIELD".to_owned()),
-                field_info: Some("INFO".to_owned()),
-                query_op: Some("=".to_owned()),
-                values: vec!["first".to_owned(), "second".to_owned()],
+                field_name: Some("FIELD".into()),
+                field_info: Some("INFO".into()),
+                query_op: Some("=".into()),
+                values: vec!["first".into(), "second".into()],
                 ..SGroupData::default()
             }),
     ];
     let before_values = values.clone();
     assert_eq!(
-        write_cx_smiles_with_params(&values, &cx_data_sgroup_params(false)).unwrap(),
+        write_cx_smiles_with_params(&values, &cx_data_sgroup_params(false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CO |SgD:1,0:FIELD:first,second:=:INFO::|"
     );
     assert_eq!(values, before_values, "multi-value DAT must be immutable");
@@ -1249,15 +1313,17 @@ fn cx_writer_data_sgroups_emit_all_typed_values_and_empty_members() {
     empty.topology.substance_groups = vec![
         SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data).with_data(
             SGroupData {
-                field_name: Some("FIELD".to_owned()),
-                values: vec!["VALUE".to_owned()],
+                field_name: Some("FIELD".into()),
+                values: vec!["VALUE".into()],
                 ..SGroupData::default()
             },
         ),
     ];
     let before_empty = empty.clone();
     assert_eq!(
-        write_cx_smiles_with_params(&empty, &cx_data_sgroup_params(false)).unwrap(),
+        write_cx_smiles_with_params(&empty, &cx_data_sgroup_params(false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CC |SgD:FIELD:VALUE::::|"
     );
     assert_eq!(empty, before_empty, "empty-member DAT must be immutable");
@@ -1276,7 +1342,9 @@ fn cx_writer_data_sgroups_do_not_requote_source_literal_field_bytes() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_data_sgroup_params(false)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_data_sgroup_params(false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CC |SgD:0,1:a.b:c;d:q:o:i,n:t|g:|"
     );
     assert_eq!(record, before, "literal DAT writing must be immutable");
@@ -1302,7 +1370,7 @@ fn cx_writer_polymer_sgroups_map_all_supported_types_in_source_order() {
         (SubstanceGroupKind::Mixture, None, "mix"),
         (SubstanceGroupKind::Formulation, None, "f"),
         (SubstanceGroupKind::AnyPolymer, None, "any"),
-        (SubstanceGroupKind::Generic("GEN".to_owned()), None, "gen"),
+        (SubstanceGroupKind::Generic("GEN".into()), None, "gen"),
         (SubstanceGroupKind::MixtureComponent, None, "c"),
         (SubstanceGroupKind::Graft, None, "grf"),
     ];
@@ -1323,7 +1391,9 @@ fn cx_writer_polymer_sgroups_map_all_supported_types_in_source_order() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_polymer_params(false)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_polymer_params(false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |Sg:n:0:L0:eu:::,Sg:mon:0:L1:eu:::,Sg:mer:0:L2:eu:::,Sg:alt:0:L3:eu:::,Sg:alt:0:L4:eu:::,Sg:ran:0:L5:eu:::,Sg:blk:0:L6:eu:::,Sg:xl:0:L7:eu:::,Sg:mod:0:L8:eu:::,Sg:mix:0:L9:eu:::,Sg:f:0:L10:eu:::,Sg:any:0:L11:eu:::,Sg:gen:0:L12:eu:::,Sg:c:0:L13:eu:::,Sg:grf:0:L14:eu:::|"
     );
     assert_eq!(record, before, "polymer type writing must be immutable");
@@ -1353,12 +1423,14 @@ fn cx_writer_polymer_sgroups_preserve_source_field_and_connection_order() {
         SubstanceGroup::new(SubstanceGroupId::new(3), SubstanceGroupKind::Graft)
             .with_atoms(vec![AtomId::new(0)])
             .with_label("unknown")
-            .with_connection(SGroupConnection::Unknown("MiXeD".to_owned())),
+            .with_connection(SGroupConnection::Unknown("MiXeD".into())),
     ];
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_polymer_params(false)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_polymer_params(false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "OC |Sg:n:1,0:head:hh:::,Sg:mon:0:tail:ht:::,Sg:mer:1:either:eu:::,Sg:grf:0:unknown:mixed:::|"
     );
     assert_eq!(record, before, "polymer field writing must be immutable");
@@ -1378,7 +1450,9 @@ fn cx_writer_polymer_crossings_use_direct_bond_order_index_and_pair_order() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_polymer_params(true)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_polymer_params(true))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CCCOCN |Sg:n:1,2,3,4,5,0::ht:4,0,1,2,3:3,2,1,0,4:|"
     );
     assert_eq!(record, before, "crossing-bond writing must be immutable");
@@ -1410,7 +1484,9 @@ fn cx_writer_polymer_crossings_apply_source_length_thresholds() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_polymer_params(false)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_polymer_params(false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CCCO |Sg:n:0,1,2,3::eu:::|"
     );
     assert_eq!(record, before, "threshold writing must be immutable");
@@ -1429,10 +1505,11 @@ fn cx_writer_sgroup_hierarchy_maps_selected_parent_children_in_source_order() {
             .with_atoms(vec![AtomId::new(0)])
             .with_parent(SubstanceGroupId::new(3))
             .with_data(SGroupData {
-                field_name: Some("A".to_owned()),
+                field_name: Some("A".into()),
                 ..Default::default()
             })
-            .with_prop("index", "40"),
+            .with_prop("index", "40")
+            .unwrap(),
         SubstanceGroup::new(
             SubstanceGroupId::new(1),
             SubstanceGroupKind::StructuralRepeatUnit,
@@ -1440,26 +1517,30 @@ fn cx_writer_sgroup_hierarchy_maps_selected_parent_children_in_source_order() {
         .with_atoms(vec![AtomId::new(1)])
         .with_parent(SubstanceGroupId::new(3))
         .with_connection(SGroupConnection::HeadToTail)
-        .with_prop("index", "7"),
+        .with_prop("index", "7")
+        .unwrap(),
         SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Superatom)
             .with_atoms(vec![AtomId::new(2)])
             .with_parent(SubstanceGroupId::new(3))
-            .with_prop("index", "8"),
+            .with_prop("index", "8")
+            .unwrap(),
         SubstanceGroup::new(
             SubstanceGroupId::new(3),
             SubstanceGroupKind::StructuralRepeatUnit,
         )
         .with_atoms(vec![AtomId::new(2)])
         .with_connection(SGroupConnection::HeadToTail)
-        .with_prop("index", "900"),
+        .with_prop("index", "900")
+        .unwrap(),
         SubstanceGroup::new(SubstanceGroupId::new(4), SubstanceGroupKind::Data)
             .with_atoms(vec![AtomId::new(1)])
             .with_parent(SubstanceGroupId::new(3))
             .with_data(SGroupData {
-                field_name: Some("C".to_owned()),
+                field_name: Some("C".into()),
                 ..Default::default()
             })
-            .with_prop("index", "42"),
+            .with_prop("index", "42")
+            .unwrap(),
     ];
     let before = record.clone();
 
@@ -1481,7 +1562,9 @@ fn cx_writer_sgroup_hierarchy_maps_selected_parent_children_in_source_order() {
         ),
     ] {
         assert_eq!(
-            write_cx_smiles_with_params(&record, &params).unwrap(),
+            write_cx_smiles_with_params(&record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected
         );
         assert_eq!(record, before, "hierarchy writing must be immutable");
@@ -1512,6 +1595,7 @@ fn cx_writer_emits_source_field_order_and_comma_pipe_separators() {
                 false,
             ),
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "CO |(1,0,;0,0,),$carbon;oxygen$,$_AV:c;o$,atomProp:1.k.v|"
     );
@@ -1537,7 +1621,9 @@ fn cx_writer_emits_source_field_order_and_comma_pipe_separators() {
         let record = parse_smiles(input, &Default::default())
             .unwrap_or_else(|error| panic!("parse hierarchy fixture {input:?}: {error}"));
         assert_eq!(
-            write_cx_smiles_with_params(&record, &cx_params(fields, true, false)).unwrap(),
+            write_cx_smiles_with_params(&record, &cx_params(fields, true, false))
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "hierarchy dispatch for {}",
             fields.bits()
@@ -1559,11 +1645,14 @@ fn cx_writer_nonisomeric_mask_removes_only_stereo_field_bits() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ALL, true, false)).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ALL, true, false))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CC.F[C@H](Cl)Br |$c;c;f;chiral;cl;br$,atomProp:2.keep.yes,w:0.0,&1:3|"
     );
     assert_eq!(
         write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::ALL, false, false))
+            .map(fixture_writer_text)
             .unwrap(),
         "CC.FC(Cl)Br |$c;c;f;chiral;cl;br$,atomProp:2.keep.yes|"
     );
@@ -1615,7 +1704,7 @@ fn cx_writer_atom_labels_follow_pseudo_attachment_and_fallback_order() {
         }
         if let Some(value) = attachment {
             record.topology.atoms[0]
-                .set_prop("_fromAttachPoint", value)
+                .set_prop("_fromAttchpt", value)
                 .expect("set attachment point");
         }
         if let Some(value) = ordinary {
@@ -1626,7 +1715,9 @@ fn cx_writer_atom_labels_follow_pseudo_attachment_and_fallback_order() {
         let before = record.clone();
 
         assert_eq!(
-            write_cx_smiles_with_params(&record, &params).unwrap(),
+            write_cx_smiles_with_params(&record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "dummy={dummy:?}, generic={generic:?}, attachment={attachment:?}, ordinary={ordinary:?}"
         );
@@ -1649,7 +1740,9 @@ fn cx_writer_atom_label_holes_trailing_slots_and_text_follow_source() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "CCCC |$left.with.dot;;tail;$|"
     );
     assert_eq!(record, before, "CX label slots must preserve their caller");
@@ -1659,7 +1752,9 @@ fn cx_writer_atom_label_holes_trailing_slots_and_text_follow_source() {
         .set_prop("atomLabel", "middle")
         .expect("set middle source label");
     assert_eq!(
-        write_cx_smiles_with_params(&leading_hole, &params).unwrap(),
+        write_cx_smiles_with_params(&leading_hole, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "CCCC |$;middle;;$|"
     );
 }
@@ -1673,7 +1768,9 @@ fn cx_writer_atom_label_clears_semicolon_only_source_block() {
         .set_prop("atomLabel", ";")
         .expect("set semicolon label");
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_label_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_label_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C"
     );
 }
@@ -1707,10 +1804,24 @@ fn cx_writer_mixed_dimension_selection_is_explicit_for_both_record_orders() {
     {
         let record = parse_smiles(input, &Default::default())
             .unwrap_or_else(|error| panic!("parse mixed-dimension input {input:?}: {error}"));
-        assert_eq!(record.coordinates.conformers_2d.len(), 1, "{input}");
-        assert_eq!(record.coordinates.conformers_3d.len(), 1, "{input}");
-        let two_d_id = record.coordinates.conformers_2d[0].id();
-        let three_d_id = record.coordinates.conformers_3d[0].id();
+        assert_eq!(record.coordinates.conformers_2d.len(), 0, "{input}");
+        assert_eq!(record.coordinates.conformers_3d.len(), 2, "{input}");
+        let false_3d = record
+            .coordinates
+            .conformers_3d
+            .iter()
+            .find(|c| !c.is_3d())
+            .unwrap();
+        let true_3d = record
+            .coordinates
+            .conformers_3d
+            .iter()
+            .find(|c| c.is_3d())
+            .unwrap();
+        let two_d_id = false_3d.id();
+        let three_d_id = true_3d.id();
+        assert_eq!(false_3d.coordinates(), &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
+        assert_eq!(true_3d.coordinates(), &[[0.0, 0.0, 1.0], [1.0, 0.0, 2.0]]);
         assert_eq!(
             two_d_id, expected_2d_id,
             "source coordinate record ID: {input}"
@@ -1725,21 +1836,30 @@ fn cx_writer_mixed_dimension_selection_is_explicit_for_both_record_orders() {
             write_cx_smiles_with_params(
                 &record,
                 &cx_coordinate_params(CxCoordinateSelection::Auto)
-            ),
+            )
+            .map(fixture_writer_text),
             Err(SmilesParseError::AmbiguousCoordinateSelection {
-                two_d_count: 1,
-                three_d_count: 1
+                two_d_count: 0,
+                three_d_count: 2
             })
         ));
+        // Native Point3D with is3D=false remains a ThreeD storage set.
+        assert!(matches!(write_cx_smiles_with_params(&record,
+            &cx_coordinate_params(CxCoordinateSelection::TwoD { id: two_d_id })),
+            Err(SmilesParseError::MissingCoordinateSelection {
+                selection: CxCoordinateSelection::TwoD { id }
+            }) if id == two_d_id));
         let explicit_2d = write_cx_smiles_with_params(
             &record,
-            &cx_coordinate_params(CxCoordinateSelection::TwoD { id: two_d_id }),
+            &cx_coordinate_params(CxCoordinateSelection::ThreeD { id: two_d_id }),
         )
+        .map(fixture_writer_text)
         .unwrap();
         let explicit_3d = write_cx_smiles_with_params(
             &record,
             &cx_coordinate_params(CxCoordinateSelection::ThreeD { id: three_d_id }),
         )
+        .map(fixture_writer_text)
         .unwrap();
 
         assert_eq!(explicit_2d, "CC |(0,0,;1,0,)|");
@@ -1763,6 +1883,7 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
     let empty_before = empty.clone();
     assert_eq!(
         write_cx_smiles_with_params(&empty, &cx_coordinate_params(CxCoordinateSelection::Auto))
+            .map(fixture_writer_text)
             .unwrap(),
         "CC"
     );
@@ -1770,7 +1891,8 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
         write_cx_smiles_with_params(
             &empty,
             &cx_coordinate_params(CxCoordinateSelection::TwoD { id: 99 })
-        ),
+        )
+        .map(fixture_writer_text),
         Err(SmilesParseError::MissingCoordinateSelection {
             selection: CxCoordinateSelection::TwoD { id: 99 }
         })
@@ -1782,6 +1904,7 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
     let sole_before = sole.clone();
     assert_eq!(
         write_cx_smiles_with_params(&sole, &cx_coordinate_params(CxCoordinateSelection::Auto))
+            .map(fixture_writer_text)
             .unwrap(),
         "CC |(4,5,;6,7,)|"
     );
@@ -1799,6 +1922,7 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
     let sole_3d_before = sole_3d.clone();
     assert_eq!(
         write_cx_smiles_with_params(&sole_3d, &cx_coordinate_params(CxCoordinateSelection::Auto))
+            .map(fixture_writer_text)
             .unwrap(),
         "CC |(1,2,3;4,5,6)|"
     );
@@ -1807,6 +1931,7 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
             &sole_3d,
             &cx_coordinate_params(CxCoordinateSelection::ThreeD { id: 23 })
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "CC |(1,2,3;4,5,6)|"
     );
@@ -1814,7 +1939,8 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
         write_cx_smiles_with_params(
             &sole_3d,
             &cx_coordinate_params(CxCoordinateSelection::TwoD { id: 23 })
-        ),
+        )
+        .map(fixture_writer_text),
         Err(SmilesParseError::MissingCoordinateSelection {
             selection: CxCoordinateSelection::TwoD { id: 23 }
         })
@@ -1823,7 +1949,8 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
         write_cx_smiles_with_params(
             &sole_3d,
             &cx_coordinate_params(CxCoordinateSelection::ThreeD { id: 24 })
-        ),
+        )
+        .map(fixture_writer_text),
         Err(SmilesParseError::MissingCoordinateSelection {
             selection: CxCoordinateSelection::ThreeD { id: 24 }
         })
@@ -1840,7 +1967,8 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
         write_cx_smiles_with_params(
             &multiple_2d,
             &cx_coordinate_params(CxCoordinateSelection::Auto)
-        ),
+        )
+        .map(fixture_writer_text),
         Err(SmilesParseError::AmbiguousCoordinateSelection {
             two_d_count: 2,
             three_d_count: 0
@@ -1851,6 +1979,7 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
             &multiple_2d,
             &cx_coordinate_params(CxCoordinateSelection::TwoD { id: 21 })
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "CC |(2,0,;3,0,)|"
     );
@@ -1858,7 +1987,8 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
         write_cx_smiles_with_params(
             &multiple_2d,
             &cx_coordinate_params(CxCoordinateSelection::TwoD { id: 1 })
-        ),
+        )
+        .map(fixture_writer_text),
         Err(SmilesParseError::MissingCoordinateSelection {
             selection: CxCoordinateSelection::TwoD { id: 1 }
         })
@@ -1881,7 +2011,8 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
         write_cx_smiles_with_params(
             &same_id_both_dimensions,
             &cx_coordinate_params(CxCoordinateSelection::Auto)
-        ),
+        )
+        .map(fixture_writer_text),
         Err(SmilesParseError::AmbiguousCoordinateSelection {
             two_d_count: 1,
             three_d_count: 1
@@ -1892,6 +2023,7 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
             &same_id_both_dimensions,
             &cx_coordinate_params(CxCoordinateSelection::TwoD { id: 5 })
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "CC |(10,20,;30,40,)|"
     );
@@ -1900,6 +2032,7 @@ fn cx_writer_selection_uses_dimension_scoped_ids_and_rejects_nonunique_or_missin
             &same_id_both_dimensions,
             &cx_coordinate_params(CxCoordinateSelection::ThreeD { id: 5 })
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "CC |(1,2,3;4,5,6)|"
     );
@@ -1920,7 +2053,9 @@ fn cx_writer_atom_values_preserve_mapped_holes_and_literal_text() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_value_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_value_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "CCCC |$_AV:left.with.dot;;tail;$|"
     );
     assert_eq!(record, before, "value output must preserve its input");
@@ -1937,7 +2072,9 @@ fn cx_writer_atom_values_preserve_leading_interior_and_trailing_holes() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_value_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_value_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "CCCC |$_AV:;middle;;$|"
     );
     assert_eq!(record, before, "value output must preserve its input");
@@ -1953,7 +2090,9 @@ fn cx_writer_atom_values_emit_present_empty_values_and_all_empty_slots() {
         .expect("set present empty molfile value");
     let single_before = single.clone();
     assert_eq!(
-        write_cx_smiles_with_params(&single, &cx_atom_value_params()).unwrap(),
+        write_cx_smiles_with_params(&single, &cx_atom_value_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |$_AV:$|"
     );
     assert_eq!(single, single_before, "empty value output preserves input");
@@ -1964,7 +2103,9 @@ fn cx_writer_atom_values_emit_present_empty_values_and_all_empty_slots() {
         .expect("set present empty molfile value");
     let multiple_before = multiple.clone();
     assert_eq!(
-        write_cx_smiles_with_params(&multiple, &cx_atom_value_params()).unwrap(),
+        write_cx_smiles_with_params(&multiple, &cx_atom_value_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "CCC |$_AV:;;$|"
     );
     assert_eq!(multiple, multiple_before, "empty slots preserve input");
@@ -1980,10 +2121,14 @@ fn cx_writer_radicals_group_supported_counts_and_keep_output_atom_order() {
     }
     let before = record.clone();
     let params = cx_radical_params();
-    let base = write_smiles_with_params(&record, &params.smiles).unwrap();
+    let base = write_smiles_with_params(&record, &params.smiles)
+        .map(fixture_writer_text)
+        .unwrap();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         format!("{base} |^1:1,4,^2:0,2,^5:3|")
     );
     assert_eq!(record, before, "radical extension writing preserves input");
@@ -1999,10 +2144,14 @@ fn cx_writer_radicals_preserve_source_default_for_unsupported_counts() {
     record.topology.atoms[2].set_radical_electrons(2);
     let before = record.clone();
     let params = cx_radical_params();
-    let base = write_smiles_with_params(&record, &params.smiles).unwrap();
+    let base = write_smiles_with_params(&record, &params.smiles)
+        .map(fixture_writer_text)
+        .unwrap();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         format!("{base} |^1:1,^2:2,0|")
     );
     assert_eq!(record, before, "radical extension writing preserves input");
@@ -2012,9 +2161,16 @@ fn cx_writer_radicals_preserve_source_default_for_unsupported_counts() {
 fn cx_writer_radicals_emit_no_block_when_all_electron_counts_are_zero() {
     let record = parse_smiles("CCC", &Default::default()).expect("parse propane");
     let params = cx_radical_params();
-    let base = write_smiles_with_params(&record, &params.smiles).unwrap();
+    let base = write_smiles_with_params(&record, &params.smiles)
+        .map(fixture_writer_text)
+        .unwrap();
 
-    assert_eq!(write_cx_smiles_with_params(&record, &params).unwrap(), base);
+    assert_eq!(
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
+        base
+    );
 }
 
 #[test]
@@ -2026,7 +2182,9 @@ fn cx_writer_atom_property_escapes_each_period_with_exact_source_token() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |atomProp:0.a&#46;b.c&#46;d|"
     );
     assert_eq!(record, before, "property escaping must preserve input");
@@ -2041,7 +2199,9 @@ fn cx_writer_atom_property_preserves_empty_values() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |atomProp:0.empty.|"
     );
     assert_eq!(
@@ -2059,7 +2219,9 @@ fn cx_writer_atom_property_copies_non_ascii_text_without_normalization() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |atomProp:0.clé.λ雪|"
     );
     assert_eq!(
@@ -2090,7 +2252,9 @@ fn cx_writer_atom_properties_use_exact_pseudoatom_exclusions() {
             .expect("set dummy label");
         let before = record.clone();
         assert_eq!(
-            write_cx_smiles_with_params(&record, &params).unwrap(),
+            write_cx_smiles_with_params(&record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "dummyLabel={label:?}"
         );
@@ -2105,10 +2269,12 @@ fn cx_writer_atom_properties_use_exact_pseudoatom_exclusions() {
         .set_prop("dummyLabel", "Het")
         .expect("set dummy label");
     attachment.topology.atoms[0]
-        .set_prop("_fromAttachPoint", "1")
+        .set_prop("_fromAttchpt", "1")
         .expect("set attachment marker");
     assert_eq!(
-        write_cx_smiles_with_params(&attachment, &params).unwrap(),
+        write_cx_smiles_with_params(&attachment, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "*",
         "attachment-point dummy labels stay excluded"
     );
@@ -2123,7 +2289,7 @@ fn cx_writer_atom_properties_exclude_skipped_private_and_computed_properties() {
         ("molParity", "1"),
         ("molAtomMapNumber", "7"),
         ("molStereoCare", "1"),
-        ("molRxnExactChange", "1"),
+        ("molRxnExachg", "1"),
         ("molInversionFlag", "1"),
         ("_private", "private"),
     ] {
@@ -2137,7 +2303,9 @@ fn cx_writer_atom_properties_exclude_skipped_private_and_computed_properties() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "*"
     );
     assert_eq!(record, before, "property exclusion preserves input");
@@ -2152,7 +2320,9 @@ fn cx_writer_atom_properties_preserve_source_insertion_order() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |atomProp:0.z.last:0.a.first|"
     );
     assert_eq!(record, before, "property writing preserves input");
@@ -2168,7 +2338,9 @@ fn cx_writer_atom_properties_overwrite_without_moving_the_key() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |atomProp:0.z.last:0.a.middle|"
     );
     assert_eq!(record, before, "property overwrite writing preserves input");
@@ -2185,7 +2357,9 @@ fn cx_writer_atom_properties_clear_then_reinsert_appends_the_key() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |atomProp:0.a.first:0.z.reinserted|"
     );
     assert_eq!(
@@ -2210,7 +2384,9 @@ fn cx_writer_atom_properties_filter_interleaved_keys_without_reordering() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |atomProp:0.z.last:0.a.first:0.m.middle|"
     );
     assert_eq!(record, before, "filtered property writing preserves input");
@@ -2220,7 +2396,7 @@ fn cx_writer_atom_properties_filter_interleaved_keys_without_reordering() {
 fn cx_writer_atom_properties_project_typed_values_after_source_filters() {
     let mut record = parse_smiles("C", &Default::default()).expect("parse carbon");
     let atom = &mut record.topology.atoms[0];
-    atom.set_prop("Text", PropertyValue::String("a.b".to_owned()))
+    atom.set_prop("Text", PropertyValue::String("a.b".into()))
         .expect("set String property");
     atom.set_prop("Count", PropertyValue::Int(7))
         .expect("set Int property");
@@ -2239,7 +2415,9 @@ fn cx_writer_atom_properties_project_typed_values_after_source_filters() {
     let before = record.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |atomProp:0.Text.a&#46;b:0.Count.7:0.Real.-0:0.Active.1|"
     );
     assert_eq!(record, before, "typed property writing preserves input");
@@ -2258,7 +2436,9 @@ fn cx_labels_and_values_use_dict_string_conversion_for_scalar_tags() {
         .unwrap();
     let before = record.clone();
     assert_eq!(
-        write_cx_smiles_with_params(&record, &Default::default()).unwrap(),
+        write_cx_smiles_with_params(&record, &Default::default())
+            .map(fixture_writer_text)
+            .unwrap(),
         "C |$9$,$_AV:1$|"
     );
     assert_eq!(record, before);
@@ -2281,7 +2461,9 @@ fn cx_writer_atom_properties_survive_clone_and_topology_remap() {
     let remapped_before = remapped.clone();
 
     assert_eq!(
-        write_cx_smiles_with_params(&remapped, &cx_atom_prop_params()).unwrap(),
+        write_cx_smiles_with_params(&remapped, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
         "N.C |atomProp:0.y.nitrogen:0.b.second:1.z.carbon:1.a.first|"
     );
     assert_eq!(
@@ -2292,4 +2474,40 @@ fn cx_writer_atom_properties_survive_clone_and_topology_remap() {
         remapped, remapped_before,
         "property writing preserves remapped input"
     );
+}
+
+#[test]
+fn cpp_identifier_spellings_are_ordinary_property_keys_without_aliases() {
+    // RDGeneral/types.h: the literal keys differ from these C++ identifiers.
+    // Preserve the original mis-spelled inputs as explicit negative coverage.
+    let mut record = parse_smiles("*", &Default::default()).unwrap();
+    let atom = &mut record.topology.atoms[0];
+    atom.set_prop("dummyLabel", "Het").unwrap();
+    atom.set_prop("atomLabel", "ordinary").unwrap();
+    atom.set_prop("_fromAttachPoint", "1").unwrap();
+    atom.set_prop("molRxnExactChange", "1").unwrap();
+    record
+        .properties
+        .set_prop("_MolFileLinkNodes", "1 3 2 1 2 1 3")
+        .unwrap();
+    let before = record.clone();
+    assert_eq!(
+        write_cx_smiles_with_params(&record, &cx_atom_label_params())
+            .map(fixture_writer_text)
+            .unwrap(),
+        "* |$ordinary$|"
+    );
+    assert_eq!(
+        write_cx_smiles_with_params(&record, &cx_atom_prop_params())
+            .map(fixture_writer_text)
+            .unwrap(),
+        "* |atomProp:0.dummyLabel.Het:0.molRxnExactChange.1|"
+    );
+    assert_eq!(
+        write_cx_smiles_with_params(&record, &cx_params(CxSmilesFields::LINKNODES, true, false))
+            .map(fixture_writer_text)
+            .unwrap(),
+        "*"
+    );
+    assert_eq!(record, before);
 }

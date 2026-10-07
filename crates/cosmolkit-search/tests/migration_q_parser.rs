@@ -1,3 +1,16 @@
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+}
+fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+    fixture_text(value.as_string().expect("original string fixture kind"))
+}
+// Test-only projection of unchanged UTF-8 spelling fixtures. Raw byte
+// boundaries are asserted without conversion in smarts_counted_bytes.rs.
+fn fixture_written_text(value: cosmolkit_model::PropertyText) -> String {
+    std::str::from_utf8(value.as_bytes())
+        .expect("unchanged UTF-8 writer fixture bytes")
+        .to_owned()
+}
 use cosmolkit_model::{
     Atom, AtomId, AtomRangeBounds, AtomRangeDataFunction, AtomSpec, Bond, BondId, BondSpec,
     Element, PropertyValue, QueryAtom, QueryAtomIdentity, TopologyBlock,
@@ -224,7 +237,7 @@ fn q03_parser_errors_use_trimmed_parser_byte_positions() {
         error,
         SmartsParseError::UnexpectedCharacter {
             position: 4,
-            character: '☃',
+            character: char::from(0xe2),
             context: "unexpected character in SMARTS string".to_owned(),
         }
     );
@@ -365,7 +378,11 @@ fn q14_disconnected_components_keep_source_order_and_reject_dangling_tokens() {
     assert_eq!((empty.num_atoms(), empty.num_bonds()), (0, 0));
     assert_eq!(
         parse_smarts(" \t\r\n", &params).expect_err("nonempty whitespace is parsed"),
-        SmartsParseError::UnexpectedEnd("expected atom but reached end".to_owned())
+        SmartsParseError::UnexpectedCharacter {
+            position: 1,
+            character: '\0',
+            context: "unexpected character in SMARTS string".to_owned(),
+        }
     );
 
     // A separator or explicit bond cannot finish without its required atomd.
@@ -690,7 +707,10 @@ fn q19_preprocessing_defaults_replacements_name_delimiter_and_malformed_input() 
             QueryAtomIdentity::Element(Element::C)
         );
     }
-    assert_eq!(graph.name(), Some("Original O\u{00a0}"));
+    assert_eq!(
+        graph.name().unwrap().map(fixture_text),
+        Some("Original O\u{00a0}")
+    );
 
     // A delimiter at offset zero is not a split point; its remaining embedded
     // whitespace stays malformed SMARTS, and replacement output is not
@@ -709,10 +729,13 @@ fn q20_wrapper_cx_name_flags_and_error_order() {
     let valid_cx = parse_source_case("C |$label$| note");
     assert_eq!(
         valid_cx.atom(0).and_then(|atom| atom.prop("atomLabel")),
-        Some(&PropertyValue::String("label".to_owned()))
+        Some(&PropertyValue::String("label".into()))
     );
-    assert_eq!(valid_cx.prop("_CXSMILES_Data"), Some("|$label$|"));
-    assert_eq!(valid_cx.name(), Some("note"));
+    assert_eq!(
+        valid_cx.prop("_CXSMILES_Data").map(fixture_value),
+        Some("|$label$|")
+    );
+    assert_eq!(valid_cx.name().unwrap().map(fixture_text), Some("note"));
 
     let no_name_params = SmartsParseParams {
         parse_name: false,
@@ -722,10 +745,13 @@ fn q20_wrapper_cx_name_flags_and_error_order() {
         .expect("parseName=false still applies valid CX records");
     assert_eq!(
         no_name.atom(0).and_then(|atom| atom.prop("atomLabel")),
-        Some(&PropertyValue::String("label".to_owned()))
+        Some(&PropertyValue::String("label".into()))
     );
-    assert_eq!(no_name.prop("_CXSMILES_Data"), Some("|$label$|"));
-    assert_eq!(no_name.name(), None);
+    assert_eq!(
+        no_name.prop("_CXSMILES_Data").map(fixture_value),
+        Some("|$label$|")
+    );
+    assert_eq!(no_name.name().unwrap().map(fixture_text), None);
 
     let no_cx_params = SmartsParseParams {
         allow_cxsmiles: false,
@@ -733,13 +759,19 @@ fn q20_wrapper_cx_name_flags_and_error_order() {
     };
     let cx_text_is_name = parse_smarts("C |$label$| note", &no_cx_params)
         .expect("allowCXSMILES=false treats the full suffix as the name");
-    assert_eq!(cx_text_is_name.name(), Some("|$label$| note"));
+    assert_eq!(
+        cx_text_is_name.name().unwrap().map(fixture_text),
+        Some("|$label$| note")
+    );
     assert_eq!(cx_text_is_name.prop("_CXSMILES_Data"), None);
 
     let retained_non_ascii =
         parse_smarts("C |$label$| note\u{00a0}", &SmartsParseParams::default())
             .expect("source-trimmed CX suffix");
-    assert_eq!(retained_non_ascii.name(), Some("note\u{00a0}"));
+    assert_eq!(
+        retained_non_ascii.name().unwrap().map(fixture_text),
+        Some("note\u{00a0}")
+    );
 
     let strict_no_name = SmartsParseParams {
         parse_name: false,
@@ -755,7 +787,7 @@ fn q20_wrapper_cx_name_flags_and_error_order() {
     };
     let parsed_without_name = parse_smarts("C note", &lenient_no_name)
         .expect("strictCXSMILES=false accepts the source name suffix");
-    assert_eq!(parsed_without_name.name(), None);
+    assert_eq!(parsed_without_name.name().unwrap().map(fixture_text), None);
 
     let strict_malformed_cx = parse_smarts("C |sense|", &SmartsParseParams::default());
     assert!(matches!(
@@ -780,10 +812,10 @@ fn q20_lenient_cx_failure_retains_source_cursor_property() {
     };
     let graph = parse_smarts("C |sense| ignored", &params)
         .expect("lenient CX failure preserves the successfully parsed SMARTS");
-    assert_eq!(graph.name(), None);
+    assert_eq!(graph.name().unwrap().map(fixture_text), None);
     // Pinned handleCXPartAndName stores [cxPart.begin(), parser iterator).
     // parse_substitution rejects `sense` at its initial `s`, so the property is `|`.
-    assert_eq!(graph.prop("_CXSMILES_Data"), Some("|"));
+    assert_eq!(graph.prop("_CXSMILES_Data").map(fixture_value), Some("|"));
 }
 
 #[test]
@@ -798,10 +830,13 @@ fn q20_lenient_cx_failure_retains_prior_record_effects() {
     // its iterator remains at `x`, so the CX data prefix also includes `s:0:`.
     assert_eq!(
         graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-        Some(&PropertyValue::String("label".to_owned()))
+        Some(&PropertyValue::String("label".into()))
     );
-    assert_eq!(graph.prop("_CXSMILES_Data"), Some("|$label$ s:0:"));
-    assert_eq!(graph.name(), None);
+    assert_eq!(
+        graph.prop("_CXSMILES_Data").map(fixture_value),
+        Some("|$label$ s:0:")
+    );
+    assert_eq!(graph.name().unwrap().map(fixture_text), None);
 }
 
 #[test]
@@ -816,17 +851,20 @@ fn q20_lenient_cx_lowering_failure_retains_record_effects_and_cursor() {
         .expect("lenient lowering failure preserves earlier source mutations");
     assert_eq!(
         graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-        Some(&PropertyValue::String("label".to_owned()))
+        Some(&PropertyValue::String("label".into()))
     );
     let bond = graph.bond(0).expect("first wedge bond remains");
     assert_eq!(bond.endpoints(), (0, 1));
     assert_eq!(bond.bond().direction(), BondDirection::BeginWedge);
     assert_eq!(
         bond.bond().prop("_MolFileBondCfg"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::UInt(1))
     );
-    assert_eq!(graph.prop("_CXSMILES_Data"), Some("|$label$ wU:0.0,1.0"));
-    assert_eq!(graph.name(), None);
+    assert_eq!(
+        graph.prop("_CXSMILES_Data").map(fixture_value),
+        Some("|$label$ wU:0.0,1.0")
+    );
+    assert_eq!(graph.name().unwrap().map(fixture_text), None);
 }
 
 #[test]
@@ -850,7 +888,7 @@ fn q03_bad_character_dispatch_preserves_byte_position_and_parser_priority() {
         ("C\tC", '\t', 2),
         ("C\rC", '\r', 2),
         ("C?C", '?', 2),
-        ("CC☃C", '☃', 3),
+        ("CC☃C", char::from(0xe2), 3),
         ("[C?]", '?', 3),
         ("C(C?C)", '?', 4),
     ] {
@@ -1118,7 +1156,7 @@ fn q03_common_bond_token_width_sets_following_bad_character_byte_position() {
             parse_smarts(input, &raw_smarts).expect_err("internal BAD_CHARACTER after bond token"),
             SmartsParseError::UnexpectedCharacter {
                 position,
-                character: '☃',
+                character: char::from(0xe2),
                 context: "unexpected character in SMARTS string".to_owned(),
             },
             "{input:?}"
@@ -1205,7 +1243,7 @@ fn q04_percent_ring_numbers_follow_pinned_grammar_and_error_position() {
             "C%☃C",
             SmartsParseError::UnexpectedCharacter {
                 position: 3,
-                character: '☃',
+                character: char::from(0xe2),
                 context: "unexpected character in SMARTS string".to_owned(),
             },
         ),
@@ -1308,7 +1346,9 @@ fn q07e_ring_primitives_keep_source_identity_full_targets_and_defaults() {
         assert_eq!(atom.try_to_atom().unwrap(), baseline_carrier, "{smarts}");
         assert!(!atom.predicate_is_carrier_derived(), "{smarts}");
         assert_eq!(
-            write_smarts(&graph, &SmartsWriteParams::default()).unwrap(),
+            write_smarts(&graph, &SmartsWriteParams::default())
+                .map(fixture_written_text)
+                .unwrap(),
             expected_writer,
             "{smarts}"
         );
@@ -1346,7 +1386,9 @@ fn q07e_ring_primitives_keep_source_identity_full_targets_and_defaults() {
         assert_eq!(atom.try_to_atom().unwrap(), baseline_carrier, "{smarts}");
         assert!(!atom.predicate_is_carrier_derived(), "{smarts}");
         assert_eq!(
-            write_smarts(&graph, &SmartsWriteParams::default()).unwrap(),
+            write_smarts(&graph, &SmartsWriteParams::default())
+                .map(fixture_written_text)
+                .unwrap(),
             smarts,
             "{smarts}"
         );
@@ -1395,7 +1437,23 @@ fn q07e_ring_primitives_keep_source_identity_full_targets_and_defaults() {
     .expect("acyclic control topology");
 
     let matches = |smarts: &str, target: &TopologyBlock| {
-        !match_query(&parse_source_case(smarts), target)
+        // QueryOps reads initialized source RingInfo. Prepare fixture chemistry
+        // explicitly through the unique CORE owner, outside SEARCH evaluation.
+        let rings = cosmolkit_core::find_sssr_from_parts(
+            target.atoms.len(),
+            &target.bonds,
+            &target.adjacency,
+        )
+        .expect("original ring fixture has initialized SSSR");
+        let coordinates = cosmolkit_model::CoordinateBlock::default();
+        let prepared = cosmolkit_search::SearchTarget::new(
+            target,
+            &coordinates,
+            &target.stereo_groups,
+            Some(&rings),
+            None,
+        );
+        !cosmolkit_search::match_query_target(&parse_source_case(smarts), &prepared)
             .expect("ring primitive query matching")
             .is_empty()
     };
@@ -1442,7 +1500,9 @@ fn q07e_ring_ranges_keep_source_query_classes_bounds_and_matching() {
         assert_eq!(range.data_function(), expected_data_function, "{smarts}");
         assert_eq!(atom.try_to_atom().unwrap(), baseline_carrier, "{smarts}");
         assert!(!atom.predicate_is_carrier_derived(), "{smarts}");
-        let written = write_smarts(&graph, &SmartsWriteParams::default()).unwrap();
+        let written = write_smarts(&graph, &SmartsWriteParams::default())
+            .map(fixture_written_text)
+            .unwrap();
         assert_eq!(written, smarts, "{smarts}");
         let reparsed = parse_source_case(&written);
         assert_eq!(
@@ -1548,7 +1608,23 @@ fn q07e_ring_ranges_keep_source_query_classes_bounds_and_matching() {
     )
     .expect("acyclic control topology");
     let matches = |smarts: &str, target: &TopologyBlock| {
-        !match_query(&parse_source_case(smarts), target)
+        // QueryOps reads initialized source RingInfo. Prepare fixture chemistry
+        // explicitly through the unique CORE owner, outside SEARCH evaluation.
+        let rings = cosmolkit_core::find_sssr_from_parts(
+            target.atoms.len(),
+            &target.bonds,
+            &target.adjacency,
+        )
+        .expect("original ring fixture has initialized SSSR");
+        let coordinates = cosmolkit_model::CoordinateBlock::default();
+        let prepared = cosmolkit_search::SearchTarget::new(
+            target,
+            &coordinates,
+            &target.stereo_groups,
+            Some(&rings),
+            None,
+        );
+        !cosmolkit_search::match_query_target(&parse_source_case(smarts), &prepared)
             .expect("ring range query matching")
             .is_empty()
     };
@@ -2386,7 +2462,7 @@ fn q23_recursive_query_hydrogen_merge_descends_without_aliasing_or_losing_serial
     };
     assert_eq!(source_outer.serial_number(), 7);
     assert_eq!(
-        source_outer.source_smarts(),
+        source_outer.source_smarts().map(fixture_text),
         Some("$([C]([H])[$([N][H])_8])")
     );
     assert_eq!(
@@ -2404,13 +2480,19 @@ fn q23_recursive_query_hydrogen_merge_descends_without_aliasing_or_losing_serial
         .query_graph_mut()
         .expect("cloned outer recursive graph");
     cloned_graph.set_prop("_q23_clone_probe", "detached");
-    assert_eq!(cloned_graph.prop("_q23_clone_probe"), Some("detached"));
+    assert_eq!(
+        cloned_graph.prop("_q23_clone_probe").map(fixture_value),
+        Some("detached")
+    );
     assert_eq!(
         source_outer.query_graph().unwrap().prop("_q23_clone_probe"),
         None
     );
     assert_eq!(cloned_outer.serial_number(), source_outer.serial_number());
-    assert_eq!(cloned_outer.source_smarts(), source_outer.source_smarts());
+    assert_eq!(
+        cloned_outer.source_smarts().map(fixture_text),
+        source_outer.source_smarts().map(fixture_text)
+    );
     assert_eq!(source, source_before);
 
     let merge_hs = SmartsParseParams {
@@ -2428,7 +2510,10 @@ fn q23_recursive_query_hydrogen_merge_descends_without_aliasing_or_losing_serial
         panic!("merged outer atom should retain its recursive predicate");
     };
     assert_eq!(outer.serial_number(), 7);
-    assert_eq!(outer.source_smarts(), source_outer.source_smarts());
+    assert_eq!(
+        outer.source_smarts().map(fixture_text),
+        source_outer.source_smarts().map(fixture_text)
+    );
 
     let inner = outer.query_graph().expect("merged outer recursive graph");
     assert_eq!(inner.num_atoms(), 2);
@@ -2456,7 +2541,7 @@ fn q23_recursive_query_hydrogen_merge_descends_without_aliasing_or_losing_serial
         panic!("nested recursive atom should retain its recursive predicate");
     };
     assert_eq!(nested.serial_number(), 8);
-    assert_eq!(nested.source_smarts(), Some("$([N][H])"));
+    assert_eq!(nested.source_smarts().map(fixture_text), Some("$([N][H])"));
     let deepest = nested
         .query_graph()
         .expect("merged deepest recursive graph");
@@ -3182,11 +3267,11 @@ fn q01_a_lenient_records_keep_prefix_commits_and_cursor() {
         let graph = parse_smarts(&text, &params).unwrap();
         assert_eq!(
             graph.atom(0).unwrap().prop("atomLabel"),
-            Some(&PropertyValue::String("kept".to_owned()))
+            Some(&PropertyValue::String("kept".into()))
         );
-        assert_eq!(graph.name(), None);
+        assert_eq!(graph.name().unwrap().map(fixture_text), None);
         assert_eq!(
-            graph.prop("_CXSMILES_Data"),
+            graph.prop("_CXSMILES_Data").map(fixture_value),
             Some(format!("|$kept$ {record}").as_str())
         );
         match record {

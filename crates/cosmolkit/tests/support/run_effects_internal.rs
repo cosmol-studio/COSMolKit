@@ -283,7 +283,7 @@ fn operation_defined_allow_list_is_exact() {
             OpParts::<EffectsAccess>::validate_effect_contract(operation),
             Err(OperationError::DerivedEffectContract {
                 action: "operation_defined",
-                issue: "only valence in the hydrogen-removal family is allow-listed",
+                issue: "only approved exact hydrogen and Weak valence source transitions are allow-listed",
                 ..
             })
         ));
@@ -773,7 +773,10 @@ fn cip_clear_removes_computed_members_only_and_is_atomic() {
     assert_eq!(output.topology().atoms[0].prop("_CIPNeighborOrder"), None);
     assert_eq!(output.topology().bonds[0].prop("_CIPNeighborOrder"), None);
     assert_eq!(output.properties().prop("_CIPComputed"), None);
-    assert_eq!(output.properties().prop("ordinary"), Some("kept"));
+    assert_eq!(
+        output.properties().prop("ordinary"),
+        Some(&cosmolkit_model::PropertyValue::String("kept".into()))
+    );
     assert_eq!(
         source.topology().atoms[0].prop("_CIPNeighborOrder"),
         Some(&cosmolkit_model::PropertyValue::from("1"))
@@ -1045,5 +1048,174 @@ fn source_shape_keeps_effect_authority_private_and_domain_free() {
     }
     for forbidden in ["aromatize", "kekulize", "sanitize", "assign_valence"] {
         assert!(!contains_exact_callable(context, forbidden));
+    }
+}
+
+#[test]
+#[cfg(all(
+    feature = "cap-hydrogens",
+    feature = "cap-kekulize",
+    feature = "cap-sanitize"
+))]
+fn add_hs_operation_defined_requires_the_exact_generated_source_transition() {
+    let canonical = crate::operation_spec("with_hydrogens_with_params").unwrap();
+    assert_eq!(
+        OpParts::<EffectsAccess>::validate_effect_contract(canonical),
+        Ok(())
+    );
+    for mutation in 0..8 {
+        let mut changed = *canonical;
+        match mutation {
+            0 => changed.method = "other_add_hs",
+            1 => changed.output = MoleculeOpOutput::Multiple,
+            2 => changed.kind = MoleculeOpKind::Weak,
+            3 => changed.topology_edit = TopologyEditKind::None,
+            4 => changed.requires_mapping = MappingRequirement::None,
+            5 => changed.cip_state = CipStatePolicy::Preserve,
+            6 => changed.access = BlockAccess::new(BlockSet::TOPOLOGY, canonical.access.write()),
+            7 => {
+                changed.access = BlockAccess::new(
+                    BlockSet::NONE,
+                    BlockSet::TOPOLOGY
+                        .union(BlockSet::PROPERTIES)
+                        .union(BlockSet::DERIVED_CACHE),
+                )
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            matches!(
+                OpParts::<EffectsAccess>::validate_effect_contract(Box::leak(Box::new(changed))),
+                Err(OperationError::DerivedEffectContract {
+                    action: "operation_defined",
+                    ..
+                })
+            ),
+            "mutation {mutation} must not acquire source transition authority"
+        );
+    }
+}
+
+#[test]
+#[cfg(all(
+    feature = "cap-hydrogens",
+    feature = "cap-kekulize",
+    feature = "cap-sanitize"
+))]
+fn weak_source_valence_guards_match_exact_generated_registry_shapes() {
+    for method in ["with_kekulized_bonds_with_params", "sanitize_with_params"] {
+        let canonical = crate::operation_spec(method).unwrap();
+        assert_eq!(
+            canonical.derived_effects.operation_defined,
+            DerivedState::VALENCE
+        );
+        assert_eq!(canonical.derived_effects.recompute, DerivedState::RINGS);
+        assert_eq!(
+            OpParts::<EffectsAccess>::validate_effect_contract(canonical),
+            Ok(())
+        );
+        for mutation in 0..12 {
+            let mut changed = *canonical;
+            match mutation {
+                0 => changed.method = "other_weak_source",
+                1 => changed.kind = MoleculeOpKind::Strong,
+                2 => changed.topology_edit = TopologyEditKind::None,
+                3 => changed.output = MoleculeOpOutput::Multiple,
+                4 => changed.requires_mapping = MappingRequirement::Required,
+                5 => {
+                    changed.cip_state = if canonical.cip_state == CipStatePolicy::Preserve {
+                        CipStatePolicy::ClearComputed
+                    } else {
+                        CipStatePolicy::Preserve
+                    }
+                }
+                6 => {
+                    changed.access =
+                        BlockAccess::new(BlockSet::COORDINATES, canonical.access.write())
+                }
+                7 => {
+                    changed.access = BlockAccess::new(
+                        BlockSet::NONE,
+                        canonical.access.write().union(BlockSet::COORDINATES),
+                    )
+                }
+                8 => changed.derived_effects.recompute = DerivedState::NONE,
+                9 => changed.derived_effects.preserve = DerivedState::NONE,
+                10 => changed.derived_effects.invalidate = DerivedState::NONE,
+                11 => changed.derived_effects.operation_defined = DerivedState::DRAWING,
+                _ => unreachable!(),
+            }
+            assert!(
+                matches!(
+                    OpParts::<EffectsAccess>::validate_effect_contract(Box::leak(Box::new(
+                        changed
+                    ))),
+                    Err(OperationError::DerivedEffectContract { .. })
+                ),
+                "{method}: mutation {mutation}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "cap-stereoisomers")]
+#[test]
+fn stereoisomer_source_transition_rejects_other_runtime_shapes() {
+    let blocks = BlockSet::TOPOLOGY
+        .union(BlockSet::COORDINATES)
+        .union(BlockSet::PROPERTIES)
+        .union(BlockSet::DERIVED_CACHE);
+    let good = spec(
+        "enumerate_stereoisomers_with_options",
+        MoleculeOpOutput::LazyMultiple,
+        BlockAccess::new(BlockSet::NONE, blocks),
+        blocks,
+        effects(
+            DerivedState::NONE,
+            DerivedState::NONE,
+            DerivedState::NONE,
+            DerivedState::NONE,
+        ),
+        CipStatePolicy::StereoisomerSourceTransition,
+    );
+    assert!(OpParts::<EffectsAccess>::validate_effect_contract(good).is_ok());
+    let mut callback = *good;
+    callback.method = "enumerate_stereoisomers_with_random_bits";
+    assert!(
+        OpParts::<EffectsAccess>::validate_effect_contract(Box::leak(Box::new(callback))).is_ok()
+    );
+    for case in 0..13 {
+        let mut bad = *good;
+        match case {
+            0 => bad.method = "other_operation",
+            1 => bad.output = MoleculeOpOutput::Single,
+            2 => bad.output = MoleculeOpOutput::Multiple,
+            3 => bad.kind = MoleculeOpKind::Strong,
+            4 => bad.topology_edit = TopologyEditKind::Local,
+            5 => bad.requires_mapping = MappingRequirement::Identity,
+            6 => bad.access = BlockAccess::new(BlockSet::TOPOLOGY, blocks),
+            7 => {
+                bad.access =
+                    BlockAccess::new(BlockSet::NONE, blocks.difference(BlockSet::COORDINATES))
+            }
+            8 => {
+                bad.access = BlockAccess::new(BlockSet::NONE, blocks.difference(BlockSet::TOPOLOGY))
+            }
+            9 => {
+                bad.access =
+                    BlockAccess::new(BlockSet::NONE, blocks.difference(BlockSet::PROPERTIES))
+            }
+            10 => bad.may_mutate = blocks.difference(BlockSet::TOPOLOGY),
+            11 => bad.may_mutate = blocks.difference(BlockSet::PROPERTIES),
+            12 => bad.may_mutate = blocks.difference(BlockSet::COORDINATES),
+            _ => unreachable!(),
+        }
+        assert!(
+            matches!(
+                OpParts::<EffectsAccess>::validate_effect_contract(Box::leak(Box::new(bad))),
+                Err(OperationError::CipStateContract { .. })
+            ),
+            "accepted illegal source policy case {case}"
+        );
     }
 }

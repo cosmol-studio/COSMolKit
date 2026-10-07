@@ -7,8 +7,8 @@
 
 use crate::{
     RingInfo, SanitizeError, SanitizeParams, ValenceAssignment, ValenceError, ValenceModel,
-    assign_valence_with_options_for_topology, rdkit_rb0, rdkit_valence_list,
-    sanitize_topology_with_query_state,
+    assign_valence_state_for_atom_from_parts, assign_valence_with_options_for_topology, rdkit_rb0,
+    rdkit_valence_list, sanitize_topology_with_query_state,
 };
 use cosmolkit_model::{
     AdjacencyList, AtomId, AtomMapping, AtomPdbResidueInfo, AtomSpec, Bond, BondDirection, BondId,
@@ -52,7 +52,7 @@ pub struct RemoveHsParams {
     /// non-implicit removal. RDKit exposes this as the overload's separate
     /// `sanitize` argument; the canonical COSMolKit parameter value keeps the
     /// observable option explicit across languages.
-    /// When false, no final valence cache is produced (CK-VALENCE-001);
+    /// When false, actual pre-removal source scalar values survive;
     /// intermediate calculations needed by removal still run. True alone is
     /// not proof of strict chemical validity when no sanitize branch executes.
     pub sanitize: bool,
@@ -124,6 +124,8 @@ pub struct AddHydrogensResult {
     pub properties: MoleculeProperties,
     pub mapping: TopologyMapping,
     pub warnings: Vec<HydrogenWarning>,
+    /// Actual selected-parent/new-H source scalars; untouched rows survive.
+    pub final_valence: ValenceAssignment,
 }
 
 /// Detached topology state prepared for the one downstream RemoveHs compaction.
@@ -140,8 +142,8 @@ pub struct RemoveHydrogensResult {
     pub coordinates: CoordinateBlock,
     pub properties: MoleculeProperties,
     pub mapping: TopologyMapping,
-    /// Complete final-topology assignment, not an intermediate RDKit cache.
-    /// Absent when sanitize=false: the runtime must invalidate its old value.
+    /// Actual source scalars aligned with the final retained atom rows.
+    /// Available without sanitization; no unsolicited final-topology refresh.
     pub final_valence: Option<ValenceAssignment>,
     /// Final ring-state transport for the final topology. `None` is the
     /// exact final source-uninitialized state (removeHs ALWAYS
@@ -149,8 +151,8 @@ pub struct RemoveHydrogensResult {
     /// reset state); `Some` is the exact SAN initialized state, INCLUDING
     /// zero rings. Published ONLY from the final pass by MOVE; the
     /// isotope-tracking preliminary pass hardcodes sanitize=false and its
-    /// state is discarded. Independent from `final_valence` (CK-VALENCE-001
-    /// is valence-only): sanitize=true/remove_nonimplicit=false yields
+    /// state is discarded. Independent from the retained scalar state:
+    /// sanitize=true/remove_nonimplicit=false yields
     /// final_valence Some with final_rings None. No live-cache
     /// installation is implied.
     pub final_rings: Option<RingInfo>,
@@ -170,6 +172,8 @@ pub enum HydrogenWarning {
 /// Errors raised by detached hydrogen algorithms.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HydrogenError {
+    BondProperty(cosmolkit_model::BondValueError),
+    AtomProperty(cosmolkit_model::AtomPropertyError),
     InvalidTopology(TopologyValidationError),
     InvalidCoordinates(CoordinateValidationError),
     TopologyEdit(TopologyEditError),
@@ -178,7 +182,7 @@ pub enum HydrogenError {
     InvalidProperty(MoleculePropertyError),
     InvalidPropertyList {
         target: SdfPropertyListTarget,
-        name: String,
+        name: cosmolkit_model::PropertyText,
         expected_rows: usize,
         actual_rows: usize,
     },
@@ -198,6 +202,10 @@ pub enum HydrogenError {
         position: usize,
         atom: AtomId,
         reason: &'static str,
+    },
+    MissingSourceState {
+        stage: &'static str,
+        state: &'static str,
     },
     ValenceAssignmentLength {
         field: &'static str,
@@ -225,6 +233,12 @@ pub enum HydrogenError {
 impl std::fmt::Display for HydrogenError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::AtomProperty(error) => {
+                write!(formatter, "atom property operation failed: {error}")
+            }
+            Self::BondProperty(error) => {
+                write!(formatter, "bond property operation failed: {error}")
+            }
             Self::InvalidTopology(error) => write!(formatter, "invalid detached topology: {error}"),
             Self::InvalidCoordinates(error) => {
                 write!(formatter, "invalid detached coordinates: {error}")
@@ -283,6 +297,10 @@ impl std::fmt::Display for HydrogenError {
                 formatter,
                 "invalid hydrogen removal candidate row {position} (atom {atom}): {reason}"
             ),
+            Self::MissingSourceState { stage, state } => write!(
+                formatter,
+                "hydrogen-removal source stage {stage} did not return materialized {state}"
+            ),
             Self::ValenceAssignmentLength {
                 field,
                 expected,
@@ -314,7 +332,27 @@ impl std::fmt::Display for HydrogenError {
     }
 }
 
-impl std::error::Error for HydrogenError {}
+impl std::error::Error for HydrogenError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::AtomProperty(source) => Some(source),
+            Self::BondProperty(source) => Some(source),
+            Self::InvalidProperty(source) => Some(source),
+            _ => None,
+        }
+    }
+}
+
+impl From<cosmolkit_model::AtomPropertyError> for HydrogenError {
+    fn from(source: cosmolkit_model::AtomPropertyError) -> Self {
+        Self::AtomProperty(source)
+    }
+}
+impl From<cosmolkit_model::BondValueError> for HydrogenError {
+    fn from(source: cosmolkit_model::BondValueError) -> Self {
+        Self::BondProperty(source)
+    }
+}
 
 impl From<TopologyValidationError> for HydrogenError {
     fn from(error: TopologyValidationError) -> Self {
@@ -387,79 +425,23 @@ pub fn add_hydrogens_with_query_state(
     params: &AddHsParams,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<AddHydrogensResult, HydrogenError> {
+    // Explicit detached preparation; this entry has no stored source scalars.
+    // The live runtime calls the separate supplied-scalar seam below instead.
     validate_blocks(&topology, &coordinates)?;
     validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
     if let Some(state) = query_state {
         state.validate_for_topology(&topology)?;
     }
-
-    let old_atom_count = topology.atoms.len();
-    let old_bond_count = topology.bonds.len();
-    let processed_atoms = processed_add_hydrogen_atoms(&topology, params, query_state)?;
-    let tracked_isotopes = processed_atoms
-        .iter()
-        .enumerate()
-        .filter(|(_, processed)| **processed)
-        .map(|(atom, _)| {
-            (
-                AtomId::new(atom),
-                topology.atoms[atom].tracked_isotopic_hydrogens().to_vec(),
-            )
-        })
-        .collect::<Vec<_>>();
-
-    // BEGIN RDKIT CPP FUNCTION MolOps::addHs computed-property prelude
-    // RDKit✔️✔️: void addHs(RWMol &mol, const AddHsParameters &params,
-    // RDKit✔️✔️:            const UINT_VECT *onlyOnAtoms) {
-    // RDKit✔️✔️:   // when we hit each atom, clear its computed properties
-    // RDKit✔️✔️:   // NOTE: it is essential that we not clear the ring info in the
-    // RDKit✔️✔️:   // molecule's computed properties.  We don't want to have to
-    // RDKit✔️✔️:   // regenerate that.  This caused Issue210 and Issue212:
-    // RDKit✔️✔️:   mol.clearComputedProps(false);
-    // END RDKIT CPP FUNCTION MolOps::addHs computed-property prelude
-    // Behavior review: the composed boundary clears molecule properties HERE
-    // once and ALL atom/bond computed properties in the delegated topology
-    // owner. Ordinary properties survive. Neither detached stage owns rings
-    // or native valence caches; this is not full source cache parity.
-    // Cost review: molecule clearing moves the computed set and removes keys
-    // in O(q log p). The topology owner's separate store-cost qualification
-    // applies to the composed prelude; no whole-topology clone is added.
-    let mut properties = properties;
-    properties.clear_computed_props();
-
-    let result = add_hydrogens_topology_with_query_state(topology, params, query_state)?;
-    let mut result = add_hydrogen_coordinates(
-        result,
+    let valence =
+        assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)?;
+    add_hydrogens_from_source_state(
+        topology,
         coordinates,
-        params.add_coords,
-        params.add_residue_info,
-    )?;
-    let warnings =
-        replay_tracked_isotopes(&mut result.topology, &result.additions, &tracked_isotopes)?;
-
-    result.mapping.validate_for_counts(
-        old_atom_count,
-        result.topology.atoms.len(),
-        old_bond_count,
-        result.topology.bonds.len(),
-    )?;
-    properties.remap_topology(
-        result.mapping.atoms().new_to_old(),
-        result.mapping.bonds().new_to_old(),
-    );
-    validate_blocks(&result.topology, &result.coordinates)?;
-    validate_property_lists(
-        &properties,
-        result.topology.atoms.len(),
-        result.topology.bonds.len(),
-    )?;
-    Ok(AddHydrogensResult {
-        topology: result.topology,
-        coordinates: result.coordinates,
         properties,
-        mapping: result.mapping,
-        warnings,
-    })
+        params,
+        query_state,
+        Some(valence),
+    )
 }
 
 fn processed_add_hydrogen_atoms(
@@ -544,7 +526,7 @@ pub fn add_hydrogens_topology(
 /// Internal typed-query AddHs topology owner.
 #[doc(hidden)]
 pub fn add_hydrogens_topology_with_query_state(
-    mut topology: TopologyBlock,
+    topology: TopologyBlock,
     params: &AddHsParams,
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<AddHydrogensTopologyResult, HydrogenError> {
@@ -552,187 +534,10 @@ pub fn add_hydrogens_topology_with_query_state(
     if let Some(state) = query_state {
         state.validate_for_topology(&topology)?;
     }
-    let old_atom_count = topology.atoms.len();
-    let old_bond_count = topology.bonds.len();
-    let mut selected = selected_atoms(&topology, params.only_on_atoms.as_deref())?;
-
-    // BEGIN RDKIT CPP FUNCTION MolOps::addHs global topology prelude
-    // RDKit✔️❌: void addHs(RWMol &mol, const AddHsParameters &params,
-    // RDKit✔️❌:            const UINT_VECT *onlyOnAtoms) {
-    // RDKit✔️❌:   // when we hit each atom, clear its computed properties
-    // RDKit✔️❌:   // NOTE: it is essential that we not clear the ring info in the
-    // RDKit✔️❌:   // molecule's computed properties.  We don't want to have to
-    // RDKit✔️❌:   // regenerate that.  This caused Issue210 and Issue212:
-    // RDKit✔️❌:   mol.clearComputedProps(false);
-    // END RDKIT CPP FUNCTION MolOps::addHs global topology prelude
-    // Behavior review: every atom and bond is cleared, even empty selection,
-    // skipped queries and no append. The source's later selected-atom clear
-    // remains below. CK retains its prior typed topology/query/selection
-    // validation before this owned edit; malformed-input native parity is
-    // not claimed. Molecule clearing belongs to the full-block wrapper.
-    // Cost review: one shared traversal with no clone, allocation or refind
-    // here; inherited PropertyStore retention cost is qualified in the helper.
-    clear_hydrogen_topology_computed_properties(&mut topology);
-
-    // BEGIN RDKIT CPP FUNCTION MolOps::addHs selection/count snapshot
-    // RDKit✔️❌: unsigned int numAddHyds = 0;
-    // RDKit✔️❌: boost::dynamic_bitset<> onAtoms(mol.getNumAtoms());
-    // RDKit✔️❌: if (onlyOnAtoms) {
-    // RDKit✔️❌:   for (auto atIdx : *onlyOnAtoms) {
-    // RDKit✔️❌:     onAtoms.set(atIdx);
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: } else {
-    // RDKit✔️❌:   onAtoms.set();
-    // RDKit✔️❌: }
-    // RDKit✔️❌: std::vector<unsigned int> numExplicitHs(mol.getNumAtoms(), 0);
-    // RDKit✔️❌: std::vector<unsigned int> numImplicitHs(mol.getNumAtoms(), 0);
-    // RDKit✔️❌: for (auto at : mol.atoms()) {
-    // RDKit✔️❌:   numExplicitHs[at->getIdx()] = at->getNumExplicitHs();
-    // RDKit✔️❌:   numImplicitHs[at->getIdx()] = at->getNumImplicitHs();
-    // RDKit✔️❌:   if (onAtoms[at->getIdx()]) {
-    // RDKit✔️❌:     if (params.skipQueries && isQueryAtom(mol, *at)) {
-    // RDKit✔️❌:       onAtoms.set(at->getIdx(), 0);
-    // RDKit✔️❌:       continue;
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     numAddHyds += at->getNumExplicitHs();
-    // RDKit✔️❌:     if (!params.explicitOnly) {
-    // RDKit✔️❌:       numAddHyds += at->getNumImplicitHs();
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION MolOps::addHs selection/count snapshot
-    // The detached port preserves the source O(atoms + selected hydrogens)
-    // traversal but rebuilds adjacency after appending, which allocates an
-    // additional O(atoms + bonds) structure compared with RDKit's incremental
-    // graph update.
-    let valence = (!params.explicit_only)
-        .then(|| {
-            assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)
-        })
-        .transpose()?;
-    let explicit_counts = topology
-        .atoms
-        .iter()
-        .map(|atom| usize::from(atom.explicit_hydrogens()))
-        .collect::<Vec<_>>();
-    let implicit_counts = topology
-        .atoms
-        .iter()
-        .map(|atom| {
-            valence.as_ref().map_or(0, |assignment| {
-                assignment.implicit_hydrogens[atom.id().index()].max(0)
-            }) as usize
-        })
-        .collect::<Vec<_>>();
-    if params.skip_queries {
-        for atom_index in 0..old_atom_count {
-            if selected[atom_index]
-                && is_query_atom(&topology, AtomId::new(atom_index), query_state)
-            {
-                selected[atom_index] = false;
-            }
-        }
-    }
-    let addition_count = (0..old_atom_count)
-        .filter(|&atom_index| selected[atom_index])
-        .map(|atom_index| {
-            explicit_counts[atom_index]
-                + if params.explicit_only {
-                    0
-                } else {
-                    implicit_counts[atom_index]
-                }
-        })
-        .sum::<usize>();
-    topology.atoms.reserve(addition_count);
-    topology.bonds.reserve(addition_count);
-    let mut additions = Vec::with_capacity(addition_count);
-
-    // BEGIN RDKIT CPP FUNCTION MolOps::addHs topology append loop
-    // RDKit✔️❌: unsigned int stopIdx = mol.getNumAtoms();
-    // RDKit✔️❌: for (unsigned int aidx = 0; aidx < stopIdx; ++aidx) {
-    // RDKit✔️❌:   if (!onAtoms[aidx]) {
-    // RDKit✔️❌:     continue;
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   Atom *newAt = mol.getAtomWithIdx(aidx);
-    // RDKit✔️❌:   newAt->clearComputedProps();
-    // RDKit✔️❌:   // always convert explicit Hs
-    // RDKit✔️❌:   unsigned int onumexpl = numExplicitHs[aidx];
-    // RDKit✔️❌:   for (unsigned int i = 0; i < onumexpl; i++) {
-    // RDKit✔️❌:     newIdx = mol.addAtom(new Atom(1), false, true);
-    // RDKit✔️❌:     mol.addBond(aidx, newIdx, Bond::SINGLE);
-    // RDKit✔️❌:     auto hAtom = mol.getAtomWithIdx(newIdx);
-    // RDKit✔️❌:     hAtom->updatePropertyCache();
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   // clear the local property
-    // RDKit✔️❌:   newAt->setNumExplicitHs(0);
-    // RDKit✔️❌:   if (!params.explicitOnly) {
-    // RDKit✔️❌:     // take care of implicits
-    // RDKit✔️❌:     for (unsigned int i = 0; i < numImplicitHs[aidx]; i++) {
-    // RDKit✔️❌:       newIdx = mol.addAtom(new Atom(1), false, true);
-    // RDKit✔️❌:       mol.addBond(aidx, newIdx, Bond::SINGLE);
-    // RDKit✔️❌:       // set the isImplicit label so that we can strip these back
-    // RDKit✔️❌:       // off later if need be.
-    // RDKit✔️❌:       auto hAtom = mol.getAtomWithIdx(newIdx);
-    // RDKit✔️❌:       hAtom->setProp(common_properties::isImplicit, 1);
-    // RDKit✔️❌:       hAtom->updatePropertyCache();
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   // update the atom's derived properties (valence count, etc.)
-    // RDKit✔️❌:   // no sense in being strict here (was github #2782)
-    // RDKit✔️❌:   newAt->updatePropertyCache(false);
-    // RDKit✔️❌: }
-    // END RDKIT CPP FUNCTION MolOps::addHs topology append loop
-    for atom_index in 0..old_atom_count {
-        if !selected[atom_index] {
-            continue;
-        }
-        topology.atoms[atom_index].clear_computed_props();
-        let parent = AtomId::new(atom_index);
-        for _ in 0..explicit_counts[atom_index] {
-            append_hydrogen(
-                &mut topology,
-                &mut additions,
-                parent,
-                AddedHydrogenKind::Explicit,
-            );
-        }
-        topology.atoms[atom_index].set_explicit_hydrogens(0);
-        if !params.explicit_only {
-            for _ in 0..implicit_counts[atom_index] {
-                append_hydrogen(
-                    &mut topology,
-                    &mut additions,
-                    parent,
-                    AddedHydrogenKind::Implicit,
-                );
-            }
-        }
-    }
-    topology.adjacency = AdjacencyList::try_from_topology(topology.atoms.len(), &topology.bonds)
-        .map_err(|_| HydrogenError::InvalidTopology(TopologyValidationError::AdjacencyMismatch))?;
-    topology.validate()?;
-    // This is the detached equivalent of the source's non-strict cache
-    // refresh. The model stores the chemical facts, not a second valence
-    // cache; calculating the complete assignment validates the post-state.
-    assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)?;
-    let mapping = TopologyMapping::with_appended(
-        old_atom_count,
-        old_bond_count,
-        additions.len(),
-        additions.len(),
-    );
-    mapping.validate_for_counts(
-        old_atom_count,
-        topology.atoms.len(),
-        old_bond_count,
-        topology.bonds.len(),
-    )?;
-    Ok(AddHydrogensTopologyResult {
-        topology,
-        mapping,
-        additions,
-    })
+    let valence =
+        assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)?;
+    add_hydrogens_topology_from_source_state(topology, params, query_state, Some(valence))
+        .map(|(result, _)| result)
 }
 
 /// Grow conformers for an accepted topology addition plan and apply the
@@ -2327,6 +2132,7 @@ pub fn remove_hydrogens_with_query_state(
     // state by MOVE; the preliminary isotope pass hardcodes sanitize=false
     // and never reaches this site with intermediate rows.
     let final_rings = final_pass.final_rings;
+    let final_valence = Some(final_pass.final_valence);
     #[cfg(test)]
     remove_hs_ring_probe::record_publication(&final_rings);
 
@@ -2344,22 +2150,8 @@ pub fn remove_hydrogens_with_query_state(
     )?;
     validate_blocks(&topology, &coordinates)?;
     validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
-    // CK-VALENCE-001 (approved 2026-09-22): sanitize=false deliberately leaves
-    // no final cache assignment. Preserve all intermediate calculations needed
-    // by removal, but do not perform an extra final pass merely to fill a cache.
-    // Unlike RDKit's observable pre-removal cache, a valid CK cache must describe
-    // the final topology. Sanitized results are calculated after every removal
-    // and chiral-H normalization; calculation errors propagate, never become None.
-    // This is an intentional cache-semantics divergence, not all-state parity.
-    let final_valence = if params.sanitize {
-        Some(assign_valence_with_options_for_topology(
-            &topology,
-            ValenceModel::RdkitLike,
-            false,
-        )?)
-    } else {
-        None
-    };
+    // The final pass moves its actual source scalar state here. No extra
+    // final-topology calculation normalizes away pre-removal cached values.
     Ok(RemoveHydrogensResult {
         topology,
         coordinates,
@@ -2373,6 +2165,7 @@ pub fn remove_hydrogens_with_query_state(
 
 struct RemoveHydrogensPassResult {
     topology: TopologyBlock,
+    final_valence: ValenceAssignment,
     mapping: TopologyMapping,
     warnings: Vec<HydrogenWarning>,
     query_rows: Option<(Vec<QueryAtom>, Vec<QueryBond>)>,
@@ -2526,6 +2319,11 @@ pub(crate) mod remove_hs_ring_probe {
 // thread-local, never reset — all observations are per-call deltas. H atoms
 // are NON-implicit (explicit model atoms, no isImplicit marker).
 #[cfg(test)]
+fn fixed_property_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("fixed fixture text is UTF8")
+}
+
+#[cfg(test)]
 mod remove_hs_ring_pass_tests {
     use super::RemoveHsParams;
     use super::remove_hs_ring_probe as probe;
@@ -2671,13 +2469,23 @@ mod remove_hs_ring_pass_tests {
                     );
                     // Ordinary property retained; computed property cleared by
                     // the actual clearComputedProps(true) of this pass.
-                    assert_eq!(properties.prop("ck-ordinary"), Some("kept"), "{label}");
-                    assert!(!properties.is_prop_computed("ck-computed"), "{label}");
+                    assert_eq!(
+                        properties.prop("ck-ordinary"),
+                        Some(&cosmolkit_model::PropertyValue::String("kept".into())),
+                        "{label}"
+                    );
+                    assert!(
+                        !properties.is_prop_computed("ck-computed").unwrap(),
+                        "{label}"
+                    );
                     assert!(
                         properties.prop("ck-computed").is_none(),
                         "{label}: computed value must be absent"
                     );
-                    assert_eq!(properties_before.prop("ck-ordinary"), Some("kept"));
+                    assert_eq!(
+                        properties_before.prop("ck-ordinary"),
+                        Some(&cosmolkit_model::PropertyValue::String("kept".into()))
+                    );
 
                     let both = nonimplicit && sanitize && atom_count > 0;
                     match (name, both) {
@@ -2978,8 +2786,8 @@ pub(crate) mod remove_hs_ring_isotope_tests_helpers {
                     .collect(),
                 true,
             )],
-            source_coordinate_dim: None,
             source_conformer_order: None,
+            source_coordinate_dim: None,
         }
     }
 
@@ -3099,8 +2907,8 @@ mod remove_hs_ring_isotope_tests {
                     .collect(),
                 true,
             )],
-            source_coordinate_dim: None,
             source_conformer_order: None,
+            source_coordinate_dim: None,
         }
     }
 
@@ -3505,15 +3313,21 @@ mod remove_hs_ring_isotope_tests {
                     assert!(result.coordinates.conformers_3d[0].is_3d(), "{label}");
                     assert_eq!(
                         result.properties.prop("ck-ordinary"),
-                        Some("kept"),
+                        Some(&cosmolkit_model::PropertyValue::String("kept".into())),
                         "{label}"
                     );
-                    // Valence/ring separation: valence Some IFF sanitize.
-                    match (sanitize, &result.final_valence) {
-                        (true, Some(_)) => {}
-                        (false, None) => {}
-                        _ => panic!("{label}: valence presence"),
-                    }
+                    // Source preparation precedes removal independently of SAN.
+                    let valence = result.final_valence.as_ref().expect("source scalar rows");
+                    assert_eq!(
+                        valence.explicit_valence.len(),
+                        result.topology.atoms.len(),
+                        "{label}"
+                    );
+                    assert_eq!(
+                        valence.implicit_hydrogens.len(),
+                        result.topology.atoms.len(),
+                        "{label}"
+                    );
                 }
             }
         }
@@ -3741,8 +3555,8 @@ mod remove_hs_ring_errors_tests {
                         true,
                     )]
                 },
-                source_coordinate_dim: None,
                 source_conformer_order: None,
+                source_coordinate_dim: None,
             };
             let properties = MoleculeProperties::default();
             let topology_snapshot = topology.clone();
@@ -3890,7 +3704,7 @@ fn remove_hydrogens_pass(
     topology.validate()?;
     let old_atom_count = topology.atoms.len();
     let old_bond_count = topology.bonds.len();
-    let valence =
+    let mut valence =
         assign_valence_with_options_for_topology(&topology, ValenceModel::RdkitLike, false)?;
     let (atoms_to_remove, warnings) =
         remove_hydrogen_candidates_with_warnings(&topology, params, query_state);
@@ -3910,13 +3724,33 @@ fn remove_hydrogens_pass(
         )
     };
 
+    // BEGIN RDKIT CPP FUNCTION Atom cached scalars / molRemoveH retained rows
+    // RDKit✔️✔️:   d_implicitValence = other.d_implicitValence;
+    // RDKit✔️✔️:   d_explicitValence = other.d_explicitValence;
+    // RDKit✔️✔️:   // computed properties will be cleared after all hydrogens are removed
+    // RDKit✔️✔️:   bool clearProps = false;
+    // RDKit✔️✔️:   mol.removeAtom(atom, clearProps);
+    // END RDKIT CPP FUNCTION Atom cached scalars / molRemoveH retained rows
+    // Source atom objects keep both scalar fields as removed atoms disappear.
+    // The unique model batch compaction preserves survivor order. Move each
+    // scalar row in-place along its authoritative mapping, then truncate;
+    // O(old atoms), no new scalar vectors, topology clone or chemistry pass.
+    for (old, new) in mapping.atoms().old_to_new().iter().enumerate() {
+        if let Some(new) = new {
+            valence.explicit_valence[new.index()] = valence.explicit_valence[old];
+            valence.implicit_hydrogens[new.index()] = valence.implicit_hydrogens[old];
+        }
+    }
+    valence.explicit_valence.truncate(topology.atoms.len());
+    valence.implicit_hydrogens.truncate(topology.atoms.len());
+
     // Query rows follow the same authoritative compaction before any later
     // source stage can inspect atom or bond query identity.
     let mut query_rows = query_state
         .map(|state| remap_query_rows(state, &topology, &mapping))
         .transpose()?;
 
-    clear_remove_hydrogen_computed_properties(&mut topology, properties);
+    clear_remove_hydrogen_computed_properties(&mut topology, properties)?;
     // Initialized to the reset-state marker; only the guarded sanitizer call
     // below replaces it by move (source: clearComputedProps(true) always).
     let mut final_rings: Option<RingInfo> = None;
@@ -3945,14 +3779,29 @@ fn remove_hydrogens_pass(
         )?;
         #[cfg(test)]
         remove_hs_ring_probe::record_sanitize_return(&sanitized.final_rings);
+        // RDKit❗✔️: int narom = 0;
         // RDKit✔️✔️: mol.setProp(common_properties::numArom, narom, true);
         // Aromaticity.cpp supplies this scalar during the existing sanitize
         // call. Transport it after clearComputedProps; no second ring pass.
         if let Some(count) = sanitized.aromatic_ring_count {
             properties
-                .set_computed_prop("numArom", count.to_string())
+                .set_computed_prop(
+                    "numArom",
+                    i32::try_from(count).map_err(|_| crate::SanitizeError::Aromaticity {
+                        stage: crate::SanitizeStage::SetAromaticity,
+                        source: crate::AromaticityError::IntegerOverflow {
+                            field: "source numArom int",
+                        },
+                    })?,
+                )
                 .map_err(HydrogenError::InvalidProperty)?;
         }
+        valence = sanitized
+            .final_valence
+            .ok_or(HydrogenError::MissingSourceState {
+                stage: "sanitizeMol default PROPERTIES",
+                state: "valence assignment",
+            })?;
         topology = sanitized.topology;
         final_rings = sanitized.final_rings;
         if let Some((atoms, bonds)) = query_rows.as_ref() {
@@ -3962,7 +3811,7 @@ fn remove_hydrogens_pass(
         }
     }
     if old_atom_count != 0 {
-        normalize_removed_hydrogen_chirality(&mut topology);
+        normalize_removed_hydrogen_chirality(&mut topology, &mut valence)?;
     }
     topology.validate()?;
     mapping.validate_for_counts(
@@ -3977,6 +3826,7 @@ fn remove_hydrogens_pass(
     remove_hs_ring_probe::record_pass_history(params.sanitize, &final_rings);
     Ok(RemoveHydrogensPassResult {
         topology,
+        final_valence: valence,
         mapping,
         warnings,
         query_rows,
@@ -4090,7 +3940,9 @@ fn compose_topology_mappings(
     Ok(composed)
 }
 
-fn clear_hydrogen_topology_computed_properties(topology: &mut TopologyBlock) {
+fn clear_hydrogen_topology_computed_properties(
+    topology: &mut TopologyBlock,
+) -> Result<(), HydrogenError> {
     // BEGIN RDKIT CPP FUNCTION ROMol::clearComputedProps
     // RDKit❗❌: void ROMol::clearComputedProps(bool includeRings) const {
     // RDKit❗❌:   // the SSSR information:
@@ -4125,22 +3977,29 @@ fn clear_hydrogen_topology_computed_properties(topology: &mut TopologyBlock) {
     // marker is a known cost limitation, not an equivalence claim. Extraction
     // changes neither store algorithm nor the original RemoveHs cost.
     for atom in &mut topology.atoms {
-        atom.clear_computed_props();
+        atom.clear_computed_props()?;
     }
     for bond in &mut topology.bonds {
-        bond.clear_computed_props();
+        bond.clear_computed_props()?;
     }
+    Ok(())
 }
 
 fn clear_remove_hydrogen_computed_properties(
     topology: &mut TopologyBlock,
     properties: &mut MoleculeProperties,
-) {
-    properties.clear_computed_props();
-    clear_hydrogen_topology_computed_properties(topology);
+) -> Result<(), HydrogenError> {
+    properties
+        .clear_computed_props()
+        .map_err(HydrogenError::InvalidProperty)?;
+    clear_hydrogen_topology_computed_properties(topology)?;
+    Ok(())
 }
 
-fn normalize_removed_hydrogen_chirality(topology: &mut TopologyBlock) {
+fn normalize_removed_hydrogen_chirality(
+    topology: &mut TopologyBlock,
+    valence: &mut ValenceAssignment,
+) -> Result<(), HydrogenError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::removeHs post-removal chiral-H normalization
     // RDKit✔️✔️:   // if we removed Hs and any chiral atoms now have more than 1 explict H,
     // RDKit✔️✔️:   // remove those
@@ -4157,14 +4016,34 @@ fn normalize_removed_hydrogen_chirality(topology: &mut TopologyBlock) {
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION MolOps::removeHs post-removal chiral-H normalization
-    for atom in &mut topology.atoms {
+    // BEGIN RDKIT CPP FUNCTION Atom::updatePropertyCache
+    // RDKit✔️✔️: void Atom::updatePropertyCache(bool strict) {
+    // RDKit✔️✔️:   calcExplicitValence(strict);
+    // RDKit✔️✔️:   calcImplicitValence(strict);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION Atom::updatePropertyCache
+    // Only source-selected atoms refresh their two scalar values, using the
+    // existing unique valence owner. O(atoms + incident bonds of changed
+    // atoms), constant additional storage; unchanged scalar rows survive.
+    for index in 0..topology.atoms.len() {
+        let atom = &mut topology.atoms[index];
         if !atom.no_implicit()
             && atom.chiral_tag() != ChiralTag::Unspecified
             && atom.explicit_hydrogens() > 1
         {
             atom.set_explicit_hydrogens(0);
+            let (explicit, implicit) = assign_valence_state_for_atom_from_parts(
+                &topology.atoms,
+                &topology.bonds,
+                &topology.adjacency,
+                AtomId::new(index),
+                false,
+            )?;
+            valence.explicit_valence[index] = explicit;
+            valence.implicit_hydrogens[index] = implicit;
         }
     }
+    Ok(())
 }
 
 fn validate_blocks(
@@ -4659,8 +4538,6 @@ fn update_removed_hydrogen_neighbor(
         topology.bonds[removed_bond.index()].begin()
     };
     let chiral_tag = topology.atoms[neighbor.index()].chiral_tag();
-    let total_valence = valence.explicit_valence[neighbor.index()]
-        .saturating_add(valence.implicit_hydrogens[neighbor.index()]);
     let increment_directly = update_explicit_count
         || topology.atoms[neighbor.index()].no_implicit()
         || chiral_tag != ChiralTag::Unspecified;
@@ -4668,25 +4545,39 @@ fn update_removed_hydrogen_neighbor(
         true
     } else {
         let atomic_number = topology.atoms[neighbor.index()].atomic_number();
-        let aromatic = is_aromatic_atom(topology, neighbor, active_bonds);
-        let nondefault_valence = rdkit_valence_list(atomic_number)?
-            .and_then(|values| values.get(1..))
-            .is_some_and(|values| values.contains(&total_valence));
-        ((atomic_number == 7
+        // RDKit✔️✔️: const INT_VECT &defaultVs =
+        // RDKit✔️✔️:     PeriodicTable::getTable()->getValenceList(heavyAtomNum);
+        // RDKit✔️✔️: if (((heavyAtomNum == 7 || heavyAtomNum == 15 ||
+        // RDKit✔️✔️:       may_need_extra_H(mol, heavyAtom)) &&
+        // RDKit✔️✔️:      isAromaticAtom(*heavyAtom)) ||
+        // RDKit✔️✔️:     (std::find(defaultVs.begin() + 1, defaultVs.end(),
+        // RDKit✔️✔️:                heavyAtom->getTotalValence()) != defaultVs.end())) {
+        // Preserve short-circuit getter order: direct and aromatic N/P paths
+        // do not read either cache. The find argument reads total valence even
+        // when its searched tail is empty. No whole-graph cache preparation.
+        let default_valences = rdkit_valence_list(atomic_number)?;
+        let aromatic_increment = (atomic_number == 7
             || atomic_number == 15
-            || may_need_extra_h(topology, neighbor, total_valence, active_bonds))
-            && aromatic)
-            || nondefault_valence
+            || may_need_extra_h(topology, neighbor, valence, active_bonds)?)
+            && is_aromatic_atom(topology, neighbor, active_bonds);
+        if aromatic_increment {
+            true
+        } else {
+            let total =
+                crate::valence::cached_total_valence(&topology.atoms[neighbor.index()], valence)?;
+            default_valences
+                .and_then(|values| values.get(1..))
+                .is_some_and(|values| values.contains(&total))
+        }
     };
     if increment {
         let current = topology.atoms[neighbor.index()].explicit_hydrogens();
-        let Some(next) = current.checked_add(1) else {
-            return Err(HydrogenError::ExplicitHydrogenOverflow {
-                atom: neighbor,
-                current,
-            });
-        };
-        topology.atoms[neighbor.index()].set_explicit_hydrogens(next);
+        // RDKit✔️✔️: heavyAtom->setNumExplicitHs(heavyAtom->getNumExplicitHs() + 1);
+        // RDKit✔️✔️: void setNumExplicitHs(unsigned int what) { d_numExplicitHs = what; }
+        // RDKit✔️✔️: std::uint8_t d_numExplicitHs;
+        // The promoted unsigned addition narrows at the source uint8 setter.
+        // This O(1) wrap is observable at 255 and is not an overflow error.
+        topology.atoms[neighbor.index()].set_explicit_hydrogens(current.wrapping_add(1));
     }
 
     if chiral_tag != ChiralTag::Unspecified {
@@ -4786,9 +4677,9 @@ fn active_degree(topology: &TopologyBlock, atom: AtomId, active_bonds: &[bool]) 
 fn may_need_extra_h(
     topology: &TopologyBlock,
     atom: AtomId,
-    total_valence: i32,
+    valence: &ValenceAssignment,
     active_bonds: &[bool],
-) -> bool {
+) -> Result<bool, HydrogenError> {
     // BEGIN RDKIT CPP FUNCTION may_need_extra_H
     // RDKit✔️✔️: bool may_need_extra_H(const ROMol &mol, const Atom *atom) {
     // RDKit✔️✔️:   unsigned single_bonds = 0;
@@ -4812,10 +4703,12 @@ fn may_need_extra_h(
         match topology.bonds[bond.index()].order() {
             BondOrder::Single => single_bonds += 1,
             BondOrder::Aromatic => aromatic_bonds += 1,
-            _ => return false,
+            _ => return Ok(false),
         }
     }
-    single_bonds == 1 && aromatic_bonds == 2 && total_valence == 3
+    Ok(single_bonds == 1
+        && aromatic_bonds == 2
+        && crate::valence::cached_total_valence(&topology.atoms[atom.index()], valence)? == 3)
 }
 
 fn is_aromatic_atom(topology: &TopologyBlock, atom: AtomId, active_bonds: &[bool]) -> bool {
@@ -5959,8 +5852,8 @@ mod tests {
                 Conformer3D::new(11, vec![[3.0, 4.0, 5.0]], true).with_prop("source", "three"),
                 Conformer3D::new(12, vec![[-1.0, 2.0, 0.0]], false).with_prop("flat", "yes"),
             ],
-            source_coordinate_dim: Some(cosmolkit_model::CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(cosmolkit_model::CoordinateDimension::ThreeD),
         };
         let original = coordinates.clone();
         let output =
@@ -6545,7 +6438,7 @@ mod add_hs_computed_prelude_tests {
     use super::*;
     use cosmolkit_model::{
         Atom, AtomQueryPredicate, BondQueryPredicate, PropertyValue, QueryNode,
-        ordered_atom_properties,
+        ordered_atom_properties, ordered_bond_properties,
     };
     use std::collections::BTreeSet;
 
@@ -6729,14 +6622,20 @@ mod add_hs_computed_prelude_tests {
                     == Some(&PropertyValue::String(["atom0", "atom1"][index].into()))
                     && atom.prop("_CIPCode")
                         == Some(&PropertyValue::String(["R", "S"][index].into()))
-                    && !atom.is_prop_computed("label")
-                    && !atom.is_prop_computed("_CIPCode"),
+                    && !atom.is_prop_computed("label").unwrap()
+                    && !atom.is_prop_computed("_CIPCode").unwrap(),
             );
             let keys = ordered_atom_properties(atom)
-                .map(|(key, _)| key)
+                .map(|(key, _)| super::fixed_property_text(key))
                 .collect::<Vec<_>>();
             let wanted = if config & 1 != 0 {
-                vec!["label", "_CIPCode", "_CIPRank", "scratch"]
+                vec![
+                    "label",
+                    "_CIPCode",
+                    "__computedProps",
+                    "_CIPRank",
+                    "scratch",
+                ]
             } else {
                 vec!["label", "_CIPCode"]
             };
@@ -6753,7 +6652,13 @@ mod add_hs_computed_prelude_tests {
                 errors,
                 label,
                 "pre atom computed membership",
-                atom.computed_prop_names() == &names,
+                atom.computed_prop_names().unwrap().map(|v| {
+                    v.iter()
+                        .map(|k| super::fixed_property_text(k).to_owned())
+                        .collect::<BTreeSet<_>>()
+                }) == (config & 1 != 0).then_some(names)
+                    && atom.computed_prop_names().unwrap()
+                        == (config & 1 != 0).then_some(&["_CIPRank".into(), "scratch".into()][..]),
             );
             for key in ["_CIPRank", "scratch"] {
                 let wanted = (config & 1 != 0).then_some(PropertyValue::Int([17, 19][index]));
@@ -6780,7 +6685,7 @@ mod add_hs_computed_prelude_tests {
             label,
             "pre typed ordinary bond value",
             bond.prop("label") == Some(&PropertyValue::String("bond0".into()))
-                && !bond.is_prop_computed("label"),
+                && !bond.is_prop_computed("label").unwrap(),
         );
         check(
             errors,
@@ -6797,37 +6702,43 @@ mod add_hs_computed_prelude_tests {
             errors,
             label,
             "pre bond computed membership",
-            bond.computed_prop_names() == &names,
+            bond.computed_prop_names().unwrap().map(|v| {
+                v.iter()
+                    .map(|k| super::fixed_property_text(k).to_owned())
+                    .collect::<BTreeSet<_>>()
+            }) == (config & 2 != 0).then_some(names),
         );
-        // Existing derived Debug exposes the actual PropertyStore order.
-        // This is ONLY the order proof; typed values are checked above.
         let order = if config & 2 != 0 {
-            "order: [\"label\", \"scratch\"]"
+            vec!["label", "__computedProps", "scratch"]
         } else {
-            "order: [\"label\"]"
+            vec!["label"]
         };
         check(
             errors,
             label,
             "pre bond insertion order",
-            format!("{bond:?}").contains(order),
+            ordered_bond_properties(bond)
+                .map(|(key, _)| super::fixed_property_text(key))
+                .collect::<Vec<_>>()
+                == order,
         );
         check(
             errors,
             label,
             "pre molecule typed string values/markers/key order",
-            value.properties.prop("label") == Some("mol")
-                && value.properties.prop("memo") == Some("discard")
-                && !value.properties.is_prop_computed("label")
-                && value.properties.is_prop_computed("memo")
-                && value.properties.computed_prop_names() == &["memo".into()].into_iter().collect()
+            value.properties.prop("label")
+                == Some(&cosmolkit_model::PropertyValue::String("mol".into()))
+                && value.properties.prop("memo")
+                    == Some(&cosmolkit_model::PropertyValue::String("discard".into()))
+                && !value.properties.is_prop_computed("label").unwrap()
+                && value.properties.is_prop_computed("memo").unwrap()
+                && value.properties.computed_prop_names().unwrap() == Some(&["memo".into()][..])
                 && value
                     .properties
-                    .props()
-                    .keys()
-                    .map(String::as_str)
+                    .ordered_props()
+                    .map(|(key, _)| super::fixed_property_text(key))
                     .collect::<Vec<_>>()
-                    == vec!["label", "memo"],
+                    == vec!["label", "__computedProps", "memo"],
         );
         check(
             errors,
@@ -7102,7 +7013,11 @@ mod add_hs_computed_prelude_tests {
                 "post no computed atom keys/markers",
                 atom.prop("_CIPRank").is_none()
                     && atom.prop("scratch").is_none()
-                    && atom.computed_prop_names().is_empty(),
+                    && atom.computed_prop_names().unwrap()
+                        == before.topology.atoms[index]
+                            .computed_prop_names()
+                            .unwrap()
+                            .map(|_| &[] as &[cosmolkit_model::PropertyText]),
             );
             check(
                 errors,
@@ -7113,9 +7028,17 @@ mod add_hs_computed_prelude_tests {
                     && atom.prop("_CIPCode")
                         == Some(&PropertyValue::String(["R", "S"][index].into()))
                     && ordered_atom_properties(atom)
-                        .map(|(key, _)| key)
+                        .map(|(key, _)| super::fixed_property_text(key))
                         .collect::<Vec<_>>()
-                        == vec!["label", "_CIPCode"],
+                        == if before.topology.atoms[index]
+                            .computed_prop_names()
+                            .unwrap()
+                            .is_some()
+                        {
+                            vec!["label", "_CIPCode", "__computedProps"]
+                        } else {
+                            vec!["label", "_CIPCode"]
+                        },
             );
         }
         if let Some(bond) = topology.bonds.first() {
@@ -7124,9 +7047,24 @@ mod add_hs_computed_prelude_tests {
                 label,
                 "post bond computed absence/ordinary/order",
                 bond.prop("scratch").is_none()
-                    && bond.computed_prop_names().is_empty()
+                    && bond.computed_prop_names().unwrap()
+                        == before.topology.bonds[0]
+                            .computed_prop_names()
+                            .unwrap()
+                            .map(|_| &[] as &[cosmolkit_model::PropertyText])
                     && bond.prop("label") == Some(&PropertyValue::String("bond0".into()))
-                    && format!("{bond:?}").contains("order: [\"label\"]"),
+                    && ordered_bond_properties(bond)
+                        .map(|(key, _)| super::fixed_property_text(key))
+                        .collect::<Vec<_>>()
+                        == if before.topology.bonds[0]
+                            .computed_prop_names()
+                            .unwrap()
+                            .is_some()
+                        {
+                            vec!["label", "__computedProps"]
+                        } else {
+                            vec!["label"]
+                        },
             );
         }
     }
@@ -7270,3 +7208,454 @@ mod add_hs_computed_prelude_tests {
     }
 }
 // END ADDHS COMPUTED PRELUDE FROZEN REGRESSIONS
+
+#[doc(hidden)]
+pub fn add_hydrogens_with_source_valence(
+    topology: TopologyBlock,
+    coordinates: CoordinateBlock,
+    properties: MoleculeProperties,
+    params: &AddHsParams,
+    source_valence: Option<ValenceAssignment>,
+) -> Result<AddHydrogensResult, HydrogenError> {
+    add_hydrogens_from_source_state(
+        topology,
+        coordinates,
+        properties,
+        params,
+        None,
+        source_valence,
+    )
+}
+
+fn add_hydrogens_from_source_state(
+    topology: TopologyBlock,
+    coordinates: CoordinateBlock,
+    properties: MoleculeProperties,
+    params: &AddHsParams,
+    query_state: Option<QueryStateRef<'_>>,
+    source_valence: Option<ValenceAssignment>,
+) -> Result<AddHydrogensResult, HydrogenError> {
+    validate_blocks(&topology, &coordinates)?;
+    validate_property_lists(&properties, topology.atoms.len(), topology.bonds.len())?;
+    if let Some(state) = query_state {
+        state.validate_for_topology(&topology)?;
+    }
+
+    let old_atom_count = topology.atoms.len();
+    let old_bond_count = topology.bonds.len();
+    let processed_atoms = processed_add_hydrogen_atoms(&topology, params, query_state)?;
+    let tracked_isotopes = processed_atoms
+        .iter()
+        .enumerate()
+        .filter(|(_, processed)| **processed)
+        .map(|(atom, _)| {
+            (
+                AtomId::new(atom),
+                topology.atoms[atom].tracked_isotopic_hydrogens().to_vec(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    // BEGIN RDKIT CPP FUNCTION MolOps::addHs computed-property prelude
+    // RDKit✔️✔️: void addHs(RWMol &mol, const AddHsParameters &params,
+    // RDKit✔️✔️:            const UINT_VECT *onlyOnAtoms) {
+    // RDKit✔️✔️:   // when we hit each atom, clear its computed properties
+    // RDKit✔️✔️:   // NOTE: it is essential that we not clear the ring info in the
+    // RDKit✔️✔️:   // molecule's computed properties.  We don't want to have to
+    // RDKit✔️✔️:   // regenerate that.  This caused Issue210 and Issue212:
+    // RDKit✔️✔️:   mol.clearComputedProps(false);
+    // END RDKIT CPP FUNCTION MolOps::addHs computed-property prelude
+    // Behavior review: the composed boundary clears molecule properties HERE
+    // once and ALL atom/bond computed properties in the delegated topology
+    // owner. Ordinary properties and input scalar fields survive the clear.
+    // The source scalar carrier is updated only by its selected-atom stages.
+    // Cost review: molecule clearing moves the computed set and removes keys
+    // in O(q log p). The topology owner's separate store-cost qualification
+    // applies to the composed prelude; no whole-topology clone is added.
+    let mut properties = properties;
+    properties
+        .clear_computed_props()
+        .map_err(HydrogenError::InvalidProperty)?;
+
+    let (result, final_valence) =
+        add_hydrogens_topology_from_source_state(topology, params, query_state, source_valence)?;
+    let mut result = add_hydrogen_coordinates(
+        result,
+        coordinates,
+        params.add_coords,
+        params.add_residue_info,
+    )?;
+    let warnings =
+        replay_tracked_isotopes(&mut result.topology, &result.additions, &tracked_isotopes)?;
+
+    result.mapping.validate_for_counts(
+        old_atom_count,
+        result.topology.atoms.len(),
+        old_bond_count,
+        result.topology.bonds.len(),
+    )?;
+    properties.remap_topology(
+        result.mapping.atoms().new_to_old(),
+        result.mapping.bonds().new_to_old(),
+    );
+    validate_blocks(&result.topology, &result.coordinates)?;
+    validate_property_lists(
+        &properties,
+        result.topology.atoms.len(),
+        result.topology.bonds.len(),
+    )?;
+    Ok(AddHydrogensResult {
+        topology: result.topology,
+        coordinates: result.coordinates,
+        properties,
+        mapping: result.mapping,
+        warnings,
+        final_valence,
+    })
+}
+
+fn add_hydrogens_topology_from_source_state(
+    mut topology: TopologyBlock,
+    params: &AddHsParams,
+    query_state: Option<QueryStateRef<'_>>,
+    source_valence: Option<ValenceAssignment>,
+) -> Result<(AddHydrogensTopologyResult, ValenceAssignment), HydrogenError> {
+    topology.validate()?;
+    if let Some(state) = query_state {
+        state.validate_for_topology(&topology)?;
+    }
+    let old_atom_count = topology.atoms.len();
+    let old_bond_count = topology.bonds.len();
+    let mut selected = selected_atoms(&topology, params.only_on_atoms.as_deref())?;
+
+    // BEGIN RDKIT CPP FUNCTION MolOps::addHs global topology prelude
+    // RDKit✔️❌: void addHs(RWMol &mol, const AddHsParameters &params,
+    // RDKit✔️❌:            const UINT_VECT *onlyOnAtoms) {
+    // RDKit✔️❌:   // when we hit each atom, clear its computed properties
+    // RDKit✔️❌:   // NOTE: it is essential that we not clear the ring info in the
+    // RDKit✔️❌:   // molecule's computed properties.  We don't want to have to
+    // RDKit✔️❌:   // regenerate that.  This caused Issue210 and Issue212:
+    // RDKit✔️❌:   mol.clearComputedProps(false);
+    // END RDKIT CPP FUNCTION MolOps::addHs global topology prelude
+    // Behavior review: every atom and bond is cleared, even empty selection,
+    // skipped queries and no append. The source's later selected-atom clear
+    // remains below. CK retains its prior typed topology/query/selection
+    // validation before this owned edit; malformed-input native parity is
+    // not claimed. Molecule clearing belongs to the full-block wrapper.
+    // Cost review: one shared traversal with no clone, allocation or refind
+    // here; inherited PropertyStore retention cost is qualified in the helper.
+    clear_hydrogen_topology_computed_properties(&mut topology)?;
+
+    // BEGIN RDKIT CPP FUNCTION MolOps::addHs selection/count snapshot
+    // RDKit✔️❌: unsigned int numAddHyds = 0;
+    // RDKit✔️❌: boost::dynamic_bitset<> onAtoms(mol.getNumAtoms());
+    // RDKit✔️❌: if (onlyOnAtoms) {
+    // RDKit✔️❌:   for (auto atIdx : *onlyOnAtoms) {
+    // RDKit✔️❌:     onAtoms.set(atIdx);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: } else {
+    // RDKit✔️❌:   onAtoms.set();
+    // RDKit✔️❌: }
+    // RDKit✔️❌: std::vector<unsigned int> numExplicitHs(mol.getNumAtoms(), 0);
+    // RDKit✔️❌: std::vector<unsigned int> numImplicitHs(mol.getNumAtoms(), 0);
+    // RDKit✔️❌: for (auto at : mol.atoms()) {
+    // RDKit✔️❌:   numExplicitHs[at->getIdx()] = at->getNumExplicitHs();
+    // RDKit✔️❌:   numImplicitHs[at->getIdx()] = at->getNumImplicitHs();
+    // RDKit✔️❌:   if (onAtoms[at->getIdx()]) {
+    // RDKit✔️❌:     if (params.skipQueries && isQueryAtom(mol, *at)) {
+    // RDKit✔️❌:       onAtoms.set(at->getIdx(), 0);
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     numAddHyds += at->getNumExplicitHs();
+    // RDKit✔️❌:     if (!params.explicitOnly) {
+    // RDKit✔️❌:       numAddHyds += at->getNumImplicitHs();
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END RDKIT CPP FUNCTION MolOps::addHs selection/count snapshot
+    // The detached port preserves the source O(atoms + selected hydrogens)
+    // traversal but rebuilds adjacency after appending, which allocates an
+    // additional O(atoms + bonds) structure compared with RDKit's incremental
+    // graph update.
+    // RDKit✔️✔️:   d_implicitValence = -1;
+    // RDKit✔️✔️:   d_explicitValence = -1;
+    // Atom::initAtom establishes a real uninitialized scalar state, not zero.
+    // Missing source state is represented literally; the unique getter below
+    // preserves noImplicit's short circuit and otherwise raises its typed error.
+    let mut valence = source_valence.unwrap_or_else(|| ValenceAssignment {
+        explicit_valence: vec![-1; old_atom_count],
+        implicit_hydrogens: vec![-1; old_atom_count],
+    });
+    validate_removal_valence(&topology, &valence)?;
+    let explicit_counts = topology
+        .atoms
+        .iter()
+        .map(|atom| usize::from(atom.explicit_hydrogens()))
+        .collect::<Vec<_>>();
+    // Source snapshots ALL implicit scalars before selection/query skipping,
+    // even in explicitOnly mode. No fresh graph assignment or max(0) fallback.
+    let implicit_counts = topology
+        .atoms
+        .iter()
+        .map(|atom| {
+            crate::hcount::implicit_hydrogen_count(atom, &valence).map(|count| count as usize)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if params.skip_queries {
+        for atom_index in 0..old_atom_count {
+            if selected[atom_index]
+                && is_query_atom(&topology, AtomId::new(atom_index), query_state)
+            {
+                selected[atom_index] = false;
+            }
+        }
+    }
+    let addition_count = (0..old_atom_count)
+        .filter(|&atom_index| selected[atom_index])
+        .map(|atom_index| {
+            explicit_counts[atom_index]
+                + if params.explicit_only {
+                    0
+                } else {
+                    implicit_counts[atom_index]
+                }
+        })
+        .sum::<usize>();
+    topology.atoms.reserve(addition_count);
+    topology.bonds.reserve(addition_count);
+    let mut additions = Vec::with_capacity(addition_count);
+
+    // BEGIN RDKIT CPP FUNCTION MolOps::addHs topology append loop
+    // RDKit✔️❌: unsigned int stopIdx = mol.getNumAtoms();
+    // RDKit✔️❌: for (unsigned int aidx = 0; aidx < stopIdx; ++aidx) {
+    // RDKit✔️❌:   if (!onAtoms[aidx]) {
+    // RDKit✔️❌:     continue;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   Atom *newAt = mol.getAtomWithIdx(aidx);
+    // RDKit✔️❌:   newAt->clearComputedProps();
+    // RDKit✔️❌:   // always convert explicit Hs
+    // RDKit✔️❌:   unsigned int onumexpl = numExplicitHs[aidx];
+    // RDKit✔️❌:   for (unsigned int i = 0; i < onumexpl; i++) {
+    // RDKit✔️❌:     newIdx = mol.addAtom(new Atom(1), false, true);
+    // RDKit✔️❌:     mol.addBond(aidx, newIdx, Bond::SINGLE);
+    // RDKit✔️❌:     auto hAtom = mol.getAtomWithIdx(newIdx);
+    // RDKit✔️❌:     hAtom->updatePropertyCache();
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   // clear the local property
+    // RDKit✔️❌:   newAt->setNumExplicitHs(0);
+    // RDKit✔️❌:   if (!params.explicitOnly) {
+    // RDKit✔️❌:     // take care of implicits
+    // RDKit✔️❌:     for (unsigned int i = 0; i < numImplicitHs[aidx]; i++) {
+    // RDKit✔️❌:       newIdx = mol.addAtom(new Atom(1), false, true);
+    // RDKit✔️❌:       mol.addBond(aidx, newIdx, Bond::SINGLE);
+    // RDKit✔️❌:       // set the isImplicit label so that we can strip these back
+    // RDKit✔️❌:       // off later if need be.
+    // RDKit✔️❌:       auto hAtom = mol.getAtomWithIdx(newIdx);
+    // RDKit✔️❌:       hAtom->setProp(common_properties::isImplicit, 1);
+    // RDKit✔️❌:       hAtom->updatePropertyCache();
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   // update the atom's derived properties (valence count, etc.)
+    // RDKit✔️❌:   // no sense in being strict here (was github #2782)
+    // RDKit✔️❌:   newAt->updatePropertyCache(false);
+    // RDKit✔️❌: }
+    // END RDKIT CPP FUNCTION MolOps::addHs topology append loop
+    for atom_index in 0..old_atom_count {
+        if !selected[atom_index] {
+            continue;
+        }
+        topology.atoms[atom_index].clear_computed_props()?;
+        let parent = AtomId::new(atom_index);
+        for _ in 0..explicit_counts[atom_index] {
+            append_hydrogen(
+                &mut topology,
+                &mut additions,
+                parent,
+                AddedHydrogenKind::Explicit,
+            );
+        }
+        topology.atoms[atom_index].set_explicit_hydrogens(0);
+        if !params.explicit_only {
+            for _ in 0..implicit_counts[atom_index] {
+                append_hydrogen(
+                    &mut topology,
+                    &mut additions,
+                    parent,
+                    AddedHydrogenKind::Implicit,
+                );
+            }
+        }
+    }
+    topology.adjacency = AdjacencyList::try_from_topology(topology.atoms.len(), &topology.bonds)
+        .map_err(|_| HydrogenError::InvalidTopology(TopologyValidationError::AdjacencyMismatch))?;
+    topology.validate()?;
+    // RDKit✔️❌:       hAtom->updatePropertyCache();
+    // RDKit✔️❌:     newAt->updatePropertyCache(false);
+    // Reuse the unique per-atom valence owner. Other parents' appended Hs do
+    // not affect these incident bonds, so calculating after the one detached
+    // adjacency rebuild preserves selected-parent/new-H source scalar values.
+    // Traversal remains O(V+E+H); the detached adjacency allocation and input
+    // carrier materialization cost more than source incremental graph edits.
+    // Unselected rows are NEVER refreshed, including source -1 sentinels.
+    valence.explicit_valence.resize(topology.atoms.len(), -1);
+    valence.implicit_hydrogens.resize(topology.atoms.len(), -1);
+    let mut addition_cursor = 0;
+    for (parent, process) in selected.iter().copied().enumerate() {
+        if !process {
+            continue;
+        }
+        while addition_cursor < additions.len()
+            && additions[addition_cursor].parent.index() == parent
+        {
+            let atom = additions[addition_cursor].atom;
+            let (explicit, implicit) = assign_valence_state_for_atom_from_parts(
+                &topology.atoms,
+                &topology.bonds,
+                &topology.adjacency,
+                atom,
+                true,
+            )?;
+            valence.explicit_valence[atom.index()] = explicit;
+            valence.implicit_hydrogens[atom.index()] = implicit;
+            addition_cursor += 1;
+        }
+        let (explicit, implicit) = assign_valence_state_for_atom_from_parts(
+            &topology.atoms,
+            &topology.bonds,
+            &topology.adjacency,
+            AtomId::new(parent),
+            false,
+        )?;
+        valence.explicit_valence[parent] = explicit;
+        valence.implicit_hydrogens[parent] = implicit;
+    }
+    validate_removal_valence(&topology, &valence)?;
+    let mapping = TopologyMapping::with_appended(
+        old_atom_count,
+        old_bond_count,
+        additions.len(),
+        additions.len(),
+    );
+    mapping.validate_for_counts(
+        old_atom_count,
+        topology.atoms.len(),
+        old_bond_count,
+        topology.bonds.len(),
+    )?;
+    Ok((
+        AddHydrogensTopologyResult {
+            topology,
+            mapping,
+            additions,
+        },
+        valence,
+    ))
+}
+
+#[cfg(test)]
+mod source_add_hydrogen_scalar_transport {
+    use super::*;
+    use cosmolkit_model::{Atom, Element};
+    fn topology(no_implicit: bool) -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            vec![
+                Atom::from_spec(
+                    AtomId::new(0),
+                    AtomSpec::new(Element::C).with_no_implicit(no_implicit),
+                ),
+                Atom::from_spec(
+                    AtomId::new(1),
+                    AtomSpec::new(Element::C).with_no_implicit(no_implicit),
+                ),
+            ],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    #[test]
+    fn all_implicit_getters_precede_explicit_only_and_empty_selection() {
+        for explicit_only in [false, true] {
+            let t = topology(false);
+            let before = t.clone();
+            let p = AddHsParams {
+                explicit_only,
+                only_on_atoms: Some(vec![]),
+                ..Default::default()
+            };
+            for (expected, state) in [
+                (0, None),
+                (
+                    1,
+                    Some(ValenceAssignment {
+                        explicit_valence: vec![0; 2],
+                        implicit_hydrogens: vec![0, -1],
+                    }),
+                ),
+            ] {
+                let err = add_hydrogens_with_source_valence(
+                    t.clone(),
+                    CoordinateBlock::default(),
+                    MoleculeProperties::default(),
+                    &p,
+                    state,
+                )
+                .unwrap_err();
+                assert!(
+                    matches!(err,HydrogenError::Valence(ValenceError::ImplicitValenceCacheNotInitialized { atom }) if atom.index()==expected),
+                    "{err:?}"
+                );
+            }
+            assert_eq!(t, before);
+        }
+    }
+    #[test]
+    fn no_implicit_bypasses_missing_fields_and_unselected_rows_survive() {
+        let t = topology(true);
+        let p = AddHsParams {
+            only_on_atoms: Some(vec![]),
+            ..Default::default()
+        };
+        let result = add_hydrogens_with_source_valence(
+            t.clone(),
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+            &p,
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.topology, t);
+        assert_eq!(
+            result.final_valence,
+            ValenceAssignment {
+                explicit_valence: vec![-1; 2],
+                implicit_hydrogens: vec![-1; 2]
+            }
+        );
+        let p = AddHsParams {
+            only_on_atoms: Some(vec![AtomId::new(0)]),
+            ..Default::default()
+        };
+        let state = ValenceAssignment {
+            explicit_valence: vec![99, 77],
+            implicit_hydrogens: vec![0, -1],
+        };
+        let result = add_hydrogens_with_source_valence(
+            t.clone(),
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+            &p,
+            Some(state),
+        )
+        .unwrap();
+        assert_eq!(result.topology, t);
+        assert_eq!(
+            result.final_valence,
+            ValenceAssignment {
+                explicit_valence: vec![0, 77],
+                implicit_hydrogens: vec![0, -1]
+            }
+        );
+    }
+}

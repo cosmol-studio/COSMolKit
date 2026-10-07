@@ -32,8 +32,12 @@ fn drawing_text_script_mode_transitions() {
         ("<sub >2</sub >", "<sub >2</sub >", "NNNNNNNNNNNNNN"),
     ];
     for (input, glyphs, modes) in cases {
-        let (actual_chars, actual_modes) = parse_draw_chars(input);
-        assert_eq!(actual_chars.iter().collect::<String>(), glyphs, "{input:?}");
+        let (actual_chars, actual_modes) = parse_draw_chars(input.as_bytes());
+        assert_eq!(
+            std::str::from_utf8(&actual_chars).expect("fixed ASCII glyph bytes"),
+            glyphs,
+            "{input:?}"
+        );
         let actual_modes: String = actual_modes
             .iter()
             .map(|mode| match mode {
@@ -68,19 +72,32 @@ fn drawing_text_entities_and_unknown_tags_are_literal() {
         "</lit>",
         "<subscript>",
     ] {
-        let (glyphs, modes) = parse_draw_chars(input);
-        assert_eq!(glyphs.iter().collect::<String>(), input, "{input:?}");
+        let (glyphs, modes) = parse_draw_chars(input.as_bytes());
+        assert_eq!(
+            std::str::from_utf8(&glyphs).expect("fixed ASCII glyph bytes"),
+            input,
+            "{input:?}"
+        );
         assert!(modes.iter().all(|mode| *mode == TextDrawType::Normal));
-        let rects = get_string_rects_unsplit(input, 20.0);
-        assert_eq!(rects.iter().map(|rect| rect.ch).collect::<String>(), input);
+        let rects = get_string_rects_unsplit(input.as_bytes(), 20.0);
+        assert_eq!(
+            rects
+                .iter()
+                .map(|rect| char::from(rect.ch))
+                .collect::<String>(),
+            input
+        );
         assert!(
             rects
                 .iter()
                 .all(|rect| rect.width.is_finite() && rect.height.is_finite())
         );
     }
-    let (glyphs, modes) = parse_draw_chars("<sup>&amp;</sup>&lt;");
-    assert_eq!(glyphs.iter().collect::<String>(), "&amp;&lt;");
+    let (glyphs, modes) = parse_draw_chars(b"<sup>&amp;</sup>&lt;");
+    assert_eq!(
+        std::str::from_utf8(&glyphs).expect("fixed ASCII glyph bytes"),
+        "&amp;&lt;"
+    );
     assert_eq!(
         modes,
         [
@@ -112,11 +129,14 @@ fn drawing_text_leading_literal_wrapper_belongs_to_label_splitter() {
             ("<lit>&amp;</lit>", "&amp;", "&amp;"),
             ("<lit>H<sub>2</sub></lit>", "H<sub>2</sub>", "H2"),
         ] {
-            assert_eq!(atom_label_to_pieces(input, orient), vec![pieces]);
             assert_eq!(
-                get_string_rects(input, orient, 20.0)
+                atom_label_to_pieces(input.as_bytes(), orient),
+                vec![pieces.as_bytes().to_vec()]
+            );
+            assert_eq!(
+                get_string_rects(input.as_bytes(), orient, 20.0)
                     .iter()
-                    .map(|rect| rect.ch)
+                    .map(|rect| char::from(rect.ch))
                     .collect::<String>(),
                 glyphs
             );
@@ -160,14 +180,19 @@ fn drawing_text_svg_glyphs_escape_once_at_output() {
             DrawColour::new(0.0, 0.0, 0.0),
             20.0,
         );
-        let mut svg = String::new();
+        let mut svg = Vec::new();
         draw_atom_label_svg(&mut svg, &label, 20.0);
         assert_eq!(
-            text_contents(&svg),
+            text_contents(std::str::from_utf8(&svg).expect("fixed source SVG UTF8")),
             (expected.to_string(), glyph_count),
             "label {input:?}"
         );
-        assert!(svg.lines().all(|line| line.contains("class='atom-7'")));
+        assert!(
+            std::str::from_utf8(&svg)
+                .expect("fixed source SVG UTF8")
+                .lines()
+                .all(|line| line.contains("class='atom-7'"))
+        );
         let annotation = DrawAnnotation::new(
             input.to_string(),
             TextAlignType::Middle,
@@ -178,10 +203,10 @@ fn drawing_text_svg_glyphs_escape_once_at_output() {
             20.0,
             1.0,
         );
-        let mut svg = String::new();
+        let mut svg = Vec::new();
         draw_annotation_svg(&mut svg, &annotation, 20.0);
         assert_eq!(
-            text_contents(&svg),
+            text_contents(std::str::from_utf8(&svg).expect("fixed source SVG UTF8")),
             (expected.to_string(), glyph_count),
             "note {input:?}"
         );
@@ -278,7 +303,7 @@ fn drawing_text_fixed_prepared_note_product_preserves_input() {
                     let svg = render_prepared_svg(&input, width, height).unwrap();
                     calls += 1;
                     assert_eq!(
-                        text_contents(&svg),
+                        text_contents(std::str::from_utf8(&svg).expect("fixed source SVG UTF8")),
                         (expected.to_string(), glyph_count),
                         "note {note:?} location={location} canvas={width}x{height}"
                     );
@@ -346,17 +371,23 @@ fn drawing_text_property_and_svg_errors_keep_typed_causes() {
                 valence: &valence,
                 rings: &rings,
             };
-            let error = render_prepared_svg(&input, 300, 300).unwrap_err();
-            assert!(error.source().is_some());
-            let DrawingError::Property(source) = error else {
-                panic!("wrong typed error: {error}")
+            // DrawMol::extractAtomNotes/extractBondNotes read std::string;
+            // Dict::getVal documents source lexical conversion of scalars.
+            let svg = render_prepared_svg(&input, 300, 300).unwrap();
+            let expected = match kind {
+                PropertyValueKind::Int => "7",
+                PropertyValueKind::Double => "1.5",
+                PropertyValueKind::Bool => "1",
+                _ => unreachable!("the original scalar fixture contains these three kinds"),
             };
-            assert_eq!(source.expected(), PropertyValueKind::String);
-            assert_eq!(source.actual(), kind);
+            assert_eq!(
+                text_contents(std::str::from_utf8(&svg).expect("fixed SVG UTF8")),
+                (expected.to_owned(), expected.len())
+            );
             assert_eq!((topology, layout, properties, valence, rings), baseline);
         }
     }
-    let error = crate::raster::svg_to_png("<svg><text>&unknown;</text></svg>").unwrap_err();
+    let error = crate::raster::svg_to_png(b"<svg><text>&unknown;</text></svg>").unwrap_err();
     assert!(matches!(error, DrawingError::SvgParse(_)));
     assert!(error.source().is_some());
 }
@@ -376,7 +407,7 @@ fn drawing_text_annotation_unsplit_declared_alignment_geometry() {
         (TextAlignType::End, [-11.04, 0.0]),
     ] {
         let annotation = DrawAnnotation::new(
-            "AB".into(),
+            "AB",
             align,
             "note".into(),
             0.8,
@@ -387,7 +418,11 @@ fn drawing_text_annotation_unsplit_declared_alignment_geometry() {
         );
         assert_eq!(annotation.rects.len(), 2);
         assert_eq!(
-            annotation.rects.iter().map(|r| r.ch).collect::<String>(),
+            annotation
+                .rects
+                .iter()
+                .map(|r| char::from(r.ch))
+                .collect::<String>(),
             "AB"
         );
         for (rect, x) in annotation.rects.iter().zip(expected_x) {
@@ -438,7 +473,7 @@ fn drawing_text_annotation_source_svg_all_alignments() {
         ),
     ] {
         let annotation = DrawAnnotation::new(
-            "AB".into(),
+            "AB",
             align,
             "note".into(),
             0.8,
@@ -447,9 +482,9 @@ fn drawing_text_annotation_source_svg_all_alignments() {
             20.0,
             1.0,
         );
-        let mut svg = String::new();
+        let mut svg = Vec::new();
         draw_annotation_svg(&mut svg, &annotation, 20.0);
-        assert_eq!(svg, expected);
+        assert_eq!(svg.as_slice(), expected.as_bytes());
     }
 }
 
@@ -458,7 +493,7 @@ fn drawing_text_annotation_source_draw_uses_final_alignment_and_script_baselines
     // DrawAnnotation::draw uses the FINAL align_ in drawString, not a stale
     // cached extraction alignment. Source extractBrackets mutates align_ after new.
     let mut shifted = DrawAnnotation::new(
-        "AB".into(),
+        "AB",
         TextAlignType::End,
         "note".into(),
         0.8,
@@ -468,10 +503,10 @@ fn drawing_text_annotation_source_draw_uses_final_alignment_and_script_baselines
         1.0,
     );
     shifted.align = TextAlignType::Start;
-    let mut shifted_svg = String::new();
+    let mut shifted_svg = Vec::new();
     draw_annotation_svg(&mut shifted_svg, &shifted, 20.0);
     assert_eq!(
-        shifted_svg,
+        std::str::from_utf8(&shifted_svg).expect("fixed source SVG UTF8"),
         concat!(
             "<text x='25.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >A</text>\n",
             "<text x='36.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >B</text>\n",
@@ -480,7 +515,7 @@ fn drawing_text_annotation_source_draw_uses_final_alignment_and_script_baselines
     // DrawText.cpp:392-436 shifts scripts using C height=12.8; :555-570
     // then emits baselines normal 48.0, sub 54.4, sup 41.6. Scripts share x.
     let mut annotation = DrawAnnotation::new(
-        "C<sub>2</sub><sup>+</sup>".into(),
+        "C<sub>2</sub><sup>+</sup>",
         TextAlignType::End,
         "note".into(),
         0.8,
@@ -490,10 +525,10 @@ fn drawing_text_annotation_source_draw_uses_final_alignment_and_script_baselines
         1.0,
     );
     annotation.align = TextAlignType::Start;
-    let mut svg = String::new();
+    let mut svg = Vec::new();
     draw_annotation_svg(&mut svg, &annotation, 20.0);
     assert_eq!(
-        svg,
+        std::str::from_utf8(&svg).expect("fixed source SVG UTF8"),
         concat!(
             "<text x='25.2' y='48.0' class='note' style='font-size:16px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >C</text>\n",
             "<text x='36.2' y='54.4' class='note' style='font-size:10px;font-style:normal;font-weight:normal;fill-opacity:1;stroke:none;font-family:sans-serif;text-anchor:start;fill:#0000FF' >2</text>\n",
@@ -523,7 +558,7 @@ fn drawing_text_annotation_source_literal_wrappers_are_not_split() {
             ("C<sub>2</sub><sup>+</sup>", "C2+", 3),
         ] {
             let annotation = DrawAnnotation::new(
-                input.into(),
+                input,
                 align,
                 "note".into(),
                 0.8,
@@ -533,9 +568,12 @@ fn drawing_text_annotation_source_literal_wrappers_are_not_split() {
                 1.0,
             );
             assert_eq!(annotation.rects.len(), count);
-            let mut svg = String::new();
+            let mut svg = Vec::new();
             draw_annotation_svg(&mut svg, &annotation, 20.0);
-            assert_eq!(text_contents(&svg), (serialized.into(), count));
+            assert_eq!(
+                text_contents(std::str::from_utf8(&svg).expect("fixed source SVG UTF8")),
+                (serialized.into(), count)
+            );
         }
     }
 }

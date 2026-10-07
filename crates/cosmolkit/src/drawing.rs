@@ -211,10 +211,13 @@ impl Molecule {
     /// Render Experimental SVG using the first stored 2D layout, or generate
     /// a detached layout when absent. Stored coordinates and caches are preserved.
     pub fn to_svg(&self, width: u32, height: u32) -> Result<String, DrawingError> {
-        cosmolkit_depict::render_cosmolkit_svg(
+        let bytes = cosmolkit_depict::render_cosmolkit_svg(
             self.drawing_input(),
             &DepictOptions { width, height },
-        )
+        )?;
+        // Checked projection happens after complete raw rendering. The owning
+        // error retains every output byte and the original UTF-8 failure.
+        String::from_utf8(bytes).map_err(DrawingError::SvgTextProjection)
     }
 
     /// Rasterize the same Experimental SVG with the embedded Noto Sans font.

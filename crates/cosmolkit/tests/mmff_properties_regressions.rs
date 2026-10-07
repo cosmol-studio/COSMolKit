@@ -227,8 +227,13 @@ fn mmff_mol_properties_constructor_preserves_existing_sanitized_prop_on_empty_mo
     assert!(props.atoms().is_empty());
     assert_eq!(
         molecule.properties().prop("_MMFFSanitized"),
-        Some("already")
+        Some(&cosmolkit::PropertyValue::from("already"))
     );
-    assert!(!molecule.properties().is_prop_computed("_MMFFSanitized"));
+    assert!(
+        !molecule
+            .properties()
+            .is_prop_computed("_MMFFSanitized")
+            .unwrap()
+    );
     assert_eq!(molecule, original);
 }

@@ -370,19 +370,25 @@ fn live_compacting_commit_remaps_rows_and_preserves_typed_references() {
     assert_eq!(
         output.to_builder().coordinates().conformers_2d[0]
             .props()
-            .get("plane")
-            .map(String::as_str),
+            .get(b"plane".as_slice())
+            .map(|value| std::str::from_utf8(value.as_bytes()).expect("UTF8 fixture property")),
         Some("kept")
     );
     assert_eq!(
         output.to_builder().coordinates().conformers_3d[0]
             .props()
-            .get("space")
-            .map(String::as_str),
+            .get(b"space".as_slice())
+            .map(|value| std::str::from_utf8(value.as_bytes()).expect("UTF8 fixture property")),
         Some("kept")
     );
-    assert_eq!(output.properties().name(), Some("remove-hydrogens-public"));
-    assert_eq!(output.property("ordinary"), Some("kept"));
+    assert_eq!(
+        output.properties().name(),
+        Some(&cosmolkit::PropertyText::from("remove-hydrogens-public"))
+    );
+    assert_eq!(
+        output.property("ordinary"),
+        Some(&cosmolkit::PropertyValue::from("kept"))
+    );
     assert_eq!(output.property("_CIPComputed"), None);
     assert_eq!(
         output.atoms()[0].prop("atom-note"),
@@ -420,8 +426,12 @@ fn strict_commit_invalidates_unsanitized_valence_and_ring_state_before_recomputa
         .unwrap();
     assert_eq!(output.num_atoms(), 3);
     assert_eq!(output.num_bonds(), 3);
-    // CK-VALENCE-001: sanitize=false clears both payload and validity.
-    assert!(format!("{output:?}").contains("derived_cache_is_empty: true"));
+    // Native removeHs updates atom property caches before removing Hs;
+    // runtime rings are recomputed independently of sanitize. This case retains
+    // its old topology/metadata assertions and verifies both source facts.
+    assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
+    let ring_assignment = output.with_assigned_rings().unwrap();
+    assert_eq!(ring_assignment.topology(), output.topology());
 
     let valence_rechecked = output.with_assigned_valence().unwrap();
     assert_eq!(valence_rechecked, output);

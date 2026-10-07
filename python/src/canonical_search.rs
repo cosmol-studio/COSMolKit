@@ -15,6 +15,10 @@ pyo3::create_exception!(cosmolkit, MatchError, PyValueError);
 pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr {
     use ck::SmartsParseError as E;
     let kind = match &source {
+        E::ParserCarrier(_) => "ParserCarrier",
+        E::AtomProperty(_) => "AtomProperty",
+        E::BondProperty(_) => "BondProperty",
+        E::MoleculeProperty(_) => "MoleculeProperty",
         E::UnclosedBracket(_) => "UnclosedBracket",
         E::UnexpectedCharacter { .. } => "UnexpectedCharacter",
         E::UnexpectedEnd(_) => "UnexpectedEnd",
@@ -83,6 +87,23 @@ pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr
 pub(crate) fn write_pyerr(py: Python<'_>, source: ck::SmartsWriteError) -> PyErr {
     use ck::SmartsWriteError as E;
     let kind = match &source {
+        E::Traversal(_) => "Traversal",
+        E::CxCoordinates(_) => "CxCoordinates",
+        E::PropertyValue(_) => "PropertyValue",
+        E::CxRequiredProperty { .. } => "CxRequiredProperty",
+        E::CxPropertyList { .. } => "CxPropertyList",
+        E::CxCoordinateSelectionArity { .. } => "CxCoordinateSelectionArity",
+        E::CxMissingOutputOrder { .. } => "CxMissingOutputOrder",
+        E::CxOutputOrderPropertyType { .. } => "CxOutputOrderPropertyType",
+        E::CxAtomPropertyKind { .. } => "CxAtomPropertyKind",
+        E::CxAtomPropertyUInt { .. } => "CxAtomPropertyUInt",
+        E::CxCoordinateSelection { .. } => "CxCoordinateSelection",
+        E::CxComposition(_) => "CxComposition",
+        E::CxOutputOrder { .. } => "CxOutputOrder",
+        E::CxRowCount { .. } => "CxRowCount",
+        E::CxBondPropertyUInt { .. } => "CxBondPropertyUInt",
+        E::CxAtomPropertyInt { .. } => "CxAtomPropertyInt",
+        E::CxSgroupPropertyUInt { .. } => "CxSgroupPropertyUInt",
         E::InvalidPropertyKind { .. } => "InvalidPropertyKind",
         E::Property(_) => "Property",
         E::Valence(_) => "Valence",
@@ -118,6 +139,7 @@ pub(crate) fn substruct_pyerr(py: Python<'_>, source: ck::SubstructMatchError) -
         ck::SubstructMatchError::Unsupported { .. } => "Unsupported",
         ck::SubstructMatchError::PeriodicTable(_) => "PeriodicTable",
         ck::SubstructMatchError::PropertyString(_) => "PropertyString",
+        ck::SubstructMatchError::PropertyInteger { .. } => "PropertyInteger",
         ck::SubstructMatchError::QueryContext(_) => "QueryContext",
     };
     let error = crate::canonical_values::annotate(
@@ -193,8 +215,12 @@ impl QueryGraph {
     fn num_bonds(&self) -> usize {
         self.inner.num_bonds()
     }
-    fn name(&self) -> Option<String> {
-        self.inner.prop("_Name").map(str::to_owned)
+    fn name(&self, py: Python<'_>) -> PyResult<Option<String>> {
+        self.inner
+            .name()
+            .map_err(|error| crate::canonical_atom_bond::property_pyerr(py, error))?
+            .map(|text| crate::canonical_sdf::decode_source_text(py, text))
+            .transpose()
     }
     fn __len__(&self) -> usize {
         self.inner.num_atoms()
@@ -546,7 +572,9 @@ fn write_smarts(
     query: &QueryGraph,
     params: &SmartsWriteParams,
 ) -> PyResult<String> {
-    ck::write_smarts(&query.inner, &params.inner).map_err(|e| write_pyerr(py, e))
+    ck::write_smarts(&query.inner, &params.inner)
+        .map_err(|e| write_pyerr(py, e))
+        .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
@@ -555,7 +583,9 @@ fn write_cx_smarts(
     query: &QueryGraph,
     params: &SmartsWriteParams,
 ) -> PyResult<String> {
-    ck::write_cx_smarts(&query.inner, &params.inner).map_err(|e| write_pyerr(py, e))
+    ck::write_cx_smarts(&query.inner, &params.inner)
+        .map_err(|e| write_pyerr(py, e))
+        .and_then(|text| crate::canonical_sdf::decode_source_text(py, &text))
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {

@@ -123,7 +123,103 @@ pub(crate) const CONFORMER_FEATURE: FeatureSpec = FeatureSpec {
     docs: "Source-backed distance geometry and independent 3D conformer storage.",
 };
 
+#[cfg(feature = "cap-stereoisomers")]
+pub(crate) const STEREOISOMERS_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cap-stereoisomers",
+    category: "chemistry",
+    docs: "Source-ordered lazy stereoisomer enumeration and upper-bound counts.",
+};
+
 molecule_ops! {
+    #[cfg(feature = "cap-stereoisomers")]
+    op enumerate_stereoisomers(options: &crate::StereoisomerOptions) {
+        method: enumerate_stereoisomers_with_options, impl_fn: crate::ops::stereoisomers::enumerate_stereoisomers_impl,
+        output: lazy_multiple, domain: topology, kind: weak, topology_edit: none,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [rings, valence], preserve: [ring_families],
+            invalidate: [aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: stereoisomer_source_transition, requires_mapping: none,
+        feature: crate::ops::runtime::registry::STEREOISOMERS_FEATURE,
+        parity: required_now, parity_profile: "python_stereoisomer_enumeration_rdkit",
+        invariant_profile: "lazy_stereoisomer_source_candidates",
+        default_method: enumerate_stereoisomers,
+        default_args: [&crate::StereoisomerOptions::default()],
+    }
+
+    #[cfg(feature = "cap-stereoisomers")]
+    op enumerate_stereoisomers_with_random_bits(options: &crate::StereoisomerOptions, callback: Box<dyn FnMut(usize) -> Result<num_bigint::BigUint, String> + Send + Sync + 'static>) {
+        method: enumerate_stereoisomers_with_random_bits, impl_fn: crate::ops::stereoisomers::enumerate_stereoisomers_with_random_bits_impl,
+        output: lazy_multiple, domain: topology, kind: weak, topology_edit: none,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [rings, valence], preserve: [ring_families],
+            invalidate: [aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: stereoisomer_source_transition, requires_mapping: none,
+        feature: crate::ops::runtime::registry::STEREOISOMERS_FEATURE,
+        parity: required_now, parity_profile: "python_stereoisomer_enumeration_rdkit",
+        invariant_profile: "lazy_stereoisomer_source_candidates",
+    }
+
+    #[cfg(feature = "cap-reaction")]
+    op reaction_products(reaction: &crate::Reaction, reactant_template: usize, params: &crate::ReactionSingleRunParams) {
+        method: reaction_products_with_params,
+        error_type: crate::ReactionRunError,
+        impl_fn: crate::ops::reaction::reaction_products_impl,
+        output: multiple,
+        result_type: Vec<Vec<crate::Molecule>>,
+        assemble_fn: crate::reaction::assemble_product_sets,
+        domain: topology, kind: strong, topology_edit: reconstruction,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [valence, rings], preserve: [], invalidate: [ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: preserve, requires_mapping: reconstruction,
+        feature: crate::ops::runtime::registry::REACTION_FEATURE,
+        parity: required_now, parity_profile: "reaction_runner_rdkit_single_input",
+        io_roundtrip: false, invariant_profile: "reaction_reconstruction_checked_row_origins_ordered_product_sets",
+        default_method: reaction_products, default_args: [&crate::ReactionSingleRunParams::default()],
+    }
+
+    #[cfg(feature = "cap-reaction")]
+    op reaction_products_from_inputs(reaction: &crate::Reaction, reactants: &[&crate::Molecule], params: &crate::ReactionRunParams) {
+        method: reaction_products_from_inputs,
+        error_type: crate::ReactionRunError,
+        method_visibility: pub(crate),
+        impl_fn: crate::ops::reaction::reaction_products_from_inputs_impl,
+        output: multiple,
+        result_type: Vec<Vec<crate::Molecule>>,
+        assemble_fn: crate::reaction::assemble_product_sets,
+        domain: topology, kind: strong, topology_edit: reconstruction,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [valence, rings], preserve: [], invalidate: [ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: preserve, requires_mapping: reconstruction,
+        feature: crate::ops::runtime::registry::REACTION_FEATURE,
+        parity: required_now, parity_profile: "reaction_runner_rdkit_multiple_inputs",
+        io_roundtrip: false, invariant_profile: "reaction_multi_input_checked_origins_ordered_product_sets",
+    }
+
+    #[cfg(feature = "cap-reaction")]
+    op apply_reaction(reaction: &crate::Reaction, params: &crate::ReactionApplyParams) {
+        method: apply_reaction_with_params,
+        error_type: crate::ReactionApplyError,
+        impl_fn: crate::ops::reaction::apply_reaction_impl,
+        report_type: bool,
+        report_result_type: crate::ReactionApplyResult,
+        inplace_result_type: bool,
+        domain: topology, kind: strong, topology_edit: compacting,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache],
+        auto_remap: [coordinates, properties],
+        derived_effects: { recompute: [], preserve: [], invalidate: [valence, rings, ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: preserve, requires_mapping: required,
+        feature: crate::ops::runtime::registry::REACTION_FEATURE,
+        parity: required_now, parity_profile: "reaction_runner_rdkit_restricted_apply",
+        io_roundtrip: false, invariant_profile: "reaction_apply_source_bool_compact_mapping_all_coordinate_sets",
+        default_method: apply_reaction, default_args: [&crate::ReactionApplyParams::default()],
+        inplace: true, inplace_method: apply_reaction_with_params_, default_inplace_method: apply_reaction_,
+    }
+
     #[cfg(feature = "cap-alignment")]
     op with_alignment_to(reference: &crate::Molecule, params: &crate::AlignmentParameters) {
         method: with_alignment_to_with_params,
@@ -380,6 +476,19 @@ molecule_ops! {
         default_args: [&crate::UffConformerOptimizationParams::default()],
     }
     #[cfg(cosmolkit_runtime_privacy_probe)]
+    op lazy_output_probe {
+        method: lazy_output_probe,
+        impl_fn: crate::ops::runtime_privacy_probe::lazy_output_probe_impl,
+        output: lazy_multiple,
+        kind: weak,
+        access: { read: [topology, properties], write: [] },
+        derived_effects: { recompute: [], preserve: [], invalidate: [], operation_defined: [] },
+        cip_state: preserve,
+        feature: crate::ops::runtime::registry::PRESERVE_PROBE_FEATURE,
+        parity: not_applicable,
+        invariant_profile: "lazy-output-compile-probe",
+    }
+    #[cfg(cosmolkit_runtime_privacy_probe)]
     op preserve_cache_read_probe {
         method: preserve_cache_read_probe,
         impl_fn: crate::ops::runtime_privacy_probe::preserve_cache_read_probe_impl,
@@ -422,7 +531,7 @@ molecule_ops! {
         may_mutate: [topology, properties, derived_cache],
         auto_remap: [],
         derived_effects: {
-            recompute: [valence, rings],
+            recompute: [rings],
             preserve: [coordinates],
             invalidate: [
                 ring_families,
@@ -431,7 +540,7 @@ molecule_ops! {
                 drawing,
                 fingerprint,
             ],
-            operation_defined: [],
+            operation_defined: [valence],
         },
         cip_state: clear,
         semantic_preconditions: [],
@@ -461,8 +570,8 @@ molecule_ops! {
         derived_effects: {
             recompute: [rings],
             preserve: [ring_families, coordinates],
-            invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
-            operation_defined: [],
+            invalidate: [aromaticity, stereo, drawing, fingerprint],
+            operation_defined: [valence],
         },
         cip_state: preserve,
         semantic_preconditions: [],
@@ -755,8 +864,8 @@ molecule_ops! {
         derived_effects: {
             recompute: [],
             preserve: [rings, ring_families],
-            invalidate: [valence, aromaticity, stereo, drawing, fingerprint],
-            operation_defined: [],
+            invalidate: [aromaticity, stereo, drawing, fingerprint],
+            operation_defined: [valence],
         },
         cip_state: clear,
         semantic_preconditions: [],

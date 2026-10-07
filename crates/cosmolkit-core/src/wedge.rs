@@ -15,7 +15,7 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag};
 
-const ATTACHMENT_POINT_PROPERTY: &str = "_fromAttachPoint";
+const ATTACHMENT_POINT_PROPERTY: &str = "_fromAttchpt";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WedgeInfo {
@@ -104,11 +104,11 @@ pub enum WedgeError {
     RingFinding(#[from] RingFindingError),
     #[error(transparent)]
     Atropisomer(#[from] AtropisomerError),
-    #[error("atom {atom} property {property} is not an integer stereo rank: {value}")]
+    #[error("atom {atom} property {property} is not an integer stereo rank: {value:?}")]
     InvalidStereoRank {
         atom: AtomId,
         property: &'static str,
-        value: String,
+        value: cosmolkit_model::PropertyText,
     },
     #[error("atom {atom} property {property} has {kind:?} value, expected an integer stereo rank")]
     InvalidStereoRankType {
@@ -667,16 +667,16 @@ fn can_be_stereo_bond(
                         value: *rank,
                     })?
                 }
-                PropertyValue::String(rank_text) => {
-                    rank_text
-                        .parse::<i32>()
-                        .map_err(|_| WedgeError::InvalidStereoRank {
-                            atom: neighbor_atom.id(),
-                            property: rank_property,
-                            value: rank_text.to_owned(),
-                        })?
-                }
-                PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => {
+                value @ PropertyValue::String(rank_text) => crate::property_value_to_int(value)
+                    .map_err(|_| WedgeError::InvalidStereoRank {
+                        atom: neighbor_atom.id(),
+                        property: rank_property,
+                        value: rank_text.to_owned(),
+                    })?,
+                PropertyValue::StringVector(_)
+                | PropertyValue::IntVector(_)
+                | PropertyValue::Double(_)
+                | PropertyValue::Bool(_) => {
                     return Err(WedgeError::InvalidStereoRankType {
                         atom: neighbor_atom.id(),
                         property: rank_property,
@@ -1318,7 +1318,7 @@ fn pick_bond_to_wedge(
         neighbor_score += 12_000 * has_known_double_bond as i32;
         neighbor_score += 23_000 * has_any_double_bond as i32;
 
-        if other_atom.props().contains_key(ATTACHMENT_POINT_PROPERTY) {
+        if other_atom.prop(ATTACHMENT_POINT_PROPERTY).is_some() {
             neighbor_score += 500_000;
         }
         neighbor_scores.push((neighbor_score, bond.id()));
@@ -2460,7 +2460,7 @@ mod tests {
     #[test]
     fn wedge_pick_uses_attachment_property_presence_as_a_penalty() {
         let marked = atom(6, ChiralTag::Unspecified)
-            .with_prop("_fromAttachPoint", "")
+            .with_prop("_fromAttchpt", "")
             .expect("empty raw attachment property is representable");
         let molecule = topology_from_specs(
             vec![
@@ -2782,10 +2782,10 @@ mod tests {
     #[test]
     fn wedge_assignment_passes_chiral_occupancy_to_atrop_owner() {
         let oxygen = atom(8, ChiralTag::Unspecified)
-            .with_prop("_fromAttachPoint", "")
+            .with_prop("_fromAttchpt", "")
             .expect("source attachment property can be present with an empty value");
         let fluorine = atom(9, ChiralTag::Unspecified)
-            .with_prop("_fromAttachPoint", "")
+            .with_prop("_fromAttchpt", "")
             .expect("source attachment property can be present with an empty value");
         let molecule = topology_from_specs(
             vec![

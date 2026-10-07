@@ -89,7 +89,9 @@ pub fn run(input: &WriteInput) -> Result<Record, String> {
     let output = match Molecule::from_smiles(&input.case.smiles) {
         Err(_) => Outcome::Error(Stage::Parse),
         Ok(mol) => match mol.to_smiles_with_params(&input.profile.params(mol.num_atoms())) {
-            Ok(text) => Outcome::Smiles(text),
+            Ok(text) => {
+                Outcome::Smiles(String::from_utf8(text.into_bytes()).map_err(|e| e.to_string())?)
+            }
             Err(_) => Outcome::Error(Stage::Write),
         },
     };

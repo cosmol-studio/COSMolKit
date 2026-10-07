@@ -70,6 +70,32 @@ pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'st
     if let Some(error) = source.downcast_ref::<ck::BatchImageError>() {
         return crate::canonical_batch::batch_image_error(py, error);
     }
+    if let Some(error) = source.downcast_ref::<ck::TopologicalTorsionReadError>() {
+        return topological_torsion_pyerr(py, error);
+    }
+    if let Some(source) = source.downcast_ref::<ck::BatchError>() {
+        let error = annotate(
+            py,
+            PyValueError::new_err(source.to_string()),
+            "batch",
+            "Record",
+            source,
+        );
+        let attributes = || -> PyResult<()> {
+            error.value(py).setattr("index", source.index)?;
+            error.value(py).setattr("operation", source.operation)?;
+            error.value(py).setattr("message", &source.message)?;
+            Ok(())
+        };
+        return match attributes() {
+            Ok(()) => error,
+            Err(error) => error,
+        };
+    }
+
+    if let Some(error) = source.downcast_ref::<ck::EnumerationError>() {
+        return crate::canonical_stereoisomers::error_pyerr(py, error);
+    }
     if let Some(error) = source.downcast_ref::<ck::CoordinateInputError>() {
         return crate::canonical_coordinate_input::error_pyerr(py, error);
     }
@@ -201,8 +227,9 @@ pub(crate) fn atom_pair_pyerr(
 
 pub(crate) fn topological_torsion_pyerr(
     py: Python<'_>,
-    source: ck::TopologicalTorsionReadError,
+    source: impl std::borrow::Borrow<ck::TopologicalTorsionReadError>,
 ) -> PyErr {
+    let source = source.borrow();
     let kind = match &source {
         ck::TopologicalTorsionReadError::Preparation(_) => "Preparation",
         ck::TopologicalTorsionReadError::Generator(_) => "Generator",
@@ -212,11 +239,15 @@ pub(crate) fn topological_torsion_pyerr(
         TopologicalTorsionReadError::new_err(source.to_string()),
         "fingerprints",
         kind,
-        &source,
+        source,
     )
 }
 
-fn fingerprint_pyerr(py: Python<'_>, source: ck::FingerprintError) -> PyErr {
+fn fingerprint_pyerr(
+    py: Python<'_>,
+    source: impl std::borrow::Borrow<ck::FingerprintError>,
+) -> PyErr {
+    let source = source.borrow();
     use ck::FingerprintError as E;
     let kind = match source {
         E::EmptyFingerprint => "EmptyFingerprint",
@@ -234,7 +265,7 @@ fn fingerprint_pyerr(py: Python<'_>, source: ck::FingerprintError) -> PyErr {
         FingerprintError::new_err(source.to_string()),
         "fingerprints",
         kind,
-        &source,
+        source,
     );
     let attributes = || -> PyResult<()> {
         let value = error.value(py);

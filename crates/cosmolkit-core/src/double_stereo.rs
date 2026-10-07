@@ -44,6 +44,107 @@ pub struct DoubleBondStereoAssignment {
     pub assigned_any: bool,
 }
 
+/// Detached result of source bond stereo/direction updates.
+/// `needs_detect_bond_stereo` records an executed ordinary Int(1) property
+/// write. False means no write, including retention of any preexisting flag.
+/// Consumers apply this event to their existing molecule property carrier.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DoubleBondStereoUpdate {
+    pub topology: TopologyBlock,
+    pub needs_detect_bond_stereo: bool,
+}
+
+/// Source diagnostic events from stereo-reference discovery.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StereoAtomSearchWarning {
+    DuplicateCipRank { center: AtomId },
+    UnableToAssign { bond: BondId },
+}
+
+/// Found references plus ordered source warnings.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StereoAtomSearch {
+    pub atoms: Option<[AtomId; 2]>,
+    pub warnings: Vec<StereoAtomSearchWarning>,
+}
+
+/// Discover source stereo references with a lazy reader of already-present
+/// CIP ranks. The reader returns None for absence and propagates source
+/// property conversion errors. No rank assignment is performed.
+#[doc(hidden)]
+pub fn find_double_bond_stereo_atoms_with_rank_reader<E>(
+    topology: &TopologyBlock,
+    bond: BondId,
+    mut rank_reader: impl FnMut(AtomId) -> Result<Option<u32>, E>,
+) -> Result<StereoAtomSearch, E>
+where
+    E: From<DoubleBondStereoError>,
+{
+    topology.validate().map_err(DoubleBondStereoError::from)?;
+    let bond_value = require_double_bond(topology, bond)?;
+    // RDKit❗✔️: PRECONDITION(bond->getStereo() > Bond::BondStereo::STEREOANY,
+    // RDKit❗✔️:              "no defined stereo");
+    if matches!(bond_value.stereo(), BondStereo::None | BondStereo::Any) {
+        return Err(DoubleBondStereoError::UndefinedStereo {
+            bond,
+            stereo: bond_value.stereo(),
+        }
+        .into());
+    }
+    // RDKit❗✔️: if (!bond->getStereoAtoms().empty()) {
+    // RDKit❗✔️:   return bond->getStereoAtoms();
+    // RDKit❗✔️: }
+    let mut result = StereoAtomSearch {
+        atoms: bond_value.stereo_atoms(),
+        warnings: Vec::new(),
+    };
+    if result.atoms.is_some() {
+        return Ok(result);
+    }
+    // RDKit❗✔️: if (bond->getStereo() == Bond::BondStereo::STEREOE ||
+    // RDKit❗✔️:     bond->getStereo() == Bond::BondStereo::STEREOZ) {
+    // RDKit❗✔️:   const Atom *startStereoAtom =
+    // RDKit❗✔️:       findHighestCIPNeighbor(bond->getBeginAtom(), bond->getEndAtom());
+    // RDKit❗✔️:   const Atom *endStereoAtom =
+    // RDKit❗✔️:       findHighestCIPNeighbor(bond->getEndAtom(), bond->getBeginAtom());
+    // RDKit❗✔️:   if (startStereoAtom == nullptr || endStereoAtom == nullptr) {
+    // RDKit❗✔️:     return {};
+    // RDKit❗✔️:   }
+    if matches!(bond_value.stereo(), BondStereo::E | BondStereo::Z) {
+        let mut warn = |center| {
+            result
+                .warnings
+                .push(StereoAtomSearchWarning::DuplicateCipRank { center })
+        };
+        let begin = highest_ranked_neighbor_from_reader(
+            topology,
+            bond_value.begin(),
+            bond_value.end(),
+            &mut rank_reader,
+            &mut warn,
+        )?;
+        // Source evaluates both endpoints even when the first is absent.
+        let end = highest_ranked_neighbor_from_reader(
+            topology,
+            bond_value.end(),
+            bond_value.begin(),
+            &mut rank_reader,
+            &mut warn,
+        )?;
+        result.atoms = begin.zip(end).map(|(begin, end)| [begin, end]);
+    } else {
+        // RDKit❗✔️: BOOST_LOG(rdWarningLog) << "Unable to assign stereo atoms for bond "
+        // RDKit❗✔️:                         << bond->getIdx() << std::endl;
+        // RDKit❗✔️: return {};
+        result
+            .warnings
+            .push(StereoAtomSearchWarning::UnableToAssign { bond });
+    }
+    Ok(result)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DoubleBondStereoError {
     #[error(
@@ -61,6 +162,14 @@ pub enum DoubleBondStereoError {
         bond: Option<BondId>,
         property: &'static str,
         kind: cosmolkit_model::PropertyValueKind,
+    },
+    #[error("property {property} numeric read failed at atom {atom:?} bond {bond:?}: {source}")]
+    NumericPropertyRead {
+        atom: Option<AtomId>,
+        bond: Option<BondId>,
+        property: &'static str,
+        #[source]
+        source: crate::PropertyIntReadError,
     },
     #[error("invalid topology: {0}")]
     InvalidTopology(#[from] TopologyValidationError),
@@ -510,12 +619,16 @@ pub fn with_double_bond_stereo_reference(
     bond: BondId,
     stereo: BondStereo,
     use_cx_ordering: bool,
-) -> Result<TopologyBlock, DoubleBondStereoError> {
+) -> Result<DoubleBondStereoUpdate, DoubleBondStereoError> {
     topology.validate()?;
     require_double_bond(&topology, bond)?;
-    set_stereo_for_bond(&mut topology, bond, stereo, use_cx_ordering)?;
+    let needs_detect_bond_stereo =
+        set_stereo_for_bond(&mut topology, bond, stereo, use_cx_ordering)?;
     topology.validate()?;
-    Ok(topology)
+    Ok(DoubleBondStereoUpdate {
+        topology,
+        needs_detect_bond_stereo,
+    })
 }
 
 pub fn assign_double_bond_stereo_from_directions(
@@ -837,11 +950,12 @@ pub fn set_double_bond_neighbor_directions(
     mut topology: TopologyBlock,
     rings: &RingInfo,
     conformer: Option<&Conformer3D>,
-) -> Result<TopologyBlock, DoubleBondStereoError> {
+) -> Result<DoubleBondStereoUpdate, DoubleBondStereoError> {
     validate_ring_inputs(&topology, rings)?;
     if let Some(conformer) = conformer {
         conformer.validate_for_atom_count(topology.atoms.len())?;
     }
+    let mut needs_detect_bond_stereo = false;
     let bond_count = topology.bonds.len();
     let mut single_bond_counts = vec![0usize; bond_count];
     let mut double_bond_neighbors = vec![Vec::<BondId>::new(); bond_count];
@@ -1036,10 +1150,14 @@ pub fn set_double_bond_neighbor_directions(
             &mut needs_direction,
             &single_bond_counts,
             &single_bond_neighbors,
+            &mut needs_detect_bond_stereo,
         )?;
     }
     topology.validate()?;
-    Ok(topology)
+    Ok(DoubleBondStereoUpdate {
+        topology,
+        needs_detect_bond_stereo,
+    })
 }
 
 pub fn clear_single_bond_directions(
@@ -1069,7 +1187,7 @@ pub fn clear_single_bond_directions(
             continue;
         }
         if bond.direction() == BondDirection::Unknown {
-            bond.set_prop("_UnknownStereo", "1")?;
+            bond.set_prop("_UnknownStereo", 1_i32)?;
         }
         if !only_wedge_flags || !has_stereo_bond_direction(bond.direction()) {
             bond.set_direction(BondDirection::None);
@@ -1107,7 +1225,7 @@ pub fn clear_bond_directions(
             bond.direction(),
             BondDirection::Unknown | BondDirection::EitherDouble
         ) {
-            bond.set_prop("_UnknownStereo", "1")?;
+            bond.set_prop("_UnknownStereo", 1_i32)?;
         }
         if !only_wedge_type_bond_directions || !has_stereo_bond_direction(bond.direction()) {
             bond.set_direction(BondDirection::None);
@@ -1124,14 +1242,17 @@ fn validate_ring_inputs(
     if !rings.is_initialized() {
         return Err(DoubleBondStereoError::RingInfoNotInitialized);
     }
-    if rings.atom_row_count() != topology.atoms.len() {
+    let preserved_prefix = (rings.atom_row_count() != topology.atoms.len()
+        || rings.bond_row_count() != topology.bonds.len())
+        && crate::rings::preserves_appended_terminal_hydrogen_ring_prefix(topology, rings);
+    if rings.atom_row_count() != topology.atoms.len() && !preserved_prefix {
         return Err(DoubleBondStereoError::RingRowCount {
             dimension: "atom",
             actual: rings.atom_row_count(),
             expected: topology.atoms.len(),
         });
     }
-    if rings.bond_row_count() != topology.bonds.len() {
+    if rings.bond_row_count() != topology.bonds.len() && !preserved_prefix {
         return Err(DoubleBondStereoError::RingRowCount {
             dimension: "bond",
             actual: rings.bond_row_count(),
@@ -1224,6 +1345,20 @@ fn property_is_true(
     atom: Option<AtomId>,
     bond: Option<BondId>,
 ) -> Result<bool, DoubleBondStereoError> {
+    // RDKit✔️✔️: template <typename T>
+    // RDKit✔️✔️:   bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️✔️:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: template <typename T>
+    // RDKit✔️✔️:   bool getValIfPresent(const std::string_view what, T &res) const {
+    // RDKit✔️✔️:     for (const auto &data : _data) {
+    // RDKit✔️✔️:       if (data.key == what) {
+    // RDKit✔️✔️:         res = from_rdvalue<T>(data.val);
+    // RDKit✔️✔️:         return true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
     // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
     // RDKit❗✔️: template <>
     // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
@@ -1240,7 +1375,9 @@ fn property_is_true(
     // RDKit❗✔️: int explicitUnknownStereo = 0;
     // RDKit❗✔️: common_properties::_UnknownStereo, explicitUnknownStereo) &&
     // A vector cannot be cast to int; errors propagate at the guarded read.
-    // Existing scalar handling is retained. One discriminant match, no copy.
+    // Present Bool/Double are also incompatible with int and must propagate
+    // the same structural wrong-tag failure, not become a false stereo flag.
+    // Numeric/String branches reuse source arithmetic behavior; no copy.
     Ok(match value {
         None => false,
         Some(PropertyValue::Int(value)) => *value != 0,
@@ -1252,19 +1389,32 @@ fn property_is_true(
                 value: *value,
             })? != 0
         }
-        Some(PropertyValue::String(value)) => {
-            value.parse::<i32>().ok().is_some_and(|value| value != 0)
+        Some(value @ PropertyValue::String(_)) => {
+            // The source's reached getPropIfPresent<int> conversion throws on
+            // an invalid present string; keep that failure rather than turning
+            // an arbitrary byte string into an absent/false stereo flag.
+            crate::property_value_to_int(value).map_err(|source| {
+                DoubleBondStereoError::NumericPropertyRead {
+                    atom,
+                    bond,
+                    property: "_UnknownStereo",
+                    source,
+                }
+            })? != 0
         }
-        Some(PropertyValue::IntVector(value)) => {
-            let _ = value;
+        Some(
+            value @ (PropertyValue::IntVector(_)
+            | PropertyValue::StringVector(_)
+            | PropertyValue::Double(_)
+            | PropertyValue::Bool(_)),
+        ) => {
             return Err(DoubleBondStereoError::InvalidPropertyKind {
                 atom,
                 bond,
                 property: "_UnknownStereo",
-                kind: cosmolkit_model::PropertyValueKind::IntVector,
+                kind: value.kind(),
             });
         }
-        Some(PropertyValue::Double(_) | PropertyValue::Bool(_)) => false,
     })
 }
 
@@ -1282,6 +1432,26 @@ fn unique_highest_ranked_neighbor(
     skip: AtomId,
     ranks: &[u32],
 ) -> Option<AtomId> {
+    let result = highest_ranked_neighbor_from_reader(
+        topology,
+        atom,
+        skip,
+        &mut |candidate| Ok::<_, std::convert::Infallible>(Some(ranks[candidate.index()])),
+        &mut |_| {},
+    );
+    match result {
+        Ok(candidate) => candidate,
+        Err(never) => match never {},
+    }
+}
+
+fn highest_ranked_neighbor_from_reader<E>(
+    topology: &TopologyBlock,
+    atom: AtomId,
+    skip: AtomId,
+    rank_reader: &mut impl FnMut(AtomId) -> Result<Option<u32>, E>,
+    warn: &mut impl FnMut(AtomId),
+) -> Result<Option<AtomId>, E> {
     // BEGIN RDKIT CPP FUNCTION findHighestCIPNeighbor
     // RDKit✔️✔️: const Atom *findHighestCIPNeighbor(const Atom *atom, const Atom *skipAtom) {
     // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
@@ -1322,15 +1492,18 @@ fn unique_highest_ranked_neighbor(
         if candidate == skip {
             continue;
         }
-        let rank = ranks[candidate.index()];
+        let Some(rank) = rank_reader(candidate)? else {
+            return Ok(None);
+        };
         if best.is_none() || rank > best_rank {
             best = Some(candidate);
             best_rank = rank;
         } else if rank == best_rank {
+            warn(atom);
             best = None;
         }
     }
-    best
+    Ok(best)
 }
 
 fn validate_stereo_references(
@@ -1427,7 +1600,7 @@ fn set_stereo_for_bond(
     bond: BondId,
     stereo: BondStereo,
     use_cx_ordering: bool,
-) -> Result<(), DoubleBondStereoError> {
+) -> Result<bool, DoubleBondStereoError> {
     // BEGIN RDKIT CPP FUNCTION setStereoForBond
     // RDKit✔️✔️: void setStereoForBond(ROMol &mol, Bond *bond, Bond::BondStereo stereo,
     // RDKit✔️✔️:                       bool useCXSmilesOrdering) {
@@ -1467,14 +1640,17 @@ fn set_stereo_for_bond(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION setStereoForBond
-    let snapshot = topology.bonds[bond.index()].clone();
-    let (low, high, reversed) = if snapshot.begin().index() <= snapshot.end().index() {
-        (snapshot.begin(), snapshot.end(), false)
+    let (begin, end) = {
+        let source = &topology.bonds[bond.index()];
+        (source.begin(), source.end())
+    };
+    let (low, high, reversed) = if begin.index() <= end.index() {
+        (begin, end, false)
     } else {
-        (snapshot.end(), snapshot.begin(), true)
+        (end, begin, true)
     };
     if degree(topology, low) <= 1 || degree(topology, high) <= 1 {
-        return Ok(());
+        return Ok(false);
     }
     let low_control = topology
         .adjacency
@@ -1503,7 +1679,8 @@ fn set_stereo_for_bond(
     };
     topology.bonds[bond.index()].set_stereo_atoms(Some(references));
     topology.bonds[bond.index()].set_stereo(stereo)?;
-    Ok(())
+    // True transports the executed ordinary Int(1) write to the caller.
+    Ok(true)
 }
 
 fn neighboring_directed_bond_unchecked(topology: &TopologyBlock, atom: AtomId) -> Option<&Bond> {
@@ -1769,6 +1946,7 @@ fn update_double_bond_neighbors(
     needs_direction: &mut [bool],
     counts: &[usize],
     single_bond_neighbors: &[Vec<BondId>],
+    needs_detect_bond_stereo: &mut bool,
 ) -> Result<(), DoubleBondStereoError> {
     // BEGIN RDKIT CPP FUNCTION updateDoubleBondNeighbors
     // RDKit❗✔️: void updateDoubleBondNeighbors(ROMol &mol, Bond *dblBond, const Conformer *conf,
@@ -2002,7 +2180,8 @@ fn update_double_bond_neighbors(
         double.begin(),
     )?;
     if begin_controls.squiggle {
-        set_stereo_for_bond(topology, double_bond, BondStereo::Any, false)?;
+        *needs_detect_bond_stereo |=
+            set_stereo_for_bond(topology, double_bond, BondStereo::Any, false)?;
         return Ok(());
     }
     let Some(mut begin_bond) = begin_controls.primary else {
@@ -2011,7 +2190,8 @@ fn update_double_bond_neighbors(
     let mut end_controls =
         controlling_bonds(topology, needs_direction, counts, double_bond, double.end())?;
     if end_controls.squiggle {
-        set_stereo_for_bond(topology, double_bond, BondStereo::Any, false)?;
+        *needs_detect_bond_stereo |=
+            set_stereo_for_bond(topology, double_bond, BondStereo::Any, false)?;
         return Ok(());
     }
     let Some(mut end_bond) = end_controls.primary else {
@@ -2061,7 +2241,8 @@ fn update_double_bond_neighbors(
             }
         }
         if linear {
-            set_stereo_for_bond(topology, double_bond, BondStereo::Any, false)?;
+            *needs_detect_bond_stereo |=
+                set_stereo_for_bond(topology, double_bond, BondStereo::Any, false)?;
             return Ok(());
         }
         same_torsion_direction = dihedral(
@@ -2173,6 +2354,7 @@ fn update_double_bond_neighbors(
             needs_direction,
             counts,
             single_bond_neighbors,
+            needs_detect_bond_stereo,
         )?;
     }
     Ok(())

@@ -16,8 +16,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let smiles = molecule.to_smiles_with_params(&params)?;
-    assert_eq!(smiles, "CCO");
+    assert_eq!(smiles.as_bytes(), b"CCO");
 
-    println!("{smiles}");
+    use std::io::Write;
+    let mut stdout = std::io::stdout().lock();
+    stdout.write_all(smiles.as_bytes())?;
+    stdout.write_all(b"\n")?;
     Ok(())
 }

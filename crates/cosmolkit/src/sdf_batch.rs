@@ -1,6 +1,7 @@
 //! Checked live-value projection of the detached batch owner.
 use crate::{BatchError, BatchErrorMode, BatchRecord, BatchValidationError, MoleculeBatch};
-use crate::{Molecule, SdfDataset, SdfReadParams, SdfRecord, SdfRecordStream};
+use crate::{Molecule, SdfDataset, SdfReadParams, SdfReader, SdfRecord, SdfRecordStream};
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 fn params(params: &SdfReadParams) -> cosmolkit_batch::BatchReadParams {
@@ -330,5 +331,71 @@ impl MoleculeBatch {
             cosmolkit_batch::write_export_report(&path, report)?;
         }
         Ok(())
+    }
+}
+
+impl SdfReader {
+    #[cfg(feature = "cap-batch")]
+    pub fn batches(
+        &self,
+        size: usize,
+        mode: crate::BatchErrorMode,
+        n_jobs: Option<usize>,
+    ) -> Result<crate::SdfReaderBatchIterator<BufReader<File>>, crate::BatchValidationError> {
+        // COSMolKit❗✔️:     pub fn batches(
+        // COSMolKit❗✔️:         &self,
+        // COSMolKit❗✔️:         size: usize,
+        // COSMolKit❗✔️:         mode: crate::BatchErrorMode,
+        // COSMolKit❗✔️:         n_jobs: Option<usize>,
+        // COSMolKit❗✔️:     ) -> Result<crate::SdfReaderBatchIterator<BufReader<File>>, crate::BatchValidationError> {
+        // COSMolKit❗✔️:         if size == 0 {
+        // COSMolKit❗✔️:             return Err(crate::BatchValidationError::parameter(
+        // COSMolKit❗✔️:                 "size",
+        // COSMolKit❗✔️:                 "size must be >= 1",
+        // COSMolKit❗✔️:             ));
+        // COSMolKit❗✔️:         }
+        // COSMolKit❗✔️:         if n_jobs == Some(0) {
+        // COSMolKit❗✔️:             return Err(crate::BatchValidationError::parameter(
+        // COSMolKit❗✔️:                 "n_jobs",
+        // COSMolKit❗✔️:                 "n_jobs must be >= 1",
+        // COSMolKit❗✔️:             ));
+        // COSMolKit❗✔️:         }
+        // COSMolKit❗✔️:         let file = File::open(&self.path).map_err(|source| {
+        // COSMolKit❗✔️:             crate::BatchValidationError::from_record_errors(vec![crate::BatchError::with_source(
+        // COSMolKit❗✔️:                 0,
+        // COSMolKit❗✔️:                 "SdfReader.open",
+        // COSMolKit❗✔️:                 crate::MolecularIoError::Io {
+        // COSMolKit❗✔️:                     path: self.path.clone(),
+        // COSMolKit❗✔️:                     source,
+        // COSMolKit❗✔️:                 },
+        // COSMolKit❗✔️:             )])
+        // COSMolKit❗✔️:         })?;
+        // COSMolKit❗✔️:         SdfRecordStream::with_params(BufReader::new(file), self.params).batches(size, mode, n_jobs)
+        // COSMolKit❗✔️:     }
+
+        if size == 0 {
+            return Err(crate::BatchValidationError::parameter(
+                "size",
+                "size must be >= 1",
+            ));
+        }
+        if n_jobs == Some(0) {
+            return Err(crate::BatchValidationError::parameter(
+                "n_jobs",
+                "n_jobs must be >= 1",
+            ));
+        }
+        let file = File::open(self.path()).map_err(|source| {
+            crate::BatchValidationError::from_record_errors(vec![crate::BatchError::with_source(
+                0,
+                "SdfReader.open",
+                crate::MolecularIoError::Io {
+                    path: self.path().to_path_buf(),
+                    source,
+                },
+            )])
+        })?;
+        SdfRecordStream::with_params(BufReader::new(file), *self.params())
+            .batches(size, mode, n_jobs)
     }
 }

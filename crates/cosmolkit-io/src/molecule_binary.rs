@@ -1,10 +1,12 @@
 //! COSMolKit native molecule archive, adapted from the complete original
 //! properties/mol_pickler.rs, SHA256 a72f13b9b36c6d691b23e2f5eecabb6bff71d166e66ab6f638972e36abcdc6fb.
 //! Writers emit archive 2.0 with one complete Müsli molecule block and one
-//! derived-state block. Raw1..3 and archive1.0..1.2 remain legacy read formats.
+//! derived-state block. Raw1..4 and archive1.0..1.3 remain legacy read formats.
 //! This is COS-native serialization, not the RDKit binary wire protocol.
 
 use std::collections::{BTreeMap, BTreeSet};
+mod native_state_v2;
+use cosmolkit_model::PropertyText;
 
 use serde::{Deserialize, Serialize};
 
@@ -26,11 +28,10 @@ mod archive_v2;
 // ──────────────────────────────────────────────
 // Format version
 // ──────────────────────────────────────────────
-const PICKLE_VERSION: u8 = 3;
-// Archive 1.x only; archive 2 has its own magic and decoder.
+const PICKLE_VERSION: u8 = 4;
 const ARCHIVE_MAGIC: &[u8; 8] = b"CSMOLPKL";
 const ARCHIVE_MAJOR: u16 = 1;
-const ARCHIVE_MINOR: u16 = 2;
+const ARCHIVE_MINOR: u16 = 3;
 const SECTION_FLAG_REQUIRED: u8 = 1;
 const SECTION_CODEC_RAW: u8 = 0;
 const SECTION_CODEC_POSTCARD: u8 = 1;
@@ -38,7 +39,7 @@ const SECTION_MANIFEST: u16 = 1;
 const SECTION_MOLECULE_STATE: u16 = 2;
 const SECTION_DERIVED_STATE: u16 = 3;
 const SECTION_CANONICAL_STATE: u16 = 4;
-const CANONICAL_STATE_VERSION: u16 = 2;
+const CANONICAL_STATE_VERSION: u16 = 3;
 const MANIFEST_VERSION: u16 = 1;
 const MOLECULE_STATE_VERSION: u16 = 1;
 const DERIVED_STATE_VERSION: u16 = 1;
@@ -101,6 +102,7 @@ struct MoleculeStateV1 {
 struct PickleWriter {
     buf: Vec<u8>,
     error: Option<PickleError>,
+    legacy_current: Option<LegacyStoreProvenance>,
 }
 
 impl PickleWriter {
@@ -108,6 +110,7 @@ impl PickleWriter {
         Self {
             buf: Vec::new(),
             error: None,
+            legacy_current: None,
         }
     }
 
@@ -142,11 +145,19 @@ impl PickleWriter {
         self.buf.push(if v { 1 } else { 0 });
     }
 
-    fn write_string(&mut self, value: &str) {
+    fn write_string(&mut self, value: impl AsRef<[u8]>) {
+        let value = value.as_ref();
+        // Old raw1..3/canonical1..2 UTF8 remains a checked old wire rule.
+        if std::str::from_utf8(value).is_err() {
+            self.error.get_or_insert(PickleError::InvalidMolecule(
+                "invalid UTF-8 in pickle string".into(),
+            ));
+            return;
+        }
         match u32::try_from(value.len()) {
             Ok(count) if value.len() <= 10_000_000 => {
                 self.write_u32(count);
-                self.buf.extend_from_slice(value.as_bytes());
+                self.buf.extend_from_slice(value);
             }
             _ => {
                 self.error
@@ -171,21 +182,11 @@ impl PickleWriter {
         self.buf.extend_from_slice(&value.to_le_bytes());
     }
 
-    fn write_typed_props(&mut self, props: &BTreeMap<String, PropertyValue>) {
-        self.write_count(props.len());
-        for (key, value) in props {
-            self.write_string(key);
-            match property_value_to_string(value) {
-                Ok(value) => self.write_string(&value),
-                Err(error) => {
-                    self.error
-                        .get_or_insert(PickleError::InvalidMolecule(error.to_string()));
-                }
-            }
-        }
+    fn write_typed_props(&mut self, props: &BTreeMap<PropertyText, PropertyValue>) {
+        self.write_props(props);
     }
 
-    fn write_option_string(&mut self, s: Option<&str>) {
+    fn write_option_string(&mut self, s: Option<&PropertyText>) {
         match s {
             Some(val) => {
                 self.write_bool(true);
@@ -197,19 +198,169 @@ impl PickleWriter {
         }
     }
 
-    fn write_props(&mut self, props: &BTreeMap<String, String>) {
-        self.write_count(props.len());
+    fn write_props<K: AsRef<[u8]>, V: LegacyTextValue>(&mut self, props: &BTreeMap<K, V>) {
+        let omit = self.legacy_current.as_ref().is_some_and(|p| !p.reserved);
+        let include = |key: &K, value: &V| {
+            !(omit && key.as_ref() == b"__computedProps" && value.synthetic_reserved())
+        };
+        self.write_count(
+            props
+                .iter()
+                .filter(|(key, value)| include(key, value))
+                .count(),
+        );
         for (key, value) in props {
-            self.write_string(key);
-            self.write_string(value);
+            if include(key, value) {
+                self.write_string(key);
+                // Legacy companion verification must reconstruct the original
+                // reserved value, even when import normalizes its conflict.
+                let original = self.legacy_current.as_ref().and_then(|provenance| {
+                    (key.as_ref() == b"__computedProps")
+                        .then_some(provenance.collision_reserved.as_ref())
+                        .flatten()
+                });
+                let text = match original {
+                    Some(original) => original.legacy_text(),
+                    None => value.legacy_text(),
+                };
+                match text {
+                    Ok(v) => self.write_string(v),
+                    Err(e) => {
+                        self.error.get_or_insert(e);
+                    }
+                }
+            }
         }
     }
-
-    fn write_computed_props(&mut self, props: &BTreeSet<String>) {
-        self.write_count(props.len());
-        for key in props {
-            self.write_string(key);
+    fn write_computed_props(
+        &mut self,
+        props: Result<Option<&[PropertyText]>, cosmolkit_model::PropertyValueError>,
+    ) {
+        if let Some(provenance) = self.legacy_current.clone() {
+            // Actual old reserved records use their original independent flags
+            // for companion verification, including normalized collisions.
+            if !provenance.reserved {
+                let names = match props {
+                    Ok(names) => names.unwrap_or_default(),
+                    Err(e) => {
+                        self.error.get_or_insert(invalid(e));
+                        return;
+                    }
+                };
+                if names.iter().collect::<BTreeSet<_>>()
+                    != provenance.computed.iter().collect::<BTreeSet<_>>()
+                {
+                    self.error
+                        .get_or_insert(PickleError::InvalidArchive(format!(
+                            "canonical computed membership disagrees with old wire in {}",
+                            provenance.context
+                        )));
+                    return;
+                }
+            }
+            self.write_count(provenance.computed.len());
+            for name in provenance.computed {
+                self.write_string(name);
+            }
+            return;
         }
+        match props {
+            Ok(props) => {
+                let sorted: BTreeSet<_> = props.unwrap_or_default().iter().collect();
+                self.write_count(sorted.len());
+                for key in sorted {
+                    self.write_string(key);
+                }
+            }
+            Err(e) => {
+                self.error.get_or_insert(invalid(e));
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+struct LegacyStoreProvenance {
+    reserved: bool,
+    collision_reserved: Option<PropertyValue>,
+    computed: Vec<PropertyText>,
+    context: String,
+}
+fn migrate_legacy_rows(
+    mut rows: Vec<(PropertyText, PropertyValue)>,
+    computed: Vec<PropertyText>,
+    context: String,
+) -> Result<(Vec<(PropertyText, PropertyValue)>, LegacyStoreProvenance), PickleError> {
+    let reserved = rows
+        .iter_mut()
+        .find(|(key, _)| key.as_bytes() == b"__computedProps");
+    let has_reserved = reserved.is_some();
+    // Explicit user policy: a legacy ordinary reserved value plus independent
+    // computed flags imports as an empty computed-name vector, not an error.
+    // Keep all other property values. Retain the old value only for validating
+    // legacy raw/canonical companion bytes; never persist it in archive 2.0.
+    let collision_reserved = reserved
+        .filter(|_| !computed.is_empty())
+        .map(|(_, value)| std::mem::replace(value, PropertyValue::StringVector(Vec::new())));
+    let provenance = LegacyStoreProvenance {
+        reserved: has_reserved,
+        collision_reserved,
+        computed: computed.clone(),
+        context,
+    };
+    if !provenance.reserved && !computed.is_empty() {
+        rows.push((
+            "__computedProps".into(),
+            PropertyValue::StringVector(computed),
+        ));
+    }
+    Ok((rows, provenance))
+}
+fn legacy_map_rows(
+    props: &BTreeMap<String, String>,
+    computed: &BTreeSet<String>,
+    context: String,
+) -> Result<(Vec<(PropertyText, PropertyValue)>, LegacyStoreProvenance), PickleError> {
+    validate_computed(props, computed)?;
+    migrate_legacy_rows(
+        props
+            .iter()
+            .map(|(k, v)| (k.into(), PropertyValue::from(v)))
+            .collect(),
+        computed.iter().map(Into::into).collect(),
+        context,
+    )
+}
+fn legacy_ordered_rows(
+    rows: Vec<(String, PropertyValue, bool)>,
+    context: String,
+) -> Result<Vec<(PropertyText, PropertyValue)>, PickleError> {
+    let computed = rows
+        .iter()
+        .filter(|(_, _, c)| *c)
+        .map(|(k, _, _)| k.into())
+        .collect();
+    let rows = rows.into_iter().map(|(k, v, _)| (k.into(), v)).collect();
+    Ok(migrate_legacy_rows(rows, computed, context)?.0)
+}
+
+trait LegacyTextValue {
+    fn legacy_text(&self) -> Result<PropertyText, PickleError>;
+    fn synthetic_reserved(&self) -> bool {
+        false
+    }
+}
+impl LegacyTextValue for PropertyText {
+    fn legacy_text(&self) -> Result<PropertyText, PickleError> {
+        Ok(self.clone())
+    }
+}
+impl LegacyTextValue for PropertyValue {
+    fn legacy_text(&self) -> Result<PropertyText, PickleError> {
+        property_value_to_string(self).map_err(invalid)
+    }
+    fn synthetic_reserved(&self) -> bool {
+        matches!(self, PropertyValue::StringVector(_))
     }
 }
 
@@ -602,7 +753,6 @@ fn read_ring_info(
     .map_err(|message| PickleError::InvalidArchive(message.to_string()))
 }
 
-#[cfg(test)]
 fn encode_derived_state(mol: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
     let cache = &mol.derived;
     let mut w = PickleWriter::new();
@@ -737,7 +887,7 @@ fn encode_manifest() -> Result<Vec<u8>, PickleError> {
 fn encode_molecule_state(payload: Vec<u8>) -> Result<Vec<u8>, PickleError> {
     let state = MoleculeStateV1 {
         encoding: SECTION_CODEC_RAW,
-        encoding_version: PICKLE_VERSION,
+        encoding_version: *payload.first().ok_or(PickleError::UnexpectedEof)?,
         payload,
     };
     postcard::to_allocvec(&state)
@@ -971,7 +1121,9 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<BinaryRecord, PickleError> {
                 derived_state = Some(section.payload);
             }
             SECTION_CANONICAL_STATE => {
-                if archive_minor != 2 || !(1..=CANONICAL_STATE_VERSION).contains(&section.version) {
+                if !((archive_minor == 2 && (1..=2).contains(&section.version))
+                    || (archive_minor == 3 && section.version == 3))
+                {
                     return Err(PickleError::UnsupportedSectionVersion {
                         section: section.id,
                         version: section.version,
@@ -1015,7 +1167,63 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<BinaryRecord, PickleError> {
             "payload version disagrees with envelope".into(),
         ));
     }
-    let mut molecule = mol_from_legacy_binary(&state.payload)?;
+    if archive_minor == 3 {
+        if state.encoding_version != 4 {
+            return Err(PickleError::InvalidArchive(
+                "archive1.3 requires raw4".into(),
+            ));
+        }
+        let (version, data) =
+            canonical_state.ok_or(PickleError::MissingRequiredSection(SECTION_CANONICAL_STATE))?;
+        if version != 3 {
+            return Err(PickleError::UnsupportedSectionVersion {
+                section: 4,
+                version,
+            });
+        }
+        let result = native_state_v2::decode(data)?;
+        let canonical = native_state_v2::encode_record(&result)?;
+        if canonical.as_slice() != data {
+            return Err(PickleError::InvalidArchive(
+                "canonical3 disagrees with validated native state".into(),
+            ));
+        }
+        let mut raw = Vec::with_capacity(canonical.len() + 1);
+        raw.push(state.encoding_version);
+        raw.extend_from_slice(&canonical);
+        if raw != state.payload {
+            return Err(PickleError::InvalidArchive(
+                "canonical state disagrees with raw4 companion".into(),
+            ));
+        }
+        let input = BinaryInput {
+            topology: &result.topology,
+            coordinates: &result.coordinates,
+            properties: &result.properties,
+            derived: BinaryDerivedView {
+                rings: result.derived.rings.as_ref(),
+                ring_families: result.derived.ring_families.as_ref(),
+                valence: result.derived.valence.as_ref(),
+                aromaticity_valid: result.derived.aromaticity_valid,
+                stereo_valid: result.derived.stereo_valid,
+                valid_bits: result.derived.valid_bits.unwrap_or(0),
+            },
+        };
+        if encode_derived_state(&input)?.as_slice()
+            != derived_state.ok_or(PickleError::MissingRequiredSection(SECTION_DERIVED_STATE))?
+        {
+            return Err(PickleError::InvalidArchive(
+                "NativeStateV2 disagrees with derived1 companion".into(),
+            ));
+        }
+        return Ok(result);
+    }
+    if state.encoding_version > 3 {
+        return Err(PickleError::InvalidArchive(
+            "old archive cannot contain raw4".into(),
+        ));
+    }
+    let (mut molecule, provenance) = mol_from_legacy_binary_with_provenance(&state.payload)?;
     if let Some(data) = derived_state {
         molecule.derived = decode_derived_state(data, &molecule)?;
     }
@@ -1029,7 +1237,12 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<BinaryRecord, PickleError> {
             properties: &molecule.properties,
             derived: BinaryDerivedView::default(),
         };
-        if mol_to_legacy_binary_version(&input, state.encoding_version)? != state.payload {
+        if mol_to_legacy_binary_version_with_provenance(
+            &input,
+            state.encoding_version,
+            Some(&provenance),
+        )? != state.payload
+        {
             return Err(PickleError::InvalidArchive(
                 "canonical state disagrees with legacy companion".into(),
             ));
@@ -1320,7 +1533,12 @@ fn write_atom(w: &mut PickleWriter, atom: &Atom, version: u8) {
     w.write_bool(atom.pdb_residue_info().is_some());
 }
 
-fn read_bond(r: &mut PickleReader, version: u8, id: BondId) -> Result<Bond, PickleError> {
+fn read_bond(
+    r: &mut PickleReader,
+    version: u8,
+    id: BondId,
+    provenance: &mut Vec<LegacyStoreProvenance>,
+) -> Result<Bond, PickleError> {
     let begin_idx = r.read_u32()? as usize;
     let end_idx = r.read_u32()? as usize;
     let order = read_bond_order(r)?;
@@ -1370,18 +1588,16 @@ fn read_bond(r: &mut PickleReader, version: u8, id: BondId) -> Result<Bond, Pick
         spec
     };
 
-    // Properties
     let mut spec = spec;
-    for (key, value) in &props {
-        spec = (if computed_props.contains(key) {
-            spec.with_computed_prop(key.clone(), value.clone())
-        } else {
-            spec.with_prop(key.clone(), value.clone())
-        })
-        .map_err(invalid)?;
+    let (rows, original) = legacy_map_rows(
+        &props,
+        &computed_props,
+        format!("raw{version} bond {}", id.index()),
+    )?;
+    for (key, value) in rows {
+        spec = spec.with_prop(key, value).map_err(invalid)?;
     }
-
-    validate_computed(&props, &computed_props)?;
+    provenance.push(original);
     // Creating from_spec requires BondId
     Ok(Bond::from_spec(id, spec))
 }
@@ -1421,7 +1637,7 @@ fn write_bond(w: &mut PickleWriter, bond: &Bond, version: u8) {
 // ──────────────────────────────────────────────
 
 fn write_substance_group_kind(w: &mut PickleWriter, kind: &SubstanceGroupKind) {
-    let (code, generic_name): (u8, Option<&str>) = match kind {
+    let (code, generic_name): (u8, Option<&PropertyText>) = match kind {
         SubstanceGroupKind::Data => (0, None),
         SubstanceGroupKind::Superatom => (1, None),
         SubstanceGroupKind::MultipleGroup => (2, None),
@@ -1436,7 +1652,7 @@ fn write_substance_group_kind(w: &mut PickleWriter, kind: &SubstanceGroupKind) {
         SubstanceGroupKind::MixtureComponent => (11, None),
         SubstanceGroupKind::Mixture => (12, None),
         SubstanceGroupKind::Formulation => (13, None),
-        SubstanceGroupKind::Generic(name) => (14, Some(name.as_str())),
+        SubstanceGroupKind::Generic(name) => (14, Some(name)),
     };
     w.write_u8(code);
     if let Some(name) = generic_name {
@@ -1462,7 +1678,7 @@ fn read_substance_group_kind(r: &mut PickleReader) -> Result<SubstanceGroupKind,
         13 => Ok(SubstanceGroupKind::Formulation),
         14 => {
             let name = r.read_string()?;
-            Ok(SubstanceGroupKind::Generic(name))
+            Ok(SubstanceGroupKind::Generic(name.into()))
         }
         v => Err(PickleError::InvalidEnumValue {
             value: v,
@@ -1490,7 +1706,7 @@ fn read_sgroup_connection(r: &mut PickleReader) -> Result<Option<SGroupConnectio
         1 => Ok(Some(SGroupConnection::HeadToHead)),
         2 => Ok(Some(SGroupConnection::HeadToTail)),
         3 => Ok(Some(SGroupConnection::Either)),
-        4 => Ok(Some(SGroupConnection::Unknown(r.read_string()?))),
+        4 => Ok(Some(SGroupConnection::Unknown(r.read_string()?.into()))),
         v => Err(PickleError::InvalidEnumValue {
             value: v,
             type_name: "SGroupConnection",
@@ -1519,7 +1735,7 @@ fn read_sgroup_bracket_style(
         1 => Ok(Some(SGroupBracketStyle::Bracket)),
         2 => Ok(Some(SGroupBracketStyle::Parenthesis)),
         3 => Ok(Some(SGroupBracketStyle::None)),
-        4 => Ok(Some(SGroupBracketStyle::Unknown(r.read_string()?))),
+        4 => Ok(Some(SGroupBracketStyle::Unknown(r.read_string()?.into()))),
         v => Err(PickleError::InvalidEnumValue {
             value: v,
             type_name: "SGroupBracketStyle",
@@ -1550,7 +1766,7 @@ fn write_sgroup_display(w: &mut PickleWriter, display: Option<&SGroupDisplay>) {
                 None => w.write_bool(false),
             }
             // Display tag
-            w.write_option_string(d.display_tag.as_deref());
+            w.write_option_string(d.display_tag.as_ref());
         }
     }
 }
@@ -1577,7 +1793,7 @@ fn read_sgroup_display(r: &mut PickleReader) -> Result<Option<SGroupDisplay>, Pi
         let fy = r.read_f64()?;
         display.field_position = Some([fx, fy]);
     }
-    display.display_tag = r.read_option_string()?;
+    display.display_tag = r.read_option_string()?.map(Into::into);
     Ok(Some(display))
 }
 
@@ -1586,13 +1802,13 @@ fn write_sgroup_data(w: &mut PickleWriter, data: Option<&SGroupData>) {
         None => w.write_bool(false),
         Some(d) => {
             w.write_bool(true);
-            w.write_option_string(d.field_name.as_deref());
-            w.write_option_string(d.field_type.as_deref());
-            w.write_option_string(d.field_info.as_deref());
-            w.write_option_string(d.field_display.as_deref());
-            w.write_option_string(d.units.as_deref());
-            w.write_option_string(d.query_type.as_deref());
-            w.write_option_string(d.query_op.as_deref());
+            w.write_option_string(d.field_name.as_ref());
+            w.write_option_string(d.field_type.as_ref());
+            w.write_option_string(d.field_info.as_ref());
+            w.write_option_string(d.field_display.as_ref());
+            w.write_option_string(d.units.as_ref());
+            w.write_option_string(d.query_type.as_ref());
+            w.write_option_string(d.query_op.as_ref());
             w.write_count(d.values.len());
             for v in &d.values {
                 w.write_string(v);
@@ -1606,16 +1822,16 @@ fn read_sgroup_data(r: &mut PickleReader) -> Result<Option<SGroupData>, PickleEr
         return Ok(None);
     }
     let mut data = SGroupData::default();
-    data.field_name = r.read_option_string()?;
-    data.field_type = r.read_option_string()?;
-    data.field_info = r.read_option_string()?;
-    data.field_display = r.read_option_string()?;
-    data.units = r.read_option_string()?;
-    data.query_type = r.read_option_string()?;
-    data.query_op = r.read_option_string()?;
+    data.field_name = r.read_option_string()?.map(Into::into);
+    data.field_type = r.read_option_string()?.map(Into::into);
+    data.field_info = r.read_option_string()?.map(Into::into);
+    data.field_display = r.read_option_string()?.map(Into::into);
+    data.units = r.read_option_string()?.map(Into::into);
+    data.query_type = r.read_option_string()?.map(Into::into);
+    data.query_op = r.read_option_string()?.map(Into::into);
     let val_count = r.read_count(1)?;
     for _ in 0..val_count {
-        data.values.push(r.read_string()?);
+        data.values.push(r.read_string()?.into());
     }
     Ok(Some(data))
 }
@@ -1729,7 +1945,7 @@ fn write_substance_group(w: &mut PickleWriter, sg: &SubstanceGroup) {
         } else {
             w.write_bool(false);
         }
-        w.write_option_string(ap.label.as_deref());
+        w.write_option_string(ap.label.as_ref());
         if let Some(order) = ap.order {
             w.write_bool(true);
             w.write_u32(order);
@@ -1851,12 +2067,19 @@ pub fn encode_molecule_binary(mol: &BinaryInput<'_>) -> Result<Vec<u8>, PickleEr
 
 #[cfg(test)]
 fn mol_to_legacy_binary(mol: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
-    mol_to_legacy_binary_version(mol, PICKLE_VERSION)
+    mol_to_legacy_binary_version(mol, 3)
 }
 
 fn mol_to_legacy_binary_version(
     mol: &BinaryInput<'_>,
     version: u8,
+) -> Result<Vec<u8>, PickleError> {
+    mol_to_legacy_binary_version_with_provenance(mol, version, None)
+}
+fn mol_to_legacy_binary_version_with_provenance(
+    mol: &BinaryInput<'_>,
+    version: u8,
+    provenance: Option<&[LegacyStoreProvenance]>,
 ) -> Result<Vec<u8>, PickleError> {
     let mut w = PickleWriter::new();
 
@@ -1869,7 +2092,8 @@ fn mol_to_legacy_binary_version(
         return Err(PickleError::TooManyAtoms(atoms.len()));
     }
     w.write_count(atoms.len());
-    for atom in atoms {
+    for (index, atom) in atoms.iter().enumerate() {
+        w.legacy_current = provenance.map(|p| p[index].clone());
         write_atom(&mut w, atom, version);
     }
 
@@ -1879,10 +2103,12 @@ fn mol_to_legacy_binary_version(
         return Err(PickleError::TooManyBonds(bonds.len()));
     }
     w.write_count(bonds.len());
-    for bond in bonds {
+    for (index, bond) in bonds.iter().enumerate() {
+        w.legacy_current = provenance.map(|p| p[atoms.len() + index].clone());
         write_bond(&mut w, bond, version);
     }
 
+    w.legacy_current = None;
     // ── 2D Coordinates ──
     if let Some(coords_2d) = mol.coordinates_2d() {
         w.write_bool(true);
@@ -1942,12 +2168,14 @@ fn mol_to_legacy_binary_version(
 
     // ── Molecule Properties ──
     let props = mol.properties();
+    w.legacy_current = provenance.map(|p| p[atoms.len() + bonds.len()].clone());
     w.write_option_string(props.name());
     w.write_props(props.props());
     if version >= 3 {
         w.write_computed_props(props.computed_prop_names());
     }
 
+    w.legacy_current = None;
     // SDF data fields
     let sdf_fields = props.sdf_data_fields();
     w.write_count(sdf_fields.len());
@@ -1989,6 +2217,15 @@ fn mol_to_legacy_binary_version(
 /// Returns `PickleError` if the data is corrupt, has an unsupported version,
 /// or produces an invalid molecule state.
 pub fn decode_molecule_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
+    if data.first() == Some(&4) {
+        let record = native_state_v2::decode(&data[1..])?;
+        if native_state_v2::encode_record(&record)?.as_slice() != &data[1..] {
+            return Err(PickleError::InvalidArchive(
+                "raw4 disagrees with validated native state".into(),
+            ));
+        }
+        return Ok(record);
+    }
     if data.starts_with(archive_v2::MAGIC) {
         archive_v2::decode(data)
     } else if data.starts_with(ARCHIVE_MAGIC) {
@@ -1999,11 +2236,17 @@ pub fn decode_molecule_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> 
 }
 
 fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
+    Ok(mol_from_legacy_binary_with_provenance(data)?.0)
+}
+fn mol_from_legacy_binary_with_provenance(
+    data: &[u8],
+) -> Result<(BinaryRecord, Vec<LegacyStoreProvenance>), PickleError> {
+    let mut provenance = Vec::new();
     let mut r = PickleReader::new(data);
 
     // Version check
     let version = r.read_u8()?;
-    if !(1..=PICKLE_VERSION).contains(&version) {
+    if !(1..=3).contains(&version) {
         return Err(PickleError::UnsupportedVersion(version));
     }
 
@@ -2104,17 +2347,12 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
             spec = spec.with_tracked_isotopic_hydrogens(tracked_isotopic_hydrogens);
         }
 
-        // Properties
-        for (key, value) in &props {
-            spec = (if computed_props.contains(key) {
-                spec.with_computed_prop(key.clone(), value.clone())
-            } else {
-                spec.with_prop(key.clone(), value.clone())
-            })
-            .map_err(invalid)?;
+        let (rows, original) =
+            legacy_map_rows(&props, &computed_props, format!("raw{version} atom {i}"))?;
+        for (key, value) in rows {
+            spec = spec.with_prop(key, value).map_err(invalid)?;
         }
-
-        validate_computed(&props, &computed_props)?;
+        provenance.push(original);
         atom_specs.push((i, spec));
     }
 
@@ -2126,7 +2364,12 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
 
     let mut bonds = Vec::with_capacity(bond_count);
     for index in 0..bond_count {
-        bonds.push(read_bond(&mut r, version, BondId::new(index))?);
+        bonds.push(read_bond(
+            &mut r,
+            version,
+            BondId::new(index),
+            &mut provenance,
+        )?);
     }
 
     // ── 2D Coordinates ──
@@ -2232,7 +2475,7 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
         } else {
             None
         };
-        let label = r.read_option_string()?;
+        let label: Option<PropertyText> = r.read_option_string()?.map(Into::into);
         let connection = read_sgroup_connection(&mut r)?;
         let subtype = r.read_option_string()?;
         let bracket_style = read_sgroup_bracket_style(&mut r)?;
@@ -2267,7 +2510,7 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
             attach_points.push(SGroupAttachPoint {
                 atom: ap_atom,
                 leaving_atom: leaving,
-                label: ap_label,
+                label: ap_label.map(Into::into),
                 order: ap_order,
             });
         }
@@ -2336,7 +2579,7 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
             sg = sg.with_data(d);
         }
         for (key, value) in &props {
-            sg = sg.with_prop(key.clone(), value.clone());
+            sg = sg.with_prop(key.clone(), value.clone()).map_err(invalid)?;
         }
         for df in &data_fields {
             sg = sg.with_data_field(df.clone());
@@ -2407,7 +2650,10 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
         let val_count = r.read_count(1)?;
         let mut values = Vec::with_capacity(val_count);
         for _ in 0..val_count {
-            values.push(r.read_option_string()?.map(PropertyValue::String));
+            values.push(
+                r.read_option_string()?
+                    .map(|value| PropertyValue::String(value.into())),
+            );
         }
         sdf_property_lists.push(SdfPropertyList::new(target, name, values));
     }
@@ -2434,14 +2680,12 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
     if let Some(name) = &prop_name {
         mol_props = mol_props.with_name(name.clone());
     }
-    for (key, value) in &props {
-        mol_props = (if computed_props.contains(key) {
-            mol_props.with_computed_prop(key.clone(), value.clone())
-        } else {
-            mol_props.with_prop(key.clone(), value.clone())
-        })
-        .map_err(invalid)?;
+    let (rows, original) =
+        legacy_map_rows(&props, &computed_props, format!("raw{version} molecule"))?;
+    for (key, value) in rows {
+        mol_props = mol_props.with_prop(key, value).map_err(invalid)?;
     }
+    provenance.push(original);
     for (key, value) in &sdf_data_fields {
         mol_props = mol_props.with_sdf_data_field(key.clone(), value.clone());
     }
@@ -2460,7 +2704,7 @@ fn mol_from_legacy_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
         derived: BinaryDerivedState::default(),
     };
     result.validate()?;
-    Ok(result)
+    Ok((result, provenance))
 }
 
 // ──────────────────────────────────────────────
@@ -2640,12 +2884,17 @@ fn write_value(w: &mut PickleWriter, value: &PropertyValue) {
             w.write_u8(5);
             w.write_bool(*value);
         }
+        PropertyValue::StringVector(_) => {
+            w.error.get_or_insert(PickleError::InvalidArchive(
+                "StringVector has no legacy canonical value tag".into(),
+            ));
+        }
     }
 }
 
 fn read_value(r: &mut PickleReader<'_>) -> Result<PropertyValue, PickleError> {
     match r.read_u8()? {
-        0 => Ok(PropertyValue::String(r.read_string()?)),
+        0 => Ok(PropertyValue::String(r.read_string()?.into())),
         1 => Ok(PropertyValue::Int(r.read_i32()?)),
         2 => Ok(PropertyValue::UInt(r.read_u32()?)),
         3 => {
@@ -2667,9 +2916,16 @@ fn read_value(r: &mut PickleReader<'_>) -> Result<PropertyValue, PickleError> {
 
 fn write_ordered_props<'a>(
     w: &mut PickleWriter,
-    props: impl ExactSizeIterator<Item = (&'a str, &'a PropertyValue)>,
-    computed: &BTreeSet<String>,
+    props: impl ExactSizeIterator<Item = (&'a PropertyText, &'a PropertyValue)>,
+    computed: Result<Option<&[PropertyText]>, cosmolkit_model::PropertyValueError>,
 ) {
+    let computed = match computed {
+        Ok(v) => v.unwrap_or_default(),
+        Err(e) => {
+            w.error.get_or_insert(invalid(e));
+            return;
+        }
+    };
     w.write_count(props.len());
     for (key, value) in props {
         w.write_string(key);
@@ -2944,36 +3200,22 @@ fn decode_canonical_state(
     }
     exact_count(&mut r, record.num_atoms())?;
     for atom in &mut record.topology.atoms {
-        let properties = read_ordered_props(&mut r)?;
-        let keys: Vec<_> = atom.props().keys().cloned().collect();
-        for key in keys {
-            atom.clear_prop(&key);
-        }
-        for (key, value, computed) in properties {
-            if computed {
-                atom.set_computed_prop(key, value).map_err(invalid)?;
-            } else {
-                atom.set_prop(key, value).map_err(invalid)?;
-            }
-        }
+        let properties = legacy_ordered_rows(
+            read_ordered_props(&mut r)?,
+            format!("canonical{version} atom {}", atom.id().index()),
+        )?;
+        atom.replace_property_records(properties).map_err(invalid)?;
         atom.set_temporary_flags(r.read_u64()?);
         atom.set_pdb_residue_info(read_pdb_info(&mut r)?);
         replace_atom_template_attachment_order(atom, read_template_order(&mut r)?);
     }
     exact_count(&mut r, record.num_bonds())?;
     for bond in &mut record.topology.bonds {
-        let properties = read_ordered_props(&mut r)?;
-        let keys: Vec<_> = bond.props().keys().cloned().collect();
-        for key in keys {
-            bond.clear_prop(&key);
-        }
-        for (key, value, computed) in properties {
-            if computed {
-                bond.set_computed_prop(key, value).map_err(invalid)?;
-            } else {
-                bond.set_prop(key, value).map_err(invalid)?;
-            }
-        }
+        let properties = legacy_ordered_rows(
+            read_ordered_props(&mut r)?,
+            format!("canonical{version} bond {}", bond.id().index()),
+        )?;
+        bond.replace_property_records(properties).map_err(invalid)?;
         bond.set_temporary_flags(r.read_u64()?);
     }
     let count = r.read_count(12)?;
@@ -3080,13 +3322,8 @@ fn decode_canonical_state(
     if let Some(name) = record.properties.name() {
         props = props.with_name(name);
     }
-    for (key, value) in record.properties.props() {
-        props = if record.properties.is_prop_computed(key) {
-            props.with_computed_prop(key, value)
-        } else {
-            props.with_prop(key, value)
-        }
-        .map_err(invalid)?;
+    for (key, value) in record.properties.ordered_props() {
+        props = props.with_prop(key, value).map_err(invalid)?;
     }
     for (key, value) in record.properties.sdf_data_fields() {
         props = props.with_sdf_data_field(key, value);
@@ -3104,7 +3341,10 @@ fn decode_canonical_state(
         };
         let name = r.read_string()?;
         let count = r.read_count(1)?;
-        if target != old.target() || name != old.name() || count != old.values().len() {
+        if target != old.target()
+            || name.as_bytes() != old.name().as_bytes()
+            || count != old.values().len()
+        {
             return Err(PickleError::InvalidArchive(
                 "SDF property list carrier mismatch".into(),
             ));
@@ -3262,11 +3502,25 @@ mod tests {
     }
     fn fixture_encode_legacy12(record: &BinaryRecord) -> Result<Vec<u8>, PickleError> {
         let input = fixture_input(record);
-        encode_sectioned_archive(
-            mol_to_legacy_binary(&input)?,
-            encode_derived_state(&input)?,
-            encode_canonical_state(&input)?,
-        )
+        let mut archive = ARCHIVE_MAGIC.to_vec();
+        write_u16_le(&mut archive, 1);
+        write_u16_le(&mut archive, 2);
+        write_u16_le(&mut archive, 4);
+        for (id, version, flags, codec, payload) in [
+            (1, 1, 0, 1, encode_manifest()?),
+            (
+                2,
+                1,
+                1,
+                1,
+                encode_molecule_state(mol_to_legacy_binary(&input)?)?,
+            ),
+            (3, 1, 1, 0, encode_derived_state(&input)?),
+            (4, 2, 1, 0, encode_canonical_state(&input)?),
+        ] {
+            write_archive_section(&mut archive, id, version, flags, codec, &payload)?;
+        }
+        Ok(archive)
     }
 
     #[test]
@@ -3337,20 +3591,10 @@ mod tests {
     }
 
     #[test]
-    fn valid_legacy_computed_collision_and_complete_native_state_upgrade_losslessly() {
+    fn legacy_computed_collision_imports_empty_and_nonconflicting_state_upgrades() {
         let mut original = build_simple_methane();
-        original.properties = original
-            .properties
-            .with_prop("__computedProps", "opaque")
-            .unwrap()
-            .with_computed_prop("mass", "16.043")
-            .unwrap();
-        original.topology.atoms[0]
-            .set_prop("__computedProps", "opaque")
-            .unwrap();
-        original.topology.atoms[0]
-            .set_computed_prop("rank", 7)
-            .unwrap();
+        original.properties = original.properties.with_prop("mass", "16.043").unwrap();
+        original.topology.atoms[0].set_prop("rank", 7).unwrap();
         original.topology.atoms[0].set_pdb_residue_info(Some(AtomPdbResidueInfo::new(
             "CA", 12, "ALA", 4, "A", false,
         )));
@@ -3364,8 +3608,100 @@ mod tests {
         let current = fixture_encode(&imported).unwrap();
         let restored = decode_molecule_binary(&current).unwrap();
         assert_record_equal(&original, &restored, "legacy collision upgrade");
-        assert_eq!(restored.properties.prop("__computedProps"), Some("opaque"));
-        assert!(restored.properties.is_prop_computed("mass"));
+        assert_eq!(
+            restored.properties.prop("mass"),
+            Some(&PropertyValue::String("16.043".into()))
+        );
+        assert!(!restored.properties.is_prop_computed("mass").unwrap());
+
+        // Explicit user policy: normalize only the conflicting reserved slot
+        // to an empty list; retain the actual values of other properties.
+        let old = BinaryRecord::new()
+            .with_prop("__computedProps", "opaque")
+            .with_prop("mass", "16.043");
+        let provenance = [LegacyStoreProvenance {
+            reserved: true,
+            collision_reserved: None,
+            computed: vec!["mass".into()],
+            context: "old molecule".into(),
+        }];
+        let raw = mol_to_legacy_binary_version_with_provenance(
+            &fixture_input(&old),
+            3,
+            Some(&provenance),
+        )
+        .unwrap();
+        let mut expected = BinaryRecord::new();
+        expected.properties = expected
+            .properties
+            .with_prop("__computedProps", PropertyValue::StringVector(vec![]))
+            .unwrap()
+            .with_prop("mass", "16.043")
+            .unwrap();
+        let imported = decode_molecule_binary(&raw).unwrap();
+        assert_record_equal(&expected, &imported, "raw3 conflict imports empty");
+        assert_eq!(
+            imported.properties.computed_prop_names().unwrap(),
+            Some(&[][..])
+        );
+        assert!(!imported.properties.is_prop_computed("mass").unwrap());
+        let upgraded = fixture_encode(&imported).unwrap();
+        assert_record_equal(
+            &expected,
+            &decode_molecule_binary(&upgraded).unwrap(),
+            "empty conflict slot survives archive 2 upgrade",
+        );
+
+        // Archives 1.0/1.1/1.2 must retain actual legacy integrity checks;
+        // normalization must not create a false companion mismatch.
+        let input = fixture_input(&old);
+        for minor in 0..=2 {
+            let mut archive = ARCHIVE_MAGIC.to_vec();
+            write_u16_le(&mut archive, 1);
+            write_u16_le(&mut archive, minor);
+            write_u16_le(
+                &mut archive,
+                2 + u16::from(minor >= 1) + u16::from(minor >= 2),
+            );
+            write_archive_section(&mut archive, 1, 1, 0, 1, &encode_manifest().unwrap()).unwrap();
+            write_archive_section(
+                &mut archive,
+                2,
+                1,
+                1,
+                1,
+                &encode_molecule_state(raw.clone()).unwrap(),
+            )
+            .unwrap();
+            if minor >= 1 {
+                write_archive_section(
+                    &mut archive,
+                    3,
+                    1,
+                    1,
+                    0,
+                    &encode_derived_state(&input).unwrap(),
+                )
+                .unwrap();
+            }
+            if minor >= 2 {
+                write_archive_section(
+                    &mut archive,
+                    4,
+                    2,
+                    1,
+                    0,
+                    &encode_canonical_state(&input).unwrap(),
+                )
+                .unwrap();
+            }
+            let imported = decode_molecule_binary(&archive).unwrap();
+            assert_record_equal(
+                &expected,
+                &imported,
+                "legacy archive conflict imports empty",
+            );
+        }
     }
     fn assert_record_equal(a: &BinaryRecord, b: &BinaryRecord, message: &str) {
         assert_eq!(a.topology, b.topology, "{message}: whole topology");
@@ -3444,7 +3780,9 @@ mod tests {
             &self.properties
         }
         fn prop(&self, key: &str) -> Option<&str> {
-            self.properties.prop(key)
+            self.properties.prop(key).map(|value| {
+                super::fixture_text(value.as_string().expect("binary fixture String tag"))
+            })
         }
         fn with_name(mut self, name: &str) -> Self {
             self.properties = self.properties.with_name(name);
@@ -3783,8 +4121,14 @@ mod tests {
         let data = fixture_encode(&mol).unwrap();
         let mol2 = decode_molecule_binary(&data).unwrap();
 
-        assert_eq!(mol.properties().name(), Some("methane_test"));
-        assert_eq!(mol2.properties().name(), Some("methane_test"));
+        assert_eq!(
+            mol.properties().name().map(super::fixture_text),
+            Some("methane_test")
+        );
+        assert_eq!(
+            mol2.properties().name().map(super::fixture_text),
+            Some("methane_test")
+        );
         assert_eq!(mol2.prop("key1"), Some("value1"));
         assert_eq!(mol2.prop("key2"), Some("value2"));
         assert_record_equal(&mol, &mol2, "methane with properties roundtrip failed");
@@ -4255,15 +4599,35 @@ mod tests {
         assert_eq!(restored.derived.valid_bits, Some(0xe0));
         assert_eq!(
             ordered_atom_properties(&restored.topology.atoms[0])
-                .map(|(k, _)| k)
+                .map(|(k, _)| super::fixture_text(k))
                 .collect::<Vec<_>>(),
-            ["z5", "z4", "z3", "z2", "z1", "z0", "negative_zero"]
+            [
+                "__computedProps",
+                "z5",
+                "z4",
+                "z3",
+                "z2",
+                "z1",
+                "z0",
+                "negative_zero"
+            ]
         );
         assert_eq!(
             ordered_bond_properties(&restored.topology.bonds[0])
-                .map(|(k, _)| k)
+                .map(|(k, _)| super::fixture_text(k))
                 .collect::<Vec<_>>(),
-            ["z5", "z4", "z3", "z2", "z1", "z0"]
+            ["__computedProps", "z5", "z4", "z3", "z2", "z1", "z0"]
+        );
+        // RDProps::setProp inserts the reserved vector before the first
+        // computed ordinary property; subsequent membership keeps its order.
+        let computed = PropertyValue::StringVector(vec!["z5".into(), "z3".into(), "z1".into()]);
+        assert_eq!(
+            restored.topology.atoms[0].prop("__computedProps"),
+            Some(&computed)
+        );
+        assert_eq!(
+            restored.topology.bonds[0].prop("__computedProps"),
+            Some(&computed)
         );
         assert_eq!(restored.topology.atoms[0].pdb_residue_info(), Some(&info));
         assert_eq!(
@@ -4350,8 +4714,74 @@ mod tests {
             )
             .unwrap();
         }
+        // Build the raw4 incompatibility explicitly rather than assuming the
+        // legacy1.2 fixture writer emits the newest raw version.
+        let (_, sections) = read_archive_sections(&bytes).unwrap();
+        historical.truncate(14);
+        // Only the raw version tag is needed: archive 1.1 rejects raw4 before
+        // decoding its body. Do not use the evolving current raw writer here.
+        let raw4 = encode_molecule_state(vec![4]).unwrap();
+        for section in sections
+            .into_iter()
+            .filter(|s| s.id != SECTION_CANONICAL_STATE)
+        {
+            write_archive_section(
+                &mut historical,
+                section.id,
+                section.version,
+                section.flags,
+                section.codec,
+                if section.id == SECTION_MOLECULE_STATE {
+                    &raw4
+                } else {
+                    section.payload
+                },
+            )
+            .unwrap();
+        }
+        // Preserve the original invalid 1.1/raw4 fixture as a rejection.
+        assert_eq!(
+            decode_molecule_binary(&historical).unwrap_err(),
+            PickleError::InvalidArchive("old archive cannot contain raw4".into())
+        );
+        // Historical archive 1.1 carries a legacy raw1..3 molecule section.
+        // Retain its manifest, derived companion and every string value.
+        let legacy_state =
+            encode_molecule_state(mol_to_legacy_binary_version(&fixture_input(&mol), 3).unwrap())
+                .unwrap();
+        let (_, sections) = read_archive_sections(&bytes).unwrap();
+        let mut historical = ARCHIVE_MAGIC.to_vec();
+        write_u16_le(&mut historical, 1);
+        write_u16_le(&mut historical, 1);
+        write_u16_le(&mut historical, 3);
+        for section in sections
+            .into_iter()
+            .filter(|section| section.id != SECTION_CANONICAL_STATE)
+        {
+            write_archive_section(
+                &mut historical,
+                section.id,
+                section.version,
+                section.flags,
+                section.codec,
+                if section.id == SECTION_MOLECULE_STATE {
+                    &legacy_state
+                } else {
+                    section.payload
+                },
+            )
+            .unwrap();
+        }
         let restored = decode_molecule_binary(&historical).unwrap();
         assert_record_equal(&mol, &restored, "historical1.1 all retained fields");
+        assert_eq!(
+            restored.topology.atoms[0].prop("numeric-looking"),
+            Some(&PropertyValue::String("4294967295".into()))
+        );
+        assert_eq!(
+            restored.topology.bonds[0].prop("bool-looking"),
+            Some(&PropertyValue::String("true".into()))
+        );
         assert_eq!(restored.derived.valid_bits, None);
     }
 
@@ -4444,10 +4874,29 @@ mod tests {
             })
         ));
         assert!(read_value(&mut PickleReader::new(&[3, 255, 255, 255, 255])).is_err());
-        for value in [0, 4, 255] {
+        // Raw4 is the supported NativeStateV2 tag; its missing atom count
+        // is truncation, as for the supported historical raw1..3 tags.
+        for value in 1..=4 {
+            assert_eq!(
+                decode_molecule_binary(&[value]).unwrap_err(),
+                PickleError::UnexpectedEof
+            );
+        }
+        for value in [0, 255] {
             assert!(
                 matches!(decode_molecule_binary(&[value]),Err(PickleError::UnsupportedVersion(v)) if v==value)
             );
         }
     }
+}
+
+#[cfg(test)]
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+#[cfg(test)]
+fn fixture_writer_text(value: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(value.into_bytes())
+        .expect("original writer fixture must retain exact UTF-8 bytes")
 }

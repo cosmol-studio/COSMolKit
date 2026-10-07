@@ -36,7 +36,9 @@ pub(crate) fn fixture_from_smiles(
 }
 fn string_prop<'a>(atom: &'a cosmolkit_model::Atom, key: &str) -> Option<&'a str> {
     match atom.prop(key) {
-        Some(cosmolkit_model::PropertyValue::String(value)) => Some(value),
+        Some(cosmolkit_model::PropertyValue::String(value)) => {
+            Some(std::str::from_utf8(value.as_bytes()).expect("original fixed ASCII CIP fixture"))
+        }
         _ => None,
     }
 }
@@ -93,7 +95,10 @@ fn stereo_and_isotopic_hydrogens_sp2_and_remove_sp3_clear_chiral_and_cip_state()
             ChiralTag::Unspecified
         );
         assert_eq!(string_prop(&tautomer.topology.atoms[0], "_CIPCode"), None);
-        assert_eq!(tautomer.properties.prop("_StereochemDone"), Some("1"));
+        assert_eq!(
+            tautomer.properties.prop("_StereochemDone"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
         assert_eq!(source, source_before);
     }
 }
@@ -418,8 +423,16 @@ fn stereo_and_isotopic_hydrogens_reassignment_reapplies_any_contract() {
         tautomer.topology.bonds.as_slice()[double_bond.index()].stereo_atoms(),
         None
     );
-    assert_eq!(tautomer.properties.prop("_StereochemDone"), Some("1"));
-    assert!(tautomer.properties.is_prop_computed("_StereochemDone"));
+    assert_eq!(
+        tautomer.properties.prop("_StereochemDone"),
+        Some(&cosmolkit_model::PropertyValue::Int(1))
+    );
+    assert!(
+        tautomer
+            .properties
+            .is_prop_computed("_StereochemDone")
+            .unwrap()
+    );
 }
 
 #[test]
@@ -467,10 +480,19 @@ fn stereo_and_isotopic_hydrogens_executes_every_option_combination_without_sourc
             );
         }
         if !options.reassign_stereo() {
-            assert_eq!(tautomer.properties.prop("_StereochemDone"), Some("1"));
             assert_eq!(
-                tautomer.properties.is_prop_computed("_StereochemDone"),
-                source.properties.is_prop_computed("_StereochemDone")
+                tautomer.properties.prop("_StereochemDone"),
+                Some(&cosmolkit_model::PropertyValue::Int(1))
+            );
+            assert_eq!(
+                tautomer
+                    .properties
+                    .is_prop_computed("_StereochemDone")
+                    .unwrap(),
+                source
+                    .properties
+                    .is_prop_computed("_StereochemDone")
+                    .unwrap()
             );
         }
     }
@@ -596,6 +618,60 @@ fn single_query_endpoint_transfers_hydrogen_in_source_order() {
         panic!("same endpoint must produce a retained candidate: {attempt:?}")
     };
     assert_eq!(product.tautomer.topology.atoms[0].explicit_hydrogens(), 4);
-    assert_eq!(product.canonical_smiles, "C");
+    assert_eq!(product.canonical_smiles.as_bytes(), b"C");
     assert_eq!(source, before);
+}
+
+#[test]
+fn source_property_failure_cip_guard_retains_prefix_and_absent_branch() {
+    let source = fixture_from_smiles("[C@H](F)(Cl)Br").unwrap();
+    let source_before = source.clone();
+    for cip_present in [false, true] {
+        let mut tautomer = source.clone();
+        tautomer.topology.atoms[0].clear_prop("_CIPCode").unwrap();
+        if cip_present {
+            tautomer.topology.atoms[0]
+                .set_prop("_CIPCode", "R")
+                .unwrap();
+        }
+        tautomer.topology.atoms[0]
+            .set_prop("__computedProps", cosmolkit_model::PropertyValue::Int(7))
+            .unwrap();
+        let before = tautomer.clone();
+        let options = TautomerParams::default().with_reassign_stereo(false);
+        let result = set_tautomer_stereo_and_isotopic_hydrogens(
+            &source,
+            &mut tautomer,
+            &marked_atoms([0]),
+            &BTreeSet::new(),
+            options,
+        );
+        if cip_present {
+            assert!(matches!(
+                result,
+                Err(TautomerRunError::AtomProperty(
+                    cosmolkit_model::AtomPropertyError::ComputedListKind(_)
+                ))
+            ));
+            let mut expected_prefix = before;
+            expected_prefix.topology.atoms[0].set_chiral_tag(ChiralTag::Unspecified);
+            assert_eq!(tautomer, expected_prefix);
+        } else {
+            assert!(result.unwrap());
+            assert_eq!(tautomer.topology.atoms[0].prop("_CIPCode"), None);
+            assert_eq!(
+                tautomer.topology.atoms[0].chiral_tag(),
+                ChiralTag::Unspecified
+            );
+            assert_eq!(
+                tautomer.topology.atoms[0].prop("__computedProps"),
+                Some(&cosmolkit_model::PropertyValue::Int(7))
+            );
+            assert_eq!(
+                tautomer.properties.prop("_StereochemDone"),
+                Some(&cosmolkit_model::PropertyValue::Int(1))
+            );
+        }
+        assert_eq!(source, source_before);
+    }
 }

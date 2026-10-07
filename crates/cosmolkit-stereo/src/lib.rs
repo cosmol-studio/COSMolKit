@@ -38,18 +38,10 @@ pub fn assign_chiral_types_from_bond_dirs(
         })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct StereoOptions {
-    pub max_isomers: Option<usize>,
-}
-
-pub fn enumerate(
-    topology: &TopologyBlock,
-    conformer: Option<&Conformer3D>,
-    options: &StereoOptions,
-) -> Result<Vec<TopologyBlock>, StereoError> {
-    let _ = (topology, conformer, options);
-    Err(StereoError::Unsupported {
-        reason: "stereoisomer enumeration is not detached yet",
-    })
-}
+#[cfg(feature = "enumeration")]
+mod stereo_enumerate;
+#[cfg(feature = "enumeration")]
+pub use stereo_enumerate::{
+    EnumerationError, StereoisomerIterator, StereoisomerOptions, StereoisomerRandomSource,
+    enumerate_stereoisomers, enumerate_stereoisomers_with_random_bits, stereoisomer_count,
+};

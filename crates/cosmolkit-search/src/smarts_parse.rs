@@ -518,7 +518,7 @@ fn apply_cx_to_query(
                     if let Some(value) = value
                         && let Some(atom) = graph.atom_mut(index)
                     {
-                        atom.set_prop("atomLabel", value);
+                        atom.set_prop("atomLabel", value)?;
                     }
                 }
             }
@@ -527,15 +527,14 @@ fn apply_cx_to_query(
                     if let Some(value) = value
                         && let Some(atom) = graph.atom_mut(index)
                     {
-                        atom.set_prop("molFileValue", value);
+                        atom.set_prop("molFileValue", value)?;
                     }
                 }
             }
             CxRecord::AtomProperties(properties) => {
                 for property in properties {
                     if let Some(atom) = graph.atom_mut(property.atom) {
-                        atom.set_prop(property.name.clone(), property.value.clone())
-                            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        atom.set_prop(property.name.clone(), property.value.clone())?;
                     }
                 }
             }
@@ -1183,6 +1182,10 @@ fn apply_cx_progress_to_query_with_cursor(
                             "CX link-node item checkpoints are out of order".to_owned(),
                         ));
                     }
+                    // Native omitted-outer degree failure precedes comma and
+                    // later syntax failure; do not write the whole property yet.
+                    crate::cx_lowering::cx_link_node_outer_atoms(graph, &nodes[item_index])
+                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
                     *committed += 1;
                 }
                 CxProgressPhase::Complete => {
@@ -1447,6 +1450,12 @@ fn apply_cx_progress_to_query_with_cursor(
         crate::cx_lowering::finish_cx_smiles_labels(graph)
             .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
     }
+    if !progress.is_complete() {
+        // Source scanning captured a terminal warning, but only successful
+        // replay reaches it. Any earlier graph/property/query failure returned
+        // above before this side effect, matching native sequential parsing.
+        progress.emit_source_warning();
+    }
     Ok(())
 }
 
@@ -1464,7 +1473,7 @@ fn apply_cx_atom_slot_to_query(
             ));
         }
     };
-    let Some(value) = value.and_then(Option::as_deref) else {
+    let Some(value) = value.and_then(Option::as_ref) else {
         return Err(SmartsParseError::CxSmiles(
             "CX atom slot checkpoint references an empty slot".to_owned(),
         ));
@@ -1535,164 +1544,98 @@ fn apply_cx_coordinate_bond_to_query(
     reference: cosmolkit_cx::CxBondReference,
     kind: CxCoordinateBondKind,
 ) -> Result<(), SmartsParseError> {
-    // RDKit source (verbatim; parse_coordinate_bonds mutates each validated pair):
-    /*
-    template <typename Iterator>
-    bool parse_coordinate_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                                Bond::BondType typ, unsigned int startAtomIdx,
-                                unsigned int startBondIdx) {
-      if (first >= last || (*first != 'C' && *first != 'H')) {
-        return false;
-      }
-      ++first;
-      if (first >= last || *first != ':') {
-        return false;
-      }
-      ++first;
-      while (first <= last && *first >= '0' && *first <= '9') {
-        unsigned int aidx;
-        unsigned int bidx;
-        if (read_int_pair(first, last, aidx, bidx)) {
-          if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
-            auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
-            if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
-                         bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
-              BOOST_LOG(rdWarningLog) << "BOND NOT FOUND! " << bidx
-                                      << " involving atom " << aidx << std::endl;
-              return false;
-            }
-            bnd->setBondType(typ);
-            if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
-              unsigned int tmp = bnd->getBeginAtomIdx();
-              bnd->setBeginAtomIdx(aidx - startAtomIdx);
-              bnd->setEndAtomIdx(tmp);
-            }
-          }
-        } else {
-          return false;
-        }
-        if (first < last && *first == ',') {
-          ++first;
-        }
-      }
-      return true;
-    }
-    */
-    // RDKit source helper (verbatim):
-    /*
-    Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-      for (auto bnd : mol.bonds()) {
-        unsigned int smilesIdx;
-        if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-            smilesIdx == idx) {
-          return bnd;
-        }
-      }
-      return nullptr;
-    }
-    */
-    // RDKit❗❌: item checkpoints retain O(n) source references; each graph
-    // lookup scans O(E) source-index properties, matching source commit order.
-    // Grammar encounter indices are independent of final bond row order.
-    if reference.atom >= graph.num_atoms() || reference.bond >= graph.num_bonds() {
-        return Ok(());
-    }
-    let row = crate::cx_lowering::query_bond_row_from_source_index(graph, reference.bond)
-        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
-    let Some(bond) = graph.bonds_mut().get_mut(row) else {
-        return Err(SmartsParseError::CxSmiles(format!(
-            "CX bond index {} is outside the SMARTS graph",
-            reference.bond
-        )));
-    };
-    let begin = bond.begin();
-    let end = bond.end();
-    if begin.index() != reference.atom && end.index() != reference.atom {
-        return Err(SmartsParseError::CxSmiles(
-            "CX coordinate bond atom does not match its bond".to_owned(),
-        ));
-    }
-    let order = match kind {
-        CxCoordinateBondKind::Dative => BondOrder::Dative,
-        CxCoordinateBondKind::Hydrogen => BondOrder::Hydrogen,
-    };
-    bond.bond_mut().set_order(order);
-    if begin.index() != reference.atom {
-        bond.bond_mut()
-            .set_endpoints(cosmolkit_model::AtomId::new(reference.atom), begin);
-    }
-    Ok(())
+    // BEGIN COMPLETE PINNED SF189
+    // RDKit✔️❌: bool parse_coordinate_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                             Bond::BondType typ, unsigned int startAtomIdx,
+    // RDKit✔️❌:                             unsigned int startBondIdx) {
+    // RDKit✔️❌:   if (first >= last || (*first != 'C' && *first != 'H')) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int aidx;
+    // RDKit✔️❌:     unsigned int bidx;
+    // RDKit✔️❌:     if (read_int_pair(first, last, aidx, bidx)) {
+    // RDKit✔️❌:       if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
+    // RDKit✔️❌:         auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
+    // RDKit✔️❌:         if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
+    // RDKit✔️❌:                      bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
+    // RDKit✔️❌:           BOOST_LOG(rdWarningLog) << "BOND NOT FOUND! " << bidx
+    // RDKit✔️❌:                                   << " involving atom " << aidx << std::endl;
+    // RDKit✔️❌:           return false;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         bnd->setBondType(typ);
+    // RDKit✔️❌:         if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
+    // RDKit✔️❌:           unsigned int tmp = bnd->getBeginAtomIdx();
+    // RDKit✔️❌:           bnd->setBeginAtomIdx(aidx - startAtomIdx);
+    // RDKit✔️❌:           bnd->setEndAtomIdx(tmp);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF189
+    // The same query destination body owns complete-record and checkpoint
+    // writes. This adapter only translates its structured error; the caller
+    // already retained the pair's source cursor before invoking it.
+    crate::cx_lowering::apply_cx_coordinate_bond(graph, reference, kind)
+        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))
 }
 
 fn apply_cx_zero_bond_to_query(
     graph: &mut QueryGraph,
     index: usize,
 ) -> Result<(), SmartsParseError> {
-    // RDKit source (verbatim; parse_zero_bonds marks each valid bond in order):
-    /*
-    template <typename Iterator>
-    bool parse_zero_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
-                          unsigned int, unsigned int startBondIdx) {
-      // these look like: C1CCCCC~CCCC1 |Z:5|
-      if (first >= last || *first != 'Z') {
-        return false;
-      }
-      ++first;
-      if (first >= last || *first != ':') {
-        return false;
-      }
-      ++first;
-
-      while (first < last && *first >= '0' && *first <= '9') {
-        unsigned int bondIdx;
-        if (!read_int(first, last, bondIdx)) {
-          return false;
-        }
-        if (VALID_BNDIDX(bondIdx)) {
-          auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
-
-          if (!bond) {
-            BOOST_LOG(rdWarningLog)
-                << "bond " << bondIdx
-                << " not found, cannot mark as zero order bond." << std::endl;
-            return false;
-          }
-          bond->setBondType(Bond::ZERO);
-        }
-        if (first < last && *first == ',') {
-          ++first;
-        }
-      }
-      return true;
-    }
-    */
-    // RDKit source helper (verbatim):
-    /*
-    Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-      for (auto bnd : mol.bonds()) {
-        unsigned int smilesIdx;
-        if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-            smilesIdx == idx) {
-          return bnd;
-        }
-      }
-      return nullptr;
-    }
-    */
-    // RDKit❗❌: item checkpoints retain O(n) indices for partial effects;
-    // valid graph indices mutate one bond and invalid indices are source skips.
-    // Source validity window uses final bond count; the separate O(E)
-    // property lookup can fail for an in-window grammar index hole.
-    if index >= graph.num_bonds() {
-        return Ok(());
-    }
-    let row = crate::cx_lowering::query_bond_row_from_source_index(graph, index)
-        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
-    let bond = graph.bonds_mut().get_mut(row).ok_or_else(|| {
-        SmartsParseError::CxSmiles("resolved CX bond row is outside graph".to_owned())
-    })?;
-    bond.bond_mut().set_order(BondOrder::Zero);
-    Ok(())
+    // BEGIN COMPLETE PINNED SF190
+    // RDKit✔️❌: bool parse_zero_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                       unsigned int, unsigned int startBondIdx) {
+    // RDKit✔️❌:   // these look like: C1CCCCC~CCCC1 |Z:5|
+    // RDKit✔️❌:   if (first >= last || *first != 'Z') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int bondIdx;
+    // RDKit✔️❌:     if (!read_int(first, last, bondIdx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_BNDIDX(bondIdx)) {
+    // RDKit✔️❌:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+    // RDKit✔️❌:
+    // RDKit✔️❌:       if (!bond) {
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << "bond " << bondIdx
+    // RDKit✔️❌:             << " not found, cannot mark as zero order bond." << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       bond->setBondType(Bond::ZERO);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF190
+    // Ordered checkpoint replay already retained this index's source cursor.
+    // Use the same destination body as complete records; translate only error.
+    crate::cx_lowering::apply_cx_zero_bond(graph, index)
+        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))
 }
 
 fn apply_cx_radical_item_to_query(
@@ -1735,9 +1678,65 @@ fn append_query_conformer(
     coordinates: &cosmolkit_cx::CxCoordinates,
 ) -> Result<(), SmartsParseError> {
     let mut values = vec![[0.0; 3]; graph.num_atoms()];
-    for (destination, source) in values.iter_mut().zip(&coordinates.values) {
-        if let Some(source) = source {
-            *destination = *source;
+    // BEGIN COMPLETE PINNED SF188
+    // RDKit✔️❌: bool parse_coords(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                   unsigned int startAtomIdx, unsigned int confIdx) {
+    // RDKit✔️❌:   if (first >= last || *first != '(') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   auto *conf = new Conformer(mol.getNumAtoms());
+    // RDKit✔️❌:   mol.addConformer(conf);
+    // RDKit✔️❌:   conf->setId(confIdx);
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   unsigned int atIdx = 0;
+    // RDKit✔️❌:   bool is3D = false;
+    // RDKit✔️❌:   while (first <= last && *first != ')') {
+    // RDKit✔️❌:     RDGeom::Point3D pt;
+    // RDKit✔️❌:     std::string tkn = read_text_to(first, last, ";)");
+    // RDKit✔️❌:     if (VALID_ATIDX(atIdx)) {
+    // RDKit✔️❌:       if (!tkn.empty()) {
+    // RDKit✔️❌:         std::vector<std::string> tokens;
+    // RDKit✔️❌:         boost::split(tokens, tkn, boost::is_any_of(std::string(",")));
+    // RDKit✔️❌:         if (tokens.size() >= 1 && tokens[0].size()) {
+    // RDKit✔️❌:           pt.x = boost::lexical_cast<double>(tokens[0]);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (tokens.size() >= 2 && tokens[1].size()) {
+    // RDKit✔️❌:           pt.y = boost::lexical_cast<double>(tokens[1]);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (tokens.size() >= 3 && tokens[2].size()) {
+    // RDKit✔️❌:           pt.z = boost::lexical_cast<double>(tokens[2]);
+    // RDKit✔️❌:           is3D = true;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:
+    // RDKit✔️❌:       conf->setAtomPos(atIdx - startAtomIdx, pt);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++atIdx;
+    // RDKit✔️❌:     if (first <= last && *first != ')') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   // make sure that the conformer really is 3D!
+    // RDKit✔️❌:   if (is3D && hasNonZeroZCoords(*conf)) {
+    // RDKit✔️❌:     conf->set3D(true);
+    // RDKit✔️❌:   } else {
+    // RDKit✔️❌:     conf->set3D(false);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (first >= last || *first != ')') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF188
+    let atom_count = u32::try_from(graph.num_atoms()).map_err(|_| {
+        SmartsParseError::CxSmiles("CX atom count exceeds source unsigned32 domain".to_owned())
+    })?;
+    for (slot, source) in coordinates.values.iter().enumerate() {
+        let index = slot as u32;
+        if index < atom_count {
+            values[index as usize] = source.unwrap_or([0.0; 3]);
         }
     }
     graph
@@ -1750,7 +1749,7 @@ fn append_query_conformer(
 }
 
 pub fn parse_smarts(
-    smarts: &str,
+    smarts: impl AsRef<[u8]>,
     params: &SmartsParseParams,
 ) -> Result<QueryGraph, SmartsParseError> {
     // BEGIN RDKIT CPP FUNCTION MolFromSmarts
@@ -1862,8 +1861,17 @@ pub fn parse_smarts(
         let mut cx_failed = false;
         let mut consumed = 0;
         if params.allow_cxsmiles {
-            if preprocessed.cx_part.starts_with('|') {
-                let progress = cosmolkit_cx::parse_cx_extensions_progress(&preprocessed.cx_part);
+            if preprocessed.cx_part.starts_with(b"|") {
+                let atom_count = u32::try_from(parsed_graph.num_atoms()).map_err(|_| {
+                    SmartsParseError::CxSmiles(
+                        "CX atom count exceeds source unsigned32 domain".to_owned(),
+                    )
+                })?;
+                let progress = cosmolkit_cx::parse_cx_extensions_progress_with_atom_window(
+                    &preprocessed.cx_part,
+                    0,
+                    atom_count,
+                );
                 consumed = progress.consumed();
                 let mut lowering_cursor = consumed;
                 if let Err(error) = apply_cx_progress_to_query_with_cursor(
@@ -1888,10 +1896,13 @@ pub fn parse_smarts(
                 }
                 let prefix = preprocessed.cx_part.get(..consumed).ok_or_else(|| {
                     SmartsParseError::CxSmiles(
-                        "CX source cursor is not a UTF-8 boundary".to_owned(),
+                        "CX source cursor is outside the counted byte input".to_owned(),
                     )
                 })?;
-                parsed_graph.set_prop("_CXSMILES_Data", prefix);
+                parsed_graph.set_prop(
+                    "_CXSMILES_Data",
+                    cosmolkit_model::PropertyText::from_bytes(prefix),
+                )?;
             } else if params.strict_cxsmiles && !params.parse_name {
                 return Err(SmartsParseError::CxSmiles(
                     "CXSMILES extension does not start with | and parseName=false".to_owned(),
@@ -1908,9 +1919,9 @@ pub fn parse_smarts(
     if params.merge_hs {
         merge_query_hs_in_place(&mut parsed_graph, false, false)?;
     }
-    crate::query_graph_behavior::set_bond_stereo_from_directions(&mut parsed_graph);
+    crate::query_graph_behavior::set_bond_stereo_from_directions(&mut parsed_graph)?;
     if !params.skip_cleanup {
-        crate::query_graph_behavior::cleanup_query_graph_parser_state(&mut parsed_graph);
+        crate::query_graph_behavior::cleanup_query_graph_parser_state(&mut parsed_graph)?;
     }
     if !name.is_empty() {
         parsed_graph = parsed_graph.with_name(name);
@@ -1918,7 +1929,7 @@ pub fn parse_smarts(
     Ok(parsed_graph)
 }
 
-fn smarts_parse_helper(input: &str) -> Result<QueryGraphBuilder, SmartsParseError> {
+fn smarts_parse_helper(input: impl AsRef<[u8]>) -> Result<QueryGraphBuilder, SmartsParseError> {
     // RDKit✔️✔️: int smarts_parse_helper(const std::string &inp, ...,
     // RDKit✔️✔️:   return generic_parse_helper<yysmarts_lex_init,
     // RDKit✔️✔️:     setup_smarts_string, yysmarts_lex_destroy>(yysmarts_parse,
@@ -1926,6 +1937,7 @@ fn smarts_parse_helper(input: &str) -> Result<QueryGraphBuilder, SmartsParseErro
     // Local complexity review: preprocessing has already produced one input
     // buffer. Recursive descent follows source reductions, but the lexer
     // still allocates remaining-tail strings, with known O(n^2) cost.
+    let input = input.as_ref();
     let tokens = tokenize(input)?;
     let mut parser = SmartsParser::new(&tokens, input);
     parser.parse_smarts_molecule()
@@ -2093,7 +2105,7 @@ fn bond_from_smarts(
     to_bond(smarts)
 }
 
-fn smarts_parse_entry(input: &str) -> Result<QueryGraphBuilder, SmartsParseError> {
+fn smarts_parse_entry(input: impl AsRef<[u8]>) -> Result<QueryGraphBuilder, SmartsParseError> {
     // RDKit✔️✔️: int smarts_parse(const std::string &inp, std::vector<RDKit::RWMol *> &molVect) {
     // RDKit✔️✔️:   auto start_tok = static_cast<int>(START_MOL);
     // RDKit✔️✔️:   Atom *atom = nullptr;
@@ -2104,6 +2116,7 @@ fn smarts_parse_entry(input: &str) -> Result<QueryGraphBuilder, SmartsParseError
     // to the sole scanner/parser path. Accepting empty molecule SMARTS avoids
     // token allocation, matching the grammar's START_MOL/EOS branch without a
     // second parser, rescan, or molecule conversion.
+    let input = input.as_ref();
     if input.is_empty() {
         return Ok(QueryGraphBuilder::default());
     }
@@ -2112,19 +2125,169 @@ fn smarts_parse_entry(input: &str) -> Result<QueryGraphBuilder, SmartsParseError
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PreprocessedSmarts {
-    smarts: String,
-    name: String,
-    cx_part: String,
+    smarts: Vec<u8>,
+    name: Vec<u8>,
+    cx_part: Vec<u8>,
 }
 
-fn trim_source_whitespace(value: &str) -> &str {
-    // Boost's default `is_space` trim follows the active C character
-    // classification; the parser's pinned default locale trims ASCII
-    // whitespace and leaves non-ASCII UTF-8 bytes such as NBSP intact.
-    value.trim_matches(|character| matches!(character, ' ' | '\t' | '\n' | '\r' | '\x0c' | '\x0b'))
+fn trim_source_whitespace(value: &[u8]) -> &[u8] {
+    // C-locale boost::trim_copy tests counted bytes against ASCII whitespace.
+    // NUL and high bytes remain data, including in names and CX suffixes.
+    let start = value
+        .iter()
+        .position(|b| !matches!(*b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c' | b'\x0b'))
+        .unwrap_or(value.len());
+    let end = value
+        .iter()
+        .rposition(|b| !matches!(*b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c' | b'\x0b'))
+        .map_or(start, |i| i + 1);
+    &value[start..end]
 }
 
-fn preprocess_smarts(smarts: &str, params: &SmartsParseParams) -> PreprocessedSmarts {
+#[rustfmt::skip]
+fn replace_all_source_bytes(input: &[u8], search: &[u8], replacement: &[u8]) -> Vec<u8> {
+    // BEGIN BOOST 1.85.0 replace.hpp
+    //         template<typename SequenceT, typename Range1T, typename Range2T>
+    //         inline void replace_all( 
+    //             SequenceT& Input,
+    //             const Range1T& Search,
+    //             const Range2T& Format )
+    //         {
+    //             ::boost::algorithm::find_format_all( 
+    //                 Input, 
+    //                 ::boost::algorithm::first_finder(Search),
+    //                 ::boost::algorithm::const_formatter(Format) );
+    //         }
+    // END BOOST 1.85.0 replace.hpp
+    // BEGIN BOOST 1.85.0 detail/finder.hpp
+    //                 // Operation
+    //                 template< typename ForwardIteratorT >
+    //                 iterator_range<ForwardIteratorT>
+    //                 operator()(
+    //                     ForwardIteratorT Begin,
+    //                     ForwardIteratorT End ) const
+    //                 {
+    //                     typedef iterator_range<ForwardIteratorT> result_type;
+    //                     typedef ForwardIteratorT input_iterator_type;
+    // 
+    //                     // Outer loop
+    //                     for(input_iterator_type OuterIt=Begin;
+    //                         OuterIt!=End;
+    //                         ++OuterIt)
+    //                     {
+    //                         // Sanity check
+    //                         if( boost::empty(m_Search) )
+    //                             return result_type( End, End );
+    // 
+    //                         input_iterator_type InnerIt=OuterIt;
+    //                         search_iterator_type SubstrIt=m_Search.begin();
+    //                         for(;
+    //                             InnerIt!=End && SubstrIt!=m_Search.end();
+    //                             ++InnerIt,++SubstrIt)
+    //                         {
+    //                             if( !( m_Comp(*InnerIt,*SubstrIt) ) )
+    //                                 break;
+    //                         }
+    // 
+    //                         // Substring matching succeeded
+    //                         if ( SubstrIt==m_Search.end() )
+    //                             return result_type( OuterIt, InnerIt );
+    //                     }
+    // 
+    //                     return result_type( End, End );
+    //                 }
+    // END BOOST 1.85.0 detail/finder.hpp
+    // BEGIN BOOST 1.85.0 detail/find_format_all.hpp
+    //             template<
+    //                 typename InputT,
+    //                 typename FinderT,
+    //                 typename FormatterT,
+    //                 typename FindResultT,
+    //                 typename FormatResultT >
+    //             inline void find_format_all_impl2( 
+    //                 InputT& Input,
+    //                 FinderT Finder,
+    //                 FormatterT Formatter,
+    //                 FindResultT FindResult,
+    //                 FormatResultT FormatResult)
+    //             {
+    //                 typedef BOOST_STRING_TYPENAME 
+    //                     range_iterator<InputT>::type input_iterator_type; 
+    //                 typedef find_format_store<
+    //                         input_iterator_type, 
+    //                         FormatterT,
+    //                         FormatResultT > store_type;
+    // 
+    //                 // Create store for the find result
+    //                 store_type M( FindResult, FormatResult, Formatter );
+    //           
+    //                 // Instantiate replacement storage
+    //                 std::deque<
+    //                     BOOST_STRING_TYPENAME range_value<InputT>::type> Storage;
+    // 
+    //                 // Initialize replacement iterators
+    //                 input_iterator_type InsertIt=::boost::begin(Input);
+    //                 input_iterator_type SearchIt=::boost::begin(Input);
+    //                 
+    //                 while( M )
+    //                 {
+    //                     // process the segment
+    //                     InsertIt=process_segment( 
+    //                         Storage,
+    //                         Input,
+    //                         InsertIt,
+    //                         SearchIt,
+    //                         M.begin() );
+    //                     
+    //                     // Adjust search iterator
+    //                     SearchIt=M.end();
+    // 
+    //                     // Copy formatted replace to the storage
+    //                     ::boost::algorithm::detail::copy_to_storage( Storage, M.format_result() );
+    // 
+    //                     // Find range for a next match
+    //                     M=Finder( SearchIt, ::boost::end(Input) );
+    //                 }
+    // 
+    //                 // process the last segment
+    //                 InsertIt=::boost::algorithm::detail::process_segment( 
+    //                     Storage,
+    //                     Input,
+    //                     InsertIt,
+    //                     SearchIt,
+    //                     ::boost::end(Input) );
+    //                 
+    //                 if ( Storage.empty() )
+    //                 {
+    //                     // Truncate input
+    //                     ::boost::algorithm::detail::erase( Input, InsertIt, ::boost::end(Input) );
+    //                 }
+    //                 else
+    //                 {
+    //                     // Copy remaining data to the end of input
+    //                     ::boost::algorithm::detail::insert( Input, ::boost::end(Input), Storage.begin(), Storage.end() );
+    //                 }
+    //             }
+    // END BOOST 1.85.0 detail/find_format_all.hpp
+    // Boost✔️❌: use the same non-overlapping counted ranges and resume after
+    // the old match. A fresh complete output buffer costs more peak storage
+    // than the source's in-place deque-assisted compaction; no perf upgrade.
+    if search.is_empty() { return input.to_vec(); }
+    let mut output = Vec::with_capacity(input.len());
+    let mut cursor = 0;
+    while cursor < input.len() {
+        let Some(found) = input[cursor..].windows(search.len()).position(|part| part == search) else {
+            output.extend_from_slice(&input[cursor..]);
+            break;
+        };
+        output.extend_from_slice(&input[cursor..cursor + found]);
+        output.extend_from_slice(replacement);
+        cursor += found + search.len();
+    }
+    output
+}
+
+fn preprocess_smarts(smarts: impl AsRef<[u8]>, params: &SmartsParseParams) -> PreprocessedSmarts {
     // BEGIN RDKIT CPP FUNCTION preprocessSmiles<SmartsParserParams>
     // RDKit✔️✔️: // despite the name: works for both SMILES and SMARTS
     // RDKit✔️✔️: template <typename T>
@@ -2171,37 +2334,40 @@ fn preprocess_smarts(smarts: &str, params: &SmartsParseParams) -> PreprocessedSm
     // repeat-until-fixed-point scans and whole-string replacements as RDKit;
     // no extra parser, tokenization pass, or consumer-local preprocessing is
     // introduced.
+    let smarts = smarts.as_ref();
     let mut processed = PreprocessedSmarts {
-        smarts: String::new(),
-        name: String::new(),
-        cx_part: String::new(),
+        smarts: Vec::new(),
+        name: Vec::new(),
+        cx_part: Vec::new(),
     };
     if params.parse_name && !params.allow_cxsmiles {
-        if let Some(split_index) = smarts.bytes().position(|byte| matches!(byte, b' ' | b'\t'))
+        if let Some(split_index) = smarts.iter().position(|byte| matches!(*byte, b' ' | b'\t'))
             && split_index != 0
         {
-            processed.smarts = smarts[..split_index].to_string();
-            processed.name = trim_source_whitespace(&smarts[split_index..]).to_string();
+            processed.smarts = smarts[..split_index].to_vec();
+            processed.name = trim_source_whitespace(&smarts[split_index..]).to_vec();
         }
     } else if params.allow_cxsmiles
-        && let Some(split_index) = smarts.bytes().position(|byte| matches!(byte, b' ' | b'\t'))
+        && let Some(split_index) = smarts.iter().position(|byte| matches!(*byte, b' ' | b'\t'))
         && split_index != 0
     {
-        processed.smarts = smarts[..split_index].to_string();
-        processed.cx_part = trim_source_whitespace(&smarts[split_index..]).to_string();
+        processed.smarts = smarts[..split_index].to_vec();
+        processed.cx_part = trim_source_whitespace(&smarts[split_index..]).to_vec();
     }
 
     if processed.smarts.is_empty() {
-        processed.smarts = smarts.to_string();
+        processed.smarts = smarts.to_vec();
     }
 
     if !params.replacements.is_empty() {
         loop {
             let mut loop_again = false;
             for (key, value) in &params.replacements {
-                if processed.smarts.contains(key) {
+                let key = key.as_bytes();
+                if key.is_empty() || processed.smarts.windows(key.len()).any(|part| part == key) {
                     loop_again = true;
-                    processed.smarts = processed.smarts.replace(key, value);
+                    processed.smarts =
+                        replace_all_source_bytes(&processed.smarts, key, value.as_bytes());
                 }
             }
             if !loop_again {
@@ -2367,7 +2533,7 @@ fn merge_recursive_query_hydrogens(
     Ok(())
 }
 
-fn remap_query_substance_groups_after_removal(
+pub(crate) fn remap_query_substance_groups_after_removal(
     groups: &[cosmolkit_model::SubstanceGroup],
     mapping: &TopologyMapping,
 ) -> Result<Vec<cosmolkit_model::SubstanceGroup>, SmartsParseError> {
@@ -2509,7 +2675,7 @@ fn remap_query_substance_groups_after_removal(
     Ok(remapped)
 }
 
-fn remap_query_stereo_groups_after_removal(
+pub(crate) fn remap_query_stereo_groups_after_removal(
     groups: &[StereoGroup],
     mapping: &TopologyMapping,
 ) -> Result<Vec<StereoGroup>, SmartsParseError> {
@@ -2576,7 +2742,13 @@ fn remap_query_stereo_groups_after_removal(
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            let remapped = StereoGroup::new(group.kind(), atoms, bonds);
+            let mut remapped = StereoGroup::new(group.kind(), atoms, bonds);
+            // RDKit❗✔️: extracted_stereo_groups.back().setWriteId(stereo_group.getWriteId());
+            // A removal retains the original group object and both IDs.
+            cosmolkit_model::set_stereo_group_write_id(
+                &mut remapped,
+                cosmolkit_model::stereo_group_write_id(&group),
+            );
             Ok(if let Some(id) = group.id() {
                 remapped.with_id(id)
             } else {
@@ -2855,7 +3027,9 @@ fn merge_query_hs_in_place(
         remap_query_substance_groups_after_removal(query_substance_groups(molecule), &mapping)?;
     let stereo_groups =
         remap_query_stereo_groups_after_removal(molecule.stereo_groups(), &mapping)?;
-    let props = molecule.props().clone();
+    let props = molecule
+        .ordered_props()
+        .map(|(key, value)| (key.clone(), value.clone()));
     // RDKit source RWMol.cpp::batchRemoveAtoms preserves every conformer and
     // removes the coordinates whose old atoms were deleted:
     // RDKit❗❌: // do the same with the coordinates in the conformations
@@ -3050,7 +3224,7 @@ fn has_query_hs_graph(graph: &QueryGraph) -> (bool, bool) {
     (query_hs, false)
 }
 
-fn label_recursive_patterns(sma: &str) -> String {
+fn label_recursive_patterns(sma: impl AsRef<[u8]>) -> Vec<u8> {
     // RDKit✔️✔️: std::string labelRecursivePatterns(const std::string &sma) {
     // RDKit✔️✔️: #ifndef NO_AUTOMATIC_SMARTS_RELABELLING
     // RDKit✔️✔️:   std::list<SmaState> state;
@@ -3118,11 +3292,12 @@ fn label_recursive_patterns(sma: &str) -> String {
     }
     use SmaState::*;
 
+    let sma = sma.as_ref();
     let mut state: Vec<SmaState> = vec![Base];
     let mut start_recurse: Vec<usize> = Vec::new();
     let mut patterns: BTreeMap<Vec<u8>, String> = BTreeMap::new();
     let mut res = Vec::with_capacity(sma.len());
-    let bytes = sma.as_bytes();
+    let bytes = sma;
 
     let mut pos: usize = 0;
     while pos < bytes.len() {
@@ -3136,7 +3311,7 @@ fn label_recursive_patterns(sma: &str) -> String {
             state.push(Branch);
         } else if bytes[pos] == b')' {
             if state.is_empty() || state.last() == Some(&Base) {
-                return sma.to_string();
+                return sma.to_vec();
             }
             let curr_state = state.pop().expect("non-base SMARTS state");
             if curr_state == Recurse {
@@ -3157,7 +3332,7 @@ fn label_recursive_patterns(sma: &str) -> String {
         }
         pos += 1;
     }
-    String::from_utf8(res).expect("SMARTS relabeling preserves UTF-8")
+    res
 }
 
 // ---------------------------------------------------------------------------
@@ -3295,7 +3470,7 @@ struct SmartsScannerInputWindow {
     byte_end: usize,
 }
 
-fn setup_smarts_input(input: &str) -> SmartsScannerInputWindow {
+fn setup_smarts_input(input: impl AsRef<[u8]>) -> SmartsScannerInputWindow {
     // BEGIN RDKIT CPP FUNCTION setup_smarts_string
     // RDKit✔️❌: size_t setup_smarts_string(const std::string &text,yyscan_t yyscanner){
     // RDKit✔️❌:   yyconst char * yybytes = text.c_str();
@@ -3315,7 +3490,7 @@ fn setup_smarts_input(input: &str) -> SmartsScannerInputWindow {
     // avoids RDKit's scanner-buffer copy. The required byte-boundary map in
     // `SmartsScanner::new` adds an O(n) usize allocation, so the complete Rust
     // tokenization path retains more memory than the pinned source.
-    let bytes = input.as_bytes();
+    let bytes = input.as_ref();
     let mut start = 0;
     while start < bytes.len() {
         if i8::from_ne_bytes([bytes[start]]) > 32 {
@@ -3338,7 +3513,7 @@ fn setup_smarts_input(input: &str) -> SmartsScannerInputWindow {
     // In the all-trimmed case, source copies only that terminal NUL. The
     // equivalent Rust scanner window is empty; otherwise end identifies the
     // last copied input byte and is inclusive in RDKit's length expression.
-    let byte_end = if end == bytes.len() { start } else { end + 1 };
+    let byte_end = end + 1;
     SmartsScannerInputWindow {
         byte_start: start,
         byte_end,
@@ -3360,7 +3535,7 @@ struct SmartsScanner {
 }
 
 impl SmartsScanner {
-    fn new(input: &str, start: ScannerStart, window: SmartsScannerInputWindow) -> Self {
+    fn new(input: impl AsRef<[u8]>, start: ScannerStart, window: SmartsScannerInputWindow) -> Self {
         // RDKit❗❌:     ltrim = string_setup(inp, scanner);
         // RDKit❗❌:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
         // RDKit❗❌:                          numAtomsParsed, numBondsParsed, branchPoints, scanner,
@@ -3369,29 +3544,23 @@ impl SmartsScanner {
         // against the original helper input for safe bracket slicing. The
         // byte-boundary Vec adds O(n) usize storage alongside `chars`; it
         // avoids repeated prefix scans but materially increases input memory.
-        let mut chars = Vec::with_capacity(input.len());
-        let mut input_byte_boundaries = Vec::with_capacity(input.len() + 1);
-        let mut char_start = None;
-        let mut char_end = None;
-        for (char_index, (byte_index, ch)) in input.char_indices().enumerate() {
-            input_byte_boundaries.push(byte_index);
-            if byte_index == window.byte_start {
-                char_start = Some(char_index);
-            }
-            if byte_index == window.byte_end {
-                char_end = Some(char_index);
-            }
-            chars.push(ch);
+        // RDKit✔️❌: the existing grammar token units now each represent one
+        // unsigned source octet. This is not text decoding: offsets are bytes,
+        // high bytes reach BAD_CHARACTER or signed-char trimming, and only
+        // accepted ASCII lexemes become grammar Strings. Vec<char> uses more
+        // storage than the source byte scanner; retain that known cost gap.
+        let input = input.as_ref();
+        let mut chars: Vec<char> = input.iter().copied().map(char::from).collect();
+        // setup_smarts_string copies end-start+1 bytes. An all-trimmed
+        // nonempty string therefore copies its defined c_str()[size()] NUL,
+        // which is data before the separate pair of Flex buffer sentinels.
+        if window.byte_end > input.len() {
+            chars.push('\0');
         }
-        let char_count = chars.len();
-        input_byte_boundaries.push(input.len());
-        let char_start = char_start
-            .or_else(|| (window.byte_start == input.len()).then_some(char_count))
-            .expect("RDKit trim start must be a UTF-8 character boundary");
-        let char_end = char_end
-            .or_else(|| (window.byte_end == input.len()).then_some(char_count))
-            .expect("RDKit trim end must be a UTF-8 character boundary");
-        debug_assert!(char_start <= char_end && char_end <= char_count);
+        let input_byte_boundaries: Vec<usize> = (0..=chars.len()).collect();
+        let char_start = window.byte_start;
+        let char_end = window.byte_end;
+        debug_assert!(char_start <= char_end && char_end <= chars.len());
 
         Self {
             chars,
@@ -3957,12 +4126,12 @@ const ELEMENT_SYMBOLS: &[&str] = &[
 /// length. State operations are O(1); token storage is O(n), and the byte map
 /// adds O(n) usize storage beyond the source scanner. Fixed element-rule
 /// lookup has constant size, and compacted token ranges are not rescanned.
-fn tokenize(input: &str) -> Result<Vec<(Token, SmartsTokenSpan)>, SmartsParseError> {
+fn tokenize(input: impl AsRef<[u8]>) -> Result<Vec<(Token, SmartsTokenSpan)>, SmartsParseError> {
     generic_parse_helper(input, ScannerStart::Molecule)
 }
 
 fn generic_parse_helper(
-    input: &str,
+    input: impl AsRef<[u8]>,
     start: ScannerStart,
 ) -> Result<Vec<(Token, SmartsTokenSpan)>, SmartsParseError> {
     // RDKit❗❌: int generic_parse_helper(T parser,
@@ -3983,13 +4152,14 @@ fn generic_parse_helper(
     // compaction are linear. Rust retains O(n) characters, byte boundaries,
     // and tokens; the boundary map is extra O(n) usize storage versus the
     // source's streaming scanner, while avoiding repeated prefix rescans.
+    let input = input.as_ref();
     let window = setup_smarts_input(input);
     let scanned = SmartsScanner::new(input, start, window).scan()?;
     compact_scanned_tokens(input, &scanned)
 }
 
 fn compact_scanned_tokens(
-    input: &str,
+    input: impl AsRef<[u8]>,
     scanned: &[ScannedToken],
 ) -> Result<Vec<(Token, SmartsTokenSpan)>, SmartsParseError> {
     // RDKit❗❌:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
@@ -3999,7 +4169,8 @@ fn compact_scanned_tokens(
     // also collects an O(n) character vector for safe bracket slices;
     // RDKit consumes its scanner buffer directly. The byte boundary
     // map prevents repeated prefix scans but adds another O(n) vector.
-    let chars: Vec<char> = input.chars().collect();
+    let input = input.as_ref();
+    let chars: Vec<char> = input.iter().copied().map(char::from).collect();
     let mut tokens = Vec::new();
     let mut i = 1usize;
     while i < scanned.len() {
@@ -4309,7 +4480,7 @@ fn invalid_atom_operator(position: usize, operator: char) -> SmartsParseError {
 /// Recursive-descent SMARTS parser for the currently modeled grammar.
 struct SmartsParser<'a> {
     tokens: &'a [(Token, SmartsTokenSpan)],
-    input: &'a str,
+    input: &'a [u8],
     pos: usize,
     /// Preserve every occurrence in the source's sorted-label/token order.
     ring_closure_targets: BTreeMap<u32, Vec<RingClosureOccurrence>>,
@@ -4595,10 +4766,10 @@ fn split_atom_map_suffix(content: &str) -> Result<(&str, Option<u32>), SmartsPar
 }
 
 impl<'a> SmartsParser<'a> {
-    fn new(tokens: &'a [(Token, SmartsTokenSpan)], input: &'a str) -> Self {
+    fn new(tokens: &'a [(Token, SmartsTokenSpan)], input: &'a (impl AsRef<[u8]> + ?Sized)) -> Self {
         Self {
             tokens,
-            input,
+            input: input.as_ref(),
             pos: 0,
             ring_closure_targets: BTreeMap::new(),
             num_bonds_parsed: Rc::new(Cell::new(0)),
@@ -4665,8 +4836,9 @@ impl<'a> SmartsParser<'a> {
                 position: span.parser_byte_end,
                 character: self
                     .input
-                    .chars()
-                    .nth(span.input_char_start)
+                    .get(span.input_char_start)
+                    .copied()
+                    .map(char::from)
                     .unwrap_or_else(|| format!("{token:?}").chars().next().unwrap_or('?')),
                 context: format!("unexpected trailing token in {context}"),
             }),
@@ -7398,7 +7570,12 @@ impl<'a> SmartsParser<'a> {
             (_, span) => Err(SmartsParseError::UnexpectedCharacter {
                 // RDKit❗✔️:   yyerror(input, molList, current_token_position, "syntax error");
                 position: span.parser_byte_end,
-                character: self.input.chars().nth(span.input_char_start).unwrap_or('?'),
+                character: self
+                    .input
+                    .get(span.input_char_start)
+                    .copied()
+                    .map(char::from)
+                    .unwrap_or('?'),
                 context: "expected bond query primitive".to_string(),
             }),
         }
@@ -7814,6 +7991,13 @@ fn element_symbol_to_atomic_number(symbol: &str) -> Option<u8> {
 
 #[cfg(test)]
 mod query_hydrogen_merge_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::*;
     use cosmolkit_model::{
         AtomId, BondId, Conformer2D, Conformer3D, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
@@ -7848,7 +8032,10 @@ mod query_hydrogen_merge_tests {
         QueryGraph::from_parts(
             vec![atom_0, atom_1, atom_2],
             bonds,
-            BTreeMap::new(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -7882,7 +8069,10 @@ mod query_hydrogen_merge_tests {
         QueryGraph::from_parts(
             vec![atom_0, atom_1, atom_2, atom_3],
             bonds,
-            BTreeMap::new(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -8159,6 +8349,7 @@ mod query_hydrogen_merge_tests {
             }])
             .with_cstates(vec![SGroupCState::new(BondId::new(1), [0.25, 0.5, 0.75])])
             .with_prop("custom", "preserved")
+            .unwrap()
             .with_data_field("first raw row")
             .with_data_field("second raw row");
         replace_query_substance_groups(&mut graph, vec![group])
@@ -8207,6 +8398,7 @@ mod query_hydrogen_merge_tests {
                 }])
                 .with_cstates(vec![SGroupCState::new(BondId::new(0), [0.25, 0.5, 0.75])])
                 .with_prop("custom", "preserved")
+                .unwrap()
                 .with_data_field("first raw row")
                 .with_data_field("second raw row");
 
@@ -8241,8 +8433,8 @@ mod query_hydrogen_merge_tests {
         assert_eq!(
             coordinates.conformers_2d[0]
                 .props()
-                .get("frame")
-                .map(String::as_str),
+                .get("frame".as_bytes())
+                .map(fixture_text),
             Some("first-2d")
         );
         assert_eq!(
@@ -8253,8 +8445,8 @@ mod query_hydrogen_merge_tests {
         assert_eq!(
             coordinates.conformers_2d[1]
                 .props()
-                .get("frame")
-                .map(String::as_str),
+                .get("frame".as_bytes())
+                .map(fixture_text),
             Some("second-2d")
         );
         assert_eq!(
@@ -8267,8 +8459,8 @@ mod query_hydrogen_merge_tests {
         assert_eq!(
             coordinates.conformers_3d[0]
                 .props()
-                .get("frame")
-                .map(String::as_str),
+                .get("frame".as_bytes())
+                .map(fixture_text),
             Some("first-3d")
         );
         assert_eq!(
@@ -8280,8 +8472,8 @@ mod query_hydrogen_merge_tests {
         assert_eq!(
             coordinates.conformers_3d[1]
                 .props()
-                .get("frame")
-                .map(String::as_str),
+                .get("frame".as_bytes())
+                .map(fixture_text),
             Some("second-3d")
         );
         assert_eq!(
@@ -8325,6 +8517,13 @@ mod query_hydrogen_merge_tests {
 
 #[cfg(test)]
 mod q03_setup_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::*;
 
     #[test]
@@ -8333,14 +8532,14 @@ mod q03_setup_tests {
             setup_smarts_input(""),
             SmartsScannerInputWindow {
                 byte_start: 0,
-                byte_end: 0,
+                byte_end: 1,
             }
         );
         assert_eq!(
             setup_smarts_input(" \t\r\n"),
             SmartsScannerInputWindow {
                 byte_start: 4,
-                byte_end: 4,
+                byte_end: 5,
             }
         );
         assert_eq!(
@@ -8350,14 +8549,14 @@ mod q03_setup_tests {
                 byte_end: 3,
             }
         );
-        // Rust strings cannot hold invalid UTF-8 byte sequences. U+2603 is
-        // a valid multibyte UTF-8 SMARTS token; its signed bytes trim at the
-        // edges exactly as the pinned plain-char source probe showed.
+        // The unchanged U+2603 fixture supplies three UTF-8 bytes. Source
+        // signed-char trimming skips them at the edges, then copies the
+        // counted std::string terminator as one input NUL before Flex sentinels.
         assert_eq!(
             setup_smarts_input("☃"),
             SmartsScannerInputWindow {
                 byte_start: 3,
-                byte_end: 3,
+                byte_end: 4,
             }
         );
         assert_eq!(
@@ -8571,7 +8770,10 @@ mod q03_setup_tests {
                 .scan()
                 .expect("first BAD_CHARACTER stops Flex-style scanning");
         assert_eq!(multibyte.len(), 3);
-        assert_eq!(multibyte[2].token, ScannerToken::BadCharacter('☃'));
+        assert_eq!(
+            multibyte[2].token,
+            ScannerToken::BadCharacter(char::from(0xe2))
+        );
         assert_eq!(
             multibyte[2].span,
             SmartsTokenSpan {
@@ -8606,6 +8808,13 @@ mod q03_setup_tests {
 
 #[cfg(test)]
 mod cx_progress_coordinate_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{apply_cx_progress_to_query, parse_smarts_graph};
 
     #[test]
@@ -8644,6 +8853,13 @@ mod cx_progress_coordinate_tests {
 
 #[cfg(test)]
 mod cx_progress_label_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{apply_cx_progress_to_query, parse_smarts_graph};
     use cosmolkit_model::{
         AtomId, BondId, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
@@ -8661,12 +8877,12 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &labels).expect("label effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("aAb".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("aAb".into()))
         );
         assert_eq!(graph.atom(1).and_then(|atom| atom.prop("atomLabel")), None);
         assert_eq!(
             graph.atom(2).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("last".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("last".into()))
         );
 
         let values = cosmolkit_cx::parse_cx_extensions_progress("|$_AV:v0;;v2$|");
@@ -8674,7 +8890,7 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &values).expect("value effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("molFileValue")),
-            Some(&cosmolkit_model::PropertyValue::String("v0".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("v0".into()))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("molFileValue")),
@@ -8682,7 +8898,7 @@ mod cx_progress_label_tests {
         );
         assert_eq!(
             graph.atom(2).and_then(|atom| atom.prop("molFileValue")),
-            Some(&cosmolkit_model::PropertyValue::String("v2".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("v2".into()))
         );
     }
 
@@ -8697,11 +8913,11 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("committed label effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("first".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("first".into()))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("second".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("second".into()))
         );
     }
 
@@ -8747,7 +8963,7 @@ mod cx_progress_label_tests {
         assert!(atom.no_implicit());
         assert_eq!(
             atom.prop("atomLabel"),
-            Some(&cosmolkit_model::PropertyValue::String("Q_e".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("Q_e".into()))
         );
         assert_eq!(query_substance_groups(&graph), &[substance_group]);
         assert_eq!(graph.stereo_groups(), &[stereo_group]);
@@ -8769,7 +8985,7 @@ mod cx_progress_label_tests {
         let atom = graph.atom(0).expect("partial query atom");
         assert_eq!(
             atom.prop("atomLabel"),
-            Some(&cosmolkit_model::PropertyValue::String("Q_e".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("Q_e".into()))
         );
         assert_eq!(atom.predicate(), &original_predicate);
         assert_eq!(atom.element(), Some(cosmolkit_types::Element::C));
@@ -8779,6 +8995,13 @@ mod cx_progress_label_tests {
 
 #[cfg(test)]
 mod cx_progress_properties_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{apply_cx_progress_to_query, parse_smarts_graph};
 
     #[test]
@@ -8794,11 +9017,11 @@ mod cx_progress_properties_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("atomProp effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("label")),
-            Some(&cosmolkit_model::PropertyValue::String("first".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("first".into()))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("kind")),
-            Some(&cosmolkit_model::PropertyValue::String("second".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("second".into()))
         );
     }
 
@@ -8814,7 +9037,7 @@ mod cx_progress_properties_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("committed property effect");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("kept")),
-            Some(&cosmolkit_model::PropertyValue::String("value".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("value".into()))
         );
         assert_eq!(graph.atom(0).and_then(|atom| atom.prop("later")), None);
     }
@@ -8822,6 +9045,13 @@ mod cx_progress_properties_tests {
 
 #[cfg(test)]
 mod cx_progress_bond_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{BondOrder, apply_cx_progress_to_query, parse_smarts_graph};
 
     #[test]
@@ -8887,6 +9117,13 @@ mod cx_progress_bond_tests {
 
 #[cfg(test)]
 mod cx_progress_radical_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{apply_cx_progress_to_query, parse_smarts_graph};
 
     #[test]
@@ -8922,6 +9159,13 @@ mod cx_progress_radical_tests {
 
 #[cfg(test)]
 mod cx_progress_stereo_merge_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
     use cosmolkit_model::{AtomId, StereoGroup, StereoGroupKind, replace_query_stereo_groups};
 
@@ -8983,6 +9227,12 @@ mod cx_progress_stereo_merge_tests {
         let mut expected_graph = initial;
         replace_query_stereo_groups(&mut expected_graph, expected_groups)
             .expect("validated expected groups");
+        expected_graph
+            .set_prop(
+                "__computedProps",
+                cosmolkit_model::PropertyValue::StringVector(Vec::new()),
+            )
+            .unwrap();
         assert_eq!(direct, expected_graph);
         assert_eq!(progressed, expected_graph);
     }
@@ -9066,6 +9316,13 @@ mod cx_progress_stereo_merge_tests {
 
 #[cfg(test)]
 mod cx_progress_constraints_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
     use cosmolkit_model::{AtomQueryPredicate, QueryNode};
 
@@ -9147,6 +9404,11 @@ mod cx_progress_constraints_tests {
             let initial = query_graph("CC");
             let mut expected = initial.clone();
             apply_complete(&mut expected, valid_prefix);
+            assert_eq!(
+                expected.prop("__computedProps"),
+                Some(&cosmolkit_model::PropertyValue::StringVector(Vec::new()))
+            );
+            expected.clear_prop("__computedProps").unwrap();
             let mut progressed = initial;
             apply_cx_progress_to_query(&mut progressed, &progress)
                 .expect("apply source-committed query items");
@@ -9177,6 +9439,13 @@ mod cx_progress_constraints_tests {
 
 #[cfg(test)]
 mod cx_progress_linknodes_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
 
     fn query_graph(smarts: &str) -> QueryGraph {
@@ -9202,7 +9471,7 @@ mod cx_progress_linknodes_tests {
 
         assert_eq!(progressed, direct);
         assert_eq!(
-            direct.prop("molFileLinkNodes"),
+            direct.prop("_molLinkNodes").map(fixture_value),
             Some("1 3 2 1 2 1 3|2 4 2 2 3 2 1")
         );
     }
@@ -9233,7 +9502,7 @@ mod cx_progress_linknodes_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("source partial effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("left".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("left".into()))
         );
         assert_eq!(graph.prop("molFileLinkNodes"), None);
     }
@@ -9254,7 +9523,10 @@ mod cx_progress_linknodes_tests {
         let mut graph = query_graph("C");
         apply_cx_progress_to_query(&mut graph, &progress)
             .expect("link-node helper completed before outer delimiter failure");
-        assert_eq!(graph.prop("molFileLinkNodes"), Some("1 2 2 1 1 1 1"));
+        assert_eq!(
+            graph.prop("_molLinkNodes").map(fixture_value),
+            Some("1 2 2 1 1 1 1")
+        );
     }
 
     #[test]
@@ -9262,14 +9534,26 @@ mod cx_progress_linknodes_tests {
         let progress = cosmolkit_cx::parse_cx_extensions_progress("|LN:0:1.2|");
         assert!(progress.is_complete());
 
-        let mut graph = query_graph("CC").with_prop("molFileLinkNodes", "prior");
+        let mut graph = query_graph("CC")
+            .with_prop("molFileLinkNodes", "prior")
+            .unwrap();
         assert!(apply_cx_progress_to_query(&mut graph, &progress).is_err());
-        assert_eq!(graph.prop("molFileLinkNodes"), Some("prior"));
+        assert_eq!(
+            graph.prop("molFileLinkNodes").map(fixture_value),
+            Some("prior")
+        );
     }
 }
 
 #[cfg(test)]
 mod cx_progress_sgroups_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
     use cosmolkit_cx::{CxRecord, CxSGroupHierarchy};
     use cosmolkit_model::{
@@ -9303,15 +9587,21 @@ mod cx_progress_sgroups_tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(5)
                 .with_prop("_cxsmilesindex", "5")
-                .with_prop("index", "71"),
+                .unwrap()
+                .with_prop("index", "71")
+                .unwrap(),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .with_prop("index", "92"),
+                .unwrap()
+                .with_prop("index", "92")
+                .unwrap(),
             SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(1)
                 .with_prop("_cxsmilesindex", "1")
-                .with_prop("index", "93"),
+                .unwrap()
+                .with_prop("index", "93")
+                .unwrap(),
         ];
         replace_query_substance_groups(&mut graph, groups).expect("valid hierarchy groups");
         graph
@@ -9339,29 +9629,66 @@ mod cx_progress_sgroups_tests {
         assert_eq!(data_group.rdkit_sequence_id(), Some(1));
         assert_eq!(data_group.atoms(), &[AtomId::new(1), AtomId::new(0)]);
         assert_eq!(
-            data_group.props().get("_cxsmilesindex").map(String::as_str),
-            Some("1")
+            data_group
+                .props()
+                .get("_cxsmilesindex".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(1_u32)
         );
         assert_eq!(
-            data_group.props().get("index").map(String::as_str),
-            Some("3")
+            data_group
+                .props()
+                .get("index".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(3_u32)
         );
         assert_eq!(
-            data_group.props().get("DATAFIELDS").map(String::as_str),
-            Some("value,with,comma")
+            data_group
+                .props()
+                .get("DATAFIELDS".as_bytes())
+                .map(|value| value
+                    .as_string_vector()
+                    .expect("source DATAFIELDS string vector")
+                    .iter()
+                    .map(fixture_text)
+                    .collect::<Vec<_>>()),
+            Some(vec!["value,with,comma"])
         );
         assert_eq!(
-            data_group.props().get("COORDS").map(String::as_str),
+            data_group
+                .props()
+                .get("COORDS".as_bytes())
+                .map(fixture_value),
             Some("(1,2")
         );
-        assert_eq!(data_group.data_fields(), &["value,with,comma"]);
-        let typed_data = data_group.data().expect("typed DAT payload");
-        assert_eq!(typed_data.field_name.as_deref(), Some("FIELD"));
-        assert_eq!(typed_data.query_op.as_deref(), Some("="));
-        assert_eq!(typed_data.field_info.as_deref(), Some("unit"));
-        assert_eq!(typed_data.values, ["value,with,comma"]);
         assert_eq!(
-            typed_data.field_display.as_deref(),
+            data_group
+                .data_fields()
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
+            &["value,with,comma"]
+        );
+        let typed_data = data_group.data().expect("typed DAT payload");
+        assert_eq!(
+            typed_data.field_name.as_ref().map(fixture_text),
+            Some("FIELD")
+        );
+        assert_eq!(typed_data.query_op.as_ref().map(fixture_text), Some("="));
+        assert_eq!(
+            typed_data.field_info.as_ref().map(fixture_text),
+            Some("unit")
+        );
+        assert_eq!(
+            typed_data
+                .values
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
+            ["value,with,comma"]
+        );
+        assert_eq!(
+            typed_data.field_display.as_ref().map(fixture_text),
             Some("    0.0000    0.0000    DR    ALL  0       0")
         );
     }
@@ -9387,7 +9714,7 @@ mod cx_progress_sgroups_tests {
         assert!(query_substance_groups(&graph).is_empty());
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("Q_e".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("Q_e".into()))
         );
     }
 
@@ -9411,16 +9738,29 @@ mod cx_progress_sgroups_tests {
             graph.atom(0).expect("first atom").identity(),
             QueryAtomIdentity::Element(Element::DUMMY)
         );
-        assert_eq!(graph.prop("_cxsmilesLabelsProcessed"), Some("1"));
+        assert_eq!(
+            graph.prop("_cxsmilesLabelsProcessed"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
         let groups = query_substance_groups(&graph);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].id(), SubstanceGroupId::new(0));
         assert_eq!(groups[0].rdkit_sequence_id(), Some(0));
         assert_eq!(
-            groups[0].props().get("index").map(String::as_str),
-            Some("1")
+            groups[0]
+                .props()
+                .get("index".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(1_u32)
         );
-        assert_eq!(groups[0].data_fields(), &["one"]);
+        assert_eq!(
+            groups[0]
+                .data_fields()
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
+            &["one"]
+        );
     }
 
     #[test]
@@ -9442,7 +9782,10 @@ mod cx_progress_sgroups_tests {
         let groups = query_substance_groups(&graph);
         assert_eq!(groups.len(), 1);
         assert_eq!(
-            groups[0].props().get("COORDS").map(String::as_str),
+            groups[0]
+                .props()
+                .get("COORDS".as_bytes())
+                .map(fixture_value),
             Some("(raw|")
         );
     }
@@ -9467,13 +9810,19 @@ mod cx_progress_sgroups_tests {
         assert_eq!(groups[0].parent(), None);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1].props().get("PARENT").map(String::as_str),
-            Some("71")
+            groups[1]
+                .props()
+                .get("PARENT".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(71_u32)
         );
         assert_eq!(groups[2].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[2].props().get("PARENT").map(String::as_str),
-            Some("71")
+            groups[2]
+                .props()
+                .get("PARENT".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(71_u32)
         );
         assert_eq!(groups[1].rdkit_sequence_id(), Some(0));
         assert_eq!(groups[2].rdkit_sequence_id(), Some(1));
@@ -9507,8 +9856,11 @@ mod cx_progress_sgroups_tests {
         let groups = query_substance_groups(&graph);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1].props().get("PARENT").map(String::as_str),
-            Some("71")
+            groups[1]
+                .props()
+                .get("PARENT".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(71_u32)
         );
         assert_eq!(groups[2].parent(), None);
     }
@@ -9530,8 +9882,11 @@ mod cx_progress_sgroups_tests {
         let groups = query_substance_groups(&graph);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1].props().get("PARENT").map(String::as_str),
-            Some("71")
+            groups[1]
+                .props()
+                .get("PARENT".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(71_u32)
         );
         assert_eq!(groups[2].parent(), None);
     }
@@ -9539,6 +9894,13 @@ mod cx_progress_sgroups_tests {
 
 #[cfg(test)]
 mod cx_progress_polymer_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
     use cosmolkit_model::{
         AtomId, BondId, QueryAtomIdentity, SGroupConnection, SubstanceGroup, SubstanceGroupId,
@@ -9588,8 +9950,8 @@ mod cx_progress_polymer_tests {
         assert_eq!(group.id(), SubstanceGroupId::new(1));
         assert_eq!(group.rdkit_sequence_id(), Some(0));
         assert_eq!(group.kind(), &SubstanceGroupKind::Copolymer);
-        assert_eq!(group.subtype(), Some("ALT"));
-        assert_eq!(group.label(), Some("repeat"));
+        assert_eq!(group.subtype().map(fixture_text), Some("ALT"));
+        assert_eq!(group.label().map(fixture_text), Some("repeat"));
         assert_eq!(group.connection(), Some(&SGroupConnection::HeadToHead));
         assert_eq!(
             group.atoms(),
@@ -9608,13 +9970,25 @@ mod cx_progress_polymer_tests {
             &[BondId::new(0), BondId::new(1)]
         );
         assert_eq!(
-            group.props().get("_cxsmilesindex").map(String::as_str),
-            Some("0")
+            group
+                .props()
+                .get("_cxsmilesindex".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(0_u32)
         );
-        assert_eq!(group.props().get("index").map(String::as_str), Some("2"));
-        assert_eq!(group.props().get("CONNECT").map(String::as_str), Some("HH"));
         assert_eq!(
-            group.props().get("SUBTYPE").map(String::as_str),
+            group
+                .props()
+                .get("index".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(2_u32)
+        );
+        assert_eq!(
+            group.props().get("CONNECT".as_bytes()).map(fixture_value),
+            Some("HH")
+        );
+        assert_eq!(
+            group.props().get("SUBTYPE".as_bytes()).map(fixture_value),
             Some("ALT")
         );
     }
@@ -9631,8 +10005,8 @@ mod cx_progress_polymer_tests {
             ("mix", SubstanceGroupKind::MixtureComponent, None),
             ("f", SubstanceGroupKind::Formulation, None),
             ("any", SubstanceGroupKind::AnyPolymer, None),
-            ("gen", SubstanceGroupKind::Generic("GEN".to_owned()), None),
-            ("c", SubstanceGroupKind::Generic("COM".to_owned()), None),
+            ("gen", SubstanceGroupKind::Generic("GEN".into()), None),
+            ("c", SubstanceGroupKind::Generic("COM".into()), None),
             ("grf", SubstanceGroupKind::Graft, None),
             ("alt", SubstanceGroupKind::Copolymer, Some("ALT")),
             ("ran", SubstanceGroupKind::Copolymer, Some("RAN")),
@@ -9656,14 +10030,20 @@ mod cx_progress_polymer_tests {
             assert_eq!(group.id(), SubstanceGroupId::new(index));
             assert_eq!(group.rdkit_sequence_id(), Some(index as u32 + 1));
             assert_eq!(group.kind(), &kind, "{type_code}");
-            assert_eq!(group.subtype(), subtype, "{type_code}");
+            assert_eq!(group.subtype().map(fixture_text), subtype, "{type_code}");
             assert_eq!(
-                group.props().get("_cxsmilesindex").map(String::as_str),
-                Some((index + 1).to_string().as_str())
+                group
+                    .props()
+                    .get("_cxsmilesindex".as_bytes())
+                    .map(|value| value.as_uint().expect("source unsigned property kind")),
+                Some(index as u32 + 1)
             );
             assert_eq!(
-                group.props().get("index").map(String::as_str),
-                Some((index + 1).to_string().as_str())
+                group
+                    .props()
+                    .get("index".as_bytes())
+                    .map(|value| value.as_uint().expect("source unsigned property kind")),
+                Some(index as u32 + 1)
             );
             assert_eq!(group.atoms(), &[AtomId::new(0)], "{type_code}");
         }
@@ -9685,7 +10065,7 @@ mod cx_progress_polymer_tests {
         assert!(query_substance_groups(&graph).is_empty());
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("Q_e".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("Q_e".into()))
         );
     }
 
@@ -9718,7 +10098,10 @@ mod cx_progress_polymer_tests {
             graph.atom(0).unwrap().identity(),
             QueryAtomIdentity::Element(Element::DUMMY)
         );
-        assert_eq!(graph.prop("_cxsmilesLabelsProcessed"), Some("1"));
+        assert_eq!(
+            graph.prop("_cxsmilesLabelsProcessed"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
     }
 
     #[test]
@@ -9733,8 +10116,11 @@ mod cx_progress_polymer_tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].rdkit_sequence_id(), Some(0));
         assert_eq!(
-            groups[0].props().get("index").map(String::as_str),
-            Some("1")
+            groups[0]
+                .props()
+                .get("index".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(1_u32)
         );
 
         let missing_outer_pipe = "|Sg:n:0:repeat:hh";
@@ -9751,9 +10137,12 @@ mod cx_progress_polymer_tests {
             .expect("completed polymer helper commits before missing outer pipe");
         let groups = query_substance_groups(&graph);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].label(), Some("repeat"));
+        assert_eq!(groups[0].label().map(fixture_text), Some("repeat"));
         assert_eq!(
-            groups[0].props().get("CONNECT").map(String::as_str),
+            groups[0]
+                .props()
+                .get("CONNECT".as_bytes())
+                .map(fixture_value),
             Some("HH")
         );
         assert_eq!(groups[0].head_crossing_bonds(), &[BondId::new(0)]);
@@ -9762,6 +10151,13 @@ mod cx_progress_polymer_tests {
 
 #[cfg(test)]
 mod cx_progress_attachments_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
 
     fn query_graph(smarts: &str) -> QueryGraph {
@@ -9775,7 +10171,7 @@ mod cx_progress_attachments_tests {
         graph
             .bond(bond_index)
             .and_then(|bond| bond.bond().prop(key))
-            .map(|value| value.as_string().expect("string property fixture"))
+            .map(|value| fixture_text(value.as_string().expect("string property fixture")))
     }
 
     #[test]
@@ -9866,8 +10262,15 @@ mod cx_progress_attachments_tests {
 
 #[cfg(test)]
 mod cx_progress_directions_tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::{QueryGraph, apply_cx_progress_to_query, parse_smarts_graph};
-    use cosmolkit_model::AtomId;
+    use cosmolkit_model::{AtomId, PropertyValue};
     use cosmolkit_types::{BondDirection, BondStereo, ChiralTag};
 
     fn query_graph(smarts: &str) -> QueryGraph {
@@ -9881,7 +10284,7 @@ mod cx_progress_directions_tests {
         graph
             .bond(bond_index)
             .and_then(|bond| bond.bond().prop(key))
-            .map(|value| value.as_string().expect("string property fixture"))
+            .map(|value| fixture_text(value.as_string().expect("string property fixture")))
     }
 
     #[test]
@@ -9908,9 +10311,18 @@ mod cx_progress_directions_tests {
             progressed.bond(1).unwrap().bond().direction(),
             BondDirection::BeginDash
         );
-        assert_eq!(bond_prop(&progressed, 0, "_MolFileBondCfg"), Some("1"));
-        assert_eq!(bond_prop(&progressed, 1, "_MolFileBondCfg"), Some("3"));
-        assert_eq!(progressed.prop("_needsDetectAtomStereo"), Some("1"));
+        assert_eq!(
+            progressed.bond(0).unwrap().bond().prop("_MolFileBondCfg"),
+            Some(&PropertyValue::UInt(1))
+        );
+        assert_eq!(
+            progressed.bond(1).unwrap().bond().prop("_MolFileBondCfg"),
+            Some(&PropertyValue::UInt(3))
+        );
+        assert_eq!(
+            progressed.prop("_needsDetectAtomStereo"),
+            Some(&PropertyValue::Int(1))
+        );
 
         let mut unknown = query_graph("C-C");
         unknown.atoms_mut()[1].set_chiral_tag(ChiralTag::TetrahedralCw);
@@ -9925,7 +10337,10 @@ mod cx_progress_directions_tests {
             unknown.atom(1).unwrap().chiral_tag(),
             ChiralTag::Unspecified
         );
-        assert_eq!(unknown.prop("_needsDetectBondStereo"), Some("1"));
+        assert_eq!(
+            unknown.prop("_needsDetectBondStereo"),
+            Some(&PropertyValue::Int(1))
+        );
 
         for (text, expected) in [
             ("|ctu:1|", BondStereo::Any),
@@ -9948,7 +10363,10 @@ mod cx_progress_directions_tests {
             let bond = progressed.bond(1).unwrap().bond();
             assert_eq!(bond.stereo(), expected);
             assert_eq!(bond.stereo_atoms(), Some([AtomId::new(3), AtomId::new(0)]));
-            assert_eq!(progressed.prop("_needsDetectBondStereo"), Some("1"));
+            assert_eq!(
+                progressed.prop("_needsDetectBondStereo"),
+                Some(&PropertyValue::Int(1))
+            );
         }
     }
 
@@ -9962,7 +10380,10 @@ mod cx_progress_directions_tests {
         let mut graph = query_graph("C-C");
         apply_cx_progress_to_query(&mut graph, &progress)
             .expect("the complete first wedge pair survives later syntax failure");
-        assert_eq!(bond_prop(&graph, 0, "_MolFileBondCfg"), Some("1"));
+        assert_eq!(
+            graph.bond(0).unwrap().bond().prop("_MolFileBondCfg"),
+            Some(&PropertyValue::UInt(1))
+        );
         assert_eq!(
             graph.bond(0).unwrap().bond().direction(),
             BondDirection::BeginWedge
@@ -9972,7 +10393,10 @@ mod cx_progress_directions_tests {
         assert!(duplicate.is_complete());
         let mut graph = query_graph("C-C");
         assert!(apply_cx_progress_to_query(&mut graph, &duplicate).is_err());
-        assert_eq!(bond_prop(&graph, 0, "_MolFileBondCfg"), Some("1"));
+        assert_eq!(
+            graph.bond(0).unwrap().bond().prop("_MolFileBondCfg"),
+            Some(&PropertyValue::UInt(1))
+        );
 
         let mut graph = query_graph("C(C)(C)C");
         assert_eq!(graph.bond(0).unwrap().endpoints(), (0, 1));
@@ -9980,8 +10404,11 @@ mod cx_progress_directions_tests {
         assert_eq!(graph.bond(2).unwrap().endpoints(), (0, 3));
         let mismatch = cosmolkit_cx::parse_cx_extensions_progress("|wU:0.0,3.1|");
         assert!(apply_cx_progress_to_query(&mut graph, &mismatch).is_err());
-        assert_eq!(bond_prop(&graph, 0, "_MolFileBondCfg"), Some("1"));
-        assert_eq!(bond_prop(&graph, 1, "_MolFileBondCfg"), None);
+        assert_eq!(
+            graph.bond(0).unwrap().bond().prop("_MolFileBondCfg"),
+            Some(&PropertyValue::UInt(1))
+        );
+        assert_eq!(graph.bond(1).unwrap().bond().prop("_MolFileBondCfg"), None);
 
         let stereo_overflow = cosmolkit_cx::parse_cx_extensions_progress("|ctu:1,4294967296|");
         assert!(!stereo_overflow.is_complete());
@@ -9998,7 +10425,7 @@ mod cx_progress_directions_tests {
         let mut graph = query_graph("C-C");
         apply_cx_progress_to_query(&mut graph, &invalid)
             .expect("source-invalid atom and bond indices are skipped");
-        assert_eq!(bond_prop(&graph, 0, "_MolFileBondCfg"), None);
+        assert_eq!(graph.bond(0).unwrap().bond().prop("_MolFileBondCfg"), None);
         assert_eq!(graph.bond(0).unwrap().bond().stereo(), BondStereo::None);
 
         let degree_limited = cosmolkit_cx::parse_cx_extensions_progress("|c:0|");

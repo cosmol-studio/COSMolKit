@@ -19,6 +19,20 @@ def twice(value):
 
 
 class ProgressTests(unittest.TestCase):
+    def test_mmcif_reference_retains_shared_bio_input_filename(self):
+        import gemmi
+        for name, format in (("sample.pdb", "pdb"), ("sample.cif", "mmcif")):
+            path = reference.PACKAGE / "testdata/bio" / name
+            case = {"case_id": name, "input": f"bio/{name}", "format": format,
+                    "text": path.read_text()}
+            groups = gemmi.MmcifOutputGroups(False)
+            groups.block_name = True
+            expected = gemmi.read_structure(str(path), merge_chain_parts=False)
+            row = reference.bio_mmcif_switch_case((case, False, "block_name"))
+            self.assertEqual(row["text"], expected.make_mmcif_document(groups).as_string())
+            self.assertEqual(row["flag"], "block_name")
+            self.assertTrue(row["value"])
+
     def test_progress_is_flushed_to_stderr_not_json_stdout(self):
         stderr, stdout = io.StringIO(), io.StringIO()
         with contextlib.redirect_stderr(stderr), contextlib.redirect_stdout(stdout):

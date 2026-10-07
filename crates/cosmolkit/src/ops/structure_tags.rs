@@ -75,8 +75,11 @@ pub(crate) fn assign_chiral_tags_from_structure_impl(
 
     if assignment.clear_stereochem_done {
         let mut properties = parts.checkout_properties()?;
-        properties.clear_prop("_StereochemDone");
+        let clear = properties
+            .clear_prop("_StereochemDone")
+            .map_err(OperationError::InvalidProperty);
         parts.install_properties(properties)?;
+        clear?;
     }
     parts.clear_cache(
         DerivedState::STEREO

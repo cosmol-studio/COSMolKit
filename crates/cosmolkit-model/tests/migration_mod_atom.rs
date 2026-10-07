@@ -4,7 +4,15 @@ use cosmolkit_model::{
 };
 
 fn string_prop(value: Option<&PropertyValue>) -> Option<&str> {
-    value.and_then(|value| value.as_string().ok())
+    value.map(|value| {
+        std::str::from_utf8(
+            value
+                .as_string()
+                .expect("original string fixture kind")
+                .as_bytes(),
+        )
+        .expect("unchanged UTF-8 fixture bytes")
+    })
 }
 
 fn full_residue() -> AtomPdbResidueInfo {
@@ -131,7 +139,7 @@ fn atom_spec_covers_every_default_builder_getter_and_optional_reset() {
     assert_eq!(default.radical_electrons(), 0);
     assert_eq!(default.hybridization(), Hybridization::Unspecified);
     assert!(default.props().is_empty());
-    assert!(default.computed_prop_names().is_empty());
+    assert!(default.computed_prop_names().unwrap().is_none());
     assert_eq!(default.pdb_residue_info(), None);
 
     let full = full_spec();
@@ -152,7 +160,7 @@ fn atom_spec_covers_every_default_builder_getter_and_optional_reset() {
     assert_eq!(full.radical_electrons(), 1);
     assert_eq!(full.hybridization(), Hybridization::Sp2);
     assert_eq!(string_prop(full.prop("ordinary")), Some("kept"));
-    assert!(full.is_prop_computed("computed"));
+    assert!(full.is_prop_computed("computed").unwrap());
     assert_eq!(full.pdb_residue_info(), Some(&full_residue()));
 
     let reset = full
@@ -194,7 +202,7 @@ fn atom_from_spec_preserves_every_fact_and_detached_setters_cover_both_states() 
     assert_eq!(atom.radical_electrons(), 1);
     assert_eq!(atom.hybridization(), Hybridization::Sp2);
     assert_eq!(string_prop(atom.prop("ordinary")), Some("kept"));
-    assert!(atom.is_prop_computed("computed"));
+    assert!(atom.is_prop_computed("computed").unwrap());
     assert_eq!(atom.pdb_residue_info(), Some(&full_residue()));
 
     atom = atom.with_id(AtomId::new(1));
@@ -258,7 +266,13 @@ fn checked_atom_properties_cover_empty_overwrite_membership_and_clear() {
         .unwrap();
     assert_eq!(string_prop(spec.prop("cache")), Some("second"));
     assert_eq!(string_prop(spec.prop("ordinary")), Some("second"));
-    assert_eq!(spec.computed_prop_names().len(), 1);
+    assert_eq!(
+        spec.computed_prop_names()
+            .unwrap()
+            .expect("computed list exists")
+            .len(),
+        1
+    );
 
     let mut atom = Atom::from_spec(AtomId::new(0), spec);
     assert_eq!(atom.set_prop("", "value"), Err(AtomPropertyError::EmptyKey));
@@ -267,19 +281,33 @@ fn checked_atom_properties_cover_empty_overwrite_membership_and_clear() {
         Err(AtomPropertyError::EmptyKey)
     );
     atom.set_prop("cache", "ordinary overwrite").unwrap();
-    assert!(atom.is_prop_computed("cache"));
+    assert!(atom.is_prop_computed("cache").unwrap());
     atom.set_computed_prop("cache", "computed overwrite")
         .unwrap();
-    assert_eq!(atom.computed_prop_names().len(), 1);
+    assert_eq!(
+        atom.computed_prop_names()
+            .unwrap()
+            .expect("computed list exists")
+            .len(),
+        1
+    );
 
-    atom.clear_prop("missing");
-    atom.clear_prop("cache");
+    atom.clear_prop("missing")
+        .expect("valid original computed state");
+    atom.clear_prop("cache")
+        .expect("valid original computed state");
     assert_eq!(atom.prop("cache"), None);
-    assert!(!atom.is_prop_computed("cache"));
+    assert!(!atom.is_prop_computed("cache").unwrap());
 
     atom.set_computed_prop("temporary", "gone").unwrap();
-    atom.clear_computed_props();
+    atom.clear_computed_props()
+        .expect("valid original computed state");
     assert_eq!(atom.prop("temporary"), None);
     assert_eq!(string_prop(atom.prop("ordinary")), Some("second"));
-    assert!(atom.computed_prop_names().is_empty());
+    assert!(
+        atom.computed_prop_names()
+            .unwrap()
+            .expect("source computed marker retained")
+            .is_empty()
+    );
 }

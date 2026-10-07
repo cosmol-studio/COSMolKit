@@ -157,18 +157,19 @@ fn explicit_hydrogen_overflow_is_structured_and_atomic() {
         Vec::new(),
     );
     let snapshot = source.clone();
-    assert_eq!(
-        prepare(
-            source.clone(),
-            vec![1],
-            &zero_valence(2),
-            &RemoveHsParams::default()
-        ),
-        Err(HydrogenError::ExplicitHydrogenOverflow {
-            atom: atom(0),
-            current: u8::MAX,
-        })
-    );
+    // Preserve the original max input and identity: the pinned source setter
+    // narrows 256 to uint8 zero, with unchanged source peer and removal mask.
+    let result = prepare(
+        source.clone(),
+        vec![1],
+        &zero_valence(2),
+        &RemoveHsParams::default(),
+    )
+    .unwrap();
+    assert_eq!(result.topology.atoms[0].explicit_hydrogens(), 0);
+    assert_eq!(result.atoms_to_remove, vec![atom(1)]);
+    assert_eq!(result.topology.atoms.len(), 2);
+    assert_eq!(result.topology.bonds, source.bonds);
     assert_eq!(source, snapshot);
 }
 
@@ -710,7 +711,8 @@ fn sgroup_references_are_cleaned_one_occurrence_without_metadata_loss() {
             },
         ])
         .with_label("kept")
-        .with_prop("key", "value");
+        .with_prop("key", "value")
+        .unwrap();
     let source = topology(
         vec![AtomSpec::new(Element::C), AtomSpec::new(Element::H)],
         vec![bond(0, 1, BondOrder::Single)],
@@ -730,10 +732,22 @@ fn sgroup_references_are_cleaned_one_occurrence_without_metadata_loss() {
     assert_eq!(group.bond_role(bond_id(0)), SGroupBondRole::Contained);
     assert_eq!(group.attach_points()[0].atom, atom(0));
     assert_eq!(group.attach_points()[0].leaving_atom, None);
-    assert_eq!(group.attach_points()[0].label.as_deref(), Some("leave"));
+    assert_eq!(
+        group.attach_points()[0]
+            .label
+            .as_ref()
+            .map(|value| value.as_bytes()),
+        Some(b"leave".as_slice())
+    );
     assert_eq!(group.attach_points()[1].atom, atom(1));
-    assert_eq!(group.label(), Some("kept"));
-    assert_eq!(group.props().get("key").map(String::as_str), Some("value"));
+    assert_eq!(
+        group.label().map(|value| value.as_bytes()),
+        Some(b"kept".as_slice())
+    );
+    assert_eq!(
+        group.props().get(b"key".as_slice()),
+        Some(&cosmolkit_model::PropertyValue::String("value".into()))
+    );
 }
 
 #[test]

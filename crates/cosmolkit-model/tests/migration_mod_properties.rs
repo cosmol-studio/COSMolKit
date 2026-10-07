@@ -1,3 +1,7 @@
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+}
+
 use std::str::FromStr;
 
 use cosmolkit_model::{
@@ -7,11 +11,13 @@ use cosmolkit_model::{
 };
 
 fn string_item_prop(value: Option<&PropertyValue>) -> Option<&str> {
-    value.and_then(|value| value.as_string().ok())
+    value
+        .and_then(|value| value.as_string().ok())
+        .map(fixture_text)
 }
 
 fn string_value(value: &str) -> PropertyValue {
-    PropertyValue::String(value.to_owned())
+    PropertyValue::String(value.into())
 }
 
 const CIP_CASES: [(CipDescriptor, &str); 12] = [
@@ -36,7 +42,7 @@ fn metadata_defaults_names_and_ordered_sdf_records_are_exact() {
     assert!(default.sdf_data_fields().is_empty());
     assert!(default.sdf_property_lists().is_empty());
     assert!(default.props().is_empty());
-    assert!(default.computed_prop_names().is_empty());
+    assert!(default.computed_prop_names().unwrap().is_none());
 
     let atom_list = SdfPropertyList::new(
         SdfPropertyListTarget::Atom,
@@ -56,9 +62,13 @@ fn metadata_defaults_names_and_ordered_sdf_records_are_exact() {
         .with_sdf_property_list(bond_list.clone())
         .with_name("");
 
-    assert_eq!(properties.name(), Some(""));
+    assert_eq!(properties.name().map(fixture_text), Some(""));
     assert_eq!(
-        properties.sdf_data_fields(),
+        properties
+            .sdf_data_fields()
+            .iter()
+            .map(|(key, value)| (fixture_text(key).to_owned(), fixture_text(value).to_owned()))
+            .collect::<Vec<_>>(),
         &[
             ("duplicate".to_owned(), "one".to_owned()),
             ("duplicate".to_owned(), "two".to_owned()),
@@ -69,7 +79,10 @@ fn metadata_defaults_names_and_ordered_sdf_records_are_exact() {
         properties.sdf_property_lists()[0].target(),
         SdfPropertyListTarget::Atom
     );
-    assert_eq!(properties.sdf_property_lists()[0].name(), "shared");
+    assert_eq!(
+        fixture_text(properties.sdf_property_lists()[0].name()),
+        "shared"
+    );
     assert_eq!(
         properties.sdf_property_lists()[0].values(),
         &[Some(string_value(" a ")), None]
@@ -110,33 +123,65 @@ fn ordinary_and_computed_properties_cover_errors_overwrites_and_clears() {
     );
     assert_eq!(properties, before_error);
 
-    assert_eq!(properties.prop("ordinary"), Some("second"));
+    assert_eq!(
+        string_item_prop(properties.prop("ordinary")),
+        Some("second")
+    );
     assert_eq!(properties.prop("missing"), None);
-    assert_eq!(properties.prop("computed"), Some("second"));
-    assert!(properties.is_prop_computed("computed"));
-    assert_eq!(properties.computed_prop_names().len(), 1);
+    assert_eq!(
+        string_item_prop(properties.prop("computed")),
+        Some("second")
+    );
+    assert!(properties.is_prop_computed("computed").unwrap());
+    assert_eq!(
+        properties
+            .computed_prop_names()
+            .unwrap()
+            .expect("computed list present")
+            .len(),
+        1
+    );
 
     properties
         .set_prop("computed", "ordinary overwrite")
         .unwrap();
-    assert_eq!(properties.prop("computed"), Some("ordinary overwrite"));
-    assert!(properties.is_prop_computed("computed"));
+    assert_eq!(
+        string_item_prop(properties.prop("computed")),
+        Some("ordinary overwrite")
+    );
+    assert!(properties.is_prop_computed("computed").unwrap());
     properties.clear_prop("absent");
     properties.clear_prop("computed");
     assert_eq!(properties.prop("computed"), None);
-    assert!(!properties.is_prop_computed("computed"));
+    assert!(!properties.is_prop_computed("computed").unwrap());
 
     properties.set_computed_prop("temporary", "gone").unwrap();
     properties.set_prop("cache_like_name", "kept").unwrap();
     properties.clear_computed_props();
     properties.clear_computed_props();
     assert_eq!(properties.prop("temporary"), None);
-    assert_eq!(properties.prop("ordinary"), Some("second"));
-    assert_eq!(properties.prop("cache_like_name"), Some("kept"));
-    assert!(properties.computed_prop_names().is_empty());
-    assert_eq!(properties.name(), Some("unchanged"));
     assert_eq!(
-        properties.sdf_data_fields(),
+        string_item_prop(properties.prop("ordinary")),
+        Some("second")
+    );
+    assert_eq!(
+        string_item_prop(properties.prop("cache_like_name")),
+        Some("kept")
+    );
+    assert!(
+        properties
+            .computed_prop_names()
+            .unwrap()
+            .expect("computed marker retained")
+            .is_empty()
+    );
+    assert_eq!(properties.name().map(fixture_text), Some("unchanged"));
+    assert_eq!(
+        properties
+            .sdf_data_fields()
+            .iter()
+            .map(|(key, value)| (fixture_text(key).to_owned(), fixture_text(value).to_owned()))
+            .collect::<Vec<_>>(),
         &[("raw".to_owned(), "record".to_owned())]
     );
 }
@@ -185,13 +230,13 @@ fn sdf_property_lists_remap_each_target_in_order_and_preserve_metadata() {
     let lists = properties.sdf_property_lists();
     assert_eq!(lists.len(), 3);
     assert_eq!(lists[0].target(), SdfPropertyListTarget::Bond);
-    assert_eq!(lists[0].name(), "bond-list");
+    assert_eq!(fixture_text(lists[0].name()), "bond-list");
     assert_eq!(
         lists[0].values(),
         &[Some(string_value("b1")), None, None, None]
     );
     assert_eq!(lists[1].target(), SdfPropertyListTarget::Atom);
-    assert_eq!(lists[1].name(), "atom-list");
+    assert_eq!(fixture_text(lists[1].name()), "atom-list");
     assert_eq!(
         lists[1].values(),
         &[
@@ -203,7 +248,7 @@ fn sdf_property_lists_remap_each_target_in_order_and_preserve_metadata() {
         ]
     );
     assert_eq!(lists[2].target(), SdfPropertyListTarget::Atom);
-    assert_eq!(lists[2].name(), "atom-subset");
+    assert_eq!(fixture_text(lists[2].name()), "atom-subset");
     assert_eq!(
         lists[2].values(),
         &[
@@ -215,14 +260,21 @@ fn sdf_property_lists_remap_each_target_in_order_and_preserve_metadata() {
         ]
     );
 
-    assert_eq!(properties.name(), Some("molecule"));
+    assert_eq!(properties.name().map(fixture_text), Some("molecule"));
     assert_eq!(
-        properties.sdf_data_fields(),
+        properties
+            .sdf_data_fields()
+            .iter()
+            .map(|(key, value)| (fixture_text(key).to_owned(), fixture_text(value).to_owned()))
+            .collect::<Vec<_>>(),
         &[("raw".to_owned(), "field".to_owned())]
     );
-    assert_eq!(properties.prop("ordinary"), Some("value"));
-    assert_eq!(properties.prop("computed"), Some("cached"));
-    assert!(properties.is_prop_computed("computed"));
+    assert_eq!(string_item_prop(properties.prop("ordinary")), Some("value"));
+    assert_eq!(
+        string_item_prop(properties.prop("computed")),
+        Some("cached")
+    );
+    assert!(properties.is_prop_computed("computed").unwrap());
 }
 
 #[test]
@@ -249,7 +301,7 @@ fn cip_descriptor_invalid_spellings_preserve_the_exact_input() {
         assert_eq!(
             CipDescriptor::from_str(value),
             Err(CipDescriptorError::InvalidStoredDescriptor {
-                value: value.to_owned(),
+                value: value.into(),
             })
         );
     }
@@ -280,7 +332,7 @@ fn atom_cip_projection_covers_absent_all_supported_and_invalid_values() {
     assert_eq!(
         invalid.cip_descriptor(),
         Err(CipDescriptorError::InvalidStoredDescriptor {
-            value: "UNKNOWN".to_owned(),
+            value: "UNKNOWN".into(),
         })
     );
     assert_eq!(string_item_prop(invalid.prop("_CIPCode")), Some("UNKNOWN"));
@@ -308,7 +360,7 @@ fn bond_cip_projection_covers_absent_all_supported_and_invalid_values() {
     assert_eq!(
         invalid.cip_descriptor(),
         Err(CipDescriptorError::InvalidStoredDescriptor {
-            value: "seqCis".to_owned(),
+            value: "seqCis".into(),
         })
     );
     assert_eq!(string_item_prop(invalid.prop("_CIPCode")), Some("seqCis"));

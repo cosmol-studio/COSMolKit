@@ -337,7 +337,7 @@ fn chirality_cleanup_applies_tetrahedral_hybridization_and_permutation_rules() {
     assert_eq!(output.atoms[0].chiral_permutation(), Some(0));
     assert_eq!(
         output.atoms[0].prop("_chiralPermutation"),
-        Some(&PropertyValue::String("0".to_owned()))
+        Some(&PropertyValue::String("0".to_owned().into()))
     );
 }
 
@@ -363,7 +363,9 @@ fn chirality_cleanup_enforces_non_tetrahedral_degree_and_exact_permutation_limit
         );
         assert_eq!(
             output.atoms[0].prop("_chiralPermutation"),
-            Some(&PropertyValue::String(maximum_permutation.to_string()))
+            Some(&PropertyValue::String(
+                maximum_permutation.to_string().into()
+            ))
         );
 
         let (too_small, valence) = star(
@@ -406,7 +408,7 @@ fn chirality_cleanup_enforces_non_tetrahedral_degree_and_exact_permutation_limit
         assert_eq!(output.atoms[0].chiral_permutation(), Some(0));
         assert_eq!(
             output.atoms[0].prop("_chiralPermutation"),
-            Some(&PropertyValue::String("0".to_owned()))
+            Some(&PropertyValue::String("0".to_owned().into()))
         );
     }
 }
@@ -661,11 +663,15 @@ fn adjust_hs_reports_exact_overflow_and_assignment_errors_without_partial_output
                 implicit_hydrogens: vec![1],
             },
         ),
-        Err(AdjustHsError::ExplicitHydrogenOverflow {
-            atom: AtomId::new(0),
-            original_explicit_hydrogens: u8::MAX,
-            original_implicit_valence: 1,
-            recalculated_implicit_valence: 0,
+        // The original 255 explicit-H input remains. Source int8 E stores -1;
+        // calculateImplicitValence keeps that stored field while calculating
+        // its local fallback, yielding 5. No decreasing-I transfer executes.
+        Ok(crate::hcount::AdjustHsAssignment {
+            topology: overflow_input.clone(),
+            valence: ValenceAssignment {
+                explicit_valence: vec![-1],
+                implicit_hydrogens: vec![5],
+            },
         })
     );
     assert_eq!(overflow_input.atoms[0].explicit_hydrogens(), u8::MAX);
@@ -693,11 +699,11 @@ fn adjust_hs_reports_exact_overflow_and_assignment_errors_without_partial_output
                 implicit_hydrogens: vec![4, -1],
             },
         ),
-        Err(AdjustHsError::InvalidValenceRow {
-            atom: AtomId::new(1),
-            field: "implicit_hydrogens",
-            value: -1,
-        })
+        Err(AdjustHsError::Valence(
+            ValenceError::ImplicitValenceCacheNotInitialized {
+                atom: AtomId::new(1)
+            }
+        ))
     );
 
     let invalid = TopologyBlock {
@@ -852,12 +858,12 @@ fn sanitize_pipeline_clears_only_computed_properties_and_reports_property_before
     assert_eq!(input, snapshot);
     assert_eq!(
         output.atoms[0].prop("user_atom"),
-        Some(&PropertyValue::String("keep".to_owned()))
+        Some(&PropertyValue::String("keep".to_owned().into()))
     );
     assert_eq!(output.atoms[0].prop("computed_atom"), None);
     assert_eq!(
         output.bonds[0].prop("user_bond"),
-        Some(&PropertyValue::String("keep".to_owned()))
+        Some(&PropertyValue::String("keep".to_owned().into()))
     );
     assert_eq!(output.bonds[0].prop("computed_bond"), None);
 
@@ -1177,7 +1183,19 @@ fn sanitize_final_valence_kekulize_early_return_has_no_refreshed_rows() {
                 let result = kekulize(input, &params).unwrap();
                 calls += 1;
                 assert_eq!(result.topology, *input);
-                assert_eq!(result.final_valence, None);
+                // The empty atoms-none return precedes preparation; selected
+                // carbon writes E=0/I=4 before the nonaromatic early return.
+                if input.atoms.is_empty() {
+                    assert_eq!(result.final_valence, None);
+                } else {
+                    assert_eq!(
+                        result.final_valence,
+                        Some(ValenceAssignment {
+                            explicit_valence: vec![0],
+                            implicit_hydrogens: vec![4],
+                        })
+                    );
+                }
                 assert!(result.refreshed_valence_atoms.is_empty());
             }
             let result =

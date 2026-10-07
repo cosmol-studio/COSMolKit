@@ -11,13 +11,27 @@ pub(crate) type PointMap = BTreeMap<usize, Point2>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum GeometryError {
-    AtomIndexOutOfRange { atom: usize, atom_count: usize },
-    AtomCountTooLarge { atom_count: usize },
-    InvalidRankProperty { atom: usize, key: &'static str },
-    NotEnoughNeighbors { atom: usize, count: usize },
+    AtomIndexOutOfRange {
+        atom: usize,
+        atom_count: usize,
+    },
+    AtomCountTooLarge {
+        atom_count: usize,
+    },
+    InvalidRankProperty {
+        atom: usize,
+        key: &'static str,
+        source: cosmolkit_core::PropertyUIntReadError,
+    },
+    NotEnoughNeighbors {
+        atom: usize,
+        count: usize,
+    },
 }
 
-fn unsigned_rank_property(value: &PropertyValue) -> Option<u32> {
+fn unsigned_rank_property(
+    value: &PropertyValue,
+) -> Result<u32, cosmolkit_core::PropertyUIntReadError> {
     // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
     // RDKit❗✔️: template <>
     // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
@@ -30,13 +44,10 @@ fn unsigned_rank_property(value: &PropertyValue) -> Option<u32> {
     // RDKit❗✔️:   throw std::bad_any_cast();
     // RDKit❗✔️: }
     // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
-
-    match value {
-        PropertyValue::Int(value) => u32::try_from(*value).ok(),
-        PropertyValue::UInt(value) => Some(*value),
-        PropertyValue::String(value) => value.parse().ok(),
-        PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => None,
-    }
+    // Canonical CORE owns RDProps -> Dict -> from_rdvalue -> Boost conversion,
+    // including right trimming and the complete negative/overflow error.
+    // This delegate adds no fallback or second arithmetic implementation.
+    cosmolkit_core::property_value_to_uint(value)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -534,13 +545,21 @@ pub(crate) fn rank_atoms_by_rank(
     // RDKit❗✔️:   for (const auto aid : commAtms) {
     // RDKit❗✔️:     unsigned int rank = aid;
     // RDKit❗✔️:     const auto at = mol.getAtomWithIdx(aid);
+    // RDKit❗✔️:     // we try for a pseudo-canonical ordering in order to always get the same
+    // RDKit❗✔️:     // coords for the same molecule.
     // RDKit❗✔️:     if (!at->getPropIfPresent(RDKit::common_properties::_CIPRank, rank)) {
+    // RDKit❗✔️:       // _CIPRank, assigned by the legacy stereochem code, is not set,
+    // RDKit❗✔️:       //  check for _ChiralAtomRank, assigned by the new stereochem code.
     // RDKit❗✔️:       if (at->getPropIfPresent(RDKit::common_properties::_ChiralAtomRank,
     // RDKit❗✔️:                                rank)) {
+    // RDKit❗✔️:         // the ordering of the CIP ranks and chiral atom ranks are (roughly)
+    // RDKit❗✔️:         // inverted, so reverse this one to be consistent with the old
+    // RDKit❗✔️:         // _CIPRank-driven behavior
     // RDKit❗✔️:         rank = mol.getNumAtoms() - rank;
     // RDKit❗✔️:       }
     // RDKit❗✔️:       rank += mol.getNumAtoms() * getAtomDepictRank(at);
     // RDKit❗✔️:     }
+    // RDKit❗✔️:
     // RDKit❗✔️:     rankAid.emplace_back(rank, aid);
     // RDKit❗✔️:   }
     // RDKit❗✔️:   if (ascending) {
@@ -575,20 +594,25 @@ pub(crate) fn rank_atoms_by_rank(
         let d2_cip = value.prop("_CIPRank"); // D2N_BIND
         // D2N
         if let Some(text) = d2_cip {
-            rank = unsigned_rank_property(text).ok_or(GeometryError::InvalidRankProperty {
-                atom,
-                key: "_CIPRank",
+            rank = unsigned_rank_property(text).map_err(|source| {
+                GeometryError::InvalidRankProperty {
+                    atom,
+                    key: "_CIPRank",
+                    source,
+                }
             })?;
         // D2N
         } else {
             // D2N
             let d2_chiral = value.prop("_ChiralAtomRank"); // D2N_BIND
             if let Some(text) = d2_chiral {
-                let chiral_rank =
-                    unsigned_rank_property(text).ok_or(GeometryError::InvalidRankProperty {
+                let chiral_rank = unsigned_rank_property(text).map_err(|source| {
+                    GeometryError::InvalidRankProperty {
                         atom,
                         key: "_ChiralAtomRank",
-                    })?;
+                        source,
+                    }
+                })?;
                 // D2N
                 rank = count.wrapping_sub(chiral_rank);
             }
@@ -1244,7 +1268,7 @@ mod uint_geometry_proposed_tests {
         for value in [0_u32, 1, 2147483646, 2147483647, 2147483648, 4294967295] {
             assert_eq!(
                 unsigned_rank_property(&PropertyValue::UInt(value)),
-                Some(value)
+                Ok(value)
             );
         }
     }
@@ -1257,36 +1281,36 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_unsigned_consumer_depict_geometry_0_geometry() {
         let v = cosmolkit_model::PropertyValue::UInt(0_u32);
-        assert_eq!(unsigned_rank_property(&v), Some(0_u32));
+        assert_eq!(unsigned_rank_property(&v), Ok(0_u32));
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_1
     #[test]
     fn uint_cell_unsigned_consumer_depict_geometry_1_geometry() {
         let v = cosmolkit_model::PropertyValue::UInt(1_u32);
-        assert_eq!(unsigned_rank_property(&v), Some(1_u32));
+        assert_eq!(unsigned_rank_property(&v), Ok(1_u32));
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_2147483646
     #[test]
     fn uint_cell_unsigned_consumer_depict_geometry_2147483646_geometry() {
         let v = cosmolkit_model::PropertyValue::UInt(2147483646_u32);
-        assert_eq!(unsigned_rank_property(&v), Some(2147483646_u32));
+        assert_eq!(unsigned_rank_property(&v), Ok(2147483646_u32));
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_2147483647
     #[test]
     fn uint_cell_unsigned_consumer_depict_geometry_2147483647_geometry() {
         let v = cosmolkit_model::PropertyValue::UInt(2147483647_u32);
-        assert_eq!(unsigned_rank_property(&v), Some(2147483647_u32));
+        assert_eq!(unsigned_rank_property(&v), Ok(2147483647_u32));
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_2147483648
     #[test]
     fn uint_cell_unsigned_consumer_depict_geometry_2147483648_geometry() {
         let v = cosmolkit_model::PropertyValue::UInt(2147483648_u32);
-        assert_eq!(unsigned_rank_property(&v), Some(2147483648_u32));
+        assert_eq!(unsigned_rank_property(&v), Ok(2147483648_u32));
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_depict/geometry_4294967295
     #[test]
     fn uint_cell_unsigned_consumer_depict_geometry_4294967295_geometry() {
         let v = cosmolkit_model::PropertyValue::UInt(4294967295_u32);
-        assert_eq!(unsigned_rank_property(&v), Some(4294967295_u32));
+        assert_eq!(unsigned_rank_property(&v), Ok(4294967295_u32));
     }
 }

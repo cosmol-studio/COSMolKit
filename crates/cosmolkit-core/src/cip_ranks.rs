@@ -137,10 +137,15 @@ fn validate_inputs(
         });
     }
     for (index, &value) in valence.implicit_hydrogens.iter().enumerate() {
-        if value < 0 {
+        // RDKit✔️✔️:   if (df_noImplicit) {
+        // RDKit✔️✔️:     return 0;
+        // RDKit✔️✔️:   }
+        // The existing source getter validates its int8 field only when used.
+        // Keep dimensions and the original negative-input error vocabulary.
+        if crate::hcount::implicit_hydrogen_count(&topology.atoms[index], valence).is_err() {
             return Err(CipRankError::NegativeImplicitHydrogen {
                 atom: AtomId::new(index),
-                value,
+                value: i32::from(value as i8),
             });
         }
     }
@@ -579,9 +584,17 @@ fn iterate_cip_ranks(
                     usize::from(count),
                 ));
             }
-            let total_hydrogens = usize::from(topology.atoms[atom_index].explicit_hydrogens())
-                + usize::try_from(valence.implicit_hydrogens[atom_index])
-                    .expect("negative implicit hydrogen rejected before iteration");
+            // RDKit✔️✔️:       int res = getNumExplicitHs() + getNumImplicitHs();
+            // Source fields were validated once above, including NoImplicit;
+            // with no neighbor inclusion this O(1) getter cannot overflow.
+            let total_hydrogens = crate::hcount::total_hydrogen_count_from_validated(
+                topology,
+                valence,
+                AtomId::new(atom_index),
+                false,
+            )
+            .expect("source implicit getter and dimensions validated before rank iteration")
+                as usize;
             // RDKit✔️✔️:       // add a zero for each coordinated H as long as we're not a query atom
             // RDKit✔️✔️:       if (!mol[index]->hasQuery()) {
             // RDKit✔️✔️:         cipEntry.insert(cipEntry.end(), mol[index]->getTotalNumHs(), 0);
@@ -764,6 +777,54 @@ mod q05_tests {
             assign_atom_cip_ranks_with_query_state(&topology, &valence, Some(explicit_state))
                 .unwrap(),
             vec![2, 3, 0, 1]
+        );
+    }
+}
+
+#[cfg(test)]
+mod source_cached_getter_conditions {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondSpec, Element};
+    #[test]
+    fn actual_rank_refinement_reads_no_implicit_and_wrapped_source_fields() {
+        let atoms = (0..2)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let bonds = vec![Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+        )];
+        let base = TopologyBlock::try_from_parts(atoms, bonds, vec![], vec![]).unwrap();
+        let zero = ValenceAssignment {
+            explicit_valence: vec![1; 2],
+            implicit_hydrogens: vec![0; 2],
+        };
+        let expected = assign_atom_cip_ranks(&base, &zero).unwrap();
+        for (no_implicit, field) in [(true, -1), (true, 128), (false, 256), (false, -256)] {
+            let mut source = base.clone();
+            for atom in &mut source.atoms {
+                atom.set_no_implicit(no_implicit);
+            }
+            let fields = ValenceAssignment {
+                explicit_valence: vec![1; 2],
+                implicit_hydrogens: vec![field; 2],
+            };
+            let before = fields.clone();
+            assert_eq!(assign_atom_cip_ranks(&source, &fields).unwrap(), expected);
+            assert_eq!(fields, before);
+        }
+        assert_eq!(
+            assign_atom_cip_ranks(
+                &base,
+                &ValenceAssignment {
+                    explicit_valence: vec![1; 2],
+                    implicit_hydrogens: vec![-1; 2]
+                }
+            ),
+            Err(CipRankError::NegativeImplicitHydrogen {
+                atom: AtomId::new(0),
+                value: -1
+            })
         );
     }
 }

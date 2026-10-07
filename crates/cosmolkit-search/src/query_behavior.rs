@@ -15,15 +15,16 @@
 //! is [`super::query_graph::QueryGraph`], while parsing belongs in
 //! `search::smarts_parse` and reuses these types.
 //!
-//! - Atom adjacency is built on-the-fly from `mol.bonds()` when not cached.
-//! - Cold match contexts rebuild ring information; prepared contexts borrow
-//!   explicit final-topology assignments without copying or recomputation.
+//! - Match contexts borrow canonical adjacency and optional target facts.
+//! - Reached source getters enforce cache preconditions; no speculative
+//!   valence assignment or ring perception is performed by the evaluator.
 //! - The SMARTS parser is a recursive-descent parser reproducing the Daylon
 //!   Wilkins / RDKit SMARTS grammar.
 
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 
+use super::matcher::SubstructMatchError;
 use super::target::SearchTargetAccess;
 
 pub use cosmolkit_model::{
@@ -63,6 +64,18 @@ pub enum QueryMatchContextError {
     },
     #[error(transparent)]
     Valence(#[from] cosmolkit_core::ValenceError),
+    #[error("atom {atom} reached {getter} without initialized {field}")]
+    ValencePrecondition {
+        atom: usize,
+        field: &'static str,
+        getter: &'static str,
+    },
+    #[error("{getter} reached uninitialized RingInfo (atom={atom:?}, bond={bond:?})")]
+    RingPrecondition {
+        getter: &'static str,
+        atom: Option<usize>,
+        bond: Option<usize>,
+    },
     #[error("prepared ring information is not initialized")]
     UninitializedRings,
     #[error("ring membership table {field} has {actual} rows; expected {expected}")]
@@ -103,8 +116,8 @@ fn validate_valence_row_counts(
 ///
 /// The caller owns correspondence to the final topology. This constructor
 /// validates structural alignment, not chemical provenance, and never copies
-/// or recomputes adjacency, rings or valence. Cold context builders retain
-/// their existing independent preparation/error behavior.
+/// or recomputes adjacency, rings or valence. Optional contexts defer absent
+/// fact checks until the corresponding source getter is reached.
 pub fn build_prepared_query_match_context<'a>(
     topology: &'a cosmolkit_model::TopologyBlock,
     ring_info: &'a RingInfo,
@@ -430,9 +443,15 @@ mod prepared_query_context_tests {
             Some(&valence),
         );
         let cold = build_query_match_context(&target);
-        assert!(matches!(cold.adj, Cow::Owned(_)));
-        assert!(matches!(cold.ring_info, Some(Cow::Owned(_))));
-        assert!(matches!(cold.valence, Some(Cow::Owned(_))));
+        assert!(
+            matches!(&cold.adj, Cow::Borrowed(value) if std::ptr::eq(*value, &topology.adjacency))
+        );
+        assert!(
+            matches!(&cold.ring_info, Some(Cow::Borrowed(value)) if std::ptr::eq(*value, &rings))
+        );
+        assert!(
+            matches!(&cold.valence, Some(Cow::Borrowed(value)) if std::ptr::eq(*value, &valence))
+        );
     }
 
     #[test]
@@ -647,96 +666,76 @@ fn match_atom_range_query(
     atom: &Atom,
     mol: &impl SearchTargetAccess,
     context: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
+    let rings = |getter| {
+        reached_ring_info(
+            context.ring_info.as_deref(),
+            getter,
+            Some(atom.id().index()),
+            None,
+        )
+    };
     let value = match range.data_function() {
         AtomRangeDataFunction::ExplicitDegree => {
-            Some(query_atom_explicit_degree(atom, &context.adj) as i32)
+            query_atom_explicit_degree(atom, &context.adj) as i32
         }
         AtomRangeDataFunction::NonHydrogenDegree => {
-            Some(query_atom_non_hydrogen_degree(atom, &context.adj, mol) as i32)
+            query_atom_non_hydrogen_degree(atom, &context.adj, mol) as i32
         }
         AtomRangeDataFunction::TotalDegree => {
-            query_atom_total_degree(&context.adj, context.valence.as_deref(), atom)
-                .map(|value| value as i32)
+            query_atom_total_degree(&context.adj, context.valence.as_deref(), atom)? as i32
         }
         AtomRangeDataFunction::TotalValence => {
-            query_atom_total_valence(context.valence.as_deref(), atom)
+            query_atom_total_valence(context.valence.as_deref(), atom)?
         }
-        AtomRangeDataFunction::NumAtomRings => context
-            .ring_info
-            .as_ref()
-            .map(|ring_info| query_atom_ring_membership(atom, ring_info)),
+        AtomRangeDataFunction::NumAtomRings => {
+            query_atom_ring_membership(atom, rings("numAtomRings")?)
+        }
         AtomRangeDataFunction::NumHeteroatomNeighbors => {
-            Some(query_atom_num_heteroatom_nbrs(atom, &context.adj, mol))
+            query_atom_num_heteroatom_nbrs(atom, &context.adj, mol)
         }
-        AtomRangeDataFunction::NumAliphaticHeteroatomNeighbors => Some(
-            query_atom_num_aliphatic_heteroatom_nbrs(atom, &context.adj, mol),
-        ),
-        AtomRangeDataFunction::MinRingSize => context
-            .ring_info
-            .as_ref()
-            .and_then(|ring_info| i32::try_from(query_atom_min_ring_size(atom, ring_info)).ok()),
-        AtomRangeDataFunction::RingBondCount => context
-            .ring_info
-            .as_ref()
-            .map(|ring_info| query_atom_ring_bond_count(atom, &context.adj, mol, ring_info)),
+        AtomRangeDataFunction::NumAliphaticHeteroatomNeighbors => {
+            query_atom_num_aliphatic_heteroatom_nbrs(atom, &context.adj, mol)
+        }
+        AtomRangeDataFunction::MinRingSize => {
+            query_atom_min_ring_size(atom, rings("minAtomRingSize")?) as i32
+        }
+        AtomRangeDataFunction::RingBondCount => {
+            query_atom_ring_bond_count(atom, &context.adj, mol, context.ring_info.as_deref())?
+        }
         AtomRangeDataFunction::ImplicitHydrogenCount => {
-            query_atom_implicit_h_count(context.valence.as_deref(), atom).map(|value| value as i32)
+            query_atom_implicit_h_count(context.valence.as_deref(), atom)? as i32
         }
-        AtomRangeDataFunction::FormalCharge => Some(query_atom_formal_charge(atom)),
-        AtomRangeDataFunction::NegativeFormalCharge => {
-            Some(query_atom_negative_formal_charge(atom))
-        }
+        AtomRangeDataFunction::FormalCharge => query_atom_formal_charge(atom),
+        AtomRangeDataFunction::NegativeFormalCharge => query_atom_negative_formal_charge(atom),
         AtomRangeDataFunction::AtomRingSize {
             lower,
             upper,
             lower_open,
             upper_open,
-        } => Some(context.ring_info.as_ref().map_or_else(
-            || {
-                if lower > -1 {
-                    -1
-                } else if upper > -1 {
-                    i32::MAX
-                } else {
-                    0
-                }
-            },
-            |ring_info| {
-                query_atom_is_in_ring_size_range(
-                    atom, lower, upper, lower_open, upper_open, ring_info,
-                )
-            },
-        )),
+        } => query_atom_is_in_ring_size_range(
+            atom,
+            lower,
+            upper,
+            lower_open,
+            upper_open,
+            rings("atomRingSizes")?,
+        ),
     };
-    let Some(value) = value else {
-        return false;
-    };
-    match range.bounds() {
+    Ok(match range.bounds() {
         AtomRangeBounds::LessEqual(threshold) => {
-            // RDKit✔️✔️: LessEqualQuery.h::Match compares queryCmp(d_val, mfArg, tol) <= 0.
-            less_equal_query_match(threshold, value, 0, false, |observed| observed)
+            less_equal_query_match(threshold, value, 0, false, |v| v)
         }
         AtomRangeBounds::GreaterEqual(threshold) => {
-            // RDKit✔️✔️: GreaterEqualQuery.h::Match compares queryCmp(d_val, mfArg, tol) >= 0.
-            greater_equal_query_match(threshold, value, 0, false, |observed| observed)
+            greater_equal_query_match(threshold, value, 0, false, |v| v)
         }
         AtomRangeBounds::Inclusive {
             lower,
             upper,
             lower_open,
             upper_open,
-        } => range_query_match(
-            lower,
-            upper,
-            value,
-            0,
-            lower_open,
-            upper_open,
-            false,
-            |observed| observed,
-        ),
-    }
+        } => range_query_match(lower, upper, value, 0, lower_open, upper_open, false, |v| v),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -2572,7 +2571,7 @@ pub fn complete_mol_queries(molecule: &mut crate::QueryGraph, magic_value: u32) 
     }
 }
 
-fn rdkit_atom_mass(atom: &Atom) -> Result<f64, PeriodicTableError> {
+pub(crate) fn rdkit_atom_mass(atom: &Atom) -> Result<f64, PeriodicTableError> {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Atom.cpp :: Atom::getMass
     // RDKit✔️✔️: double Atom::getMass() const {
     // RDKit✔️✔️:   if (d_isotope) {
@@ -2653,8 +2652,73 @@ pub(crate) fn replace_atom_with_query_atom(
     // construct at most five leaves. Rust has the same bounded composite-node
     // allocations but avoids the source temporary atom clone, virtual query
     // objects, molecule row replacement, and second atom copy.
-    let mut query = make_atom_num_query(atom.atomic_number());
-    if let Some(isotope) = atom.isotope()
+    let query = query_from_plain_atom_carrier(
+        atom.atomic_number(),
+        atom.isotope(),
+        atom.formal_charge(),
+        atom.radical_electrons(),
+        || {
+            if atom.prop("_hasMassQuery").is_some() {
+                rdkit_atom_mass(&atom).map(|mass| Some(mass as u16))
+            } else {
+                Ok(None)
+            }
+        },
+    )?;
+    Ok(crate::QueryAtom::from_parts(atom, query))
+}
+
+/// The source QueryAtom(const Atom&) predicate and optional _hasMassQuery
+/// extension. Inputs are the source scalar facts; the mass getter runs only
+/// after the constructor's isotope/charge/radical clauses, at the native point.
+pub(crate) fn query_from_plain_atom_carrier<E>(
+    atomic_number: u8,
+    isotope: Option<u16>,
+    formal_charge: i8,
+    radical_electrons: u8,
+    mass_query: impl FnOnce() -> Result<Option<u16>, E>,
+) -> Result<QueryNode<AtomQueryPredicate>, E> {
+    // BEGIN COMPLETE QueryAtom ordinary carrier constructor
+    // RDKit✔️✔️:   explicit QueryAtom(const Atom &other)
+    // RDKit✔️✔️:       : Atom(other), dp_query(makeAtomNumQuery(other.getAtomicNum())) {
+    // RDKit✔️✔️:     if (other.getIsotope()) {
+    // RDKit✔️✔️:       this->expandQuery(makeAtomIsotopeQuery(other.getIsotope()),
+    // RDKit✔️✔️:                         Queries::CompositeQueryType::COMPOSITE_AND);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (other.getFormalCharge()) {
+    // RDKit✔️✔️:       this->expandQuery(makeAtomFormalChargeQuery(other.getFormalCharge()),
+    // RDKit✔️✔️:                         Queries::CompositeQueryType::COMPOSITE_AND);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (other.getNumRadicalElectrons()) {
+    // RDKit✔️✔️:       this->expandQuery(
+    // RDKit✔️✔️:           makeAtomNumRadicalElectronsQuery(other.getNumRadicalElectrons()),
+    // RDKit✔️✔️:           Queries::CompositeQueryType::COMPOSITE_AND);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // END COMPLETE QueryAtom ordinary carrier constructor
+    // BEGIN COMPLETE QueryOps::replaceAtomWithQueryAtom
+    // RDKit✔️❌: Atom *replaceAtomWithQueryAtom(RWMol *mol, Atom *atom) {
+    // RDKit✔️❌:   PRECONDITION(mol, "bad molecule");
+    // RDKit✔️❌:   PRECONDITION(atom, "bad atom");
+    // RDKit✔️❌:   if (atom->hasQuery()) {
+    // RDKit✔️❌:     return atom;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   QueryAtom qa(*atom);
+    // RDKit✔️❌:   unsigned int idx = atom->getIdx();
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (atom->hasProp(common_properties::_hasMassQuery)) {
+    // RDKit✔️❌:     qa.expandQuery(makeAtomMassQuery(static_cast<int>(atom->getMass())));
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   mol->replaceAtom(idx, &qa);
+    // RDKit✔️❌:   return mol->getAtomWithIdx(idx);
+    // RDKit✔️❌: }
+    // END COMPLETE QueryOps::replaceAtomWithQueryAtom
+    // One canonical construction sequence; no predicate synthesis from an
+    // old carrier-derived tree, flattening, deduplication or extra constraints.
+    // Scalar domain is unchanged from the existing source-owned constructor.
+    let mut query = make_atom_num_query(atomic_number);
+    if let Some(isotope) = isotope
         && isotope != 0
     {
         query_atom_expand_query(
@@ -2664,24 +2728,23 @@ pub(crate) fn replace_atom_with_query_atom(
             true,
         );
     }
-    if atom.formal_charge() != 0 {
+    if formal_charge != 0 {
         query_atom_expand_query(
             &mut query,
-            make_atom_formal_charge_query(i32::from(atom.formal_charge())),
+            make_atom_formal_charge_query(i32::from(formal_charge)),
             CompositeQueryType::And,
             true,
         );
     }
-    if atom.radical_electrons() != 0 {
+    if radical_electrons != 0 {
         query_atom_expand_query(
             &mut query,
-            make_atom_num_radical_electrons_query(atom.radical_electrons()),
+            make_atom_num_radical_electrons_query(radical_electrons),
             CompositeQueryType::And,
             true,
         );
     }
-    if atom.prop("_hasMassQuery").is_some() {
-        let mass = rdkit_atom_mass(&atom)? as u16;
+    if let Some(mass) = mass_query()? {
         query_atom_expand_query(
             &mut query,
             make_atom_mass_query(mass),
@@ -2689,7 +2752,7 @@ pub(crate) fn replace_atom_with_query_atom(
             true,
         );
     }
-    Ok(crate::QueryAtom::from_parts(atom, query))
+    Ok(query)
 }
 
 #[inline]
@@ -3805,6 +3868,14 @@ pub enum QueryConstructionError {
 /// Errors produced by SMARTS parsing.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmartsParseError {
+    #[error("parser carrier cleanup failed: {0}")]
+    ParserCarrier(#[from] cosmolkit_core::parser_helpers::ParserCarrierError),
+    #[error("atom property operation failed: {0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
+    #[error("bond property operation failed: {0}")]
+    BondProperty(#[from] cosmolkit_model::BondValueError),
+    #[error("molecule property operation failed: {0}")]
+    MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
     #[error("unclosed bracket at position {0}")]
     UnclosedBracket(usize),
     #[error("unexpected character '{character}' at position {position}: {context}")]
@@ -3850,82 +3921,44 @@ pub enum SmartsParseError {
 // Cache helpers (build adjacency / ring info on-the-fly when not cached)
 // ---------------------------------------------------------------------------
 
-/// RDKit✔️❌: Returns an `AdjacencyList` for `mol`.
-/// COSMolKit stores adjacency inline in topology instead of in a derived cache.
-fn ensure_adjacency(mol: &impl SearchTargetAccess) -> AdjacencyList {
-    mol.adjacency().clone()
-}
-
-/// Build current-target ring information for detached query evaluation.
-fn ensure_ring_info(mol: &impl SearchTargetAccess) -> Option<RingInfo> {
-    // RDKit✔️❌: static inline int queryIsAtomInRing(Atom const *at) {
-    // RDKit✔️❌:   return at->getOwningMol().getRingInfo()->numAtomRings(at->getIdx()) != 0;
-    // RDKit✔️❌: };
-    // The source reads RingInfo attached to the current owning molecule. A
-    // detached optional RingInfo has no topology identity, so rebuild from the
-    // canonical current topology instead of trusting potentially stale state.
-    // Complexity: source ring perception is prepared once and then queried;
-    // this builds SSSR state per match context (O(V × SSSR), O(V+E) storage).
-    let topology = mol.topology_block();
-    cosmolkit_core::find_sssr_from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency)
-        .ok()
-}
-
-fn ensure_valence_assignment(mol: &impl SearchTargetAccess) -> Option<ValenceAssignment> {
-    // RDKit✔️❌: void Atom::updatePropertyCache(bool strict) {
-    // RDKit✔️❌:   calcExplicitValence(strict);
-    // RDKit✔️❌:   calcImplicitValence(strict);
-    // RDKit✔️❌: }
-    // A detached target's optional valence vector carries no topology identity,
-    // so it cannot prove that its cached fields describe this current topology.
-    // Recompute the source property-cache values from the target topology.
-    // Complexity: RDKit updates the attached atom cache once before matching;
-    // this detached context assigns the values in O(V+E) with O(V) output
-    // storage. It avoids trusting stale data, at the cost of recomputation.
-    cosmolkit_core::assign_valence_with_options_for_topology(
-        mol.topology_block(),
-        ValenceModel::RdkitLike,
-        false,
-    )
-    .ok()
-}
-
+/// Borrow the owning target's current facts. Missing optional state is checked
+/// by the reached source getter, never prepared speculatively here.
 #[must_use]
-pub(crate) fn build_query_match_context_for_target(
-    mol: &impl SearchTargetAccess,
-) -> QueryMatchContext<'static> {
+pub(crate) fn build_query_match_context_for_target<'a>(
+    mol: &'a impl SearchTargetAccess,
+) -> QueryMatchContext<'a> {
+    // RDKit❗🔝:   detail::AtomLabelFunctor atomLabeler(query, mol, params);
+    // RDKit❗🔝:   detail::BondLabelFunctor bondLabeler(query, mol, params);
+    // Source functors retain the owning target. Borrowing its existing blocks
+    // removes the previous O(V+E) copies and uncalled chemistry preparation.
     #[cfg(test)]
     COLD_QUERY_CONTEXT_BUILDS.with(|count| count.set(count.get() + 1));
     QueryMatchContext {
-        adj: Cow::Owned(ensure_adjacency(mol)),
-        ring_info: ensure_ring_info(mol).map(Cow::Owned),
-        valence: ensure_valence_assignment(mol).map(Cow::Owned),
+        adj: Cow::Borrowed(mol.adjacency()),
+        ring_info: mol.ring_info().map(Cow::Borrowed),
+        valence: mol.valence().map(Cow::Borrowed),
     }
 }
 
-/// Build query predicate state for a live molecule (compatibility adapter).
-/// The matching implementation itself uses `build_query_match_context_for_target`
-/// and therefore only requires detached search data.
+/// Borrow the target's current query facts without recomputing chemistry.
 #[must_use]
-pub fn build_query_match_context(mol: &impl SearchTargetAccess) -> QueryMatchContext<'static> {
+pub fn build_query_match_context<'a>(mol: &'a impl SearchTargetAccess) -> QueryMatchContext<'a> {
     build_query_match_context_for_target(mol)
 }
 
-/// Build predicate state from detached model values without constructing a
-/// runtime molecule. This is the entrypoint used by future domain-crate
-/// search adapters; the live-object overload above remains only as a
-/// transitional facade adapter.
 #[must_use]
-pub(crate) fn build_query_match_context_from_blocks(
-    topology: &cosmolkit_model::TopologyBlock,
-    coordinates: &cosmolkit_model::CoordinateBlock,
-    stereo_groups: &[cosmolkit_model::StereoGroup],
-    ring_info: Option<&RingInfo>,
-    valence: Option<&ValenceAssignment>,
-) -> QueryMatchContext<'static> {
-    let target =
-        super::target::SearchTarget::new(topology, coordinates, stereo_groups, ring_info, valence);
-    build_query_match_context_for_target(&target)
+pub(crate) fn build_query_match_context_from_blocks<'a>(
+    topology: &'a cosmolkit_model::TopologyBlock,
+    _coordinates: &cosmolkit_model::CoordinateBlock,
+    _stereo_groups: &[cosmolkit_model::StereoGroup],
+    ring_info: Option<&'a RingInfo>,
+    valence: Option<&'a ValenceAssignment>,
+) -> QueryMatchContext<'a> {
+    QueryMatchContext {
+        adj: Cow::Borrowed(&topology.adjacency),
+        ring_info: ring_info.map(Cow::Borrowed),
+        valence: valence.map(Cow::Borrowed),
+    }
 }
 
 /// Evaluate one atom predicate directly against detached model blocks.
@@ -3937,7 +3970,7 @@ pub(crate) fn atom_predicate_matches_from_blocks(
     stereo_groups: &[cosmolkit_model::StereoGroup],
     ring_info: Option<&RingInfo>,
     valence: Option<&ValenceAssignment>,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     let target =
         super::target::SearchTarget::new(topology, coordinates, stereo_groups, ring_info, valence);
     let context = build_query_match_context_for_target(&target);
@@ -3945,114 +3978,159 @@ pub(crate) fn atom_predicate_matches_from_blocks(
 }
 
 #[inline]
-fn query_atom_implicit_valence(valence: Option<&ValenceAssignment>, at: &Atom) -> Option<i32> {
-    // RDKit✔️✔️: static inline int queryAtomImplicitValence(Atom const *at) {
-    // RDKit✔️✔️:   return at->getValence(Atom::ValenceType::IMPLICIT);
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: unsigned int Atom::getValence(ValenceType which) const {
-    // RDKit✔️✔️:   if (!dp_mol) {
-    // RDKit✔️✔️:     return 0;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   PRECONDITION(
-    // RDKit✔️✔️:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
-    // RDKit✔️✔️:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
-    // RDKit✔️✔️:   PRECONDITION(
-    // RDKit✔️✔️:       (which == ValenceType::EXPLICIT || df_noImplicit ||
-    // RDKit✔️✔️:        d_implicitValence > -1),
-    // RDKit✔️✔️:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
-    // RDKit✔️✔️:   if (which == ValenceType::EXPLICIT) {
-    // RDKit✔️✔️:     return d_explicitValence;
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     return df_noImplicit ? 0 : d_implicitValence;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
+fn query_atom_implicit_valence(
+    valence: Option<&ValenceAssignment>,
+    at: &Atom,
+) -> Result<i32, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomImplicitValence(Atom const *at) {
+    // RDKit❗✔️:   return at->getValence(Atom::ValenceType::IMPLICIT);
+    // RDKit❗✔️: };
+    // RDKit❗✔️: unsigned int Atom::getValence(ValenceType which) const {
+    // RDKit❗✔️:   if (!dp_mol) {
+    // RDKit❗✔️:     return 0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   PRECONDITION(
+    // RDKit❗✔️:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
+    // RDKit❗✔️:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
+    // RDKit❗✔️:   PRECONDITION(
+    // RDKit❗✔️:       (which == ValenceType::EXPLICIT || df_noImplicit ||
+    // RDKit❗✔️:        d_implicitValence > -1),
+    // RDKit❗✔️:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
+    // RDKit❗✔️:   if (which == ValenceType::EXPLICIT) {
+    // RDKit❗✔️:     return d_explicitValence;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     return df_noImplicit ? 0 : d_implicitValence;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
     // Local complexity review: RDKit performs one O(1) cached valence-field
     // read after constant-time state checks; Rust performs one O(1) indexed
     // read from the already assigned typed valence vector. Neither traverses,
     // allocates, clones, repeats a lookup, or creates a temporary collection.
-    valence.and_then(|assignment| assignment.implicit_hydrogens.get(at.id().index()).copied())
+    if at.no_implicit() {
+        return Ok(0);
+    }
+    valence
+        .and_then(|v| v.implicit_hydrogens.get(at.id().index()).copied())
+        .filter(|value| *value >= 0)
+        .ok_or_else(|| {
+            QueryMatchContextError::ValencePrecondition {
+                atom: at.id().index(),
+                field: "implicit_hydrogens",
+                getter: "getValence(IMPLICIT)",
+            }
+            .into()
+        })
 }
 
 #[inline]
-fn atom_explicit_valence(valence: Option<&ValenceAssignment>, at: &Atom) -> Option<i32> {
-    // RDKit✔️✔️: unsigned int Atom::getValence(ValenceType which) const {
-    // RDKit✔️✔️:   if (!dp_mol) {
-    // RDKit✔️✔️:     return 0;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   PRECONDITION(
-    // RDKit✔️✔️:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
-    // RDKit✔️✔️:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
-    // RDKit✔️✔️:   PRECONDITION(
-    // RDKit✔️✔️:       (which == ValenceType::EXPLICIT || df_noImplicit ||
-    // RDKit✔️✔️:        d_implicitValence > -1),
-    // RDKit✔️✔️:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
-    // RDKit✔️✔️:   if (which == ValenceType::EXPLICIT) {
-    // RDKit✔️✔️:     return d_explicitValence;
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     return df_noImplicit ? 0 : d_implicitValence;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
+fn atom_explicit_valence(
+    valence: Option<&ValenceAssignment>,
+    at: &Atom,
+) -> Result<i32, SubstructMatchError> {
+    // RDKit❗✔️: unsigned int Atom::getValence(ValenceType which) const {
+    // RDKit❗✔️:   if (!dp_mol) {
+    // RDKit❗✔️:     return 0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   PRECONDITION(
+    // RDKit❗✔️:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
+    // RDKit❗✔️:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
+    // RDKit❗✔️:   PRECONDITION(
+    // RDKit❗✔️:       (which == ValenceType::EXPLICIT || df_noImplicit ||
+    // RDKit❗✔️:        d_implicitValence > -1),
+    // RDKit❗✔️:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
+    // RDKit❗✔️:   if (which == ValenceType::EXPLICIT) {
+    // RDKit❗✔️:     return d_explicitValence;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     return df_noImplicit ? 0 : d_implicitValence;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
     // Local complexity review: RDKit performs one O(1) cached explicit-valence
     // field read after constant-time state checks; Rust performs one O(1)
     // indexed read from the already assigned typed valence vector. Neither
     // traverses, allocates, clones, repeats a lookup, or creates a temporary
     // collection.
-    valence.and_then(|assignment| assignment.explicit_valence.get(at.id().index()).copied())
+    valence
+        .and_then(|v| v.explicit_valence.get(at.id().index()).copied())
+        .filter(|value| *value >= 0)
+        .ok_or_else(|| {
+            QueryMatchContextError::ValencePrecondition {
+                atom: at.id().index(),
+                field: "explicit_valence",
+                getter: "getValence(EXPLICIT)",
+            }
+            .into()
+        })
 }
 
 #[inline]
-fn query_atom_explicit_valence(valence: Option<&ValenceAssignment>, at: &Atom) -> Option<i32> {
-    // RDKit✔️✔️: static inline int queryAtomExplicitValence(Atom const *at) {
-    // RDKit✔️✔️:   return at->getValence(Atom::ValenceType::EXPLICIT) - at->getNumExplicitHs();
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
+fn query_atom_explicit_valence(
+    valence: Option<&ValenceAssignment>,
+    at: &Atom,
+) -> Result<i32, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomExplicitValence(Atom const *at) {
+    // RDKit❗✔️:   return at->getValence(Atom::ValenceType::EXPLICIT) - at->getNumExplicitHs();
+    // RDKit❗✔️: };
+    // RDKit❗✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
     // Local complexity review: both implementations perform two O(1) typed or
     // cached field reads and one integer subtraction, with no traversal,
     // allocation, cloning, repeated lookup, or temporary collection. The raw
     // explicit-valence access is centralized in `atom_explicit_valence` so
     // total-valence matching and this SMARTS primitive cannot diverge.
-    atom_explicit_valence(valence, at).map(|explicit| explicit - i32::from(at.explicit_hydrogens()))
+    Ok(atom_explicit_valence(valence, at)?.wrapping_sub(i32::from(at.explicit_hydrogens())))
 }
 
-fn implicit_hydrogen_count(valence: Option<&ValenceAssignment>, atom: &Atom) -> Option<u8> {
-    query_atom_implicit_valence(valence, atom).map(|count| count.max(0) as u8)
+fn implicit_hydrogen_count(
+    valence: Option<&ValenceAssignment>,
+    atom: &Atom,
+) -> Result<u32, SubstructMatchError> {
+    // RDKit❗✔️:   if (df_noImplicit) {
+    // RDKit❗✔️:     return 0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return getValence(ValenceType::IMPLICIT);
+    // O(1), no narrowed u8 count and no silent negative-value replacement.
+    Ok(query_atom_implicit_valence(valence, atom)? as u32)
 }
 
-fn total_hydrogen_count(valence: Option<&ValenceAssignment>, atom: &Atom) -> Option<usize> {
-    implicit_hydrogen_count(valence, atom)
-        .map(|implicit| usize::from(atom.explicit_hydrogens()) + usize::from(implicit))
+fn total_hydrogen_count(
+    valence: Option<&ValenceAssignment>,
+    atom: &Atom,
+) -> Result<u32, SubstructMatchError> {
+    Ok(u32::from(atom.explicit_hydrogens()).wrapping_add(implicit_hydrogen_count(valence, atom)?))
 }
 
 #[inline]
-fn query_atom_implicit_h_count(valence: Option<&ValenceAssignment>, at: &Atom) -> Option<usize> {
-    // RDKit✔️✔️: static inline int queryAtomImplicitHCount(Atom const *at) {
-    // RDKit✔️✔️:   return at->getTotalNumHs(false);
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: //
-    // RDKit✔️✔️: //  If includeNeighbors is set, we'll loop over our neighbors
-    // RDKit✔️✔️: //   and include any of them that are Hs in the count here
-    // RDKit✔️✔️: //
-    // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit✔️✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
-    // RDKit✔️✔️:   if (includeNeighbors && dp_mol) {
-    // RDKit✔️✔️:     auto nbrs = dp_mol->atomNeighbors(this);
-    // RDKit✔️✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
-    // RDKit✔️✔️:       return (nbr->getAtomicNum() == 1);
-    // RDKit✔️✔️:     });
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
-    // RDKit✔️✔️: unsigned int Atom::getNumImplicitHs() const {
-    // RDKit✔️✔️:   if (df_noImplicit) {
-    // RDKit✔️✔️:     return 0;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   PRECONDITION(d_implicitValence > -1,
-    // RDKit✔️✔️:                "getNumImplicitHs() called without preceding call to "
-    // RDKit✔️✔️:                "calcImplicitValence()");
-    // RDKit✔️✔️:   return getValence(ValenceType::IMPLICIT);
-    // RDKit✔️✔️: }
+fn query_atom_implicit_h_count(
+    valence: Option<&ValenceAssignment>,
+    at: &Atom,
+) -> Result<u32, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomImplicitHCount(Atom const *at) {
+    // RDKit❗✔️:   return at->getTotalNumHs(false);
+    // RDKit❗✔️: };
+    // RDKit❗✔️: //
+    // RDKit❗✔️: //  If includeNeighbors is set, we'll loop over our neighbors
+    // RDKit❗✔️: //   and include any of them that are Hs in the count here
+    // RDKit❗✔️: //
+    // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
+    // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
+    // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
+    // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
+    // RDKit❗✔️:       return (nbr->getAtomicNum() == 1);
+    // RDKit❗✔️:     });
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
+    // RDKit❗✔️: unsigned int Atom::getNumImplicitHs() const {
+    // RDKit❗✔️:   if (df_noImplicit) {
+    // RDKit❗✔️:     return 0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   PRECONDITION(d_implicitValence > -1,
+    // RDKit❗✔️:                "getNumImplicitHs() called without preceding call to "
+    // RDKit❗✔️:                "calcImplicitValence()");
+    // RDKit❗✔️:   return getValence(ValenceType::IMPLICIT);
+    // RDKit❗✔️: }
     // Local complexity review: the literal `includeNeighbors=false` makes
     // RDKit and Rust each perform two O(1) hydrogen-state reads and one
     // addition. Neither traverses adjacency, allocates, clones, branches over
@@ -4062,40 +4140,43 @@ fn query_atom_implicit_h_count(valence: Option<&ValenceAssignment>, at: &Atom) -
 }
 
 #[inline]
-fn query_atom_has_implicit_h(valence: Option<&ValenceAssignment>, at: &Atom) -> bool {
-    // RDKit✔️✔️: static inline int queryAtomHasImplicitH(Atom const *at) {
-    // RDKit✔️✔️:   return int(at->getTotalNumHs(false) > 0);
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: //
-    // RDKit✔️✔️: //  If includeNeighbors is set, we'll loop over our neighbors
-    // RDKit✔️✔️: //   and include any of them that are Hs in the count here
-    // RDKit✔️✔️: //
-    // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit✔️✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
-    // RDKit✔️✔️:   if (includeNeighbors && dp_mol) {
-    // RDKit✔️✔️:     auto nbrs = dp_mol->atomNeighbors(this);
-    // RDKit✔️✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
-    // RDKit✔️✔️:       return (nbr->getAtomicNum() == 1);
-    // RDKit✔️✔️:     });
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
-    // RDKit✔️✔️: unsigned int Atom::getNumImplicitHs() const {
-    // RDKit✔️✔️:   if (df_noImplicit) {
-    // RDKit✔️✔️:     return 0;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   PRECONDITION(d_implicitValence > -1,
-    // RDKit✔️✔️:                "getNumImplicitHs() called without preceding call to "
-    // RDKit✔️✔️:                "calcImplicitValence()");
-    // RDKit✔️✔️:   return getValence(ValenceType::IMPLICIT);
-    // RDKit✔️✔️: }
+fn query_atom_has_implicit_h(
+    valence: Option<&ValenceAssignment>,
+    at: &Atom,
+) -> Result<bool, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomHasImplicitH(Atom const *at) {
+    // RDKit❗✔️:   return int(at->getTotalNumHs(false) > 0);
+    // RDKit❗✔️: };
+    // RDKit❗✔️: //
+    // RDKit❗✔️: //  If includeNeighbors is set, we'll loop over our neighbors
+    // RDKit❗✔️: //   and include any of them that are Hs in the count here
+    // RDKit❗✔️: //
+    // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
+    // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
+    // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
+    // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
+    // RDKit❗✔️:       return (nbr->getAtomicNum() == 1);
+    // RDKit❗✔️:     });
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
+    // RDKit❗✔️: unsigned int Atom::getNumImplicitHs() const {
+    // RDKit❗✔️:   if (df_noImplicit) {
+    // RDKit❗✔️:     return 0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   PRECONDITION(d_implicitValence > -1,
+    // RDKit❗✔️:                "getNumImplicitHs() called without preceding call to "
+    // RDKit❗✔️:                "calcImplicitValence()");
+    // RDKit❗✔️:   return getValence(ValenceType::IMPLICIT);
+    // RDKit❗✔️: }
     // Local complexity review: RDKit and Rust each reuse the O(1) no-neighbor
     // total-hydrogen count and perform one comparison with zero. Neither scans
     // adjacency, allocates, clones, or creates a temporary collection. The
     // shared helper preserves the source's inclusion of explicit atom H state.
-    query_atom_implicit_h_count(valence, at).is_some_and(|count| count > 0)
+    Ok(query_atom_implicit_h_count(valence, at)? > 0)
 }
 
 #[inline]
@@ -4104,48 +4185,57 @@ fn query_atom_h_count(
     valence: Option<&ValenceAssignment>,
     at: &Atom,
     mol: &impl SearchTargetAccess,
-) -> Option<usize> {
-    // RDKit✔️✔️: static inline int queryAtomHCount(Atom const *at) {
-    // RDKit✔️✔️:   return at->getTotalNumHs(true);
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: //
-    // RDKit✔️✔️: //  If includeNeighbors is set, we'll loop over our neighbors
-    // RDKit✔️✔️: //   and include any of them that are Hs in the count here
-    // RDKit✔️✔️: //
-    // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit✔️✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
-    // RDKit✔️✔️:   if (includeNeighbors && dp_mol) {
-    // RDKit✔️✔️:     auto nbrs = dp_mol->atomNeighbors(this);
-    // RDKit✔️✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
-    // RDKit✔️✔️:       return (nbr->getAtomicNum() == 1);
-    // RDKit✔️✔️:     });
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
-    // RDKit✔️✔️: unsigned int Atom::getNumImplicitHs() const {
-    // RDKit✔️✔️:   if (df_noImplicit) {
-    // RDKit✔️✔️:     return 0;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   PRECONDITION(d_implicitValence > -1,
-    // RDKit✔️✔️:                "getNumImplicitHs() called without preceding call to "
-    // RDKit✔️✔️:                "calcImplicitValence()");
-    // RDKit✔️✔️:   return getValence(ValenceType::IMPLICIT);
-    // RDKit✔️✔️: }
+) -> Result<u32, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomHCount(Atom const *at) {
+    // RDKit❗✔️:   return at->getTotalNumHs(true);
+    // RDKit❗✔️: };
+    // RDKit❗✔️: //
+    // RDKit❗✔️: //  If includeNeighbors is set, we'll loop over our neighbors
+    // RDKit❗✔️: //   and include any of them that are Hs in the count here
+    // RDKit❗✔️: //
+    // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
+    // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
+    // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
+    // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
+    // RDKit❗✔️:       return (nbr->getAtomicNum() == 1);
+    // RDKit❗✔️:     });
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
+    // RDKit❗✔️: unsigned int Atom::getNumImplicitHs() const {
+    // RDKit❗✔️:   if (df_noImplicit) {
+    // RDKit❗✔️:     return 0;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   PRECONDITION(d_implicitValence > -1,
+    // RDKit❗✔️:                "getNumImplicitHs() called without preceding call to "
+    // RDKit❗✔️:                "calcImplicitValence()");
+    // RDKit❗✔️:   return getValence(ValenceType::IMPLICIT);
+    // RDKit❗✔️: }
     // Local complexity review: RDKit and Rust each perform O(1) explicit and
     // implicit hydrogen reads followed by one O(degree) pass over the existing
     // adjacency range. Neither allocates, clones, repeats the scan, or creates
     // a temporary collection. Rust uses `usize` for the accumulator so the
-    // target atom's neighbor count cannot silently saturate at the query's
-    // `u8` representation limit.
+    // target atom's count retains the source unsigned width.
     let mut res = total_hydrogen_count(valence, at)?;
     for nbr in adj.neighbors_of(at.id().index()) {
         if mol.query_atomic_number(&mol.atoms()[nbr.atom_index]) == 1 {
             res += 1;
         }
     }
-    Some(res)
+    Ok(res)
+}
+
+/// Narrow shared cached getter for source callers that consume its unsigned
+/// value rather than a query comparison. It enforces the same lazy precondition.
+#[doc(hidden)]
+pub fn atom_total_degree_with_context(
+    atom: &Atom,
+    context: &QueryMatchContext,
+) -> Result<u32, SubstructMatchError> {
+    query_atom_total_degree(&context.adj, context.valence.as_deref(), atom)
 }
 
 #[inline]
@@ -4153,50 +4243,52 @@ fn query_atom_total_degree(
     adj: &AdjacencyList,
     valence: Option<&ValenceAssignment>,
     atom: &Atom,
-) -> Option<usize> {
-    // RDKit✔️✔️: static inline int queryAtomTotalDegree(Atom const *at) {
-    // RDKit✔️✔️:   return at->getTotalDegree();
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: unsigned int Atom::getTotalDegree() const {
-    // RDKit✔️✔️:   unsigned int res = this->getTotalNumHs(false) + this->getDegree();
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
-    // RDKit✔️✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
-    // RDKit✔️✔️:   if (includeNeighbors && dp_mol) {
-    // RDKit✔️✔️:     auto nbrs = dp_mol->atomNeighbors(this);
-    // RDKit✔️✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
-    // RDKit✔️✔️:       return (nbr->getAtomicNum() == 1);
-    // RDKit✔️✔️:     });
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
+) -> Result<u32, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomTotalDegree(Atom const *at) {
+    // RDKit❗✔️:   return at->getTotalDegree();
+    // RDKit❗✔️: };
+    // RDKit❗✔️: unsigned int Atom::getTotalDegree() const {
+    // RDKit❗✔️:   unsigned int res = this->getTotalNumHs(false) + this->getDegree();
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
+    // RDKit❗✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
+    // RDKit❗✔️:   if (includeNeighbors && dp_mol) {
+    // RDKit❗✔️:     auto nbrs = dp_mol->atomNeighbors(this);
+    // RDKit❗✔️:     res += std::count_if(nbrs.begin(), nbrs.end(), [](const auto nbr) {
+    // RDKit❗✔️:       return (nbr->getAtomicNum() == 1);
+    // RDKit❗✔️:     });
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
     // Local complexity review: with RDKit's literal `includeNeighbors=false`,
     // both implementations perform O(1) cached/typed hydrogen reads, one O(1)
     // graph-degree lookup, and one addition. Neither traverses neighbors,
     // allocates, clones, or creates a temporary collection. Rust returns
     // `None` only outside the modeled valid query context when valence state
     // could not be assigned; supported matching builds that state up front.
-    total_hydrogen_count(valence, atom)
-        .map(|total_hs| total_hs + query_atom_explicit_degree(atom, adj))
+    Ok(total_hydrogen_count(valence, atom)?
+        .wrapping_add(query_atom_explicit_degree(atom, adj) as u32))
 }
 
 #[inline]
-fn query_atom_total_valence(valence: Option<&ValenceAssignment>, at: &Atom) -> Option<i32> {
-    // RDKit✔️✔️: static inline int queryAtomTotalValence(Atom const *at) {
-    // RDKit✔️✔️:   return at->getTotalValence();
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
-    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
-    // RDKit✔️✔️: }
+fn query_atom_total_valence(
+    valence: Option<&ValenceAssignment>,
+    at: &Atom,
+) -> Result<i32, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomTotalValence(Atom const *at) {
+    // RDKit❗✔️:   return at->getTotalValence();
+    // RDKit❗✔️: };
+    // RDKit❗✔️: unsigned int Atom::getTotalValence() const {
+    // RDKit❗✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+    // RDKit❗✔️: }
     // Local complexity review: RDKit and Rust each perform two O(1) cached or
     // typed valence reads and one integer addition, with no traversal,
     // allocation, cloning, repeated lookup, or temporary collection. Rust
     // reuses the canonical explicit- and implicit-valence readers, so all
     // total-valence predicates share one implementation of each source field.
-    atom_explicit_valence(valence, at)
-        .zip(query_atom_implicit_valence(valence, at))
-        .and_then(|(explicit, implicit)| explicit.checked_add(implicit))
+    Ok((atom_explicit_valence(valence, at)? as u32)
+        .wrapping_add(query_atom_implicit_valence(valence, at)? as u32) as i32)
 }
 
 #[inline]
@@ -4204,23 +4296,19 @@ fn query_atom_unsaturated(
     adj: &AdjacencyList,
     valence: Option<&ValenceAssignment>,
     at: &Atom,
-) -> Option<bool> {
-    // RDKit✔️✔️: static inline int queryAtomUnsaturated(Atom const *at) {
-    // RDKit✔️✔️:   return at->getTotalDegree() < at->getTotalValence();
-    // RDKit✔️✔️: };
+) -> Result<bool, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomUnsaturated(Atom const *at) {
+    // RDKit❗✔️:   return at->getTotalDegree() < at->getTotalValence();
+    // RDKit❗✔️: };
     // Local complexity review: both implementations reuse two O(1) cached or
     // typed atom-property reads and perform one integer comparison. Neither
     // traverses neighbors, allocates, clones, repeats a lookup, or creates a
     // temporary collection. Reusing the canonical total-degree and
     // total-valence functions removes the historical hybridization-based
     // SMARTS branch without introducing another chemistry implementation.
-    query_atom_total_degree(adj, valence, at)
-        .zip(query_atom_total_valence(valence, at))
-        .and_then(|(degree, total_valence)| {
-            usize::try_from(total_valence)
-                .ok()
-                .map(|total_valence| degree < total_valence)
-        })
+    let degree = query_atom_total_degree(adj, valence, at)?;
+    let valence = query_atom_total_valence(valence, at)? as u32;
+    Ok(degree < valence)
 }
 
 // ---------------------------------------------------------------------------
@@ -4754,6 +4842,28 @@ fn query_atom_num_aliphatic_heteroatom_nbrs(
     res
 }
 
+fn reached_ring_info<'a>(
+    rings: Option<&'a RingInfo>,
+    getter: &'static str,
+    atom: Option<usize>,
+    bond: Option<usize>,
+) -> Result<&'a RingInfo, SubstructMatchError> {
+    // RDKit❗✔️: unsigned int RingInfo::numAtomRings(unsigned int idx) const {
+    // RDKit❗✔️:   PRECONDITION(df_init, "RingInfo not initialized");
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (idx < d_atomMembers.size()) {
+    // RDKit❗✔️:     return rdcast<unsigned int>(d_atomMembers[idx].size());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return 0;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: const RingInfo::INT_VECT &RingInfo::atomMembers(unsigned int idx) const {
+    // RDKit❗✔️:   PRECONDITION(df_init, "RingInfo not initialized");
+    // The source cache's initialization check is O(1), without perception.
+    rings
+        .filter(|r| r.is_initialized())
+        .ok_or_else(|| QueryMatchContextError::RingPrecondition { getter, atom, bond }.into())
+}
+
 #[inline]
 fn query_atom_ring_membership(atom: &Atom, ring_info: &RingInfo) -> i32 {
     // RDKit✔️✔️: static inline int queryIsAtomInNRings(Atom const *at) {
@@ -4790,20 +4900,20 @@ fn query_atom_has_ring_bond(
     atom: &Atom,
     adj: &AdjacencyList,
     mol: &impl SearchTargetAccess,
-    ring_info: &RingInfo,
-) -> i32 {
-    // RDKit✔️✔️: static inline int queryAtomHasRingBond(Atom const *at) {
-    // RDKit✔️✔️:   ROMol::OBOND_ITER_PAIR atomBonds = at->getOwningMol().getAtomBonds(at);
-    // RDKit✔️✔️:   while (atomBonds.first != atomBonds.second) {
-    // RDKit✔️✔️:     unsigned int bondIdx =
-    // RDKit✔️✔️:         at->getOwningMol().getTopology()[*atomBonds.first]->getIdx();
-    // RDKit✔️✔️:     if (at->getOwningMol().getRingInfo()->numBondRings(bondIdx)) {
-    // RDKit✔️✔️:       return 1;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     ++atomBonds.first;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return 0;
-    // RDKit✔️✔️: };
+    ring_info: Option<&RingInfo>,
+) -> Result<i32, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomHasRingBond(Atom const *at) {
+    // RDKit❗✔️:   ROMol::OBOND_ITER_PAIR atomBonds = at->getOwningMol().getAtomBonds(at);
+    // RDKit❗✔️:   while (atomBonds.first != atomBonds.second) {
+    // RDKit❗✔️:     unsigned int bondIdx =
+    // RDKit❗✔️:         at->getOwningMol().getTopology()[*atomBonds.first]->getIdx();
+    // RDKit❗✔️:     if (at->getOwningMol().getRingInfo()->numBondRings(bondIdx)) {
+    // RDKit❗✔️:       return 1;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     ++atomBonds.first;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return 0;
+    // RDKit❗✔️: };
     // Local complexity review: RDKit and Rust each make one O(degree) pass
     // over the owning molecule's indexed incident-bond range and return on
     // the first ring bond. Each iteration performs O(1) bond indexing and an
@@ -4812,11 +4922,15 @@ fn query_atom_has_ring_bond(
     // molecule state explicitly and reuses the canonical ring-count helper.
     for neighbor in adj.neighbors_of(atom.id().index()) {
         let bond = &mol.bonds()[neighbor.bond.index()];
-        if query_is_bond_in_n_rings(bond, ring_info) != 0 {
-            return 1;
+        if query_is_bond_in_n_rings(
+            bond,
+            reached_ring_info(ring_info, "numBondRings", None, Some(bond.id().index()))?,
+        ) != 0
+        {
+            return Ok(1);
         }
     }
-    0
+    Ok(0)
 }
 
 #[inline]
@@ -4867,22 +4981,22 @@ fn query_atom_ring_bond_count(
     atom: &Atom,
     adj: &AdjacencyList,
     mol: &impl SearchTargetAccess,
-    ring_info: &RingInfo,
-) -> i32 {
-    // RDKit✔️✔️: static inline int queryAtomRingBondCount(Atom const *at) {
-    // RDKit✔️✔️:   // EFF: cache this result
-    // RDKit✔️✔️:   int res = 0;
-    // RDKit✔️✔️:   ROMol::OBOND_ITER_PAIR atomBonds = at->getOwningMol().getAtomBonds(at);
-    // RDKit✔️✔️:   while (atomBonds.first != atomBonds.second) {
-    // RDKit✔️✔️:     unsigned int bondIdx =
-    // RDKit✔️✔️:         at->getOwningMol().getTopology()[*atomBonds.first]->getIdx();
-    // RDKit✔️✔️:     if (at->getOwningMol().getRingInfo()->numBondRings(bondIdx)) {
-    // RDKit✔️✔️:       res++;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     ++atomBonds.first;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
+    ring_info: Option<&RingInfo>,
+) -> Result<i32, SubstructMatchError> {
+    // RDKit❗✔️: static inline int queryAtomRingBondCount(Atom const *at) {
+    // RDKit❗✔️:   // EFF: cache this result
+    // RDKit❗✔️:   int res = 0;
+    // RDKit❗✔️:   ROMol::OBOND_ITER_PAIR atomBonds = at->getOwningMol().getAtomBonds(at);
+    // RDKit❗✔️:   while (atomBonds.first != atomBonds.second) {
+    // RDKit❗✔️:     unsigned int bondIdx =
+    // RDKit❗✔️:         at->getOwningMol().getTopology()[*atomBonds.first]->getIdx();
+    // RDKit❗✔️:     if (at->getOwningMol().getRingInfo()->numBondRings(bondIdx)) {
+    // RDKit❗✔️:       res++;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     ++atomBonds.first;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
     // Local complexity review: RDKit and Rust each make one O(degree) pass
     // over the indexed incident-bond range, perform O(1) bond indexing and
     // ring-count lookup per entry, and maintain one integer accumulator.
@@ -4891,11 +5005,15 @@ fn query_atom_ring_bond_count(
     let mut res = 0;
     for neighbor in adj.neighbors_of(atom.id().index()) {
         let bond = &mol.bonds()[neighbor.bond.index()];
-        if query_is_bond_in_n_rings(bond, ring_info) != 0 {
+        if query_is_bond_in_n_rings(
+            bond,
+            reached_ring_info(ring_info, "numBondRings", None, Some(bond.id().index()))?,
+        ) != 0
+        {
             res += 1;
         }
     }
-    res
+    Ok(res)
 }
 
 #[inline]
@@ -5096,7 +5214,7 @@ fn query_atom_all_bond_product(
     adj: &AdjacencyList,
     mol: &impl SearchTargetAccess,
     valence: Option<&ValenceAssignment>,
-) -> Option<u32> {
+) -> Result<u32, SubstructMatchError> {
     // RDKit✔️✔️: unsigned int queryAtomAllBondProduct(Atom const *at) {
     // RDKit✔️✔️:   ROMol::OEDGE_ITER beg, end;
     // RDKit✔️✔️:
@@ -5124,7 +5242,7 @@ fn query_atom_all_bond_product(
     for _ in 0..total_hydrogens {
         prod = prod.wrapping_mul(rdkit_bond_type_prime(BondOrder::Single));
     }
-    Some(prod)
+    Ok(prod)
 }
 
 #[inline]
@@ -5144,11 +5262,61 @@ fn query_atom_explicit_degree(at: &Atom, adj: &AdjacencyList) -> usize {
 ///   + `QueryOps.cpp` atomMatchesQuery dispatch logic.
 ///
 /// Returns `true` when the predicate matches the atom.
+fn property_string_matches(
+    property: Option<&cosmolkit_model::PropertyValue>,
+    expected: &str,
+) -> Result<bool, SubstructMatchError> {
+    // RDKit❗✔️:   bool Match(const TargetPtr what) const override {
+    // RDKit❗✔️:     bool res = what->hasProp(propname);
+    // RDKit❗✔️:     if (res) {
+    // RDKit❗✔️:       try {
+    // RDKit❗✔️:         std::string atom_val = what->template getProp<std::string>(propname);
+    // RDKit❗✔️:         res = atom_val == this->val;
+    // RDKit❗✔️:       } catch (KeyErrorException &) {
+    // RDKit❗✔️:         res = false;
+    // RDKit❗✔️:       } catch (std::bad_any_cast &) {
+    // RDKit❗✔️:         res = false;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️: #ifdef __GNUC__
+    // RDKit❗✔️: #if (__GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 2))
+    // RDKit❗✔️:       catch (...) {
+    // RDKit❗✔️:         // catch all -- this is currently necessary to
+    // RDKit❗✔️:         //  trap some bugs in boost+gcc configurations
+    // RDKit❗✔️:         //  Normally, this is not the correct thing to
+    // RDKit❗✔️:         //  do, but the only exception above is due
+    // RDKit❗✔️:         //  to the boost any_cast which is trapped
+    // RDKit❗✔️:         //  by the Boost python wrapper when it shouldn't
+    // RDKit❗✔️:         //  be.
+    // RDKit❗✔️:         res = false;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️: #endif
+    // RDKit❗✔️: #endif
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (this->getNegation()) {
+    // RDKit❗✔️:       res = !res;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     return res;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   //! returns a copy of this query
+    // RDKit❗✔️:   Queries::Query<int, TargetPtr, true> *copy() const override {
+    // Absent properties reproduce hasProp=false. All modeled value kinds use
+    // the sole CORE source string converter. A missing conversion capability
+    // is not std::bad_any_cast and therefore retains its structured cause.
+    // Converter cost is identical to the owning CORE projection; no clone.
+    match property {
+        None => Ok(false),
+        Some(value) => {
+            Ok(cosmolkit_core::property_value_to_string(value)?.as_bytes() == expected.as_bytes())
+        }
+    }
+}
+
 pub fn atom_predicate_matches(
     atom: &Atom,
     pred: &AtomQueryPredicate,
     mol: &impl SearchTargetAccess,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     let ctx = build_query_match_context(mol);
     atom_predicate_matches_with_target_context(atom, pred, mol, &ctx)
 }
@@ -5158,7 +5326,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
     pred: &AtomQueryPredicate,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     let aidx = atom.id().index();
     let adj = &ctx.adj;
     let ring_info = &ctx.ring_info;
@@ -5207,28 +5375,18 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         // RDKit✔️✔️: isotope match — queryAtomIsotope.
         AtomQueryPredicate::Isotope(i) => query_atom_isotope(atom) == *i,
 
-        AtomQueryPredicate::HydrogenCount(n) => usize::try_from(*n)
-            .ok()
-            .is_some_and(|target| query_atom_h_count(adj, valence, atom, mol) == Some(target)),
-
-        AtomQueryPredicate::HasImplicitHydrogen => query_atom_has_implicit_h(valence, atom),
-
-        AtomQueryPredicate::ImplicitValence(n) => {
-            query_atom_implicit_valence(valence, atom) == Some(*n)
+        AtomQueryPredicate::HydrogenCount(n) => {
+            query_atom_h_count(adj, valence, atom, mol)? as i32 == *n
         }
-
-        AtomQueryPredicate::ExplicitValence(n) => {
-            query_atom_explicit_valence(valence, atom) == Some(*n)
+        AtomQueryPredicate::HasImplicitHydrogen => query_atom_has_implicit_h(valence, atom)?,
+        AtomQueryPredicate::ImplicitValence(n) => query_atom_implicit_valence(valence, atom)? == *n,
+        AtomQueryPredicate::ExplicitValence(n) => query_atom_explicit_valence(valence, atom)? == *n,
+        AtomQueryPredicate::ImplicitHydrogenCount(n) => {
+            query_atom_implicit_h_count(valence, atom)? as i32 == *n
         }
-
-        AtomQueryPredicate::ImplicitHydrogenCount(n) => usize::try_from(*n)
-            .ok()
-            .is_some_and(|target| query_atom_implicit_h_count(valence, atom) == Some(target)),
-
         AtomQueryPredicate::ImplicitHydrogenCountLessEqual(n) => {
-            query_atom_implicit_h_count(valence, atom).is_some_and(|count| count <= usize::from(*n))
+            query_atom_implicit_h_count(valence, atom)? as i32 <= i32::from(*n)
         }
-
         AtomQueryPredicate::ExplicitDegree(n) => usize::try_from(*n)
             .ok()
             .is_some_and(|target| query_atom_explicit_degree(atom, adj) == target),
@@ -5271,32 +5429,45 @@ pub(crate) fn atom_predicate_matches_with_target_context(
         //       if (ringInfo->numBondRings(bondIdx)) res++;
         //     return res;
         //   }
-        AtomQueryPredicate::RingBondCount(n) => {
-            if let Some(ri) = &ring_info {
-                let count = query_atom_ring_bond_count(atom, adj, mol, ri);
-                if *n < 0 { count != 0 } else { count == *n }
-            } else {
-                false
-            }
-        }
-
         // RDKit✔️✔️: ring bond count ≤ N.
+        AtomQueryPredicate::RingBondCount(n) => {
+            let count = query_atom_ring_bond_count(atom, adj, mol, ring_info.as_deref())?;
+            if *n < 0 { count != 0 } else { count == *n }
+        }
         AtomQueryPredicate::RingBondCountLessEqual(n) => {
-            if let Some(ri) = &ring_info {
-                query_atom_ring_bond_count(atom, adj, mol, ri) <= i32::from(*n)
-            } else {
-                false
-            }
+            // BEGIN COMPLETE LessEqualQuery::Match
+            // RDKit✔️✔️:   bool Match(const DataFuncArgType what) const override {
+            // RDKit✔️✔️:     MatchFuncArgType mfArg =
+            // RDKit✔️✔️:         this->TypeConvert(what, Int2Type<needsConversion>());
+            // RDKit✔️✔️:     if (queryCmp(this->d_val, mfArg, this->d_tol) <= 0) {
+            // RDKit✔️✔️:       return !this->getNegation();
+            // RDKit✔️✔️:     } else {
+            // RDKit✔️✔️:       return this->getNegation();
+            // RDKit✔️✔️:     }
+            // RDKit✔️✔️:   }
+            // END COMPLETE LessEqualQuery::Match
+            // BEGIN COMPLETE Queries::queryCmp
+            // RDKit✔️✔️: int queryCmp(const T1 v1, const T2 v2, const T1 tol) {
+            // RDKit✔️✔️:   T1 diff = v1 - v2;
+            // RDKit✔️✔️:   if (diff <= tol) {
+            // RDKit✔️✔️:     if (diff >= -tol) {
+            // RDKit✔️✔️:       return 0;
+            // RDKit✔️✔️:     } else {
+            // RDKit✔️✔️:       return -1;
+            // RDKit✔️✔️:     }
+            // RDKit✔️✔️:   } else {
+            // RDKit✔️✔️:     return 1;
+            // RDKit✔️✔️:   }
+            // RDKit✔️✔️: }
+            // END COMPLETE Queries::queryCmp
+            // Source compares stored query value <= converted target value.
+            // With rb:4 and zero tolerance, the target must have >=4 ring
+            // bonds. One existing source data getter; no field-value guess.
+            i32::from(*n) <= query_atom_ring_bond_count(atom, adj, mol, ring_info.as_deref())?
         }
-
         AtomQueryPredicate::HasRingBond => {
-            if let Some(ri) = &ring_info {
-                query_atom_has_ring_bond(atom, adj, mol, ri) != 0
-            } else {
-                false
-            }
+            query_atom_has_ring_bond(atom, adj, mol, ring_info.as_deref())? != 0
         }
-
         AtomQueryPredicate::IsBridgehead => ring_info.as_ref().is_some_and(|ri| {
             cosmolkit_core::is_atom_bridgehead_from_topology(mol.topology_block(), aidx, ri) != 0
         }),
@@ -5309,112 +5480,105 @@ pub(crate) fn atom_predicate_matches_with_target_context(
             }
         }
 
-        AtomQueryPredicate::IsUnsaturated => {
-            query_atom_unsaturated(adj, valence, atom).unwrap_or(false)
-        }
-
         // RDKit✔️✔️: hybridization match — queryAtomHybridization.
+        AtomQueryPredicate::IsUnsaturated => query_atom_unsaturated(adj, valence, atom)?,
         AtomQueryPredicate::HybridizationMatch(h) => query_atom_hybridization(atom) == *h as i32,
 
-        AtomQueryPredicate::TotalDegree(n) => usize::try_from(*n)
-            .ok()
-            .is_some_and(|target| query_atom_total_degree(adj, valence, atom) == Some(target)),
-        AtomQueryPredicate::TotalDegreeLessEqual(n) => query_atom_total_degree(adj, valence, atom)
-            .is_some_and(|total| total <= usize::from(*n)),
+        AtomQueryPredicate::TotalDegree(n) => {
+            query_atom_total_degree(adj, valence, atom)? as i32 == *n
+        }
+        AtomQueryPredicate::TotalDegreeLessEqual(n) => {
+            query_atom_total_degree(adj, valence, atom)? as i32 <= i32::from(*n)
+        }
         AtomQueryPredicate::TotalDegreeGreaterEqual(n) => {
-            query_atom_total_degree(adj, valence, atom)
-                .is_some_and(|total| total >= usize::from(*n))
+            query_atom_total_degree(adj, valence, atom)? as i32 >= i32::from(*n)
         }
-
-        AtomQueryPredicate::TotalValence(n) => query_atom_total_valence(valence, atom) == Some(*n),
+        AtomQueryPredicate::TotalValence(n) => query_atom_total_valence(valence, atom)? == *n,
         AtomQueryPredicate::TotalValenceLessEqual(n) => {
-            query_atom_total_valence(valence, atom).is_some_and(|total| total <= i32::from(*n))
+            query_atom_total_valence(valence, atom)? <= i32::from(*n)
         }
-        AtomQueryPredicate::TotalValenceGreaterEqual(n) => {
-            query_atom_total_valence(valence, atom).is_some_and(|total| total >= i32::from(*n))
-        }
-
         // RDKit✔️✔️: in ring — queryIsAtomInRing.
         // RDKit source: queryIsAtomInRing(at) {
         //   return at->getOwningMol().getRingInfo()->numAtomRings(at->getIdx()) != 0;
         // }
-        AtomQueryPredicate::InRing => {
-            if let Some(ri) = &ring_info {
-                query_is_atom_in_ring(atom, ri) != 0
-            } else {
-                false
-            }
+        AtomQueryPredicate::TotalValenceGreaterEqual(n) => {
+            query_atom_total_valence(valence, atom)? >= i32::from(*n)
         }
-
         // RDKit✔️✔️: AtomRingQuery(N) — atom ring membership count.
         // RDKit source: `COMPLEX_ATOM_QUERY_TOKEN number` mutates the
         // AtomRingQuery value used for `R` SMARTS primitives.
+        AtomQueryPredicate::InRing => {
+            query_is_atom_in_ring(
+                atom,
+                reached_ring_info(ring_info.as_deref(), "numAtomRings", Some(aidx), None)?,
+            ) != 0
+        }
+        // RDKit✔️✔️: in ring of size N — isAtomInRingOfSize.
         AtomQueryPredicate::NumAtomRings(n) => {
-            if let Some(ri) = &ring_info {
-                let membership = query_atom_ring_membership(atom, ri);
-                if *n < 0 {
-                    membership != 0
-                } else {
-                    membership == *n
-                }
+            let membership = query_atom_ring_membership(
+                atom,
+                reached_ring_info(ring_info.as_deref(), "numAtomRings", Some(aidx), None)?,
+            );
+            if *n < 0 {
+                membership != 0
             } else {
-                false
+                membership == *n
             }
         }
-
-        // RDKit✔️✔️: in ring of size N — isAtomInRingOfSize.
         AtomQueryPredicate::InRingOfSize(n) => {
-            if let Some(ri) = &ring_info {
-                query_atom_is_in_ring_of_size(atom, *n, ri) == *n
-            } else {
-                false
-            }
+            query_atom_is_in_ring_of_size(
+                atom,
+                *n,
+                reached_ring_info(ring_info.as_deref(), "isAtomInRingOfSize", Some(aidx), None)?,
+            ) == *n
         }
         AtomQueryPredicate::InRingOfSizeLessEqual(n) => {
-            if let Some(ri) = &ring_info {
-                query_atom_is_in_ring_size_range(atom, i32::from(*n), -1, false, false, ri)
-                    <= i32::from(*n)
-            } else {
-                false
-            }
+            query_atom_is_in_ring_size_range(
+                atom,
+                i32::from(*n),
+                -1,
+                false,
+                false,
+                reached_ring_info(ring_info.as_deref(), "atomRingSizes", Some(aidx), None)?,
+            ) <= i32::from(*n)
         }
-        AtomQueryPredicate::InRingOfSizeGreaterEqual(n) => {
-            if let Some(ri) = &ring_info {
-                query_atom_is_in_ring_size_range(atom, -1, i32::from(*n), false, false, ri)
-                    >= i32::from(*n)
-            } else {
-                false
-            }
-        }
-
         // RDKit✔️✔️: smallest ring size — queryAtomMinRingSize.
         // RDKit source: queryAtomMinRingSize(at) {
         //   return getRingInfo()->minAtomRingSize(at->getIdx());
         // }
+        AtomQueryPredicate::InRingOfSizeGreaterEqual(n) => {
+            query_atom_is_in_ring_size_range(
+                atom,
+                -1,
+                i32::from(*n),
+                false,
+                false,
+                reached_ring_info(ring_info.as_deref(), "atomRingSizes", Some(aidx), None)?,
+            ) >= i32::from(*n)
+        }
         AtomQueryPredicate::SmallestRingSize(n) => {
-            if let Some(ri) = &ring_info {
-                i32::try_from(query_atom_min_ring_size(atom, ri)).ok() == Some(*n)
-            } else {
-                false
-            }
+            query_atom_min_ring_size(
+                atom,
+                reached_ring_info(ring_info.as_deref(), "minAtomRingSize", Some(aidx), None)?,
+            ) as i32
+                == *n
         }
         AtomQueryPredicate::SmallestRingSizeLessEqual(n) => {
-            if let Some(ri) = &ring_info {
-                query_atom_min_ring_size(atom, ri) <= usize::from(*n)
-            } else {
-                false
-            }
+            query_atom_min_ring_size(
+                atom,
+                reached_ring_info(ring_info.as_deref(), "minAtomRingSize", Some(aidx), None)?,
+            ) as i32
+                <= i32::from(*n)
         }
-        AtomQueryPredicate::SmallestRingSizeGreaterEqual(n) => {
-            if let Some(ri) = &ring_info {
-                query_atom_min_ring_size(atom, ri) >= usize::from(*n)
-            } else {
-                false
-            }
-        }
-
         // RDKit✔️✔️: mass match — queryAtomMass. `Mass` retains the unscaled
         // integer query value accepted by RDKit's makeAtomMassQuery.
+        AtomQueryPredicate::SmallestRingSizeGreaterEqual(n) => {
+            query_atom_min_ring_size(
+                atom,
+                reached_ring_info(ring_info.as_deref(), "minAtomRingSize", Some(aidx), None)?,
+            ) as i32
+                >= i32::from(*n)
+        }
         AtomQueryPredicate::Mass(m) => {
             query_atom_mass(atom)? == i32::from(*m) * MASS_INTEGER_CONVERSION_FACTOR
         }
@@ -5433,9 +5597,8 @@ pub(crate) fn atom_predicate_matches_with_target_context(
             query_atom_explicit_degree(atom, adj) >= usize::from(*n)
         }
 
-        AtomQueryPredicate::Range(range) => match_atom_range_query(range, atom, mol, ctx),
-
         // RDKit✔️✔️: recursive SMARTS — not yet fully supported.
+        AtomQueryPredicate::Range(range) => match_atom_range_query(range, atom, mol, ctx)?,
         AtomQueryPredicate::RecursiveSmarts(_query) => {
             // RDKit✔️❌: Recursive SMARTS evaluation requires the full SMARTS matcher /
             // substructure matching engine which is not yet ported. This is preserved
@@ -5445,9 +5608,7 @@ pub(crate) fn atom_predicate_matches_with_target_context(
 
         AtomQueryPredicate::HasProperty(name) => atom.prop(name).is_some(),
         AtomQueryPredicate::PropertyValue { name, value } => {
-            atom.prop(name)
-                .and_then(|property| property.as_string().ok())
-                == Some(value.as_str())
+            property_string_matches(atom.prop(name), value)?
         }
 
         // RDKit✔️✔️: R-group label.
@@ -5477,7 +5638,7 @@ pub fn atom_predicate_matches_with_context(
     pred: &AtomQueryPredicate,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     atom_predicate_matches_with_target_context(atom, pred, mol, ctx)
 }
 
@@ -5611,7 +5772,7 @@ pub fn bond_predicate_matches(
     bond: &Bond,
     pred: &BondQueryPredicate,
     mol: &impl SearchTargetAccess,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     let ctx = build_query_match_context(mol);
     bond_predicate_matches_with_target_context(bond, pred, mol, &ctx)
 }
@@ -5621,10 +5782,10 @@ pub(crate) fn bond_predicate_matches_with_target_context(
     pred: &BondQueryPredicate,
     _mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     let ring_info = &ctx.ring_info;
 
-    match pred {
+    Ok(match pred {
         // RDKit✔️✔️: `~` matches any bond.
         BondQueryPredicate::Any => true,
 
@@ -5638,15 +5799,19 @@ pub(crate) fn bond_predicate_matches_with_target_context(
         BondQueryPredicate::IsAromatic(desired) => bond.is_aromatic() == *desired,
 
         // RDKit✔️✔️: `@` ring bond — queryIsBondInRing.
-        BondQueryPredicate::IsInRing(desired) => {
-            if let Some(ri) = &ring_info {
-                (query_is_bond_in_ring(bond, ri) != 0) == *desired
-            } else {
-                !desired
-            }
-        }
-
         // RDKit✔️✔️: `/` `\` bond direction — queryBondDir.
+        BondQueryPredicate::IsInRing(desired) => {
+            (query_is_bond_in_ring(
+                bond,
+                reached_ring_info(
+                    ring_info.as_deref(),
+                    "numBondRings",
+                    None,
+                    Some(bond.id().index()),
+                )?,
+            ) != 0)
+                == *desired
+        }
         BondQueryPredicate::Direction(dir) => query_bond_dir(bond) == *dir,
 
         // Exact typed stereo identity matching. RDKit's separate boolean
@@ -5661,47 +5826,68 @@ pub(crate) fn bond_predicate_matches_with_target_context(
 
         // RDKit✔️✔️: number of ring bonds the bond is part of.
         BondQueryPredicate::NumRingBonds(n) => {
-            if let Some(ri) = &ring_info {
-                usize::try_from(*n).is_ok_and(|target| query_is_bond_in_n_rings(bond, ri) == target)
-            } else {
-                false
-            }
+            query_is_bond_in_n_rings(
+                bond,
+                reached_ring_info(
+                    ring_info.as_deref(),
+                    "numBondRings",
+                    None,
+                    Some(bond.id().index()),
+                )?,
+            ) as i32
+                == *n
         }
         BondQueryPredicate::InRingOfSize(target) => {
-            if let Some(ri) = &ring_info {
-                query_bond_is_in_ring_of_size(bond, *target, ri) == *target
-            } else {
-                false
-            }
+            query_bond_is_in_ring_of_size(
+                bond,
+                *target,
+                reached_ring_info(
+                    ring_info.as_deref(),
+                    "isBondInRingOfSize",
+                    None,
+                    Some(bond.id().index()),
+                )?,
+            ) == *target
         }
         BondQueryPredicate::MinRingSize(target) => {
-            if let Some(ri) = &ring_info {
-                usize::try_from(*target)
-                    .is_ok_and(|target| query_bond_min_ring_size(bond, ri) == target)
-            } else {
-                false
-            }
+            query_bond_min_ring_size(
+                bond,
+                reached_ring_info(
+                    ring_info.as_deref(),
+                    "minBondRingSize",
+                    None,
+                    Some(bond.id().index()),
+                )?,
+            ) as i32
+                == *target
         }
         BondQueryPredicate::NumRingBondsGreaterEqual(n) => {
-            if let Some(ri) = &ring_info {
-                query_is_bond_in_n_rings(bond, ri) >= usize::from(*n)
-            } else {
-                false
-            }
+            query_is_bond_in_n_rings(
+                bond,
+                reached_ring_info(
+                    ring_info.as_deref(),
+                    "numBondRings",
+                    None,
+                    Some(bond.id().index()),
+                )?,
+            ) as i32
+                >= i32::from(*n)
         }
         BondQueryPredicate::NumRingBondsLessEqual(n) => {
-            if let Some(ri) = &ring_info {
-                query_is_bond_in_n_rings(bond, ri) <= usize::from(*n)
-            } else {
-                false
-            }
+            query_is_bond_in_n_rings(
+                bond,
+                reached_ring_info(
+                    ring_info.as_deref(),
+                    "numBondRings",
+                    None,
+                    Some(bond.id().index()),
+                )?,
+            ) as i32
+                <= i32::from(*n)
         }
-
         BondQueryPredicate::HasProperty(name) => bond.prop(name).is_some(),
         BondQueryPredicate::PropertyValue { name, value } => {
-            bond.prop(name)
-                .and_then(|property| property.as_string().ok())
-                == Some(value.as_str())
+            property_string_matches(bond.prop(name), value)?
         }
 
         // RDKit✔️✔️: MolFile query code — preserved but not interpreted.
@@ -5712,7 +5898,7 @@ pub(crate) fn bond_predicate_matches_with_target_context(
 
         // RDKit✔️✔️: explicitly unsupported feature.
         BondQueryPredicate::UnsupportedFeature(_desc) => false,
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -6521,7 +6707,7 @@ pub(crate) fn query_atom_query_match(
     what_atom: &Atom,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️✔️: bool QueryAtom::QueryMatch(QueryAtom const *what) const {
     // RDKit✔️✔️:   PRECONDITION(what, "bad query atom");
     // RDKit✔️✔️:   PRECONDITION(dp_query, "no query set");
@@ -6552,7 +6738,7 @@ pub(crate) fn query_bond_query_match(
     what_bond: &Bond,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️✔️: bool QueryBond::QueryMatch(QueryBond const *what) const {
     // RDKit✔️✔️:   PRECONDITION(what, "bad query bond");
     // RDKit✔️✔️:   PRECONDITION(dp_query, "no query set");
@@ -6570,7 +6756,7 @@ pub(crate) fn query_bond_query_match(
     // retains RDKit's child-loop bounds, including BondAnd's source-specific
     // second-operand !any branch.
     if let Some(what_query) = what_query {
-        bond_queries_match(query, what_query)
+        Ok(bond_queries_match(query, what_query))
     } else {
         bond_matches_query_with_target_context(what_bond, query, mol, ctx)
     }
@@ -6579,8 +6765,8 @@ pub(crate) fn query_bond_query_match(
 pub(crate) fn and_query_match<T>(
     children: &[QueryNode<T>],
     negated: bool,
-    mut child_matches: impl FnMut(&QueryNode<T>) -> bool,
-) -> bool {
+    mut child_matches: impl FnMut(&QueryNode<T>) -> Result<bool, SubstructMatchError>,
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️✔️: bool Match(const DataFuncArgType what) const override {
     // RDKit✔️✔️:   bool res = true;
     // RDKit✔️✔️:   typename BASE::CHILD_VECT_CI it1;
@@ -6604,7 +6790,7 @@ pub(crate) fn and_query_match<T>(
     // or asymptotic/hot-path branch beyond RDKit's virtual child Match call.
     let mut result = true;
     for child in children {
-        if !child_matches(child) {
+        if !child_matches(child)? {
             result = false;
             break;
         }
@@ -6612,14 +6798,14 @@ pub(crate) fn and_query_match<T>(
     if negated {
         result = !result;
     }
-    result
+    Ok(result)
 }
 
 pub(crate) fn or_query_match<T>(
     children: &[QueryNode<T>],
     negated: bool,
-    mut child_matches: impl FnMut(&QueryNode<T>) -> bool,
-) -> bool {
+    mut child_matches: impl FnMut(&QueryNode<T>) -> Result<bool, SubstructMatchError>,
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️✔️: bool Match(const DataFuncArgType what) const override {
     // RDKit✔️✔️:   bool res = false;
     // RDKit✔️✔️:   typename BASE::CHILD_VECT_CI it1;
@@ -6643,7 +6829,7 @@ pub(crate) fn or_query_match<T>(
     // or asymptotic/hot-path branch beyond RDKit's virtual child Match call.
     let mut result = false;
     for child in children {
-        if child_matches(child) {
+        if child_matches(child)? {
             result = true;
             break;
         }
@@ -6651,14 +6837,14 @@ pub(crate) fn or_query_match<T>(
     if negated {
         result = !result;
     }
-    result
+    Ok(result)
 }
 
 pub(crate) fn xor_query_match<T>(
     children: &[QueryNode<T>],
     negated: bool,
-    mut child_matches: impl FnMut(&QueryNode<T>) -> bool,
-) -> bool {
+    mut child_matches: impl FnMut(&QueryNode<T>) -> Result<bool, SubstructMatchError>,
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️✔️: bool Match(const DataFuncArgType what) const override {
     // RDKit✔️✔️:   bool res = false;
     // RDKit✔️✔️:   typename BASE::CHILD_VECT_CI it1;
@@ -6687,7 +6873,7 @@ pub(crate) fn xor_query_match<T>(
     // child Match call.
     let mut result = false;
     for child in children {
-        if child_matches(child) {
+        if child_matches(child)? {
             if result {
                 result = false;
                 break;
@@ -6698,7 +6884,7 @@ pub(crate) fn xor_query_match<T>(
     if negated {
         result = !result;
     }
-    result
+    Ok(result)
 }
 
 pub fn bond_predicate_matches_with_context(
@@ -6706,7 +6892,7 @@ pub fn bond_predicate_matches_with_context(
     pred: &BondQueryPredicate,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     bond_predicate_matches_with_target_context(bond, pred, mol, ctx)
 }
 
@@ -6721,7 +6907,7 @@ pub fn atom_matches_query(
     atom: &Atom,
     query: &QueryNode<AtomQueryPredicate>,
     mol: &impl SearchTargetAccess,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️❌: bool QueryAtom::Match(Atom const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query atom");
     // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
@@ -6743,7 +6929,7 @@ pub(crate) fn atom_matches_query_with_target_context(
     query: &QueryNode<AtomQueryPredicate>,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     Ok(match query {
         QueryNode::Predicate(pred) => {
             atom_predicate_matches_with_target_context(atom, pred, mol, ctx)?
@@ -6796,7 +6982,7 @@ pub fn bond_matches_query(
     bond: &Bond,
     query: &QueryNode<BondQueryPredicate>,
     mol: &impl SearchTargetAccess,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     // RDKit✔️❌: bool QueryBond::Match(Bond const *what) const {
     // RDKit✔️❌:   PRECONDITION(what, "bad query bond");
     // RDKit✔️❌:   PRECONDITION(dp_query, "no query set");
@@ -6818,7 +7004,7 @@ pub(crate) fn bond_matches_query_with_target_context(
     query: &QueryNode<BondQueryPredicate>,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     match query {
         QueryNode::Predicate(pred) => {
             bond_predicate_matches_with_target_context(bond, pred, mol, ctx)
@@ -6837,7 +7023,9 @@ pub(crate) fn bond_matches_query_with_target_context(
         }),
 
         // RDKit✔️✔️: NOT
-        QueryNode::Not(child) => !bond_matches_query_with_target_context(bond, child, mol, ctx),
+        QueryNode::Not(child) => Ok(!bond_matches_query_with_target_context(
+            bond, child, mol, ctx,
+        )?),
     }
 }
 
@@ -6846,7 +7034,7 @@ pub fn atom_matches_query_with_context(
     query: &QueryNode<AtomQueryPredicate>,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     atom_matches_query_with_target_context(atom, query, mol, ctx)
 }
 
@@ -6855,7 +7043,7 @@ pub fn bond_matches_query_with_context(
     query: &QueryNode<BondQueryPredicate>,
     mol: &impl SearchTargetAccess,
     ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     bond_matches_query_with_target_context(bond, query, mol, ctx)
 }
 
@@ -7407,6 +7595,7 @@ mod q41_query_query_tests {
             &target,
             &context,
         )
+        .expect("original fixed query bond evaluation succeeds")
     }
 
     fn relation(

@@ -31,7 +31,10 @@ pub(crate) fn concrete_pruning_query(
         .collect();
     let mut props = properties.props().clone();
     if let Some(name) = properties.name() {
-        props.insert("_Name".to_owned(), name.to_owned());
+        props.insert(
+            "_Name".into(),
+            cosmolkit_model::PropertyValue::String(name.clone()),
+        );
     }
     let mut query = QueryGraph::from_parts(
         atoms,
@@ -271,7 +274,10 @@ mod tests {
         assert_eq!(query.atoms()[0].formal_charge(), 1);
         assert_eq!(query.bonds()[0].bond(), &mol.bonds[0]);
         assert_eq!(query.conformers_3d(), coordinates.conformers_3d.as_slice());
-        assert_eq!(query.name(), Some("carrier-original"));
+        assert_eq!(
+            query.name().unwrap().map(|name| name.as_bytes()),
+            Some(b"carrier-original".as_slice())
+        );
     }
     #[test]
     fn source_self_matches_keep_degree_zero_hydrogen_and_nonzero_truth_condition() {

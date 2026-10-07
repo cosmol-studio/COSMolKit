@@ -1,3 +1,4 @@
+use crate::PropertyText;
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
 use std::{
@@ -40,9 +41,11 @@ pub enum BondValueError {
     StereoAtomsRequired,
     #[error("bond property key cannot be empty")]
     EmptyPropertyKey,
+    #[error("computed property list has the wrong value kind: {0}")]
+    ComputedListKind(crate::PropertyValueError),
 }
 
-fn validate_property_key(key: &str) -> Result<(), BondValueError> {
+fn validate_property_key(key: &PropertyText) -> Result<(), BondValueError> {
     // BEGIN RDKIT CPP FUNCTION RDProps::setProp empty-key precondition
     // RDKit✔️✔️: if(key.empty()) {
     // RDKit✔️✔️:   throw ValueErrorException("Cannot set property with empty key");
@@ -196,45 +199,77 @@ impl BondSpec {
     #[must_use]
     pub fn with_prop(
         mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<Self, BondValueError> {
         let key = key.into();
         validate_property_key(&key)?;
         // RDKit✔️✔️: d_props.setVal(key, val);
-        self.properties.set(key, value.into());
+        self.properties
+            .set(key, value.into())
+            .map_err(|error| match error {
+                crate::property_value::PropertyStoreError::EmptyKey => {
+                    BondValueError::EmptyPropertyKey
+                }
+                crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                    BondValueError::ComputedListKind(source)
+                }
+            })?;
         Ok(self)
     }
 
     #[must_use]
     pub fn with_computed_prop(
         mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<Self, BondValueError> {
         let key = key.into();
         validate_property_key(&key)?;
-        self.properties.set_computed(key, value.into());
+        self.properties
+            .set_computed(key, value.into())
+            .map_err(|error| match error {
+                crate::property_value::PropertyStoreError::EmptyKey => {
+                    BondValueError::EmptyPropertyKey
+                }
+                crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                    BondValueError::ComputedListKind(source)
+                }
+            })?;
         Ok(self)
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, PropertyValue> {
+    pub fn props(&self) -> &BTreeMap<PropertyText, PropertyValue> {
         self.properties.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&PropertyValue> {
-        self.properties.get(key)
+    pub fn prop(&self, key: impl AsRef<[u8]>) -> Option<&PropertyValue> {
+        self.properties.get(key.as_ref())
+    }
+
+    /// Read a required detached property without conversion.
+    #[doc(hidden)]
+    pub fn prop_required(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<&crate::PropertyValue, crate::MissingPropertyError> {
+        self.properties.get_required(key)
     }
 
     #[must_use]
-    pub fn is_prop_computed(&self, key: &str) -> bool {
+    pub fn is_prop_computed(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<bool, crate::PropertyValueError> {
         self.properties.is_computed(key)
     }
 
     #[must_use]
-    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+    pub fn computed_prop_names(
+        &self,
+    ) -> Result<Option<&[PropertyText]>, crate::PropertyValueError> {
         self.properties.computed_names()
     }
 
@@ -302,7 +337,7 @@ pub struct Bond {
 #[doc(hidden)]
 pub fn ordered_bond_properties(
     bond: &Bond,
-) -> impl ExactSizeIterator<Item = (&str, &PropertyValue)> + '_ {
+) -> impl ExactSizeIterator<Item = (&PropertyText, &PropertyValue)> + '_ {
     // BEGIN RDKIT CPP FUNCTION Dict::keys / RDProps::getPropList
     // RDKit❗✔️: for (const auto &item : _data) {
     // RDKit❗✔️:   res.push_back(item.key);
@@ -320,6 +355,36 @@ pub fn ordered_bond_properties(
 }
 
 impl Bond {
+    /// Replace detached canonical records atomically; no live storage access.
+    #[doc(hidden)]
+    pub fn replace_property_records(
+        &mut self,
+        records: impl IntoIterator<Item = (PropertyText, PropertyValue)>,
+    ) -> Result<(), BondValueError> {
+        // ROOT CK-a88d982c9d33462896acbb759460e4e8: necessary codec carrier
+        // transport. Replay ordinary set into a fresh store; reserved entries
+        // retain their tag and position without invoking computed operations.
+        let mut replacement = crate::property_value::PropertyStore::new();
+        for (key, value) in records {
+            replacement.set(key, value).map_err(BondValueError::from)?;
+        }
+        self.properties = replacement;
+        Ok(())
+    }
+
+    /// Borrow property records using the source private/computed include flags.
+    #[doc(hidden)]
+    pub fn property_records(
+        &self,
+        include_private: bool,
+        include_computed: bool,
+    ) -> Result<impl Iterator<Item = (&PropertyText, &crate::PropertyValue)> + '_, BondValueError>
+    {
+        self.properties
+            .filtered_ordered(include_private, include_computed)
+            .map_err(BondValueError::from)
+    }
+
     pub fn from_spec(id: BondId, spec: BondSpec) -> Self {
         // BEGIN RDKIT CPP MEMBER Bond::d_flags default
         // RDKit✔️✔️: std::uint64_t d_flags = 0;
@@ -464,13 +529,22 @@ impl Bond {
     }
 
     #[must_use]
-    pub fn props(&self) -> &BTreeMap<String, PropertyValue> {
+    pub fn props(&self) -> &BTreeMap<PropertyText, PropertyValue> {
         self.properties.values()
     }
 
     #[must_use]
-    pub fn prop(&self, key: &str) -> Option<&PropertyValue> {
-        self.properties.get(key)
+    pub fn prop(&self, key: impl AsRef<[u8]>) -> Option<&PropertyValue> {
+        self.properties.get(key.as_ref())
+    }
+
+    /// Read a required detached property without conversion.
+    #[doc(hidden)]
+    pub fn prop_required(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<&crate::PropertyValue, crate::MissingPropertyError> {
+        self.properties.get_required(key)
     }
 
     pub const fn order_code(&self) -> i64 {
@@ -500,12 +574,17 @@ impl Bond {
 
     /// Returns whether a property is registered as computed state.
     #[must_use]
-    pub fn is_prop_computed(&self, key: &str) -> bool {
+    pub fn is_prop_computed(
+        &self,
+        key: impl AsRef<[u8]>,
+    ) -> Result<bool, crate::PropertyValueError> {
         self.properties.is_computed(key)
     }
 
     #[must_use]
-    pub fn computed_prop_names(&self) -> &BTreeSet<String> {
+    pub fn computed_prop_names(
+        &self,
+    ) -> Result<Option<&[PropertyText]>, crate::PropertyValueError> {
         self.properties.computed_names()
     }
 
@@ -581,21 +660,30 @@ impl Bond {
     #[doc(hidden)]
     pub fn set_prop(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<(), BondValueError> {
         let key = key.into();
         validate_property_key(&key)?;
         // RDKit✔️✔️: d_props.setVal(key, val);
         // A non-computed write does not remove an existing computed marker.
-        self.properties.set(key, value.into());
+        self.properties
+            .set(key, value.into())
+            .map_err(|error| match error {
+                crate::property_value::PropertyStoreError::EmptyKey => {
+                    BondValueError::EmptyPropertyKey
+                }
+                crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                    BondValueError::ComputedListKind(source)
+                }
+            })?;
         Ok(())
     }
 
     #[doc(hidden)]
     pub fn set_computed_prop(
         &mut self,
-        key: impl Into<String>,
+        key: impl Into<PropertyText>,
         value: impl Into<PropertyValue>,
     ) -> Result<(), BondValueError> {
         // RDKit✔️🔝: if (computed) {
@@ -611,12 +699,31 @@ impl Bond {
         // source vector's linear duplicate scan with logarithmic insertion.
         let key = key.into();
         validate_property_key(&key)?;
-        self.properties.set_computed(key, value.into());
+        self.properties
+            .set_computed(key, value.into())
+            .map_err(|error| match error {
+                crate::property_value::PropertyStoreError::EmptyKey => {
+                    BondValueError::EmptyPropertyKey
+                }
+                crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                    BondValueError::ComputedListKind(source)
+                }
+            })?;
         Ok(())
     }
 
+    /// Source RDProps dictionary update for detached bond values.
     #[doc(hidden)]
-    pub fn clear_prop(&mut self, key: &str) {
+    pub fn update_properties_from(&mut self, source: &Self, preserve_existing: bool) {
+        // RDKit❗✔️:   void updateProps(const RDProps &source, bool preserveExisting = false) {
+        // RDKit❗✔️:     d_props.update(source.getDict(), preserveExisting);
+        // RDKit❗✔️:   }
+        self.properties
+            .update_from(&source.properties, preserve_existing);
+    }
+
+    #[doc(hidden)]
+    pub fn clear_prop(&mut self, key: impl AsRef<[u8]>) -> Result<(), BondValueError> {
         // RDKit✔️🔝: auto svi = std::find(compLst.begin(), compLst.end(), key);
         // RDKit✔️🔝: if (svi != compLst.end()) {
         // RDKit✔️🔝:   compLst.erase(svi);
@@ -625,22 +732,42 @@ impl Bond {
         // RDKit✔️🔝: d_props.clearVal(key);
         // BTreeSet removal preserves the source transition with logarithmic
         // lookup instead of the source vector's linear search and erase.
-        self.properties.clear(key);
+        self.properties.clear(key).map_err(BondValueError::from)
     }
 
     #[doc(hidden)]
-    pub fn clear_computed_props(&mut self) {
+    pub fn clear_computed_props(&mut self) -> Result<(), BondValueError> {
         // RDKit✔️🔝: for (const auto &key : compLst) {
         // RDKit✔️🔝:   d_props.clearVal(key);
         // RDKit✔️🔝: }
         // Moving the set avoids the source vector copy while preserving exact
         // membership-based clearing.
-        self.properties.clear_computed();
+        self.properties
+            .clear_computed()
+            .map_err(BondValueError::from)
+    }
+}
+
+impl From<crate::property_value::PropertyStoreError> for BondValueError {
+    fn from(error: crate::property_value::PropertyStoreError) -> Self {
+        match error {
+            crate::property_value::PropertyStoreError::EmptyKey => Self::EmptyPropertyKey,
+            crate::property_value::PropertyStoreError::ComputedListKind(source) => {
+                Self::ComputedListKind(source)
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    // These original fixtures contain UTF-8 literals. Decode only their
+    // borrowed test projection; raw-byte controls assert as_bytes directly.
+    // Invalid bytes fail this assertion, never change a chemistry outcome.
+    fn fixture_text(value: &crate::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+
     use super::*;
     use crate::{BondQueryPredicate, QueryBond, QueryNode};
 
@@ -648,22 +775,29 @@ mod tests {
         bond.properties
             .ordered_keys()
             .iter()
-            .map(String::as_str)
+            .map(fixture_text)
             .collect()
     }
 
     #[test]
     fn typed_property_transport_bond_copy_and_query_carrier_preserve_values_and_order() {
         let spec = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single)
-            .with_prop("first", PropertyValue::String("seven".to_owned()))
+            .with_prop("first", PropertyValue::String("seven".into()))
             .unwrap()
             .with_computed_prop("computed", PropertyValue::Bool(false))
             .unwrap()
             .with_prop("first", PropertyValue::Int(7))
             .unwrap();
-        assert_eq!(spec.properties.ordered_keys(), &["first", "computed"]);
+        assert_eq!(
+            spec.properties
+                .ordered_keys()
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
+            &["first", "__computedProps", "computed"]
+        );
         assert_eq!(spec.prop("first"), Some(&PropertyValue::Int(7)));
-        assert!(spec.is_prop_computed("computed"));
+        assert!(spec.is_prop_computed("computed").unwrap());
 
         let bond = Bond::from_spec(BondId::new(0), spec);
         let source = bond.clone();
@@ -672,26 +806,35 @@ mod tests {
             QueryNode::predicate(BondQueryPredicate::Order(BondOrder::Single)),
         );
         assert_eq!(query.bond(), &source);
-        assert_eq!(property_order(query.bond()), vec!["first", "computed"]);
+        assert_eq!(
+            property_order(query.bond()),
+            vec!["first", "__computedProps", "computed"]
+        );
         assert_eq!(query.bond().prop("first"), Some(&PropertyValue::Int(7)));
         assert_eq!(
             query.bond().prop("computed"),
             Some(&PropertyValue::Bool(false))
         );
-        assert!(query.bond().is_prop_computed("computed"));
+        assert!(query.bond().is_prop_computed("computed").unwrap());
 
         query.bond_mut().clear_prop("first");
         query
             .bond_mut()
             .set_prop("first", PropertyValue::Double(1.25))
             .unwrap();
-        assert_eq!(property_order(query.bond()), vec!["computed", "first"]);
+        assert_eq!(
+            property_order(query.bond()),
+            vec!["__computedProps", "computed", "first"]
+        );
         assert_eq!(
             query.bond().prop("first"),
             Some(&PropertyValue::Double(1.25))
         );
         assert_eq!(bond, source);
-        assert_eq!(property_order(&bond), vec!["first", "computed"]);
+        assert_eq!(
+            property_order(&bond),
+            vec!["first", "__computedProps", "computed"]
+        );
     }
 }
 
@@ -754,7 +897,7 @@ mod flags_tests {
         assert_eq!(cleared.prop("derived"), None);
         assert_eq!(
             cleared.prop("ordinary"),
-            Some(&crate::PropertyValue::String("kept".to_owned()))
+            Some(&crate::PropertyValue::String("kept".into()))
         );
 
         let mut changed_clone = source.clone();

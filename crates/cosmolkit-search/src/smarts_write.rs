@@ -2,12 +2,13 @@
 
 use cosmolkit_model::{
     AdjacencyList, AtomId, AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, Bond,
-    BondId, BondQueryPredicate, QueryAtom, QueryBond, QueryGraph, QueryNode,
+    BondId, BondQueryPredicate, PropertyText, QueryAtom, QueryBond, QueryGraph, QueryNode,
     RecursiveStructureQuery, SGroupConnection, StereoGroup, StereoGroupKind, SubstanceGroup,
     SubstanceGroupKind, query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element, Hybridization};
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 /// Options for QueryGraph-native SMARTS serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,11 +60,95 @@ impl std::ops::BitOrAssign for QueryBoolFeatures {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmartsWriteError {
+    #[cfg(feature = "smiles-integration")]
+    #[error("source SMARTS traversal preparation failed: {0}")]
+    Traversal(#[from] cosmolkit_smiles::SmartsTraversalError),
+    #[error("source CX coordinate selection failed: {0}")]
+    CxCoordinates(#[from] cosmolkit_model::CoordinateValidationError),
+    #[error("CX property value has the wrong source type: {0}")]
+    PropertyValue(#[from] cosmolkit_model::PropertyValueError),
+    #[error("CX required property read failed at atom {atom:?}: {source}")]
+    CxRequiredProperty {
+        atom: AtomId,
+        #[source]
+        source: cosmolkit_core::RequiredPropertyStringError,
+    },
+    #[error("property listing failed on atom {atom}: {source}")]
+    CxPropertyList {
+        atom: AtomId,
+        #[source]
+        source: cosmolkit_model::AtomPropertyError,
+    },
+    #[error("received {actual} coordinate selectors for {expected} CX templates")]
+    CxCoordinateSelectionArity { expected: usize, actual: usize },
+    #[error("template {template} does not have the source SMARTS output-order properties")]
+    CxMissingOutputOrder { template: usize },
+    #[error(
+        "template {template} property {property}: bad_any_cast reading string as source unsigned output-order vector"
+    )]
+    CxOutputOrderPropertyType {
+        template: usize,
+        property: &'static str,
+    },
+    #[error("template {template}, atom {atom}, property {property}: invalid kind {kind:?}")]
+    CxAtomPropertyKind {
+        template: usize,
+        atom: AtomId,
+        property: &'static str,
+        kind: cosmolkit_model::PropertyValueKind,
+    },
+    #[error("template {template}, atom {atom}, property {property}: {source}")]
+    CxAtomPropertyUInt {
+        template: usize,
+        atom: AtomId,
+        property: &'static str,
+        #[source]
+        source: cosmolkit_core::PropertyUIntReadError,
+    },
+    #[cfg(feature = "smiles-integration")]
+    #[error("template {template} coordinate selection: {source}")]
+    CxCoordinateSelection {
+        template: usize,
+        #[source]
+        source: cosmolkit_smiles::SmilesParseError,
+    },
+    #[error("query CX composition: {0}")]
+    CxComposition(#[from] cosmolkit_model::QueryGraphError),
+    #[error("template {template} {kind} output-order row {row} exceeds {count} rows")]
+    CxOutputOrder {
+        template: usize,
+        kind: &'static str,
+        row: usize,
+        count: usize,
+    },
+    #[error("CX {kind} row count {count} exceeds source unsigned int")]
+    CxRowCount { kind: &'static str, count: usize },
+    #[error("bond {bond} property {property}: {source}")]
+    CxBondPropertyUInt {
+        bond: BondId,
+        property: &'static str,
+        #[source]
+        source: cosmolkit_core::PropertyUIntReadError,
+    },
     #[error("bond {bond} property {property} has invalid kind {kind:?}")]
     InvalidPropertyKind {
         bond: BondId,
         property: &'static str,
         kind: cosmolkit_model::PropertyValueKind,
+    },
+    #[error("atom {atom} property {property}: {source}")]
+    CxAtomPropertyInt {
+        atom: AtomId,
+        property: &'static str,
+        #[source]
+        source: cosmolkit_core::PropertyIntReadError,
+    },
+    #[error("SGroup {group:?} property {property}: {source}")]
+    CxSgroupPropertyUInt {
+        group: cosmolkit_model::SubstanceGroupId,
+        property: &'static str,
+        #[source]
+        source: cosmolkit_core::PropertyUIntReadError,
     },
     #[error("SMARTS property string conversion failed: {0}")]
     Property(#[from] cosmolkit_core::PropertyStringError),
@@ -105,6 +190,111 @@ pub enum SmartsWriteError {
     BondAtomNotEndpoint { bond: usize, atom: usize },
 }
 
+/// Serialize concrete detached rows through the existing SMARTS traversal.
+#[doc(hidden)]
+#[cfg(feature = "smiles-integration")]
+pub fn topology_to_smarts(
+    topology: &cosmolkit_model::TopologyBlock,
+    coordinates: &cosmolkit_model::CoordinateBlock,
+    properties: &cosmolkit_model::MoleculeProperties,
+    params: &SmartsWriteParams,
+    include_cx: bool,
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit✔️✔️:   const unsigned int nAtoms = mol.getNumAtoms();
+    // RDKit✔️✔️:   if (!nAtoms) {
+    // RDKit✔️✔️:     return "";
+    // RDKit✔️✔️:   }
+    if topology.atoms.is_empty() {
+        return Ok(PropertyText::new());
+    }
+    // RDKit❗❌:   ROMol mol(inmol);
+    // RDKit❗❌:   for (auto &atom : mol.atoms()) {
+    // RDKit❗❌:     atom->updatePropertyCache(false);
+    // RDKit❗❌:   }
+    if let Some(atom) = params.rooted_at_atom {
+        if atom >= topology.atoms.len() {
+            return Err(SmartsWriteError::RootedAtomOutOfRange { atom });
+        }
+    }
+    let prepared = cosmolkit_smiles::prepare_smarts_serialization_topology(
+        topology.clone(),
+        properties,
+        params.rooted_at_atom,
+        params.do_isomeric_smiles,
+    )?;
+    let mut effective = *params;
+    if include_cx {
+        effective.include_dative_bonds = false;
+    }
+    let prepared_graph = concrete_smarts_graph(prepared, None, properties)?;
+    let output = query_graph_to_smarts_output(&prepared_graph, &effective)?;
+    let mut text = output.text;
+    if include_cx && !text.is_empty() {
+        // RDKit✔️✔️:   auto res = MolToSmarts(mol, ps);
+        // RDKit✔️✔️:     auto cxext = SmilesWrite::getCXExtensions(mol);
+        // Native extensions read the ORIGINAL molecule, not the temporary
+        // traversal's inverted tags/directions or computed CIP properties.
+        // Reusing QueryGraph CX serialization needs a second detached carrier
+        // here: extra O(V+E) copy cost, explicitly retained as ❌ above.
+        drop(prepared_graph);
+        let graph = concrete_smarts_graph(topology.clone(), Some(coordinates), properties)?;
+        let extension = write_query_cx_extensions(
+            &graph,
+            &output.atom_order,
+            &output.bond_order,
+            cosmolkit_smiles::CxSmilesFields::ALL,
+        )?;
+        if !extension.is_empty() {
+            text.push_byte(b' ');
+            text.extend_bytes(extension.as_bytes());
+        }
+    }
+    Ok(text)
+}
+
+#[cfg(feature = "smiles-integration")]
+fn concrete_smarts_graph(
+    topology: cosmolkit_model::TopologyBlock,
+    coordinates: Option<&cosmolkit_model::CoordinateBlock>,
+    properties: &cosmolkit_model::MoleculeProperties,
+) -> Result<QueryGraph, SmartsWriteError> {
+    // Rust-only transport into the existing uniform graph carrier; origin,
+    // ordered properties and groups remain exact. No predicates are exposed
+    // as queries for ordinary rows. Atoms/bonds move rather than clone again.
+    let atoms = topology
+        .atoms
+        .into_iter()
+        .map(|atom| {
+            let predicate =
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(atom.atomic_number()));
+            QueryAtom::from_carrier_parts(atom, predicate)
+        })
+        .collect();
+    let bonds = topology
+        .bonds
+        .into_iter()
+        .map(|bond| {
+            let predicate = QueryNode::predicate(BondQueryPredicate::Order(bond.order()));
+            QueryBond::from_carrier_parts(bond, predicate)
+        })
+        .collect();
+    let mut graph = QueryGraph::from_parts(
+        atoms,
+        bonds,
+        properties
+            .ordered_props()
+            .map(|(key, value)| (key.clone(), value.clone())),
+        coordinates.map_or_else(Vec::new, |coordinates| coordinates.conformers_2d.clone()),
+        coordinates.map_or_else(Vec::new, |coordinates| coordinates.conformers_3d.clone()),
+        topology.stereo_groups,
+    )?;
+    if let Some(coordinates) = coordinates {
+        graph.set_source_conformer_order(coordinates.source_conformer_order.clone())?;
+    }
+    cosmolkit_model::replace_query_substance_groups(&mut graph, topology.substance_groups)?;
+    Ok(graph)
+}
+
 /// Serialize an independent query graph.
 ///
 /// The canonical molecule traversal is intentionally not used here: a query
@@ -112,14 +302,42 @@ pub enum SmartsWriteError {
 pub fn query_graph_to_smarts(
     query: &QueryGraph,
     params: &SmartsWriteParams,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     query_graph_to_smarts_fragment(query, params, None, None, false)
 }
 
+/// Serialize with the existing source traversal and retain output-order
+/// evidence for reaction-wide CX composition.
+#[doc(hidden)]
+pub fn query_graph_to_smarts_output(
+    query: &QueryGraph,
+    params: &SmartsWriteParams,
+) -> Result<SmartsWriteOutput, SmartsWriteError> {
+    let result = query_graph_to_smarts_fragment_result(query, params, None, None, false)?;
+    Ok(SmartsWriteOutput {
+        text: result.smarts,
+        atom_order: result.atom_ordering,
+        bond_order: result.bond_ordering,
+        source_orders_written: result.source_orders_written,
+    })
+}
+
+/// Detached writer evidence; no runtime authority or duplicated graph.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SmartsWriteOutput {
+    pub text: PropertyText,
+    pub atom_order: Vec<AtomId>,
+    pub bond_order: Vec<BondId>,
+    /// Explicit proof of reaching the SOURCE order-property recording branch.
+    pub source_orders_written: bool,
+}
+
+#[cfg(feature = "smiles-integration")]
 pub fn query_graph_to_cx_smarts(
     query: &QueryGraph,
     params: &SmartsWriteParams,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     query_graph_to_smarts_fragment(query, params, None, None, true)
 }
 
@@ -128,16 +346,17 @@ pub fn query_graph_fragment_to_smarts(
     params: &SmartsWriteParams,
     atoms: &[AtomId],
     bonds: Option<&[BondId]>,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     query_graph_to_smarts_fragment(query, params, Some(atoms), bonds, false)
 }
 
+#[cfg(feature = "smiles-integration")]
 pub fn query_graph_fragment_to_cx_smarts(
     query: &QueryGraph,
     params: &SmartsWriteParams,
     atoms: &[AtomId],
     bonds: Option<&[BondId]>,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     query_graph_to_smarts_fragment(query, params, Some(atoms), bonds, true)
 }
 
@@ -147,7 +366,7 @@ fn query_graph_to_smarts_fragment(
     atom_selection: Option<&[AtomId]>,
     bond_selection: Option<&[BondId]>,
     include_cx: bool,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     query_graph_to_smarts_fragment_result(query, params, atom_selection, bond_selection, include_cx)
         .map(|result| result.smarts)
 }
@@ -159,6 +378,11 @@ fn query_graph_to_smarts_fragment_result(
     bond_selection: Option<&[BondId]>,
     include_cx: bool,
 ) -> Result<SmartsWriteResult, SmartsWriteError> {
+    #[cfg(not(feature = "smiles-integration"))]
+    assert!(
+        !include_cx,
+        "CX entrypoints require the SMILES integration feature"
+    );
     // RDKit✔️✔️:   PRECONDITION(!atomsToUse.empty(), "no atoms provided");
     // RDKit✔️✔️:   PRECONDITION(!bondsToUse || !bondsToUse->empty(), "no bonds provided");
     if atom_selection.is_some_and(<[AtomId]>::is_empty) {
@@ -302,7 +526,7 @@ fn query_graph_to_smarts_fragment_result(
             continue;
         }
         if component_count > 0 {
-            result.smarts.push('.');
+            result.smarts.push_byte(b'.');
         }
         component_count += 1;
         emit_query_graph(
@@ -315,6 +539,10 @@ fn query_graph_to_smarts_fragment_result(
             &mut result,
         )?;
     }
+    // RDKit❗✔️:   inmol.setProp(common_properties::_smilesAtomOutputOrder, atomOrdering, true);
+    // RDKit❗✔️:   inmol.setProp(common_properties::_smilesBondOutputOrder, bondOrdering, true);
+    result.source_orders_written = true;
+    #[cfg(feature = "smiles-integration")]
     if include_cx && !result.smarts.is_empty() {
         // RDKit✔️✔️:   if (!res.empty()) {
         // RDKit✔️✔️:     auto cxext = SmilesWrite::getCXExtensions(mol);
@@ -322,11 +550,15 @@ fn query_graph_to_smarts_fragment_result(
         // RDKit✔️✔️:       res += " " + cxext;
         // RDKit✔️✔️:     }
         // RDKit✔️✔️:   }
-        let extension =
-            write_query_cx_extensions(query, &result.atom_ordering, &result.bond_ordering)?;
+        let extension = write_query_cx_extensions(
+            query,
+            &result.atom_ordering,
+            &result.bond_ordering,
+            cosmolkit_smiles::CxSmilesFields::ALL,
+        )?;
         if !extension.is_empty() {
-            result.smarts.push(' ');
-            result.smarts.push_str(&extension);
+            result.smarts.push_byte(b' ');
+            result.smarts.extend_bytes((&extension).as_ref());
         }
     }
     Ok(result)
@@ -459,7 +691,8 @@ fn collect_query_atom_order(
     }
 }
 
-fn append_query_cx_extension(addition: String, output: &mut String) {
+#[cfg(feature = "smiles-integration")]
+fn append_query_cx_extension(addition: impl AsRef<[u8]>, output: &mut PropertyText) {
     // RDKit✔️✔️: void appendToCXExtension(const std::string &addition, std::string &base) {
     // RDKit✔️✔️:   if (!addition.empty()) {
     // RDKit✔️✔️:     if (base.size() > 1) {
@@ -468,14 +701,16 @@ fn append_query_cx_extension(addition: String, output: &mut String) {
     // RDKit✔️✔️:     base += addition;
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
+    let addition = addition.as_ref();
     if !addition.is_empty() {
         if output.len() > 1 {
-            output.push(',');
+            output.push_byte(b',');
         }
-        output.push_str(&addition);
+        output.extend_bytes(addition);
     }
 }
 
+#[cfg(feature = "smiles-integration")]
 fn query_cx_atom_positions(atom_order: &[AtomId], atom_count: usize) -> Vec<Option<usize>> {
     let mut positions = vec![None; atom_count];
     for (position, atom) in atom_order.iter().copied().enumerate() {
@@ -484,6 +719,7 @@ fn query_cx_atom_positions(atom_order: &[AtomId], atom_count: usize) -> Vec<Opti
     positions
 }
 
+#[cfg(feature = "smiles-integration")]
 fn query_cx_source_reverse_atom_order(atom_order: &[AtomId], atom_count: usize) -> Vec<usize> {
     // RDKit value-initializes the reverse vector. For fragment CXSMARTS this
     // intentionally leaves every unselected source atom mapped to output 0.
@@ -494,51 +730,25 @@ fn query_cx_source_reverse_atom_order(atom_order: &[AtomId], atom_count: usize) 
     positions
 }
 
+#[cfg(feature = "smiles-integration")]
 fn query_cx_zero_small(value: f64) -> f64 {
     if value.abs() < 1e-4 { 0.0 } else { value }
 }
 
 // `boost::format("%g")` uses six significant digits and switches to
 // scientific notation outside the source's fixed-format exponent window.
+#[cfg(feature = "smiles-integration")]
 fn query_cx_format_general(value: f64) -> String {
-    if value == 0.0 {
-        return "0".to_owned();
-    }
-    if !value.is_finite() {
-        return value.to_string();
-    }
-    let exponent = value.abs().log10().floor() as i32;
-    let scale = 10_f64.powi(5 - exponent);
-    let rounded = (value * scale).round() / scale;
-    let exponent = rounded.abs().log10().floor() as i32;
-    if !(-4..6).contains(&exponent) {
-        let mut text = format!("{rounded:.5e}");
-        let exponent_at = text.find('e').expect("scientific format contains exponent");
-        let exponent_text = text.split_off(exponent_at);
-        while text.ends_with('0') {
-            text.pop();
-        }
-        if text.ends_with('.') {
-            text.pop();
-        }
-        let exponent_value = exponent_text[1..].parse::<i32>().unwrap_or(exponent);
-        format!("{text}e{exponent_value:+03}")
-    } else {
-        let decimals = usize::try_from((5 - exponent).max(0)).unwrap_or(0);
-        let mut text = format!("{rounded:.decimals$}");
-        if text.contains('.') {
-            while text.ends_with('0') {
-                text.pop();
-            }
-            if text.ends_with('.') {
-                text.pop();
-            }
-        }
-        text
-    }
+    // Reuse the sole SOURCE six-significant-digit formatter. Its LowerExp
+    // rounds once; no arithmetic scale/log10 or second rounding is performed.
+    cosmolkit_smiles::format_cx_coordinate(value)
 }
 
-fn write_query_cx_coordinates(query: &QueryGraph, atom_order: &[AtomId]) -> Option<String> {
+#[cfg(feature = "smiles-integration")]
+fn write_query_cx_coordinates(
+    query: &QueryGraph,
+    atom_order: &[AtomId],
+) -> Result<Option<String>, SmartsWriteError> {
     // RDKit✔️✔️: std::string get_coords_block(const ROMol &mol,
     // RDKit✔️✔️:                              const std::vector<unsigned int> &atomOrder) {
     // RDKit✔️✔️:   const auto &conf = mol.getConformer();
@@ -555,127 +765,171 @@ fn write_query_cx_coordinates(query: &QueryGraph, atom_order: &[AtomId]) -> Opti
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
-    if let Some(conformer) = query.conformers_3d().first() {
-        return Some(
-            atom_order
-                .iter()
-                .map(|atom| {
+    let Some(conformer) = query.first_source_conformer()? else {
+        return Ok(None);
+    };
+    let rows = atom_order
+        .iter()
+        .map(|atom| {
+            let (point, is_3d) = match conformer {
+                cosmolkit_model::CoordinateSourceConformer::TwoD(conformer) => {
                     let point = conformer.coordinates()[atom.index()];
-                    let mut text = format!(
-                        "{},{},",
-                        query_cx_format_general(query_cx_zero_small(point[0])),
-                        query_cx_format_general(query_cx_zero_small(point[1]))
-                    );
-                    if conformer.is_3d() {
-                        let z = query_cx_format_general(query_cx_zero_small(point[2]));
-                        if z != "0" {
-                            text.push_str(&z);
-                        }
-                    }
-                    text
-                })
-                .collect::<Vec<_>>()
-                .join(";"),
-        );
-    }
-    let coordinates = query.coordinates_2d()?;
-    Some(
-        atom_order
-            .iter()
-            .map(|atom| {
-                let point = coordinates[atom.index()];
-                format!(
-                    "{},{},",
-                    query_cx_format_general(query_cx_zero_small(point[0])),
-                    query_cx_format_general(query_cx_zero_small(point[1]))
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(";"),
-    )
+                    ([point[0], point[1], 0.0], false)
+                }
+                cosmolkit_model::CoordinateSourceConformer::ThreeD(conformer) => {
+                    (conformer.coordinates()[atom.index()], conformer.is_3d())
+                }
+            };
+            let mut text = format!(
+                "{},{},",
+                query_cx_format_general(query_cx_zero_small(point[0])),
+                query_cx_format_general(query_cx_zero_small(point[1]))
+            );
+            if is_3d {
+                let z = query_cx_format_general(query_cx_zero_small(point[2]));
+                if z != "0" {
+                    text.push_str(&z);
+                }
+            }
+            text
+        })
+        .collect::<Vec<_>>()
+        .join(";");
+    Ok(Some(rows))
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_atom_labels(
     query: &QueryGraph,
     atom_order: &[AtomId],
-) -> Result<String, SmartsWriteError> {
-    // RDKit✔️✔️: if (atom->getPropIfPresent(common_properties::_QueryAtomGenericLabel,
-    // RDKit✔️✔️:                            lbl)) {
-    // RDKit✔️✔️:   res += quote_string(lbl + "_p");
-    // RDKit✔️✔️: } else if (!atom->getAtomicNum() &&
-    // RDKit✔️✔️:            atom->getPropIfPresent(common_properties::dummyLabel, lbl) &&
-    // RDKit✔️✔️:            std::find(SmilesParseOps::pseudoatoms.begin(),
-    // RDKit✔️✔️:                      SmilesParseOps::pseudoatoms.end(), lbl) !=
-    // RDKit✔️✔️:                SmilesParseOps::pseudoatoms.end()) {
-    // RDKit✔️✔️:   res += quote_string(lbl + "_p");
-    // RDKit✔️✔️: } else if (!atom->getAtomicNum() &&
-    // RDKit✔️✔️:            atom->getPropIfPresent(common_properties::_fromAttachPoint,
-    // RDKit✔️✔️:                                       val) &&
-    // RDKit✔️✔️:            (val == 1 || val == 2)) {
-    // RDKit✔️✔️:   res += quote_string("_AP" + std::to_string(val));
-    // RDKit✔️✔️: } else if (atom->getPropIfPresent(common_properties::atomLabel, lbl)) {
-    // RDKit✔️✔️:   res += quote_string(lbl);
-    // RDKit✔️✔️: }
-    const PSEUDOATOMS: [&str; 2] = ["Pol", "Mod"];
-    let labels = atom_order
-        .iter()
-        .map(|atom_id| {
-            let atom = &query.atoms()[atom_id.index()];
-            // RDKit Dict::getValIfPresent(std::string&) delegates to
-            // rdvalue_tostring; keep the shared typed conversion owner.
-            let property = |name| {
-                atom.prop(name)
-                    .map(cosmolkit_core::property_value_to_string)
-                    .transpose()
-            };
-            Ok(if let Some(label) = property("_QueryAtomGenericLabel")? {
-                format!("{label}_p")
-            } else if atom.atomic_number() == 0
-                && property("dummyLabel")?
-                    .is_some_and(|label| PSEUDOATOMS.contains(&label.as_str()))
-            {
-                format!("{}_p", property("dummyLabel")?.unwrap_or_default())
-            } else if atom.atomic_number() == 0
-                && property("_fromAttachPoint")?
-                    .is_some_and(|value| matches!(value.as_str(), "1" | "2"))
-            {
-                format!("_AP{}", property("_fromAttachPoint")?.unwrap_or_default())
-            } else {
-                property("atomLabel")?.unwrap_or_default()
-            })
-        })
-        .collect::<Result<Vec<_>, SmartsWriteError>>()?;
-    if labels.iter().all(String::is_empty) {
-        Ok(String::new())
-    } else {
-        Ok(labels.join(";"))
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit❗✔️: std::string get_atomlabel_block(const ROMol &mol,
+    // RDKit❗✔️:                                 const std::vector<unsigned int> &atomOrder) {
+    // RDKit❗✔️:   std::string res = "";
+    // RDKit❗✔️:   for (auto idx : atomOrder) {
+    // RDKit❗✔️:     if (idx != atomOrder.front()) {
+    // RDKit❗✔️:       res += ";";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     std::string lbl;
+    // RDKit❗✔️:     int val;
+    // RDKit❗✔️:     const auto atom = mol.getAtomWithIdx(idx);
+    // RDKit❗✔️:     if (atom->getPropIfPresent(common_properties::_QueryAtomGenericLabel,
+    // RDKit❗✔️:                                lbl)) {
+    // RDKit❗✔️:       res += quote_string(lbl + "_p");
+    // RDKit❗✔️:     } else if (!atom->getAtomicNum() &&
+    // RDKit❗✔️:                atom->getPropIfPresent(common_properties::dummyLabel, lbl) &&
+    // RDKit❗✔️:                std::find(SmilesParseOps::pseudoatoms.begin(),
+    // RDKit❗✔️:                          SmilesParseOps::pseudoatoms.end(),
+    // RDKit❗✔️:                          lbl) != SmilesParseOps::pseudoatoms.end()) {
+    // RDKit❗✔️:       res += quote_string(lbl + "_p");
+    // RDKit❗✔️:     } else if (!atom->getAtomicNum() &&
+    // RDKit❗✔️:                atom->getPropIfPresent(common_properties::_fromAttachPoint,
+    // RDKit❗✔️:                                       val) &&
+    // RDKit❗✔️:                (val == 1 || val == 2)) {
+    // RDKit❗✔️:       res += quote_string("_AP" + std::to_string(val));
+    // RDKit❗✔️:     } else if (atom->getPropIfPresent(common_properties::atomLabel, lbl)) {
+    // RDKit❗✔️:       res += quote_string(lbl);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // if we didn't find anything return an empty string
+    // RDKit❗✔️:   if (std::find_if_not(res.begin(), res.end(),
+    // RDKit❗✔️:                        [](const auto c) { return c == ';'; }) == res.end()) {
+    // RDKit❗✔️:     res.clear();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // RDKit❗✔️: std::string quote_string(const std::string &txt) {
+    // RDKit❗✔️:   // FIX
+    // RDKit❗✔️:   return txt;
+    // RDKit❗✔️: }
+    const PSEUDOATOMS: [&[u8]; 2] = [b"Pol", b"Mod"];
+    let Some(first) = atom_order.first() else {
+        return Ok(PropertyText::new());
+    };
+    let mut result = PropertyText::new();
+    for id in atom_order {
+        if id != first {
+            result.push_byte(b';');
+        }
+        let atom = &query.atoms()[id.index()];
+        if let Some(value) = atom.prop("_QueryAtomGenericLabel") {
+            result.extend_bytes((&cosmolkit_core::property_value_to_string(value)?).as_ref());
+            result.extend_bytes(("_p").as_ref());
+            continue;
+        }
+        if atom.atomic_number() == 0 {
+            if let Some(value) = atom.prop("dummyLabel") {
+                let label = cosmolkit_core::property_value_to_string(value)?;
+                if PSEUDOATOMS.contains(&label.as_bytes()) {
+                    result.extend_bytes((&label).as_ref());
+                    result.extend_bytes(("_p").as_ref());
+                    continue;
+                }
+            }
+            if let Some(value) = atom.prop("_fromAttchpt") {
+                let value = cosmolkit_core::property_value_to_int(value).map_err(|source| {
+                    SmartsWriteError::CxAtomPropertyInt {
+                        atom: *id,
+                        property: "_fromAttchpt",
+                        source,
+                    }
+                })?;
+                if matches!(value, 1 | 2) {
+                    result.extend_bytes(("_AP").as_ref());
+                    result.extend_bytes((&value.to_string()).as_ref());
+                    continue;
+                }
+            }
+        }
+        if let Some(value) = atom.prop("atomLabel") {
+            result.extend_bytes((&cosmolkit_core::property_value_to_string(value)?).as_ref());
+        }
     }
+    if result.as_bytes().iter().all(|c| *c == b';') {
+        result.clear();
+    }
+    Ok(result)
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_atom_values(
     query: &QueryGraph,
     atom_order: &[AtomId],
-) -> Result<String, SmartsWriteError> {
-    // RDKit✔️✔️: if (mol.getAtomWithIdx(idx)->getPropIfPresent(prop, lbl)) {
-    // RDKit✔️✔️:   res += quote_string(lbl);
-    // RDKit✔️✔️: }
-    let values = atom_order
-        .iter()
-        .map(|atom| {
-            Ok(query.atoms()[atom.index()]
-                .prop("molFileValue")
-                .map(cosmolkit_core::property_value_to_string)
-                .transpose()?
-                .unwrap_or_default())
-        })
-        .collect::<Result<Vec<_>, SmartsWriteError>>()?;
-    if values.iter().all(String::is_empty) {
-        Ok(String::new())
-    } else {
-        Ok(values.join(";"))
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit❗✔️: std::string get_value_block(const ROMol &mol,
+    // RDKit❗✔️:                             const std::vector<unsigned int> &atomOrder,
+    // RDKit❗✔️:                             const std::string_view &prop) {
+    // RDKit❗✔️:   std::string res = "";
+    // RDKit❗✔️:   bool first = true;
+    // RDKit❗✔️:   for (auto idx : atomOrder) {
+    // RDKit❗✔️:     if (!first) {
+    // RDKit❗✔️:       res += ";";
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       first = false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     std::string lbl;
+    // RDKit❗✔️:     if (mol.getAtomWithIdx(idx)->getPropIfPresent(prop, lbl)) {
+    // RDKit❗✔️:       res += quote_string(lbl);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    let mut result = PropertyText::new();
+    for (position, id) in atom_order.iter().enumerate() {
+        if position != 0 {
+            result.push_byte(b';');
+        }
+        if let Some(value) = query.atoms()[id.index()].prop("molFileValue") {
+            result.extend_bytes((&cosmolkit_core::property_value_to_string(value)?).as_ref());
+        }
     }
+    // SOURCE returns semicolons and empty values; the caller's presence guard
+    // decides whether to emit $_AV, independently of converted value content.
+    Ok(result)
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_radicals(query: &QueryGraph, atom_order: &[AtomId]) -> String {
     // RDKit✔️✔️: std::map<unsigned int, std::vector<unsigned int>> rads;
     // RDKit✔️✔️: for (unsigned int i = 0; i < atomOrder.size(); ++i) {
@@ -703,7 +957,9 @@ fn write_query_cx_radicals(query: &QueryGraph, atom_order: &[AtomId]) -> String 
             1 => output.push_str("^1:"),
             2 => output.push_str("^2:"),
             3 => output.push_str("^5:"),
-            _ => {}
+            _ => {
+                eprintln!("unsupported number of radical electrons {count}");
+            }
         }
         for atom in atoms {
             output.push_str(&atom.to_string());
@@ -716,7 +972,8 @@ fn write_query_cx_radicals(query: &QueryGraph, atom_order: &[AtomId]) -> String 
     output
 }
 
-fn quote_query_cx_atom_property(text: &str) -> String {
+#[cfg(feature = "smiles-integration")]
+fn quote_query_cx_atom_property(text: &[u8]) -> PropertyText {
     // RDKit✔️✔️: for (auto c : txt) {
     // RDKit✔️✔️:   if (c == '.') {
     // RDKit✔️✔️:     res += "&#46;";
@@ -724,13 +981,22 @@ fn quote_query_cx_atom_property(text: &str) -> String {
     // RDKit✔️✔️:     res += c;
     // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
-    text.replace('.', "&#46;")
+    let mut result = PropertyText::new();
+    for &byte in text {
+        if byte == b'.' {
+            result.extend_bytes(b"&#46;");
+        } else {
+            result.push_byte(byte);
+        }
+    }
+    result
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_atom_properties(
     query: &QueryGraph,
     atom_order: &[AtomId],
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     // RDKit✔️✔️: constexpr std::array<std::string_view, 7> skip = {
     // RDKit✔️✔️:     common_properties::atomLabel, common_properties::molFileValue,
     // RDKit✔️✔️:     common_properties::molParity, common_properties::molAtomMapNumber,
@@ -748,38 +1014,58 @@ fn write_query_cx_atom_properties(
         "molParity",
         "molAtomMapNumber",
         "molStereoCare",
-        "molRxnExactChange",
+        "molRxnExachg",
         "molInversionFlag",
     ];
-    const PSEUDOATOMS: [&str; 2] = ["Pol", "Mod"];
+    const PSEUDOATOMS: [&[u8]; 2] = [b"Pol", b"Mod"];
     let mut entries = Vec::new();
     for (position, atom_id) in atom_order.iter().copied().enumerate() {
         let atom = &query.atoms()[atom_id.index()];
-        let attachment = atom.atomic_number() == 0 && atom.prop("_fromAttachPoint").is_some();
-        for (name, value) in cosmolkit_model::ordered_query_atom_properties(atom) {
-            if name.starts_with('_') || atom.is_prop_computed(name) || SKIP.contains(&name) {
+        let attachment = atom.atomic_number() == 0 && atom.prop("_fromAttchpt").is_some();
+        for (name, _stored_value) in atom.property_records(false, false).map_err(|source| {
+            SmartsWriteError::CxPropertyList {
+                atom: atom_id,
+                source,
+            }
+        })? {
+            if SKIP.iter().any(|skip| skip.as_bytes() == name.as_bytes()) {
                 continue;
             }
-            let value = cosmolkit_core::property_value_to_string(value)?;
-            if name == "dummyLabel"
-                && (attachment || value == "*" || PSEUDOATOMS.contains(&value.as_str()))
+            let value = cosmolkit_core::required_property_value_to_string(atom.prop_required(name))
+                .map_err(|source| SmartsWriteError::CxRequiredProperty {
+                    atom: atom_id,
+                    source,
+                })?;
+            if name.as_bytes() == b"dummyLabel"
+                && (attachment
+                    || value.as_bytes() == b"*"
+                    || PSEUDOATOMS.contains(&value.as_bytes()))
             {
                 continue;
             }
-            entries.push(format!(
-                "{position}.{}.{}",
-                quote_query_cx_atom_property(name),
-                quote_query_cx_atom_property(&value)
-            ));
+            let mut entry = PropertyText::new();
+            write!(&mut entry, "{position}.").expect("byte output formatting cannot fail");
+            entry.extend_bytes(quote_query_cx_atom_property(name.as_bytes()).as_bytes());
+            entry.push_byte(b'.');
+            entry.extend_bytes(quote_query_cx_atom_property(value.as_bytes()).as_bytes());
+            entries.push(entry);
         }
     }
     if entries.is_empty() {
-        Ok(String::new())
+        Ok(PropertyText::new())
     } else {
-        Ok(format!("atomProp:{}", entries.join(":")))
+        let mut output = PropertyText::from("atomProp:");
+        for (index, entry) in entries.into_iter().enumerate() {
+            if index != 0 {
+                output.push_byte(b':');
+            }
+            output.extend_bytes(entry.as_bytes());
+        }
+        Ok(output)
     }
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_bond_config(
     query: &QueryGraph,
     atom_order: &[AtomId],
@@ -798,18 +1084,18 @@ fn write_query_cx_bond_config(
     // RDKit❗✔️:   throw std::bad_any_cast();
     // RDKit❗✔️: }
     // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
-    // RDKit✔️✔️: if (!canHaveDirection(*bond)) {
-    // RDKit✔️✔️:   continue;
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: if (bd == Bond::BondDir::UNKNOWN) {
-    // RDKit✔️✔️:   wType = "w";
-    // RDKit✔️✔️: } else if (coordsIncluded || isAnAtropisomer) {
-    // RDKit✔️✔️:   if (bd == Bond::BondDir::BEGINWEDGE) {
-    // RDKit✔️✔️:     wType = "wU";
-    // RDKit✔️✔️:   } else if (bd == Bond::BondDir::BEGINDASH) {
-    // RDKit✔️✔️:     wType = "wD";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
+    // RDKit❗✔️: if (!canHaveDirection(*bond)) {
+    // RDKit❗✔️:   continue;
+    // RDKit❗✔️: }
+    // RDKit❗✔️: if (bd == Bond::BondDir::UNKNOWN) {
+    // RDKit❗✔️:   wType = "w";
+    // RDKit❗✔️: } else if (coordsIncluded || isAnAtropisomer) {
+    // RDKit❗✔️:   if (bd == Bond::BondDir::BEGINWEDGE) {
+    // RDKit❗✔️:     wType = "wU";
+    // RDKit❗✔️:   } else if (bd == Bond::BondDir::BEGINDASH) {
+    // RDKit❗✔️:     wType = "wD";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
     let positions = query_cx_atom_positions(atom_order, query.num_atoms());
     let mut parts = BTreeMap::<&'static str, Vec<String>>::new();
     for (bond_position, bond_id) in bond_order.iter().copied().enumerate() {
@@ -824,26 +1110,21 @@ fn write_query_cx_bond_config(
             _ => BondDirection::None,
         };
         if direction == BondDirection::None {
-            // Read only under source order/direction guards; no preflight.
-            if let Some(value @ cosmolkit_model::PropertyValue::IntVector(_)) =
-                bond.prop("_MolFileBondCfg")
-            {
-                return Err(SmartsWriteError::InvalidPropertyKind {
+            // RDKit❗✔️:       unsigned int cfg = 0;
+            // RDKit❗✔️:       if (bd == Bond::BondDir::NONE &&
+            // RDKit❗✔️:           bond->getPropIfPresent(common_properties::_MolFileBondCfg, cfg)) {
+            // Source-reached canonical unsigned read; invalid present values
+            // propagate rather than turning into an absent/no-direction value.
+            let cfg = bond
+                .prop("_MolFileBondCfg")
+                .map(cosmolkit_core::property_value_to_uint)
+                .transpose()
+                .map_err(|source| SmartsWriteError::CxBondPropertyUInt {
                     bond: bond.id(),
                     property: "_MolFileBondCfg",
-                    kind: value.kind(),
-                });
-            }
-            direction = match bond.prop("_MolFileBondCfg").and_then(|value| match value {
-                cosmolkit_model::PropertyValue::Int(value) => {
-                    u8::try_from(*value).ok().map(u32::from)
-                }
-                cosmolkit_model::PropertyValue::UInt(value) => Some(*value),
-                cosmolkit_model::PropertyValue::String(value) => {
-                    value.parse::<u8>().ok().map(u32::from)
-                }
-                _ => None,
-            }) {
+                    source,
+                })?;
+            direction = match cfg {
                 Some(1) => BondDirection::BeginWedge,
                 Some(2) => BondDirection::Unknown,
                 Some(3) => BondDirection::BeginDash,
@@ -871,6 +1152,7 @@ fn write_query_cx_bond_config(
         .join(","))
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_typed_bonds(
     query: &QueryGraph,
     atom_order: &[AtomId],
@@ -912,6 +1194,7 @@ fn write_query_cx_typed_bonds(
     }
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_zero_bonds(query: &QueryGraph, bond_order: &[BondId]) -> String {
     // RDKit✔️✔️: if (bond->getBondType() != Bond::BondType::ZERO) {
     // RDKit✔️✔️:   continue;
@@ -933,6 +1216,7 @@ fn write_query_cx_zero_bonds(query: &QueryGraph, bond_order: &[BondId]) -> Strin
     }
 }
 
+#[cfg(feature = "smiles-integration")]
 fn query_cx_stereo_kind_order(kind: StereoGroupKind) -> u8 {
     match kind {
         StereoGroupKind::Absolute => 0,
@@ -941,42 +1225,17 @@ fn query_cx_stereo_kind_order(kind: StereoGroupKind) -> u8 {
     }
 }
 
-fn assign_query_cx_stereo_group_ids(groups: &[StereoGroup]) -> Vec<Option<u32>> {
-    // RDKit✔️✔️: if (sg.getWriteId() == 0) {
-    // RDKit✔️✔️:   ++nextId;
-    // RDKit✔️✔️:   while (nextId < ids.size() && ids[nextId]) {
-    // RDKit✔️✔️:     ++nextId;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   sg.setWriteId(nextId);
-    // RDKit✔️✔️: }
-    // Query parsing retains source read IDs. The current detached model has no
-    // separate write-ID carrier, matching parsed source groups whose write ID
-    // is zero; assignment is therefore independent within OR and AND kinds.
-    let mut ids = vec![None; groups.len()];
-    let mut next_or = 0;
-    let mut next_and = 0;
-    for (index, group) in groups.iter().enumerate() {
-        let next = match group.kind() {
-            StereoGroupKind::Absolute => continue,
-            StereoGroupKind::Or => &mut next_or,
-            StereoGroupKind::And => &mut next_and,
-        };
-        *next += 1;
-        ids[index] = Some(*next);
-    }
-    ids
-}
-
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_enhanced_stereo(query: &QueryGraph, atom_order: &[AtomId]) -> String {
-    // RDKit✔️✔️: const auto newAtomIndexes = getSortedMappedIndexes(atomIds, revOrder);
-    // RDKit✔️✔️: if (!newAtomIndexes.empty()) {
-    // RDKit✔️✔️:   sortingGroups.emplace_back(sg, newAtomIndexes);
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: // sort by 1) StereoGroup type; 2) StereoGroup id; 3) atom indexes
-    // RDKit✔️✔️: assignStereoGroupIds(groups);
-    // RDKit✔️✔️: case StereoGroupType::STEREO_ABSOLUTE: res << "a:"; break;
-    // RDKit✔️✔️: case StereoGroupType::STEREO_OR: res << "o" << sgItr->getWriteId() << ":"; break;
-    // RDKit✔️✔️: case StereoGroupType::STEREO_AND: res << "&" << sgItr->getWriteId() << ":"; break;
+    // RDKit❗❌: const auto newAtomIndexes = getSortedMappedIndexes(atomIds, revOrder);
+    // RDKit❗❌: if (!newAtomIndexes.empty()) {
+    // RDKit❗❌:   sortingGroups.emplace_back(sg, newAtomIndexes);
+    // RDKit❗❌: }
+    // RDKit❗❌: // sort by 1) StereoGroup type; 2) StereoGroup id; 3) atom indexes
+    // RDKit❗❌: assignStereoGroupIds(groups);
+    // RDKit❗❌: case StereoGroupType::STEREO_ABSOLUTE: res << "a:"; break;
+    // RDKit❗❌: case StereoGroupType::STEREO_OR: res << "o" << sgItr->getWriteId() << ":"; break;
+    // RDKit❗❌: case StereoGroupType::STEREO_AND: res << "&" << sgItr->getWriteId() << ":"; break;
     let positions = query_cx_source_reverse_atom_order(atom_order, query.num_atoms());
     let mut groups = query
         .stereo_groups()
@@ -994,21 +1253,18 @@ fn write_query_cx_enhanced_stereo(query: &QueryGraph, atom_order: &[AtomId]) -> 
     groups.sort_by(|(left_group, left_atoms), (right_group, right_atoms)| {
         query_cx_stereo_kind_order(left_group.kind())
             .cmp(&query_cx_stereo_kind_order(right_group.kind()))
+            .then_with(|| left_group.write_id().cmp(&right_group.write_id()))
             .then_with(|| left_atoms.cmp(right_atoms))
     });
-    let sorted_groups = groups
-        .iter()
-        .map(|(group, _)| group.clone())
-        .collect::<Vec<_>>();
-    let ids = assign_query_cx_stereo_group_ids(&sorted_groups);
+    // Reuse the canonical SOURCE duplicate-ID and missing-ID implementation.
+    cosmolkit_smiles::assign_stereo_group_ids(&mut groups);
     groups
         .into_iter()
-        .zip(ids)
-        .map(|((group, atoms), id)| {
+        .map(|(group, atoms)| {
             let prefix = match group.kind() {
                 StereoGroupKind::Absolute => "a".to_owned(),
-                StereoGroupKind::Or => format!("o{}", id.expect("OR group has assigned ID")),
-                StereoGroupKind::And => format!("&{}", id.expect("AND group has assigned ID")),
+                StereoGroupKind::Or => format!("o{}", group.write_id()),
+                StereoGroupKind::And => format!("&{}", group.write_id()),
             };
             format!(
                 "{prefix}:{}",
@@ -1023,6 +1279,7 @@ fn write_query_cx_enhanced_stereo(query: &QueryGraph, atom_order: &[AtomId]) -> 
         .join(",")
 }
 
+#[cfg(feature = "smiles-integration")]
 fn query_cx_other_atom(bond: &Bond, atom: AtomId) -> Option<AtomId> {
     if bond.begin() == atom {
         Some(bond.end())
@@ -1033,6 +1290,7 @@ fn query_cx_other_atom(bond: &Bond, atom: AtomId) -> Option<AtomId> {
     }
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_ring_bond_stereo(
     query: &QueryGraph,
     atom_order: &[AtomId],
@@ -1130,7 +1388,139 @@ fn write_query_cx_ring_bond_stereo(
     .join(","))
 }
 
-fn write_query_cx_link_nodes(query: &QueryGraph, atom_order: &[AtomId]) -> String {
+#[cfg(feature = "smiles-integration")]
+fn write_query_cx_link_nodes(
+    query: &QueryGraph,
+    atom_order: &[AtomId],
+) -> Result<String, SmartsWriteError> {
+    // RDKit❗❌: Full reached helper; strict=false, no atomIdxMap at this caller.
+    /*
+    inline std::vector<LinkNode> getMolLinkNodes(
+        const ROMol &mol, bool strict = true,
+        const std::map<unsigned, Atom *> *atomIdxMap = nullptr) {
+      std::vector<LinkNode> res;
+      std::string pval;
+      if (!mol.getPropIfPresent(common_properties::molFileLinkNodes, pval)) {
+        return res;
+      }
+      std::vector<int> mapping;
+
+      boost::char_separator<char> pipesep("|");
+      boost::char_separator<char> spacesep(" ");
+      for (auto linknodetext : tokenizer(pval, pipesep)) {
+        LinkNode node;
+        tokenizer tokens(linknodetext, spacesep);
+        std::vector<unsigned int> data;
+        try {
+          std::transform(tokens.begin(), tokens.end(), std::back_inserter(data),
+                         [](const std::string &token) -> unsigned int {
+                           return boost::lexical_cast<unsigned int>(token);
+                         });
+        } catch (boost::bad_lexical_cast &) {
+          std::ostringstream errout;
+          errout << "Cannot convert values in LINKNODE '" << linknodetext
+                 << "' to unsigned ints";
+          if (strict) {
+            throw ValueErrorException(errout.str());
+          } else {
+            BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+            continue;
+          }
+        }
+        // the second test here is for the atom-pairs defining the bonds
+        // data[2] contains the number of bonds
+        if (data.size() < 5 || data.size() < 3 + 2 * data[2]) {
+          std::ostringstream errout;
+          errout << "not enough values in LINKNODE '" << linknodetext << "'";
+          if (strict) {
+            throw ValueErrorException(errout.str());
+          } else {
+            BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+            continue;
+          }
+        }
+
+        node.minRep = data[0];
+        node.maxRep = data[1];
+        if (node.minRep == 0 || node.maxRep < node.minRep) {
+          std::ostringstream errout;
+          errout << "bad counts in LINKNODE '" << linknodetext << "'";
+          if (strict) {
+            throw ValueErrorException(errout.str());
+          } else {
+            BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+            continue;
+          }
+        }
+        node.nBonds = data[2];
+        if (node.nBonds != 2) {
+          if (strict) {
+            UNDER_CONSTRUCTION(
+                "only link nodes with 2 bonds are currently supported");
+          } else {
+            BOOST_LOG(rdWarningLog)
+                << "only link nodes with 2 bonds are currently supported"
+                << std::endl;
+            continue;
+          }
+        }
+        // both bonds must start from the same atom:
+        if (data[3] != data[5]) {
+          std::ostringstream errout;
+          errout << "bonds don't start at the same atom for LINKNODE '"
+                 << linknodetext << "'";
+          if (strict) {
+            throw ValueErrorException(errout.str());
+          } else {
+            BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+            continue;
+          }
+        }
+
+        if (atomIdxMap) {
+          // map the indices back to the original atom numbers
+          for (unsigned int i = 3; i <= 6; ++i) {
+            const auto aidx = atomIdxMap->find(data[i] - 1);
+            if (aidx == atomIdxMap->end()) {
+              std::ostringstream errout;
+              errout << "atom index " << data[i]
+                     << " cannot be found in molecule for LINKNODE '"
+                     << linknodetext << "'";
+              if (strict) {
+                throw ValueErrorException(errout.str());
+              } else {
+                BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+                continue;
+              }
+            } else {
+              data[i] = aidx->second->getIdx();
+            }
+          }
+        } else {
+          for (unsigned int i = 3; i <= 6; ++i) {
+            --data[i];
+          }
+        }
+        node.bondAtoms.push_back(std::make_pair(data[3], data[4]));
+        node.bondAtoms.push_back(std::make_pair(data[5], data[6]));
+        if (!mol.getBondBetweenAtoms(data[4], data[3]) ||
+            !mol.getBondBetweenAtoms(data[6], data[5])) {
+          std::ostringstream errout;
+          errout << "bond not found between atoms in LINKNODE '" << linknodetext
+                 << "'";
+          if (strict) {
+            throw ValueErrorException(errout.str());
+          } else {
+            BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+            continue;
+          }
+        }
+        res.push_back(std::move(node));
+      }
+      return res;
+    }
+
+        */
     // RDKit✔️✔️: auto linkNodes = MolEnumerator::utils::getMolLinkNodes(mol, strict);
     // RDKit✔️✔️: if (linkNodes.empty()) {
     // RDKit✔️✔️:   return "";
@@ -1139,15 +1529,33 @@ fn write_query_cx_link_nodes(query: &QueryGraph, atom_order: &[AtomId]) -> Strin
     // RDKit✔️✔️:   unsigned int atomIdx = atomOrder[ln.bondAtoms[0].first];
     // RDKit✔️✔️:   res << atomIdx << ":" << ln.minRep << "." << ln.maxRep;
     // RDKit✔️✔️: }
-    let Some(raw) = query.prop("_MolFileLinkNodes") else {
-        return String::new();
+    let Some(raw) = query.prop("_molLinkNodes") else {
+        return Ok(String::new());
     };
     let mut entries = Vec::new();
-    for item in raw.split('|').filter(|item| !item.trim().is_empty()) {
-        let Ok(values) = item
-            .split_whitespace()
-            .map(str::parse::<usize>)
-            .collect::<Result<Vec<_>, _>>()
+    let raw = cosmolkit_core::property_value_to_string(raw)?;
+    for item in raw
+        .as_bytes()
+        .split(|byte| *byte == b'|')
+        .filter(|item| !item.is_empty())
+    {
+        let Some(values) = item
+            .split(|byte| *byte == b' ')
+            .filter(|token| !token.is_empty())
+            .map(|token| {
+                if token
+                    .iter()
+                    .any(|byte| matches!(*byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+                {
+                    return None;
+                }
+                cosmolkit_core::property_value_to_uint(&cosmolkit_model::PropertyValue::String(
+                    PropertyText::from_bytes(token),
+                ))
+                .ok()
+                .map(|value| value as usize)
+            })
+            .collect::<Option<Vec<_>>>()
         else {
             continue;
         };
@@ -1177,127 +1585,378 @@ fn write_query_cx_link_nodes(query: &QueryGraph, atom_order: &[AtomId]) -> Strin
         entries.push(entry);
     }
     if entries.is_empty() {
-        String::new()
+        Ok(String::new())
     } else {
-        format!("LN:{}", entries.join(","))
+        Ok(format!("LN:{}", entries.join(",")))
     }
 }
 
-fn query_cx_is_data_sgroup(group: &SubstanceGroup) -> bool {
-    matches!(group.kind(), SubstanceGroupKind::Data)
-        || group
-            .props()
-            .get("TYPE")
-            .is_some_and(|value| value == "DAT")
+#[cfg(feature = "smiles-integration")]
+fn query_cx_is_data_sgroup(group: &SubstanceGroup) -> Result<bool, SmartsWriteError> {
+    // BEGIN COMPLETE RDProps::getPropIfPresent
+    // RDKit✔️❌: bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️❌:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️❌:   }
+    // END COMPLETE RDProps::getPropIfPresent
+
+    // A present source property is read through the sole CORE conversion;
+    // wrong supported types/conversions propagate. The typed detached kind
+    // supplies TYPE only when no explicit source property was supplied.
+    if let Some(value) = group.props().get(b"TYPE".as_slice()) {
+        return Ok(cosmolkit_core::property_value_to_string(value)?.as_bytes() == b"DAT");
+    }
+    Ok(matches!(group.kind(), SubstanceGroupKind::Data))
 }
 
-fn query_cx_sgroup_value(group: &SubstanceGroup, key: &str) -> String {
-    group.props().get(key).cloned().unwrap_or_default()
-}
+#[cfg(feature = "smiles-integration")]
+fn query_cx_sgroup_value(
+    group: &SubstanceGroup,
+    key: &str,
+) -> Result<PropertyText, SmartsWriteError> {
+    // BEGIN COMPLETE RDProps::getPropIfPresent
+    // RDKit✔️❌: bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️❌:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️❌:   }
+    // END COMPLETE RDProps::getPropIfPresent
 
-fn write_query_cx_data_sgroups(query: &QueryGraph, atom_order: &[AtomId]) -> String {
-    // RDKit✔️✔️: if (sg.hasProp("TYPE") && sg.getProp<std::string>("TYPE") == "DAT") {
-    // RDKit✔️✔️:   res << "SgD:";
-    // RDKit✔️✔️:   for (const auto oaid : sg.getAtoms()) {
-    // RDKit✔️✔️:     res << revOrder[oaid] << ",";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   res << ":" << FIELDNAME << ":" << DATAFIELDS << ":" << QUERYOP
-    // RDKit✔️✔️:       << ":" << FIELDINFO << ":" << FIELDTAG << ":";
-    // RDKit✔️✔️: }
-    let positions = query_cx_source_reverse_atom_order(atom_order, query.num_atoms());
-    query_substance_groups(query)
-        .iter()
-        .filter(|group| query_cx_is_data_sgroup(group))
-        .filter_map(|group| {
-            let atoms = group
-                .atoms()
-                .iter()
-                .map(|atom| positions[atom.index()])
-                .map(|position| position.to_string())
-                .collect::<Vec<_>>();
-            if atoms.is_empty() {
-                return None;
-            }
-            let data = if group.data_fields().is_empty() {
-                query_cx_sgroup_value(group, "DATAFIELDS")
-            } else {
-                group.data_fields().join(",")
-            };
-            Some(format!(
-                "SgD:{}:{}:{}:{}:{}:{}:",
-                atoms.join(","),
-                query_cx_sgroup_value(group, "FIELDNAME"),
-                data,
-                query_cx_sgroup_value(group, "QUERYOP"),
-                query_cx_sgroup_value(group, "FIELDINFO"),
-                query_cx_sgroup_value(group, "FIELDTAG")
-            ))
+    // Scalar source getProp<string> uses canonical RDValue conversion. This
+    // helper is never used to reinterpret DATAFIELDS as a scalar string.
+    if let Some(value) = group.props().get(key.as_bytes()) {
+        return cosmolkit_core::property_value_to_string(value).map_err(SmartsWriteError::from);
+    }
+    Ok(group
+        .data()
+        .and_then(|data| match key {
+            "FIELDNAME" => data.field_name.as_ref(),
+            "QUERYOP" => data.query_op.as_ref(),
+            "FIELDINFO" => data.field_info.as_ref(),
+            _ => None,
         })
-        .collect::<Vec<_>>()
-        .join(",")
+        .cloned()
+        .unwrap_or_default())
 }
 
-fn query_cx_polymer_type(group: &SubstanceGroup) -> Option<&'static str> {
-    match group.kind() {
+#[cfg(feature = "smiles-integration")]
+fn query_cx_data_sgroup_values(
+    group: &SubstanceGroup,
+) -> Result<&[PropertyText], SmartsWriteError> {
+    // BEGIN COMPLETE RDProps::getPropIfPresent
+    // RDKit✔️❌: bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️❌:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️❌:   }
+    // END COMPLETE RDProps::getPropIfPresent
+
+    // Source DATAFIELDS is vector<string>: exact tag, bytes and element order.
+    // A present scalar is a native cast failure, never split or inferred.
+    if let Some(value) = group.props().get(b"DATAFIELDS".as_slice()) {
+        return value
+            .as_string_vector()
+            .map_err(SmartsWriteError::PropertyValue);
+    }
+    Ok(group
+        .data()
+        .map(|data| data.values.as_slice())
+        .filter(|values| !values.is_empty())
+        .unwrap_or_else(|| group.data_fields()))
+}
+
+#[cfg(feature = "smiles-integration")]
+fn write_query_cx_data_sgroups(
+    query: &QueryGraph,
+    atom_order: &[AtomId],
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit❗✔️: std::string get_sgroup_data_block(const ROMol &mol,
+    // RDKit❗✔️:                                   const std::vector<unsigned int> &atomOrder) {
+    // RDKit❗✔️:   const auto &sgs = getSubstanceGroups(mol);
+    // RDKit❗✔️:   if (sgs.empty()) {
+    // RDKit❗✔️:     return "";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int sgroupOutputIndex = 0;
+    // RDKit❗✔️:   mol.getPropIfPresent("_cxsmilesOutputIndex", sgroupOutputIndex);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::stringstream res;
+    // RDKit❗✔️:   // we need a map from original atom idx to output idx:
+    // RDKit❗✔️:   std::vector<unsigned int> revOrder(mol.getNumAtoms());
+    // RDKit❗✔️:   for (unsigned i = 0; i < atomOrder.size(); ++i) {
+    // RDKit❗✔️:     revOrder[atomOrder[i]] = i;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   for (const auto &sg : sgs) {
+    // RDKit❗✔️:     if (sg.hasProp("TYPE") && sg.getProp<std::string>("TYPE") == "DAT") {
+    // RDKit❗✔️:       sg.setProp("_cxsmilesOutputIndex", sgroupOutputIndex);
+    // RDKit❗✔️:       ++sgroupOutputIndex;
+    // RDKit❗✔️:
+    // RDKit❗✔️:       res << "SgD:";
+    // RDKit❗✔️:       // we don't attempt to canonicalize the atom order because the user
+    // RDKit❗✔️:       // may ascribe some significance to the ordering of the atoms
+    // RDKit❗✔️:       for (const auto oaid : sg.getAtoms()) {
+    // RDKit❗✔️:         res << revOrder[oaid] << ",";
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       // remove the extra ",":
+    // RDKit❗✔️:       res.seekp(-1, res.cur);
+    // RDKit❗✔️:       res << ":";
+    // RDKit❗✔️:       std::string prop;
+    // RDKit❗✔️:       if (sg.getPropIfPresent("FIELDNAME", prop) && !prop.empty()) {
+    // RDKit❗✔️:         res << prop;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       res << ":";
+    // RDKit❗✔️:       std::vector<std::string> vprop;
+    // RDKit❗✔️:       if (sg.getPropIfPresent("DATAFIELDS", vprop) && !vprop.empty()) {
+    // RDKit❗✔️:         for (const auto &pv : vprop) {
+    // RDKit❗✔️:           res << pv << ",";
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         // remove the extra ",":
+    // RDKit❗✔️:         res.seekp(-1, res.cur);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       res << ":";
+    // RDKit❗✔️:       if (sg.getPropIfPresent("QUERYOP", prop) && !prop.empty()) {
+    // RDKit❗✔️:         res << prop;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       res << ":";
+    // RDKit❗✔️:       if (sg.getPropIfPresent("FIELDINFO", prop) && !prop.empty()) {
+    // RDKit❗✔️:         res << prop;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       res << ":";
+    // RDKit❗✔️:       if (sg.getPropIfPresent("FIELDTAG", prop) && !prop.empty()) {
+    // RDKit❗✔️:         res << prop;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       res << ":";
+    // RDKit❗✔️:       // FIX: do something about the coordinates
+    // RDKit❗✔️:       res << ",";  // only add a comma if we wrote something
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string resStr = res.str();
+    // RDKit❗✔️:   if (!resStr.empty() && resStr.back() == ',') {
+    // RDKit❗✔️:     resStr.pop_back();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   mol.setProp("_cxsmilesOutputIndex", sgroupOutputIndex);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return resStr;
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // Same one reverse vector and output buffer. Empty members reproduce
+    // SOURCE seekp(-1): the prefix colon is overwritten, not duplicated.
+    let positions = query_cx_source_reverse_atom_order(atom_order, query.num_atoms());
+    let mut result = PropertyText::new();
+    for group in query_substance_groups(query) {
+        if !query_cx_is_data_sgroup(group)? {
+            continue;
+        }
+        if !result.is_empty() {
+            result.push_byte(b',');
+        }
+        result.extend_bytes(("SgD:").as_ref());
+        for (i, atom) in group.atoms().iter().enumerate() {
+            if i != 0 {
+                result.push_byte(b',');
+            }
+            result.extend_bytes((&positions[atom.index()].to_string()).as_ref());
+        }
+        if !group.atoms().is_empty() {
+            result.push_byte(b':');
+        }
+        result.extend_bytes((query_cx_sgroup_value(group, "FIELDNAME")?).as_ref());
+        result.push_byte(b':');
+        let values = query_cx_data_sgroup_values(group)?;
+        {
+            for (i, value) in values.iter().enumerate() {
+                if i != 0 {
+                    result.push_byte(b',');
+                }
+                result.extend_bytes((value).as_ref());
+            }
+        }
+        for key in ["QUERYOP", "FIELDINFO", "FIELDTAG"] {
+            result.push_byte(b':');
+            result.extend_bytes((query_cx_sgroup_value(group, key)?).as_ref());
+        }
+        result.push_byte(b':');
+    }
+    Ok(result)
+}
+
+#[cfg(feature = "smiles-integration")]
+fn query_cx_polymer_type(group: &SubstanceGroup) -> Result<Option<&'static str>, SmartsWriteError> {
+    // RDKit❗✔️: const std::map<std::string, std::string> sgroupTypemap = {
+    // RDKit❗✔️:     {"n", "SRU"},   {"mon", "MON"}, {"mer", "MER"}, {"co", "COP"},
+    // RDKit❗✔️:     {"xl", "CRO"},  {"mod", "MOD"}, {"mix", "MIX"}, {"f", "FOR"},
+    // RDKit❗✔️:     {"any", "ANY"}, {"gen", "GEN"}, {"c", "COM"},   {"grf", "GRA"},
+    // RDKit❗✔️:     {"alt", "COP"}, {"ran", "COP"}, {"blk", "COP"}};
+    // SOURCE std::map lexical traversal selects COP -> alt first.
+    Ok(match group.kind() {
         SubstanceGroupKind::StructuralRepeatUnit => Some("n"),
         SubstanceGroupKind::Monomer => Some("mon"),
         SubstanceGroupKind::Mer => Some("mer"),
-        SubstanceGroupKind::Copolymer => match group
-            .subtype()
-            .or_else(|| group.props().get("SUBTYPE").map(String::as_str))
-        {
-            Some("ALT") => Some("alt"),
-            Some("RAN") => Some("ran"),
-            Some("BLO") => Some("blk"),
-            _ => Some("co"),
-        },
+        SubstanceGroupKind::Copolymer => {
+            let raw_subtype = if group.subtype().is_none() {
+                group
+                    .props()
+                    .get(b"SUBTYPE".as_slice())
+                    .map(cosmolkit_core::property_value_to_string)
+                    .transpose()?
+            } else {
+                None
+            };
+            match group
+                .subtype()
+                .map(PropertyText::as_bytes)
+                .or_else(|| raw_subtype.as_ref().map(PropertyText::as_bytes))
+            {
+                Some(b"ALT") => Some("alt"),
+                Some(b"RAN") => Some("ran"),
+                Some(b"BLO") => Some("blk"),
+                _ => Some("alt"),
+            }
+        }
         SubstanceGroupKind::Crosslink => Some("xl"),
         SubstanceGroupKind::Modification => Some("mod"),
-        SubstanceGroupKind::MixtureComponent => Some("mix"),
+        SubstanceGroupKind::Mixture => Some("mix"),
+        SubstanceGroupKind::MixtureComponent => Some("c"),
         SubstanceGroupKind::Formulation => Some("f"),
         SubstanceGroupKind::AnyPolymer => Some("any"),
         SubstanceGroupKind::Graft => Some("grf"),
-        SubstanceGroupKind::Generic(value) if value == "GEN" => Some("gen"),
-        SubstanceGroupKind::Generic(value) if value == "COM" => Some("c"),
+        SubstanceGroupKind::Generic(value) if value.as_bytes() == b"GEN" => Some("gen"),
+        SubstanceGroupKind::Generic(value) if value.as_bytes() == b"COM" => Some("c"),
         _ => None,
+    })
+}
+
+#[cfg(feature = "smiles-integration")]
+fn query_cx_connection_text(group: &SubstanceGroup) -> Result<PropertyText, SmartsWriteError> {
+    if let Some(connection) = group.connection() {
+        return Ok(match connection {
+            SGroupConnection::HeadToHead => PropertyText::from("hh"),
+            SGroupConnection::HeadToTail => PropertyText::from("ht"),
+            SGroupConnection::Either => PropertyText::from("eu"),
+            SGroupConnection::Unknown(value) => {
+                PropertyText::from(value.as_bytes().to_ascii_lowercase())
+            }
+        });
     }
+    let raw = group
+        .props()
+        .get(b"CONNECT".as_slice())
+        .map(cosmolkit_core::property_value_to_string)
+        .transpose()?;
+    Ok(raw
+        .map(|value| PropertyText::from(value.as_bytes().to_ascii_lowercase()))
+        .unwrap_or_default())
 }
 
-fn query_cx_connection_text(group: &SubstanceGroup) -> String {
-    group
-        .connection()
-        .map(|connection| match connection {
-            SGroupConnection::HeadToHead => "hh".to_owned(),
-            SGroupConnection::HeadToTail => "ht".to_owned(),
-            SGroupConnection::Either => "eu".to_owned(),
-            SGroupConnection::Unknown(value) => value.to_ascii_lowercase(),
-        })
-        .or_else(|| {
-            group
-                .props()
-                .get("CONNECT")
-                .map(|value| value.to_ascii_lowercase())
-        })
-        .unwrap_or_default()
-}
-
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_polymer_sgroups(
     query: &QueryGraph,
     atom_order: &[AtomId],
     bond_order: &[BondId],
-) -> Result<String, SmartsWriteError> {
-    // RDKit✔️✔️: if (sg.getPropIfPresent("TYPE", typ) &&
-    // RDKit✔️✔️:     reverseTypemap.find(typ) != reverseTypemap.end()) {
-    // RDKit✔️✔️:   res << "Sg:" << reverse type << ":";
-    // RDKit✔️✔️:   for (const auto oaid : sg.getAtoms()) {
-    // RDKit✔️✔️:     res << revAtomOrder[oaid] << ",";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   res << ":" << LABEL << ":" << lowercase CONNECT << ":";
-    // RDKit✔️✔️: }
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit❗❌: std::string get_sgroup_polymer_block(
+    // RDKit❗❌:     const ROMol &mol, const std::vector<unsigned int> &atomOrder,
+    // RDKit❗❌:     const std::vector<unsigned int> &bondOrder) {
+    // RDKit❗❌:   const auto &sgs = getSubstanceGroups(mol);
+    // RDKit❗❌:   if (sgs.empty()) {
+    // RDKit❗❌:     return "";
+    // RDKit❗❌:   }
+    // RDKit❗❌:   unsigned int sgroupOutputIndex = 0;
+    // RDKit❗❌:   mol.getPropIfPresent("_cxsmilesOutputIndex", sgroupOutputIndex);
+    // RDKit❗❌:   std::stringstream res;
+    // RDKit❗❌:   // we need a map from original atom idx to output idx:
+    // RDKit❗❌:   std::vector<unsigned int> revAtomOrder(mol.getNumAtoms());
+    // RDKit❗❌:   for (unsigned i = 0; i < atomOrder.size(); ++i) {
+    // RDKit❗❌:     revAtomOrder[atomOrder[i]] = i;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // we need a map from original bond idx to output idx:
+    // RDKit❗❌:   std::vector<unsigned int> revBondOrder(mol.getNumBonds());
+    // RDKit❗❌:   for (unsigned i = 0; i < bondOrder.size(); ++i) {
+    // RDKit❗❌:     revBondOrder[bondOrder[i]] = i;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   std::map<std::string, std::string> reverseTypemap;
+    // RDKit❗❌:   for (const auto &pr : SmilesParseOps::sgroupTypemap) {
+    // RDKit❗❌:     if (reverseTypemap.find(pr.second) == reverseTypemap.end()) {
+    // RDKit❗❌:       reverseTypemap[pr.second] = pr.first;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   for (const auto &sg : sgs) {
+    // RDKit❗❌:     std::string typ;
+    // RDKit❗❌:     if (sg.getPropIfPresent("TYPE", typ) &&
+    // RDKit❗❌:         reverseTypemap.find(typ) != reverseTypemap.end()) {
+    // RDKit❗❌:       sg.setProp("_cxsmilesOutputIndex", sgroupOutputIndex);
+    // RDKit❗❌:       ++sgroupOutputIndex;
+    // RDKit❗❌:
+    // RDKit❗❌:       res << "Sg:";
+    // RDKit❗❌:       std::string subtype;
+    // RDKit❗❌:       if (typ == "COP" && sg.getPropIfPresent("SUBTYPE", subtype)) {
+    // RDKit❗❌:         if (subtype == "ALT") {
+    // RDKit❗❌:           res << "alt";
+    // RDKit❗❌:         } else if (subtype == "RAN") {
+    // RDKit❗❌:           res << "ran";
+    // RDKit❗❌:         } else if (subtype == "BLO") {
+    // RDKit❗❌:           res << "blk";
+    // RDKit❗❌:         } else {
+    // RDKit❗❌:           res << reverseTypemap["COP"];
+    // RDKit❗❌:         }
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         res << reverseTypemap[typ];
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res << ":";
+    // RDKit❗❌:       for (const auto oaid : sg.getAtoms()) {
+    // RDKit❗❌:         res << revAtomOrder[oaid] << ",";
+    // RDKit❗❌:       }
+    // RDKit❗❌:       // remove the extra ",":
+    // RDKit❗❌:       res.seekp(-1, res.cur);
+    // RDKit❗❌:       res << ":";
+    // RDKit❗❌:       std::string label;
+    // RDKit❗❌:       if (sg.getPropIfPresent("LABEL", label)) {
+    // RDKit❗❌:         res << label;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res << ":";
+    // RDKit❗❌:       std::string connect;
+    // RDKit❗❌:       if (sg.getPropIfPresent("CONNECT", connect)) {
+    // RDKit❗❌:         boost::algorithm::to_lower(connect);
+    // RDKit❗❌:         res << connect;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res << ":";
+    // RDKit❗❌:       std::vector<unsigned int> headCrossings;
+    // RDKit❗❌:       if (sg.getPropIfPresent("XBHEAD", headCrossings) &&
+    // RDKit❗❌:           headCrossings.size() > 1) {
+    // RDKit❗❌:         for (auto v : headCrossings) {
+    // RDKit❗❌:           res << bondOrder[v] << ",";
+    // RDKit❗❌:         }
+    // RDKit❗❌:         // remove the extra ",":
+    // RDKit❗❌:         res.seekp(-1, res.cur);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res << ":";
+    // RDKit❗❌:       std::vector<unsigned int> tailCrossings;
+    // RDKit❗❌:       if (sg.getPropIfPresent("XBCORR", tailCrossings) &&
+    // RDKit❗❌:           tailCrossings.size() > 2) {
+    // RDKit❗❌:         for (unsigned int i = 1; i < tailCrossings.size(); i += 2) {
+    // RDKit❗❌:           res << bondOrder[tailCrossings[i]] << ",";
+    // RDKit❗❌:         }
+    // RDKit❗❌:         // remove the extra ",":
+    // RDKit❗❌:         res.seekp(-1, res.cur);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res << ":";
+    // RDKit❗❌:       res << ",";  // only add a comma if we wrote something
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   std::string resStr = res.str();
+    // RDKit❗❌:   while (!resStr.empty() && resStr.back() == ',') {
+    // RDKit❗❌:     resStr.pop_back();
+    // RDKit❗❌:   }
+    // RDKit❗❌:   mol.setProp("_cxsmilesOutputIndex", sgroupOutputIndex);
+    // RDKit❗❌:
+    // RDKit❗❌:   return resStr;
+    // RDKit❗❌: }
+    // RDKit❗❌:
+    // Per-field collection allocations remain an explicit performance gap.
     let atom_positions = query_cx_source_reverse_atom_order(atom_order, query.num_atoms());
     let mut blocks = Vec::new();
     for group in query_substance_groups(query) {
-        let Some(kind) = query_cx_polymer_type(group) else {
+        let Some(kind) = query_cx_polymer_type(group)? else {
             continue;
         };
         let atoms = group
@@ -1306,9 +1965,6 @@ fn write_query_cx_polymer_sgroups(
             .map(|atom| atom_positions[atom.index()])
             .map(|position| position.to_string())
             .collect::<Vec<_>>();
-        if atoms.is_empty() {
-            continue;
-        }
         let crossing_position = |bond: BondId| {
             bond_order
                 .get(bond.index())
@@ -1351,169 +2007,450 @@ fn write_query_cx_polymer_sgroups(
         } else {
             String::new()
         };
-        blocks.push(format!(
-            "Sg:{kind}:{}:{}:{}:{head}:{tail}:",
-            atoms.join(","),
+        let mut block = PropertyText::new();
+        write!(&mut block, "Sg:{kind}:").expect("byte output formatting cannot fail");
+        if !atoms.is_empty() {
+            write!(&mut block, "{}:", atoms.join(",")).expect("byte output formatting cannot fail");
+        }
+        let raw_label = if group.label().is_none() {
             group
-                .label()
-                .or_else(|| group.props().get("LABEL").map(String::as_str))
-                .unwrap_or_default(),
-            query_cx_connection_text(group)
-        ));
+                .props()
+                .get(b"LABEL".as_slice())
+                .map(cosmolkit_core::property_value_to_string)
+                .transpose()?
+        } else {
+            None
+        };
+        if let Some(label) = group.label().or(raw_label.as_ref()) {
+            block.extend_bytes(label.as_bytes());
+        }
+        block.push_byte(b':');
+        block.extend_bytes(query_cx_connection_text(group)?.as_bytes());
+        write!(&mut block, ":{head}:{tail}:").expect("byte output formatting cannot fail");
+        blocks.push(block);
     }
-    Ok(blocks.join(","))
+    let mut output = PropertyText::new();
+    for (index, block) in blocks.into_iter().enumerate() {
+        if index != 0 {
+            output.push_byte(b',');
+        }
+        output.extend_bytes(block.as_bytes());
+    }
+    Ok(output)
 }
 
-fn query_cx_sgroup_index(group: &SubstanceGroup) -> usize {
-    group
-        .props()
-        .get("index")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or_else(|| group.id().index())
+#[cfg(feature = "smiles-integration")]
+fn query_cx_sgroup_index(group: &SubstanceGroup) -> Result<u32, SmartsWriteError> {
+    match group.props().get(b"index".as_slice()) {
+        Some(value) => cosmolkit_core::property_value_to_uint(value).map_err(|source| {
+            SmartsWriteError::CxSgroupPropertyUInt {
+                group: group.id(),
+                property: "index",
+                source,
+            }
+        }),
+        None => Ok(group.id().index() as u32),
+    }
 }
 
-fn write_query_cx_sgroup_hierarchy(query: &QueryGraph) -> String {
-    // RDKit✔️✔️: if (sg.hasProp("_cxsmilesOutputIndex")) {
-    // RDKit✔️✔️:   unsigned int sgidx = sg.getIndexInMol();
-    // RDKit✔️✔️:   sg.getPropIfPresent("index", sgidx);
-    // RDKit✔️✔️:   sgroupOrder[sgidx] = sg.getProp<unsigned int>("_cxsmilesOutputIndex");
-    // RDKit✔️✔️: }
-    // RDKit✔️✔️: if (sg.getPropIfPresent("PARENT", pidx) &&
-    // RDKit✔️✔️:     sgroupOrder.find(pidx) != sgroupOrder.end()) {
-    // RDKit✔️✔️:   accum[sgroupOrder[pidx]].push_back(sgroupOrder[sgidx]);
-    // RDKit✔️✔️: }
+#[cfg(feature = "smiles-integration")]
+fn write_query_cx_sgroup_hierarchy(
+    query: &QueryGraph,
+    include_data: bool,
+    include_polymer: bool,
+) -> Result<String, SmartsWriteError> {
+    // RDKit❗✔️: std::string get_sgroup_hierarchy_block(const ROMol &mol) {
+    // RDKit❗✔️:   const auto &sgs = getSubstanceGroups(mol);
+    // RDKit❗✔️:   if (sgs.empty()) {
+    // RDKit❗✔️:     return "";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   std::stringstream res;
+    // RDKit❗✔️:   // we need a map from sgroup index to output index;
+    // RDKit❗✔️:   std::map<unsigned int, unsigned int> sgroupOrder;
+    // RDKit❗✔️:   bool parentPresent = false;
+    // RDKit❗✔️:   for (const auto &sg : sgs) {
+    // RDKit❗✔️:     if (sg.hasProp("_cxsmilesOutputIndex")) {
+    // RDKit❗✔️:       unsigned int sgidx = sg.getIndexInMol();
+    // RDKit❗✔️:       sg.getPropIfPresent("index", sgidx);
+    // RDKit❗✔️:       sgroupOrder[sgidx] = sg.getProp<unsigned int>("_cxsmilesOutputIndex");
+    // RDKit❗✔️:       sg.clearProp("_cxsmilesOutputIndex");
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (sg.hasProp("PARENT")) {
+    // RDKit❗✔️:       parentPresent = true;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (parentPresent) {
+    // RDKit❗✔️:     // now loop over them and add the information
+    // RDKit❗✔️:     std::map<unsigned int, std::vector<unsigned int>> accum;
+    // RDKit❗✔️:     for (const auto &sg : sgs) {
+    // RDKit❗✔️:       unsigned pidx;
+    // RDKit❗✔️:       if (sg.getPropIfPresent("PARENT", pidx) &&
+    // RDKit❗✔️:           sgroupOrder.find(pidx) != sgroupOrder.end()) {
+    // RDKit❗✔️:         unsigned int sgidx = sg.getIndexInMol();
+    // RDKit❗✔️:         sg.getPropIfPresent("index", sgidx);
+    // RDKit❗✔️:         if (sgroupOrder.find(sgidx) != sgroupOrder.end()) {
+    // RDKit❗✔️:           accum[sgroupOrder[pidx]].push_back(sgroupOrder[sgidx]);
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (!accum.empty()) {
+    // RDKit❗✔️:       res << "SgH:";
+    // RDKit❗✔️:       for (const auto &pr : accum) {
+    // RDKit❗✔️:         res << pr.first << ":";
+    // RDKit❗✔️:         for (auto v : pr.second) {
+    // RDKit❗✔️:           res << v << ".";
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         // remove the extra ".":
+    // RDKit❗✔️:         res.seekp(-1, res.cur);
+    // RDKit❗✔️:         res << ",";
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     std::string resStr = res.str();
+    // RDKit❗✔️:     while (!resStr.empty() && resStr.back() == ',') {
+    // RDKit❗✔️:       resStr.pop_back();
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     return resStr;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     return "";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
     let groups = query_substance_groups(query);
+    // _cxsmilesOutputIndex is local writer state from the actually enabled
+    // data/polymer passes. SOURCE overwrites duplicate source indices last.
+    let mut emitted = vec![None; groups.len()];
+    let mut next = 0u32;
+    for (i, group) in groups.iter().enumerate() {
+        if include_data && query_cx_is_data_sgroup(group)? {
+            emitted[i] = Some(next);
+            next += 1;
+        }
+    }
+    for (i, group) in groups.iter().enumerate() {
+        if include_polymer && query_cx_polymer_type(group)?.is_some() {
+            emitted[i] = Some(next);
+            next += 1;
+        }
+    }
     let mut output_indices = BTreeMap::new();
-    let mut next = 0usize;
-    for group in groups.iter().filter(|group| query_cx_is_data_sgroup(group)) {
-        output_indices.insert(query_cx_sgroup_index(group), next);
-        next += 1;
+    let mut parent_present = false;
+    for (i, group) in groups.iter().enumerate() {
+        if let Some(output) = emitted[i] {
+            output_indices.insert(query_cx_sgroup_index(group)?, output);
+        }
+        parent_present |=
+            group.parent().is_some() || group.props().contains_key(b"PARENT".as_slice());
     }
-    for group in groups
-        .iter()
-        .filter(|group| query_cx_polymer_type(group).is_some())
-    {
-        output_indices.insert(query_cx_sgroup_index(group), next);
-        next += 1;
+    if !parent_present {
+        return Ok(String::new());
     }
-    let source_indices = groups
-        .iter()
-        .map(|group| (group.id(), query_cx_sgroup_index(group)))
-        .collect::<BTreeMap<_, _>>();
-    let mut hierarchy = BTreeMap::<usize, Vec<usize>>::new();
+    let mut hierarchy = BTreeMap::<u32, Vec<u32>>::new();
     for group in groups {
-        let Some(child) = output_indices.get(&query_cx_sgroup_index(group)).copied() else {
+        // SOURCE reads PARENT on every group before deciding whether the
+        // group's source index was emitted. Conversion errors cannot vanish.
+        let parent = if let Some(value) = group.props().get(b"PARENT".as_slice()) {
+            Some(
+                cosmolkit_core::property_value_to_uint(value).map_err(|source| {
+                    SmartsWriteError::CxSgroupPropertyUInt {
+                        group: group.id(),
+                        property: "PARENT",
+                        source,
+                    }
+                })?,
+            )
+        } else if let Some(parent) = group.parent() {
+            Some(query_cx_sgroup_index(&groups[parent.index()])?)
+        } else {
+            None
+        };
+        let Some(parent_output) = parent.and_then(|p| output_indices.get(&p).copied()) else {
             continue;
         };
-        let parent_key = group
-            .parent()
-            .and_then(|parent| source_indices.get(&parent).copied())
-            .or_else(|| {
-                group
-                    .props()
-                    .get("PARENT")
-                    .and_then(|value| value.parse::<usize>().ok())
-            });
-        let Some(parent) = parent_key.and_then(|parent| output_indices.get(&parent).copied())
-        else {
-            continue;
-        };
-        hierarchy.entry(parent).or_default().push(child);
+        if let Some(child) = output_indices.get(&query_cx_sgroup_index(group)?).copied() {
+            hierarchy.entry(parent_output).or_default().push(child);
+        }
     }
     if hierarchy.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "SgH:{}",
-            hierarchy
-                .into_iter()
-                .map(|(parent, children)| format!(
-                    "{parent}:{}",
-                    children
-                        .iter()
-                        .map(usize::to_string)
-                        .collect::<Vec<_>>()
-                        .join(".")
-                ))
-                .collect::<Vec<_>>()
-                .join(",")
-        )
+        return Ok(String::new());
     }
+    let mut result = String::from("SgH:");
+    for (i, (parent, children)) in hierarchy.into_iter().enumerate() {
+        if i != 0 {
+            result.push(',');
+        }
+        result.push_str(&parent.to_string());
+        result.push(':');
+        for (j, child) in children.into_iter().enumerate() {
+            if j != 0 {
+                result.push('.');
+            }
+            result.push_str(&child.to_string());
+        }
+    }
+    Ok(result)
 }
 
+#[cfg(feature = "smiles-integration")]
 fn write_query_cx_extensions(
     query: &QueryGraph,
     atom_order: &[AtomId],
     bond_order: &[BondId],
-) -> Result<String, SmartsWriteError> {
-    // RDKit✔️✔️: std::string getCXExtensions(const ROMol &mol, std::uint32_t flags) {
-    // RDKit✔️✔️:   std::string res = "|";
-    // RDKit✔️✔️:   if ((flags & SmilesWrite::CXSmilesFields::CX_COORDS) &&
-    // RDKit✔️✔️:       mol.getNumConformers()) {
-    // RDKit✔️✔️:     res += "(" + get_coords_block(mol, atomOrder) + ")";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   // labels, values, radicals, atom properties, bond configuration,
-    // RDKit✔️✔️:   // coordinate/hydrogen/zero bonds, link nodes, enhanced stereo,
-    // RDKit✔️✔️:   // data/polymer SGroups and hierarchy follow in this exact order.
-    // RDKit✔️✔️:   if (res.size() > 1) {
-    // RDKit✔️✔️:     res += "|";
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     res = "";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    let mut result = String::from("|");
-    let coordinates = write_query_cx_coordinates(query, atom_order);
-    if let Some(coordinates) = &coordinates {
-        result.push('(');
-        result.push_str(coordinates);
-        result.push(')');
+    fields: cosmolkit_smiles::CxSmilesFields,
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit❗✔️:
+    // RDKit❗✔️: std::string getCXExtensions(const ROMol &mol, std::uint32_t flags) {
+    // RDKit❗✔️:   std::string res = "|";
+    // RDKit❗✔️:   const std::vector<unsigned int> &atomOrder =
+    // RDKit❗✔️:       mol.getProp<std::vector<unsigned int>>(
+    // RDKit❗✔️:           common_properties::_smilesAtomOutputOrder);
+    // RDKit❗✔️:   const std::vector<unsigned int> &bondOrder =
+    // RDKit❗✔️:       mol.getProp<std::vector<unsigned int>>(
+    // RDKit❗✔️:           common_properties::_smilesBondOutputOrder);
+    // RDKit❗✔️:
+    // RDKit❗✔️:   bool needLabels = false;
+    // RDKit❗✔️:   bool needValues = false;
+    // RDKit❗✔️:   for (auto idx : atomOrder) {
+    // RDKit❗✔️:     const auto at = mol.getAtomWithIdx(idx);
+    // RDKit❗✔️:     if (at->hasProp(common_properties::atomLabel) ||
+    // RDKit❗✔️:         at->hasProp(common_properties::_QueryAtomGenericLabel) ||
+    // RDKit❗✔️:         at->hasProp(common_properties::dummyLabel) ||
+    // RDKit❗✔️:         at->hasProp(common_properties::_fromAttachPoint)) {
+    // RDKit❗✔️:       needLabels = true;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (at->hasProp(common_properties::molFileValue)) {
+    // RDKit❗✔️:       needValues = true;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if ((flags & SmilesWrite::CXSmilesFields::CX_COORDS) &&
+    // RDKit❗✔️:       mol.getNumConformers()) {
+    // RDKit❗✔️:     res += "(" + get_coords_block(mol, atomOrder) + ")";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if ((flags & SmilesWrite::CXSmilesFields::CX_ATOM_LABELS) && needLabels) {
+    // RDKit❗✔️:     auto lbls = get_atomlabel_block(mol, atomOrder);
+    // RDKit❗✔️:     if (!lbls.empty()) {
+    // RDKit❗✔️:       if (res.size() > 1) {
+    // RDKit❗✔️:         res += ",";
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       res += "$" + lbls + "$";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if ((flags & SmilesWrite::CXSmilesFields::CX_MOLFILE_VALUES) && needValues) {
+    // RDKit❗✔️:     if (res.size() > 1) {
+    // RDKit❗✔️:       res += ",";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     res += "$_AV:" +
+    // RDKit❗✔️:            get_value_block(mol, atomOrder, common_properties::molFileValue) +
+    // RDKit❗✔️:            "$";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   auto radblock = get_radical_block(mol, atomOrder);
+    // RDKit❗✔️:   if ((flags & SmilesWrite::CXSmilesFields::CX_RADICALS) && radblock.size()) {
+    // RDKit❗✔️:     if (res.size() > 1) {
+    // RDKit❗✔️:       res += ",";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     res += radblock;
+    // RDKit❗✔️:     if (res.back() == ',') {
+    // RDKit❗✔️:       res.erase(res.size() - 1);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (flags & SmilesWrite::CXSmilesFields::CX_ATOM_PROPS) {
+    // RDKit❗✔️:     const auto atomblock = get_atom_props_block(mol, atomOrder);
+    // RDKit❗✔️:     appendToCXExtension(atomblock, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   const Conformer *conf = nullptr;
+    // RDKit❗✔️:   if (mol.getNumConformers() && (flags & SmilesWrite::CX_COORDS)) {
+    // RDKit❗✔️:     conf = &mol.getConformer();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❌❌:   std::map<int, std::unique_ptr<RDKit::Chirality::WedgeInfoBase>> wedgeBonds;
+    // RDKit❌❌:   if (flags & SmilesWrite::CXSmilesFields::CX_BOND_CFG) {
+    // RDKit❌❌:     wedgeBonds = Chirality::pickBondsToWedge(mol, nullptr, conf);
+    // RDKit❌❌:
+    // RDKit❌❌:     bool includeCoords = flags & SmilesWrite::CXSmilesFields::CX_COORDS &&
+    // RDKit❌❌:                          mol.getNumConformers();
+    // RDKit❌❌:     const auto cfgblock = get_bond_config_block(mol, atomOrder, bondOrder,
+    // RDKit❌❌:                                                 includeCoords, wedgeBonds);
+    // RDKit❌❌:     appendToCXExtension(cfgblock, res);
+    // RDKit❌❌:     const auto cistransblock =
+    // RDKit❌❌:         get_ringbond_cistrans_block(mol, atomOrder, bondOrder);
+    // RDKit❌❌:     appendToCXExtension(cistransblock, res);
+    // RDKit❌❌:   }
+    // RDKit❌❌:
+    // RDKit❌❌:   // do the CX_BOND_ATROPISOMER only if CX_BOND_CFG s not done.  CX_BOND_CFG
+    // RDKit❌❌:   // includes the atropisomer wedging
+    // RDKit❌❌:   else if (flags & SmilesWrite::CXSmilesFields::CX_BOND_ATROPISOMER) {
+    // RDKit❌❌:     Atropisomers::wedgeBondsFromAtropisomers(mol, conf, wedgeBonds);
+    // RDKit❌❌:     const auto cfgblock = get_bond_config_block(
+    // RDKit❌❌:         mol, atomOrder, bondOrder, conf != nullptr, wedgeBonds, true);
+    // RDKit❌❌:     appendToCXExtension(cfgblock, res);
+    // RDKit❌❌:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (flags & SmilesWrite::CXSmilesFields::CX_COORDINATE_BONDS) {
+    // RDKit❗✔️:     const auto block = get_coord_or_hydrogen_bonds_block(
+    // RDKit❗✔️:         mol, Bond::BondType::DATIVE, "C", atomOrder, bondOrder);
+    // RDKit❗✔️:     appendToCXExtension(block, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (flags & SmilesWrite::CXSmilesFields::CX_HYDROGEN_BONDS) {
+    // RDKit❗✔️:     const auto block = get_coord_or_hydrogen_bonds_block(
+    // RDKit❗✔️:         mol, Bond::BondType::HYDROGEN, "H", atomOrder, bondOrder);
+    // RDKit❗✔️:     appendToCXExtension(block, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (flags & SmilesWrite::CXSmilesFields::CX_ZERO_BONDS) {
+    // RDKit❗✔️:     const auto block = get_zerobonds_block(mol, atomOrder, bondOrder);
+    // RDKit❗✔️:     appendToCXExtension(block, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (flags & SmilesWrite::CXSmilesFields::CX_LINKNODES) {
+    // RDKit❗✔️:     const auto linknodeblock = get_linknodes_block(mol, atomOrder);
+    // RDKit❗✔️:     appendToCXExtension(linknodeblock, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (flags & SmilesWrite::CXSmilesFields::CX_ENHANCEDSTEREO) {
+    // RDKit❗✔️:     const auto stereoblock =
+    // RDKit❗✔️:         get_enhanced_stereo_block(mol, atomOrder, wedgeBonds);
+    // RDKit❗✔️:     appendToCXExtension(stereoblock, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (flags & SmilesWrite::CXSmilesFields::CX_SGROUPS) {
+    // RDKit❗✔️:     const auto sgroupdatablock = get_sgroup_data_block(mol, atomOrder);
+    // RDKit❗✔️:     appendToCXExtension(sgroupdatablock, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (flags & SmilesWrite::CXSmilesFields::CX_POLYMER) {
+    // RDKit❗✔️:     const auto sgrouppolyblock =
+    // RDKit❗✔️:         get_sgroup_polymer_block(mol, atomOrder, bondOrder);
+    // RDKit❗✔️:     appendToCXExtension(sgrouppolyblock, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (flags & (SmilesWrite::CXSmilesFields::CX_SGROUPS |
+    // RDKit❗✔️:                SmilesWrite::CXSmilesFields::CX_POLYMER)) {
+    // RDKit❗✔️:     const auto sgrouphierarchyblock = get_sgroup_hierarchy_block(mol);
+    // RDKit❗✔️:     appendToCXExtension(sgrouphierarchyblock, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   mol.clearProp("_cxsmilesOutputIndex");
+    // RDKit❗✔️:   if (res.size() > 1) {
+    // RDKit❗✔️:     res += "|";
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     res = "";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    use cosmolkit_smiles::CxSmilesFields as F;
+    let mut need_labels = false;
+    let mut need_values = false;
+    for id in atom_order {
+        let atom = &query.atoms()[id.index()];
+        need_labels |= [
+            "atomLabel",
+            "_QueryAtomGenericLabel",
+            "dummyLabel",
+            "_fromAttchpt",
+        ]
+        .iter()
+        .any(|key| atom.prop(key).is_some());
+        need_values |= atom.prop("molFileValue").is_some();
     }
-    let labels = write_query_cx_atom_labels(query, atom_order)?;
-    if !labels.is_empty() {
-        append_query_cx_extension(format!("${labels}$"), &mut result);
-    }
-    let values = write_query_cx_atom_values(query, atom_order)?;
-    if !values.is_empty() {
-        append_query_cx_extension(format!("$_AV:{values}$"), &mut result);
-    }
-    append_query_cx_extension(write_query_cx_radicals(query, atom_order), &mut result);
-    append_query_cx_extension(
-        write_query_cx_atom_properties(query, atom_order)?,
-        &mut result,
-    );
-    append_query_cx_extension(
-        write_query_cx_bond_config(query, atom_order, bond_order, coordinates.is_some())?,
-        &mut result,
-    );
-    append_query_cx_extension(
-        write_query_cx_ring_bond_stereo(query, atom_order, bond_order)?,
-        &mut result,
-    );
-    append_query_cx_extension(
-        write_query_cx_typed_bonds(query, atom_order, bond_order, BondOrder::Dative, "C"),
-        &mut result,
-    );
-    append_query_cx_extension(
-        write_query_cx_typed_bonds(query, atom_order, bond_order, BondOrder::Hydrogen, "H"),
-        &mut result,
-    );
-    append_query_cx_extension(write_query_cx_zero_bonds(query, bond_order), &mut result);
-    append_query_cx_extension(write_query_cx_link_nodes(query, atom_order), &mut result);
-    append_query_cx_extension(
-        write_query_cx_enhanced_stereo(query, atom_order),
-        &mut result,
-    );
-    append_query_cx_extension(write_query_cx_data_sgroups(query, atom_order), &mut result);
-    append_query_cx_extension(
-        write_query_cx_polymer_sgroups(query, atom_order, bond_order)?,
-        &mut result,
-    );
-    append_query_cx_extension(write_query_cx_sgroup_hierarchy(query), &mut result);
-    if result.len() == 1 {
-        Ok(String::new())
+    let mut result = PropertyText::from("|");
+    let coordinates = if fields.contains(F::COORDS) {
+        write_query_cx_coordinates(query, atom_order)?
     } else {
-        result.push('|');
+        None
+    };
+    if let Some(coordinates) = &coordinates {
+        result.push_byte(b'(');
+        result.extend_bytes((coordinates).as_ref());
+        result.push_byte(b')');
+    }
+    if fields.contains(F::ATOM_LABELS) && need_labels {
+        let labels = write_query_cx_atom_labels(query, atom_order)?;
+        if !labels.is_empty() {
+            let mut framed = PropertyText::from("$");
+            framed.extend_bytes(labels.as_bytes());
+            framed.push_byte(b'$');
+            append_query_cx_extension(framed, &mut result);
+        }
+    }
+    if fields.contains(F::MOLFILE_VALUES) && need_values {
+        append_query_cx_extension(
+            {
+                let mut framed = PropertyText::from("$_AV:");
+                framed.extend_bytes(write_query_cx_atom_values(query, atom_order)?.as_bytes());
+                framed.push_byte(b'$');
+                framed
+            },
+            &mut result,
+        );
+    }
+    // SOURCE evaluates radical grouping/logging even with CX_RADICALS off.
+    let radicals = write_query_cx_radicals(query, atom_order);
+    if fields.contains(F::RADICALS) {
+        append_query_cx_extension(radicals, &mut result);
+    }
+    if fields.contains(F::ATOM_PROPS) {
+        append_query_cx_extension(
+            write_query_cx_atom_properties(query, atom_order)?,
+            &mut result,
+        );
+    }
+    // The existing query bond-config helpers remain under audit until the
+    // authorized unique CORE query wedge/atrop seam supplies shared state.
+    if fields.contains(F::BOND_CFG) {
+        append_query_cx_extension(
+            write_query_cx_bond_config(query, atom_order, bond_order, coordinates.is_some())?,
+            &mut result,
+        );
+        append_query_cx_extension(
+            write_query_cx_ring_bond_stereo(query, atom_order, bond_order)?,
+            &mut result,
+        );
+    }
+    if fields.contains(F::COORDINATE_BONDS) {
+        append_query_cx_extension(
+            write_query_cx_typed_bonds(query, atom_order, bond_order, BondOrder::Dative, "C"),
+            &mut result,
+        );
+    }
+    if fields.contains(F::HYDROGEN_BONDS) {
+        append_query_cx_extension(
+            write_query_cx_typed_bonds(query, atom_order, bond_order, BondOrder::Hydrogen, "H"),
+            &mut result,
+        );
+    }
+    if fields.contains(F::ZERO_BONDS) {
+        append_query_cx_extension(write_query_cx_zero_bonds(query, bond_order), &mut result);
+    }
+    if fields.contains(F::LINKNODES) {
+        append_query_cx_extension(write_query_cx_link_nodes(query, atom_order)?, &mut result);
+    }
+    if fields.contains(F::ENHANCED_STEREO) {
+        append_query_cx_extension(
+            write_query_cx_enhanced_stereo(query, atom_order),
+            &mut result,
+        );
+    }
+    if fields.contains(F::SGROUPS) {
+        append_query_cx_extension(write_query_cx_data_sgroups(query, atom_order)?, &mut result);
+    }
+    if fields.contains(F::POLYMER) {
+        append_query_cx_extension(
+            write_query_cx_polymer_sgroups(query, atom_order, bond_order)?,
+            &mut result,
+        );
+    }
+    if fields.contains(F::SGROUPS) || fields.contains(F::POLYMER) {
+        append_query_cx_extension(
+            write_query_cx_sgroup_hierarchy(
+                query,
+                fields.contains(F::SGROUPS),
+                fields.contains(F::POLYMER),
+            )?,
+            &mut result,
+        );
+    }
+    if result.len() == 1 {
+        Ok(PropertyText::new())
+    } else {
+        result.push_byte(b'|');
         Ok(result)
     }
 }
@@ -1601,43 +2538,57 @@ fn emit_query_graph(
     let query_atom = query
         .atom(atom.index())
         .ok_or(SmartsWriteError::FragmentAtomOutOfRange { atom: atom.index() })?;
+    let mut atom_params = *params;
+    if query.prop("_doIsoSmiles").is_some() {
+        atom_params.do_isomeric_smiles = true;
+    }
     result
         .smarts
-        .push_str(&query_atom_to_smarts(query_atom, params)?);
+        .extend_bytes(query_atom_to_smarts(query_atom, &atom_params)?.as_bytes());
     result.atom_ordering.push(atom);
     for (bond, first, _second, ring_number) in ring_edges
         .iter()
         .filter(|(_, first, second, _)| *first == atom || *second == atom)
     {
         if *first == atom {
-            result.smarts.push_str(&query_bond_to_smarts(
-                query
-                    .bond(bond.index())
-                    .ok_or(SmartsWriteError::FragmentBondOutOfRange { bond: bond.index() })?,
-                params,
-                Some(atom.index()),
-            )?);
+            result.smarts.extend_bytes(
+                (&query_bond_to_smarts(
+                    query
+                        .bond(bond.index())
+                        .ok_or(SmartsWriteError::FragmentBondOutOfRange { bond: bond.index() })?,
+                    params,
+                    Some(atom.index()),
+                )?)
+                    .as_ref(),
+            );
             result.bond_ordering.push(*bond);
         }
         if *ring_number < 10 {
-            result.smarts.push_str(&ring_number.to_string());
+            result
+                .smarts
+                .extend_bytes((&ring_number.to_string()).as_ref());
         } else {
-            result.smarts.push('%');
-            result.smarts.push_str(&ring_number.to_string());
+            result.smarts.push_byte(b'%');
+            result
+                .smarts
+                .extend_bytes((&ring_number.to_string()).as_ref());
         }
     }
     let children = &tree_children[atom.index()];
     for (index, (bond, other)) in children.iter().enumerate() {
         if index + 1 != children.len() {
-            result.smarts.push('(');
+            result.smarts.push_byte(b'(');
         }
-        result.smarts.push_str(&query_bond_to_smarts(
-            query
-                .bond(bond.index())
-                .ok_or(SmartsWriteError::FragmentBondOutOfRange { bond: bond.index() })?,
-            params,
-            Some(atom.index()),
-        )?);
+        result.smarts.extend_bytes(
+            (&query_bond_to_smarts(
+                query
+                    .bond(bond.index())
+                    .ok_or(SmartsWriteError::FragmentBondOutOfRange { bond: bond.index() })?,
+                params,
+                Some(atom.index()),
+            )?)
+                .as_ref(),
+        );
         result.bond_ordering.push(*bond);
         emit_query_graph(
             query,
@@ -1649,7 +2600,7 @@ fn emit_query_graph(
             result,
         )?;
         if index + 1 != children.len() {
-            result.smarts.push(')');
+            result.smarts.push_byte(b')');
         }
     }
     Ok(())
@@ -1659,7 +2610,14 @@ fn emit_query_graph(
 pub fn query_atom_to_smarts(
     atom: &QueryAtom,
     params: &SmartsWriteParams,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit✔️✔️:   if (!atom->hasQuery()) {
+    // RDKit✔️✔️:     res = getNonQueryAtomSmarts(atom);
+    // RDKit✔️✔️:     return res;
+    // RDKit✔️✔️:   }
+    if atom.predicate_is_carrier_derived() {
+        return non_query_atom_to_smarts(atom, params);
+    }
     let mut features = QueryBoolFeatures::default();
     let mut stereo_written = false;
     let mut needs_brackets;
@@ -1730,7 +2688,7 @@ pub fn query_atom_to_smarts(
                 }
             };
             if !propagated_negation_written {
-                value.insert(0, '!');
+                value.insert_byte(0, b'!');
             }
             value
         }
@@ -1739,8 +2697,8 @@ pub fn query_atom_to_smarts(
         && let Some(map) = atom.atom_map()
     {
         needs_brackets = true;
-        result.push(':');
-        result.push_str(&map.to_string());
+        result.push_byte(b':');
+        result.extend_bytes((&map.to_string()).as_ref());
     }
     if let Some(symbol) = atom.prop("smilesSymbol") {
         let symbol = cosmolkit_core::property_value_to_string(symbol)?;
@@ -1748,11 +2706,19 @@ pub fn query_atom_to_smarts(
         result = if result.is_empty() {
             symbol
         } else {
-            format!("{symbol};{result}")
+            {
+                let mut text = symbol;
+                text.push_byte(b';');
+                text.extend_bytes(result.as_bytes());
+                text
+            }
         };
     }
     if needs_brackets {
-        result = format!("[{result}]");
+        let mut framed = PropertyText::from("[");
+        framed.extend_bytes(result.as_bytes());
+        framed.push_byte(b']');
+        result = framed;
     }
     Ok(result)
 }
@@ -1762,7 +2728,18 @@ pub fn query_bond_to_smarts(
     bond: &QueryBond,
     params: &SmartsWriteParams,
     atom_to_left_idx: Option<usize>,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit✔️✔️:   if (!bond->hasQuery()) {
+    // RDKit✔️✔️:     res = getNonQueryBondSmarts(bond, atomToLeftIdx, params);
+    // RDKit✔️✔️:     return res;
+    // RDKit✔️✔️:   }
+    if bond.predicate_is_carrier_derived() {
+        return Ok(non_query_bond_to_smarts(
+            bond.bond(),
+            params,
+            atom_to_left_idx,
+        ));
+    }
     // RDKit✔️✔️: if ((descrip == "BondAnd") || (descrip == "BondOr")) {
     // RDKit✔️✔️:   // composite query
     // RDKit✔️✔️:   res = _recurseBondSmarts(bond, query, query->getNegation(), atomToLeftIdx,
@@ -1806,27 +2783,227 @@ pub fn query_bond_to_smarts(
                     );
                 }
             };
-            result.insert(0, '!');
+            result.insert_byte(0, b'!');
             Ok(result)
         }
     }
 }
 
+fn non_query_atom_to_smarts(
+    atom: &QueryAtom,
+    params: &SmartsWriteParams,
+) -> Result<PropertyText, SmartsWriteError> {
+    // RDKit✔️✔️: std::string getNonQueryAtomSmarts(const Atom *atom) {
+    // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
+    // RDKit✔️✔️:   PRECONDITION(!atom->hasQuery(), "atom should not have query");
+    // RDKit✔️✔️:   std::stringstream res;
+    // RDKit✔️✔️:   res << "[";
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   int isotope = atom->getIsotope();
+    // RDKit✔️✔️:   if (isotope) {
+    // RDKit✔️✔️:     res << isotope;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   std::string symbol;
+    // RDKit✔️✔️:   if (atom->getPropIfPresent(common_properties::smilesSymbol, symbol)) {
+    // RDKit✔️✔️:     res << symbol;
+    // RDKit✔️✔️:   } else if (SmilesWrite::inOrganicSubset(atom->getAtomicNum())) {
+    // RDKit✔️✔️:     res << "#" << atom->getAtomicNum();
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     res << atom->getSymbol();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   bool addedChirality = false;
+    // RDKit✔️✔️:   if (atom->hasOwningMol() &&
+    // RDKit✔️✔️:       atom->getOwningMol().hasProp(common_properties::_doIsoSmiles)) {
+    // RDKit✔️✔️:     if (atom->getChiralTag() != Atom::CHI_UNSPECIFIED &&
+    // RDKit✔️✔️:         !atom->hasProp(_qatomHasStereoSet) &&
+    // RDKit✔️✔️:         !atom->hasProp(common_properties::_brokenChirality)) {
+    // RDKit✔️✔️:       atom->setProp(_qatomHasStereoSet, 1);
+    // RDKit✔️✔️:       switch (atom->getChiralTag()) {
+    // RDKit✔️✔️:         case Atom::CHI_TETRAHEDRAL_CW:
+    // RDKit✔️✔️:           res << "@@";
+    // RDKit✔️✔️:           addedChirality = true;
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         case Atom::CHI_TETRAHEDRAL_CCW:
+    // RDKit✔️✔️:           res << "@";
+    // RDKit✔️✔️:           addedChirality = true;
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         default:
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (addedChirality && atom->getNumExplicitHs() == 1) {
+    // RDKit✔️✔️:     // FIX: this isn't really correct in many cases, but
+    // RDKit✔️✔️:     //   fixing it requires opening a fairly large construction site on the
+    // RDKit✔️✔️:     //   SMARTS handling side. We'll do this later.
+    // RDKit✔️✔️:     res << "H";
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   auto chg = atom->getFormalCharge();
+    // RDKit✔️✔️:   if (chg) {
+    // RDKit✔️✔️:     if (chg == -1) {
+    // RDKit✔️✔️:       res << "-";
+    // RDKit✔️✔️:     } else if (chg == 1) {
+    // RDKit✔️✔️:       res << "+";
+    // RDKit✔️✔️:     } else if (chg < 0) {
+    // RDKit✔️✔️:       res << atom->getFormalCharge();
+    // RDKit✔️✔️:     } else {
+    // RDKit✔️✔️:       res << "+" << atom->getFormalCharge();
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   int mapNum;
+    // RDKit✔️✔️:   if (atom->getPropIfPresent(common_properties::molAtomMapNumber, mapNum)) {
+    // RDKit✔️✔️:     res << ":";
+    // RDKit✔️✔️:     res << mapNum;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   res << "]";
+    // RDKit✔️✔️:   return res.str();
+    // RDKit✔️✔️: }
+    // One bounded attribute pass and one output buffer, as in the source.
+    // Carrier origin already proves hasQuery() == false; no query is invented.
+    let mut result = PropertyText::from("[");
+    if let Some(isotope) = atom.isotope().filter(|isotope| *isotope != 0) {
+        result.extend_bytes(isotope.to_string().as_bytes());
+    }
+    if let Some(symbol) = atom.prop("smilesSymbol") {
+        result.extend_bytes(cosmolkit_core::property_value_to_string(symbol)?.as_bytes());
+    } else if in_organic_subset(atom.atomic_number()).unwrap() {
+        result.push_byte(b'#');
+        result.extend_bytes(atom.atomic_number().to_string().as_bytes());
+    } else {
+        // A carrier-derived row originates from a concrete Element identity.
+        let element = atom.element().ok_or_else(|| {
+            SmartsWriteError::InvalidGraph(
+                "ordinary atom has no concrete element identity".to_owned(),
+            )
+        })?;
+        result.extend_bytes(element.symbol().as_bytes());
+    }
+    let stereo = params.do_isomeric_smiles
+        && atom.prop("_qatomHasStereoSet").is_none()
+        && atom.prop("_brokenChirality").is_none();
+    let added_chirality = if stereo {
+        match atom.chiral_tag() {
+            ChiralTag::TetrahedralCw => {
+                result.extend_bytes(b"@@");
+                true
+            }
+            ChiralTag::TetrahedralCcw => {
+                result.push_byte(b'@');
+                true
+            }
+            _ => false,
+        }
+    } else {
+        false
+    };
+    if added_chirality && atom.explicit_hydrogens() == 1 {
+        result.push_byte(b'H');
+    }
+    match atom.formal_charge() {
+        0 => (),
+        -1 => result.push_byte(b'-'),
+        1 => result.push_byte(b'+'),
+        charge => {
+            if charge > 0 {
+                result.push_byte(b'+');
+            }
+            result.extend_bytes(charge.to_string().as_bytes());
+        }
+    }
+    let map = if let Some(value) = atom.prop("molAtomMapNumber") {
+        Some(
+            cosmolkit_core::property_value_to_int(value).map_err(|source| {
+                SmartsWriteError::CxAtomPropertyInt {
+                    atom: atom.id(),
+                    property: "molAtomMapNumber",
+                    source,
+                }
+            })?,
+        )
+    } else {
+        atom.atom_map()
+            .map(|value| {
+                i32::try_from(value).map_err(|_| SmartsWriteError::CxAtomPropertyInt {
+                    atom: atom.id(),
+                    property: "molAtomMapNumber",
+                    source: cosmolkit_core::PropertyIntReadError::UnsignedOverflow { value },
+                })
+            })
+            .transpose()?
+    };
+    // The native ordinary-atom branch emits stored maps independently of
+    // includeAtomMaps; retain that behavior rather than filtering the carrier.
+    if let Some(map) = map {
+        result.push_byte(b':');
+        result.extend_bytes(map.to_string().as_bytes());
+    }
+    result.push_byte(b']');
+    Ok(result)
+}
+
+fn non_query_bond_to_smarts(
+    bond: &Bond,
+    params: &SmartsWriteParams,
+    atom_to_left_idx: Option<usize>,
+) -> PropertyText {
+    // RDKit✔️✔️: std::string getNonQueryBondSmarts(const Bond *qbond, int atomToLeftIdx,
+    // RDKit✔️✔️:                                   const SmilesWriteParams &params) {
+    // RDKit✔️✔️:   PRECONDITION(qbond, "bad bond");
+    // RDKit✔️✔️:   std::string res;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (qbond->getIsAromatic()) {
+    // RDKit✔️✔️:     res = ":";
+    // RDKit✔️✔️:     if (params.doIsomericSmiles) {
+    // RDKit✔️✔️:       if (qbond->getBondDir() == Bond::ENDDOWNRIGHT) {
+    // RDKit✔️✔️:         res = "\\";
+    // RDKit✔️✔️:       } else if (qbond->getBondDir() == Bond::ENDUPRIGHT) {
+    // RDKit✔️✔️:         res = "/";
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     bool reverseDative =
+    // RDKit✔️✔️:         (atomToLeftIdx >= 0 &&
+    // RDKit✔️✔️:          qbond->getBeginAtomIdx() != static_cast<unsigned int>(atomToLeftIdx));
+    // RDKit✔️✔️:     res = getBasicBondRepr(qbond->getBondType(), qbond->getBondDir(),
+    // RDKit✔️✔️:                            reverseDative, params);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // One constant-size dispatch; reuse the existing basic bond-token owner.
+    let order = if bond.is_aromatic() {
+        BondOrder::Aromatic
+    } else {
+        bond.order()
+    };
+    get_basic_bond_repr(
+        order,
+        bond.direction(),
+        atom_to_left_idx.is_some_and(|left| left != bond.begin().index()),
+        params,
+    )
+    .into()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct SmartsWriteResult {
-    smarts: String,
+    smarts: PropertyText,
     atom_ordering: Vec<AtomId>,
     bond_ordering: Vec<BondId>,
+    source_orders_written: bool,
 }
 
 fn combine_child_smarts(
-    child1: String,
+    child1: PropertyText,
     features1: QueryBoolFeatures,
-    child2: String,
+    child2: PropertyText,
     features2: QueryBoolFeatures,
     description: &str,
     features: &mut QueryBoolFeatures,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     // RDKit✔️✔️: std::string _combineChildSmarts(std::string cs1, unsigned int features1,
     // RDKit✔️✔️:                                 std::string cs2, unsigned int features2,
     // RDKit✔️✔️:                                 std::string descrip, unsigned int &features) {
@@ -1905,12 +3082,12 @@ fn combine_child_smarts(
         });
     };
 
-    let mut result = String::with_capacity(child1.len() + child2.len() + 1);
-    result.push_str(&child1);
+    let mut result = PropertyText::with_capacity(child1.len() + child2.len() + 1);
+    result.extend_bytes((&child1).as_ref());
     if !child1.is_empty() && !child2.is_empty() {
-        result.push_str(separator);
+        result.extend_bytes((separator).as_ref());
     }
-    result.push_str(&child2);
+    result.extend_bytes((&child2).as_ref());
     *features |= features1;
     *features |= features2;
     Ok(result)
@@ -1964,7 +3141,7 @@ fn get_atom_smarts_simple(
     check_for_symbol: bool,
     do_isomeric_smarts: bool,
     stereo_written: &mut bool,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     // BEGIN RDKIT CPP FUNCTION getAtomSmartsSimple
     // RDKit✔️✔️: std::string getAtomSmartsSimple(const QueryAtom *qatom,
     // RDKit✔️✔️:                                 const Atom::QUERYATOM_QUERY *query,
@@ -2291,16 +3468,17 @@ fn get_atom_smarts_simple(
             });
         }
     };
+    let mut result = PropertyText::from(result);
 
     if do_isomeric_smarts && !*stereo_written && atom.prop("_brokenChirality").is_none() {
         match atom.chiral_tag() {
             ChiralTag::TetrahedralCw => {
-                result.push_str("@@");
+                result.extend_bytes(("@@").as_ref());
                 *need_paren = true;
                 *stereo_written = true;
             }
             ChiralTag::TetrahedralCcw => {
-                result.push('@');
+                result.push_byte(b'@');
                 *need_paren = true;
                 *stereo_written = true;
             }
@@ -2315,9 +3493,9 @@ fn get_recursive_structure_query_smarts<F>(
     negated: bool,
     params: &SmartsWriteParams,
     write_molecule: F,
-) -> Result<String, SmartsWriteError>
+) -> Result<PropertyText, SmartsWriteError>
 where
-    F: FnOnce(&crate::QueryGraph, &SmartsWriteParams) -> Result<String, SmartsWriteError>,
+    F: FnOnce(&crate::QueryGraph, &SmartsWriteParams) -> Result<PropertyText, SmartsWriteError>,
 {
     // BEGIN RDKIT CPP FUNCTION getRecursiveStructureQuerySmarts
     // RDKit✔️✔️: std::string getRecursiveStructureQuerySmarts(
@@ -2342,13 +3520,13 @@ where
         .query_graph()
         .ok_or(SmartsWriteError::MissingRecursiveQueryMolecule)?;
     let inner = write_molecule(query_molecule, params)?;
-    let mut result = String::with_capacity(inner.len() + if negated { 4 } else { 3 });
+    let mut result = PropertyText::with_capacity(inner.len() + if negated { 4 } else { 3 });
     if negated {
-        result.push('!');
+        result.push_byte(b'!');
     }
-    result.push_str("$(");
-    result.push_str(&inner);
-    result.push(')');
+    result.extend_bytes(("$(").as_ref());
+    result.extend_bytes((&inner).as_ref());
+    result.push_byte(b')');
     Ok(result)
 }
 
@@ -2458,7 +3636,7 @@ fn get_bond_smarts_simple(
     query: &BondQueryPredicate,
     atom_to_left_idx: Option<usize>,
     params: &SmartsWriteParams,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     // BEGIN RDKIT CPP FUNCTION getBondSmartsSimple
     // RDKit✔️✔️: std::string getBondSmartsSimple(const Bond *bond,
     // RDKit✔️✔️:                                 const QueryBond::QUERYBOND_QUERY *bquery,
@@ -2522,34 +3700,34 @@ fn get_bond_smarts_simple(
     // one result of at most five bytes. Fixed `OrderIn` vectors contain at most
     // three elements, so their comparisons preserve the source's O(1) cost.
     match query {
-        BondQueryPredicate::Any => Ok("~".to_owned()),
-        BondQueryPredicate::IsInRing(_) => Ok("@".to_owned()),
+        BondQueryPredicate::Any => Ok("~".into()),
+        BondQueryPredicate::IsInRing(_) => Ok("@".into()),
         BondQueryPredicate::OrderIn(orders)
             if orders.as_slice() == [BondOrder::Single, BondOrder::Aromatic] =>
         {
             Ok(match bond.direction() {
-                BondDirection::EndDownRight => "\\".to_owned(),
-                BondDirection::EndUpRight => "/".to_owned(),
-                _ => String::new(),
+                BondDirection::EndDownRight => "\\".into(),
+                BondDirection::EndUpRight => "/".into(),
+                _ => PropertyText::new(),
             })
         }
         BondQueryPredicate::OrderIn(orders)
             if orders.as_slice() == [BondOrder::Single, BondOrder::Double] =>
         {
-            Ok("-,=".to_owned())
+            Ok("-,=".into())
         }
         BondQueryPredicate::OrderIn(orders)
             if orders.as_slice() == [BondOrder::Double, BondOrder::Aromatic] =>
         {
-            Ok("=,:".to_owned())
+            Ok("=,:".into())
         }
         BondQueryPredicate::OrderIn(orders)
             if orders.as_slice() == [BondOrder::Single, BondOrder::Double, BondOrder::Aromatic] =>
         {
-            Ok("-,=,:".to_owned())
+            Ok("-,=,:".into())
         }
-        BondQueryPredicate::Direction(BondDirection::EndDownRight) => Ok("\\".to_owned()),
-        BondQueryPredicate::Direction(BondDirection::EndUpRight) => Ok("/".to_owned()),
+        BondQueryPredicate::Direction(BondDirection::EndDownRight) => Ok("\\".into()),
+        BondQueryPredicate::Direction(BondDirection::EndUpRight) => Ok("/".into()),
         BondQueryPredicate::Direction(direction) => {
             Err(SmartsWriteError::UnsupportedBondDirection {
                 direction: *direction,
@@ -2558,12 +3736,7 @@ fn get_bond_smarts_simple(
         BondQueryPredicate::Order(order) => {
             let reverse_dative =
                 atom_to_left_idx.is_some_and(|atom_idx| bond.begin().index() != atom_idx);
-            Ok(get_basic_bond_repr(
-                *order,
-                bond.direction(),
-                reverse_dative,
-                params,
-            ))
+            Ok(get_basic_bond_repr(*order, bond.direction(), reverse_dative, params).into())
         }
         _ => Err(SmartsWriteError::UnsupportedBondQuery {
             predicate: query.clone(),
@@ -2590,9 +3763,9 @@ fn recurse_get_smarts<F>(
     params: &SmartsWriteParams,
     stereo_written: &mut bool,
     write_molecule: &mut F,
-) -> Result<String, SmartsWriteError>
+) -> Result<PropertyText, SmartsWriteError>
 where
-    F: FnMut(&crate::QueryGraph, &SmartsWriteParams) -> Result<String, SmartsWriteError>,
+    F: FnMut(&crate::QueryGraph, &SmartsWriteParams) -> Result<PropertyText, SmartsWriteError>,
 {
     // BEGIN RDKIT CPP FUNCTION _recurseGetSmarts
     // RDKit✔️✔️: std::string _recurseGetSmarts(const QueryAtom *qatom,
@@ -2722,7 +3895,7 @@ where
                         child_features: &mut QueryBoolFeatures,
                         stereo_written: &mut bool,
                         write_molecule: &mut F|
-     -> Result<String, SmartsWriteError> {
+     -> Result<PropertyText, SmartsWriteError> {
         let (child, child_negate) = atom_query_without_not(child, negate);
         match child {
             QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => {
@@ -2745,7 +3918,7 @@ where
                     stereo_written,
                 )?;
                 if child_negate {
-                    result.insert(0, '!');
+                    result.insert_byte(0, b'!');
                 }
                 Ok(result)
             }
@@ -2811,7 +3984,7 @@ fn recurse_bond_smarts(
     atom_to_left_idx: Option<usize>,
     features: &mut QueryBoolFeatures,
     params: &SmartsWriteParams,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     // BEGIN RDKIT CPP FUNCTION _recurseBondSmarts
     // RDKit✔️✔️: std::string _recurseBondSmarts(const Bond *bond,
     // RDKit✔️✔️:                                const QueryBond::QUERYBOND_QUERY *node,
@@ -2935,13 +4108,13 @@ fn recurse_bond_smarts(
 
     let render_child = |child: &QueryNode<BondQueryPredicate>,
                         child_features: &mut QueryBoolFeatures|
-     -> Result<String, SmartsWriteError> {
+     -> Result<PropertyText, SmartsWriteError> {
         let (child, child_negate) = bond_query_without_not(child, negate);
         match child {
             QueryNode::Predicate(predicate) => {
                 let mut result = get_bond_smarts_simple(bond, predicate, atom_to_left_idx, params)?;
                 if child_negate {
-                    result.insert(0, '!');
+                    result.insert_byte(0, b'!');
                 }
                 Ok(result)
             }
@@ -2965,7 +4138,7 @@ fn recurse_bond_smarts(
     let child2_smarts = if matches!(child2_base, QueryNode::And(_) | QueryNode::Or(_)) {
         // Preserve the pinned source assignment to csmarts1 in this branch.
         child1_smarts = render_child(&children[1], &mut child2_features)?;
-        String::new()
+        PropertyText::new()
     } else {
         render_child(&children[1], &mut child2_features)?
     };
@@ -2984,7 +4157,7 @@ fn recurse_bond_smarts(
 pub fn write_smarts(
     graph: &QueryGraph,
     params: &SmartsWriteParams,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     graph
         .validate()
         .map_err(|error| SmartsWriteError::InvalidGraph(error.to_string()))?;
@@ -2996,7 +4169,7 @@ pub fn atom_to_smarts(
     graph: &QueryGraph,
     atom_id: AtomId,
     params: &SmartsWriteParams,
-) -> Result<String, SmartsWriteError> {
+) -> Result<PropertyText, SmartsWriteError> {
     graph
         .validate()
         .map_err(|error| SmartsWriteError::InvalidGraph(error.to_string()))?;
@@ -3010,7 +4183,10 @@ pub fn atom_to_smarts(
 }
 
 /// Serialize one detached query bond.
-pub fn bond_to_smarts(graph: &QueryGraph, bond_id: BondId) -> Result<String, SmartsWriteError> {
+pub fn bond_to_smarts(
+    graph: &QueryGraph,
+    bond_id: BondId,
+) -> Result<PropertyText, SmartsWriteError> {
     graph
         .validate()
         .map_err(|error| SmartsWriteError::InvalidGraph(error.to_string()))?;
@@ -3023,7 +4199,7 @@ pub fn bond_to_smarts(graph: &QueryGraph, bond_id: BondId) -> Result<String, Sma
     query_bond_to_smarts(bond, &SmartsWriteParams::default(), None)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "smiles-integration"))]
 mod uint_complete_source_condition_cells {
     use super::*;
     fn query_graph(props: Vec<cosmolkit_model::PropertyValue>) -> cosmolkit_model::QueryGraph {
@@ -3054,7 +4230,10 @@ mod uint_complete_source_condition_cells {
         cosmolkit_model::QueryGraph::from_parts(
             atoms,
             bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             vec![],
             vec![],
             vec![],
@@ -3307,7 +4486,10 @@ mod smarts_source_state_tests {
                 QueryNode::predicate(predicate),
             )],
             vec![],
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             vec![],
             vec![],
             vec![],
@@ -3330,14 +4512,17 @@ mod smarts_source_state_tests {
             Err(expected.clone())
         );
         assert_eq!(
-            query_atom_to_smarts(invalid.atom(0).unwrap(), &Default::default()).unwrap(),
-            "*"
+            query_atom_to_smarts(invalid.atom(0).unwrap(), &Default::default())
+                .unwrap()
+                .as_bytes(),
+            b"*"
         );
         let before = invalid.clone();
         assert_eq!(
             query_graph_to_smarts(&invalid, &Default::default()),
             Err(expected.clone())
         );
+        #[cfg(feature = "smiles-integration")]
         assert_eq!(
             query_graph_to_cx_smarts(&invalid, &Default::default()),
             Err(expected.clone())

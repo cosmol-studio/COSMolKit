@@ -23,27 +23,25 @@ pub enum Mol2ReadError {
     Topology(#[from] cosmolkit_model::TopologyValidationError),
     #[error("invalid detached MOL2 coordinates: {0}")]
     Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
+    #[error(transparent)]
+    PropertyString(#[from] cosmolkit_core::PropertyStringError),
     #[error("invalid atom property: {0}")]
     AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
     #[error("invalid molecule property: {0}")]
     MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
 }
 
-fn tripos_atom_type(atom: &Atom) -> Result<std::borrow::Cow<'_, str>, Mol2ReadError> {
+fn tripos_atom_type(atom: &Atom) -> Result<std::borrow::Cow<'_, [u8]>, Mol2ReadError> {
     // RDKit❗✔️:       auto tATT = at->getProp<std::string>(common_properties::_TriposAtomType);
-    // Vector string projection shares the core owner; existing scalar debt retained.
-    // Borrow strings, allocate only the source vector string result, O(elements).
+    // Canonical source getter: String is borrowed, other tags reuse CORE's
+    // source conversion. O(bytes), no decoding or second property model.
     let value = atom
         .prop("_TriposAtomType")
-        .ok_or_else(|| Mol2ReadError::Parse("Missing _TriposAtomType".to_owned()))?;
+        .ok_or_else(|| Mol2ReadError::Parse("Missing _TriposAtomType".into()))?;
     match value {
-        PropertyValue::String(value) => Ok(std::borrow::Cow::Borrowed(value)),
-        PropertyValue::UInt(value) => Ok(std::borrow::Cow::Owned(value.to_string())),
-        PropertyValue::IntVector(value) => Ok(std::borrow::Cow::Owned(
-            cosmolkit_core::int_vector_to_string(value),
-        )),
-        _ => Err(Mol2ReadError::Parse(
-            "Invalid _TriposAtomType value kind".to_owned(),
+        PropertyValue::String(value) => Ok(std::borrow::Cow::Borrowed(value.as_bytes())),
+        _ => Ok(std::borrow::Cow::Owned(
+            cosmolkit_core::property_value_to_string(value)?.into_bytes(),
         )),
     }
 }
@@ -832,7 +830,7 @@ fn guess_formal_charges(builder: &mut DetachedBuilder) -> Result<(), Mol2ReadErr
         // RDKit✔️✔️:         continue;
         // RDKit✔️✔️:       }
         if builder.atoms[index].is_aromatic()
-            && !tripos_type.contains("ar")
+            && !tripos_type.windows(2).any(|bytes| bytes == b"ar")
             && ring_info
                 .as_ref()
                 .is_some_and(|rings| rings.is_atom_in_ring_of_size(atom_id, 5))
@@ -842,7 +840,7 @@ fn guess_formal_charges(builder: &mut DetachedBuilder) -> Result<(), Mol2ReadErr
         // RDKit✔️✔️:       if (noAromBonds == 3 && tATT == "N.ar") {
         // RDKit✔️✔️:         continue;
         // RDKit✔️✔️:       }
-        if aromatic_bonds == 3 && tripos_type == "N.ar" {
+        if aromatic_bonds == 3 && tripos_type == b"N.ar".as_slice() {
             continue;
         }
         // RDKit✔️✔️:       auto expVal = static_cast<int>(std::round(accum + 0.1));
@@ -1206,12 +1204,12 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
         }
         let atom = AtomId::new(index);
         let tripos_type = tripos_atom_type(&builder.atoms()[index])?.to_owned();
-        if tripos_type == "N.4" {
+        if tripos_type == b"N.4".as_slice() {
             builder
                 .atom_mut(atom)
                 .ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_owned()))?
                 .set_formal_charge(1);
-        } else if tripos_type == "O.co2" {
+        } else if tripos_type == b"O.co2".as_slice() {
             if builder.degree(atom) != 1 {
                 return Ok(false);
             }
@@ -1225,7 +1223,7 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
                 bond.begin()
             };
             let neighbor_type = tripos_atom_type(&builder.atoms()[neighbor.index()])?.to_owned();
-            if neighbor_type == "P.3" {
+            if neighbor_type == b"P.3".as_slice() {
                 let bond = builder
                     .bond_mut(bond_id)
                     .ok_or_else(|| Mol2ReadError::Parse("index mismatch".to_owned()))?;
@@ -1243,7 +1241,8 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
                     };
                     if builder.atoms()[oxygen.index()].atomic_number() == 8
                         && !fixed[oxygen.index()]
-                        && tripos_atom_type(&builder.atoms()[oxygen.index()])? == "O.co2"
+                        && tripos_atom_type(&builder.atoms()[oxygen.index()])?
+                            == b"O.co2".as_slice()
                     {
                         let oxygen_bond = builder.bond_mut(oxygen_bond_id).unwrap();
                         oxygen_bond.set_order(BondOrder::Single);
@@ -1256,7 +1255,7 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
                 }
                 builder.atom_mut(neighbor).unwrap().set_aromatic(false);
                 fixed[neighbor.index()] = true;
-            } else if neighbor_type == "C.2" || neighbor_type == "S.o2" {
+            } else if neighbor_type == b"C.2".as_slice() || neighbor_type == b"S.o2".as_slice() {
                 if !fixed[neighbor.index()] {
                     let bond = builder.bond_mut(bond_id).unwrap();
                     bond.set_order(BondOrder::Single);
@@ -1277,7 +1276,7 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
             } else {
                 return Ok(false);
             }
-        } else if tripos_type == "C.cat" {
+        } else if tripos_type == b"C.cat".as_slice() {
             fixed[index] = true;
             let neighbor_pairs = builder
                 .neighbor_bonds(atom)
@@ -1367,7 +1366,7 @@ fn cleanup_substructures(builder: &mut DetachedBuilder) -> Result<bool, Mol2Read
                             };
                             if builder.atoms()[next_neighbor.index()].atomic_number() > 1 {
                                 if tripos_atom_type(&builder.atoms()[next_neighbor.index()])?
-                                    == "C.cat"
+                                    == b"C.cat".as_slice()
                                 {
                                     heavy_atom_degree = heavy_atom_degree.wrapping_add(2);
                                 } else {
@@ -1509,18 +1508,21 @@ mod tests {
         assert_eq!(record.topology.atoms.len(), 3);
         assert_eq!(record.topology.bonds.len(), 2);
         assert_eq!(record.topology.bonds[0].order(), BondOrder::Double);
-        assert_eq!(record.properties.name(), Some("example"));
+        assert_eq!(
+            record.properties.name().map(super::fixture_text),
+            Some("example")
+        );
         assert_eq!(
             record.properties.prop("_TriposChargeType"),
-            Some("NO_CHARGES")
+            Some(&PropertyValue::String("NO_CHARGES".into()))
         );
         assert_eq!(
             record.topology.atoms[0].prop("_TriposAtomName"),
-            Some(&PropertyValue::String("C1".to_owned()))
+            Some(&PropertyValue::String("C1".into()))
         );
         assert_eq!(
             record.topology.atoms[0].prop("_TriposPartialCharge"),
-            Some(&PropertyValue::String("0.25".to_owned()))
+            Some(&PropertyValue::String("0.25".into()))
         );
         assert_eq!(
             record.coordinates.conformers_3d[0].coordinates()[1],
@@ -1739,7 +1741,7 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = a.clone();
-        assert_eq!(tripos_atom_type(&a).unwrap(), "0");
+        assert_eq!(tripos_atom_type(&a).unwrap().as_ref(), "0".as_bytes());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_1
@@ -1752,7 +1754,7 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = a.clone();
-        assert_eq!(tripos_atom_type(&a).unwrap(), "1");
+        assert_eq!(tripos_atom_type(&a).unwrap().as_ref(), "1".as_bytes());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_2147483646
@@ -1765,7 +1767,10 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = a.clone();
-        assert_eq!(tripos_atom_type(&a).unwrap(), "2147483646");
+        assert_eq!(
+            tripos_atom_type(&a).unwrap().as_ref(),
+            "2147483646".as_bytes()
+        );
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_2147483647
@@ -1778,7 +1783,10 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = a.clone();
-        assert_eq!(tripos_atom_type(&a).unwrap(), "2147483647");
+        assert_eq!(
+            tripos_atom_type(&a).unwrap().as_ref(),
+            "2147483647".as_bytes()
+        );
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_2147483648
@@ -1791,7 +1799,10 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = a.clone();
-        assert_eq!(tripos_atom_type(&a).unwrap(), "2147483648");
+        assert_eq!(
+            tripos_atom_type(&a).unwrap().as_ref(),
+            "2147483648".as_bytes()
+        );
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/MOL2text_4294967295
@@ -1804,7 +1815,21 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = a.clone();
-        assert_eq!(tripos_atom_type(&a).unwrap(), "4294967295");
+        assert_eq!(
+            tripos_atom_type(&a).unwrap().as_ref(),
+            "4294967295".as_bytes()
+        );
         assert_eq!(a, before);
     }
+}
+
+#[cfg(test)]
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+#[cfg(test)]
+fn fixture_writer_text(value: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(value.into_bytes())
+        .expect("original writer fixture must retain exact UTF-8 bytes")
 }

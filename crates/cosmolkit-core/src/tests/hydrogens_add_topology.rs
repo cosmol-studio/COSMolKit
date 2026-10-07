@@ -250,7 +250,7 @@ fn explicit_and_implicit_metadata_props_and_no_implicit_are_exact() {
     assert_eq!(parent.tracked_isotopic_hydrogens(), &[2, 3]);
     assert_eq!(
         parent.prop("ordinary"),
-        Some(&PropertyValue::String("kept".to_owned()))
+        Some(&PropertyValue::String("kept".to_owned().into()))
     );
     assert_eq!(parent.prop("computed"), None);
 }
@@ -316,11 +316,11 @@ fn old_properties_sgroup_and_stereo_group_rows_are_preserved() {
     assert_eq!(result.topology.stereo_groups, expected_stereo);
     assert_eq!(
         result.topology.atoms[0].prop("atom-key"),
-        Some(&PropertyValue::String("atom-value".to_owned()))
+        Some(&PropertyValue::String("atom-value".to_owned().into()))
     );
     assert_eq!(
         result.topology.bonds[0].prop("bond-key"),
-        Some(&PropertyValue::String("bond-value".to_owned()))
+        Some(&PropertyValue::String("bond-value".to_owned().into()))
     );
 }
 

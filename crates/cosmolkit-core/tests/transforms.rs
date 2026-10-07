@@ -192,8 +192,11 @@ fn canonicalization_centers_rotates_preserves_distances_and_metadata() {
     assert_eq!(output.id(), 7);
     assert!(output.is_3d());
     assert_eq!(
-        output.props().get("source").map(String::as_str),
-        Some("kept")
+        output
+            .props()
+            .get(b"source".as_slice())
+            .map(|v| v.as_bytes()),
+        Some(b"kept".as_slice())
     );
     point_close(
         centroid(&topology, &output, &Default::default()).unwrap(),

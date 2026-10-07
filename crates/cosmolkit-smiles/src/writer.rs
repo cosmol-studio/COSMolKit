@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use cosmolkit_core::{KekulizeParams, ValenceAssignment, ValenceModel, fast_find_rings_from_parts};
 use cosmolkit_model::{
-    Atom, AtomId, Bond, BondId, PropertyValue, StereoGroup, TopologyBlock,
+    Atom, AtomId, Bond, BondId, PropertyText, PropertyValue, StereoGroup, TopologyBlock,
     set_stereo_group_write_id, stereo_group_write_id,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag};
@@ -23,13 +23,20 @@ const MAX_NATOMS: i64 = 5000;
 const MAX_BONDTYPE: i64 = 32;
 const MAX_CYCLES: usize = 1024;
 
-fn source_string_property<'a>(
-    value: &'a PropertyValue,
-    name: &str,
-) -> Result<&'a str, SmilesParseError> {
-    value.as_string().map_err(|_| {
-        SmilesParseError::WriterStereo(format!("bad_any_cast reading {name} as std::string"))
-    })
+fn source_string_property(
+    value: &PropertyValue,
+    _name: &str,
+) -> Result<PropertyText, SmilesParseError> {
+    // RDKit❗✔️: bool getValIfPresent(const std::string_view what, std::string &res) const {
+    // RDKit❗✔️:     for (const auto &i : _data) {
+    // RDKit❗✔️:       if (i.key == what) {
+    // RDKit❗✔️:         rdvalue_tostring(i.val, res);
+    // RDKit❗✔️:         return true;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    cosmolkit_core::property_value_to_string(value).map_err(SmilesParseError::WriterProperty)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,14 +71,14 @@ struct ChiralAdjustment {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SmilesWriteOutput {
-    pub text: String,
+    pub text: PropertyText,
     pub atom_order: Vec<AtomId>,
     pub bond_order: Vec<BondId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FragmentWriteOutput {
-    text: String,
+    text: PropertyText,
     atom_order: Vec<AtomId>,
     bond_order: Vec<BondId>,
 }
@@ -136,7 +143,7 @@ impl Default for RandomSmilesWriteParams {
 /// ranking and traversal.
 pub fn write_smiles<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     write_smiles_with_params(record, &SmilesWriteParams::default())
 }
@@ -145,7 +152,7 @@ pub fn write_smiles<'record>(
 pub fn write_smiles_with_params<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     params: &SmilesWriteParams,
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     write_smiles_output(record, params, false).map(|output| output.text)
 }
@@ -156,7 +163,7 @@ pub fn write_smiles_with_random<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     params: &SmilesWriteParams,
     do_random: bool,
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION MolToSmiles params overload
     // RDKit❗❌: std::string MolToSmiles(const ROMol &mol, const SmilesWriteParams &params) {
@@ -188,7 +195,7 @@ pub fn write_random_smiles_vector<'record>(
     num_smiles: u32,
     random_seed: u32,
     params: &RandomSmilesWriteParams,
-) -> Result<Vec<String>, SmilesParseError> {
+) -> Result<Vec<PropertyText>, SmilesParseError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION MolToRandomSmilesVect
     // RDKit❗❌: std::vector<std::string> MolToRandomSmilesVect(
@@ -545,7 +552,7 @@ pub fn write_fragment_smiles_output<'record>(
     }
     let ring_bonds = find_ring_bonds(&topology);
     let mut rooted_at_atom = params.rooted_at_atom.map(AtomId::index);
-    let mut text = String::new();
+    let mut text = PropertyText::new();
     let mut atom_order = Vec::new();
     let mut bond_order = Vec::new();
 
@@ -676,15 +683,18 @@ pub fn write_fragment_smiles_output<'record>(
             &stack,
             &traversal_ring_closure_bonds,
         )?;
-        text.push_str(&write_mol_stack(
-            &topology,
-            emitted_valence,
-            &stack,
-            &chiral_adjustments,
-            params,
-            atom_symbols,
-            bond_symbols,
-        )?);
+        text.extend_bytes(
+            (&write_mol_stack(
+                &topology,
+                emitted_valence,
+                &stack,
+                &chiral_adjustments,
+                params,
+                atom_symbols,
+                bond_symbols,
+            )?)
+                .as_ref(),
+        );
         atom_order.extend(stack.iter().filter_map(|element| match element {
             MolStackElem::Atom(atom) => Some(AtomId::new(*atom)),
             _ => None,
@@ -699,7 +709,7 @@ pub fn write_fragment_smiles_output<'record>(
             .enumerate()
             .any(|(atom_index, selected)| *selected && colors[atom_index] == AtomColor::White)
         {
-            text.push('.');
+            text.push_byte(b'.');
         }
     }
 
@@ -720,7 +730,7 @@ pub fn write_fragment_cx_smiles<'record>(
     bond_symbols: Option<&[String]>,
     source_rings: Option<&cosmolkit_core::RingInfo>,
     existing_valence: Option<&ValenceAssignment>,
-) -> Result<String, FragmentWriteInputError> {
+) -> Result<PropertyText, FragmentWriteInputError> {
     let record = record.into();
     // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolFragmentToCXSmiles
     // RDKit❗✔️:   auto res = MolFragmentToSmiles(mol, params, atomsToUse,
@@ -761,7 +771,12 @@ pub fn write_fragment_cx_smiles<'record>(
     if extension.is_empty() {
         Ok(output.text)
     } else {
-        Ok(format!("{} {extension}", output.text))
+        {
+            let mut text = output.text;
+            text.push_byte(b' ');
+            text.extend_bytes(extension.as_bytes());
+            Ok(text)
+        }
     }
 }
 
@@ -798,7 +813,7 @@ fn write_smiles_output_with_random_stream<'record>(
         .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     if record.topology.atoms.is_empty() {
         return Ok(SmilesWriteOutput {
-            text: String::new(),
+            text: PropertyText::new(),
             atom_order: Vec::new(),
             bond_order: Vec::new(),
         });
@@ -860,7 +875,8 @@ fn write_smiles_output_with_random_stream<'record>(
     let stereochem_done_marker_is_computed = record
         .properties
         .prop("_StereochemDone")
-        .map(|_| record.properties.is_prop_computed("_StereochemDone"));
+        .map(|_| record.properties.is_prop_computed("_StereochemDone"))
+        .transpose()?;
     prepare_writer_stereochemistry(
         &mut topology,
         stereochem_done_marker_is_computed,
@@ -905,7 +921,8 @@ fn write_smiles_output_with_random_stream<'record>(
                 bond.set_direction(BondDirection::None);
             }
             if bond.stereo() == BondStereo::Any {
-                bond.set_stereo(BondStereo::None);
+                bond.set_stereo(BondStereo::None)
+                    .map_err(SmilesParseError::WriterStereoBond)?;
             }
         }
         topology.adjacency =
@@ -1357,11 +1374,13 @@ fn write_smiles_output_with_random_stream<'record>(
                 .then_with(|| left.bond_order.cmp(&right.bond_order))
         });
     }
-    let text = fragments
-        .iter()
-        .map(|fragment| fragment.text.as_str())
-        .collect::<Vec<_>>()
-        .join(".");
+    let mut text = PropertyText::new();
+    for (index, fragment) in fragments.iter().enumerate() {
+        if index != 0 {
+            text.push_byte(b'.');
+        }
+        text.extend_bytes(fragment.text.as_bytes());
+    }
     let atom_order = fragments
         .iter()
         .flat_map(|fragment| fragment.atom_order.iter().copied())
@@ -1957,7 +1976,7 @@ fn extract_writer_subset_fragment(
         let mut atom = topology.atoms[source_atom.index()]
             .clone()
             .with_id(AtomId::new(0));
-        atom.clear_computed_props();
+        atom.clear_computed_props()?;
         atom.remap_template_attachment_order(&atom_old_to_new)
             .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
         let stereo_groups = topology
@@ -2193,16 +2212,14 @@ fn extract_writer_preserving_fragment(
     // confirmed local cost increase over RDKit's one-copy in-place branch.
     let mut edit = topology
         .begin_batch_edit()
-        .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+        .map_err(SmilesParseError::from)?;
     for (index, selected) in inside.iter().copied().enumerate() {
         if !selected {
             edit.remove_atom(AtomId::new(index))
-                .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+                .map_err(SmilesParseError::from)?;
         }
     }
-    let (mut fragment, mapping) = edit
-        .finish()
-        .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+    let (mut fragment, mapping) = edit.finish().map_err(SmilesParseError::from)?;
     // BEGIN RDKIT CPP FUNCTION RWMol::commitBatchEdit computed-property clearing
     // RDKit❗❌:   // fix properties
     // RDKit❗❌:   clearComputedProps(true);
@@ -2220,10 +2237,10 @@ fn extract_writer_preserving_fragment(
     // cache; those source-owned fields remain handled by their caller. Its
     // retained atom and bond rows carry the source property-clearing effect.
     for atom in &mut fragment.atoms {
-        atom.clear_computed_props();
+        atom.clear_computed_props()?;
     }
     for bond in &mut fragment.bonds {
-        bond.clear_computed_props();
+        bond.clear_computed_props()?;
     }
     Ok(WriterStereoFragment {
         topology: fragment,
@@ -2264,12 +2281,12 @@ fn merge_writer_stereo_fragment(
         target.set_chiral_tag(prepared.chiral_tag());
         target.set_explicit_hydrogens(prepared.explicit_hydrogens());
         target.set_no_implicit(prepared.no_implicit());
-        target.clear_computed_props();
+        target.clear_computed_props()?;
         for (key, value) in prepared.props() {
-            if !prepared.is_prop_computed(key) {
+            if !prepared.is_prop_computed(key)? {
                 continue;
             }
-            let value = if key == "_ringStereoAtoms" {
+            let value = if key.as_bytes() == b"_ringStereoAtoms" {
                 parse_ring_stereo_atoms(value, assigned.atoms.len())?
                     .into_iter()
                     .map(|(same_orientation, local_atom)| {
@@ -2286,9 +2303,7 @@ fn merge_writer_stereo_fragment(
             } else {
                 value.clone()
             };
-            target
-                .set_computed_prop(key.clone(), value)
-                .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+            target.set_computed_prop(key.clone(), value)?;
         }
     }
     for (local_index, source_id) in source_bonds.iter().copied().enumerate() {
@@ -2302,15 +2317,11 @@ fn merge_writer_stereo_fragment(
             ]
         });
         target.set_stereo_atoms(stereo_atoms);
-        target
-            .set_stereo(prepared.stereo())
-            .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
-        target.clear_computed_props();
+        target.set_stereo(prepared.stereo())?;
+        target.clear_computed_props()?;
         for (key, value) in prepared.props() {
-            if prepared.is_prop_computed(key) {
-                target
-                    .set_computed_prop(key.clone(), value.clone())
-                    .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+            if prepared.is_prop_computed(key)? {
+                target.set_computed_prop(key.clone(), value.clone())?;
             }
         }
     }
@@ -2823,6 +2834,204 @@ fn mark_fragment_broken_chirality(
     Ok(())
 }
 
+/// Known causes from source SMARTS traversal preparation.
+#[derive(Debug, Clone)]
+pub enum SmartsTraversalError {
+    Valence(cosmolkit_core::ValenceError),
+    Stereo(std::sync::Arc<cosmolkit_core::LegacyStereoError>),
+    Traversal(SmilesParseError),
+}
+impl std::fmt::Display for SmartsTraversalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Valence(error) => write!(f, "SMARTS traversal valence preparation: {error}"),
+            Self::Stereo(error) => write!(f, "SMARTS traversal stereo preparation: {error}"),
+            Self::Traversal(error) => std::fmt::Display::fmt(error, f),
+        }
+    }
+}
+impl std::error::Error for SmartsTraversalError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(match self {
+            Self::Valence(error) => error,
+            Self::Stereo(error) => error.as_ref(),
+            Self::Traversal(error) => error,
+        })
+    }
+}
+impl PartialEq for SmartsTraversalError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Valence(a), Self::Valence(b)) => a == b,
+            (Self::Stereo(a), Self::Stereo(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Self::Traversal(a), Self::Traversal(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+impl Eq for SmartsTraversalError {}
+impl From<SmilesParseError> for SmartsTraversalError {
+    fn from(error: SmilesParseError) -> Self {
+        Self::Traversal(error)
+    }
+}
+
+/// Reuse the Canon traversal and stereo owners for concrete SMARTS output.
+/// The input is detached; no live molecule or runtime cache is accessible.
+#[doc(hidden)]
+pub fn prepare_smarts_serialization_topology(
+    mut topology: TopologyBlock,
+    properties: &cosmolkit_model::MoleculeProperties,
+    rooted_at_atom: Option<usize>,
+    do_isomeric: bool,
+) -> Result<TopologyBlock, SmartsTraversalError> {
+    // RDKit❗❌:   ROMol mol(inmol);
+    // RDKit❗❌:   mol.getRingInfo()->reset();
+    // RDKit❗❌:   mol.getRingInfo()->initialize(FIND_RING_TYPE_SYMM_SSSR);
+    // RDKit❗❌:   for (auto &atom : mol.atoms()) {
+    // RDKit❗❌:     atom->updatePropertyCache(false);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   bool doRandom = false;
+    // RDKit❗❌:   bool doChiralInversions = true;
+    // RDKit❗❌:   Canon::canonicalizeFragment(
+    // RDKit❗❌:       mol, atomIdx, colors, ranks, molStack, &atomsInPlay, bondsInPlay, nullptr,
+    // RDKit❗❌:       params.doIsomericSmiles, doRandom, doChiralInversions);
+    // This adapter selects the source SMARTS profile of the existing traversal,
+    // permutation, relative-stereo and double-bond direction owners. SEARCH
+    // retains its serializer; no SMARTS or stereo algorithm is duplicated here.
+    // Cost review: traversal is linear plus existing neighbor sorts. SEARCH
+    // currently traverses the prepared carrier again to emit tokens, an extra
+    // O(V+E) pass compared with SOURCE's single shared stack, hence ❌ complexity.
+    let count = topology.atoms.len();
+    if count == 0 {
+        return Ok(topology);
+    }
+    let valence = cosmolkit_core::assign_valence_with_options_for_topology(
+        &topology,
+        ValenceModel::RdkitLike,
+        false,
+    )
+    .map_err(SmartsTraversalError::Valence)?;
+    let rings = cosmolkit_core::RingInfo::new(
+        cosmolkit_core::RingFindType::SymmSssr,
+        count,
+        topology.bonds.len(),
+    );
+    // RDKit❗✔️:   if (!mol.hasProp(common_properties::_StereochemDone)) {
+    // RDKit❗✔️:     MolOps::assignStereochemistry(mol, false);
+    // RDKit❗✔️:   }
+    if properties.prop("_StereochemDone").is_none() {
+        topology = cosmolkit_core::assign_legacy_stereochemistry_with_flags(
+            topology, &valence, &rings, false, false,
+        )
+        .map_err(|error| SmartsTraversalError::Stereo(std::sync::Arc::new(error)))?;
+    }
+    // RDKit✔️✔️:   for (const auto &atom : mol.atoms()) {
+    // RDKit✔️✔️:     ranks.push_back(atom->getIdx());
+    // RDKit✔️✔️:   }
+    let ranks = (0..count).map(|index| index as i64).collect::<Vec<_>>();
+    let ring_bonds = vec![false; topology.bonds.len()];
+    let mut colors = vec![AtomColor::White; count];
+    let mut root = rooted_at_atom;
+    while colors.contains(&AtomColor::White) {
+        // RDKit✔️✔️:       // Try to find a non-chiral atom we have not processed yet.
+        // RDKit✔️✔️:       // If we can't find non-chiral atom, use the chiral atom with
+        // RDKit✔️✔️:       // the lowest rank (we are guaranteed to find an unprocessed atom).
+        let start = root.take().unwrap_or_else(|| {
+            (0..count)
+                .find(|index| {
+                    colors[*index] == AtomColor::White
+                        && !matches!(
+                            topology.atoms[*index].chiral_tag(),
+                            ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw,
+                        )
+                })
+                .unwrap_or_else(|| {
+                    (0..count)
+                        .find(|index| colors[*index] == AtomColor::White)
+                        .expect("white atom exists")
+                })
+        });
+        if start >= count {
+            return Err(SmilesParseError::Model("bad atom index".into()).into());
+        }
+        let mut cycle_colors = colors.clone();
+        let mut ring_closures = vec![Vec::new(); count];
+        dfs_find_cycles(
+            &topology,
+            start,
+            None,
+            &mut cycle_colors,
+            &ranks,
+            &ring_bonds,
+            None,
+            None,
+            &mut ring_closures,
+            None,
+        );
+        let mut stack = Vec::with_capacity(count + topology.bonds.len());
+        let mut ring_ids = vec![None; topology.bonds.len()];
+        let mut closure_bonds = vec![false; topology.bonds.len()];
+        let mut available_ids = vec![true; MAX_CYCLES];
+        let mut traversal = vec![Vec::new(); count];
+        dfs_build_stack(
+            &topology,
+            start,
+            None,
+            &mut colors,
+            &ranks,
+            &ring_bonds,
+            &ring_closures,
+            &mut ring_ids,
+            &mut available_ids,
+            &mut stack,
+            &mut traversal,
+            &mut closure_bonds,
+            None,
+            None,
+            None,
+        )?;
+        let adjustments = compute_chiral_adjustments(
+            &topology,
+            &valence,
+            Some(&rings),
+            do_isomeric,
+            start,
+            &ring_closures,
+            &traversal,
+            &stack,
+            &BTreeMap::new(),
+            None,
+        )?;
+        direction::canonicalize_double_bond_directions_for_writer(
+            &mut topology,
+            &stack,
+            &closure_bonds,
+        )?;
+        // RDKit❗✔️:             msI.obj.atom->invertChirality();
+        // RDKit❗✔️:             msI.obj.atom->setProp(
+        // RDKit❗✔️:                 common_properties::_chiralPermutation,
+        // RDKit❗✔️:                 atomPermutationIndices[msI.obj.atom->getIdx()]);
+        if do_isomeric {
+            for element in &stack {
+                if let MolStackElem::Atom(index) = element {
+                    let adjustment = adjustments[*index];
+                    let atom = &mut topology.atoms[*index];
+                    let mut tag = adjustment.chiral_tag_override.unwrap_or(atom.chiral_tag());
+                    if adjustment.invert_tetrahedral {
+                        tag = stereo::invert_tetrahedral_tag(tag);
+                    }
+                    atom.set_chiral_tag(tag);
+                    if let Some(permutation) = adjustment.nontetrahedral_permutation {
+                        atom.set_chiral_permutation(Some(permutation));
+                    }
+                }
+            }
+        }
+    }
+    Ok(topology)
+}
+
 fn compute_chiral_adjustments(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
@@ -3222,7 +3431,7 @@ fn write_mol_stack(
     params: &SmilesWriteParams,
     atom_symbols: Option<&[String]>,
     bond_symbols: Option<&[String]>,
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION FragmentSmilesConstruct MolStack emission section
     // RDKit✔️❌:   for (auto &mSE : molStack) {
     // RDKit✔️❌:     switch (mSE.type) {
@@ -3284,7 +3493,7 @@ fn write_mol_stack(
     // END RDKIT CPP FUNCTION FragmentSmilesConstruct MolStack emission section
     // `write_smiles_output` collects atom and bond output-order rows in two
     // separate scans after this emission pass; RDKit records both in this loop.
-    let mut output = String::new();
+    let mut output = PropertyText::new();
     let mut display_digits = BTreeMap::<usize, usize>::new();
     let mut closures_to_erase = Vec::new();
     for element in stack {
@@ -3294,27 +3503,27 @@ fn write_mol_stack(
                     display_digits.remove(&ring_id);
                 }
                 if let Some(symbols) = atom_symbols {
-                    output.push_str(&symbols[atom]);
+                    output.extend_bytes((&symbols[atom]).as_ref());
                 } else {
-                    output.push_str(&atom_text(
-                        topology,
-                        valence,
-                        atom,
-                        chiral_adjustments[atom],
-                        params,
-                    )?);
+                    output.extend_bytes(
+                        (&atom_text(topology, valence, atom, chiral_adjustments[atom], params)?)
+                            .as_ref(),
+                    );
                 }
             }
             MolStackElem::Bond { bond, atom_to_left } => {
                 if let Some(symbols) = bond_symbols {
-                    output.push_str(&symbols[bond.index()]);
+                    output.extend_bytes((&symbols[bond.index()]).as_ref());
                 } else {
-                    output.push_str(&bond_text(
-                        topology,
-                        &topology.bonds[bond.index()],
-                        atom_to_left,
-                        params,
-                    )?);
+                    output.extend_bytes(
+                        (&bond_text(
+                            topology,
+                            &topology.bonds[bond.index()],
+                            atom_to_left,
+                            params,
+                        )?)
+                            .as_ref(),
+                    );
                 }
             }
             MolStackElem::Ring(ring_id) => {
@@ -3330,8 +3539,8 @@ fn write_mol_stack(
                 };
                 write_ring_label(&mut output, display_digit);
             }
-            MolStackElem::BranchOpen => output.push('('),
-            MolStackElem::BranchClose => output.push(')'),
+            MolStackElem::BranchOpen => output.push_byte(b'('),
+            MolStackElem::BranchClose => output.push_byte(b')'),
         }
     }
     Ok(output)
@@ -3343,7 +3552,7 @@ fn atom_text(
     atom_index: usize,
     chiral_adjustment: ChiralAdjustment,
     params: &SmilesWriteParams,
-) -> Result<String, SmilesParseError> {
+) -> Result<PropertyText, SmilesParseError> {
     let atom = &topology.atoms[atom_index];
     // BEGIN RDKIT CPP FUNCTION atomNeedsBracket
     // RDKit❗✔️: bool atomNeedsBracket(const Atom *atom, const std::string &atString,
@@ -3457,24 +3666,21 @@ fn atom_text(
     // RDKit Dict's std::string overload uses rdvalue_tostring, including
     // scalar tags. This is not the INT_VECT cast used by _ringStereoAtoms.
     let raw_symbol = custom_symbol
-        .as_deref()
-        .unwrap_or_else(|| atom.element().symbol());
-    let symbol = if !params.do_kekule
+        .as_ref()
+        .map(PropertyText::as_bytes)
+        .unwrap_or_else(|| atom.element().symbol().as_bytes());
+    let mut symbol = raw_symbol.to_vec();
+    if !params.do_kekule
         && atom.is_aromatic()
-        && raw_symbol
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_uppercase)
+        && raw_symbol.first().is_some_and(u8::is_ascii_uppercase)
         && matches!(
             atom.atomic_number(),
             5 | 6 | 7 | 8 | 14 | 15 | 16 | 33 | 34 | 52
-        ) {
-        let mut lowered = raw_symbol.to_owned();
-        lowered.get_mut(0..1).map(str::make_ascii_lowercase);
-        lowered
-    } else {
-        raw_symbol.to_owned()
-    };
+        )
+    {
+        symbol[0] = symbol[0].to_ascii_lowercase();
+    }
+    let symbol = PropertyText::from(symbol);
     // BEGIN RDKIT CPP FUNCTION GetAtomSmiles chirality selection
     // RDKit❗✔️:   if (params.doIsomericSmiles) {
     // RDKit❗✔️:     if (atom->getChiralTag() != Atom::CHI_UNSPECIFIED &&
@@ -3582,41 +3788,44 @@ fn atom_text(
         return append_supplemental_label(atom, symbol);
     }
 
-    let mut output = String::from("[");
+    let mut output = PropertyText::from("[");
     if params.do_isomeric_smiles {
         if let Some(isotope) = atom.isotope() {
-            output.push_str(&isotope.to_string());
+            output.extend_bytes((&isotope.to_string()).as_ref());
         }
     }
-    output.push_str(&symbol);
-    output.push_str(&chirality);
+    output.extend_bytes((&symbol).as_ref());
+    output.extend_bytes((&chirality).as_ref());
     let total_num_hydrogens = usize::from(atom.explicit_hydrogens())
         + usize::try_from(valence.implicit_hydrogens[atom_index].max(0)).unwrap_or(usize::MAX);
     if total_num_hydrogens > 0 {
-        output.push('H');
+        output.push_byte(b'H');
         if total_num_hydrogens > 1 {
-            output.push_str(&total_num_hydrogens.to_string());
+            output.extend_bytes((&total_num_hydrogens.to_string()).as_ref());
         }
     }
     match atom.formal_charge() {
         0 => {}
-        1 => output.push('+'),
-        -1 => output.push('-'),
+        1 => output.push_byte(b'+'),
+        -1 => output.push_byte(b'-'),
         charge if charge > 1 => {
-            output.push('+');
-            output.push_str(&charge.to_string());
+            output.push_byte(b'+');
+            output.extend_bytes((&charge.to_string()).as_ref());
         }
-        charge => output.push_str(&charge.to_string()),
+        charge => output.extend_bytes((&charge.to_string()).as_ref()),
     }
     if let Some(atom_map) = atom.atom_map() {
-        output.push(':');
-        output.push_str(&atom_map.to_string());
+        output.push_byte(b':');
+        output.extend_bytes((&atom_map.to_string()).as_ref());
     }
-    output.push(']');
+    output.push_byte(b']');
     append_supplemental_label(atom, output)
 }
 
-fn append_supplemental_label(atom: &Atom, mut text: String) -> Result<String, SmilesParseError> {
+fn append_supplemental_label(
+    atom: &Atom,
+    mut text: PropertyText,
+) -> Result<PropertyText, SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION GetAtomSmiles supplemental label
     // RDKit❗✔️:   // If the atom has this property, the contained string will
     // RDKit❗✔️:   // be inserted directly in the SMILES:
@@ -3627,9 +3836,10 @@ fn append_supplemental_label(atom: &Atom, mut text: String) -> Result<String, Sm
     // RDKit❗✔️:   }
     // END RDKIT CPP FUNCTION GetAtomSmiles supplemental label
     if let Some(label) = atom.prop("_supplementalSmilesLabel") {
-        text.push_str(
-            &cosmolkit_core::property_value_to_string(label)
-                .map_err(SmilesParseError::WriterProperty)?,
+        text.extend_bytes(
+            (&cosmolkit_core::property_value_to_string(label)
+                .map_err(SmilesParseError::WriterProperty)?)
+                .as_ref(),
         );
     }
     Ok(text)
@@ -3857,7 +4067,7 @@ fn rdkit_query_ops_is_metal(atomic_number: u8) -> bool {
     )
 }
 
-fn write_ring_label(output: &mut String, label: usize) {
+fn write_ring_label(output: &mut PropertyText, label: usize) {
     // RDKit✔️❌:         if (closureVal < 10) {
     // RDKit✔️❌:           res << (char)(closureVal + '0');
     // RDKit✔️❌:         } else if (closureVal < 100) {
@@ -3868,14 +4078,14 @@ fn write_ring_label(output: &mut String, label: usize) {
     // The multi-digit branches allocate a temporary with `to_string`; RDKit
     // streams the integer into its existing output buffer.
     if label < 10 {
-        output.push(char::from(b'0' + label as u8));
+        output.push_byte(b'0' + label as u8);
     } else if label < 100 {
-        output.push('%');
-        output.push_str(&label.to_string());
+        output.push_byte(b'%');
+        output.extend_bytes((&label.to_string()).as_ref());
     } else {
-        output.push_str("%(");
-        output.push_str(&label.to_string());
-        output.push(')');
+        output.extend_bytes(("%(").as_ref());
+        output.extend_bytes((&label.to_string()).as_ref());
+        output.push_byte(b')');
     }
 }
 
@@ -4272,7 +4482,7 @@ mod tests {
 
     fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
         match value {
-            Some(PropertyValue::String(value)) => Some(value),
+            Some(PropertyValue::String(value)) => Some(fixed_property_text(value)),
             _ => None,
         }
     }
@@ -4286,6 +4496,7 @@ mod tests {
                 ..Default::default()
             },
         )
+        .map(|value| fixed_property_text(&value).to_owned())
         .expect("write")
     }
 
@@ -4342,11 +4553,18 @@ mod tests {
             ("[C@H](F)(Cl)Br.[C@@H](I)(N)O", "F[C@@H](Cl)Br.N[C@H](O)I"),
         ] {
             let record = parse_smiles(input, &Default::default()).unwrap();
-            assert_eq!(write_smiles(&record).unwrap(), expected, "{input}");
+            assert_eq!(
+                (write_smiles(&record).unwrap()).as_bytes(),
+                (expected).as_bytes(),
+                "{input}"
+            );
         }
 
         let bond_stereo = parse_smiles("F/C=C/F", &Default::default()).unwrap();
-        assert_eq!(write_smiles(&bond_stereo).unwrap(), "F/C=C/F");
+        assert_eq!(
+            (write_smiles(&bond_stereo).unwrap()).as_bytes(),
+            ("F/C=C/F").as_bytes()
+        );
     }
 
     #[test]
@@ -4415,20 +4633,21 @@ mod tests {
         ] {
             let record = parse_smiles(input, &Default::default()).unwrap();
             assert_eq!(
-                write_smiles_with_params(
+                (write_smiles_with_params(
                     &record,
                     &SmilesWriteParams {
                         canonical: false,
                         ..Default::default()
                     }
                 )
-                .unwrap(),
-                expected_noncanonical,
+                .unwrap())
+                .as_bytes(),
+                (expected_noncanonical).as_bytes(),
                 "non-canonical {input}"
             );
             assert_eq!(
-                write_smiles(&record).unwrap(),
-                expected_canonical,
+                (write_smiles(&record).unwrap()).as_bytes(),
+                (expected_canonical).as_bytes(),
                 "canonical {input}"
             );
         }
@@ -4451,7 +4670,11 @@ mod tests {
             let mut record = parse_smiles(input, &Default::default()).unwrap();
             record.topology.atoms[1].set_prop("_ringStereoAtoms", vec![relation.0]);
             record.topology.atoms[5].set_prop("_ringStereoAtoms", vec![relation.1]);
-            assert_eq!(write_smiles(&record).unwrap(), expected, "{input}");
+            assert_eq!(
+                (write_smiles(&record).unwrap()).as_bytes(),
+                (expected).as_bytes(),
+                "{input}"
+            );
         }
     }
 
@@ -4510,7 +4733,7 @@ mod tests {
         ] {
             let record = parse_smiles(input, &Default::default()).unwrap();
             let actual = write_smiles(&record).unwrap();
-            if actual != expected {
+            if actual.as_bytes() != expected.as_bytes() {
                 mismatches.push((input, expected, actual));
             }
         }
@@ -4554,11 +4777,11 @@ mod tests {
 
     #[test]
     fn ring_label_format_matches_smiles_writer_extensions() {
-        let mut output = String::new();
+        let mut output = cosmolkit_model::PropertyText::new();
         write_ring_label(&mut output, 9);
         write_ring_label(&mut output, 10);
         write_ring_label(&mut output, 100);
-        assert_eq!(output, "9%10%(100)");
+        assert_eq!(output.as_bytes(), b"9%10%(100)");
     }
 
     #[test]
@@ -4605,7 +4828,11 @@ mod tests {
             ("[O:2]=[C:1]O", "O[C:1]=[O:2]"),
         ] {
             let record = parse_smiles(input, &Default::default()).unwrap();
-            assert_eq!(write_smiles(&record).unwrap(), expected, "{input}");
+            assert_eq!(
+                (write_smiles(&record).unwrap()).as_bytes(),
+                (expected).as_bytes(),
+                "{input}"
+            );
         }
     }
 
@@ -4695,13 +4922,21 @@ mod tests {
             Some("kept")
         );
         assert_eq!(clone_prune.topology.atoms[1].prop("_computed_atom"), None);
-        assert!(!clone_prune.topology.atoms[1].is_prop_computed("_computed_atom"));
+        assert!(
+            !clone_prune.topology.atoms[1]
+                .is_prop_computed("_computed_atom")
+                .unwrap()
+        );
         assert_eq!(
             string_property(clone_prune.topology.bonds[0].prop("ordinary_bond")),
             Some("kept")
         );
         assert_eq!(clone_prune.topology.bonds[0].prop("_computed_bond"), None);
-        assert!(!clone_prune.topology.bonds[0].is_prop_computed("_computed_bond"));
+        assert!(
+            !clone_prune.topology.bonds[0]
+                .is_prop_computed("_computed_bond")
+                .unwrap()
+        );
         assert_eq!(clone_prune.topology.stereo_groups.len(), 1);
         assert_eq!(clone_prune.topology.stereo_groups[0].id(), Some(17));
         assert_eq!(
@@ -4767,8 +5002,10 @@ mod tests {
             &[AtomId::new(0)]
         );
         assert_eq!(
-            singleton.topology.substance_groups[0].label(),
-            Some("singleton")
+            singleton.topology.substance_groups[0]
+                .label()
+                .map(|value| value.as_bytes()),
+            Some(b"singleton".as_slice())
         );
         assert_eq!(singleton.topology.stereo_groups.len(), 1);
         assert_eq!(singleton.topology.stereo_groups[0].id(), Some(23));
@@ -4842,12 +5079,20 @@ mod tests {
             target.topology.atoms[2].prop("_ringStereoAtoms"),
             Some(&PropertyValue::IntVector(vec![-4_i32, 6]))
         );
-        assert!(target.topology.atoms[2].is_prop_computed("_ringStereoAtoms"));
+        assert!(
+            target.topology.atoms[2]
+                .is_prop_computed("_ringStereoAtoms")
+                .unwrap()
+        );
         assert_eq!(
             string_property(target.topology.atoms[2].prop("_incoming_atom_computed")),
             Some("copy")
         );
-        assert!(target.topology.atoms[2].is_prop_computed("_incoming_atom_computed"));
+        assert!(
+            target.topology.atoms[2]
+                .is_prop_computed("_incoming_atom_computed")
+                .unwrap()
+        );
         assert_eq!(
             string_property(target.topology.bonds[2].prop("target_bond")),
             Some("source")
@@ -4861,7 +5106,11 @@ mod tests {
             string_property(target.topology.bonds[2].prop("_incoming_bond_computed")),
             Some("copy")
         );
-        assert!(target.topology.bonds[2].is_prop_computed("_incoming_bond_computed"));
+        assert!(
+            target.topology.bonds[2]
+                .is_prop_computed("_incoming_bond_computed")
+                .unwrap()
+        );
         assert_eq!(
             target.topology.bonds[2].direction(),
             BondDirection::EndUpRight
@@ -4908,7 +5157,11 @@ mod tests {
     ) {
         let before = record.clone();
         let output = write_smiles_output(record, params, false).expect(case);
-        assert_eq!(output.text, expected_text, "{case}: text");
+        assert_eq!(
+            (output.text).as_bytes(),
+            (expected_text).as_bytes(),
+            "{case}: text"
+        );
         assert_eq!(
             output.atom_order,
             expected_atom_order
@@ -5426,7 +5679,10 @@ mod enhanced_stereo_canonical_tests {
         let output = super::write_smiles_for_cx(&record, &SmilesWriteParams::default())
             .expect("write canonical CX base SMILES");
 
-        assert_eq!(output.text, "N[P@TB2](F)(Cl)(Br)I");
+        assert_eq!(
+            (output.text).as_bytes(),
+            ("N[P@TB2](F)(Cl)(Br)I").as_bytes()
+        );
 
         let atoms = (0..record.topology.atoms.len())
             .map(AtomId::new)
@@ -5443,7 +5699,10 @@ mod enhanced_stereo_canonical_tests {
         )
         .expect("write canonical detached fragment");
 
-        assert_eq!(fragment.text, "N[P@TB2](F)(Cl)(Br)I");
+        assert_eq!(
+            (fragment.text).as_bytes(),
+            ("N[P@TB2](F)(Cl)(Br)I").as_bytes()
+        );
     }
 
     #[test]
@@ -5474,7 +5733,15 @@ mod enhanced_stereo_canonical_tests {
 
         assert_eq!(record, before, "detached writer must preserve its input");
         assert_eq!(output.atom_order.len(), atoms.len());
-        assert_eq!(output.text.matches('.').count(), 0);
+        assert_eq!(
+            output
+                .text
+                .as_bytes()
+                .iter()
+                .filter(|&&byte| byte == b'.')
+                .count(),
+            0
+        );
     }
 }
 
@@ -5490,5 +5757,101 @@ mod uint_complete_source_condition_cells {
                 matches!(parse_ring_stereo_atoms(&PropertyValue::UInt(n),2),Err(SmilesParseError::WriterStereo(message)) if message=="`_ringStereoAtoms` is not a signed source INT_VECT value (bad_any_cast)")
             );
         }
+    }
+}
+
+#[cfg(test)]
+fn fixed_property_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("original fixed fixture text is UTF8")
+}
+
+#[cfg(test)]
+mod computed_clear_error_tests {
+    use super::*;
+    use crate::{SmilesParseParams, parse_smiles};
+
+    fn assert_writer_failure(input: &str, bad_bond: bool) {
+        for clean_stereo in [false, true] {
+            let mut record = parse_smiles(input, &SmilesParseParams::default()).unwrap();
+            record.properties.clear_prop("_StereochemDone").unwrap();
+            if bad_bond {
+                record.topology.bonds[0]
+                    .set_prop("__computedProps", PropertyValue::Int(7))
+                    .unwrap();
+            } else {
+                record.topology.atoms[0]
+                    .set_prop("__computedProps", PropertyValue::Int(7))
+                    .unwrap();
+            }
+            let before = record.clone();
+            let params = SmilesWriteParams {
+                clean_stereo,
+                ..Default::default()
+            };
+            let error = write_smiles_with_params(&record, &params).unwrap_err();
+            if bad_bond {
+                assert!(matches!(
+                    &error,
+                    SmilesParseError::BondProperty(
+                        cosmolkit_model::BondValueError::ComputedListKind(_)
+                    )
+                ));
+                assert!(
+                    std::error::Error::source(&error)
+                        .unwrap()
+                        .downcast_ref::<cosmolkit_model::BondValueError>()
+                        .is_some()
+                );
+            } else {
+                assert!(matches!(
+                    &error,
+                    SmilesParseError::AtomProperty(
+                        cosmolkit_model::AtomPropertyError::ComputedListKind(_)
+                    )
+                ));
+                assert!(
+                    std::error::Error::source(&error)
+                        .unwrap()
+                        .downcast_ref::<cosmolkit_model::AtomPropertyError>()
+                        .is_some()
+                );
+            }
+            assert_eq!(
+                record, before,
+                "failed serialization preserves all input blocks"
+            );
+
+            // A genuine empty StringVector is valid source state. It must
+            // keep the same writer options, succeed and preserve its input.
+            if bad_bond {
+                record.topology.bonds[0]
+                    .set_prop("__computedProps", PropertyValue::StringVector(Vec::new()))
+                    .unwrap();
+            } else {
+                record.topology.atoms[0]
+                    .set_prop("__computedProps", PropertyValue::StringVector(Vec::new()))
+                    .unwrap();
+            }
+            let valid_before = record.clone();
+            assert_eq!(
+                write_smiles_with_params(&record, &params)
+                    .unwrap()
+                    .as_bytes(),
+                input.as_bytes()
+            );
+            assert_eq!(record, valid_before);
+        }
+    }
+    #[test]
+    fn singleton_subset_writer_retains_computed_list_error_and_input() {
+        assert_writer_failure("C.C", false);
+    }
+    #[test]
+    fn preserving_fragment_writer_retains_atom_computed_list_error_and_input() {
+        assert_writer_failure("CC.CC", false);
+    }
+    #[test]
+    fn preserving_fragment_writer_retains_bond_computed_list_error_and_input() {
+        assert_writer_failure("CC.CC", true);
     }
 }

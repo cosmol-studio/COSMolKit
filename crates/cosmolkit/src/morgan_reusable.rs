@@ -145,7 +145,7 @@ impl MorganFingerprintGenerator {
     pub fn info_string(&self) -> Result<String, MorganReadError> {
         self.inner.info_string().map_err(MorganReadError::Generator)
     }
-    pub fn to_json(&self) -> Result<String, MorganReadError> {
+    pub fn to_json(&self) -> Result<cosmolkit_model::PropertyText, MorganReadError> {
         self.inner.to_json().map_err(MorganReadError::Generator)
     }
 }

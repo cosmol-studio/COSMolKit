@@ -475,9 +475,25 @@ fn automatic_best_alignment_uses_all_non_unique_matches() {
 
 #[test]
 fn best_alignment_default_ignores_explicit_hydrogens_only_for_automatic_maps() {
-    let molecule = molecule_with_conformer("C", 0, vec![[0.0, 0.0, 0.0]])
+    // The detached fixture builder intentionally creates a cacheless live
+    // value. RDKit Atom::getNumImplicitHs requires initialized valence before
+    // AddHs even when conformers are present; retain that original input as
+    // a typed failure and explicitly prepare the positive alignment companion.
+    let source = molecule_with_conformer("C", 0, vec![[0.0, 0.0, 0.0]]);
+    let before = source.clone();
+    assert!(matches!(
+        source.with_hydrogens(),
+        Err(OperationError::Hydrogen(cosmolkit::HydrogenError::Valence(
+            cosmolkit::ValenceError::ImplicitValenceCacheNotInitialized { atom }
+        ))) if atom == cosmolkit::AtomId::new(0)
+    ));
+    assert_eq!(source, before);
+    let molecule = source
+        .with_assigned_valence()
+        .expect("explicit source valence preparation")
         .with_hydrogens()
         .expect("explicit hydrogens");
+    assert_eq!(source, before);
     let automatic = molecule
         .best_alignment_to_with_params(&molecule, &BestAlignmentParameters::default())
         .expect("automatic map");

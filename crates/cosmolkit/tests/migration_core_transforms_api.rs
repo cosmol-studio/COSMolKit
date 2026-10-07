@@ -54,7 +54,12 @@ fn transform_molecule() -> Molecule {
                 .with_prop("kind", "explicit"),
         ],
         source_coordinate_dim: None,
-        source_conformer_order: None,
+        source_conformer_order: Some(vec![
+            cosmolkit::CoordinateDimension::TwoD,
+            cosmolkit::CoordinateDimension::ThreeD,
+            cosmolkit::CoordinateDimension::ThreeD,
+            cosmolkit::CoordinateDimension::ThreeD,
+        ]),
     };
     let properties = MoleculeProperties::default()
         .with_name("transforms-public")
@@ -238,8 +243,8 @@ fn default_value_operation_updates_first_true_3d_conformer_and_clears_cip() {
     assert_eq!(
         output.conformers_3d()[1]
             .props()
-            .get("kind")
-            .map(String::as_str),
+            .get(b"kind".as_slice())
+            .map(|value| std::str::from_utf8(value.as_bytes()).expect("ASCII fixture property")),
         Some("default")
     );
     assert_eq!(source.topology().adjacency, output.topology().adjacency);
@@ -247,7 +252,10 @@ fn default_value_operation_updates_first_true_3d_conformer_and_clears_cip() {
         source.topology().stereo_groups,
         output.topology().stereo_groups
     );
-    assert_eq!(output.property("source"), Some("preserved"));
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(
         output.atom(AtomId::new(0)).unwrap().prop("atom-label"),
         Some(&cosmolkit_model::PropertyValue::from("first"))
@@ -264,7 +272,10 @@ fn default_value_operation_updates_first_true_3d_conformer_and_clears_cip() {
     );
 
     assert_eq!(source.conformers_3d()[1].coordinates()[1], [1.0, 1.0, 0.0]);
-    assert_eq!(source.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        source.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
     assert_eq!(
         source.atom(AtomId::new(0)).unwrap().prop("_CIPCode"),
         Some(&cosmolkit_model::PropertyValue::from("R"))
@@ -294,8 +305,8 @@ fn explicit_conformer_id_updates_only_the_selected_row_set() {
     assert_eq!(
         output.conformers_3d()[2]
             .props()
-            .get("kind")
-            .map(String::as_str),
+            .get(b"kind".as_slice())
+            .map(|value| std::str::from_utf8(value.as_bytes()).expect("ASCII fixture property")),
         Some("explicit")
     );
 }
@@ -370,7 +381,10 @@ fn missing_default_and_explicit_conformers_remain_distinct_errors() {
                 false,
             )],
             source_coordinate_dim: None,
-            source_conformer_order: None,
+            source_conformer_order: Some(vec![
+                cosmolkit::CoordinateDimension::TwoD,
+                cosmolkit::CoordinateDimension::ThreeD,
+            ]),
         },
         source.properties().clone(),
     )

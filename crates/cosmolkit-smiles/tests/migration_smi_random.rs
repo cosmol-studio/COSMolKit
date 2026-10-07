@@ -3,6 +3,12 @@ use cosmolkit_smiles::{
     write_random_smiles_vector, write_smiles_with_random,
 };
 
+// Original source-text fixtures decode only at this observation boundary.
+// Invalid UTF-8 fails; the complete byte payload is never substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
 #[test]
 fn random_writer_and_vector_match_pinned_sequences_and_shared_stream_semantics() {
     let record = parse_smiles("CC(C)(O)F", &SmilesParseParams::default()).expect("parse fixture");
@@ -16,8 +22,11 @@ fn random_writer_and_vector_match_pinned_sequences_and_shared_stream_semantics()
         |record: &cosmolkit_smiles::SmilesRecord, count, seed, params: &RandomSmilesWriteParams| {
             write_random_smiles_vector(record, count, seed, params).expect("random vector writer")
         };
-    let expected = |values: &[&str]| -> Vec<String> {
-        values.iter().map(|value| (*value).to_owned()).collect()
+    let expected = |values: &[&str]| -> Vec<cosmolkit_model::PropertyText> {
+        values
+            .iter()
+            .map(|value| cosmolkit_model::PropertyText::from(*value))
+            .collect()
     };
 
     // RDKit 2026.03.1, seed 42, canonical=false and doRandom=true emits this
@@ -26,7 +35,9 @@ fn random_writer_and_vector_match_pinned_sequences_and_shared_stream_semantics()
     // stream after the complete writer returns.
     cosmolkit_core::with_rdkit_random_generator(42, |_| ());
     assert_eq!(
-        write_smiles_with_random(&record, &params, true).expect("random writer"),
+        write_smiles_with_random(&record, &params, true)
+            .map(fixture_writer_text)
+            .expect("random writer"),
         "CC(F)(C)O"
     );
     let continuation = cosmolkit_core::with_rdkit_random_generator(0, |rng| rng.next_u32());
@@ -48,7 +59,9 @@ fn random_writer_and_vector_match_pinned_sequences_and_shared_stream_semantics()
     // A zero seed preserves state across separate outer writer calls.
     cosmolkit_core::with_rdkit_random_generator(42, |_| ());
     assert_eq!(
-        write_smiles_with_random(&record, &params, true).expect("random single writer"),
+        write_smiles_with_random(&record, &params, true)
+            .map(fixture_writer_text)
+            .expect("random single writer"),
         "CC(F)(C)O"
     );
     assert_eq!(

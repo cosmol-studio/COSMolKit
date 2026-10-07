@@ -29,6 +29,8 @@ pub enum SmilesStereoError {
         expected: usize,
     },
     #[error(transparent)]
+    Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
+    #[error(transparent)]
     Directions(#[from] DoubleBondStereoError),
     #[error(transparent)]
     Assignment(#[from] LegacyStereoError),
@@ -399,13 +401,13 @@ mod smiles_stereo_ring_matrix_tests {
                             assert!(output.coordinates.conformers_3d.is_empty());
                             assert_eq!(
                                 output.properties.prop("ck-ordinary"),
-                                Some("kept"),
+                                Some(&cosmolkit_model::PropertyValue::String("kept".into())),
                                 "{label}: sentinel"
                             );
                             if active {
                                 assert_eq!(
                                     output.properties.prop("_StereochemDone"),
-                                    Some("1"),
+                                    Some(&cosmolkit_model::PropertyValue::Int(1)),
                                     "{label}: done computed"
                                 );
                                 assert!(
@@ -418,13 +420,13 @@ mod smiles_stereo_ring_matrix_tests {
                                 assert_eq!(legacy_delta, 0, "{label}: no legacy");
                                 assert_eq!(
                                     output.properties.prop("_StereochemDone"),
-                                    Some("0"),
+                                    Some(&cosmolkit_model::PropertyValue::String("0".into())),
                                     "{label}: done retained"
                                 );
                                 if marker {
                                     assert_eq!(
                                         output.properties.prop("_needsDetectBondStereo"),
-                                        Some("0"),
+                                        Some(&cosmolkit_model::PropertyValue::String("0".into())),
                                         "{label}: marker retained"
                                     );
                                 }
@@ -1103,7 +1105,7 @@ mod smiles_stereo_ring_routes_tests {
                 if sanitize || remove_hydrogens {
                     assert_eq!(
                         output.properties.prop("_StereochemDone"),
-                        Some("1"),
+                        Some(&cosmolkit_model::PropertyValue::Int(1)),
                         "{label}"
                     );
                 }
@@ -1376,26 +1378,21 @@ pub fn finalize_smiles_stereo(
         // RDKit✔️✔️:       }
         // RDKit's geometry kernel accepts XYZ also for a 2D conformer. Lift
         // only a borrowed 2D input, prefer it over 3D, and keep stored rows intact.
-        let lifted = record.coordinates.conformers_2d.first().map(|conformer| {
-            Conformer3D::new(
-                conformer.id(),
-                conformer
-                    .coordinates()
-                    .iter()
-                    .map(|xy| [xy[0], xy[1], 0.0])
-                    .collect(),
-                false,
-            )
-        });
-        let conformer = lifted
-            .as_ref()
-            .or_else(|| record.coordinates.conformers_3d.first());
+        let (two_d, three_d) = source_stereo_conformers(&record.coordinates)?;
+        let conformer = two_d.as_deref().or(three_d);
         if conformer.is_some() {
             record.topology = clear_single_bond_directions(record.topology, false)?;
         }
-        record.topology = set_double_bond_neighbor_directions(record.topology, rings, conformer)?;
+        let update = set_double_bond_neighbor_directions(record.topology, rings, conformer)?;
+        record.topology = update.topology;
+        if update.needs_detect_bond_stereo {
+            // RDKit❗✔️:     mol.setProp("_needsDetectBondStereo", 1);
+            record
+                .properties
+                .set_prop("_needsDetectBondStereo", 1_i32)?;
+        }
     }
-    record.properties.clear_prop("_needsDetectBondStereo");
+    record.properties.clear_prop("_needsDetectBondStereo")?;
     // assignStereochemistry updates a missing property cache non-strictly.
     // This local assignment is not a claim that unsanitized chemistry passed
     // strict sanitization, nor does it undo CK-VALENCE-001 runtime invalidation.
@@ -1513,6 +1510,202 @@ pub fn finalize_smiles_stereo(
     // Complexity: one property insertion; no topology copy or perception pass.
     record
         .properties
-        .set_computed_prop("_StereochemDone", "1")?;
+        .set_computed_prop("_StereochemDone", cosmolkit_model::PropertyValue::Int(1))?;
     Ok(record)
+}
+
+pub(crate) fn source_stereo_conformers(
+    coordinates: &cosmolkit_model::CoordinateBlock,
+) -> Result<
+    (
+        Option<std::borrow::Cow<'_, Conformer3D>>,
+        Option<&Conformer3D>,
+    ),
+    cosmolkit_model::CoordinateValidationError,
+> {
+    // RDKit❗✔️:   const Conformer *conf = nullptr, *conf3d = nullptr;
+    // RDKit❗✔️:   if (res && res->getNumConformers() > 0) {
+    // RDKit❗✔️:     for (unsigned int confId = 0; confId < res->getNumConformers(); ++confId) {
+    // RDKit❗✔️:       auto *testConf = &res->getConformer(confId);
+    // RDKit❗✔️:       if (!testConf->is3D()) {
+    // RDKit❗✔️:         if (conf == nullptr) {  // only take the first 2d conf
+    // RDKit❗✔️:           conf = testConf;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         if (conf3d == nullptr) {  // only take the first 3d conf
+    // RDKit❗✔️:           conf3d = testConf;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (conf != nullptr && conf3d != nullptr) {
+    // RDKit❗✔️:         break;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // Behavior: source insertion order is the existing MODEL occurrence order;
+    // source is3D is independent of XYZ storage. A false-flag XYZ row remains
+    // borrowed with all Z bits; genuine XY alone receives a transient lift.
+    // Missing mixed order is a structural error, never an inferred preference.
+    // Complexity: source-order scan stops when both flags are found, O(C).
+    // XYZ borrows allocate nothing; the existing XY lift costs O(V) once.
+    use cosmolkit_model::{CoordinateDimension, CoordinateValidationError};
+    let (mut xy, mut xyz) = (0usize, 0usize);
+    let (mut two_d, mut three_d) = (None, None);
+    let order = coordinates.source_conformer_order.as_deref();
+    if order.is_none()
+        && !coordinates.conformers_2d.is_empty()
+        && !coordinates.conformers_3d.is_empty()
+    {
+        return Err(CoordinateValidationError::MissingSourceConformerOrder);
+    }
+    let count = order.map_or(
+        coordinates.conformers_2d.len() + coordinates.conformers_3d.len(),
+        |order| order.len(),
+    );
+    for index in 0..count {
+        let dimension = order.map_or_else(
+            || {
+                if coordinates.conformers_2d.is_empty() {
+                    CoordinateDimension::ThreeD
+                } else {
+                    CoordinateDimension::TwoD
+                }
+            },
+            |order| order[index],
+        );
+        match dimension {
+            CoordinateDimension::TwoD => {
+                let conformer = coordinates.conformers_2d.get(xy).ok_or(
+                    CoordinateValidationError::SourceConformerOrder {
+                        two_d: xy + 1,
+                        three_d: xyz,
+                        expected_two_d: coordinates.conformers_2d.len(),
+                        expected_three_d: coordinates.conformers_3d.len(),
+                    },
+                )?;
+                xy += 1;
+                if two_d.is_none() {
+                    two_d = Some(std::borrow::Cow::Owned(Conformer3D::new(
+                        conformer.id(),
+                        conformer
+                            .coordinates()
+                            .iter()
+                            .map(|point| [point[0], point[1], 0.0])
+                            .collect(),
+                        false,
+                    )));
+                }
+            }
+            CoordinateDimension::ThreeD => {
+                let conformer = coordinates.conformers_3d.get(xyz).ok_or(
+                    CoordinateValidationError::SourceConformerOrder {
+                        two_d: xy,
+                        three_d: xyz + 1,
+                        expected_two_d: coordinates.conformers_2d.len(),
+                        expected_three_d: coordinates.conformers_3d.len(),
+                    },
+                )?;
+                xyz += 1;
+                if conformer.is_3d() {
+                    if three_d.is_none() {
+                        three_d = Some(conformer);
+                    }
+                } else if two_d.is_none() {
+                    two_d = Some(std::borrow::Cow::Borrowed(conformer));
+                }
+            }
+        }
+        if two_d.is_some() && three_d.is_some() {
+            break;
+        }
+    }
+    Ok((two_d, three_d))
+}
+
+#[cfg(test)]
+mod source_conformer_flag_regressions {
+    use super::source_stereo_conformers;
+    use cosmolkit_model::{
+        Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, CoordinateValidationError,
+    };
+
+    #[test]
+    fn false_flag_xyz_retains_z_bits_and_is_borrowed_in_source_order() {
+        let coordinates = CoordinateBlock {
+            conformers_3d: vec![
+                Conformer3D::new(9, vec![[1.0, 2.0, 3.0]], true),
+                Conformer3D::new(2, vec![[4.0, 5.0, -0.0]], false),
+                Conformer3D::new(1, vec![[6.0, 7.0, 8.0]], false),
+            ],
+            ..Default::default()
+        };
+        let before = coordinates.clone();
+        let (two_d, three_d) = source_stereo_conformers(&coordinates).unwrap();
+        let std::borrow::Cow::Borrowed(two_d) = two_d.unwrap() else {
+            panic!("XYZ must be borrowed")
+        };
+        assert!(std::ptr::eq(two_d, &coordinates.conformers_3d[1]));
+        assert_eq!(two_d.coordinates()[0][2].to_bits(), (-0.0_f64).to_bits());
+        assert!(std::ptr::eq(
+            three_d.unwrap(),
+            &coordinates.conformers_3d[0]
+        ));
+        assert_eq!(coordinates, before);
+    }
+
+    #[test]
+    fn mixed_storage_occurrence_order_selects_the_actual_first_false_flag() {
+        for xyz_first in [false, true] {
+            let order = if xyz_first {
+                vec![
+                    CoordinateDimension::ThreeD,
+                    CoordinateDimension::TwoD,
+                    CoordinateDimension::ThreeD,
+                ]
+            } else {
+                vec![
+                    CoordinateDimension::TwoD,
+                    CoordinateDimension::ThreeD,
+                    CoordinateDimension::ThreeD,
+                ]
+            };
+            let coordinates = CoordinateBlock {
+                conformers_2d: vec![Conformer2D::new(7, vec![[1.0, 2.0]])],
+                conformers_3d: vec![
+                    Conformer3D::new(4, vec![[3.0, 4.0, 0.0001]], false),
+                    Conformer3D::new(6, vec![[5.0, 6.0, 7.0]], true),
+                ],
+                source_conformer_order: Some(order),
+                ..Default::default()
+            };
+            let before = coordinates.clone();
+            let (two_d, three_d) = source_stereo_conformers(&coordinates).unwrap();
+            let two_d = two_d.unwrap();
+            assert_eq!(two_d.id(), if xyz_first { 4 } else { 7 });
+            assert_eq!(
+                two_d.coordinates()[0][2].to_bits(),
+                if xyz_first {
+                    0.0001_f64.to_bits()
+                } else {
+                    0.0_f64.to_bits()
+                }
+            );
+            assert_eq!(three_d.unwrap().id(), 6);
+            assert_eq!(coordinates, before);
+        }
+    }
+
+    #[test]
+    fn missing_mixed_order_is_a_typed_error_without_inference() {
+        let coordinates = CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(0, vec![])],
+            conformers_3d: vec![Conformer3D::new(0, vec![], false)],
+            ..Default::default()
+        };
+        let before = coordinates.clone();
+        assert!(matches!(
+            source_stereo_conformers(&coordinates),
+            Err(CoordinateValidationError::MissingSourceConformerOrder)
+        ));
+        assert_eq!(coordinates, before);
+    }
 }

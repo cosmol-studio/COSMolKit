@@ -1,11 +1,19 @@
 use cosmolkit_io::{MolBlockRecord, SdfReadError, read_mol_block_detached};
 use cosmolkit_model::PropertyValue;
 
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+
 fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
-    match value {
-        Some(PropertyValue::String(value)) => Some(value),
-        _ => None,
-    }
+    value.map(|value| {
+        fixture_text(
+            value
+                .as_string()
+                .expect("source text property must have String tag"),
+        )
+    })
 }
 
 fn v3000_with_atoms(atoms: &[&str]) -> String {

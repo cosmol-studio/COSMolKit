@@ -51,11 +51,11 @@ fn enumeration_initialization_canonical_kekulizes_aromatic_input_without_clearin
         state
             .candidates
             .keys()
-            .map(String::as_str)
+            .map(fixed_key_text)
             .collect::<Vec<_>>(),
         ["c1ccccc1"]
     );
-    let topology = &state.candidates["c1ccccc1"]
+    let topology = &state.candidates[b"c1ccccc1".as_slice()]
         .kekulized
         .as_ref()
         .unwrap()
@@ -102,14 +102,14 @@ fn enumeration_initialization_handles_empty_and_disconnected_inputs() {
             valence: None,
             rings: None,
         },
-        String::new(),
+        cosmolkit_model::PropertyText::new(),
     )
     .unwrap();
     assert_eq!(empty.topology.atoms.len(), 0);
     assert_eq!(empty.topology.bonds.len(), 0);
-    assert!(state.candidates.contains_key(""));
+    assert!(state.candidates.contains_key(b"".as_slice()));
     let (disconnected, state) = initialize(&fixture("O.CC"));
-    assert!(state.candidates.contains_key("CC.O"));
+    assert!(state.candidates.contains_key(b"CC.O".as_slice()));
     assert_eq!(disconnected.topology.atoms.len(), 3);
     assert_eq!(disconnected.topology.bonds.len(), 1);
 }
@@ -121,7 +121,7 @@ fn enumeration_initialization_is_independent_of_input_atom_order() {
         first
             .candidates
             .keys()
-            .map(String::as_str)
+            .map(fixed_key_text)
             .collect::<Vec<_>>(),
         ["CC(=O)O"]
     );
@@ -134,7 +134,7 @@ fn enumeration_initialization_is_independent_of_input_atom_order() {
 fn enumeration_initialization_inserts_one_unfinished_candidate_in_key_order() {
     let (_, state) = initialize(&fixture("OC(=O)C"));
     assert_eq!(state.candidates.len(), 1);
-    let value = &state.candidates["CC(=O)O"];
+    let value = &state.candidates[b"CC(=O)O".as_slice()];
     assert!(value.tautomer.is_some());
     assert!(value.kekulized.is_some());
     assert_eq!(value.num_modified_atoms, 0);
@@ -176,4 +176,8 @@ fn enumeration_initialization_never_mutates_the_input() {
         let _ = initialize(&source);
         assert_eq!(source, before, "{text}");
     }
+}
+
+fn fixed_key_text(key: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(key.as_bytes()).expect("original fixed ASCII test key")
 }

@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => DEMO_XYZ.to_string(),
     };
 
-    let mol = Molecule::from_xyz_block(&xyz)?;
+    let mol = Molecule::from_xyz(&xyz)?;
     println!("atoms: {}", mol.num_atoms());
     println!("bonds: {}", mol.num_bonds());
     println!("3d conformers: {}", mol.conformers_3d().len());

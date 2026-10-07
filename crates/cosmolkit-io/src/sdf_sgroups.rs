@@ -3,9 +3,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cosmolkit_model::{
-    AtomId, BondId, SGroupAttachPoint, SGroupBondRole, SGroupBracket, SGroupBracketStyle,
-    SGroupCState, SGroupConnection, StereoGroup, StereoGroupKind, SubstanceGroup, SubstanceGroupId,
-    SubstanceGroupKind, TopologyBlock,
+    AtomId, BondId, PropertyText, PropertyValue, SGroupAttachPoint, SGroupBondRole, SGroupBracket,
+    SGroupBracketStyle, SGroupCState, SGroupConnection, StereoGroup, StereoGroupKind,
+    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, TopologyBlock,
 };
 
 use crate::sdf::{
@@ -29,7 +29,7 @@ fn sgroup_kind_from_rdkit_type(value: &str) -> SubstanceGroupKind {
         "COM" => SubstanceGroupKind::MixtureComponent,
         "MIX" => SubstanceGroupKind::Mixture,
         "FOR" => SubstanceGroupKind::Formulation,
-        other => SubstanceGroupKind::Generic(other.to_owned()),
+        other => SubstanceGroupKind::Generic(other.into()),
     }
 }
 
@@ -1031,7 +1031,7 @@ fn parse_sap(
     group.push_attach_point(SGroupAttachPoint {
         atom,
         leaving_atom,
-        label: Some(label.to_owned()),
+        label: Some(label.into()),
         order: None,
     });
     // Behavior review: the count is source-read but deliberately not checked;
@@ -1312,6 +1312,7 @@ fn parse_non_array_label(
                     "Invalid PARENT label found on line {line_number}"
                 )));
             }
+            group.set_prop("PARENT", PropertyValue::UInt(parent))?;
             if let Some(sequence) = group.rdkit_sequence_id() {
                 parents.insert(sequence, parent);
             }
@@ -1353,6 +1354,7 @@ fn parse_non_array_label(
                     "SGroup SNC value over 256: '{number}' on line {line_number}"
                 )));
             }
+            group.set_prop("COMPNO", PropertyValue::UInt(number))?;
             group.set_component_number(number);
             // Formatted unsigned extraction advances the shared label stream;
             // the bound check and one typed assignment are constant time and
@@ -1368,19 +1370,14 @@ fn parse_non_array_label(
             // RDKit❗✔️:   }
             // RDKit❗✔️:       dataFields.push_back(strValue);
             let parsed = parse_string_property(cursor);
-            let parsed = if strict_parsing && parsed.len() > 200 {
-                parsed
-                    .get(..200)
-                    .ok_or_else(|| {
-                        SdfReadError::Parse(format!(
-                            "FIELDDATA 200-byte truncation splits UTF-8 on line {line_number}"
-                        ))
-                    })?
-                    .to_owned()
-            } else {
-                parsed
-            };
-            group.data_mut().values.push(parsed);
+            let parsed = PropertyText::from_bytes(
+                &parsed.as_bytes()[..if strict_parsing {
+                    parsed.len().min(200)
+                } else {
+                    parsed.len()
+                }],
+            );
+            group.data_mut().values.push(parsed.into());
             // The canonical DAT value vector preserves append order. Strict
             // mode performs the source's 200-byte prefix operation; an invalid
             // UTF-8 cut is a structured Rust text-boundary error, so behavior
@@ -1395,6 +1392,7 @@ fn parse_non_array_label(
                     "Unsupported SGroup subtype '{parsed}' on line {line_number}"
                 )));
             }
+            group.set_prop("SUBTYPE", parsed.clone())?;
             group.set_subtype(parsed);
         }
         "CONNECT" => {
@@ -1404,6 +1402,7 @@ fn parse_non_array_label(
                     "Unsupported SGroup connection type '{parsed}' on line {line_number}"
                 ))
             })?;
+            group.set_prop("CONNECT", parsed)?;
             group.set_connection(connection);
         }
         "CLASS" => {
@@ -1413,9 +1412,14 @@ fn parse_non_array_label(
                     "Unsupported SGroup template class '{parsed}' on line {line_number}"
                 )));
             }
+            group.set_prop("CLASS", parsed.clone())?;
             group.set_class(parsed);
         }
-        "LABEL" => group.set_label(parse_string_property(cursor)),
+        "LABEL" => {
+            let value = parse_string_property(cursor);
+            group.set_prop("LABEL", value.clone())?;
+            group.set_label(value);
+        }
         // BEGIN RDKIT CPP FUNCTION ParseV3000ParseLabel (string-property tail)
         // RDKit✔️✔️: } else {
         // RDKit✔️✔️:       // Parse string props
@@ -1444,28 +1448,57 @@ fn parse_non_array_label(
         // RDKit✔️✔️:
         // RDKit✔️✔️:       sgroup.setProp(label, strValue);
         // RDKit✔️✔️: }
-        "FIELDNAME" => group.data_mut().field_name = Some(parse_string_property(cursor)),
-        "FIELDTYPE" => group.data_mut().field_type = Some(parse_string_property(cursor)),
-        "FIELDINFO" => group.data_mut().field_info = Some(parse_string_property(cursor)),
-        "FIELDDISP" => group.data_mut().field_display = Some(parse_string_property(cursor)),
-        "QUERYTYPE" => group.data_mut().query_type = Some(parse_string_property(cursor)),
-        "QUERYOP" => group.data_mut().query_op = Some(parse_string_property(cursor)),
+        "FIELDNAME" => {
+            let value = parse_string_property(cursor);
+            group.set_prop("FIELDNAME", value.clone())?;
+            group.data_mut().field_name = Some(value.into());
+        }
+        "FIELDTYPE" => {
+            let value = parse_string_property(cursor);
+            group.set_prop("FIELDTYPE", value.clone())?;
+            group.data_mut().field_type = Some(value.into());
+        }
+        "FIELDINFO" => {
+            let value = parse_string_property(cursor);
+            group.set_prop("FIELDINFO", value.clone())?;
+            group.data_mut().field_info = Some(value.into());
+        }
+        "FIELDDISP" => {
+            let value = parse_string_property(cursor);
+            group.set_prop("FIELDDISP", value.clone())?;
+            group.data_mut().field_display = Some(value.into());
+        }
+        "QUERYTYPE" => {
+            let value = parse_string_property(cursor);
+            group.set_prop("QUERYTYPE", value.clone())?;
+            group.data_mut().query_type = Some(value.into());
+        }
+        "QUERYOP" => {
+            let value = parse_string_property(cursor);
+            group.set_prop("QUERYOP", value.clone())?;
+            group.data_mut().query_op = Some(value.into());
+        }
         // The six DAT metadata labels use the one shared source string parser
         // and overwrite their single canonical typed slots in O(value length),
         // matching the source property assignment without a parallel raw prop.
         // END RDKIT CPP FUNCTION
-        "ESTATE" => group.set_expansion_state(parse_string_property(cursor)),
+        "ESTATE" => {
+            let value = parse_string_property(cursor);
+            group.set_prop("ESTATE", value.clone())?;
+            group.set_expansion_state(value);
+        }
         "BRKTYP" => {
             let parsed = parse_string_property(cursor);
             let style = match parsed.as_str() {
                 "BRACKET" => SGroupBracketStyle::Bracket,
                 "PAREN" => SGroupBracketStyle::Parenthesis,
                 "" => SGroupBracketStyle::None,
-                other => SGroupBracketStyle::Unknown(other.to_owned()),
+                other => SGroupBracketStyle::Unknown(other.into()),
             };
+            group.set_prop("BRKTYP", parsed)?;
             group.set_bracket_style(style);
         }
-        other => group.set_prop(other, parse_string_property(cursor)),
+        other => group.set_prop(other, parse_string_property(cursor))?,
     }
     Ok(())
 }
@@ -1715,8 +1748,10 @@ pub(super) fn parse_v3000_sgroup_block(
             sgroup_kind_from_rdkit_type(kind_text),
         );
         group.set_rdkit_sequence_id(sequence);
-        group.set_prop("TYPE", kind_text);
+        group.set_prop("TYPE", kind_text)?;
+        group.set_prop("index", PropertyValue::UInt(sequence))?;
         if external_id != 0 {
+            group.set_prop("ID", PropertyValue::UInt(external_id))?;
             group.set_external_id(external_id);
         }
         let mut seen = BTreeSet::new();
@@ -1749,6 +1784,14 @@ pub(super) fn parse_v3000_sgroup_block(
         } else {
             false
         };
+        group.set_prop(
+            "DATAFIELDS",
+            PropertyValue::StringVector(
+                group
+                    .data()
+                    .map_or_else(Vec::new, |data| data.values.clone()),
+            ),
+        )?;
         if let std::collections::btree_map::Entry::Vacant(entry) = groups.entry(sequence) {
             entry.insert(group);
             parents.extend(candidate_parents);
@@ -2450,7 +2493,8 @@ impl V2000SgroupState {
                 sgroup_kind_from_rdkit_type(kind_text),
             );
             group.set_rdkit_sequence_id(sequence);
-            group.set_prop("TYPE", kind_text);
+            group.set_prop("TYPE", kind_text)?;
+            group.set_prop("index", PropertyValue::UInt(sequence))?;
             self.groups.entry(sequence).or_insert(group);
             position += 4;
         }
@@ -2558,9 +2602,13 @@ impl V2000SgroupState {
                     )),
                 );
             }
-            self.group_mut_if_present(sequence)
-                .expect("presence checked before parsing SGroup subtype")
-                .set_subtype(subtype);
+            {
+                let group = self
+                    .group_mut_if_present(sequence)
+                    .expect("presence checked before parsing SGroup subtype");
+                group.set_prop("SUBTYPE", subtype)?;
+                group.set_subtype(subtype);
+            }
             position += 4;
         }
         Ok(())
@@ -2670,9 +2718,13 @@ impl V2000SgroupState {
                 self.invalid_sequences.insert(sequence);
                 return Ok(());
             };
-            self.group_mut_if_present(sequence)
-                .expect("presence checked before parsing SGroup label ID")
-                .set_external_id(id);
+            {
+                let group = self
+                    .group_mut_if_present(sequence)
+                    .expect("presence checked before parsing SGroup label ID");
+                group.set_prop("ID", PropertyValue::UInt(id))?;
+                group.set_external_id(id);
+            }
         }
         Ok(())
     }
@@ -2771,9 +2823,13 @@ impl V2000SgroupState {
                     )),
                 );
             };
-            self.group_mut_if_present(sequence)
-                .expect("presence checked before parsing SGroup connection")
-                .set_connection(connection);
+            {
+                let group = self
+                    .group_mut_if_present(sequence)
+                    .expect("presence checked before parsing SGroup connection");
+                group.set_prop("CONNECT", text)?;
+                group.set_connection(connection);
+            }
             position += 3;
         }
         Ok(())
@@ -3054,8 +3110,9 @@ impl V2000SgroupState {
             .group_mut_if_present(sequence)
             .expect("presence checked before parsing SGroup label");
         if group.kind() == &SubstanceGroupKind::MultipleGroup {
-            group.set_prop("MULT", label);
+            group.set_prop("MULT", label)?;
         } else {
+            group.set_prop("LABEL", label)?;
             group.set_label(label);
         }
         Ok(())
@@ -3385,25 +3442,30 @@ impl V2000SgroupState {
         let query_op = rdkit_substr(line, position, line.len().saturating_sub(position))
             .trim_end()
             .to_owned();
-        let data = self
+        let group = self
             .group_mut_if_present(sequence)
-            .expect("presence checked before parsing SGroup data header")
-            .data_mut();
+            .expect("presence checked before parsing SGroup data header");
         if !field_name.is_empty() {
-            data.field_name = Some(field_name);
+            group.set_prop("FIELDNAME", field_name.clone())?;
+            group.data_mut().field_name = Some(field_name.into());
         }
         if !field_type.is_empty() {
-            data.field_type = Some(field_type);
+            group.set_prop("FIELDTYPE", field_type.clone())?;
+            group.data_mut().field_type = Some(field_type.into());
         }
         if !field_info.is_empty() {
-            data.field_info = Some(field_info);
+            group.set_prop("FIELDINFO", field_info.clone())?;
+            group.data_mut().field_info = Some(field_info.into());
         }
         if !query_type.is_empty() {
-            data.query_type = Some(query_type);
+            group.set_prop("QUERYTYPE", query_type.clone())?;
+            group.data_mut().query_type = Some(query_type.into());
         }
         if !query_op.is_empty() {
-            data.query_op = Some(query_op);
+            group.set_prop("QUERYOP", query_op.clone())?;
+            group.data_mut().query_op = Some(query_op.into());
         }
+
         Ok(())
     }
 
@@ -3456,10 +3518,11 @@ impl V2000SgroupState {
         }
         position += 1;
         if position < line.len() {
-            self.group_mut_if_present(sequence)
-                .expect("presence checked before parsing SGroup display data")
-                .data_mut()
-                .field_display = Some(line[position..].to_owned());
+            let group = self
+                .group_mut_if_present(sequence)
+                .expect("presence checked before parsing SGroup display data");
+            group.set_prop("FIELDDISP", &line[position..])?;
+            group.data_mut().field_display = Some(line[position..].into());
         }
         Ok(())
     }
@@ -3585,7 +3648,7 @@ impl V2000SgroupState {
                     .expect("presence checked before parsing SGroup data value")
                     .data_mut()
                     .values
-                    .push(value);
+                    .push(value.into());
                 self.current_data_field.clear();
                 self.scd_counter = 0;
             } else {
@@ -3678,6 +3741,9 @@ impl V2000SgroupState {
             // RDKit intentionally uses the throwing overload for PARENT even
             // when the surrounding parse is non-strict.
             let parent = parse_v2000_int_field(line, line_number, &mut position, false)?;
+            self.group_mut_if_present(sequence)
+                .expect("presence checked")
+                .set_prop("PARENT", PropertyValue::UInt(parent))?;
             self.parent_by_sequence.insert(sequence, parent);
         }
         Ok(())
@@ -3794,9 +3860,13 @@ impl V2000SgroupState {
                     )),
                 );
             }
-            self.group_mut_if_present(sequence)
-                .expect("presence checked before parsing SGroup component number")
-                .set_component_number(component);
+            {
+                let group = self
+                    .group_mut_if_present(sequence)
+                    .expect("presence checked before parsing SGroup component number");
+                group.set_prop("COMPNO", PropertyValue::UInt(component))?;
+                group.set_component_number(component);
+            }
         }
         Ok(())
     }
@@ -3937,7 +4007,7 @@ impl V2000SgroupState {
                     atom,
                     leaving_atom: (leaving_bookmark != 0)
                         .then(|| AtomId::new(leaving_bookmark as usize - 1)),
-                    label,
+                    label: label.map(Into::into),
                     order: None,
                 });
         }
@@ -4005,9 +4075,13 @@ impl V2000SgroupState {
                 )),
             );
         }
-        self.group_mut_if_present(sequence)
-            .expect("presence checked before parsing SGroup class")
-            .set_class(&line[position..]);
+        {
+            let group = self
+                .group_mut_if_present(sequence)
+                .expect("presence checked before parsing SGroup class");
+            group.set_prop("CLASS", &line[position..])?;
+            group.set_class(&line[position..]);
+        }
         Ok(())
     }
 
@@ -4127,9 +4201,18 @@ impl V2000SgroupState {
                     );
                 }
             };
-            self.group_mut_if_present(sequence)
-                .expect("presence checked before parsing SGroup bracket type")
-                .set_bracket_style(style);
+            let group = self
+                .group_mut_if_present(sequence)
+                .expect("presence checked before parsing SGroup bracket type");
+            group.set_prop(
+                "BRKTYP",
+                if bracket_type == 0 {
+                    "BRACKET"
+                } else {
+                    "PAREN"
+                },
+            )?;
+            group.set_bracket_style(style);
         }
         Ok(())
     }
@@ -4171,6 +4254,22 @@ impl V2000SgroupState {
         // RDKit❗✔️:     res = false;
         // RDKit❗✔️:   }
         // RDKit❗✔️: }
+        for (sequence, group) in &mut self.groups {
+            if !self.invalid_sequences.contains(sequence) {
+                // RDKit❗❌:         sgroup.second.setProp("DATAFIELDS", dataFieldsMap[sgroup.first]);
+                // Actual tag/order is retained in the sole PropertyStore; the
+                // existing explicit SGroupData field requires one extra O(D)
+                // payload copy over source, retained as performance debt.
+                group.set_prop(
+                    "DATAFIELDS",
+                    PropertyValue::StringVector(
+                        group
+                            .data()
+                            .map_or_else(Vec::new, |data| data.values.clone()),
+                    ),
+                )?;
+            }
+        }
         for (sequence, atom, label) in std::mem::take(&mut self.pending_attach_points) {
             if self.invalid_sequences.contains(&sequence) {
                 continue;
@@ -4195,7 +4294,7 @@ impl V2000SgroupState {
                     .push_attach_point(SGroupAttachPoint {
                         atom,
                         leaving_atom: Some(leaving_atom),
-                        label,
+                        label: label.map(Into::into),
                         order: None,
                     });
             } else {
@@ -4238,34 +4337,154 @@ impl V2000SgroupState {
     }
 }
 
-fn rdkit_sgroup_type(group: &SubstanceGroup) -> &str {
-    group.props().get("TYPE").map_or_else(
-        || match group.kind() {
-            SubstanceGroupKind::Data => "DAT",
-            SubstanceGroupKind::Superatom => "SUP",
-            SubstanceGroupKind::MultipleGroup => "MUL",
-            SubstanceGroupKind::StructuralRepeatUnit => "SRU",
-            SubstanceGroupKind::Monomer => "MON",
-            SubstanceGroupKind::Copolymer => "COP",
-            SubstanceGroupKind::Crosslink => "CRO",
-            SubstanceGroupKind::Graft => "GRA",
-            SubstanceGroupKind::Modification => "MOD",
-            SubstanceGroupKind::Mer => "MER",
-            SubstanceGroupKind::AnyPolymer => "ANY",
-            SubstanceGroupKind::MixtureComponent => "COM",
-            SubstanceGroupKind::Mixture => "MIX",
-            SubstanceGroupKind::Formulation => "FOR",
-            SubstanceGroupKind::Generic(value) => value,
-        },
-        String::as_str,
-    )
+fn sgroup_string_value(
+    group: &SubstanceGroup,
+    key: &str,
+    detached: Option<&[u8]>,
+) -> Result<Option<PropertyText>, SdfWriteError> {
+    // RDKit❗✔️:   template <typename T>
+    // RDKit❗✔️:   bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit❗✔️:     return d_props.getValIfPresent(key, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   bool getValIfPresent(const std::string_view what, std::string &res) const {
+    // RDKit❗✔️:     for (const auto &i : _data) {
+    // RDKit❗✔️:       if (i.key == what) {
+    // RDKit❗✔️:         rdvalue_tostring(i.val, res);
+    // RDKit❗✔️:         return true;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // Actual counted property bytes take precedence. The explicit detached
+    // field is the same modeled value when no source property was supplied.
+    // O(log P + bytes), one canonical conversion; no decoding or retagging.
+    match group.props().get(key.as_bytes()) {
+        Some(value) => Ok(Some(cosmolkit_core::property_value_to_string(value)?)),
+        None => Ok(detached.map(PropertyText::from_bytes)),
+    }
+}
+fn sgroup_uint_value(
+    group: &SubstanceGroup,
+    key: &str,
+    detached: Option<u32>,
+) -> Result<Option<u32>, SdfWriteError> {
+    // RDKit❗✔️:   template <typename T>
+    // RDKit❗✔️:   bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit❗✔️:     return d_props.getValIfPresent(key, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   template <typename T>
+    // RDKit❗✔️:   bool getValIfPresent(const std::string_view what, T &res) const {
+    // RDKit❗✔️:     for (const auto &data : _data) {
+    // RDKit❗✔️:       if (data.key == what) {
+    // RDKit❗✔️:         res = from_rdvalue<T>(data.val);
+    // RDKit❗✔️:         return true;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // Preserve from_rdvalue<unsigned int> conversion and failure order.
+    // O(log P + bytes) for text, O(log P) for typed scalar, no buffering.
+    match group.props().get(key.as_bytes()) {
+        Some(value) => Ok(Some(cosmolkit_core::property_value_to_uint(value)?)),
+        None => Ok(detached),
+    }
+}
+fn sgroup_parent_value(group: &SubstanceGroup) -> Result<Option<u32>, SdfWriteError> {
+    // RDKit❗✔️: std::string FormatV3000ParentBlock(const SubstanceGroup &sgroup) {
+    // RDKit❗✔️:   std::ostringstream ret;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int parentIdx = -1;
+    // RDKit❗✔️:   if (sgroup.getPropIfPresent("PARENT", parentIdx)) {
+    // RDKit❗✔️:     ret << " PARENT=" << parentIdx;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return ret.str();
+    // RDKit❗✔️: }
+    // Convert the explicit identifier only if the actual source property is
+    // absent; a present property retains its own conversion/error ordering.
+    if let Some(value) = group.props().get(b"PARENT".as_slice()) {
+        return Ok(Some(cosmolkit_core::property_value_to_uint(value)?));
+    }
+    group
+        .parent()
+        .map(|parent| {
+            parent
+                .index()
+                .checked_add(1)
+                .and_then(|value| u32::try_from(value).ok())
+                .ok_or_else(|| {
+                    SdfWriteError::SubstanceGroup(
+                        "parent sequence exceeds source unsigned int".into(),
+                    )
+                })
+        })
+        .transpose()
+}
+fn sgroup_data_values(group: &SubstanceGroup) -> Result<&[PropertyText], SdfWriteError> {
+    // RDKit❗✔️:   template <typename T>
+    // RDKit❗✔️:   bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit❗✔️:     return d_props.getValIfPresent(key, res);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   template <typename T>
+    // RDKit❗✔️:   bool getValIfPresent(const std::string_view what, T &res) const {
+    // RDKit❗✔️:     for (const auto &data : _data) {
+    // RDKit❗✔️:       if (data.key == what) {
+    // RDKit❗✔️:         res = from_rdvalue<T>(data.val);
+    // RDKit❗✔️:         return true;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline std::vector<std::string> rdvalue_cast<std::vector<std::string>>(
+    // RDKit❗✔️:     RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<std::vector<std::string>>(v)) {
+    // RDKit❗✔️:     return *v.ptrCast<std::vector<std::string>>();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // Wrong-kind errors remain visible; the absent explicit detached value
+    // is borrowed. O(log P), no second property map or payload copy.
+    match group.props().get(b"DATAFIELDS".as_slice()) {
+        Some(value) => Ok(value.as_string_vector()?),
+        None => Ok(group
+            .data()
+            .map_or(group.data_fields(), |data| data.values.as_slice())),
+    }
+}
+
+fn rdkit_sgroup_type(group: &SubstanceGroup) -> Result<PropertyText, SdfWriteError> {
+    if let Some(value) = group.props().get(b"TYPE".as_slice()) {
+        return cosmolkit_core::property_value_to_string(value).map_err(SdfWriteError::Property);
+    }
+    // Behavior: absent typed property uses the existing explicit detached kind;
+    // present source property uses the canonical byte-preserving converter.
+    // Complexity: one indexed lookup plus source conversion, no second map.
+    let kind: &[u8] = match group.kind() {
+        SubstanceGroupKind::Data => b"DAT",
+        SubstanceGroupKind::Superatom => b"SUP",
+        SubstanceGroupKind::MultipleGroup => b"MUL",
+        SubstanceGroupKind::StructuralRepeatUnit => b"SRU",
+        SubstanceGroupKind::Monomer => b"MON",
+        SubstanceGroupKind::Copolymer => b"COP",
+        SubstanceGroupKind::Crosslink => b"CRO",
+        SubstanceGroupKind::Graft => b"GRA",
+        SubstanceGroupKind::Modification => b"MOD",
+        SubstanceGroupKind::Mer => b"MER",
+        SubstanceGroupKind::AnyPolymer => b"ANY",
+        SubstanceGroupKind::MixtureComponent => b"COM",
+        SubstanceGroupKind::Mixture => b"MIX",
+        SubstanceGroupKind::Formulation => b"FOR",
+        SubstanceGroupKind::Generic(value) => value.as_bytes(),
+    };
+    Ok(PropertyText::from(kind))
 }
 
 fn v3000_index_block<T>(
     name: &str,
     values: impl IntoIterator<Item = T>,
     index: impl Fn(T) -> usize,
-) -> String {
+) -> PropertyText {
     // BEGIN RDKIT CPP FUNCTION BuildV3000IdxVectorDataBlock
     // RDKit✔️✔️:   size_t size = dataVectorEnd - dataVectorBegin;
     // RDKit✔️✔️:   if (size) {
@@ -4277,20 +4496,59 @@ fn v3000_index_block<T>(
     // RDKit✔️✔️: }
     let indices = values.into_iter().map(index).collect::<Vec<_>>();
     if indices.is_empty() {
-        return String::new();
+        return PropertyText::new();
     }
     let mut output = format!(" {name}=({}", indices.len());
     for value in indices {
         output.push_str(&format!(" {}", value + 1));
     }
     output.push(')');
-    output
+    output.into()
     // END RDKIT CPP FUNCTION
 }
 
-fn v3000_string_block(name: &str, value: Option<&str>) -> String {
+fn v3000_string_block(name: &str, value: Option<&[u8]>) -> PropertyText {
+    // RDKit❗✔️: std::string FormatV3000StringPropertyBlock(const std::string &prop,
+    // RDKit❗✔️:                                            const SubstanceGroup &sgroup) {
+    // RDKit❗✔️:   std::ostringstream ret;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string propValue;
+    // RDKit❗✔️:   if (sgroup.getPropIfPresent(prop, propValue)) {
+    // RDKit❗✔️:     if (!propValue.empty()) {
+    // RDKit❗✔️:       ret << ' ' << prop << '=';
+    // RDKit❗✔️:       // CTAB spec says: "Strings that contain blank spaces or start with left
+    // RDKit❗✔️:       // parenthesis or double quote, must be surrounded by double quotes A
+    // RDKit❗✔️:       // double quote can be entered literally by doubling it."
+    // RDKit❗✔️:       // However, BIOVIA Draw 2020 doesn't correctly parse values like
+    // RDKit❗✔️:       // foo"" or foo(bar) but does fine with "foo""" and "foo(bar)"
+    // RDKit❗✔️:       // and both BIOVIA Draw and Marvin Sketch happily ignore the theoretically
+    // RDKit❗✔️:       // extra quotes.
+    // RDKit❗✔️:       bool needsQuotes = propValue.find(' ') != std::string::npos ||
+    // RDKit❗✔️:                          propValue.find('"') != std::string::npos ||
+    // RDKit❗✔️:                          propValue.find('(') != std::string::npos;
+    // RDKit❗✔️:       if (needsQuotes) {
+    // RDKit❗✔️:         ret << "\"";
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:
+    // RDKit❗✔️:       for (auto chr : propValue) {
+    // RDKit❗✔️:         ret << chr;
+    // RDKit❗✔️:         // double quotes need to be doubled on output:
+    // RDKit❗✔️:         if (chr == '"') {
+    // RDKit❗✔️:           ret << chr;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:
+    // RDKit❗✔️:       if (needsQuotes) {
+    // RDKit❗✔️:         ret << "\"";
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return ret.str();
+    // RDKit❗✔️: }
+
     let Some(value) = value.filter(|value| !value.is_empty()) else {
-        return String::new();
+        return PropertyText::new();
     };
     // BEGIN RDKIT CPP FUNCTION FormatV3000StringPropertyBlock
     // RDKit✔️✔️:       bool needsQuotes = propValue.find(' ') != std::string::npos ||
@@ -4308,17 +4566,58 @@ fn v3000_string_block(name: &str, value: Option<&str>) -> String {
     // RDKit✔️✔️:       if (needsQuotes) {
     // RDKit✔️✔️:         ret << "\"";
     // RDKit✔️✔️: }
-    let needs_quotes = value.contains([' ', '"', '(']);
-    let escaped = value.replace('"', "\"\"");
+    // Behavior: source byte scanning and quote doubling, without text decoding.
+    // Complexity: O(bytes), one output buffer with source-required expansion.
+    let needs_quotes = value.iter().any(|byte| matches!(byte, b' ' | b'"' | b'('));
+    let mut output = PropertyText::from(format!(" {name}="));
     if needs_quotes {
-        format!(" {name}=\"{escaped}\"")
-    } else {
-        format!(" {name}={escaped}")
+        output.push_byte(b'"');
     }
+    for &byte in value {
+        output.push_byte(byte);
+        if byte == b'"' {
+            output.push_byte(byte);
+        }
+    }
+    if needs_quotes {
+        output.push_byte(b'"');
+    }
+    output
     // END RDKIT CPP FUNCTION
 }
 
-fn add_v3000_block(block: &str, current: &mut String, output: &mut String) {
+fn add_v3000_block(block: &[u8], current: &mut PropertyText, output: &mut PropertyText) {
+    // RDKit❗✔️: void addBlockToSGroupString(std::string block, std::string &currentLine,
+    // RDKit❗✔️:                             std::ostringstream &os) {
+    // RDKit❗✔️:   if (block.empty()) {
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (currentLine.length() + block.length() < 78) {
+    // RDKit❗✔️:     currentLine += block;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     os << currentLine << " -\n";
+    // RDKit❗✔️:     unsigned int length = block.size();
+    // RDKit❗✔️:     unsigned int start = 0;
+    // RDKit❗✔️:     while (length - start >= 73) {
+    // RDKit❗✔️:       os << "M  V30";
+    // RDKit❗✔️:       if (start) {
+    // RDKit❗✔️:         os << ' ';
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       os << block.substr(start, 72);
+    // RDKit❗✔️:       start += 72;
+    // RDKit❗✔️:       if (start < length) {
+    // RDKit❗✔️:         // need to write more, so add another "-"
+    // RDKit❗✔️:         os << "-\n";
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (start < length) {
+    // RDKit❗✔️:       currentLine =
+    // RDKit❗✔️:           "M  V30" + std::string(start ? " " : "") + block.substr(start, 73);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // RDKit❗✔️: }  // namespace
+
     // BEGIN RDKIT CPP FUNCTION addBlockToSGroupString
     // RDKit❗✔️:   if (block.empty()) {
     // RDKit❗✔️:   return;
@@ -4342,58 +4641,56 @@ fn add_v3000_block(block: &str, current: &mut String, output: &mut String) {
     // RDKit❗✔️:     }
     // RDKit❗✔️:   }
     // RDKit❗✔️: }
+    // Behavior: counted substrings split at source 72-byte offsets, including
+    // non-UTF8 and embedded NUL. Generated syntax stays ASCII.
+    // Complexity: O(bytes), append-only output and bounded slices, as source.
     if block.is_empty() {
         return;
     }
     if current.len() + block.len() < 78 {
-        current.push_str(block);
+        current.extend_bytes(block);
         return;
     }
-    output.push_str(current);
-    output.push_str(" -\n");
-    // SGroup blocks are ASCII syntax plus user strings. Split only at a UTF-8
-    // character boundary while retaining RDKit's 72-byte target where possible.
-    let mut remainder = block;
-    let mut continued = false;
-    while remainder.len() >= 73 {
-        let mut split = 72;
-        while !remainder.is_char_boundary(split) {
-            split -= 1;
+    output.extend_bytes(current.as_bytes());
+    output.extend_bytes(b" -\n");
+    let mut start = 0;
+    while block.len() - start >= 73 {
+        output.extend_bytes(b"M  V30");
+        if start != 0 {
+            output.push_byte(b' ');
         }
-        output.push_str("M  V30");
-        if continued {
-            output.push(' ');
-        }
-        output.push_str(&remainder[..split]);
-        remainder = &remainder[split..];
-        continued = true;
-        if !remainder.is_empty() {
-            output.push_str("-\n");
+        output.extend_bytes(&block[start..start + 72]);
+        start += 72;
+        if start < block.len() {
+            output.extend_bytes(b"-\n");
         }
     }
-    if remainder.is_empty() {
+    if start < block.len() {
         current.clear();
-    } else {
-        *current = format!("M  V30{}{remainder}", if continued { " " } else { "" });
+        current.extend_bytes(b"M  V30");
+        if start != 0 {
+            current.push_byte(b' ');
+        }
+        current.extend_bytes(&block[start..]);
     }
     // END RDKIT CPP FUNCTION
 }
 
-fn connection_text(value: &SGroupConnection) -> &str {
+fn connection_text(value: &SGroupConnection) -> &[u8] {
     match value {
-        SGroupConnection::HeadToHead => "HH",
-        SGroupConnection::HeadToTail => "HT",
-        SGroupConnection::Either => "EU",
-        SGroupConnection::Unknown(value) => value,
+        SGroupConnection::HeadToHead => b"HH",
+        SGroupConnection::HeadToTail => b"HT",
+        SGroupConnection::Either => b"EU",
+        SGroupConnection::Unknown(value) => value.as_bytes(),
     }
 }
 
-fn bracket_style_text(value: &SGroupBracketStyle) -> &str {
+fn bracket_style_text(value: &SGroupBracketStyle) -> &[u8] {
     match value {
-        SGroupBracketStyle::Bracket => "BRACKET",
-        SGroupBracketStyle::Parenthesis => "PAREN",
-        SGroupBracketStyle::None => "",
-        SGroupBracketStyle::Unknown(value) => value,
+        SGroupBracketStyle::Bracket => b"BRACKET",
+        SGroupBracketStyle::Parenthesis => b"PAREN",
+        SGroupBracketStyle::None => b"",
+        SGroupBracketStyle::Unknown(value) => value.as_bytes(),
     }
 }
 
@@ -4538,7 +4835,7 @@ pub(super) fn write_v3000_sgroup(
     sequence: usize,
     group: &SubstanceGroup,
     bonds: &[cosmolkit_model::Bond],
-) -> Result<String, SdfWriteError> {
+) -> Result<PropertyText, SdfWriteError> {
     // BEGIN RDKIT CPP FUNCTION GetV3000MolFileSGroupLines
     // RDKit❗✔️:   std::string currLine = (boost::format("M  V30 %d %s %d") % idx %
     // RDKit❗✔️:                           sgroup.getProp<std::string>("TYPE") % id)
@@ -4569,29 +4866,32 @@ pub(super) fn write_v3000_sgroup(
     // RDKit✔️✔️:
     // RDKit✔️✔️:   return ret.str();
     // RDKit✔️✔️: }
-    // RDKit✔️✔️:   addBlockToSGroupString(BuildV3000BondsBlock(sgroup), currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(
-    // RDKit❗✔️:       BuildV3000IdxVectorDataBlock("PATOMS", sgroup.getParentAtoms()), currLine,
-    // RDKit❗✔️:       os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000StringPropertyBlock("SUBTYPE", sgroup),
-    // RDKit❗✔️:                          currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000StringPropertyBlock("CONNECT", sgroup),
-    // RDKit❗✔️:                          currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000ParentBlock(sgroup), currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000CompNoBlock(sgroup), currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000StringPropertyBlock("LABEL", sgroup),
-    // RDKit❗✔️:                          currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000BracketBlock(sgroup.getBrackets()),
-    // RDKit❗✔️:                          currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000CStateBlock(sgroup), currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000FieldDataBlock(sgroup), currLine, os);
-    // RDKit❗✔️:   addBlockToSGroupString(FormatV3000AttachPointBlock(sgroup.getAttachPoints()),
-    // RDKit❗✔️:                          currLine, os);
-    let mut output = String::new();
-    let mut current = format!(
-        "M  V30 {sequence} {} {}",
-        rdkit_sgroup_type(group),
-        group.external_id().unwrap_or(0)
+    // RDKit✔️✔️: addBlockToSGroupString(BuildV3000BondsBlock(sgroup), currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(
+    // RDKit❗✔️:     BuildV3000IdxVectorDataBlock("PATOMS", sgroup.getParentAtoms()), currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000StringPropertyBlock("SUBTYPE", sgroup),
+    // RDKit❗✔️:                        currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000StringPropertyBlock("CONNECT", sgroup),
+    // RDKit❗✔️:                        currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000ParentBlock(sgroup), currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000CompNoBlock(sgroup), currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000StringPropertyBlock("LABEL", sgroup),
+    // RDKit❗✔️:                        currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000BracketBlock(sgroup.getBrackets()),
+    // RDKit❗✔️:                        currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000CStateBlock(sgroup), currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000FieldDataBlock(sgroup), currLine, os);
+    // RDKit❗✔️: addBlockToSGroupString(FormatV3000AttachPointBlock(sgroup.getAttachPoints()),
+    // RDKit❗✔️:                        currLine, os);
+    let mut output = PropertyText::new();
+    let mut current = PropertyText::from(format!("M  V30 {sequence} "));
+    current.extend_bytes(rdkit_sgroup_type(group)?.as_bytes());
+    current.extend_bytes(
+        format!(
+            " {}",
+            sgroup_uint_value(group, "ID", group.external_id())?.unwrap_or(0)
+        )
+        .as_bytes(),
     );
     let mut blocks = vec![v3000_index_block(
         "ATOMS",
@@ -4634,60 +4934,163 @@ pub(super) fn write_v3000_sgroup(
         group.parent_atoms().iter().copied(),
         AtomId::index,
     ));
-    blocks.push(v3000_string_block("SUBTYPE", group.subtype()));
+    blocks.push(v3000_string_block(
+        "SUBTYPE",
+        sgroup_string_value(
+            group,
+            "SUBTYPE",
+            group.subtype().map(PropertyText::as_bytes),
+        )?
+        .as_ref()
+        .map(PropertyText::as_bytes),
+    ));
     blocks.push(v3000_string_block(
         "MULT",
-        group.props().get("MULT").map(String::as_str),
+        group
+            .props()
+            .get(b"MULT".as_slice())
+            .map(cosmolkit_core::property_value_to_string)
+            .transpose()
+            .map_err(SdfWriteError::Property)?
+            .as_ref()
+            .map(PropertyText::as_bytes),
     ));
     blocks.push(v3000_string_block(
         "CONNECT",
-        group.connection().map(connection_text),
+        sgroup_string_value(group, "CONNECT", group.connection().map(connection_text))?
+            .as_ref()
+            .map(PropertyText::as_bytes),
     ));
-    if let Some(parent) = group.parent() {
-        blocks.push(format!(" PARENT={}", parent.index() + 1));
+    if let Some(parent) = sgroup_parent_value(group)? {
+        blocks.push(format!(" PARENT={parent}").into());
     }
-    if let Some(component) = group.component_number() {
-        blocks.push(format!(" COMPNO={component}"));
+    if let Some(component) = sgroup_uint_value(group, "COMPNO", group.component_number())? {
+        blocks.push(format!(" COMPNO={component}").into());
     }
-    blocks.push(v3000_string_block("LABEL", group.label()));
+    blocks.push(v3000_string_block(
+        "LABEL",
+        sgroup_string_value(group, "LABEL", group.label().map(PropertyText::as_bytes))?
+            .as_ref()
+            .map(PropertyText::as_bytes),
+    ));
     if let Some(display) = group.display() {
         for bracket in &display.brackets {
-            blocks.push(format!(
-                " BRKXYZ=(9 {:.4} {:.4} 0 {:.4} {:.4} 0 0 0 0)",
-                bracket.points[0][0],
-                bracket.points[0][1],
-                bracket.points[1][0],
-                bracket.points[1][1]
-            ));
+            blocks.push(
+                format!(
+                    " BRKXYZ=(9 {:.4} {:.4} 0 {:.4} {:.4} 0 0 0 0)",
+                    bracket.points[0][0],
+                    bracket.points[0][1],
+                    bracket.points[1][0],
+                    bracket.points[1][1]
+                )
+                .into(),
+            );
         }
     }
-    blocks.push(v3000_string_block("ESTATE", group.expansion_state()));
+    blocks.push(v3000_string_block(
+        "ESTATE",
+        sgroup_string_value(
+            group,
+            "ESTATE",
+            group.expansion_state().map(PropertyText::as_bytes),
+        )?
+        .as_ref()
+        .map(PropertyText::as_bytes),
+    ));
     for cstate in group.cstates() {
-        blocks.push(if group.kind() == &SubstanceGroupKind::Superatom {
-            format!(
-                " CSTATE=(4 {} {:.4} {:.4} 0)",
-                cstate.bond.index() + 1,
-                cstate.vector[0],
-                cstate.vector[1]
-            )
-        } else {
-            format!(" CSTATE=(1 {})", cstate.bond.index() + 1)
-        });
+        blocks.push(
+            (if group.kind() == &SubstanceGroupKind::Superatom {
+                format!(
+                    " CSTATE=(4 {} {:.4} {:.4} 0)",
+                    cstate.bond.index() + 1,
+                    cstate.vector[0],
+                    cstate.vector[1]
+                )
+            } else {
+                format!(" CSTATE=(1 {})", cstate.bond.index() + 1)
+            })
+            .into(),
+        );
     }
-    if let Some(data) = group.data() {
-        blocks.push(v3000_string_block("FIELDNAME", data.field_name.as_deref()));
-        blocks.push(v3000_string_block("FIELDINFO", data.field_info.as_deref()));
-        blocks.push(v3000_string_block(
+    let data = group.data();
+    blocks.push(v3000_string_block(
+        "FIELDNAME",
+        sgroup_string_value(
+            group,
+            "FIELDNAME",
+            data.and_then(|data| data.field_name.as_ref().map(PropertyText::as_bytes)),
+        )?
+        .as_ref()
+        .map(PropertyText::as_bytes),
+    ));
+    blocks.push(v3000_string_block(
+        "FIELDINFO",
+        sgroup_string_value(
+            group,
+            "FIELDINFO",
+            data.and_then(|data| data.field_info.as_ref().map(PropertyText::as_bytes)),
+        )?
+        .as_ref()
+        .map(PropertyText::as_bytes),
+    ));
+    blocks.push(v3000_string_block(
+        "FIELDDISP",
+        sgroup_string_value(
+            group,
             "FIELDDISP",
-            data.field_display.as_deref(),
-        ));
-        blocks.push(v3000_string_block("QUERYTYPE", data.query_type.as_deref()));
-        blocks.push(v3000_string_block("QUERYOP", data.query_op.as_deref()));
-        for value in &data.values {
-            blocks.push(format!(" FIELDDATA=\"{value}\""));
+            data.and_then(|data| data.field_display.as_ref().map(PropertyText::as_bytes)),
+        )?
+        .as_ref()
+        .map(PropertyText::as_bytes),
+    ));
+    blocks.push(v3000_string_block(
+        "QUERYTYPE",
+        sgroup_string_value(
+            group,
+            "QUERYTYPE",
+            data.and_then(|data| data.query_type.as_ref().map(PropertyText::as_bytes)),
+        )?
+        .as_ref()
+        .map(PropertyText::as_bytes),
+    ));
+    blocks.push(v3000_string_block(
+        "QUERYOP",
+        sgroup_string_value(
+            group,
+            "QUERYOP",
+            data.and_then(|data| data.query_op.as_ref().map(PropertyText::as_bytes)),
+        )?
+        .as_ref()
+        .map(PropertyText::as_bytes),
+    ));
+    // RDKit✔️✔️: std::string FormatV3000FieldDataBlock(const SubstanceGroup &sgroup) {
+    // RDKit✔️✔️:   std::ostringstream ret;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   STR_VECT dataFields;
+    // RDKit✔️✔️:   if (sgroup.getPropIfPresent("DATAFIELDS", dataFields)) {
+    // RDKit✔️✔️:     for (const auto &data : dataFields) {
+    // RDKit✔️✔️:       ret << " FIELDDATA=\"" << data << "\"";
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   return ret.str();
+    // RDKit✔️✔️: }
+    // Copy every payload byte once, including quotes; the source does not
+    // escape DATAFIELDS. Linear append cost, with no decoded payload copy.
+    for value in sgroup_data_values(group)? {
+        let mut block = PropertyText::from(" FIELDDATA=\"");
+        for &byte in value.as_bytes() {
+            block.push_byte(byte);
         }
+        block.push_byte(b'"');
+        blocks.push(block);
     }
-    blocks.push(v3000_string_block("CLASS", group.class()));
+    blocks.push(v3000_string_block(
+        "CLASS",
+        sgroup_string_value(group, "CLASS", group.class().map(PropertyText::as_bytes))?
+            .as_ref()
+            .map(PropertyText::as_bytes),
+    ));
     for point in group.attach_points() {
         let leaving = if point.leaving_atom == Some(point.atom) {
             "aidx".to_owned()
@@ -4696,275 +5099,72 @@ pub(super) fn write_v3000_sgroup(
                 .leaving_atom
                 .map_or_else(|| "0".to_owned(), |atom| (atom.index() + 1).to_string())
         };
-        blocks.push(format!(
-            " SAP=(3 {} {leaving} {})",
-            point.atom.index() + 1,
-            point.label.as_deref().unwrap_or_default()
-        ));
+        let mut block =
+            PropertyText::from(format!(" SAP=(3 {} {leaving} ", point.atom.index() + 1));
+        block.extend_bytes(
+            point
+                .label
+                .as_ref()
+                .map(PropertyText::as_bytes)
+                .unwrap_or_default(),
+        );
+        block.push_byte(b')');
+        blocks.push(block);
     }
     blocks.push(v3000_string_block(
         "BRKTYP",
-        group.bracket_style().map(bracket_style_text),
+        sgroup_string_value(
+            group,
+            "BRKTYP",
+            group.bracket_style().map(bracket_style_text),
+        )?
+        .as_ref()
+        .map(PropertyText::as_bytes),
     ));
     for block in blocks {
-        add_v3000_block(&block, &mut current, &mut output);
+        add_v3000_block(block.as_bytes(), &mut current, &mut output);
     }
     if !current.is_empty() {
-        output.push_str(&current);
-        output.push('\n');
-    } else if output.ends_with(" -\n") {
-        output.truncate(output.len() - 3);
-        output.push('\n');
+        output.extend_bytes((&current).as_bytes());
+        output.push_byte(b'\n');
+    } else if output.as_bytes().ends_with(b" -\n") {
+        output = PropertyText::from(&output.as_bytes()[..output.len() - 3]);
+        output.push_byte(b'\n');
     }
     Ok(output)
     // END RDKIT CPP FUNCTION
 }
 
-pub(super) fn write_v3000_typed_blocks(topology: &TopologyBlock) -> Result<String, SdfWriteError> {
-    let mut output = String::new();
+pub(super) fn write_v3000_typed_blocks(
+    topology: &TopologyBlock,
+) -> Result<PropertyText, SdfWriteError> {
+    let mut output = PropertyText::new();
     if !topology.substance_groups.is_empty() {
         // BEGIN RDKIT CPP FUNCTION getV3000CTAB (SGroup block)
-        // RDKit✔️✔️:   if (nSGroups > 0) {
-        // RDKit✔️✔️:     res += "M  V30 BEGIN SGROUP\n";
+        // RDKit✔️✔️: if (nSGroups > 0) {
+        // RDKit✔️✔️:   res += "M  V30 BEGIN SGROUP\n";
         // RDKit✔️✔️:   unsigned int idx = 0;
-        // RDKit✔️✔️:     for (const auto &sgroup : sgroups) {
-        // RDKit✔️✔️:       res += GetV3000MolFileSGroupLines(++idx, sgroup);
+        // RDKit✔️✔️:   for (const auto &sgroup : sgroups) {
+        // RDKit✔️✔️:     res += GetV3000MolFileSGroupLines(++idx, sgroup);
         // RDKit✔️✔️:   }
-        // RDKit✔️✔️:     res += "M  V30 END SGROUP\n";
+        // RDKit✔️✔️:   res += "M  V30 END SGROUP\n";
         // RDKit✔️✔️: }
-        output.push_str("M  V30 BEGIN SGROUP\n");
+        output.extend_bytes(("M  V30 BEGIN SGROUP\n").as_bytes());
         for (index, group) in topology.substance_groups.iter().enumerate() {
-            output.push_str(&write_v3000_sgroup(index + 1, group, &topology.bonds)?);
+            output
+                .extend_bytes((write_v3000_sgroup(index + 1, group, &topology.bonds)?).as_bytes());
         }
-        output.push_str("M  V30 END SGROUP\n");
+        output.extend_bytes(("M  V30 END SGROUP\n").as_bytes());
         // END RDKIT CPP FUNCTION
     }
-    let atom_ids = topology
+    let atoms = topology
         .stereo_groups
         .iter()
         .map(|group| group.atoms().to_vec())
         .collect::<Vec<_>>();
-    output.push_str(&write_v3000_collection_rows(
-        &topology.stereo_groups,
-        &atom_ids,
-    ));
+    output.extend_bytes(write_v3000_collection_rows(&topology.stereo_groups, &atoms).as_bytes());
+
     Ok(output)
-}
-
-pub(super) fn write_v3000_collection_rows(
-    groups: &[StereoGroup],
-    atom_ids: &[Vec<cosmolkit_model::AtomId>],
-) -> String {
-    // RDKit❗❌: void appendEnhancedStereoGroups(
-    // RDKit❗❌:     std::string &res, const RWMol &tmol,
-    // RDKit❗❌:     std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> &wedgeBonds) {
-    // RDKit❗❌:   if (!tmol.getStereoGroups().empty()) {
-    // RDKit❗❌:     auto stereo_groups = tmol.getStereoGroups();
-    // RDKit❗❌:     assignStereoGroupIds(stereo_groups);
-    // RDKit❗❌:     res += "M  V30 BEGIN COLLECTION\n";
-    // RDKit❗❌:     std::string tmp;
-    // RDKit❗❌:     tmp.reserve(80);
-    // RDKit❗❌:     for (auto &&group : stereo_groups) {
-    // RDKit❗❌:       tmp += "M  V30 MDLV30/";
-    // RDKit❗❌:       switch (group.getGroupType()) {
-    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_ABSOLUTE:
-    // RDKit❗❌:           tmp += "STEABS";
-    // RDKit❗❌:           break;
-    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_OR:
-    // RDKit❗❌:           tmp += "STEREL";
-    // RDKit❗❌:           tmp += std::to_string(group.getWriteId());
-    // RDKit❗❌:           break;
-    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_AND:
-    // RDKit❗❌:           tmp += "STERAC";
-    // RDKit❗❌:           tmp += std::to_string(group.getWriteId());
-    // RDKit❗❌:           break;
-    // RDKit❗❌:       }
-    // RDKit❗❌:       tmp += " ATOMS=(";
-    // RDKit❗❌:
-    // RDKit❗❌:       std::vector<unsigned int> atomIds;
-    // RDKit❗❌:       Atropisomers::getAllAtomIdsForStereoGroup(tmol, group, atomIds,
-    // RDKit❗❌:                                                 wedgeBonds);
-    // RDKit❗❌:
-    // RDKit❗❌:       tmp += std::to_string(atomIds.size());
-    // RDKit❗❌:       for (auto &&atom : atomIds) {
-    // RDKit❗❌:         tmp += ' ';
-    // RDKit❗❌:         // atoms are 1 indexed in molfiles
-    // RDKit❗❌:         auto idxStr = std::to_string(atom + 1);
-    // RDKit❗❌:         if (tmp.size() + idxStr.size() >= 78) {
-    // RDKit❗❌:           res += tmp + "-\n";
-    // RDKit❗❌:           tmp = "M  V30 ";
-    // RDKit❗❌:         }
-    // RDKit❗❌:         tmp += idxStr;
-    // RDKit❗❌:       }
-    // RDKit❗❌:       res += tmp + ")\n";
-    // RDKit❗❌:       tmp.clear();
-    // RDKit❗❌:     }
-    // RDKit❗❌:     res += tmp + "M  V30 END COLLECTION\n";
-    // RDKit❗❌:   }
-    // RDKit❗❌: }
-    let mut output = String::new();
-    if !groups.is_empty() {
-        // BEGIN RDKIT CPP FUNCTION appendEnhancedStereoGroups
-        // RDKit❗✔️:     auto stereo_groups = tmol.getStereoGroups();
-        // RDKit❗✔️:     assignStereoGroupIds(stereo_groups);
-        // RDKit❗✔️:     res += "M  V30 BEGIN COLLECTION\n";
-        // RDKit❗✔️:       std::string tmp;
-        // RDKit❗✔️:     tmp.reserve(80);
-        // RDKit❗✔️:     for (auto &&group : stereo_groups) {
-        // RDKit❗✔️:       tmp += "M  V30 MDLV30/";
-        // RDKit❗✔️:     switch (group.getGroupType()) {
-        // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_ABSOLUTE:
-        // RDKit❗✔️:           tmp += "STEABS";
-        // RDKit❗✔️:       break;
-        // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_OR:
-        // RDKit❗✔️:           tmp += "STEREL";
-        // RDKit❗✔️:           tmp += std::to_string(group.getWriteId());
-        // RDKit❗✔️:       break;
-        // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_AND:
-        // RDKit❗✔️:           tmp += "STERAC";
-        // RDKit❗✔️:           tmp += std::to_string(group.getWriteId());
-        // RDKit❗✔️:       break;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:       tmp += " ATOMS=(";
-        // RDKit❗✔️:       tmp += std::to_string(atomIds.size());
-        // RDKit❗✔️:       for (auto &&atom : atomIds) {
-        // RDKit❗✔️:         tmp += ' ';
-        // RDKit❗✔️:         // atoms are 1 indexed in molfiles
-        // RDKit❗✔️:         auto idxStr = std::to_string(atom + 1);
-        // RDKit❗✔️:         if (tmp.size() + idxStr.size() >= 78) {
-        // RDKit❗✔️:           res += tmp + "-\n";
-        // RDKit❗✔️:           tmp = "M  V30 ";
-        // RDKit❗✔️:     }
-        // RDKit❗✔️:         tmp += idxStr;
-        // RDKit❗✔️:   }
-        // RDKit❗✔️:       res += tmp + ")\n";
-        // RDKit❗✔️:   tmp.clear();
-        // RDKit❗✔️: }
-        // RDKit❗✔️:     res += tmp + "M  V30 END COLLECTION\n";
-        output.push_str("M  V30 BEGIN COLLECTION\n");
-        let group_ids = assigned_stereo_group_ids(&groups);
-        for ((group, assigned_id), atoms) in groups.iter().zip(group_ids).zip(atom_ids) {
-            let label = match group.kind() {
-                StereoGroupKind::Absolute => "STEABS".to_owned(),
-                StereoGroupKind::Or => format!("STEREL{}", assigned_id.expect("OR ID assigned")),
-                StereoGroupKind::And => {
-                    format!("STERAC{}", assigned_id.expect("AND ID assigned"))
-                }
-            };
-            let mut current = format!("M  V30 MDLV30/{label} ATOMS=({}", atoms.len());
-            for atom in atoms {
-                current.push(' ');
-                let index = (atom.index() + 1).to_string();
-                if current.len() + index.len() >= 78 {
-                    output.push_str(&current);
-                    output.push_str("-\n");
-                    current.clear();
-                    current.push_str("M  V30 ");
-                }
-                current.push_str(&index);
-            }
-            output.push_str(&current);
-            output.push_str(")\n");
-        }
-        output.push_str("M  V30 END COLLECTION\n");
-        // END RDKIT CPP FUNCTION
-    }
-    output
-}
-
-fn append_v2000_sdt(
-    output: &mut String,
-    index: usize,
-    data: &cosmolkit_model::SGroupData,
-) -> Result<(), SdfWriteError> {
-    // RDKit❗❌: std::string BuildV2000SDTLine(const int idx, const SubstanceGroup &sgroup) {
-    // RDKit❗❌:   std::ostringstream ret;
-    // RDKit❗❌:
-    // RDKit❗❌:   std::string sdtValue;
-    // RDKit❗❌:   if (sgroup.getPropIfPresent("FIELDNAME", sdtValue)) {
-    // RDKit❗❌:     ret << "M  SDT" << FormatV2000IntField(idx);
-    // RDKit❗❌:     ret << FormatV2000StringField(sdtValue, 30, true, true);
-    // RDKit❗❌:
-    // RDKit❗❌:     if (sgroup.getPropIfPresent("FIELDTYPE", sdtValue)) {
-    // RDKit❗❌:       ret << FormatV2000StringField(sdtValue, 2, true, false);
-    // RDKit❗❌:     } else {
-    // RDKit❗❌:       ret << " T";
-    // RDKit❗❌:     }
-    // RDKit❗❌:
-    // RDKit❗❌:     if (sgroup.getPropIfPresent("FIELDINFO", sdtValue)) {
-    // RDKit❗❌:       ret << FormatV2000StringField(sdtValue, 20, true, false);
-    // RDKit❗❌:     }
-    // RDKit❗❌:
-    // RDKit❗❌:     if (sgroup.getPropIfPresent("QUERYTYPE", sdtValue)) {
-    // RDKit❗❌:       ret << FormatV2000StringField(sdtValue, 2, true, false);
-    // RDKit❗❌:     }
-    // RDKit❗❌:     if (sgroup.getPropIfPresent("QUERYOP", sdtValue)) {
-    // RDKit❗❌:       ret << FormatV2000StringField(sdtValue, 15, true, false);
-    // RDKit❗❌:     }
-    // RDKit❗❌:
-    // RDKit❗❌:     ret << "\n";
-    // RDKit❗❌:   }
-    // RDKit❗❌:   return ret.str();
-    // RDKit❗❌: }
-    if let Some(field_name) = &data.field_name {
-        output.push_str(&format!("M  SDT{}", v2000_int(index)));
-        output.push_str(&v2000_string_field(field_name, 30, true, true)?);
-        if let Some(field_type) = &data.field_type {
-            output.push_str(&v2000_string_field(field_type, 2, true, false)?);
-        } else {
-            output.push_str(" T");
-        }
-        if let Some(value) = &data.field_info {
-            output.push_str(&v2000_string_field(value, 20, true, false)?);
-        }
-        if let Some(value) = &data.query_type {
-            output.push_str(&v2000_string_field(value, 2, true, false)?);
-        }
-        if let Some(value) = &data.query_op {
-            output.push_str(&v2000_string_field(value, 15, true, false)?);
-        }
-        output.push('\n');
-    }
-    Ok(())
-}
-fn v2000_string_field(
-    value: &str,
-    size: usize,
-    pad: bool,
-    separator: bool,
-) -> Result<String, SdfWriteError> {
-    // RDKit❗❌: inline std::string FormatV2000StringField(const std::string &value,
-    // RDKit❗❌:                                           unsigned int fieldSize, bool pad,
-    // RDKit❗❌:                                           bool addSeparator) {
-    // RDKit❗❌:   std::ostringstream os;
-    // RDKit❗❌:   if (addSeparator) {
-    // RDKit❗❌:     os << ' ';
-    // RDKit❗❌:   }
-    // RDKit❗❌:   if (value.size() >= fieldSize) {
-    // RDKit❗❌:     os << value.substr(0, fieldSize);
-    // RDKit❗❌:   } else if (pad) {
-    // RDKit❗❌:     os << std::setw(fieldSize) << std::left << value;
-    // RDKit❗❌:   } else {
-    // RDKit❗❌:     os << value;
-    // RDKit❗❌:   }
-    // RDKit❗❌:   return os.str();
-    // RDKit❗❌: }
-    let mut out = String::new();
-    if separator {
-        out.push(' ');
-    }
-    if value.len() >= size {
-        let value = value.get(..size).ok_or_else(|| {
-            SdfWriteError::SubstanceGroup("V2000 field truncation splits UTF-8 bytes".into())
-        })?;
-        out.push_str(value);
-    } else {
-        out.push_str(value);
-        if pad {
-            out.extend(std::iter::repeat_n(' ', size - value.len()));
-        }
-    }
-    Ok(out)
 }
 
 fn v2000_int(value: usize) -> String {
@@ -4975,67 +5175,95 @@ fn v2000_count(value: usize) -> String {
     format!(" {value:>2}")
 }
 
-fn append_v2000_pairs(output: &mut String, code: &str, pairs: &[(usize, String)], per_line: usize) {
-    for chunk in pairs.chunks(per_line) {
-        output.push_str(&format!("M  {code}{}", v2000_count(chunk.len())));
-        for (index, value) in chunk {
-            output.push_str(&v2000_int(*index));
-            output.push(' ');
-            output.push_str(value);
+fn v2000_string_field(value: &[u8], width: usize, pad: bool, separator: bool) -> PropertyText {
+    // RDKit❗✔️: inline std::string FormatV2000StringField(const std::string &value,
+    // RDKit❗✔️:                                           unsigned int fieldSize, bool pad,
+    // RDKit❗✔️:                                           bool addSeparator) {
+    // RDKit❗✔️:   std::ostringstream os;
+    // RDKit❗✔️:   if (addSeparator) {
+    // RDKit❗✔️:     os << ' ';
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (value.size() >= fieldSize) {
+    // RDKit❗✔️:     os << value.substr(0, fieldSize);
+    // RDKit❗✔️:   } else if (pad) {
+    // RDKit❗✔️:     os << std::setw(fieldSize) << std::left << value;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     os << value;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return os.str();
+    // RDKit❗✔️: }
+
+    // RDKit❗✔️: inline std::string FormatV2000StringField(const std::string &value,
+    // RDKit❗✔️:                                           unsigned int fieldSize, bool pad,
+    // RDKit❗✔️:                                           bool addSeparator) {
+    // RDKit❗✔️:   std::ostringstream os;
+    // RDKit❗✔️:   if (addSeparator) {
+    // RDKit❗✔️:     os << ' ';
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (value.size() >= fieldSize) {
+    // RDKit❗✔️:     os << value.substr(0, fieldSize);
+    // RDKit❗✔️:   } else if (pad) {
+    // RDKit❗✔️:     os << std::setw(fieldSize) << std::left << value;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     os << value;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return os.str();
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // RDKit❗✔️: inline std::string FormatV3000DoubleField(double value) {
+    // Behavior: byte-counted prefix/truncation and ASCII padding, no decoding.
+    // Complexity: one output buffer, O(min(bytes,width)+padding), as source.
+    let mut output = PropertyText::new();
+    if separator {
+        output.push_byte(b' ');
+    }
+    output.extend_bytes(&value[..value.len().min(width)]);
+    if pad {
+        for _ in value.len()..width {
+            output.push_byte(b' ');
         }
-        output.push('\n');
+    }
+    output
+}
+
+fn append_v2000_pairs(
+    output: &mut PropertyText,
+    code: &str,
+    pairs: &[(usize, PropertyText)],
+    per_line: usize,
+) {
+    for chunk in pairs.chunks(per_line) {
+        output.extend_bytes((&format!("M  {code}{}", v2000_count(chunk.len()))).as_bytes());
+        for (index, value) in chunk {
+            output.extend_bytes((&v2000_int(*index)).as_bytes());
+            output.push_byte(b' ');
+            output.extend_bytes((value).as_bytes());
+        }
+        output.push_byte(b'\n');
     }
 }
 
 fn append_v2000_indices(
-    output: &mut String,
+    output: &mut PropertyText,
     code: &str,
     group: usize,
     indices: impl IntoIterator<Item = usize>,
 ) {
     let values = indices.into_iter().collect::<Vec<_>>();
     for chunk in values.chunks(15) {
-        output.push_str(&format!(
-            "M  {code}{}{}",
-            v2000_int(group),
-            v2000_count(chunk.len())
-        ));
+        output.extend_bytes(
+            (&format!("M  {code}{}{}", v2000_int(group), v2000_count(chunk.len()))).as_bytes(),
+        );
         for index in chunk {
-            output.push_str(&v2000_int(index + 1));
+            output.extend_bytes((&v2000_int(index + 1)).as_bytes());
         }
-        output.push('\n');
+        output.push_byte(b'\n');
     }
 }
 
-fn utf8_chunks_at_most(value: &str, maximum_bytes: usize) -> Vec<&str> {
-    if value.is_empty() {
-        return vec![value];
-    }
-    let mut chunks = Vec::new();
-    let mut start = 0;
-    while start < value.len() {
-        let mut end = (start + maximum_bytes).min(value.len());
-        while end > start && !value.is_char_boundary(end) {
-            end -= 1;
-        }
-        // `maximum_bytes` is non-zero at the only call site. This guard keeps
-        // the helper total if that changes and a single scalar is wider than
-        // the requested chunk size.
-        if end == start {
-            end = value[start..]
-                .char_indices()
-                .nth(1)
-                .map_or(value.len(), |(offset, _)| start + offset);
-        }
-        chunks.push(&value[start..end]);
-        start = end;
-    }
-    chunks
-}
-
-pub(super) fn write_v2000_sgroups(topology: &TopologyBlock) -> Result<String, SdfWriteError> {
+pub(super) fn write_v2000_sgroups(topology: &TopologyBlock) -> Result<PropertyText, SdfWriteError> {
     if topology.substance_groups.is_empty() {
-        return Ok(String::new());
+        return Ok(PropertyText::new());
     }
     // BEGIN RDKIT CPP FUNCTION GetMolFileSGroupInfo
     // RDKit❗✔️:   ret << BuildV2000STYLines(mol);
@@ -5060,98 +5288,281 @@ pub(super) fn write_v2000_sgroups(topology: &TopologyBlock) -> Result<String, Sd
     // RDKit❗✔️:     ret << BuildV2000SAPLines(idx, sgroup);
     // RDKit❗✔️:     ret << BuildV2000SCLLine(idx, sgroup);
     // RDKit❗✔️: }
-    let mut output = String::new();
-    let sty = topology
-        .substance_groups
-        .iter()
-        .enumerate()
-        .map(|(index, group)| (index + 1, format!("{:<3}", rdkit_sgroup_type(group))))
-        .collect::<Vec<_>>();
-    append_v2000_pairs(&mut output, "STY", &sty, 8);
-    let slb = topology
-        .substance_groups
-        .iter()
-        .enumerate()
-        .filter_map(|(index, group)| {
-            group
-                .external_id()
-                .map(|id| (index + 1, format!("{id:>3}")))
-        })
-        .collect::<Vec<_>>();
-    append_v2000_pairs(&mut output, "SLB", &slb, 8);
-    let subtype = topology
-        .substance_groups
-        .iter()
-        .enumerate()
-        .filter_map(|(index, group)| {
-            group
-                .subtype()
-                .map(|value| (index + 1, format!("{value:<3}")))
-        })
-        .collect::<Vec<_>>();
-    append_v2000_pairs(&mut output, "SST", &subtype, 8);
-    let connections = topology
-        .substance_groups
-        .iter()
-        .enumerate()
-        .filter_map(|(index, group)| {
-            group
-                .connection()
-                .map(|value| (index + 1, format!("{:<3}", connection_text(value))))
-        })
-        .collect::<Vec<_>>();
-    append_v2000_pairs(&mut output, "SCN", &connections, 8);
-    let expanded = topology
-        .substance_groups
-        .iter()
-        .enumerate()
-        .filter(|(_, group)| group.expansion_state() == Some("E"))
-        .map(|(index, _)| index + 1)
-        .collect::<Vec<_>>();
-    for chunk in expanded.chunks(15) {
-        output.push_str(&format!("M  SDS EXP{}", v2000_count(chunk.len())));
-        for index in chunk {
-            output.push_str(&v2000_int(*index));
+    let mut output = PropertyText::new();
+    for chunk in topology.substance_groups.chunks(8).enumerate() {
+        output.extend_bytes(format!("M  STY{}", v2000_count(chunk.1.len())).as_bytes());
+        for (offset, group) in chunk.1.iter().enumerate() {
+            output.extend_bytes(v2000_int(chunk.0 * 8 + offset + 1).as_bytes());
+            output.push_byte(b' ');
+            let kind = rdkit_sgroup_type(group)?;
+            output.extend_bytes(&kind.as_bytes()[..kind.len().min(3)]);
+            for _ in kind.len()..3 {
+                output.push_byte(b' ');
+            }
         }
-        output.push('\n');
+        output.push_byte(b'\n');
     }
-    let parents = topology
-        .substance_groups
-        .iter()
-        .enumerate()
-        .filter_map(|(index, group)| {
-            group
-                .parent()
-                .map(|parent| (index + 1, format!("{:>3}", parent.index() + 1)))
-        })
-        .collect::<Vec<_>>();
+    // RDKit❗✔️: std::string BuildV2000SLBLines(const ROMol &mol) {
+    // RDKit❗✔️:   std::ostringstream ret;
+    // RDKit❗✔️:   std::ostringstream temp;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int count = 0;
+    // RDKit❗✔️:   const auto &sgroups = getSubstanceGroups(mol);
+    // RDKit❗✔️:   for (auto sg = sgroups.begin(); sg != sgroups.end(); ++sg) {
+    // RDKit❗✔️:     unsigned int id;
+    // RDKit❗✔️:     // Write value if assigned, else 0
+    // RDKit❗✔️:     if (sg->getPropIfPresent("ID", id)) {
+    // RDKit❗✔️:       temp << FormatV2000IntField(1 + (sg - sgroups.begin()))
+    // RDKit❗✔️:            << FormatV2000IntField(id);
+    // RDKit❗✔️:       if (++count == 8) {
+    // RDKit❗✔️:         ret << "M  SLB" << FormatV2000NumEntriesField(8) << temp.str() << "\n";
+    // RDKit❗✔️:         temp.str("");
+    // RDKit❗✔️:         count = 0;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (count) {
+    // RDKit❗✔️:     ret << "M  SLB" << FormatV2000NumEntriesField(count) << temp.str() << "\n";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return ret.str();
+    // RDKit❗✔️: }
+    // RDKit❗✔️: std::string BuildV2000StringPropLines(const unsigned int entriesPerLine,
+    // RDKit❗✔️:                                       const ROMol &mol,
+    // RDKit❗✔️:                                       const std::string &propName,
+    // RDKit❗✔️:                                       const std::string &propCode,
+    // RDKit❗✔️:                                       const unsigned int fieldWitdh) {
+    // RDKit❗✔️:   std::ostringstream ret;
+    // RDKit❗✔️:   std::ostringstream temp;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int count = 0;
+    // RDKit❗✔️:   const auto &sgroups = getSubstanceGroups(mol);
+    // RDKit❗✔️:   for (auto sg = sgroups.begin(); sg != sgroups.end(); ++sg) {
+    // RDKit❗✔️:     std::string propValue;
+    // RDKit❗✔️:     // Write field only if defined
+    // RDKit❗✔️:     if (sg->getPropIfPresent(propName, propValue)) {
+    // RDKit❗✔️:       temp << FormatV2000IntField(1 + (sg - sgroups.begin()))
+    // RDKit❗✔️:            << FormatV2000StringField(propValue, fieldWitdh, true, true);
+    // RDKit❗✔️:       if (++count == entriesPerLine) {
+    // RDKit❗✔️:         ret << "M  " << propCode << FormatV2000NumEntriesField(entriesPerLine)
+    // RDKit❗✔️:             << temp.str() << "\n";
+    // RDKit❗✔️:         temp.str("");
+    // RDKit❗✔️:         count = 0;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (count) {
+    // RDKit❗✔️:     ret << "M  " << propCode << FormatV2000NumEntriesField(count) << temp.str()
+    // RDKit❗✔️:         << "\n";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return ret.str();
+    // RDKit❗✔️: }
+    // RDKit❗✔️: std::string BuildV2000SDSLines(const ROMol &mol) {
+    // RDKit❗✔️:   std::ostringstream ret;
+    // RDKit❗✔️:   std::ostringstream temp;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int count = 0;
+    // RDKit❗✔️:   const auto &sgroups = getSubstanceGroups(mol);
+    // RDKit❗✔️:   for (auto sg = sgroups.begin(); sg != sgroups.end(); ++sg) {
+    // RDKit❗✔️:     // Write field only if defined
+    // RDKit❗✔️:     std::string eState;
+    // RDKit❗✔️:     if (sg->getPropIfPresent("ESTATE", eState) && eState == "E") {
+    // RDKit❗✔️:       temp << FormatV2000IntField(1 + (sg - sgroups.begin()));
+    // RDKit❗✔️:       if (++count == 15) {
+    // RDKit❗✔️:         ret << "M  SDS EXP" << FormatV2000NumEntriesField(15) << temp.str()
+    // RDKit❗✔️:             << "\n";
+    // RDKit❗✔️:         temp.str("");
+    // RDKit❗✔️:         count = 0;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (count) {
+    // RDKit❗✔️:     ret << "M  SDS EXP" << FormatV2000NumEntriesField(count) << temp.str()
+    // RDKit❗✔️:         << "\n";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return ret.str();
+    // RDKit❗✔️: }
+    // RDKit❗✔️: std::string BuildV2000SPLLines(const ROMol &mol) {
+    // RDKit❗✔️:   std::ostringstream ret;
+    // RDKit❗✔️:   std::ostringstream temp;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int count = 0;
+    // RDKit❗✔️:   const auto &sgroups = getSubstanceGroups(mol);
+    // RDKit❗✔️:   for (auto sg = sgroups.begin(); sg != sgroups.end(); ++sg) {
+    // RDKit❗✔️:     // Write field only if a parent is defined
+    // RDKit❗✔️:     unsigned int parentIdx = -1;
+    // RDKit❗✔️:     if (sg->getPropIfPresent("PARENT", parentIdx)) {
+    // RDKit❗✔️:       temp << FormatV2000IntField(1 + (sg - sgroups.begin()))
+    // RDKit❗✔️:            << FormatV2000IntField(parentIdx);
+    // RDKit❗✔️:       if (++count == 8) {
+    // RDKit❗✔️:         ret << "M  SPL" << FormatV2000NumEntriesField(8) << temp.str() << "\n";
+    // RDKit❗✔️:         temp.str("");
+    // RDKit❗✔️:         count = 0;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (count) {
+    // RDKit❗✔️:     ret << "M  SPL" << FormatV2000NumEntriesField(count) << temp.str() << "\n";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return ret.str();
+    // RDKit❗✔️: }
+    // RDKit❗✔️: std::string BuildV2000SNCLines(const ROMol &mol) {
+    // RDKit❗✔️:   std::ostringstream ret;
+    // RDKit❗✔️:   std::ostringstream temp;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int count = 0;
+    // RDKit❗✔️:   const auto &sgroups = getSubstanceGroups(mol);
+    // RDKit❗✔️:   for (auto sg = sgroups.begin(); sg != sgroups.end(); ++sg) {
+    // RDKit❗✔️:     unsigned int compno;
+    // RDKit❗✔️:     // Write field only if compno is set
+    // RDKit❗✔️:     if (sg->getPropIfPresent("COMPNO", compno)) {
+    // RDKit❗✔️:       temp << FormatV2000IntField(1 + (sg - sgroups.begin()))
+    // RDKit❗✔️:            << FormatV2000IntField(compno);
+    // RDKit❗✔️:       if (++count == 8) {
+    // RDKit❗✔️:         ret << "M  SNC" << FormatV2000NumEntriesField(8) << temp.str() << "\n";
+    // RDKit❗✔️:         temp.str("");
+    // RDKit❗✔️:         count = 0;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (count) {
+    // RDKit❗✔️:     ret << "M  SNC" << FormatV2000NumEntriesField(count) << temp.str() << "\n";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return ret.str();
+    // RDKit❗✔️: }
+    // RDKit❗✔️: std::string BuildV2000SBTLines(const ROMol &mol) {
+    // RDKit❗✔️:   std::ostringstream ret;
+    // RDKit❗✔️:   std::ostringstream temp;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int count = 0;
+    // RDKit❗✔️:   const auto &sgroups = getSubstanceGroups(mol);
+    // RDKit❗✔️:   for (auto sg = sgroups.begin(); sg != sgroups.end(); ++sg) {
+    // RDKit❗✔️:     std::string bracketType;
+    // RDKit❗✔️:     if (sg->getPropIfPresent("BRKTYP", bracketType)) {
+    // RDKit❗✔️:       unsigned int idx = 1 + (sg - sgroups.begin());
+    // RDKit❗✔️:       if (bracketType == "BRACKET") {
+    // RDKit❗✔️:         temp << FormatV2000IntField(idx) << FormatV2000IntField(0);
+    // RDKit❗✔️:       } else if (bracketType == "PAREN") {
+    // RDKit❗✔️:         temp << FormatV2000IntField(idx) << FormatV2000IntField(1);
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         std::ostringstream errout;
+    // RDKit❗✔️:         errout << "Invalid BRKTYP value '" << bracketType << "' for SGroup "
+    // RDKit❗✔️:                << idx;
+    // RDKit❗✔️:         throw SubstanceGroupException(errout.str());
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (++count == 8) {
+    // RDKit❗✔️:         ret << "M  SBT" << FormatV2000NumEntriesField(8) << temp.str() << "\n";
+    // RDKit❗✔️:         temp.str("");
+    // RDKit❗✔️:         count = 0;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (count) {
+    // RDKit❗✔️:     ret << "M  SBT" << FormatV2000NumEntriesField(count) << temp.str() << "\n";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return ret.str();
+    // RDKit❗✔️: }
+    let mut slb = Vec::new();
+    for (index, group) in topology.substance_groups.iter().enumerate() {
+        if let Some(id) = sgroup_uint_value(group, "ID", group.external_id())? {
+            // Source FormatV2000IntField(int) receives unsigned int by the
+            // pinned platform's narrowing conversion, preserving its bits.
+            slb.push((index + 1, PropertyText::from(format!("{:>3}", id as i32))));
+        }
+    }
+    append_v2000_pairs(&mut output, "SLB", &slb, 8);
+    let mut subtype = Vec::new();
+    for (index, group) in topology.substance_groups.iter().enumerate() {
+        if let Some(value) = sgroup_string_value(
+            group,
+            "SUBTYPE",
+            group.subtype().map(PropertyText::as_bytes),
+        )? {
+            subtype.push((
+                index + 1,
+                v2000_string_field(value.as_bytes(), 3, true, false),
+            ));
+        }
+    }
+    append_v2000_pairs(&mut output, "SST", &subtype, 8);
+    let mut connections = Vec::new();
+    for (index, group) in topology.substance_groups.iter().enumerate() {
+        if let Some(value) =
+            sgroup_string_value(group, "CONNECT", group.connection().map(connection_text))?
+        {
+            connections.push((
+                index + 1,
+                v2000_string_field(value.as_bytes(), 3, true, false),
+            ));
+        }
+    }
+    append_v2000_pairs(&mut output, "SCN", &connections, 8);
+    let mut expanded = Vec::new();
+    for (index, group) in topology.substance_groups.iter().enumerate() {
+        if sgroup_string_value(
+            group,
+            "ESTATE",
+            group.expansion_state().map(PropertyText::as_bytes),
+        )?
+        .is_some_and(|value| value.as_bytes() == b"E")
+        {
+            expanded.push(index + 1);
+        }
+    }
+    for chunk in expanded.chunks(15) {
+        output.extend_bytes(format!("M  SDS EXP{}", v2000_count(chunk.len())).as_bytes());
+        for index in chunk {
+            output.extend_bytes(v2000_int(*index).as_bytes());
+        }
+        output.push_byte(b'\n');
+    }
+    let mut parents = Vec::new();
+    for (index, group) in topology.substance_groups.iter().enumerate() {
+        if let Some(parent) = sgroup_parent_value(group)? {
+            parents.push((
+                index + 1,
+                PropertyText::from(format!("{:>3}", parent as i32)),
+            ));
+        }
+    }
     append_v2000_pairs(&mut output, "SPL", &parents, 8);
-    let components = topology
-        .substance_groups
-        .iter()
-        .enumerate()
-        .filter_map(|(index, group)| {
-            group
-                .component_number()
-                .map(|value| (index + 1, format!("{value:>3}")))
-        })
-        .collect::<Vec<_>>();
+    let mut components = Vec::new();
+    for (index, group) in topology.substance_groups.iter().enumerate() {
+        if let Some(value) = sgroup_uint_value(group, "COMPNO", group.component_number())? {
+            components.push((
+                index + 1,
+                PropertyText::from(format!("{:>3}", value as i32)),
+            ));
+        }
+    }
     append_v2000_pairs(&mut output, "SNC", &components, 8);
     let mut brackets = Vec::new();
     for (index, group) in topology.substance_groups.iter().enumerate() {
-        let Some(style) = group.bracket_style() else {
+        let Some(style) = sgroup_string_value(
+            group,
+            "BRKTYP",
+            group.bracket_style().map(bracket_style_text),
+        )?
+        else {
             continue;
         };
-        let value = match style {
-            SGroupBracketStyle::Bracket => 0,
-            SGroupBracketStyle::Parenthesis => 1,
-            other => {
+        let value = match style.as_bytes() {
+            b"BRACKET" => 0,
+            b"PAREN" => 1,
+            _ => {
                 return Err(SdfWriteError::SubstanceGroup(format!(
-                    "V2000 cannot encode bracket style {other:?}"
+                    "Invalid BRKTYP value {:?} for SGroup {}",
+                    style,
+                    index + 1
                 )));
             }
         };
-        brackets.push((index + 1, format!("{value:>3}")));
+        brackets.push((index + 1, PropertyText::from(format!("{value:>3}"))));
     }
     append_v2000_pairs(&mut output, "SBT", &brackets, 8);
 
@@ -5177,82 +5588,200 @@ pub(super) fn write_v2000_sgroups(topology: &TopologyBlock) -> Result<String, Sd
         );
         if let Some(display) = group.display() {
             for bracket in &display.brackets {
-                output.push_str(&format!(
-                    "M  SDI{}{}{:>10.4}{:>10.4}{:>10.4}{:>10.4}\n",
-                    v2000_int(index),
-                    v2000_count(4),
-                    bracket.points[0][0],
-                    bracket.points[0][1],
-                    bracket.points[1][0],
-                    bracket.points[1][1]
-                ));
+                output.extend_bytes(
+                    (&format!(
+                        "M  SDI{}{}{:>10.4}{:>10.4}{:>10.4}{:>10.4}\n",
+                        v2000_int(index),
+                        v2000_count(4),
+                        bracket.points[0][0],
+                        bracket.points[0][1],
+                        bracket.points[1][0],
+                        bracket.points[1][1]
+                    ))
+                        .as_bytes(),
+                );
             }
         }
-        let label = if group.kind() == &SubstanceGroupKind::MultipleGroup {
-            group.props().get("MULT").map(String::as_str)
+        // RDKit❗✔️: std::string BuildV2000SMTLine(const int idx, const SubstanceGroup &sgroup) {
+        // RDKit❗✔️:   std::ostringstream ret;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   std::string smtValue;
+        // RDKit❗✔️:   if ((sgroup.getProp<std::string>("TYPE") == "MUL" &&
+        // RDKit❗✔️:        sgroup.getPropIfPresent("MULT", smtValue)) ||
+        // RDKit❗✔️:       sgroup.getPropIfPresent("LABEL", smtValue)) {
+        // RDKit❗✔️:     ret << "M  SMT" << FormatV2000IntField(idx)
+        // RDKit❗✔️:         << FormatV2000StringField(smtValue, 69, false, true) << "\n";
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return ret.str();
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: std::string BuildV2000SDILine(const int idx, const SubstanceGroup &sgroup) {
+        let multiple = if rdkit_sgroup_type(group)?.as_bytes() == b"MUL" {
+            group
+                .props()
+                .get(b"MULT".as_slice())
+                .map(cosmolkit_core::property_value_to_string)
+                .transpose()
+                .map_err(SdfWriteError::Property)?
         } else {
-            group.label()
+            None
+        };
+        let label = match multiple {
+            Some(value) => Some(value),
+            None => sgroup_string_value(group, "LABEL", group.label().map(PropertyText::as_bytes))?,
         };
         if let Some(label) = label {
-            output.push_str(&format!("M  SMT{} {}\n", v2000_int(index), label));
+            let label = label.as_bytes();
+            output.extend_bytes(format!("M  SMT{} ", v2000_int(index)).as_bytes());
+            output.extend_bytes(&label[..label.len().min(69)]);
+            output.push_byte(b'\n');
         }
         for cstate in group.cstates() {
-            output.push_str(&format!(
-                "M  SBV{}{}",
-                v2000_int(index),
-                v2000_int(cstate.bond.index() + 1)
-            ));
+            output.extend_bytes(
+                (&format!(
+                    "M  SBV{}{}",
+                    v2000_int(index),
+                    v2000_int(cstate.bond.index() + 1)
+                ))
+                    .as_bytes(),
+            );
             if group.kind() == &SubstanceGroupKind::Superatom {
-                output.push_str(&format!(
-                    "{:>10.4}{:>10.4}",
-                    cstate.vector[0], cstate.vector[1]
-                ));
+                output.extend_bytes(
+                    (&format!("{:>10.4}{:>10.4}", cstate.vector[0], cstate.vector[1])).as_bytes(),
+                );
             }
-            output.push('\n');
+            output.push_byte(b'\n');
         }
-        if let Some(data) = group.data() {
-            append_v2000_sdt(&mut output, index, data)?;
-            if let Some(display) = &data.field_display {
-                output.push_str(&format!("M  SDD{} {}\n", v2000_int(index), display));
+        let data = group.data();
+        let field_name = sgroup_string_value(
+            group,
+            "FIELDNAME",
+            data.and_then(|data| data.field_name.as_ref().map(PropertyText::as_bytes)),
+        )?;
+        // BEGIN RDKIT CPP FUNCTION BuildV2000SDTLine
+        // RDKit❗✔️: std::string BuildV2000SDTLine(const int idx, const SubstanceGroup &sgroup) {
+        // RDKit❗✔️:   std::ostringstream ret;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   std::string sdtValue;
+        // RDKit❗✔️:   if (sgroup.getPropIfPresent("FIELDNAME", sdtValue)) {
+        // RDKit❗✔️:     ret << "M  SDT" << FormatV2000IntField(idx);
+        // RDKit❗✔️:     ret << FormatV2000StringField(sdtValue, 30, true, true);
+        // RDKit❗✔️:
+        // RDKit❗✔️:     if (sgroup.getPropIfPresent("FIELDTYPE", sdtValue)) {
+        // RDKit❗✔️:       ret << FormatV2000StringField(sdtValue, 2, true, false);
+        // RDKit❗✔️:     } else {
+        // RDKit❗✔️:       ret << " T";
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     if (sgroup.getPropIfPresent("FIELDINFO", sdtValue)) {
+        // RDKit❗✔️:       ret << FormatV2000StringField(sdtValue, 20, true, false);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     if (sgroup.getPropIfPresent("QUERYTYPE", sdtValue)) {
+        // RDKit❗✔️:       ret << FormatV2000StringField(sdtValue, 2, true, false);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     if (sgroup.getPropIfPresent("QUERYOP", sdtValue)) {
+        // RDKit❗✔️:       ret << FormatV2000StringField(sdtValue, 15, true, false);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     ret << "\n";
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return ret.str();
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION
+        if let Some(field_name) = field_name {
+            output.extend_bytes(format!("M  SDT{}", v2000_int(index)).as_bytes());
+            output
+                .extend_bytes(v2000_string_field(field_name.as_bytes(), 30, true, true).as_bytes());
+            let field_type = sgroup_string_value(
+                group,
+                "FIELDTYPE",
+                data.and_then(|d| d.field_type.as_ref().map(PropertyText::as_bytes)),
+            )?;
+            if let Some(field_type) = field_type {
+                output.extend_bytes(
+                    v2000_string_field(field_type.as_bytes(), 2, true, false).as_bytes(),
+                );
+            } else {
+                output.extend_bytes(b" T");
             }
-            for value in &data.values {
-                if value.len() > 200 {
-                    return Err(SdfWriteError::SubstanceGroup(format!(
-                        "data field in SGroup {index} is longer than 200 bytes"
-                    )));
+            for (key, field, width) in [
+                ("FIELDINFO", data.and_then(|d| d.field_info.as_ref()), 20),
+                ("QUERYTYPE", data.and_then(|d| d.query_type.as_ref()), 2),
+                ("QUERYOP", data.and_then(|d| d.query_op.as_ref()), 15),
+            ] {
+                if let Some(value) =
+                    sgroup_string_value(group, key, field.map(PropertyText::as_bytes))?
+                {
+                    output.extend_bytes(
+                        v2000_string_field(value.as_bytes(), width, true, false).as_bytes(),
+                    );
                 }
-                let chunks = utf8_chunks_at_most(value, 69);
-                for (chunk_index, chunk) in chunks.iter().enumerate() {
-                    let code = if chunk_index + 1 == chunks.len() {
-                        "SED"
-                    } else {
-                        "SCD"
-                    };
-                    output.push_str(&format!("M  {code}{} {chunk}\n", v2000_int(index)));
+            }
+            output.push_byte(b'\n');
+        }
+        // Preserve source field presence independently from empty bytes, and
+        // source QUERYOP truncation/padding at fifteen counted bytes. Four
+        // optional lookups and bounded byte formatting match the source cost.
+        if let Some(display) = sgroup_string_value(
+            group,
+            "FIELDDISP",
+            data.and_then(|d| d.field_display.as_ref().map(PropertyText::as_bytes)),
+        )? {
+            output.extend_bytes(format!("M  SDD{} ", v2000_int(index)).as_bytes());
+            output.extend_bytes(display.as_bytes());
+            output.push_byte(b'\n');
+        }
+        for value in sgroup_data_values(group)? {
+            if value.len() > 200 {
+                return Err(SdfWriteError::SubstanceGroup(format!(
+                    "data field in SGroup {index} is longer than 200 bytes"
+                )));
+            }
+            if value.is_empty() {
+                output.extend_bytes(format!("M  SED{} \n", v2000_int(index)).as_bytes());
+            } else {
+                let count = value.len().div_ceil(69);
+                for (i, chunk) in value.as_bytes().chunks(69).enumerate() {
+                    let code = if i + 1 == count { "SED" } else { "SCD" };
+                    output.extend_bytes(format!("M  {code}{} ", v2000_int(index)).as_bytes());
+                    output.extend_bytes(chunk);
+                    output.push_byte(b'\n');
                 }
             }
         }
         for chunk in group.attach_points().chunks(6) {
-            output.push_str(&format!(
-                "M  SAP{}{}",
-                v2000_int(index),
-                v2000_count(chunk.len())
-            ));
+            output.extend_bytes(
+                (&format!("M  SAP{}{}", v2000_int(index), v2000_count(chunk.len()))).as_bytes(),
+            );
             for point in chunk {
-                output.push_str(&v2000_int(point.atom.index() + 1));
-                output.push_str(&v2000_int(
-                    point.leaving_atom.map_or(0, |atom| atom.index() + 1),
-                ));
-                output.push(' ');
-                output.push_str(&format!(
-                    "{:<2}",
-                    point.label.as_deref().unwrap_or_default()
-                ));
+                output.extend_bytes((&v2000_int(point.atom.index() + 1)).as_bytes());
+                output.extend_bytes(
+                    (&v2000_int(point.leaving_atom.map_or(0, |atom| atom.index() + 1))).as_bytes(),
+                );
+                output.push_byte(b' ');
+                output.extend_bytes(
+                    v2000_string_field(
+                        point
+                            .label
+                            .as_ref()
+                            .map(PropertyText::as_bytes)
+                            .unwrap_or_default(),
+                        2,
+                        true,
+                        false,
+                    )
+                    .as_bytes(),
+                );
             }
-            output.push('\n');
+            output.push_byte(b'\n');
         }
-        if let Some(class) = group.class() {
-            output.push_str(&format!("M  SCL{} {}\n", v2000_int(index), class));
+        if let Some(class) =
+            sgroup_string_value(group, "CLASS", group.class().map(PropertyText::as_bytes))?
+        {
+            output.extend_bytes(format!("M  SCL{} ", v2000_int(index)).as_bytes());
+            output.extend_bytes(class.as_bytes());
+            output.push_byte(b'\n');
         }
     }
     Ok(output)
@@ -5343,7 +5872,9 @@ mod cf3d_sgids_io_5_tests {
             vec![Some(1), Some(9), Some(2), Some(4), Some(1), Some(4), None]
         );
         assert_eq!(
-            write_v3000_typed_blocks(&topology).expect("valid source stereo fixture"),
+            write_v3000_typed_blocks(&topology)
+                .map(super::fixture_writer_text)
+                .unwrap(),
             "M  V30 BEGIN COLLECTION\n\
              M  V30 MDLV30/STEREL1 ATOMS=(1 1)\n\
              M  V30 MDLV30/STEREL9 ATOMS=(1 2)\n\
@@ -5355,5 +5886,218 @@ mod cf3d_sgids_io_5_tests {
              M  V30 END COLLECTION\n"
         );
         assert_eq!(topology.stereo_groups, original_groups);
+    }
+}
+
+pub(super) fn write_v3000_collection_rows(
+    groups: &[StereoGroup],
+    atom_ids: &[Vec<cosmolkit_model::AtomId>],
+) -> PropertyText {
+    // RDKit❗❌: void appendEnhancedStereoGroups(
+    // RDKit❗❌:     std::string &res, const RWMol &tmol,
+    // RDKit❗❌:     std::map<int, std::unique_ptr<Chirality::WedgeInfoBase>> &wedgeBonds) {
+    // RDKit❗❌:   if (!tmol.getStereoGroups().empty()) {
+    // RDKit❗❌:     auto stereo_groups = tmol.getStereoGroups();
+    // RDKit❗❌:     assignStereoGroupIds(stereo_groups);
+    // RDKit❗❌:     res += "M  V30 BEGIN COLLECTION\n";
+    // RDKit❗❌:     std::string tmp;
+    // RDKit❗❌:     tmp.reserve(80);
+    // RDKit❗❌:     for (auto &&group : stereo_groups) {
+    // RDKit❗❌:       tmp += "M  V30 MDLV30/";
+    // RDKit❗❌:       switch (group.getGroupType()) {
+    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_ABSOLUTE:
+    // RDKit❗❌:           tmp += "STEABS";
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_OR:
+    // RDKit❗❌:           tmp += "STEREL";
+    // RDKit❗❌:           tmp += std::to_string(group.getWriteId());
+    // RDKit❗❌:           break;
+    // RDKit❗❌:         case RDKit::StereoGroupType::STEREO_AND:
+    // RDKit❗❌:           tmp += "STERAC";
+    // RDKit❗❌:           tmp += std::to_string(group.getWriteId());
+    // RDKit❗❌:           break;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       tmp += " ATOMS=(";
+    // RDKit❗❌:
+    // RDKit❗❌:       std::vector<unsigned int> atomIds;
+    // RDKit❗❌:       Atropisomers::getAllAtomIdsForStereoGroup(tmol, group, atomIds,
+    // RDKit❗❌:                                                 wedgeBonds);
+    // RDKit❗❌:
+    // RDKit❗❌:       tmp += std::to_string(atomIds.size());
+    // RDKit❗❌:       for (auto &&atom : atomIds) {
+    // RDKit❗❌:         tmp += ' ';
+    // RDKit❗❌:         // atoms are 1 indexed in molfiles
+    // RDKit❗❌:         auto idxStr = std::to_string(atom + 1);
+    // RDKit❗❌:         if (tmp.size() + idxStr.size() >= 78) {
+    // RDKit❗❌:           res += tmp + "-\n";
+    // RDKit❗❌:           tmp = "M  V30 ";
+    // RDKit❗❌:         }
+    // RDKit❗❌:         tmp += idxStr;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       res += tmp + ")\n";
+    // RDKit❗❌:       tmp.clear();
+    // RDKit❗❌:     }
+    // RDKit❗❌:     res += tmp + "M  V30 END COLLECTION\n";
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    let mut output = PropertyText::new();
+    if !groups.is_empty() {
+        // BEGIN RDKIT CPP FUNCTION appendEnhancedStereoGroups
+        // RDKit❗✔️: auto stereo_groups = tmol.getStereoGroups();
+        // RDKit❗✔️: assignStereoGroupIds(stereo_groups);
+        // RDKit❗✔️: res += "M  V30 BEGIN COLLECTION\n";
+        // RDKit❗✔️: std::string tmp;
+        // RDKit❗✔️: tmp.reserve(80);
+        // RDKit❗✔️: for (auto &&group : stereo_groups) {
+        // RDKit❗✔️:   tmp += "M  V30 MDLV30/";
+        // RDKit❗✔️:   switch (group.getGroupType()) {
+        // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_ABSOLUTE:
+        // RDKit❗✔️:       tmp += "STEABS";
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_OR:
+        // RDKit❗✔️:       tmp += "STEREL";
+        // RDKit❗✔️:       tmp += std::to_string(group.getWriteId());
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:     case RDKit::StereoGroupType::STEREO_AND:
+        // RDKit❗✔️:       tmp += "STERAC";
+        // RDKit❗✔️:       tmp += std::to_string(group.getWriteId());
+        // RDKit❗✔️:       break;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   tmp += " ATOMS=(";
+        // RDKit❗✔️:   tmp += std::to_string(atomIds.size());
+        // RDKit❗✔️:   for (auto &&atom : atomIds) {
+        // RDKit❗✔️:     tmp += ' ';
+        // RDKit❗✔️:     // atoms are 1 indexed in molfiles
+        // RDKit❗✔️:     auto idxStr = std::to_string(atom + 1);
+        // RDKit❗✔️:     if (tmp.size() + idxStr.size() >= 78) {
+        // RDKit❗✔️:       res += tmp + "-\n";
+        // RDKit❗✔️:       tmp = "M  V30 ";
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     tmp += idxStr;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   res += tmp + ")\n";
+        // RDKit❗✔️:   tmp.clear();
+        // RDKit❗✔️: }
+        // RDKit❗✔️: res += tmp + "M  V30 END COLLECTION\n";
+        output.extend_bytes(b"M  V30 BEGIN COLLECTION\n");
+        let group_ids = assigned_stereo_group_ids(&groups);
+        for ((group, assigned_id), atoms) in groups.iter().zip(group_ids).zip(atom_ids) {
+            let label = match group.kind() {
+                StereoGroupKind::Absolute => "STEABS".to_owned(),
+                StereoGroupKind::Or => format!("STEREL{}", assigned_id.expect("OR ID assigned")),
+                StereoGroupKind::And => {
+                    format!("STERAC{}", assigned_id.expect("AND ID assigned"))
+                }
+            };
+            let mut current = format!("M  V30 MDLV30/{label} ATOMS=({}", atoms.len());
+            for atom in atoms {
+                current.push(' ');
+                let index = (atom.index() + 1).to_string();
+                if current.len() + index.len() >= 78 {
+                    output.extend_bytes(current.as_bytes());
+                    output.extend_bytes(b"-\n");
+                    current.clear();
+                    current.push_str("M  V30 ");
+                }
+                current.push_str(&index);
+            }
+            output.extend_bytes(current.as_bytes());
+            output.extend_bytes(b")\n");
+        }
+        output.extend_bytes(b"M  V30 END COLLECTION\n");
+        // END RDKIT CPP FUNCTION
+    }
+    output
+}
+
+#[cfg(test)]
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+#[cfg(test)]
+fn fixture_writer_text(value: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(value.into_bytes())
+        .expect("original writer fixture must retain exact UTF-8 bytes")
+}
+
+#[cfg(test)]
+mod native_sdt_field_tests {
+    use super::*;
+
+    #[test]
+    fn v3000_field_data_retains_quotes_verbatim_like_rdkit() {
+        let group = SubstanceGroup::new(
+            cosmolkit_model::SubstanceGroupId::new(0),
+            SubstanceGroupKind::Data,
+        )
+        .with_data(cosmolkit_model::SGroupData {
+            values: vec!["a\"b".into(), "".into(), "a\"\"b".into()],
+            ..Default::default()
+        });
+        let output = write_v3000_sgroup(1, &group, &[]).unwrap();
+        assert_eq!(
+            output.as_bytes(),
+            b"M  V30 1 DAT 0 FIELDDATA=\"a\"b\" FIELDDATA=\"\" FIELDDATA=\"a\"\"b\"\n"
+        );
+    }
+
+    fn sdt(data: cosmolkit_model::SGroupData) -> Vec<u8> {
+        let mut topology = TopologyBlock::default();
+        topology.substance_groups.push(
+            SubstanceGroup::new(
+                cosmolkit_model::SubstanceGroupId::new(0),
+                SubstanceGroupKind::Data,
+            )
+            .with_data(data),
+        );
+        let output = write_v2000_sgroups(&topology).unwrap();
+        output
+            .as_bytes()
+            .split(|b| *b == b'\n')
+            .find(|l| l.starts_with(b"M  SDT"))
+            .unwrap()
+            .to_vec()
+    }
+
+    #[test]
+    fn native_sdt_omits_absent_fields_and_distinguishes_empty_field_type() {
+        for field_type in [None, Some(PropertyText::new())] {
+            let actual = sdt(cosmolkit_model::SGroupData {
+                field_name: Some("FIELD".into()),
+                field_type: field_type.clone(),
+                ..Default::default()
+            });
+            let mut expected = b"M  SDT   1 FIELD                         ".to_vec();
+            expected.extend_from_slice(if field_type.is_none() { b" T" } else { b"  " });
+            assert_eq!(actual, expected);
+        }
+    }
+
+    #[test]
+    fn native_sdt_queryop_preserves_fifteen_byte_padding_and_truncation() {
+        for (input, expected_tail) in [
+            (b"OP".as_slice(), b"OP             ".as_slice()),
+            (
+                b"abcdefghijklmnopq".as_slice(),
+                b"abcdefghijklmno".as_slice(),
+            ),
+            (
+                &[0xff, 0x00][..],
+                &[
+                    0xff, 0x00, b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ', b' ',
+                    b' ', b' ',
+                ][..],
+            ),
+        ] {
+            let actual = sdt(cosmolkit_model::SGroupData {
+                field_name: Some("FIELD".into()),
+                query_op: Some(PropertyText::from(input.to_vec())),
+                ..Default::default()
+            });
+            let mut expected = b"M  SDT   1 FIELD                          T".to_vec();
+            expected.extend_from_slice(expected_tail);
+            assert_eq!(actual, expected);
+        }
     }
 }

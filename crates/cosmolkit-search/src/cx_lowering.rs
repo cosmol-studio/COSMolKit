@@ -8,7 +8,7 @@ use cosmolkit_cx::{
 };
 use cosmolkit_model::{
     AtomId, AtomQueryPredicate, BondDirection, BondId, BondOrder, BondStereo, Conformer3D,
-    QueryAtomIdentity, QueryGraph, QueryGraphError, QueryNode, SGroupData, StereoGroup,
+    QueryAtom, QueryAtomIdentity, QueryGraph, QueryGraphError, QueryNode, SGroupData, StereoGroup,
     StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, query_substance_groups,
     replace_query_stereo_groups, replace_query_substance_groups,
 };
@@ -18,8 +18,16 @@ const QUERY_SCAN_MAGIC_VALUE: u32 = 0xDEAD_BEEF;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CxQueryLoweringError {
+    #[error("CX unsigned property read failed: {0}")]
+    Numeric(#[from] cosmolkit_core::PropertyUIntReadError),
+    #[error("CX bond property operation failed: {0}")]
+    BondProperty(#[from] cosmolkit_model::BondValueError),
+    #[error("CX atom property operation failed: {0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
     #[error("CX property string conversion failed: {0}")]
     Property(#[from] cosmolkit_core::PropertyStringError),
+    #[error("CX molecule property assignment failed: {0}")]
+    MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
     #[error("CX atom index {index} is outside the query graph")]
     AtomIndex { index: usize },
     #[error("CX bond index {index} is outside the query graph")]
@@ -41,18 +49,7 @@ pub(crate) fn query_bond_row_from_source_index(
     graph: &QueryGraph,
     index: usize,
 ) -> Result<usize, CxQueryLoweringError> {
-    // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
-    // RDKit❗✔️: template <>
-    // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
-    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
-    // RDKit❗✔️:     return v.value.u;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
-    // RDKit❗✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   throw std::bad_any_cast();
-    // RDKit❗✔️: }
-    // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
+    // BEGIN COMPLETE PINNED SF184
     // RDKit✔️✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
     // RDKit✔️✔️:   for (auto bnd : mol.bonds()) {
     // RDKit✔️✔️:     unsigned int smilesIdx;
@@ -63,30 +60,113 @@ pub(crate) fn query_bond_row_from_source_index(
     // RDKit✔️✔️:   }
     // RDKit✔️✔️:   return nullptr;
     // RDKit✔️✔️: }
-    // Scan in final row order, O(E), without cloning or an alternative map.
-    // UInt is the proposed parser scalar; existing Int/String properties retain
-    // unsigned conversion. Missing metadata never falls back to the row ID.
+    // END COMPLETE PINNED SF184
+    // Complete reached RDProps.h
+    // RDKit✔️✔️: bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit✔️✔️:     return d_props.getValIfPresent(key, res);
+    // RDKit✔️✔️:   }
+    // Complete reached Dict.h
+    // RDKit✔️✔️: bool getValIfPresent(const std::string_view what, T &res) const {
+    // RDKit✔️✔️:     for (const auto &data : _data) {
+    // RDKit✔️✔️:       if (data.key == what) {
+    // RDKit✔️✔️:         res = from_rdvalue<T>(data.val);
+    // RDKit✔️✔️:         return true;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     return false;
+    // RDKit✔️✔️:   }
+    // Complete reached RDValue-taggedunion.h
+    // RDKit✔️✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
+    // RDKit✔️✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit✔️✔️:     return v.value.u;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit✔️✔️:     return boost::numeric_cast<unsigned int>(v.value.i);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   throw std::bad_any_cast();
+    // RDKit✔️✔️: }
+    // Complete reached RDValue.h
+    // RDKit✔️✔️: typename boost::enable_if<boost::is_arithmetic<T>, T>::type from_rdvalue(
+    // RDKit✔️✔️:     RDValue_cast_t arg) {
+    // RDKit✔️✔️:   T res;
+    // RDKit✔️✔️:   if (arg.getTag() == RDTypeTag::StringTag) {
+    // RDKit✔️✔️:     Utils::LocaleSwitcher ls;
+    // RDKit✔️✔️:     try {
+    // RDKit✔️✔️:       res = rdvalue_cast<T>(arg);
+    // RDKit✔️✔️:     } catch (const std::bad_any_cast &exc) {
+    // RDKit✔️✔️:       try {
+    // RDKit✔️✔️: 	std::string val = rdvalue_cast<std::string>(arg);
+    // RDKit✔️✔️: 	// trim only the right characters, this mimics how SD values
+    // RDKit✔️✔️: 	//  work on read, they will be trimmed by the MolFile parser
+    // RDKit✔️✔️: 	boost::trim_right(val);
+    // RDKit✔️✔️:         res = boost::lexical_cast<T>(val);
+    // RDKit✔️✔️:       } catch (...) {
+    // RDKit✔️✔️:         throw exc;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     res = rdvalue_cast<T>(arg);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // Complete reached ROMol.h
+    // RDKit✔️✔️: CXXBondIterator<const MolGraph, Bond *const> bonds() const {
+    // RDKit✔️✔️:     return {&d_graph};
+    // RDKit✔️✔️:   }
+    // Complete reached ordered CXXBondIterator
+    // RDKit✔️✔️: struct CXXBondIterator {
+    // RDKit✔️✔️:   Graph *graph;
+    // RDKit✔️✔️:   Iterator vstart, vend;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   struct CXXBondIter {
+    // RDKit✔️✔️:     using iterator_category = std::forward_iterator_tag;
+    // RDKit✔️✔️:     using difference_type = std::ptrdiff_t;
+    // RDKit✔️✔️:     using value_type = Edge;
+    // RDKit✔️✔️:     using pointer = Edge *;
+    // RDKit✔️✔️:     using reference = Edge &;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     Graph *graph;
+    // RDKit✔️✔️:     Iterator pos;
+    // RDKit✔️✔️:     Bond *current;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     CXXBondIter(Graph *graph, Iterator pos)
+    // RDKit✔️✔️:         : graph(graph), pos(pos), current(nullptr) {}
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     reference operator*() {
+    // RDKit✔️✔️:       current = (*graph)[*pos];
+    // RDKit✔️✔️:       return current;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     CXXBondIter &operator++() {
+    // RDKit✔️✔️:       ++pos;
+    // RDKit✔️✔️:       return *this;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     bool operator==(const CXXBondIter &it) const { return pos == it.pos; }
+    // RDKit✔️✔️:     bool operator!=(const CXXBondIter &it) const { return pos != it.pos; }
+    // RDKit✔️✔️:   };
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   CXXBondIterator(Graph *graph) : graph(graph) {
+    // RDKit✔️✔️:     auto vs = boost::edges(*graph);
+    // RDKit✔️✔️:     vstart = vs.first;
+    // RDKit✔️✔️:     vend = vs.second;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   CXXBondIterator(Graph *graph, Iterator start, Iterator end)
+    // RDKit✔️✔️:       : graph(graph), vstart(start), vend(end) {};
+    // RDKit✔️✔️:   CXXBondIter begin() { return {graph, vstart}; }
+    // RDKit✔️✔️:   CXXBondIter end() { return {graph, vend}; }
+    // RDKit✔️✔️: }
+    // Behavior: absent metadata continues, wrong present types/conversions
+    // propagate the canonical structured failure, and first matching row stops
+    // the scan before later properties are touched. Null maps to BondIndex at
+    // this canonical required-row boundary; it is never replaced by a row ID.
+    // Complexity: one ordered O(E) scan with O(1) scratch and no graph clone,
+    // secondary index or repeated read. Numeric conversion has its sole CORE
+    // owner; comparison is width-independent and cannot hide a conversion error.
     for (row, bond) in graph.bonds().iter().enumerate() {
         let Some(value) = bond.bond().prop("_cxsmilesBondIdx") else {
             continue;
         };
-        let source_index = match value {
-            cosmolkit_model::PropertyValue::Int(value) => u32::try_from(*value).ok(),
-            cosmolkit_model::PropertyValue::UInt(value) => Some(*value),
-            cosmolkit_model::PropertyValue::String(value) => value.parse::<u32>().ok(),
-            cosmolkit_model::PropertyValue::IntVector(_) => {
-                return Err(CxQueryLoweringError::InvalidGraph(
-                    "bad_any_cast reading _cxsmilesBondIdx as unsigned int".to_owned(),
-                ));
-            }
-            _ => None,
-        }
-        .ok_or_else(|| {
-            CxQueryLoweringError::InvalidGraph(
-                "query CX bond index property is not a source unsigned integer".to_owned(),
-            )
-        })?;
-        if usize::try_from(source_index).ok() == Some(index) {
+        let source_index = cosmolkit_core::property_value_to_uint(value)?;
+        if u128::from(source_index) == index as u128 {
             return Ok(row);
         }
     }
@@ -201,72 +281,721 @@ pub(crate) fn merge_cx_enhanced_stereo(
     Ok(())
 }
 
+pub(crate) fn cx_link_node_outer_atoms(
+    graph: &QueryGraph,
+    node: &CxLinkNode,
+) -> Result<Option<[usize; 2]>, CxQueryLoweringError> {
+    // BEGIN COMPLETE PINNED SF193
+    // RDKit✔️❌: bool parse_linknodes(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                      unsigned int startAtomIdx) {
+    // RDKit✔️❌:   // these look like: |LN:1:1.3.2.6,4:1.4.3.6|
+    // RDKit✔️❌:   // that's two records:
+    // RDKit✔️❌:   //   1:1.3.2.6: 1-3 repeats, atom 1-2, 1-6
+    // RDKit✔️❌:   //   4:1.4.3.6: 1-4 repeats, atom 4-3, 4-6
+    // RDKit✔️❌:   // which maps to the property value "1 3 2 2 3 2 7|1 4 2 5 4 5 7"
+    // RDKit✔️❌:   // If the linking atom only has two neighbors then the outer atom
+    // RDKit✔️❌:   // specification (the last two digits) can be left out. So for a molecule
+    // RDKit✔️❌:   // where atom 1 has bonds only to atoms 2 and 6 we could have
+    // RDKit✔️❌:   // |LN:1:1.3|
+    // RDKit✔️❌:   // instead of
+    // RDKit✔️❌:   // |LN:1:1.3.2.6|
+    // RDKit✔️❌:   if (first >= last || *first != 'L' || first + 1 >= last ||
+    // RDKit✔️❌:       *(first + 1) != 'N' || first + 2 >= last || *(first + 2) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 3;
+    // RDKit✔️❌:   std::string accum = "";
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int atidx;
+    // RDKit✔️❌:     if (!read_int(first, last, atidx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     // check that we can read at least two more characters:
+    // RDKit✔️❌:     if (first + 1 >= last || *first != ':') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int startReps;
+    // RDKit✔️❌:     if (!read_int(first, last, startReps)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first + 1 >= last || *first != '.') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int endReps;
+    // RDKit✔️❌:     if (!read_int(first, last, endReps)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     unsigned int idx1;
+    // RDKit✔️❌:     unsigned int idx2;
+    // RDKit✔️❌:     if (first < last && *first == '.') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       if (!read_int(first, last, idx1)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       if (!read_int(first, last, idx2)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else if (VALID_ATIDX(atidx) &&
+    // RDKit✔️❌:                mol.getAtomWithIdx(atidx - startAtomIdx)->getDegree() == 2) {
+    // RDKit✔️❌:       auto nbrs =
+    // RDKit✔️❌:           mol.getAtomNeighbors(mol.getAtomWithIdx(atidx - startAtomIdx));
+    // RDKit✔️❌:       idx1 = *nbrs.first;
+    // RDKit✔️❌:       nbrs.first++;
+    // RDKit✔️❌:       idx2 = *nbrs.first;
+    // RDKit✔️❌:     } else if (VALID_ATIDX(atidx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_ATIDX(atidx)) {
+    // RDKit✔️❌:       if (!accum.empty()) {
+    // RDKit✔️❌:         accum += "|";
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       accum += (boost::format("%d %d 2 %d %d %d %d") % startReps % endReps %
+    // RDKit✔️❌:                 (atidx - startAtomIdx + 1) % (idx1 - startAtomIdx + 1) %
+    // RDKit✔️❌:                 (atidx - startAtomIdx + 1) % (idx2 - startAtomIdx + 1))
+    // RDKit✔️❌:                    .str();
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (!accum.empty()) {
+    // RDKit✔️❌:     mol.setProp(common_properties::molFileLinkNodes, accum);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF193
+    // BEGIN COMPLETE Atom::getDegree
+    // RDKit✔️✔️: unsigned int Atom::getDegree() const {
+    // RDKit✔️✔️:   return dp_mol ? getOwningMol().getAtomDegree(this) : 0;
+    // RDKit✔️✔️: }
+    // END COMPLETE Atom::getDegree
+    // BEGIN COMPLETE ROMol::getAtomDegree
+    // RDKit✔️✔️: unsigned int ROMol::getAtomDegree(const Atom *at) const {
+    // RDKit✔️✔️:   PRECONDITION(at, "no atom");
+    // RDKit✔️✔️:   PRECONDITION(&at->getOwningMol() == this,
+    // RDKit✔️✔️:                "atom not associated with this molecule");
+    // RDKit✔️✔️:   return rdcast<unsigned int>(boost::out_degree(at->getIdx(), d_graph));
+    // RDKit✔️✔️: }
+    // END COMPLETE ROMol::getAtomDegree
+    // BEGIN COMPLETE ROMol::getAtomNeighbors
+    // RDKit✔️✔️: ROMol::ADJ_ITER_PAIR ROMol::getAtomNeighbors(Atom const *at) const {
+    // RDKit✔️✔️:   PRECONDITION(at, "no atom");
+    // RDKit✔️✔️:   PRECONDITION(&at->getOwningMol() == this,
+    // RDKit✔️✔️:                "atom not associated with this molecule");
+    // RDKit✔️✔️:   return boost::adjacent_vertices(at->getIdx(), d_graph);
+    // RDKit✔️✔️: }
+    // END COMPLETE ROMol::getAtomNeighbors
+    // BEGIN COMPLETE Boost1.81::adjacent_vertices
+    // Boost✔️✔️: adjacent_vertices(typename Config::vertex_descriptor u,
+    // Boost✔️✔️:     const adj_list_helper< Config, Base >& g_)
+    // Boost✔️✔️: {
+    // Boost✔️✔️:     typedef typename Config::graph_type AdjList;
+    // Boost✔️✔️:     const AdjList& cg = static_cast< const AdjList& >(g_);
+    // Boost✔️✔️:     AdjList& g = const_cast< AdjList& >(cg);
+    // Boost✔️✔️:     typedef typename Config::adjacency_iterator adjacency_iterator;
+    // Boost✔️✔️:     typename Config::out_edge_iterator first, last;
+    // Boost✔️✔️:     boost::tie(first, last) = out_edges(u, g);
+    // Boost✔️✔️:     return std::make_pair(
+    // Boost✔️✔️:         adjacency_iterator(first, &g), adjacency_iterator(last, &g));
+    // Boost✔️✔️: }
+    // END COMPLETE Boost1.81::adjacent_vertices
+    // BEGIN COMPLETE Boost1.81::out_edges
+    // Boost✔️✔️: out_edges(typename Config::vertex_descriptor u,
+    // Boost✔️✔️:     bidirectional_graph_helper_with_property< Config >& g_)
+    // Boost✔️✔️: {
+    // Boost✔️✔️:     typedef typename Config::global_edgelist_selector EdgeListS;
+    // Boost✔️✔️:     BOOST_STATIC_ASSERT((!is_same< EdgeListS, vecS >::value));
+    // Boost✔️✔️:
+    // Boost✔️✔️:     typedef typename Config::graph_type graph_type;
+    // Boost✔️✔️:     typedef typename Config::edge_parallel_category Cat;
+    // Boost✔️✔️:     graph_type& g = static_cast< graph_type& >(g_);
+    // Boost✔️✔️:     typename Config::OutEdgeList& el = g.out_edge_list(u);
+    // Boost✔️✔️:     typename Config::OutEdgeList::iterator ei = el.begin(), ei_end = el.end();
+    // Boost✔️✔️:     for (; ei != ei_end; ++ei)
+    // Boost✔️✔️:     {
+    // Boost✔️✔️:         detail::erase_from_incidence_list(
+    // Boost✔️✔️:             in_edge_list(g, (*ei).get_target()), u, Cat());
+    // Boost✔️✔️:         g.m_edges.erase((*ei).get_iter());
+    // Boost✔️✔️:     }
+    // Boost✔️✔️:     g.out_edge_list(u).clear();
+    // Boost✔️✔️: }
+    // END COMPLETE Boost1.81::out_edges
+    // BEGIN COMPLETE Boost1.81::out_degree
+    // Boost✔️✔️: inline typename Config::degree_size_type out_degree(
+    // Boost✔️✔️:     typename Config::vertex_descriptor u,
+    // Boost✔️✔️:     const adj_list_helper< Config, Base >& g_)
+    // Boost✔️✔️: {
+    // Boost✔️✔️:     typedef typename Config::graph_type AdjList;
+    // Boost✔️✔️:     const AdjList& g = static_cast< const AdjList& >(g_);
+    // Boost✔️✔️:     return g.out_edge_list(u).size();
+    // Boost✔️✔️: }
+    // END COMPLETE Boost1.81::out_degree
+    // Source global window is zero-based in this canonical local consumer.
+    // Skip before neighbor access; explicit indices are not range-validated.
+    // O(1) adjacency lookup/degree and the first two insertion-order neighbors.
+    if node.atom >= graph.num_atoms() {
+        return Ok(None);
+    }
+    if let Some(outer) = node.outer_atoms {
+        return Ok(Some(outer));
+    }
+    let neighbors = graph.adjacency().get(node.atom).ok_or_else(|| {
+        CxQueryLoweringError::InvalidGraph("CX link-node center has no adjacency row".to_owned())
+    })?;
+    if neighbors.len() != 2 {
+        return Err(CxQueryLoweringError::InvalidGraph(format!(
+            "CX link-node atom {} has degree {}, expected two when outer atoms are omitted",
+            node.atom,
+            neighbors.len()
+        )));
+    }
+    Ok(Some([neighbors[0].0, neighbors[1].0]))
+}
+
 pub(crate) fn apply_cx_link_nodes_to_query(
     graph: &mut QueryGraph,
     nodes: &[CxLinkNode],
 ) -> Result<(), CxQueryLoweringError> {
-    // RDKit source (verbatim; CXSmilesOps.cpp::parse_linknodes):
-    /*
-    if (first < last && *first == '.') {
-      ++first;
-      if (!read_int(first, last, idx1)) {
-        return false;
-      }
-      ++first;
-      if (!read_int(first, last, idx2)) {
-        return false;
-      }
-    } else if (VALID_ATIDX(atidx) &&
-               mol.getAtomWithIdx(atidx - startAtomIdx)->getDegree() == 2) {
-      auto nbrs =
-          mol.getAtomNeighbors(mol.getAtomWithIdx(atidx - startAtomIdx));
-      idx1 = *nbrs.first;
-      nbrs.first++;
-      idx2 = *nbrs.first;
-    } else if (VALID_ATIDX(atidx)) {
-      return false;
-    }
-    if (first < last && *first == ',') {
-      ++first;
-    }
-    if (VALID_ATIDX(atidx)) {
-      if (!accum.empty()) {
-        accum += "|";
-      }
-      accum += (boost::format("%d %d 2 %d %d %d %d") % startReps % endReps %
-                (atidx - startAtomIdx + 1) % (idx1 - startAtomIdx + 1) %
-                (atidx - startAtomIdx + 1) % (idx2 - startAtomIdx + 1))
-                   .str();
-    }
-    if (!accum.empty()) {
-      mol.setProp(common_properties::molFileLinkNodes, accum);
-    }
-    */
-    // RDKit❗✔️: preserve source neighbor order and one-based unsigned values;
-    // build locally so a later degree error leaves the prior property intact.
+    // BEGIN COMPLETE PINNED SF193
+    // RDKit✔️❌: bool parse_linknodes(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                      unsigned int startAtomIdx) {
+    // RDKit✔️❌:   // these look like: |LN:1:1.3.2.6,4:1.4.3.6|
+    // RDKit✔️❌:   // that's two records:
+    // RDKit✔️❌:   //   1:1.3.2.6: 1-3 repeats, atom 1-2, 1-6
+    // RDKit✔️❌:   //   4:1.4.3.6: 1-4 repeats, atom 4-3, 4-6
+    // RDKit✔️❌:   // which maps to the property value "1 3 2 2 3 2 7|1 4 2 5 4 5 7"
+    // RDKit✔️❌:   // If the linking atom only has two neighbors then the outer atom
+    // RDKit✔️❌:   // specification (the last two digits) can be left out. So for a molecule
+    // RDKit✔️❌:   // where atom 1 has bonds only to atoms 2 and 6 we could have
+    // RDKit✔️❌:   // |LN:1:1.3|
+    // RDKit✔️❌:   // instead of
+    // RDKit✔️❌:   // |LN:1:1.3.2.6|
+    // RDKit✔️❌:   if (first >= last || *first != 'L' || first + 1 >= last ||
+    // RDKit✔️❌:       *(first + 1) != 'N' || first + 2 >= last || *(first + 2) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 3;
+    // RDKit✔️❌:   std::string accum = "";
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int atidx;
+    // RDKit✔️❌:     if (!read_int(first, last, atidx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     // check that we can read at least two more characters:
+    // RDKit✔️❌:     if (first + 1 >= last || *first != ':') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int startReps;
+    // RDKit✔️❌:     if (!read_int(first, last, startReps)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first + 1 >= last || *first != '.') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int endReps;
+    // RDKit✔️❌:     if (!read_int(first, last, endReps)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     unsigned int idx1;
+    // RDKit✔️❌:     unsigned int idx2;
+    // RDKit✔️❌:     if (first < last && *first == '.') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       if (!read_int(first, last, idx1)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       if (!read_int(first, last, idx2)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else if (VALID_ATIDX(atidx) &&
+    // RDKit✔️❌:                mol.getAtomWithIdx(atidx - startAtomIdx)->getDegree() == 2) {
+    // RDKit✔️❌:       auto nbrs =
+    // RDKit✔️❌:           mol.getAtomNeighbors(mol.getAtomWithIdx(atidx - startAtomIdx));
+    // RDKit✔️❌:       idx1 = *nbrs.first;
+    // RDKit✔️❌:       nbrs.first++;
+    // RDKit✔️❌:       idx2 = *nbrs.first;
+    // RDKit✔️❌:     } else if (VALID_ATIDX(atidx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_ATIDX(atidx)) {
+    // RDKit✔️❌:       if (!accum.empty()) {
+    // RDKit✔️❌:         accum += "|";
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       accum += (boost::format("%d %d 2 %d %d %d %d") % startReps % endReps %
+    // RDKit✔️❌:                 (atidx - startAtomIdx + 1) % (idx1 - startAtomIdx + 1) %
+    // RDKit✔️❌:                 (atidx - startAtomIdx + 1) % (idx2 - startAtomIdx + 1))
+    // RDKit✔️❌:                    .str();
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (!accum.empty()) {
+    // RDKit✔️❌:     mol.setProp(common_properties::molFileLinkNodes, accum);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF193
+    // BEGIN COMPLETE source common_properties::molFileLinkNodes
+    // RDKit✔️✔️: inline constexpr std::string_view molFileLinkNodes = "_molLinkNodes";
+    // END COMPLETE source common_properties::molFileLinkNodes
+    // BEGIN COMPLETE Boost1.81::parse_printf_directive
+    // Boost✔️✔️:     bool parse_printf_directive(Iter & start, const Iter& last,
+    // Boost✔️✔️:                                 detail::format_item<Ch, Tr, Alloc> * fpar,
+    // Boost✔️✔️:                                 const Facet& fac,
+    // Boost✔️✔️:                                 std::size_t offset, unsigned char exceptions)
+    // Boost✔️✔️:     {
+    // Boost✔️✔️:         typedef typename basic_format<Ch, Tr, Alloc>::format_item_t format_item_t;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         fpar->argN_ = format_item_t::argN_no_posit;  // if no positional-directive
+    // Boost✔️✔️:         bool precision_set = false;
+    // Boost✔️✔️:         bool in_brackets=false;
+    // Boost✔️✔️:         Iter start0 = start;
+    // Boost✔️✔️:         std::size_t fstring_size = last-start0+offset;
+    // Boost✔️✔️:         char mssiz = 0;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         if(start>= last) { // empty directive : this is a trailing %
+    // Boost✔️✔️:                 maybe_throw_exception(exceptions, start-start0 + offset, fstring_size);
+    // Boost✔️✔️:                 return false;
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         if(*start== const_or_not(fac).widen( '|')) {
+    // Boost✔️✔️:             in_brackets=true;
+    // Boost✔️✔️:             if( ++start >= last ) {
+    // Boost✔️✔️:                 maybe_throw_exception(exceptions, start-start0 + offset, fstring_size);
+    // Boost✔️✔️:                 return false;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         // the flag '0' would be picked as a digit for argument order, but here it's a flag :
+    // Boost✔️✔️:         if(*start== const_or_not(fac).widen( '0'))
+    // Boost✔️✔️:             goto parse_flags;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         // handle argument order (%2$d)  or possibly width specification: %2d
+    // Boost✔️✔️:         if(wrap_isdigit(fac, *start)) {
+    // Boost✔️✔️:             int n;
+    // Boost✔️✔️:             start = str2int(start, last, n, fac);
+    // Boost✔️✔️:             if( start >= last ) {
+    // Boost✔️✔️:                 maybe_throw_exception(exceptions, start-start0+offset, fstring_size);
+    // Boost✔️✔️:                 return false;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // %N% case : this is already the end of the directive
+    // Boost✔️✔️:             if( *start ==  const_or_not(fac).widen( '%') ) {
+    // Boost✔️✔️:                 fpar->argN_ = n-1;
+    // Boost✔️✔️:                 ++start;
+    // Boost✔️✔️:                 if( in_brackets)
+    // Boost✔️✔️:                     maybe_throw_exception(exceptions, start-start0+offset, fstring_size);
+    // Boost✔️✔️:                 return true;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:
+    // Boost✔️✔️:             if ( *start== const_or_not(fac).widen( '$') ) {
+    // Boost✔️✔️:                 fpar->argN_ = n-1;
+    // Boost✔️✔️:                 ++start;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             else {
+    // Boost✔️✔️:                 // non-positional directive
+    // Boost✔️✔️:                 fpar->fmtstate_.width_ = n;
+    // Boost✔️✔️:                 fpar->argN_  = format_item_t::argN_no_posit;
+    // Boost✔️✔️:                 goto parse_precision;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:       parse_flags:
+    // Boost✔️✔️:         // handle flags
+    // Boost✔️✔️:         while (start != last) { // as long as char is one of + - = _ # 0 or ' '
+    // Boost✔️✔️:             switch ( wrap_narrow(fac, *start, 0)) {
+    // Boost✔️✔️:                 case '\'':
+    // Boost✔️✔️:                     break; // no effect yet. (painful to implement)
+    // Boost✔️✔️:                 case '-':
+    // Boost✔️✔️:                     fpar->fmtstate_.flags_ |= std::ios_base::left;
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '=':
+    // Boost✔️✔️:                     fpar->pad_scheme_ |= format_item_t::centered;
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '_':
+    // Boost✔️✔️:                     fpar->fmtstate_.flags_ |= std::ios_base::internal;
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case ' ':
+    // Boost✔️✔️:                     fpar->pad_scheme_ |= format_item_t::spacepad;
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '+':
+    // Boost✔️✔️:                     fpar->fmtstate_.flags_ |= std::ios_base::showpos;
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '0':
+    // Boost✔️✔️:                     fpar->pad_scheme_ |= format_item_t::zeropad;
+    // Boost✔️✔️:                     // need to know alignment before really setting flags,
+    // Boost✔️✔️:                     // so just add 'zeropad' flag for now, it will be processed later.
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '#':
+    // Boost✔️✔️:                     fpar->fmtstate_.flags_ |= std::ios_base::showpoint | std::ios_base::showbase;
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 default:
+    // Boost✔️✔️:                     goto parse_width;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             ++start;
+    // Boost✔️✔️:         } // loop on flag.
+    // Boost✔️✔️:
+    // Boost✔️✔️:         if( start>=last) {
+    // Boost✔️✔️:             maybe_throw_exception(exceptions, start-start0+offset, fstring_size);
+    // Boost✔️✔️:             return true;
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:       // first skip 'asterisk fields' : * or num (length)
+    // Boost✔️✔️:       parse_width:
+    // Boost✔️✔️:         if(*start == const_or_not(fac).widen( '*') )
+    // Boost✔️✔️:             ++start;
+    // Boost✔️✔️:         else if(start!=last && wrap_isdigit(fac, *start))
+    // Boost✔️✔️:             start = str2int(start, last, fpar->fmtstate_.width_, fac);
+    // Boost✔️✔️:
+    // Boost✔️✔️:       parse_precision:
+    // Boost✔️✔️:         if( start>= last) {
+    // Boost✔️✔️:             maybe_throw_exception(exceptions, start-start0+offset, fstring_size);
+    // Boost✔️✔️:             return true;
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:         // handle precision spec
+    // Boost✔️✔️:         if (*start== const_or_not(fac).widen( '.')) {
+    // Boost✔️✔️:             ++start;
+    // Boost✔️✔️:             if(start != last && *start == const_or_not(fac).widen( '*') )
+    // Boost✔️✔️:                 ++start;
+    // Boost✔️✔️:             else if(start != last && wrap_isdigit(fac, *start)) {
+    // Boost✔️✔️:                 start = str2int(start, last, fpar->fmtstate_.precision_, fac);
+    // Boost✔️✔️:                 precision_set = true;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             else
+    // Boost✔️✔️:                 fpar->fmtstate_.precision_ =0;
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:       // argument type modifiers
+    // Boost✔️✔️:         while (start != last) {
+    // Boost✔️✔️:             switch (wrap_narrow(fac, *start, 0)) {
+    // Boost✔️✔️:                 case 'h':
+    // Boost✔️✔️:                 case 'l':
+    // Boost✔️✔️:                 case 'j':
+    // Boost✔️✔️:                 case 'z':
+    // Boost✔️✔️:                 case 'L':
+    // Boost✔️✔️:                     // boost::format ignores argument type modifiers as it relies on
+    // Boost✔️✔️:                     // the type of the argument fed into it by operator %
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // Note that the ptrdiff_t argument type 't' from C++11 is not honored
+    // Boost✔️✔️:                 // because it was already in use as the tabulation specifier in boost::format
+    // Boost✔️✔️:                 // case 't':
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // Microsoft extensions:
+    // Boost✔️✔️:                 // https://msdn.microsoft.com/en-us/library/tcxf1dw6.aspx
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 case 'w':
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case 'I':
+    // Boost✔️✔️:                     mssiz = 'I';
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '3':
+    // Boost✔️✔️:                     if (mssiz != 'I') {
+    // Boost✔️✔️:                         maybe_throw_exception(exceptions, start - start0 + offset, fstring_size);
+    // Boost✔️✔️:                         return true;
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                     mssiz = '3';
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '2':
+    // Boost✔️✔️:                     if (mssiz != '3') {
+    // Boost✔️✔️:                         maybe_throw_exception(exceptions, start - start0 + offset, fstring_size);
+    // Boost✔️✔️:                         return true;
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                     mssiz = 0x00;
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '6':
+    // Boost✔️✔️:                     if (mssiz != 'I') {
+    // Boost✔️✔️:                         maybe_throw_exception(exceptions, start - start0 + offset, fstring_size);
+    // Boost✔️✔️:                         return true;
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                     mssiz = '6';
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 case '4':
+    // Boost✔️✔️:                     if (mssiz != '6') {
+    // Boost✔️✔️:                         maybe_throw_exception(exceptions, start - start0 + offset, fstring_size);
+    // Boost✔️✔️:                         return true;
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                     mssiz = 0x00;
+    // Boost✔️✔️:                     break;
+    // Boost✔️✔️:                 default:
+    // Boost✔️✔️:                     if (mssiz && mssiz == 'I') {
+    // Boost✔️✔️:                         mssiz = 0;
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                     goto parse_conversion_specification;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             ++start;
+    // Boost✔️✔️:         } // loop on argument type modifiers to pick up 'hh', 'll', and the more complex microsoft ones
+    // Boost✔️✔️:
+    // Boost✔️✔️:       parse_conversion_specification:
+    // Boost✔️✔️:         if (start >= last || mssiz) {
+    // Boost✔️✔️:             maybe_throw_exception(exceptions, start - start0 + offset, fstring_size);
+    // Boost✔️✔️:             return true;
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         if( in_brackets && *start== const_or_not(fac).widen( '|') ) {
+    // Boost✔️✔️:             ++start;
+    // Boost✔️✔️:             return true;
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         // The default flags are "dec" and "skipws"
+    // Boost✔️✔️:         // so if changing the base, need to unset basefield first
+    // Boost✔️✔️:
+    // Boost✔️✔️:         switch (wrap_narrow(fac, *start, 0))
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             // Boolean
+    // Boost✔️✔️:             case 'b':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::boolalpha;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // Decimal
+    // Boost✔️✔️:             case 'u':
+    // Boost✔️✔️:             case 'd':
+    // Boost✔️✔️:             case 'i':
+    // Boost✔️✔️:                 // Defaults are sufficient
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // Hex
+    // Boost✔️✔️:             case 'X':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::uppercase;
+    // Boost✔️✔️:                 BOOST_FALLTHROUGH;
+    // Boost✔️✔️:             case 'x':
+    // Boost✔️✔️:             case 'p': // pointer => set hex.
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ &= ~std::ios_base::basefield;
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::hex;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // Octal
+    // Boost✔️✔️:             case 'o':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ &= ~std::ios_base::basefield;
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::oct;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // Floating
+    // Boost✔️✔️:             case 'A':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::uppercase;
+    // Boost✔️✔️:                 BOOST_FALLTHROUGH;
+    // Boost✔️✔️:             case 'a':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ &= ~std::ios_base::basefield;
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::fixed;
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::scientific;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:             case 'E':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::uppercase;
+    // Boost✔️✔️:                 BOOST_FALLTHROUGH;
+    // Boost✔️✔️:             case 'e':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::scientific;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:             case 'F':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::uppercase;
+    // Boost✔️✔️:                 BOOST_FALLTHROUGH;
+    // Boost✔️✔️:             case 'f':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::fixed;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:             case 'G':
+    // Boost✔️✔️:                 fpar->fmtstate_.flags_ |= std::ios_base::uppercase;
+    // Boost✔️✔️:                 BOOST_FALLTHROUGH;
+    // Boost✔️✔️:             case 'g':
+    // Boost✔️✔️:                 // default flags are correct here
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // Tabulation (a boost::format extension)
+    // Boost✔️✔️:             case 'T':
+    // Boost✔️✔️:                 ++start;
+    // Boost✔️✔️:                 if( start >= last) {
+    // Boost✔️✔️:                     maybe_throw_exception(exceptions, start-start0+offset, fstring_size);
+    // Boost✔️✔️:                     return false;
+    // Boost✔️✔️:                 } else {
+    // Boost✔️✔️:                     fpar->fmtstate_.fill_ = *start;
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:                 fpar->pad_scheme_ |= format_item_t::tabulation;
+    // Boost✔️✔️:                 fpar->argN_ = format_item_t::argN_tabulation;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:             case 't':
+    // Boost✔️✔️:                 fpar->fmtstate_.fill_ = const_or_not(fac).widen( ' ');
+    // Boost✔️✔️:                 fpar->pad_scheme_ |= format_item_t::tabulation;
+    // Boost✔️✔️:                 fpar->argN_ = format_item_t::argN_tabulation;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // Character
+    // Boost✔️✔️:             case 'C':
+    // Boost✔️✔️:             case 'c':
+    // Boost✔️✔️:                 fpar->truncate_ = 1;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // String
+    // Boost✔️✔️:             case 'S':
+    // Boost✔️✔️:             case 's':
+    // Boost✔️✔️:                 if(precision_set) // handle truncation manually, with own parameter.
+    // Boost✔️✔️:                     fpar->truncate_ = fpar->fmtstate_.precision_;
+    // Boost✔️✔️:                 fpar->fmtstate_.precision_ = 6; // default stream precision.
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             // %n is insecure and ignored by boost::format
+    // Boost✔️✔️:             case 'n' :
+    // Boost✔️✔️:                 fpar->argN_ = format_item_t::argN_ignored;
+    // Boost✔️✔️:                 break;
+    // Boost✔️✔️:
+    // Boost✔️✔️:             default:
+    // Boost✔️✔️:                 maybe_throw_exception(exceptions, start-start0+offset, fstring_size);
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:         ++start;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         if( in_brackets ) {
+    // Boost✔️✔️:             if( start != last && *start== const_or_not(fac).widen( '|') ) {
+    // Boost✔️✔️:                 ++start;
+    // Boost✔️✔️:                 return true;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             else  maybe_throw_exception(exceptions, start-start0+offset, fstring_size);
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:         return true;
+    // Boost✔️✔️:     }
+    // END COMPLETE Boost1.81::parse_printf_directive
+    // BEGIN COMPLETE Boost1.81::put
+    // Boost✔️✔️:     void put( T x,
+    // Boost✔️✔️:               const format_item<Ch, Tr, Alloc>& specs,
+    // Boost✔️✔️:               typename basic_format<Ch, Tr, Alloc>::string_type& res,
+    // Boost✔️✔️:               typename basic_format<Ch, Tr, Alloc>::internal_streambuf_t & buf,
+    // Boost✔️✔️:               io::detail::locale_t *loc_p = NULL)
+    // Boost✔️✔️:     {
+    // Boost✔️✔️: #ifdef BOOST_MSVC
+    // Boost✔️✔️:        // If std::min<unsigned> or std::max<unsigned> are already instantiated
+    // Boost✔️✔️:        // at this point then we get a blizzard of warning messages when we call
+    // Boost✔️✔️:        // those templates with std::size_t as arguments.  Weird and very annoyning...
+    // Boost✔️✔️: #pragma warning(push)
+    // Boost✔️✔️: #pragma warning(disable:4267)
+    // Boost✔️✔️: #endif
+    // Boost✔️✔️:         // does the actual conversion of x, with given params, into a string
+    // Boost✔️✔️:         // using the supplied stringbuf.
+    // Boost✔️✔️:
+    // Boost✔️✔️:         typedef typename basic_format<Ch, Tr, Alloc>::string_type   string_type;
+    // Boost✔️✔️:         typedef typename basic_format<Ch, Tr, Alloc>::format_item_t format_item_t;
+    // Boost✔️✔️:         typedef typename string_type::size_type size_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         basic_oaltstringstream<Ch, Tr, Alloc>  oss( &buf);
+    // Boost✔️✔️:
+    // Boost✔️✔️: #if !defined(BOOST_NO_STD_LOCALE)
+    // Boost✔️✔️:         if(loc_p != NULL)
+    // Boost✔️✔️:             oss.imbue(*loc_p);
+    // Boost✔️✔️: #endif
+    // Boost✔️✔️:
+    // Boost✔️✔️:         specs.fmtstate_.apply_on(oss, loc_p);
+    // Boost✔️✔️:
+    // Boost✔️✔️:         // the stream format state can be modified by manipulators in the argument :
+    // Boost✔️✔️:         put_head( oss, x );
+    // Boost✔️✔️:         // in case x is a group, apply the manip part of it,
+    // Boost✔️✔️:         // in order to find width
+    // Boost✔️✔️:
+    // Boost✔️✔️:         const std::ios_base::fmtflags fl=oss.flags();
+    // Boost✔️✔️:         const bool internal = (fl & std::ios_base::internal) != 0;
+    // Boost✔️✔️:         const std::streamsize w = oss.width();
+    // Boost✔️✔️:         const bool two_stepped_padding= internal && (w!=0);
+    // Boost✔️✔️:
+    // Boost✔️✔️:         res.resize(0);
+    // Boost✔️✔️:         if(! two_stepped_padding) {
+    // Boost✔️✔️:             if(w>0) // handle padding via mk_str, not natively in stream
+    // Boost✔️✔️:                 oss.width(0);
+    // Boost✔️✔️:             put_last( oss, x);
+    // Boost✔️✔️:             const Ch * res_beg = buf.pbase();
+    // Boost✔️✔️:             Ch prefix_space = 0;
+    // Boost✔️✔️:             if(specs.pad_scheme_ & format_item_t::spacepad)
+    // Boost✔️✔️:                 if(buf.pcount()== 0 ||
+    // Boost✔️✔️:                    (res_beg[0] !=oss.widen('+') && res_beg[0] !=oss.widen('-')  ))
+    // Boost✔️✔️:                     prefix_space = oss.widen(' ');
+    // Boost✔️✔️:             size_type res_size = (std::min)(
+    // Boost✔️✔️:                 (static_cast<size_type>((specs.truncate_ & (std::numeric_limits<size_type>::max)())) - !!prefix_space),
+    // Boost✔️✔️:                 buf.pcount() );
+    // Boost✔️✔️:             mk_str(res, res_beg, res_size, w, oss.fill(), fl,
+    // Boost✔️✔️:                    prefix_space, (specs.pad_scheme_ & format_item_t::centered) !=0 );
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:         else  { // 2-stepped padding
+    // Boost✔️✔️:             // internal can be implied by zeropad, or user-set.
+    // Boost✔️✔️:             // left, right, and centered alignment overrule internal,
+    // Boost✔️✔️:             // but spacepad or truncate might be mixed with internal (using manipulator)
+    // Boost✔️✔️:             put_last( oss, x); // may pad
+    // Boost✔️✔️:             const Ch * res_beg = buf.pbase();
+    // Boost✔️✔️:             size_type res_size = buf.pcount();
+    // Boost✔️✔️:             bool prefix_space=false;
+    // Boost✔️✔️:             if(specs.pad_scheme_ & format_item_t::spacepad)
+    // Boost✔️✔️:                 if(buf.pcount()== 0 ||
+    // Boost✔️✔️:                    (res_beg[0] !=oss.widen('+') && res_beg[0] !=oss.widen('-')  ))
+    // Boost✔️✔️:                     prefix_space = true;
+    // Boost✔️✔️:             if(res_size == static_cast<size_type>(w) && w<=specs.truncate_ && !prefix_space) {
+    // Boost✔️✔️:                 // okay, only one thing was printed and padded, so res is fine
+    // Boost✔️✔️:                 res.assign(res_beg, res_size);
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             else { //   length w exceeded
+    // Boost✔️✔️:                 // either it was multi-output with first output padding up all width..
+    // Boost✔️✔️:                 // either it was one big arg and we are fine.
+    // Boost✔️✔️:                 // Note that res_size<w is possible  (in case of bad user-defined formatting)
+    // Boost✔️✔️:                 res.assign(res_beg, res_size);
+    // Boost✔️✔️:                 res_beg=NULL;  // invalidate pointers.
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // make a new stream, to start re-formatting from scratch :
+    // Boost✔️✔️:                 buf.clear_buffer();
+    // Boost✔️✔️:                 basic_oaltstringstream<Ch, Tr, Alloc>  oss2( &buf);
+    // Boost✔️✔️:                 specs.fmtstate_.apply_on(oss2, loc_p);
+    // Boost✔️✔️:                 put_head( oss2, x );
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 oss2.width(0);
+    // Boost✔️✔️:                 if(prefix_space)
+    // Boost✔️✔️:                     oss2 << ' ';
+    // Boost✔️✔️:                 put_last(oss2, x );
+    // Boost✔️✔️:                 if(buf.pcount()==0 && specs.pad_scheme_ & format_item_t::spacepad) {
+    // Boost✔️✔️:                     prefix_space =true;
+    // Boost✔️✔️:                     oss2 << ' ';
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:                 // we now have the minimal-length output
+    // Boost✔️✔️:                 const Ch * tmp_beg = buf.pbase();
+    // Boost✔️✔️:                 size_type tmp_size = (std::min)(
+    // Boost✔️✔️:                     (static_cast<size_type>(specs.truncate_ & (std::numeric_limits<size_type>::max)())),
+    // Boost✔️✔️:                     buf.pcount());
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 if(static_cast<size_type>(w) <= tmp_size) {
+    // Boost✔️✔️:                     // minimal length is already >= w, so no padding (cool!)
+    // Boost✔️✔️:                         res.assign(tmp_beg, tmp_size);
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:                 else { // hum..  we need to pad (multi_output, or spacepad present)
+    // Boost✔️✔️:                     //find where we should pad
+    // Boost✔️✔️:                     size_type sz = (std::min)(res_size + (prefix_space ? 1 : 0), tmp_size);
+    // Boost✔️✔️:                     size_type i = prefix_space;
+    // Boost✔️✔️:                     for(; i<sz && tmp_beg[i] == res[i - (prefix_space ? 1 : 0)]; ++i) {}
+    // Boost✔️✔️:                     if(i>=tmp_size) i=prefix_space;
+    // Boost✔️✔️:                     res.assign(tmp_beg, i);
+    // Boost✔️✔️:                                         std::streamsize d = w - static_cast<std::streamsize>(tmp_size);
+    // Boost✔️✔️:                                         BOOST_ASSERT(d>0);
+    // Boost✔️✔️:                     res.append(static_cast<size_type>( d ), oss2.fill());
+    // Boost✔️✔️:                     res.append(tmp_beg+i, tmp_size-i);
+    // Boost✔️✔️:                     BOOST_ASSERT(i+(tmp_size-i)+(std::max)(d,(std::streamsize)0)
+    // Boost✔️✔️:                                  == static_cast<size_type>(w));
+    // Boost✔️✔️:                     BOOST_ASSERT(res.size() == static_cast<size_type>(w));
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:         buf.clear_buffer();
+    // Boost✔️✔️: #ifdef BOOST_MSVC
+    // Boost✔️✔️: #pragma warning(pop)
+    // Boost✔️✔️: #endif
+    // Boost✔️✔️:     }
+    // END COMPLETE Boost1.81::put
+    // BEGIN COMPLETE Boost1.81::put_last<unsigned>
+    // Boost✔️✔️:     void put_last( BOOST_IO_STD basic_ostream<Ch, Tr> & os, const T& x ) {
+    // Boost✔️✔️:         os << x ;
+    // Boost✔️✔️:     }
+    // END COMPLETE Boost1.81::put_last<unsigned>
+    // Accumulate locally; any later item failure keeps the prior property.
+    // Native u32 +1 wraps before unsigned decimal formatting. Empty output
+    // never clears prior state. Same linear accumulation; source property
+    // tree storage and retained parse records add allocation overhead.
     let mut accum = String::new();
     for node in nodes {
-        if node.atom >= graph.num_atoms() {
+        let Some([outer_one, outer_two]) = cx_link_node_outer_atoms(graph, node)? else {
             continue;
-        }
-
-        let [outer_one, outer_two] = match node.outer_atoms {
-            Some(outer_atoms) => outer_atoms,
-            None => {
-                let neighbors = graph.adjacency().get(node.atom).ok_or_else(|| {
-                    CxQueryLoweringError::InvalidGraph(
-                        "CX link-node center has no adjacency row".to_owned(),
-                    )
-                })?;
-                if neighbors.len() != 2 {
-                    return Err(CxQueryLoweringError::InvalidGraph(format!(
-                        "CX link-node atom {} has degree {}, expected two when outer atoms are omitted",
-                        node.atom,
-                        neighbors.len()
-                    )));
-                }
-                [neighbors[0].0, neighbors[1].0]
-            }
         };
 
         let source_uint = |value: usize| {
@@ -294,7 +1023,7 @@ pub(crate) fn apply_cx_link_nodes_to_query(
     }
 
     if !accum.is_empty() {
-        graph.set_prop("molFileLinkNodes", accum);
+        graph.set_prop("_molLinkNodes", accum)?;
     }
     Ok(())
 }
@@ -304,28 +1033,161 @@ fn append_atom_predicate(
     atom: usize,
     predicate: AtomQueryPredicate,
 ) -> Result<(), CxQueryLoweringError> {
-    // BEGIN RDKIT CPP FUNCTION QueryOps::replaceAtomWithQueryAtom
-    // RDKit✔️✔️: Atom *replaceAtomWithQueryAtom(RWMol *mol, Atom *atom) {
-    // RDKit✔️✔️:   PRECONDITION(mol, "bad molecule");
-    // RDKit✔️✔️:   PRECONDITION(atom, "bad atom");
-    // RDKit✔️✔️:   if (atom->hasQuery()) {
-    // RDKit✔️✔️:     return atom;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   QueryAtom qa(*atom);
-    // RDKit✔️✔️:   unsigned int idx = atom->getIdx();
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (atom->hasProp(common_properties::_hasMassQuery)) {
-    // RDKit✔️✔️:     qa.expandQuery(makeAtomMassQuery(static_cast<int>(atom->getMass())));
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   mol->replaceAtom(idx, &qa);
-    // RDKit✔️✔️:   return mol->getAtomWithIdx(idx);
+    // BEGIN COMPLETE QueryOps::replaceAtomWithQueryAtom
+    // RDKit✔️❌: Atom *replaceAtomWithQueryAtom(RWMol *mol, Atom *atom) {
+    // RDKit✔️❌:   PRECONDITION(mol, "bad molecule");
+    // RDKit✔️❌:   PRECONDITION(atom, "bad atom");
+    // RDKit✔️❌:   if (atom->hasQuery()) {
+    // RDKit✔️❌:     return atom;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   QueryAtom qa(*atom);
+    // RDKit✔️❌:   unsigned int idx = atom->getIdx();
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (atom->hasProp(common_properties::_hasMassQuery)) {
+    // RDKit✔️❌:     qa.expandQuery(makeAtomMassQuery(static_cast<int>(atom->getMass())));
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   mol->replaceAtom(idx, &qa);
+    // RDKit✔️❌:   return mol->getAtomWithIdx(idx);
+    // RDKit✔️❌: }
+    // END COMPLETE QueryOps::replaceAtomWithQueryAtom
+    // BEGIN COMPLETE makeAtomUnsaturatedQuery
+    // RDKit✔️✔️: ATOM_EQUALS_QUERY *makeAtomUnsaturatedQuery() {
+    // RDKit✔️✔️:   auto *res =
+    // RDKit✔️✔️:       makeAtomSimpleQuery<ATOM_EQUALS_QUERY>(true, queryAtomUnsaturated);
+    // RDKit✔️✔️:   res->setDescription("AtomUnsaturated");
+    // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION QueryOps::replaceAtomWithQueryAtom
-    // The detached QueryGraph already stores the carrier, its predicate, and
-    // whether that predicate came from an ordinary atom in the corresponding
-    // typed value. Mutating the predicate marks that origin explicit without
-    // replacing the raw query identity or carrier state.
+    // END COMPLETE makeAtomUnsaturatedQuery
+    // BEGIN COMPLETE RWMol::replaceAtom
+    // RDKit✔️❌: void RWMol::replaceAtom(unsigned int idx, Atom *atom_pin, bool,
+    // RDKit✔️❌:                         bool preserveProps) {
+    // RDKit✔️❌:   PRECONDITION(atom_pin, "bad atom passed to replaceAtom");
+    // RDKit✔️❌:   URANGE_CHECK(idx, getNumAtoms());
+    // RDKit✔️❌:   auto atom_p = atom_pin->copy();
+    // RDKit✔️❌:   atom_p->setOwningMol(this);
+    // RDKit✔️❌:   atom_p->setIdx(idx);
+    // RDKit✔️❌:   auto vd = boost::vertex(idx, d_graph);
+    // RDKit✔️❌:   if (preserveProps) {
+    // RDKit✔️❌:     const bool replaceExistingData = false;
+    // RDKit✔️❌:     atom_p->updateProps(*d_graph[vd], replaceExistingData);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   const auto orig_p = d_graph[vd];
+    // RDKit✔️❌:   delete orig_p;
+    // RDKit✔️❌:   d_graph[vd] = atom_p;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // handle bookmarks
+    // RDKit✔️❌:   for (auto &ab : d_atomBookmarks) {
+    // RDKit✔️❌:     for (auto &elem : ab.second) {
+    // RDKit✔️❌:       if (elem == orig_p) {
+    // RDKit✔️❌:         elem = atom_p;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // handle stereo group
+    // RDKit✔️❌:   for (auto &group : d_stereo_groups) {
+    // RDKit✔️❌:     auto groupId = group.getReadId();
+    // RDKit✔️❌:     auto atoms = group.getAtoms();
+    // RDKit✔️❌:     auto bonds = group.getBonds();
+    // RDKit✔️❌:     auto aiter = std::find(atoms.begin(), atoms.end(), orig_p);
+    // RDKit✔️❌:     while (aiter != atoms.end()) {
+    // RDKit✔️❌:       *aiter = atom_p;
+    // RDKit✔️❌:       ++aiter;
+    // RDKit✔️❌:       aiter = std::find(aiter, atoms.end(), orig_p);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     group = StereoGroup(group.getGroupType(), std::move(atoms),
+    // RDKit✔️❌:                         std::move(bonds), groupId);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END COMPLETE RWMol::replaceAtom
+    // BEGIN COMPLETE QueryAtom::expandQuery
+    // RDKit✔️✔️: void QueryAtom::expandQuery(QUERYATOM_QUERY *what,
+    // RDKit✔️✔️:                             Queries::CompositeQueryType how,
+    // RDKit✔️✔️:                             bool maintainOrder) {
+    // RDKit✔️✔️:   PRECONDITION(dp_query, "Can't expand empty query");
+    // RDKit✔️✔️:   bool thisIsNullQuery = dp_query->getDescription() == "AtomNull";
+    // RDKit✔️✔️:   bool otherIsNullQuery = what->getDescription() == "AtomNull";
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (thisIsNullQuery || otherIsNullQuery) {
+    // RDKit✔️✔️:     mergeNullQueries(dp_query, thisIsNullQuery, what, otherIsNullQuery, how);
+    // RDKit✔️✔️:     delete what;
+    // RDKit✔️✔️:     return;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   QUERYATOM_QUERY *origQ = dp_query;
+    // RDKit✔️✔️:   std::string descrip;
+    // RDKit✔️✔️:   switch (how) {
+    // RDKit✔️✔️:     case Queries::COMPOSITE_AND:
+    // RDKit✔️✔️:       dp_query = new ATOM_AND_QUERY;
+    // RDKit✔️✔️:       descrip = "AtomAnd";
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case Queries::COMPOSITE_OR:
+    // RDKit✔️✔️:       dp_query = new ATOM_OR_QUERY;
+    // RDKit✔️✔️:       descrip = "AtomOr";
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     case Queries::COMPOSITE_XOR:
+    // RDKit✔️✔️:       dp_query = new ATOM_XOR_QUERY;
+    // RDKit✔️✔️:       descrip = "AtomXor";
+    // RDKit✔️✔️:       break;
+    // RDKit✔️✔️:     default:
+    // RDKit✔️✔️:       UNDER_CONSTRUCTION("unrecognized combination query");
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   dp_query->setDescription(descrip);
+    // RDKit✔️✔️:   if (maintainOrder) {
+    // RDKit✔️✔️:     dp_query->addChild(QUERYATOM_QUERY::CHILD_TYPE(origQ));
+    // RDKit✔️✔️:     dp_query->addChild(QUERYATOM_QUERY::CHILD_TYPE(what));
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     dp_query->addChild(QUERYATOM_QUERY::CHILD_TYPE(what));
+    // RDKit✔️✔️:     dp_query->addChild(QUERYATOM_QUERY::CHILD_TYPE(origQ));
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // END COMPLETE QueryAtom::expandQuery
+    // Source hasQuery is the stored explicit origin, never an inferred shape.
+    // Ordinary carriers first acquire the native constructor query and optional
+    // mass leaf; existing explicit query roots are expanded directly. Native
+    // row replacement (only ordinary branch) also reconstructs every stereo
+    // group, preserving read ID and resetting write ID through the canonical
+    // replacement helper. Carrier members/cache/source facts remain unchanged.
+    // Cost: scalar constructor has bounded leaves; ordinary replacement copies
+    // typed carrier/property payload and stereo memberships. Cloning a uniform
+    // carrier also copies its old non-source derived tree before discarding it,
+    // an explicit overhead vs the source ordinary Atom. No graph clone/reparse.
+    let source = graph
+        .atom(atom)
+        .ok_or(CxQueryLoweringError::AtomIndex { index: atom })?;
+    if source.predicate_is_carrier_derived() {
+        let source_query = crate::query_behavior::query_from_plain_atom_carrier(
+            source.atomic_number(),
+            source.isotope(),
+            source.formal_charge(),
+            source.radical_electrons(),
+            || -> Result<Option<u16>, CxQueryLoweringError> {
+                if source.prop("_hasMassQuery").is_none() {
+                    return Ok(None);
+                }
+                // This conversion is confined to the actual source getMass
+                // point. Without a mass query, every raw query atomic number
+                // remains intact and never crosses the Element-only boundary.
+                // Non-Element numbers are outside the native mass table too;
+                // its explicit Atomic number not found precondition is an
+                // error, never an unsupported label or guessed mass.
+                let carrier = source.try_to_atom().map_err(|_| {
+                    CxQueryLoweringError::InvalidGraph(format!(
+                        "source mass lookup: Atomic number not found ({})",
+                        source.atomic_number(),
+                    ))
+                })?;
+                crate::query_behavior::rdkit_atom_mass(&carrier)
+                    .map(|mass| Some(mass as u16))
+                    .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))
+            },
+        )?;
+        let mut incoming = source.clone();
+        incoming.set_predicate(source_query);
+        replace_query_atom_like_rdkit(graph, atom, &incoming, false)?;
+    }
     let query_atom = graph
         .atom_mut(atom)
         .ok_or(CxQueryLoweringError::AtomIndex { index: atom })?;
@@ -343,6 +1205,111 @@ pub(crate) fn apply_cx_query_constraint_item(
     record: &CxRecord,
     item_index: usize,
 ) -> Result<(), CxQueryLoweringError> {
+    // BEGIN COMPLETE PINNED SF192
+    // RDKit✔️❌: bool parse_ring_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                       unsigned int startAtomIdx) {
+    // RDKit✔️❌:   if (first >= last || *first != 'r' || first + 1 >= last ||
+    // RDKit✔️❌:       *(first + 1) != 'b' || first + 2 >= last || *(first + 2) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 3;
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int n1;
+    // RDKit✔️❌:     if (!read_int(first, last, n1)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     // check that we can read at least two more characters:
+    // RDKit✔️❌:     if (first + 1 >= last || *first != ':') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int n2;
+    // RDKit✔️❌:     bool gt = false;
+    // RDKit✔️❌:     if (*first == '*') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       n2 = 0xDEADBEEF;
+    // RDKit✔️❌:       if (VALID_ATIDX(n1)) {
+    // RDKit✔️❌:         mol.setProp(common_properties::_NeedsQueryScan, 1);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       if (!read_int(first, last, n2)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       switch (n2) {
+    // RDKit✔️❌:         case 0:
+    // RDKit✔️❌:         case 2:
+    // RDKit✔️❌:         case 3:
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         case 4:
+    // RDKit✔️❌:           gt = true;
+    // RDKit✔️❌:           break;
+    // RDKit✔️❌:         default:
+    // RDKit✔️❌:           BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:               << "unrecognized rb value: " << n2 << std::endl;
+    // RDKit✔️❌:           return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_ATIDX(n1)) {
+    // RDKit✔️❌:       auto atom = mol.getAtomWithIdx(n1 - startAtomIdx);
+    // RDKit✔️❌:       if (!atom->hasQuery()) {
+    // RDKit✔️❌:         atom = QueryOps::replaceAtomWithQueryAtom(&mol, atom);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if (!gt) {
+    // RDKit✔️❌:         atom->expandQuery(makeAtomRingBondCountQuery(n2),
+    // RDKit✔️❌:                           Queries::COMPOSITE_AND);
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         auto q = static_cast<ATOM_EQUALS_QUERY *>(new ATOM_LESSEQUAL_QUERY);
+    // RDKit✔️❌:         q->setVal(n2);
+    // RDKit✔️❌:         q->setDescription("AtomRingBondCount");
+    // RDKit✔️❌:         q->setDataFunc(queryAtomRingBondCount);
+    // RDKit✔️❌:         atom->expandQuery(q, Queries::COMPOSITE_AND);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF192
+    // BEGIN COMPLETE makeAtomRingBondCountQuery
+    // RDKit✔️✔️: ATOM_EQUALS_QUERY *makeAtomRingBondCountQuery(int what) {
+    // RDKit✔️✔️:   ATOM_EQUALS_QUERY *res = new AtomRingQuery(what);
+    // RDKit✔️✔️:   res->setDescription("AtomRingBondCount");
+    // RDKit✔️✔️:   res->setDataFunc(queryAtomRingBondCount);
+    // RDKit✔️✔️:   return res;
+    // RDKit✔️✔️: }
+    // END COMPLETE makeAtomRingBondCountQuery
+    // BEGIN COMPLETE PINNED SF191
+    // RDKit✔️❌: bool parse_unsaturation(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                         unsigned int startAtomIdx) {
+    // RDKit✔️❌:   if (first + 1 >= last || *first != 'u') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int idx;
+    // RDKit✔️❌:     if (!read_int(first, last, idx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_ATIDX(idx)) {
+    // RDKit✔️❌:       auto atom = mol.getAtomWithIdx(idx - startAtomIdx);
+    // RDKit✔️❌:       if (!atom->hasQuery()) {
+    // RDKit✔️❌:         atom = QueryOps::replaceAtomWithQueryAtom(&mol, atom);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       atom->expandQuery(makeAtomUnsaturatedQuery(), Queries::COMPOSITE_AND);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF191
     // RDKit source (verbatim; one complete source record item mutates one atom):
     /*
     // RDKit✔️✔️: if (VALID_ATIDX(idx)) {
@@ -435,6 +1402,21 @@ pub(crate) fn apply_cx_query_constraint_item(
     if atom >= graph.num_atoms() {
         return Ok(());
     }
+    if let CxRecord::RingBonds(constraints) = record
+        && matches!(
+            constraints[item_index].constraint,
+            CxCountConstraint::QueryScan
+        )
+    {
+        // RDKit✔️✔️: if (VALID_ATIDX(n1)) {
+        // RDKit✔️✔️:   mol.setProp(common_properties::_NeedsQueryScan, 1);
+        // RDKit✔️✔️: }
+        // Source ordinary int1 is assigned before query conversion/expansion;
+        // preserve it if the optional source mass lookup or replacement fails.
+        graph
+            .set_prop("_NeedsQueryScan", 1_i32)
+            .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+    }
     append_atom_predicate(graph, atom, predicate)
 }
 
@@ -444,45 +1426,71 @@ const CX_LABELS_PROCESSED_PROP: &str = "_cxsmilesLabelsProcessed";
 /// The temporary guard remains set until the enclosing CX application calls
 /// `finish_cx_smiles_labels`, so SGroup helpers can invoke this before attach.
 pub(crate) fn process_cx_smiles_labels(graph: &mut QueryGraph) -> Result<(), CxQueryLoweringError> {
-    // BEGIN RDKIT CPP FUNCTION processCXSmilesLabels
-    // RDKit❗✔️: void processCXSmilesLabels(RWMol &mol) {
-    // RDKit❗✔️:   if (mol.hasProp("_cxsmilesLabelsProcessed")) {
-    // RDKit❗✔️:     return;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   for (auto atom : mol.atoms()) {
-    // RDKit❗✔️:     std::string symb = "";
-    // RDKit❗✔️:     if (atom->getPropIfPresent(common_properties::atomLabel, symb)) {
-    // RDKit❗✔️:       atom->clearProp(common_properties::dummyLabel);
-    // RDKit❗✔️:       if (symb == "star_e") {
-    // RDKit❗✔️:         addquery(makeAtomNullQuery(), symb, mol, atom->getIdx());
-    // RDKit❗✔️:       } else if (symb == "Q_e") {
-    // RDKit❗✔️:         addquery(makeQAtomQuery(), symb, mol, atom->getIdx());
-    // RDKit❗✔️:       } else if (symb == "QH_p") {
-    // RDKit❗✔️:         addquery(makeQHAtomQuery(), symb, mol, atom->getIdx());
-    // RDKit❗✔️:       } else if (symb == "AH_p") {
-    // RDKit❗✔️:         addquery(makeAHAtomQuery(), symb, mol, atom->getIdx());
-    // RDKit❗✔️:       } else if (symb == "X_p") {
-    // RDKit❗✔️:         addquery(makeXAtomQuery(), symb, mol, atom->getIdx());
-    // RDKit❗✔️:       } else if (symb == "XH_p") {
-    // RDKit❗✔️:         addquery(makeXHAtomQuery(), symb, mol, atom->getIdx());
-    // RDKit❗✔️:       } else if (symb == "M_p") {
-    // RDKit❗✔️:         addquery(makeMAtomQuery(), symb, mol, atom->getIdx());
-    // RDKit❗✔️:       } else if (symb == "MH_p") {
-    // RDKit❗✔️:         addquery(makeMHAtomQuery(), symb, mol, atom->getIdx());
-    // RDKit❗✔️:       } else if (std::find(pseudoatoms_p.begin(), pseudoatoms_p.end(), symb) !=
-    // RDKit❗✔️:                  pseudoatoms_p.end()) {
-    // RDKit❗✔️:         atom->setProp(common_properties::dummyLabel,
-    // RDKit❗✔️:                       symb.substr(0, symb.size() - 2));
-    // RDKit❗✔️:         atom->clearProp(common_properties::atomLabel);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     } else if (atom->getAtomicNum() == 0 && !atom->hasQuery() &&
-    // RDKit❗✔️:                !atom->getIsotope() && atom->getSymbol() == "*") {
-    // RDKit❗✔️:       addquery(makeAAtomQuery(), "", mol, atom->getIdx());
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   mol.setProp("_cxsmilesLabelsProcessed", 1, true);
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION processCXSmilesLabels
+    // RDKit✔️❌: void processCXSmilesLabels(RWMol &mol) {
+    // RDKit✔️❌:   if (mol.hasProp("_cxsmilesLabelsProcessed")) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   for (auto atom : mol.atoms()) {
+    // RDKit✔️❌:     std::string symb = "";
+    // RDKit✔️❌:     if (atom->getPropIfPresent(common_properties::atomLabel, symb)) {
+    // RDKit✔️❌:       atom->clearProp(common_properties::dummyLabel);
+    // RDKit✔️❌:       if (symb == "star_e") {
+    // RDKit✔️❌:         /* according to the MDL spec, these match anything, but in MARVIN they
+    // RDKit✔️❌:         are "unspecified end groups" for polymers */
+    // RDKit✔️❌:         addquery(makeAtomNullQuery(), symb, mol, atom->getIdx());
+    // RDKit✔️❌:       } else if (symb == "Q_e") {
+    // RDKit✔️❌:         addquery(makeQAtomQuery(), symb, mol, atom->getIdx());
+    // RDKit✔️❌:       } else if (symb == "QH_p") {
+    // RDKit✔️❌:         addquery(makeQHAtomQuery(), symb, mol, atom->getIdx());
+    // RDKit✔️❌:       } else if (symb == "AH_p") {  // this seems wrong...
+    // RDKit✔️❌:         /* According to the MARVIN Sketch, AH is "any atom, including H" -
+    // RDKit✔️❌:         this would be "*" in SMILES - and "A" is "any atom except H".
+    // RDKit✔️❌:         The CXSMILES docs say that "A" can be represented normally in SMILES
+    // RDKit✔️❌:         and that "AH" needs to be written out as AH_p. I'm going to assume that
+    // RDKit✔️❌:         this is a Marvin internal thing and just parse it as they describe it.
+    // RDKit✔️❌:         This means that "*" in the SMILES itself needs to be treated
+    // RDKit✔️❌:         differently, which we do below. */
+    // RDKit✔️❌:         addquery(makeAHAtomQuery(), symb, mol, atom->getIdx());
+    // RDKit✔️❌:       } else if (symb == "X_p") {
+    // RDKit✔️❌:         addquery(makeXAtomQuery(), symb, mol, atom->getIdx());
+    // RDKit✔️❌:       } else if (symb == "XH_p") {
+    // RDKit✔️❌:         addquery(makeXHAtomQuery(), symb, mol, atom->getIdx());
+    // RDKit✔️❌:       } else if (symb == "M_p") {
+    // RDKit✔️❌:         addquery(makeMAtomQuery(), symb, mol, atom->getIdx());
+    // RDKit✔️❌:       } else if (symb == "MH_p") {
+    // RDKit✔️❌:         addquery(makeMHAtomQuery(), symb, mol, atom->getIdx());
+    // RDKit✔️❌:       } else if (std::find(pseudoatoms_p.begin(), pseudoatoms_p.end(), symb) !=
+    // RDKit✔️❌:                  pseudoatoms_p.end()) {
+    // RDKit✔️❌:         // strip off the "_p":
+    // RDKit✔️❌:         atom->setProp(common_properties::dummyLabel,
+    // RDKit✔️❌:                       symb.substr(0, symb.size() - 2));
+    // RDKit✔️❌:         atom->clearProp(common_properties::atomLabel);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else if (atom->getAtomicNum() == 0 && !atom->hasQuery() &&
+    // RDKit✔️❌:                !atom->getIsotope() && atom->getSymbol() == "*") {
+    // RDKit✔️❌:       addquery(makeAAtomQuery(), "", mol, atom->getIdx());
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   mol.setProp("_cxsmilesLabelsProcessed", 1, true);
+    // RDKit✔️❌: }
+    // RDKit✔️❌: std::string Atom::getSymbol() const {
+    // RDKit✔️❌:   std::string res;
+    // RDKit✔️❌:   // handle dummies differently:
+    // RDKit✔️❌:   if (d_atomicNum != 0 ||
+    // RDKit✔️❌:       !getPropIfPresent<std::string>(common_properties::dummyLabel, res)) {
+    // RDKit✔️❌:     res = PeriodicTable::getTable()->getElementSymbol(d_atomicNum);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return res;
+    // RDKit✔️❌: }
+    // Behavior: preserve guard presence and ordered atom visitation. Label
+    // conversion occurs before clearing dummyLabel; all factories and pseudo
+    // label stripping retain the source dispatch. The unlabeled branch short
+    // circuits atomic number, hasQuery and isotope before getSymbol, including
+    // a typed dummyLabel property. Successful completion alone sets the computed
+    // guard; earlier atom mutations remain visible if a later conversion fails.
+    // Complexity: O(V + copied query/properties + stereo memberships), with
+    // source-required allocations; canonical property-tree allocation costs
+    // differ from Dict's contiguous rows, hence the separate loss marker.
     // These predicates reuse the existing source-anchored QueryOps factories
     // in query_behavior; this dispatcher does not build parallel query trees.
     if graph.prop(CX_LABELS_PROCESSED_PROP).is_some() {
@@ -500,44 +1508,53 @@ pub(crate) fn process_cx_smiles_labels(graph: &mut QueryGraph) -> Result<(), CxQ
             graph
                 .atom_mut(atom_index)
                 .ok_or(CxQueryLoweringError::AtomIndex { index: atom_index })?
-                .clear_prop("dummyLabel");
+                .clear_prop("dummyLabel")?;
 
-            let predicate = match label.as_str() {
-                "star_e" => Some(crate::query_behavior::make_atom_null_query()),
-                "Q_e" => Some(crate::query_behavior::make_q_atom_query()),
-                "QH_p" => Some(crate::query_behavior::make_q_h_atom_query()),
-                "AH_p" => Some(crate::query_behavior::make_a_h_atom_query()),
-                "X_p" => Some(crate::query_behavior::make_x_atom_query()),
-                "XH_p" => Some(crate::query_behavior::make_x_h_atom_query()),
-                "M_p" => Some(crate::query_behavior::make_m_atom_query()),
-                "MH_p" => Some(crate::query_behavior::make_m_h_atom_query()),
+            let predicate = match label.as_bytes() {
+                b"star_e" => Some(crate::query_behavior::make_atom_null_query()),
+                b"Q_e" => Some(crate::query_behavior::make_q_atom_query()),
+                b"QH_p" => Some(crate::query_behavior::make_q_h_atom_query()),
+                b"AH_p" => Some(crate::query_behavior::make_a_h_atom_query()),
+                b"X_p" => Some(crate::query_behavior::make_x_atom_query()),
+                b"XH_p" => Some(crate::query_behavior::make_x_h_atom_query()),
+                b"M_p" => Some(crate::query_behavior::make_m_atom_query()),
+                b"MH_p" => Some(crate::query_behavior::make_m_h_atom_query()),
                 _ => None,
             };
             if let Some(predicate) = predicate {
-                replace_query_atom_like_rdkit(graph, atom_index, predicate, Some(&label))?;
-            } else if let Some(dummy_label) = match label.as_str() {
-                "Pol_p" => Some("Pol"),
-                "Mod_p" => Some("Mod"),
+                add_query_like_rdkit(graph, atom_index, predicate, Some(&label))?;
+            } else if let Some(dummy_label) = match label.as_bytes() {
+                b"Pol_p" => Some("Pol"),
+                b"Mod_p" => Some("Mod"),
                 _ => None,
             } {
                 let atom = graph
                     .atom_mut(atom_index)
                     .ok_or(CxQueryLoweringError::AtomIndex { index: atom_index })?;
-                atom.set_prop("dummyLabel", dummy_label)
-                    .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
-                atom.clear_prop("atomLabel");
+                atom.set_prop("dummyLabel", dummy_label)?;
+                atom.clear_prop("atomLabel")?;
             }
-        } else if graph.atom(atom_index).is_some_and(|atom| {
-            atom.atomic_number() == 0
-                && atom.isotope().is_none()
+        } else {
+            let atom = &graph.atoms()[atom_index];
+            // Atom::getSymbol is reached only after these source guards.
+            if atom.atomic_number() == 0
                 && atom.predicate_is_carrier_derived()
-        }) {
-            replace_query_atom_like_rdkit(
-                graph,
-                atom_index,
-                crate::query_behavior::make_a_atom_query(),
-                None,
-            )?;
+                && atom.isotope().unwrap_or(0) == 0
+            {
+                let symbol = atom
+                    .prop("dummyLabel")
+                    .map(cosmolkit_core::property_value_to_string)
+                    .transpose()?
+                    .unwrap_or_else(|| cosmolkit_model::PropertyText::from("*"));
+                if symbol.as_bytes() == b"*" {
+                    add_query_like_rdkit(
+                        graph,
+                        atom_index,
+                        crate::query_behavior::make_a_atom_query(),
+                        None,
+                    )?;
+                }
+            }
         }
     }
 
@@ -545,7 +1562,7 @@ pub(crate) fn process_cx_smiles_labels(graph: &mut QueryGraph) -> Result<(), CxQ
     // replacement copies that atom's property map and reconstructs the same
     // stereo-group members that RWMol::replaceAtom scans; both costs are
     // linear in the copied properties and affected group membership.
-    graph.set_prop(CX_LABELS_PROCESSED_PROP, "1");
+    graph.set_computed_prop(CX_LABELS_PROCESSED_PROP, 1_i32)?;
     Ok(())
 }
 
@@ -553,7 +1570,7 @@ pub(crate) fn process_cx_smiles_labels(graph: &mut QueryGraph) -> Result<(), CxQ
 /// cleanup after its final label pass.
 pub(crate) fn finish_cx_smiles_labels(graph: &mut QueryGraph) -> Result<(), CxQueryLoweringError> {
     process_cx_smiles_labels(graph)?;
-    graph.clear_prop(CX_LABELS_PROCESSED_PROP);
+    graph.clear_prop(CX_LABELS_PROCESSED_PROP)?;
     Ok(())
 }
 
@@ -614,7 +1631,7 @@ pub(crate) fn apply_cx_data_sgroup_to_query(
     let typed_data = SGroupData {
         field_name: (!data.field_name.is_empty()).then(|| data.field_name.clone()),
         field_info: (!data.field_info.is_empty()).then(|| data.field_info.clone()),
-        field_display: Some("    0.0000    0.0000    DR    ALL  0       0".to_owned()),
+        field_display: Some("    0.0000    0.0000    DR    ALL  0       0".into()),
         query_op: (!data.query_op.is_empty()).then(|| data.query_op.clone()),
         values: (!data.data.is_empty())
             .then(|| vec![data.data.clone()])
@@ -625,28 +1642,60 @@ pub(crate) fn apply_cx_data_sgroup_to_query(
         .with_rdkit_sequence_id(cx_sequence_id)
         .with_atoms(atoms)
         .with_data(typed_data);
-    group.set_prop("_cxsmilesindex", cx_sequence_id.to_string());
-    group.set_prop("index", source_index.to_string());
-    group.set_prop("FIELDDISP", "    0.0000    0.0000    DR    ALL  0       0");
+    // BEGIN COMPLETE PINNED SF194 property-field writes
+    // RDKit✔️❌: void parse_data_sgroup_attr(Iterator &first, Iterator last,
+    // RDKit✔️❌:                             SubstanceGroup &sgroup, bool keepSGroup,
+    // RDKit✔️❌:                             std::string fieldName, bool fieldIsArray = false) {
+    // RDKit✔️❌:   PRECONDITION(first < last, "parse_data_sgroup_attr: first >= last");
+    // RDKit✔️❌:   if (first != last && *first != '|') {
+    // RDKit✔️❌:     std::string data = read_text_to(first, last, ":");
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     if (!data.empty() && keepSGroup) {
+    // RDKit✔️❌:       if (fieldIsArray) {
+    // RDKit✔️❌:         std::vector<std::string> dataFields = {data};
+    // RDKit✔️❌:         sgroup.setProp(fieldName, dataFields);
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         sgroup.setProp(fieldName, data);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF194 property-field writes
+    // BEGIN COMPLETE SubstanceGroup::SubstanceGroup(TYPE)
+    // RDKit✔️❌: SubstanceGroup::SubstanceGroup(ROMol *owning_mol, const std::string &type)
+    // RDKit✔️❌:     : RDProps(), dp_mol(owning_mol) {
+    // RDKit✔️❌:   PRECONDITION(owning_mol, "supplied owning molecule is bad");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // TYPE is required to be set , as other properties will depend on it.
+    // RDKit✔️❌:   setProp<std::string>("TYPE", type);
+    // RDKit✔️❌: }
+    // END COMPLETE SubstanceGroup::SubstanceGroup(TYPE)
+    // Source property insertion order is retained by the sole store: TYPE,
+    // sequence index, FIELDNAME when nonempty, FIELDDISP, remaining fields,
+    // optional COORDS, then dense source index at helper completion.
+    group.set_prop("TYPE", "DAT")?;
+    group.set_prop("_cxsmilesindex", cx_sequence_id)?;
     if !data.field_name.is_empty() {
-        group.set_prop("FIELDNAME", data.field_name.clone());
+        group.set_prop("FIELDNAME", data.field_name.clone())?;
     }
+    group.set_prop("FIELDDISP", "    0.0000    0.0000    DR    ALL  0       0")?;
     if !data.data.is_empty() {
-        group.set_prop("DATAFIELDS", data.data.clone());
+        group.set_prop("DATAFIELDS", vec![data.data.clone()])?;
         group.push_data_field(data.data.clone());
     }
     if !data.query_op.is_empty() {
-        group.set_prop("QUERYOP", data.query_op.clone());
+        group.set_prop("QUERYOP", data.query_op.clone())?;
     }
     if !data.field_info.is_empty() {
-        group.set_prop("FIELDINFO", data.field_info.clone());
+        group.set_prop("FIELDINFO", data.field_info.clone())?;
     }
     if !data.field_tag.is_empty() {
-        group.set_prop("FIELDTAG", data.field_tag.clone());
+        group.set_prop("FIELDTAG", data.field_tag.clone())?;
     }
     if let Some(coordinates) = &data.coordinates {
-        group.set_prop("COORDS", coordinates.clone());
+        group.set_prop("COORDS", coordinates.clone())?;
     }
+    group.set_prop("index", source_index as u32)?;
     groups.push(group);
     replace_query_substance_groups(graph, groups)
         .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))
@@ -739,11 +1788,8 @@ pub(crate) fn apply_cx_variable_attachment_effect_to_query(
             .get_mut(bond_index)
             .ok_or(CxQueryLoweringError::BondIndex { index: bond_index })?;
         bond.bond_mut()
-            .set_prop("_MolFileBondEndPts", end_points.clone())
-            .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
-        bond.bond_mut()
-            .set_prop("_MolFileBondAttach", "ANY")
-            .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+            .set_prop("_MolFileBondEndPts", end_points.clone())?;
+        bond.bond_mut().set_prop("_MolFileBondAttach", "ANY")?;
     }
     Ok(())
 }
@@ -903,27 +1949,25 @@ pub(crate) fn apply_cx_wedge_bond_to_query(
         bond.bond_mut().set_endpoints(atom, previous_begin);
     }
     let (configuration, direction) = match wedge.direction {
-        CxWedgeDirection::Unknown => ("2", BondDirection::Unknown),
-        CxWedgeDirection::BeginWedge => ("1", BondDirection::BeginWedge),
-        CxWedgeDirection::BeginDash => ("3", BondDirection::BeginDash),
+        CxWedgeDirection::Unknown => (2_u32, BondDirection::Unknown),
+        CxWedgeDirection::BeginWedge => (1_u32, BondDirection::BeginWedge),
+        CxWedgeDirection::BeginDash => (3_u32, BondDirection::BeginDash),
     };
-    bond.bond_mut()
-        .set_prop("_MolFileBondCfg", configuration)
-        .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+    bond.bond_mut().set_prop("_MolFileBondCfg", configuration)?;
     bond.bond_mut().set_direction(direction);
     if wedge.direction == CxWedgeDirection::Unknown && can_have_direction {
         graph
             .atom_mut(wedge.atom)
             .ok_or(CxQueryLoweringError::AtomIndex { index: wedge.atom })?
             .set_chiral_tag(ChiralTag::Unspecified);
-        graph.set_prop("_needsDetectBondStereo", "1");
+        graph.set_prop("_needsDetectBondStereo", 1_i32)?;
     }
     if matches!(
         wedge.direction,
         CxWedgeDirection::BeginWedge | CxWedgeDirection::BeginDash
     ) && can_have_direction
     {
-        graph.set_prop("_needsDetectAtomStereo", "1");
+        graph.set_prop("_needsDetectAtomStereo", 1_i32)?;
     }
     Ok(())
 }
@@ -1061,7 +2105,7 @@ pub(crate) fn apply_cx_double_bond_stereo_to_query(
     bond.bond_mut()
         .set_stereo(value)
         .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
-    graph.set_prop("_needsDetectBondStereo", "1");
+    graph.set_prop("_needsDetectBondStereo", 1_i32)?;
     Ok(())
 }
 
@@ -1103,20 +2147,20 @@ pub(crate) fn apply_cx_polymer_sgroup_to_query(
     */
     // RDKit✔️❌: valid atom occurrences retain source order and duplicates; a
     // group with no valid atoms is skipped before labels or crossings run.
-    let kind = match polymer.type_code.as_str() {
-        "n" => SubstanceGroupKind::StructuralRepeatUnit,
-        "mon" => SubstanceGroupKind::Monomer,
-        "mer" => SubstanceGroupKind::Mer,
-        "co" => SubstanceGroupKind::Copolymer,
-        "xl" => SubstanceGroupKind::Crosslink,
-        "mod" => SubstanceGroupKind::Modification,
-        "mix" => SubstanceGroupKind::MixtureComponent,
-        "f" => SubstanceGroupKind::Formulation,
-        "any" => SubstanceGroupKind::AnyPolymer,
-        "gen" => SubstanceGroupKind::Generic("GEN".to_owned()),
-        "c" => SubstanceGroupKind::Generic("COM".to_owned()),
-        "grf" => SubstanceGroupKind::Graft,
-        "alt" | "ran" | "blk" => SubstanceGroupKind::Copolymer,
+    let (kind, source_type) = match polymer.type_code.as_bytes() {
+        b"n" => (SubstanceGroupKind::StructuralRepeatUnit, "SRU"),
+        b"mon" => (SubstanceGroupKind::Monomer, "MON"),
+        b"mer" => (SubstanceGroupKind::Mer, "MER"),
+        b"co" => (SubstanceGroupKind::Copolymer, "COP"),
+        b"xl" => (SubstanceGroupKind::Crosslink, "CRO"),
+        b"mod" => (SubstanceGroupKind::Modification, "MOD"),
+        b"mix" => (SubstanceGroupKind::MixtureComponent, "MIX"),
+        b"f" => (SubstanceGroupKind::Formulation, "FOR"),
+        b"any" => (SubstanceGroupKind::AnyPolymer, "ANY"),
+        b"gen" => (SubstanceGroupKind::Generic("GEN".into()), "GEN"),
+        b"c" => (SubstanceGroupKind::Generic("COM".into()), "COM"),
+        b"grf" => (SubstanceGroupKind::Graft, "GRA"),
+        b"alt" | b"ran" | b"blk" => (SubstanceGroupKind::Copolymer, "COP"),
         _ => {
             return Err(CxQueryLoweringError::InvalidGraph(
                 "unknown CX polymer SGroup type".to_owned(),
@@ -1165,32 +2209,42 @@ pub(crate) fn apply_cx_polymer_sgroup_to_query(
     let mut group = SubstanceGroup::new(dense_id, kind)
         .with_rdkit_sequence_id(cx_sequence_id)
         .with_atoms(atoms);
-    group.set_prop("_cxsmilesindex", cx_sequence_id.to_string());
-    if !polymer.label.is_empty() {
-        group.set_label(polymer.label.clone());
-        group.set_prop("LABEL", polymer.label.clone());
-    }
-    if !polymer.connect.is_empty() {
-        group.set_prop("CONNECT", polymer.connect.clone());
-    }
-    match polymer.type_code.as_str() {
-        "alt" => {
+    // RDKit✔️❌: SubstanceGroup::SubstanceGroup(ROMol *owning_mol, const std::string &type)
+    // RDKit✔️❌:     : RDProps(), dp_mol(owning_mol) {
+    // RDKit✔️❌:   PRECONDITION(owning_mol, "supplied owning molecule is bad");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // TYPE is required to be set , as other properties will depend on it.
+    // RDKit✔️❌:   setProp<std::string>("TYPE", type);
+    // RDKit✔️❌: }
+    // Ordinary TYPE assignment uses the source String tag; the sole
+    // store preserves order, with its known extra key allocation cost.
+    group.set_prop("TYPE", source_type)?;
+    group.set_prop("_cxsmilesindex", cx_sequence_id)?;
+    match polymer.type_code.as_bytes() {
+        b"alt" => {
             group.set_subtype("ALT");
-            group.set_prop("SUBTYPE", "ALT");
+            group.set_prop("SUBTYPE", "ALT")?;
         }
-        "ran" => {
+        b"ran" => {
             group.set_subtype("RAN");
-            group.set_prop("SUBTYPE", "RAN");
+            group.set_prop("SUBTYPE", "RAN")?;
         }
-        "blk" => {
+        b"blk" => {
             group.set_subtype("BLO");
-            group.set_prop("SUBTYPE", "BLO");
+            group.set_prop("SUBTYPE", "BLO")?;
         }
         _ => {}
     }
+    if !polymer.label.is_empty() {
+        group.set_label(polymer.label.clone());
+        group.set_prop("LABEL", polymer.label.clone())?;
+    }
+    if !polymer.connect.is_empty() {
+        group.set_prop("CONNECT", polymer.connect.clone())?;
+    }
     cosmolkit_core::finalize_polymer_sgroup(
         &mut group,
-        (!polymer.connect.is_empty()).then_some(polymer.connect.as_str()),
+        (!polymer.connect.is_empty()).then_some(polymer.connect.as_bytes()),
         &head,
         &tail,
         graph.num_atoms(),
@@ -1208,7 +2262,7 @@ pub(crate) fn apply_cx_polymer_sgroup_to_query(
 
     // RDKit sets the one-based source index only after finalization succeeds.
     let source_index = groups.len() + 1;
-    group.set_prop("index", source_index.to_string());
+    group.set_prop("index", source_index as u32)?;
     groups.push(group);
     replace_query_substance_groups(graph, groups)
         .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))
@@ -1247,12 +2301,8 @@ pub(crate) fn resolve_cx_sgroup_hierarchy_parent(
         return Ok(None);
     };
     let parent = &groups[parent_index];
-    let parent_property_id = match parent.props().get("index") {
-        Some(value) => value.parse::<u32>().map_err(|_| {
-            CxQueryLoweringError::InvalidGraph(
-                "query SGroup index property is not a source unsigned integer".to_owned(),
-            )
-        })?,
+    let parent_property_id = match parent.props().get(b"index".as_slice()) {
+        Some(value) => cosmolkit_core::property_value_to_uint(value)?,
         None => cx_parent_id,
     };
     Ok(Some((parent.id(), parent_property_id)))
@@ -1305,23 +2355,17 @@ pub(crate) fn apply_cx_sgroup_hierarchy_child(
         return Ok(false);
     };
     let child = &groups[child_index];
-    child
-        .props()
-        .get("index")
-        .ok_or_else(|| {
-            CxQueryLoweringError::InvalidGraph(
-                "query SGroup child is missing its source index property".to_owned(),
-            )
-        })?
-        .parse::<u32>()
-        .map_err(|_| {
-            CxQueryLoweringError::InvalidGraph(
-                "query SGroup child index property is not a source unsigned integer".to_owned(),
-            )
-        })?;
+    let child_index_value = child.props().get(b"index".as_slice()).ok_or_else(|| {
+        CxQueryLoweringError::InvalidGraph(
+            "query SGroup child is missing its source index property".to_owned(),
+        )
+    })?;
+    cosmolkit_core::property_value_to_uint(child_index_value)?;
     let child = &mut groups[child_index];
+    // Native parentId is unsigned; preserve its UInt tag and propagate the
+    // sole store error before installing the detached semantic projection.
+    child.set_prop("PARENT", parent_property_id)?;
     child.set_parent(parent_id);
-    child.set_prop("PARENT", parent_property_id.to_string());
     Ok(true)
 }
 
@@ -1343,14 +2387,10 @@ fn find_query_sgroup_by_cx_sequence_id(
     // RDKit✔️✔️:   });
     // RDKit✔️✔️: }
     for (index, group) in groups.iter().enumerate() {
-        let Some(value) = group.props().get("_cxsmilesindex") else {
+        let Some(value) = group.props().get(b"_cxsmilesindex".as_slice()) else {
             continue;
         };
-        let sequence_id = value.parse::<u32>().map_err(|_| {
-            CxQueryLoweringError::InvalidGraph(
-                "query SGroup CX sequence property is not a source unsigned integer".to_owned(),
-            )
-        })?;
+        let sequence_id = cosmolkit_core::property_value_to_uint(value)?;
         if sequence_id == target_id {
             return Ok(Some(index));
         }
@@ -1392,97 +2432,507 @@ pub(crate) fn apply_cx_sgroup_hierarchy_to_query(
 fn replace_query_atom_like_rdkit(
     graph: &mut QueryGraph,
     atom_index: usize,
-    predicate: QueryNode<AtomQueryPredicate>,
-    label: Option<&str>,
+    incoming: &QueryAtom,
+    preserve_props: bool,
 ) -> Result<(), CxQueryLoweringError> {
-    // BEGIN RDKIT CPP FUNCTION CXSmilesOps::addquery
-    // RDKit❗✔️: void addquery(Q *qry, std::string symbol, RDKit::RWMol &mol, unsigned int idx) {
-    // RDKit❗✔️:   PRECONDITION(qry, "bad query");
-    // RDKit❗✔️:   auto *qa = new QueryAtom(0);
-    // RDKit❗✔️:   qa->setQuery(qry);
-    // RDKit❗✔️:   qa->setNoImplicit(true);
-    // RDKit❗✔️:   bool updateLabel = false;
-    // RDKit❗✔️:   bool preserveProps = true;
-    // RDKit❗✔️:   mol.replaceAtom(idx, qa, updateLabel, preserveProps);
-    // RDKit❗✔️:   if (symbol != "") {
-    // RDKit❗✔️:     mol.getAtomWithIdx(idx)->setProp(RDKit::common_properties::atomLabel,
-    // RDKit❗✔️:                                      symbol);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   delete qa;
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION CXSmilesOps::addquery
-    // BEGIN RDKIT CPP FUNCTION RWMol::replaceAtom
-    // RDKit❗✔️: if (preserveProps) atom_p->updateProps(*d_graph[vd], false);
-    // RDKit❗✔️: for (auto &group : d_stereo_groups) {
-    // RDKit❗✔️:   auto groupId = group.getReadId();
-    // RDKit❗✔️:   auto atoms = group.getAtoms();
-    // RDKit❗✔️:   auto bonds = group.getBonds();
-    // RDKit❗✔️:     auto aiter = std::find(atoms.begin(), atoms.end(), orig_p);
-    // RDKit❗✔️:     while (aiter != atoms.end()) {
-    // RDKit❗✔️:       *aiter = atom_p;
-    // RDKit❗✔️:       ++aiter;
-    // RDKit❗✔️:       aiter = std::find(aiter, atoms.end(), orig_p);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     group = StereoGroup(group.getGroupType(), std::move(atoms),
-    // RDKit❗✔️:                         std::move(bonds), groupId);
-    // END RDKIT CPP FUNCTION RWMol::replaceAtom
+    // RDKit✔️❌: void RWMol::replaceAtom(unsigned int idx, Atom *atom_pin, bool,
+    // RDKit✔️❌:                         bool preserveProps) {
+    // RDKit✔️❌:   PRECONDITION(atom_pin, "bad atom passed to replaceAtom");
+    // RDKit✔️❌:   URANGE_CHECK(idx, getNumAtoms());
+    // RDKit✔️❌:   auto atom_p = atom_pin->copy();
+    // RDKit✔️❌:   atom_p->setOwningMol(this);
+    // RDKit✔️❌:   atom_p->setIdx(idx);
+    // RDKit✔️❌:   auto vd = boost::vertex(idx, d_graph);
+    // RDKit✔️❌:   if (preserveProps) {
+    // RDKit✔️❌:     const bool replaceExistingData = false;
+    // RDKit✔️❌:     atom_p->updateProps(*d_graph[vd], replaceExistingData);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   const auto orig_p = d_graph[vd];
+    // RDKit✔️❌:   delete orig_p;
+    // RDKit✔️❌:   d_graph[vd] = atom_p;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // handle bookmarks
+    // RDKit✔️❌:   for (auto &ab : d_atomBookmarks) {
+    // RDKit✔️❌:     for (auto &elem : ab.second) {
+    // RDKit✔️❌:       if (elem == orig_p) {
+    // RDKit✔️❌:         elem = atom_p;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // handle stereo group
+    // RDKit✔️❌:   for (auto &group : d_stereo_groups) {
+    // RDKit✔️❌:     auto groupId = group.getReadId();
+    // RDKit✔️❌:     auto atoms = group.getAtoms();
+    // RDKit✔️❌:     auto bonds = group.getBonds();
+    // RDKit✔️❌:     auto aiter = std::find(atoms.begin(), atoms.end(), orig_p);
+    // RDKit✔️❌:     while (aiter != atoms.end()) {
+    // RDKit✔️❌:       *aiter = atom_p;
+    // RDKit✔️❌:       ++aiter;
+    // RDKit✔️❌:       aiter = std::find(aiter, atoms.end(), orig_p);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     group = StereoGroup(group.getGroupType(), std::move(atoms),
+    // RDKit✔️❌:                         std::move(bonds), groupId);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: };
+    // Source copy helper: Code/GraphMol/QueryAtom.cpp
+    // RDKit✔️❌: Atom *QueryAtom::copy() const {
+    // RDKit✔️❌:   auto *res = new QueryAtom(*this);
+    // RDKit✔️❌:   return static_cast<Atom *>(res);
+    // RDKit✔️❌: }
+    // Source copy helper: Code/GraphMol/QueryAtom.h
+    // RDKit✔️❌:   QueryAtom(const QueryAtom &other) : Atom(other) {
+    // RDKit✔️❌:     if (other.dp_query) {
+    // RDKit✔️❌:       dp_query = other.dp_query->copy();
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       dp_query = nullptr;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // Source copy helper: Code/GraphMol/Atom.cpp
+    // RDKit✔️❌:
+    // RDKit✔️❌: void Atom::initFromOther(const Atom &other) {
+    // RDKit✔️❌:   RDProps::operator=(other);
+    // RDKit✔️❌:   // NOTE: we do *not* copy ownership!
+    // RDKit✔️❌:   dp_mol = nullptr;
+    // RDKit✔️❌:   d_atomicNum = other.d_atomicNum;
+    // RDKit✔️❌:   d_index = 0;
+    // RDKit✔️❌:   d_formalCharge = other.d_formalCharge;
+    // RDKit✔️❌:   df_noImplicit = other.df_noImplicit;
+    // RDKit✔️❌:   df_isAromatic = other.df_isAromatic;
+    // RDKit✔️❌:   d_numExplicitHs = other.d_numExplicitHs;
+    // RDKit✔️❌:   d_numRadicalElectrons = other.d_numRadicalElectrons;
+    // RDKit✔️❌:   d_isotope = other.d_isotope;
+    // RDKit✔️❌:   // d_pos = other.d_pos;
+    // RDKit✔️❌:   d_chiralTag = other.d_chiralTag;
+    // RDKit✔️❌:   d_hybrid = other.d_hybrid;
+    // RDKit✔️❌:   d_implicitValence = other.d_implicitValence;
+    // RDKit✔️❌:   d_explicitValence = other.d_explicitValence;
+    // RDKit✔️❌:   if (other.dp_monomerInfo) {
+    // RDKit✔️❌:     dp_monomerInfo = other.dp_monomerInfo->copy();
+    // RDKit✔️❌:   } else {
+    // RDKit✔️❌:     dp_monomerInfo = nullptr;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   d_flags = other.d_flags;
+    // RDKit✔️❌: }
+    // Source copy helper: Code/Query/Query.h
+    // RDKit✔️❌:   virtual Query<MatchFuncArgType, DataFuncArgType, needsConversion> *copy()
+    // RDKit✔️❌:       const {
+    // RDKit✔️❌:     Query<MatchFuncArgType, DataFuncArgType, needsConversion> *res =
+    // RDKit✔️❌:         new Query<MatchFuncArgType, DataFuncArgType, needsConversion>();
+    // RDKit✔️❌:     for (auto iter = this->beginChildren(); iter != this->endChildren();
+    // RDKit✔️❌:          ++iter) {
+    // RDKit✔️❌:       res->addChild(CHILD_TYPE(iter->get()->copy()));
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     res->d_val = this->d_val;
+    // RDKit✔️❌:     res->d_tol = this->d_tol;
+    // RDKit✔️❌:     res->df_negate = this->df_negate;
+    // RDKit✔️❌:     res->d_matchFunc = this->d_matchFunc;
+    // RDKit✔️❌:     res->d_dataFunc = this->d_dataFunc;
+    // RDKit✔️❌:     res->d_description = this->d_description;
+    // RDKit✔️❌:     res->d_queryType = this->d_queryType;
+    // RDKit✔️❌:     return res;
+    // RDKit✔️❌:   }
+    // Source copy helper: Code/Query/AndQuery.h
+    // RDKit✔️❌:   Query<MatchFuncArgType, DataFuncArgType, needsConversion> *copy()
+    // RDKit✔️❌:       const override {
+    // RDKit✔️❌:     AndQuery<MatchFuncArgType, DataFuncArgType, needsConversion> *res =
+    // RDKit✔️❌:         new AndQuery<MatchFuncArgType, DataFuncArgType, needsConversion>();
+    // RDKit✔️❌:     typename BASE::CHILD_VECT_CI i;
+    // RDKit✔️❌:     for (i = this->beginChildren(); i != this->endChildren(); ++i) {
+    // RDKit✔️❌:       res->addChild(typename BASE::CHILD_TYPE(i->get()->copy()));
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     res->setNegation(this->getNegation());
+    // RDKit✔️❌:     res->d_description = this->d_description;
+    // RDKit✔️❌:     res->d_queryType = this->d_queryType;
+    // RDKit✔️❌:     return res;
+    // RDKit✔️❌:   }
+    // Source copy helper: Code/Query/OrQuery.h
+    // RDKit✔️❌:   Query<MatchFuncArgType, DataFuncArgType, needsConversion> *copy()
+    // RDKit✔️❌:       const override {
+    // RDKit✔️❌:     OrQuery<MatchFuncArgType, DataFuncArgType, needsConversion> *res =
+    // RDKit✔️❌:         new OrQuery<MatchFuncArgType, DataFuncArgType, needsConversion>();
+    // RDKit✔️❌:
+    // RDKit✔️❌:     typename BASE::CHILD_VECT_CI i;
+    // RDKit✔️❌:     for (i = this->beginChildren(); i != this->endChildren(); ++i) {
+    // RDKit✔️❌:       res->addChild(typename BASE::CHILD_TYPE(i->get()->copy()));
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     res->setNegation(this->getNegation());
+    // RDKit✔️❌:     res->d_description = this->d_description;
+    // RDKit✔️❌:     res->d_queryType = this->d_queryType;
+    // RDKit✔️❌:     return res;
+    // RDKit✔️❌:   }
+    // Source copy helper: Code/Query/XOrQuery.h
+    // RDKit✔️❌:   Query<MatchFuncArgType, DataFuncArgType, needsConversion> *copy()
+    // RDKit✔️❌:       const override {
+    // RDKit✔️❌:     XOrQuery<MatchFuncArgType, DataFuncArgType, needsConversion> *res =
+    // RDKit✔️❌:         new XOrQuery<MatchFuncArgType, DataFuncArgType, needsConversion>();
+    // RDKit✔️❌:
+    // RDKit✔️❌:     typename BASE::CHILD_VECT_CI i;
+    // RDKit✔️❌:     for (i = this->beginChildren(); i != this->endChildren(); ++i) {
+    // RDKit✔️❌:       res->addChild(typename BASE::CHILD_TYPE(i->get()->copy()));
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     res->setNegation(this->getNegation());
+    // RDKit✔️❌:     res->d_description = this->d_description;
+    // RDKit✔️❌:     res->d_queryType = this->d_queryType;
+    // RDKit✔️❌:     return res;
+    // RDKit✔️❌:   }
+    // Source copy helper: Code/Query/EqualityQuery.h
+    // RDKit✔️❌:   Query<MatchFuncArgType, DataFuncArgType, needsConversion> *copy()
+    // RDKit✔️❌:       const override {
+    // RDKit✔️❌:     EqualityQuery<MatchFuncArgType, DataFuncArgType, needsConversion> *res =
+    // RDKit✔️❌:         new EqualityQuery<MatchFuncArgType, DataFuncArgType, needsConversion>();
+    // RDKit✔️❌:     res->setNegation(this->getNegation());
+    // RDKit✔️❌:     res->setVal(this->d_val);
+    // RDKit✔️❌:     res->setTol(this->d_tol);
+    // RDKit✔️❌:     res->setDataFunc(this->d_dataFunc);
+    // RDKit✔️❌:     res->d_description = this->d_description;
+    // RDKit✔️❌:     res->d_queryType = this->d_queryType;
+    // RDKit✔️❌:     return res;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // Behavior: Rust's non-null borrow supplies the source atom precondition.
+    // Check the target row before copying. Stable row IDs carry all references
+    // that the source repairs by replacing pointers (including duplicates).
+    // QueryGraph has no pointer-owning bookmarks or owning-molecule handles.
+    // Copy incoming atom members/query/cache facts, then replace only its
+    // dictionary when requested. Both branches retain incoming monomer info,
+    // temporary flags and valence storage. Install before rebuilding groups.
+    // Reconstruct every group in its original slot: no merging, sorting,
+    // validation, or new error path. The read ID survives; the write ID resets.
+    // Complexity: O(incoming query/property payload + preserved properties +
+    // stereo memberships). PropertyStore's tree uses per-key allocations versus
+    // the source contiguous Dict vector, hence a conservative cost-loss marker.
     let source = graph
         .atom(atom_index)
         .ok_or(CxQueryLoweringError::AtomIndex { index: atom_index })?;
-    let id = source.id();
-    let mut replacement = source
-        .clone()
-        .with_identity(QueryAtomIdentity::from_atomic_number(0));
-    replacement.set_predicate(predicate);
-    replacement.set_formal_charge(0);
-    replacement.set_explicit_hydrogens(0);
-    replacement.set_chiral_tag(ChiralTag::Unspecified);
-    replacement.set_chiral_permutation(None);
-    replacement.set_unknown_stereo(false);
-    replacement.set_mol_parity(None);
-    replacement.set_mol_inversion_flag(None);
-    replacement.set_implicit_hydrogen(false);
-    replacement.set_tracked_isotopic_hydrogens(Vec::new());
-    replacement.set_aromatic(false);
-    replacement.set_isotope(None);
-    replacement.set_atom_map(None);
-    replacement.set_no_implicit(true);
-    replacement.set_radical_electrons(0);
-    replacement.set_hybridization(Hybridization::Unspecified);
-    replacement.set_pdb_residue_info(None);
-    replacement.set_template_attachment_order(None);
-    if let Some(label) = label.filter(|label| !label.is_empty()) {
-        replacement
-            .set_prop("atomLabel", label)
-            .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+    let mut replacement = incoming.clone().with_id(AtomId::new(atom_index));
+    if preserve_props {
+        replacement.replace_source_properties_from(source);
     }
-    debug_assert_eq!(replacement.id(), id);
     graph.atoms_mut()[atom_index] = replacement;
-
-    let stereo_groups = graph
-        .stereo_groups()
-        .iter()
-        .map(|group| {
-            let replacement =
-                StereoGroup::new(group.kind(), group.atoms().to_vec(), group.bonds().to_vec());
-            if let Some(read_id) = group.id() {
-                replacement.with_id(read_id)
-            } else {
-                replacement
-            }
-        })
-        .collect();
-    replace_query_stereo_groups(graph, stereo_groups)
-        .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
-
-    // The model currently exposes the stereo read ID only. RDKit reconstructs
-    // each group with getReadId(), which resets its separate write ID to zero;
-    // keep this reconstruction so tab4's upcoming write-ID field gets the
-    // same zero-default behavior when integrated.
-    // Local complexity review: the source also copies each stereo group's
-    // ordered atom/bond vectors per replacement. This reconstruction has the
-    // same O(groups + memberships) work and preserves duplicate order.
+    for group in graph.stereo_groups_mut() {
+        let mut replacement =
+            StereoGroup::new(group.kind(), group.atoms().to_vec(), group.bonds().to_vec());
+        if let Some(read_id) = group.id() {
+            replacement = replacement.with_id(read_id);
+        }
+        *group = replacement;
+    }
     Ok(())
+}
+
+fn add_query_like_rdkit(
+    graph: &mut QueryGraph,
+    atom_index: usize,
+    predicate: QueryNode<AtomQueryPredicate>,
+    label: Option<&cosmolkit_model::PropertyText>,
+) -> Result<(), CxQueryLoweringError> {
+    // Source: Code/GraphMol/SmilesParse/CXSmilesOps.cpp
+    // RDKit✔️❌: void addquery(Q *qry, std::string symbol, RDKit::RWMol &mol, unsigned int idx) {
+    // RDKit✔️❌:   PRECONDITION(qry, "bad query");
+    // RDKit✔️❌:   auto *qa = new QueryAtom(0);
+    // RDKit✔️❌:   qa->setQuery(qry);
+    // RDKit✔️❌:   qa->setNoImplicit(true);
+    // RDKit✔️❌:   bool updateLabel = false;
+    // RDKit✔️❌:   bool preserveProps = true;
+    // RDKit✔️❌:   mol.replaceAtom(idx, qa, updateLabel, preserveProps);
+    // RDKit✔️❌:   if (symbol != "") {
+    // RDKit✔️❌:     mol.getAtomWithIdx(idx)->setProp(RDKit::common_properties::atomLabel,
+    // RDKit✔️❌:                                      symbol);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   delete qa;
+    // RDKit✔️❌: }
+    // Source: Code/GraphMol/QueryAtom.h
+    // RDKit✔️❌:   explicit QueryAtom(int num) : Atom(num), dp_query(makeAtomNumQuery(num)) {}
+    // Source: Code/GraphMol/QueryAtom.h
+    // RDKit✔️❌:   //! returns the label associated to this query
+    // RDKit✔️❌:   std::string getQueryType() const override { return dp_query->getTypeLabel(); }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   //! replaces our current query with the value passed in
+    // RDKit✔️❌:   void setQuery(QUERYATOM_QUERY *what) override {
+    // Source: Code/GraphMol/Atom.cpp
+    // RDKit✔️❌: Atom::Atom(unsigned int num) : RDProps() {
+    // RDKit✔️❌:   d_atomicNum = num;
+    // RDKit✔️❌:   initAtom();
+    // RDKit✔️❌: };
+    // Source: Code/GraphMol/Atom.cpp
+    // RDKit✔️❌: void Atom::initAtom() {
+    // RDKit✔️❌:   df_isAromatic = false;
+    // RDKit✔️❌:   df_noImplicit = false;
+    // RDKit✔️❌:   d_numExplicitHs = 0;
+    // RDKit✔️❌:   d_numRadicalElectrons = 0;
+    // RDKit✔️❌:   d_formalCharge = 0;
+    // RDKit✔️❌:   d_index = 0;
+    // RDKit✔️❌:   d_isotope = 0;
+    // RDKit✔️❌:   d_chiralTag = CHI_UNSPECIFIED;
+    // RDKit✔️❌:   d_hybrid = UNSPECIFIED;
+    // RDKit✔️❌:   dp_mol = nullptr;
+    // RDKit✔️❌:   dp_monomerInfo = nullptr;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   d_implicitValence = -1;
+    // RDKit✔️❌:   d_explicitValence = -1;
+    // RDKit✔️❌: }
+    // Behavior: a typed owned predicate satisfies the non-null query
+    // precondition. A fresh atomic-number-zero QueryAtom carries source Atom
+    // defaults (including -1 valence facts and zero flags); setting the supplied
+    // query replaces the constructor's temporary atomic-number predicate.
+    // Delegate replacement with preserveProps=true, then overwrite atomLabel
+    // only for a nonempty supplied symbol. RAII destroys the temporary query.
+    // Complexity: one temporary query value and the source-required replacement
+    // copy. The constructor's immediately discarded predicate need not allocate
+    // in Rust. Overall cost includes PropertyStore's tree allocation difference
+    // from the source contiguous dictionary, marked separately as a cost loss.
+    let mut incoming = QueryAtom::from_identity_parts(
+        AtomId::new(0),
+        QueryAtomIdentity::from_atomic_number(0),
+        predicate,
+    );
+    incoming.set_no_implicit(true);
+    replace_query_atom_like_rdkit(graph, atom_index, &incoming, true)?;
+    if let Some(label) = label.filter(|label| !label.is_empty()) {
+        graph.atoms_mut()[atom_index].set_prop("atomLabel", label)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn apply_cx_coordinate_bond(
+    graph: &mut QueryGraph,
+    reference: cosmolkit_cx::CxBondReference,
+    kind: CxCoordinateBondKind,
+) -> Result<(), CxQueryLoweringError> {
+    // BEGIN COMPLETE PINNED SF189
+    // RDKit✔️❌: bool parse_coordinate_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                             Bond::BondType typ, unsigned int startAtomIdx,
+    // RDKit✔️❌:                             unsigned int startBondIdx) {
+    // RDKit✔️❌:   if (first >= last || (*first != 'C' && *first != 'H')) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int aidx;
+    // RDKit✔️❌:     unsigned int bidx;
+    // RDKit✔️❌:     if (read_int_pair(first, last, aidx, bidx)) {
+    // RDKit✔️❌:       if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
+    // RDKit✔️❌:         auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
+    // RDKit✔️❌:         if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
+    // RDKit✔️❌:                      bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
+    // RDKit✔️❌:           BOOST_LOG(rdWarningLog) << "BOND NOT FOUND! " << bidx
+    // RDKit✔️❌:                                   << " involving atom " << aidx << std::endl;
+    // RDKit✔️❌:           return false;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         bnd->setBondType(typ);
+    // RDKit✔️❌:         if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
+    // RDKit✔️❌:           unsigned int tmp = bnd->getBeginAtomIdx();
+    // RDKit✔️❌:           bnd->setBeginAtomIdx(aidx - startAtomIdx);
+    // RDKit✔️❌:           bnd->setEndAtomIdx(tmp);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF189
+    // BEGIN COMPLETE PINNED SF184
+    // RDKit✔️✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+    // RDKit✔️✔️:   for (auto bnd : mol.bonds()) {
+    // RDKit✔️✔️:     unsigned int smilesIdx;
+    // RDKit✔️✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+    // RDKit✔️✔️:         smilesIdx == idx) {
+    // RDKit✔️✔️:       return bnd;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return nullptr;
+    // RDKit✔️✔️: }
+    // END COMPLETE PINNED SF184
+    // BEGIN COMPLETE REACHED Code/GraphMol/Bond.h void setBondType(BondType bT)
+    // RDKit✔️✔️:   void setBondType(BondType bT) { d_bondType = bT; }
+    // END COMPLETE REACHED Code/GraphMol/Bond.h void setBondType(BondType bT)
+    // BEGIN COMPLETE REACHED Code/GraphMol/Bond.h unsigned int getBeginAtomIdx() const
+    // RDKit✔️✔️:   unsigned int getBeginAtomIdx() const { return d_beginAtomIdx; }
+    // END COMPLETE REACHED Code/GraphMol/Bond.h unsigned int getBeginAtomIdx() const
+    // BEGIN COMPLETE REACHED Code/GraphMol/Bond.h unsigned int getEndAtomIdx() const
+    // RDKit✔️✔️:   unsigned int getEndAtomIdx() const { return d_endAtomIdx; }
+    // END COMPLETE REACHED Code/GraphMol/Bond.h unsigned int getEndAtomIdx() const
+    // BEGIN COMPLETE REACHED Code/GraphMol/Bond.cpp void Bond::setBeginAtomIdx(unsigned int what)
+    // RDKit✔️✔️: void Bond::setBeginAtomIdx(unsigned int what) {
+    // RDKit✔️✔️:   if (dp_mol) {
+    // RDKit✔️✔️:     URANGE_CHECK(what, getOwningMol().getNumAtoms());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   d_beginAtomIdx = what;
+    // RDKit✔️✔️: }
+    // END COMPLETE REACHED Code/GraphMol/Bond.cpp void Bond::setBeginAtomIdx(unsigned int what)
+    // BEGIN COMPLETE REACHED Code/GraphMol/Bond.cpp void Bond::setEndAtomIdx(unsigned int what)
+    // RDKit✔️✔️: void Bond::setEndAtomIdx(unsigned int what) {
+    // RDKit✔️✔️:   if (dp_mol) {
+    // RDKit✔️✔️:     URANGE_CHECK(what, getOwningMol().getNumAtoms());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   d_endAtomIdx = what;
+    // RDKit✔️✔️: }
+    // END COMPLETE REACHED Code/GraphMol/Bond.cpp void Bond::setEndAtomIdx(unsigned int what)
+    // Behavior: graph-local startAtomIdx/startBondIdx are both zero. Native
+    // u32 pair values were validated by the syntax owner, with no row guessing.
+    // Compare both ranges before reading any source-index property. Missing
+    // properties are skipped, wrong present property conversion propagates,
+    // and first matching source index short circuits through canonical SF184.
+    // Missing/mismatched bonds log the source payload before failure; only a
+    // matching bond is mutated, type first and then begin/end reversal. Query
+    // predicates and adjacency remain the same undirected edge's source state.
+    // Cost: one O(E) borrowed source-index scan, no graph clone or reparse.
+    if reference.atom >= graph.num_atoms() || reference.bond >= graph.num_bonds() {
+        return Ok(());
+    }
+    let row = match query_bond_row_from_source_index(graph, reference.bond) {
+        Ok(row) => row,
+        Err(error @ CxQueryLoweringError::BondIndex { .. }) => {
+            warn_cx_coordinate_bond_not_found(reference);
+            return Err(error);
+        }
+        Err(error) => return Err(error),
+    };
+    let bond = graph
+        .bonds_mut()
+        .get_mut(row)
+        .ok_or(CxQueryLoweringError::BondIndex {
+            index: reference.bond,
+        })?;
+    let begin = bond.begin();
+    if begin.index() != reference.atom && bond.end().index() != reference.atom {
+        warn_cx_coordinate_bond_not_found(reference);
+        return Err(CxQueryLoweringError::BondAtomMismatch {
+            atom: reference.atom,
+            bond: reference.bond,
+        });
+    }
+    bond.bond_mut().set_order(match kind {
+        CxCoordinateBondKind::Dative => BondOrder::Dative,
+        CxCoordinateBondKind::Hydrogen => BondOrder::Hydrogen,
+    });
+    if begin.index() != reference.atom {
+        bond.bond_mut()
+            .set_endpoints(AtomId::new(reference.atom), begin);
+    }
+    Ok(())
+}
+
+fn warn_cx_coordinate_bond_not_found(reference: cosmolkit_cx::CxBondReference) {
+    // RDKit✔️✔️:           BOOST_LOG(rdWarningLog) << "BOND NOT FOUND! " << bidx
+    // RDKit✔️✔️:                                   << " involving atom " << aidx << std::endl;
+    // Reproduce this source payload/default output plus newline/flush, with
+    // non-throwing I/O like the source ostream default. Independent RDLog
+    // enable flags, alternate sinks and prefix formatting are unmodeled.
+    use std::io::Write;
+    let mut output = std::io::stderr().lock();
+    let _ = writeln!(
+        output,
+        "BOND NOT FOUND! {} involving atom {}",
+        reference.bond, reference.atom
+    )
+    .and_then(|_| output.flush());
+}
+
+pub(crate) fn apply_cx_zero_bond(
+    graph: &mut QueryGraph,
+    index: usize,
+) -> Result<(), CxQueryLoweringError> {
+    // BEGIN COMPLETE PINNED SF190
+    // RDKit✔️❌: bool parse_zero_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                       unsigned int, unsigned int startBondIdx) {
+    // RDKit✔️❌:   // these look like: C1CCCCC~CCCC1 |Z:5|
+    // RDKit✔️❌:   if (first >= last || *first != 'Z') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int bondIdx;
+    // RDKit✔️❌:     if (!read_int(first, last, bondIdx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_BNDIDX(bondIdx)) {
+    // RDKit✔️❌:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+    // RDKit✔️❌:
+    // RDKit✔️❌:       if (!bond) {
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << "bond " << bondIdx
+    // RDKit✔️❌:             << " not found, cannot mark as zero order bond." << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       bond->setBondType(Bond::ZERO);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF190
+    // BEGIN COMPLETE PINNED SF184
+    // RDKit✔️✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+    // RDKit✔️✔️:   for (auto bnd : mol.bonds()) {
+    // RDKit✔️✔️:     unsigned int smilesIdx;
+    // RDKit✔️✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+    // RDKit✔️✔️:         smilesIdx == idx) {
+    // RDKit✔️✔️:       return bnd;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return nullptr;
+    // RDKit✔️✔️: }
+    // END COMPLETE PINNED SF184
+    // RDKit✔️✔️: void setBondType(BondType bT) { d_bondType = bT; }
+    // Source-local startBondIdx=0: skip an index outside the final bond count
+    // before consulting properties. Use the first source index match; present
+    // wrong-kind numeric properties propagate, with no warning or fallback.
+    // A source-index hole logs the native payload before failure. Valid writes
+    // change only d_bondType; query predicates, endpoints and properties stay.
+    // One borrowed O(E) canonical scan and one assignment, without graph copy.
+    if index >= graph.num_bonds() {
+        return Ok(());
+    }
+    let row = match query_bond_row_from_source_index(graph, index) {
+        Ok(row) => row,
+        Err(error @ CxQueryLoweringError::BondIndex { .. }) => {
+            warn_cx_zero_bond_not_found(index);
+            return Err(error);
+        }
+        Err(error) => return Err(error),
+    };
+    let bond = graph
+        .bonds_mut()
+        .get_mut(row)
+        .ok_or(CxQueryLoweringError::BondIndex { index })?;
+    bond.bond_mut().set_order(BondOrder::Zero);
+    Ok(())
+}
+
+fn warn_cx_zero_bond_not_found(index: usize) {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:             << "bond " << bondIdx
+    // RDKit✔️✔️:             << " not found, cannot mark as zero order bond." << std::endl;
+    // Source payload/default stderr, decimal native index, newline and flush;
+    // default ostream I/O does not throw. Independent RDLog enable flags,
+    // alternate sinks and prefixes remain unmodeled, not inferred here.
+    use std::io::Write;
+    let mut output = std::io::stderr().lock();
+    let _ = writeln!(
+        output,
+        "bond {} not found, cannot mark as zero order bond.",
+        index
+    )
+    .and_then(|_| output.flush());
 }
 
 /// Apply parsed CX records directly to the canonical query value.
@@ -1499,76 +2949,105 @@ pub fn apply_cx_to_query_graph(
     for record in parsed.records() {
         match record {
             CxRecord::Coordinates(coordinates) => {
-                // BEGIN RDKIT CPP FUNCTION parse_coords
-                // RDKit❗✔️: auto *conf = new Conformer(mol.getNumAtoms());
-                // RDKit❗✔️: mol.addConformer(conf);
-                // RDKit❗✔️: conf->setId(confIdx);
-                // RDKit❗✔️: unsigned int atIdx = 0;
-                // RDKit❗✔️: while (first <= last && *first != ')') {
-                // RDKit❗✔️:   if (VALID_ATIDX(atIdx)) {
-                // RDKit❗✔️:     conf->setAtomPos(atIdx - startAtomIdx, pt);
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   ++atIdx;
-                // RDKit❗✔️: }
-                // RDKit❗✔️: if (is3D && hasNonZeroZCoords(*conf)) {
-                // RDKit❗✔️:   conf->set3D(true);
-                // RDKit❗✔️: } else {
-                // RDKit❗✔️:   conf->set3D(false);
-                // RDKit❗✔️: }
-                // END RDKIT CPP FUNCTION parse_coords
-                // BEGIN RDKIT CPP MACRO VALID_ATIDX
-                // RDKit❗✔️: #define VALID_ATIDX(_atidx_) \
-                // RDKit❗✔️:   ((_atidx_) >= startAtomIdx && (_atidx_) < startAtomIdx + mol.getNumAtoms())
-                // END RDKIT CPP MACRO VALID_ATIDX
-                // BEGIN RDKIT CPP FUNCTION Conformer::Conformer(unsigned int)
-                // RDKit❗✔️: Conformer(unsigned int numAtoms)
-                // RDKit❗✔️:     : d_positions(numAtoms, RDGeom::Point3D(0.0, 0.0, 0.0)) {}
-                // END RDKIT CPP FUNCTION Conformer::Conformer(unsigned int)
-                // BEGIN RDKIT CPP FUNCTION Conformer::setAtomPos
-                // RDKit❗✔️: inline void setAtomPos(unsigned int atomId, const RDGeom::Point3D &position) {
-                // RDKit❗✔️:   if (atomId == std::numeric_limits<unsigned int>::max()) {
-                // RDKit❗✔️:     throw ValueErrorException("atom index overflow");
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   if (atomId >= d_positions.size()) {
-                // RDKit❗✔️:     d_positions.resize(atomId + 1, RDGeom::Point3D(0.0, 0.0, 0.0));
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   d_positions[atomId] = position;
-                // RDKit❗✔️: }
-                // END RDKIT CPP FUNCTION Conformer::setAtomPos
-                // BEGIN RDKIT CPP FUNCTION hasNonZeroZCoords
-                // RDKit❗✔️: inline bool hasNonZeroZCoords(const Conformer &conf) {
-                // RDKit❗✔️:   constexpr double zeroTol = 1e-3;
-                // RDKit❗✔️:   for (auto p : conf.getPositions()) {
-                // RDKit❗✔️:     if (std::abs(p.z) > zeroTol) {
-                // RDKit❗✔️:       return true;
-                // RDKit❗✔️:     }
-                // RDKit❗✔️:   }
-                // RDKit❗✔️:   return false;
-                // RDKit❗✔️: }
-                // END RDKIT CPP FUNCTION hasNonZeroZCoords
-                // RDKit uses a zero-filled atom-sized conformer and increments
-                // the source slot for every row. Here row ordinals are already
-                // decoded, and query graphs use startAtomIdx == 0.
+                // BEGIN COMPLETE PINNED SF188
+                // RDKit✔️❌: bool parse_coords(Iterator &first, Iterator last, RDKit::RWMol &mol,
+                // RDKit✔️❌:                   unsigned int startAtomIdx, unsigned int confIdx) {
+                // RDKit✔️❌:   if (first >= last || *first != '(') {
+                // RDKit✔️❌:     return false;
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:
+                // RDKit✔️❌:   auto *conf = new Conformer(mol.getNumAtoms());
+                // RDKit✔️❌:   mol.addConformer(conf);
+                // RDKit✔️❌:   conf->setId(confIdx);
+                // RDKit✔️❌:   ++first;
+                // RDKit✔️❌:   unsigned int atIdx = 0;
+                // RDKit✔️❌:   bool is3D = false;
+                // RDKit✔️❌:   while (first <= last && *first != ')') {
+                // RDKit✔️❌:     RDGeom::Point3D pt;
+                // RDKit✔️❌:     std::string tkn = read_text_to(first, last, ";)");
+                // RDKit✔️❌:     if (VALID_ATIDX(atIdx)) {
+                // RDKit✔️❌:       if (!tkn.empty()) {
+                // RDKit✔️❌:         std::vector<std::string> tokens;
+                // RDKit✔️❌:         boost::split(tokens, tkn, boost::is_any_of(std::string(",")));
+                // RDKit✔️❌:         if (tokens.size() >= 1 && tokens[0].size()) {
+                // RDKit✔️❌:           pt.x = boost::lexical_cast<double>(tokens[0]);
+                // RDKit✔️❌:         }
+                // RDKit✔️❌:         if (tokens.size() >= 2 && tokens[1].size()) {
+                // RDKit✔️❌:           pt.y = boost::lexical_cast<double>(tokens[1]);
+                // RDKit✔️❌:         }
+                // RDKit✔️❌:         if (tokens.size() >= 3 && tokens[2].size()) {
+                // RDKit✔️❌:           pt.z = boost::lexical_cast<double>(tokens[2]);
+                // RDKit✔️❌:           is3D = true;
+                // RDKit✔️❌:         }
+                // RDKit✔️❌:       }
+                // RDKit✔️❌:
+                // RDKit✔️❌:       conf->setAtomPos(atIdx - startAtomIdx, pt);
+                // RDKit✔️❌:     }
+                // RDKit✔️❌:     ++atIdx;
+                // RDKit✔️❌:     if (first <= last && *first != ')') {
+                // RDKit✔️❌:       ++first;
+                // RDKit✔️❌:     }
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:   // make sure that the conformer really is 3D!
+                // RDKit✔️❌:   if (is3D && hasNonZeroZCoords(*conf)) {
+                // RDKit✔️❌:     conf->set3D(true);
+                // RDKit✔️❌:   } else {
+                // RDKit✔️❌:     conf->set3D(false);
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:   if (first >= last || *first != ')') {
+                // RDKit✔️❌:     return false;
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:   ++first;
+                // RDKit✔️❌:   return true;
+                // RDKit✔️❌: }
+                // END COMPLETE PINNED SF188
                 let atom_count = graph.num_atoms();
+                let source_atom_count = u32::try_from(atom_count).map_err(|_| {
+                    CxQueryLoweringError::InvalidGraph(
+                        "CX atom count exceeds source unsigned32 domain".to_owned(),
+                    )
+                })?;
                 let mut values = vec![[0.0; 3]; atom_count];
-                // This allocates one atom-sized destination and scans each
-                // parsed row once; rows rejected by VALID_ATIDX do not write.
-                for (index, value) in coordinates.values.iter().enumerate() {
-                    if index >= atom_count {
-                        continue;
-                    }
-                    if let Some(value) = value {
-                        values[index] = *value;
+                for (slot, value) in coordinates.values.iter().enumerate() {
+                    let index = slot as u32;
+                    if index < source_atom_count {
+                        values[index as usize] = value.unwrap_or([0.0; 3]);
                     }
                 }
-                // Ignore z values belonging to source rows the conformer
-                // rejected as invalid atom indices before setting its 3D flag.
+                // This complete-record lowerer also accepts syntax-only records;
+                // derive the final flag from the actual mapped destination rows.
                 let is_3d = coordinates.is_3d && values.iter().any(|point| point[2].abs() > 1e-3);
                 graph
                     .add_conformer_3d(Conformer3D::new(coordinates.conformer, values, is_3d))
                     .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
             }
             CxRecord::AtomLabels(values) => {
+                // BEGIN COMPLETE PINNED SF187 GRAPH WRITE
+                // RDKit✔️✔️: bool parse_atom_labels(Iterator &first, Iterator last, RDKit::RWMol &mol,
+                // RDKit✔️✔️:                        unsigned int startAtomIdx) {
+                // RDKit✔️✔️:   if (first >= last || *first != '$') {
+                // RDKit✔️✔️:     return false;
+                // RDKit✔️✔️:   }
+                // RDKit✔️✔️:   ++first;
+                // RDKit✔️✔️:   unsigned int atIdx = 0;
+                // RDKit✔️✔️:   while (first <= last && *first != '$') {
+                // RDKit✔️✔️:     std::string tkn = read_text_to(first, last, ";$");
+                // RDKit✔️✔️:     if (!tkn.empty() && VALID_ATIDX(atIdx)) {
+                // RDKit✔️✔️:       mol.getAtomWithIdx(atIdx - startAtomIdx)
+                // RDKit✔️✔️:           ->setProp(RDKit::common_properties::atomLabel, tkn);
+                // RDKit✔️✔️:     }
+                // RDKit✔️✔️:     ++atIdx;
+                // RDKit✔️✔️:     if (first <= last && *first != '$') {
+                // RDKit✔️✔️:       ++first;
+                // RDKit✔️✔️:     }
+                // RDKit✔️✔️:   }
+                // RDKit✔️✔️:   if (first >= last || *first != '$') {
+                // RDKit✔️✔️:     return false;
+                // RDKit✔️✔️:   }
+                // RDKit✔️✔️:   ++first;
+                // RDKit✔️✔️:   return true;
+                // RDKit✔️✔️: }
+                // END COMPLETE PINNED SF187 GRAPH WRITE
                 // BEGIN RDKIT CPP FUNCTION parse_atom_labels
                 // RDKit✔️✔️: std::string tkn = read_text_to(first, last, ";$");
                 // RDKit✔️✔️: if (!tkn.empty() && VALID_ATIDX(atIdx)) {
@@ -1580,7 +3059,11 @@ pub fn apply_cx_to_query_graph(
                 // `cosmolkit-cx` has decoded numeric character entities before
                 // creating these ordered slots; keep each nonempty source value
                 // unchanged and skip slots outside the detached query graph.
-                for (index, value) in values.iter().enumerate() {
+                // RDKit✔️✔️: unsigned int atIdx = 0;
+                // RDKit✔️✔️: ++atIdx;
+                // Transport slot remains usize; source atom ordinal is u32.
+                for (slot, value) in values.iter().enumerate() {
+                    let index = (slot as u32) as usize;
                     if index >= graph.num_atoms() {
                         continue;
                     }
@@ -1590,11 +3073,36 @@ pub fn apply_cx_to_query_graph(
                     let atom = graph
                         .atom_mut(index)
                         .ok_or(CxQueryLoweringError::AtomIndex { index })?;
-                    atom.set_prop("atomLabel", value)
-                        .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+                    atom.set_prop("atomLabel", value)?;
                 }
             }
             CxRecord::AtomValues(values) => {
+                // BEGIN COMPLETE PINNED SF185 GRAPH WRITE
+                // RDKit✔️✔️: bool parse_atom_values(Iterator &first, Iterator last, RDKit::RWMol &mol,
+                // RDKit✔️✔️:                        unsigned int startAtomIdx) {
+                // RDKit✔️✔️:   if (first >= last || *first != ':') {
+                // RDKit✔️✔️:     return false;
+                // RDKit✔️✔️:   }
+                // RDKit✔️✔️:   ++first;
+                // RDKit✔️✔️:   unsigned int atIdx = 0;
+                // RDKit✔️✔️:   while (first <= last && *first != '$') {
+                // RDKit✔️✔️:     std::string tkn = read_text_to(first, last, ";$");
+                // RDKit✔️✔️:     if (tkn != "" && VALID_ATIDX(atIdx)) {
+                // RDKit✔️✔️:       mol.getAtomWithIdx(atIdx)->setProp(RDKit::common_properties::molFileValue,
+                // RDKit✔️✔️:                                          tkn);
+                // RDKit✔️✔️:     }
+                // RDKit✔️✔️:     ++atIdx;
+                // RDKit✔️✔️:     if (first <= last && *first != '$') {
+                // RDKit✔️✔️:       ++first;
+                // RDKit✔️✔️:     }
+                // RDKit✔️✔️:   }
+                // RDKit✔️✔️:   if (first >= last || *first != '$') {
+                // RDKit✔️✔️:     return false;
+                // RDKit✔️✔️:   }
+                // RDKit✔️✔️:   ++first;
+                // RDKit✔️✔️:   return true;
+                // RDKit✔️✔️: }
+                // END COMPLETE PINNED SF185 GRAPH WRITE
                 // BEGIN RDKIT CPP FUNCTION parse_atom_values
                 // RDKit✔️✔️: std::string tkn = read_text_to(first, last, ";$");
                 // RDKit✔️✔️: if (tkn != "" && VALID_ATIDX(atIdx)) {
@@ -1604,7 +3112,12 @@ pub fn apply_cx_to_query_graph(
                 // RDKit✔️✔️: ++atIdx;
                 // END RDKIT CPP FUNCTION parse_atom_values
                 // Values use the same already-decoded ordered slots as labels.
-                for (index, value) in values.iter().enumerate() {
+                // RDKit✔️✔️: unsigned int atIdx = 0;
+                // RDKit✔️✔️: ++atIdx;
+                // Record-slot ordinals are transport positions; chemistry uses
+                // the source 32-bit unsigned atom index, including wraparound.
+                for (slot, value) in values.iter().enumerate() {
+                    let index = (slot as u32) as usize;
                     if index >= graph.num_atoms() {
                         continue;
                     }
@@ -1614,8 +3127,7 @@ pub fn apply_cx_to_query_graph(
                     let atom = graph
                         .atom_mut(index)
                         .ok_or(CxQueryLoweringError::AtomIndex { index })?;
-                    atom.set_prop("molFileValue", value)
-                        .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+                    atom.set_prop("molFileValue", value)?;
                 }
             }
             CxRecord::AtomProperties(properties) => {
@@ -1645,98 +3157,17 @@ pub fn apply_cx_to_query_graph(
                             .ok_or(CxQueryLoweringError::AtomIndex {
                                 index: property.atom,
                             })?;
-                    atom.set_prop(property.name.clone(), property.value.clone())
-                        .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+                    atom.set_prop(property.name.clone(), property.value.clone())?;
                 }
             }
             CxRecord::CoordinateBonds(annotation) => {
-                let order = match annotation.kind {
-                    CxCoordinateBondKind::Dative => BondOrder::Dative,
-                    CxCoordinateBondKind::Hydrogen => BondOrder::Hydrogen,
-                };
                 for reference in &annotation.bonds {
-                    // RDKit❗✔️: if (VALID_ATIDX(aidx) && VALID_BNDIDX(bidx)) {
-                    // RDKit❗✔️:   auto bnd = get_bond_with_smiles_idx(mol, bidx - startBondIdx);
-                    // RDKit❗✔️:   if (!bnd || (bnd->getBeginAtomIdx() != aidx - startAtomIdx &&
-                    // RDKit❗✔️:                bnd->getEndAtomIdx() != aidx - startAtomIdx)) {
-                    // RDKit❗✔️:     return false;
-                    // RDKit❗✔️:   }
-                    // RDKit❗✔️:   bnd->setBondType(typ);
-                    // RDKit❗✔️:   if (bnd->getBeginAtomIdx() != aidx - startAtomIdx) {
-                    // RDKit❗✔️:     unsigned int tmp = bnd->getBeginAtomIdx();
-                    // RDKit❗✔️:     bnd->setBeginAtomIdx(aidx - startAtomIdx);
-                    // RDKit❗✔️:     bnd->setEndAtomIdx(tmp);
-                    // RDKit❗✔️:   }
-                    // RDKit❗✔️: }
-                    // RDKit❗✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-                    // RDKit❗✔️:   for (auto bnd : mol.bonds()) {
-                    // RDKit❗✔️:     unsigned int smilesIdx;
-                    // RDKit❗✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-                    // RDKit❗✔️:         smilesIdx == idx) {
-                    // RDKit❗✔️:       return bnd;
-                    // RDKit❗✔️:     }
-                    // RDKit❗✔️:   }
-                    // RDKit❗✔️:   return nullptr;
-                    // RDKit❗✔️: }
-                    // Grammar source index is resolved by a source-shaped
-                    // property scan, independently of final row ordering.
-                    if reference.atom >= graph.num_atoms() || reference.bond >= graph.num_bonds() {
-                        continue;
-                    }
-                    let row = query_bond_row_from_source_index(graph, reference.bond)?;
-                    let bond =
-                        graph
-                            .bonds_mut()
-                            .get_mut(row)
-                            .ok_or(CxQueryLoweringError::BondIndex {
-                                index: reference.bond,
-                            })?;
-                    if bond.begin().index() != reference.atom
-                        && bond.end().index() != reference.atom
-                    {
-                        return Err(CxQueryLoweringError::BondAtomMismatch {
-                            atom: reference.atom,
-                            bond: reference.bond,
-                        });
-                    }
-                    let begin = bond.begin();
-                    bond.bond_mut().set_order(order);
-                    if begin.index() != reference.atom {
-                        bond.bond_mut()
-                            .set_endpoints(AtomId::new(reference.atom), begin);
-                    }
+                    apply_cx_coordinate_bond(graph, *reference, annotation.kind)?;
                 }
             }
             CxRecord::ZeroBonds(indices) => {
                 for &index in indices {
-                    // RDKit❗✔️: if (VALID_BNDIDX(bondIdx)) {
-                    // RDKit❗✔️:   auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
-                    // RDKit❗✔️:   if (!bond) {
-                    // RDKit❗✔️:     return false;
-                    // RDKit❗✔️:   }
-                    // RDKit❗✔️:   bond->setBondType(Bond::ZERO);
-                    // RDKit❗✔️: }
-                    // RDKit❗✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-                    // RDKit❗✔️:   for (auto bnd : mol.bonds()) {
-                    // RDKit❗✔️:     unsigned int smilesIdx;
-                    // RDKit❗✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-                    // RDKit❗✔️:         smilesIdx == idx) {
-                    // RDKit❗✔️:       return bnd;
-                    // RDKit❗✔️:     }
-                    // RDKit❗✔️:   }
-                    // RDKit❗✔️:   return nullptr;
-                    // RDKit❗✔️: }
-                    // Valid source window uses final bond count; an index
-                    // hole is an error rather than an invented row fallback.
-                    if index >= graph.num_bonds() {
-                        continue;
-                    }
-                    let row = query_bond_row_from_source_index(graph, index)?;
-                    let bond = graph
-                        .bonds_mut()
-                        .get_mut(row)
-                        .ok_or(CxQueryLoweringError::BondIndex { index })?;
-                    bond.bond_mut().set_order(BondOrder::Zero);
+                    apply_cx_zero_bond(graph, index)?;
                 }
             }
             CxRecord::Unsaturation(indices) => {
@@ -1807,6 +3238,13 @@ pub fn apply_cx_to_query_graph(
 
 #[cfg(test)]
 mod tests {
+    fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+    fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+        fixture_text(value.as_string().expect("original string fixture kind"))
+    }
+
     use super::*;
     use crate::query_behavior::{
         make_atom_in_ring_of_size_query, make_atom_min_ring_size_query,
@@ -1835,7 +3273,10 @@ mod tests {
         QueryGraph::from_parts(
             atoms,
             bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -1879,13 +3320,14 @@ mod tests {
                     .with_parent_atoms(vec![AtomId::new(1)])
                     .with_label("typed polymer label")
                     .with_data(SGroupData {
-                        field_name: Some("FIELD".to_owned()),
-                        field_type: Some("S".to_owned()),
-                        values: vec!["one".to_owned(), "two".to_owned()],
+                        field_name: Some("FIELD".into()),
+                        field_type: Some("S".into()),
+                        values: vec!["one".into(), "two".into()],
                         ..SGroupData::default()
                     })
                     .with_cstates(vec![SGroupCState::new(BondId::new(0), [0.25, 0.5, 0.75])])
                     .with_prop("origin", "existing")
+                    .unwrap()
                     .with_data_field("first source row")
                     .with_data_field("second source row");
             replace_query_substance_groups(&mut query, vec![substance_group.clone()])
@@ -1901,7 +3343,7 @@ mod tests {
                 .expect("stereo group references are valid");
 
             let parsed = ParsedCxExtensions::new(
-                vec![CxRecord::AtomLabels(vec![Some(label.to_owned()), None])],
+                vec![CxRecord::AtomLabels(vec![Some(label.into()), None])],
                 0,
             );
             apply_cx_to_query_graph(&mut query, &parsed).expect("source CX label lowering");
@@ -1916,18 +3358,16 @@ mod tests {
             assert!(atom.no_implicit(), "{label}");
             assert_eq!(atom.formal_charge(), 0, "{label}");
             assert_eq!(atom.isotope(), None, "{label}");
-            assert_eq!(atom.atom_map(), None, "{label}");
+            assert_eq!(atom.atom_map(), Some(9), "{label}");
             assert_eq!(
                 atom.prop("atomLabel"),
-                Some(&cosmolkit_model::PropertyValue::String(label.to_owned())),
+                Some(&cosmolkit_model::PropertyValue::String(label.into())),
                 "{label}"
             );
             assert_eq!(atom.prop("dummyLabel"), None, "{label}");
             assert_eq!(
                 atom.prop("sourceProperty"),
-                Some(&cosmolkit_model::PropertyValue::String(
-                    "retained".to_owned()
-                )),
+                Some(&cosmolkit_model::PropertyValue::String("retained".into())),
                 "{label}"
             );
             assert_eq!(query_substance_groups(&query), &[substance_group]);
@@ -1952,7 +3392,7 @@ mod tests {
             let source_predicate = atom.predicate().clone();
             let source_identity = atom.identity();
             let parsed = ParsedCxExtensions::new(
-                vec![CxRecord::AtomLabels(vec![Some(label.to_owned()), None])],
+                vec![CxRecord::AtomLabels(vec![Some(label.into()), None])],
                 0,
             );
 
@@ -1990,11 +3430,11 @@ mod tests {
             .expect("dummy label property");
         let parsed = ParsedCxExtensions::new(
             vec![
-                CxRecord::AtomLabels(vec![Some("Q_e".to_owned()), None]),
+                CxRecord::AtomLabels(vec![Some("Q_e".into()), None]),
                 CxRecord::AtomProperties(vec![cosmolkit_cx::CxAtomProperty {
                     atom: 0,
-                    name: "atomLabel".to_owned(),
-                    value: "ordinary after atomProp".to_owned(),
+                    name: "atomLabel".into(),
+                    value: "ordinary after atomProp".into(),
                 }]),
             ],
             0,
@@ -2006,7 +3446,7 @@ mod tests {
         assert_eq!(
             atom.prop("atomLabel"),
             Some(&cosmolkit_model::PropertyValue::String(
-                "ordinary after atomProp".to_owned()
+                "ordinary after atomProp".into()
             ))
         );
         assert_eq!(atom.prop("dummyLabel"), None);
@@ -2036,16 +3476,19 @@ mod tests {
         let atom = query.atom(0).expect("guarded atom");
         assert_eq!(
             atom.prop("atomLabel"),
-            Some(&cosmolkit_model::PropertyValue::String("Pol_p".to_owned()))
+            Some(&cosmolkit_model::PropertyValue::String("Pol_p".into()))
         );
         assert_eq!(
             atom.prop("dummyLabel"),
             Some(&cosmolkit_model::PropertyValue::String(
-                "later property".to_owned()
+                "later property".into()
             ))
         );
         assert_eq!(atom.predicate(), &first_predicate);
-        assert_eq!(query.prop(CX_LABELS_PROCESSED_PROP), Some("1"));
+        assert_eq!(
+            query.prop(CX_LABELS_PROCESSED_PROP),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
 
         finish_cx_smiles_labels(&mut query).expect("outer parse clears the guard");
         assert_eq!(query.prop(CX_LABELS_PROCESSED_PROP), None);
@@ -2101,7 +3544,10 @@ mod tests {
         let mut query = QueryGraph::from_parts(
             vec![query_atom],
             Vec::new(),
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -2129,7 +3575,7 @@ mod tests {
                     atom: 1,
                     constraint: CxCountConstraint::Exact(1),
                 }]),
-                CxRecord::AtomLabels(vec![Some("left".to_owned()), None]),
+                CxRecord::AtomLabels(vec![Some("left".into()), None]),
             ],
             8,
         );
@@ -2137,7 +3583,7 @@ mod tests {
         apply_cx_to_query_graph(&mut query, &parsed).unwrap();
         assert_eq!(
             query.atom(0).unwrap().prop("atomLabel"),
-            Some(&PropertyValue::String("left".to_owned()))
+            Some(&PropertyValue::String("left".into()))
         );
         assert!(matches!(
             query.atom(0).unwrap().predicate(),
@@ -2265,9 +3711,12 @@ mod tests {
     #[test]
     fn cx_progress_linknodes_empty_record_preserves_existing_property() {
         let parsed = ParsedCxExtensions::new(vec![CxRecord::LinkNodes(Vec::new())], 4);
-        let mut query = graph().with_prop("molFileLinkNodes", "prior");
+        let mut query = graph().with_prop("molFileLinkNodes", "prior").unwrap();
         apply_cx_to_query_graph(&mut query, &parsed).expect("empty source accumulator");
-        assert_eq!(query.prop("molFileLinkNodes"), Some("prior"));
+        assert_eq!(
+            query.prop("molFileLinkNodes").map(fixture_value),
+            Some("prior")
+        );
     }
 
     #[test]
@@ -2290,7 +3739,10 @@ mod tests {
         let mut query = QueryGraph::from_parts(
             atoms,
             bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -2323,7 +3775,7 @@ mod tests {
         apply_cx_to_query_graph(&mut query, &parsed).expect("source link-node projection");
 
         assert_eq!(
-            query.prop("molFileLinkNodes"),
+            query.prop("_molLinkNodes").map(fixture_value),
             Some("1 3 2 1 2 1 3|2 4 2 1 2 1 3")
         );
     }
@@ -2347,10 +3799,13 @@ mod tests {
             ])],
             0,
         );
-        let mut query = graph().with_prop("molFileLinkNodes", "prior");
+        let mut query = graph().with_prop("molFileLinkNodes", "prior").unwrap();
 
         assert!(apply_cx_to_query_graph(&mut query, &parsed).is_err());
-        assert_eq!(query.prop("molFileLinkNodes"), Some("prior"));
+        assert_eq!(
+            query.prop("molFileLinkNodes").map(fixture_value),
+            Some("prior")
+        );
     }
 
     #[test]
@@ -2414,15 +3869,21 @@ mod tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(5)
                 .with_prop("_cxsmilesindex", "5")
-                .with_prop("index", "71"),
+                .unwrap()
+                .with_prop("index", "71")
+                .unwrap(),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .with_prop("index", "92"),
+                .unwrap()
+                .with_prop("index", "92")
+                .unwrap(),
             SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(1)
                 .with_prop("_cxsmilesindex", "1")
-                .with_prop("index", "93"),
+                .unwrap()
+                .with_prop("index", "93")
+                .unwrap(),
         ];
         let parsed =
             cosmolkit_cx::parse_cx_extensions("|SgH:5:0.1.0|").expect("source hierarchy syntax");
@@ -2439,13 +3900,19 @@ mod tests {
         assert_eq!(groups[0].parent(), None);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1].props().get("PARENT").map(String::as_str),
-            Some("71")
+            groups[1]
+                .props()
+                .get("PARENT".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(71_u32)
         );
         assert_eq!(groups[2].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[2].props().get("PARENT").map(String::as_str),
-            Some("71")
+            groups[2]
+                .props()
+                .get("PARENT".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(71_u32)
         );
     }
 
@@ -2455,11 +3922,15 @@ mod tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(5)
                 .with_prop("_cxsmilesindex", "5")
-                .with_prop("index", "71"),
+                .unwrap()
+                .with_prop("index", "71")
+                .unwrap(),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .with_prop("index", "92"),
+                .unwrap()
+                .with_prop("index", "92")
+                .unwrap(),
         ];
         let parsed = cosmolkit_cx::parse_cx_extensions("|SgH:99:4294967295|")
             .expect("source hierarchy syntax");
@@ -2478,14 +3949,19 @@ mod tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(5)
                 .with_prop("_cxsmilesindex", "5")
-                .with_prop("index", "71"),
+                .unwrap()
+                .with_prop("index", "71")
+                .unwrap(),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .with_prop("index", "92"),
+                .unwrap()
+                .with_prop("index", "92")
+                .unwrap(),
             SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(1)
-                .with_prop("_cxsmilesindex", "1"),
+                .with_prop("_cxsmilesindex", "1")
+                .unwrap(),
         ];
         let parsed =
             cosmolkit_cx::parse_cx_extensions("|SgH:5:0.1|").expect("source hierarchy syntax");
@@ -2499,11 +3975,14 @@ mod tests {
         let groups = query_substance_groups(&query);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1].props().get("PARENT").map(String::as_str),
-            Some("71")
+            groups[1]
+                .props()
+                .get("PARENT".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(71_u32)
         );
         assert_eq!(groups[2].parent(), None);
-        assert_eq!(groups[2].props().get("PARENT"), None);
+        assert_eq!(groups[2].props().get("PARENT".as_bytes()), None);
     }
 
     #[test]
@@ -2511,11 +3990,14 @@ mod tests {
         let groups = vec![
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(17)
-                .with_prop("_cxsmilesindex", "17"),
+                .with_prop("_cxsmilesindex", "17")
+                .unwrap(),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .with_prop("index", "4"),
+                .unwrap()
+                .with_prop("index", "4")
+                .unwrap(),
         ];
         let parsed = ParsedCxExtensions::new(
             vec![CxRecord::SGroupHierarchy(vec![CxSGroupHierarchy {
@@ -2531,7 +4013,13 @@ mod tests {
 
         let child = &query_substance_groups(&query)[1];
         assert_eq!(child.parent(), Some(SubstanceGroupId::new(0)));
-        assert_eq!(child.props().get("PARENT").map(String::as_str), Some("17"));
+        assert_eq!(
+            child
+                .props()
+                .get("PARENT".as_bytes())
+                .map(|value| value.as_uint().expect("source unsigned property kind")),
+            Some(17_u32)
+        );
     }
 }
 
@@ -2566,7 +4054,10 @@ mod uint_complete_source_condition_cells {
         cosmolkit_model::QueryGraph::from_parts(
             atoms,
             bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             vec![],
             vec![],
             vec![],

@@ -96,12 +96,17 @@ enum StateModel {
     InPlace,
     ReadOnly,
 }
+enum BindingPropertyAccess {
+    Getter,
+    Setter,
+}
 struct BindingContractEntry {
     semantic_id: &'static str,
     item: BindingItem,
     owner: BindingOwner,
     rust_path: &'static str,
     python_name: &'static str,
+    python_property: Option<BindingPropertyAccess>,
     javascript_name: &'static str,
     feature: &'static str,
     required_capabilities: &'static [&'static str],
@@ -604,6 +609,53 @@ fn operation_identity_canonical_names_and_projections_fail_closed() {
         "javascript: \"molecular_weight\"",
     );
     assert!(error_for(registry_with(&javascript)).contains("JavaScript callable name must"));
+}
+
+#[test]
+fn python_properties_and_constructor_are_explicit_validated_projections() {
+    let getter = r#"{
+        semantic_id:"Params.limit", item:callable, owner:type_,
+        rust:crate::Params::limit, python:"limit", python_property:getter,
+        javascript:"limit", feature:"test", kind:instance, receiver:shared,
+        parameters:[], output:usize, error:none, state:read_only, operation:none,
+        signature:fn(&crate::Params)->usize,
+    }"#;
+    let setter = r#"{
+        semantic_id:"Params.set_limit", item:callable, owner:type_,
+        rust:crate::Params::set_limit, python:"limit", python_property:setter,
+        javascript:"setLimit", feature:"test", kind:instance, receiver:mutable,
+        parameters:[{name:value,type:usize,default:required}],
+        output:(), error:none, state:in_place, operation:none,
+        signature:fn(&mut crate::Params,usize)->(),
+    }"#;
+    let constructor = r#"{
+        semantic_id:"Params.new", item:callable, owner:type_,
+        rust:crate::Params::new, python:"__new__", javascript:"new",
+        feature:"test", kind:static_, parameters:[], output:crate::Params,
+        error:none, state:value_returning, operation:none, signature:fn()->crate::Params,
+    }"#;
+    let valid = format!("{getter},{setter},{constructor}");
+    let generated = compact(expand_binding_contract(registry_with(&valid)).unwrap());
+    assert!(generated.contains("Some(crate::BindingPropertyAccess::Getter)"));
+    assert!(generated.contains("Some(crate::BindingPropertyAccess::Setter)"));
+    assert!(
+        error_for(registry_with(
+            &setter.replace("python_property:setter", "python_property:getter")
+        ))
+        .contains("getter requires")
+    );
+    assert!(
+        error_for(registry_with(
+            &getter.replace("python_property:getter", "python_property:setter")
+        ))
+        .contains("setter requires")
+    );
+    assert!(
+        error_for(registry_with(
+            &constructor.replace("python:\"__new__\"", "python:\"__init__\"")
+        ))
+        .contains("Python callable name must equal")
+    );
 }
 
 #[test]

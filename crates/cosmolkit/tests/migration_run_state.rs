@@ -74,7 +74,10 @@ fn clone_shares_state_without_exposing_aliasing() {
     assert!(std::ptr::eq(cloned.properties(), source.properties()));
     drop(source);
     assert_eq!(cloned.num_atoms(), 2);
-    assert_eq!(cloned.properties().name(), Some("source"));
+    assert_eq!(
+        cloned.properties().name(),
+        Some(&cosmolkit::PropertyText::from("source"))
+    );
 }
 
 #[test]

@@ -140,7 +140,7 @@ pub fn expand_attachment_points(
         };
         let parent = AtomId::new(parent_index);
         for &label in labels {
-            topology.atoms[parent_index].clear_prop("molAttachPoint");
+            topology.atoms[parent_index].clear_prop("molAttachPoint")?;
             let atom_id = AtomId::new(topology.atoms.len());
             let bond_id = BondId::new(topology.bonds.len());
             let mut atom = Atom::from_spec(atom_id, AtomSpec::new(Element::DUMMY));

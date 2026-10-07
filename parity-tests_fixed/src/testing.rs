@@ -86,6 +86,9 @@ fn equal(expected: &Record, actual: &Record) -> bool {
         return false;
     }
     match (&expected.output, &actual.output) {
+        (registry::Value::MolAlign(a), registry::Value::MolAlign(b)) => {
+            crate::molalign::matches(a, b)
+        }
         (registry::Value::Mmff(a), registry::Value::Mmff(b)) => crate::mmff::matches(a, b),
         (registry::Value::Uff(a), registry::Value::Uff(b)) => {
             crate::uff::matches(&expected.input, a, b)
@@ -138,6 +141,14 @@ fn batch(input: &Value) -> Result<Value> {
                 ..Default::default()
             },
         )
+        .map_err(|e| e.to_string())?;
+    let smiles = smiles
+        .into_iter()
+        .map(|text| {
+            text.map(|text| String::from_utf8(text.into_bytes()))
+                .transpose()
+        })
+        .collect::<std::result::Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     if batch.len() != cases.len()
         || batch.valid_mask() != mask

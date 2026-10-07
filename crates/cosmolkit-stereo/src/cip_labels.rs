@@ -473,7 +473,7 @@ fn cip_clear_selected_labels(
     molecule: &mut Cow<'_, TopologyBlock>,
     atom_mask: &[bool],
     bond_mask: &[bool],
-) {
+) -> Result<(), CipLabelerError> {
     // RDKit✔️❌: getFocus()->clearProp(common_properties::_CIPCode);
     // RDKit✔️❌: dp_bond->clearProp(common_properties::_CIPCode);
     // Only actual configuration reset writes detach topology. A first write
@@ -488,7 +488,9 @@ fn cip_clear_selected_labels(
                 atom.chiral_tag(),
                 ChiralTag::TetrahedralCw | ChiralTag::TetrahedralCcw
             ) {
-                molecule.to_mut().atoms[idx].clear_prop("_CIPCode");
+                molecule.to_mut().atoms[idx]
+                    .clear_prop("_CIPCode")
+                    .map_err(|source| CipLabelerError::AtomProperty { atom: idx, source })?;
             }
         }
     }
@@ -506,10 +508,13 @@ fn cip_clear_selected_labels(
                     | BondStereo::AtropCcw
                     | BondStereo::AtropCw
             ) {
-                molecule.to_mut().bonds[idx].clear_prop("_CIPCode");
+                molecule.to_mut().bonds[idx]
+                    .clear_prop("_CIPCode")
+                    .map_err(|source| CipLabelerError::BondValue { bond: idx, source })?;
             }
         }
     }
+    Ok(())
 }
 
 fn cip_apply_primary_labels(
@@ -656,8 +661,8 @@ fn assign_cip_labels_for_masks<'a>(
     // RDKit✔️✔️:   mol.setProp(common_properties::_CIPComputed, true, computed);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION assignCIPLabels selected overload
-    properties.to_mut().clear_prop("_CIPComputed");
-    cip_clear_selected_labels(&mut topology, atom_mask, bond_mask);
+    properties.to_mut().clear_prop("_CIPComputed")?;
+    cip_clear_selected_labels(&mut topology, atom_mask, bond_mask)?;
 
     let mut configs = cip_find_configs(&topology, atom_mask, bond_mask)?;
     cip_label(&mut configs, max_recursive_iterations)?;
@@ -671,16 +676,9 @@ fn assign_cip_labels_for_masks<'a>(
         cip_apply_primary_labels(topology.to_mut(), labels)?;
     }
     topology.validate()?;
-    // RDKit❗✔️: const bool computed = true;
-    // RDKit❗✔️: mol.setProp(common_properties::_CIPComputed, true, computed);
-    // RDKit❗✔️: case RDTypeTag::BoolTag:
-    // RDKit❗✔️:   res = boost::lexical_cast<std::string>(rdvalue_cast<bool>(val));
-    // RDKit❗✔️:   break;
-    // Source BoolTag string conversion is 1/0, as implemented by the sole
-    // core property formatter. MoleculeProperties currently stores strings;
-    // preserve that source projection, rather than Rust bool Display spelling.
-    // One constant string allocation is equivalent to source scalar formatting.
-    properties.to_mut().set_computed_prop("_CIPComputed", "1")?;
+    properties
+        .to_mut()
+        .set_computed_prop("_CIPComputed", cosmolkit_model::PropertyValue::Bool(true))?;
     Ok((topology, properties))
 }
 
@@ -1889,6 +1887,39 @@ impl<'a> CipSp2Bond<'a> {
             // rank stops only its focus, while a throwing vector cast aborts.
             // This is two source-order adjacency scans, without eager preflight.
             let mut read_focus = |focus: usize, skip: usize| -> Result<bool, CipLabelerError> {
+                // RDKit❗✔️: const Atom *findHighestCIPNeighbor(const Atom *atom, const Atom *skipAtom) {
+                // RDKit❗✔️:   PRECONDITION(atom, "bad atom");
+                // RDKit❗✔️:
+                // RDKit❗✔️:   unsigned bestCipRank = 0;
+                // RDKit❗✔️:   const Atom *bestCipRankedAtom = nullptr;
+                // RDKit❗✔️:   const auto &mol = atom->getOwningMol();
+                // RDKit❗✔️:
+                // RDKit❗✔️:   for (const auto neighbor : mol.atomNeighbors(atom)) {
+                // RDKit❗✔️:     if (neighbor == skipAtom) {
+                // RDKit❗✔️:       continue;
+                // RDKit❗✔️:     }
+                // RDKit❗✔️:     unsigned cip = 0;
+                // RDKit❗✔️:     if (!neighbor->getPropIfPresent(common_properties::_CIPRank, cip)) {
+                // RDKit❗✔️:       // If at least one of the atoms doesn't have a CIP rank, the highest rank
+                // RDKit❗✔️:       // does not make sense, so return a nullptr.
+                // RDKit❗✔️:       return nullptr;
+                // RDKit❗✔️:     } else if (cip > bestCipRank || bestCipRankedAtom == nullptr) {
+                // RDKit❗✔️:       bestCipRank = cip;
+                // RDKit❗✔️:       bestCipRankedAtom = neighbor;
+                // RDKit❗✔️:     } else if (cip == bestCipRank) {
+                // RDKit❗✔️:       // This also doesn't make sense if there is a tie (if that's possible).
+                // RDKit❗✔️:       // We still keep the best CIP rank in case something better comes around
+                // RDKit❗✔️:       // (also not sure if that's possible).
+                // RDKit❗✔️:       BOOST_LOG(rdWarningLog)
+                // RDKit❗✔️:           << "Warning: duplicate CIP ranks found in findHighestCIPNeighbor()"
+                // RDKit❗✔️:           << std::endl;
+                // RDKit❗✔️:       bestCipRankedAtom = nullptr;
+                // RDKit❗✔️:     }
+                // RDKit❗✔️:   }
+                // RDKit❗✔️:   return bestCipRankedAtom;
+                // RDKit❗✔️: }
+                // Presence short-circuits this focus only; converter failures propagate.
+                // Two adjacency scans, O(sum degree + counted rank bytes), no preflight clone.
                 // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:488-497
                 // RDKit❗✔️: template <>
                 // RDKit❗✔️: inline unsigned int rdvalue_cast<unsigned int>(RDValue_cast_t v) {
@@ -1908,23 +1939,23 @@ impl<'a> CipSp2Bond<'a> {
                     let Some(value) = molecule.atoms[neighbor.atom_index].prop("_CIPRank") else {
                         return Ok(false);
                     };
-                    let rank = match value {
-                        cosmolkit_model::PropertyValue::Int(value) => u32::try_from(*value).ok(),
-                        cosmolkit_model::PropertyValue::UInt(value) => Some(*value),
-                        cosmolkit_model::PropertyValue::String(value) => value.parse::<u32>().ok(),
-                        cosmolkit_model::PropertyValue::IntVector(_) => {
-                            return Err(CipLabelerError::InvalidPropertyKind {
-                                atom: neighbor.atom_index,
-                                property: "_CIPRank",
-                                kind: value.kind(),
-                            });
-                        }
-                        cosmolkit_model::PropertyValue::Double(_)
-                        | cosmolkit_model::PropertyValue::Bool(_) => None,
-                    };
-                    let Some(rank) = rank else {
-                        return Ok(false);
-                    };
+                    let rank =
+                        cosmolkit_core::property_value_to_uint(value).map_err(
+                            |source| match source {
+                                cosmolkit_core::PropertyUIntReadError::InvalidKind { kind } => {
+                                    CipLabelerError::InvalidPropertyKind {
+                                        atom: neighbor.atom_index,
+                                        property: "_CIPRank",
+                                        kind,
+                                    }
+                                }
+                                source => CipLabelerError::UnsignedPropertyRead {
+                                    atom: neighbor.atom_index,
+                                    property: "_CIPRank",
+                                    source,
+                                },
+                            },
+                        )?;
                     ranks[neighbor.atom_index] = rank;
                 }
                 Ok(true)

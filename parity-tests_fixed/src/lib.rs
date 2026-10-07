@@ -1,8 +1,10 @@
 //! Corpus and designated source-regression preparation/comparison only.
+pub mod bio_mmcif;
 mod descriptors;
 mod execute;
 pub mod fingerprints;
 pub mod mmff;
+pub mod molalign;
 pub mod molecular;
 mod reference;
 pub mod registry;

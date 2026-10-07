@@ -76,6 +76,9 @@ pub use crate::FunctionStatus;
 pub(crate) use runtime::context::{OpParts, PreservationProof};
 pub(crate) use runtime::context::{PendingMolecule, PendingResult, ResultFinalizer};
 pub(crate) use runtime::multiple::MultiOutputOpParts;
+pub use runtime::multiple::StereoisomerIterator;
+#[cfg(cosmolkit_runtime_privacy_probe)]
+pub(crate) use runtime::registry::LazyOutputProbeAccess;
 #[cfg(feature = "cap-stereo")]
 pub(crate) use runtime::registry::PotentialStereoAccess;
 #[cfg(feature = "cap-sanitize")]
@@ -139,4 +142,11 @@ mod conformer;
 pub(crate) use runtime::registry::{
     With3dConformerAccess, With3dConformerResultAccess, With3dConformersAccess,
     With3dConformersResultAccess,
+};
+
+#[cfg(feature = "cap-stereoisomers")]
+mod stereoisomers;
+#[cfg(feature = "cap-stereoisomers")]
+pub(crate) use runtime::registry::{
+    EnumerateStereoisomersAccess, EnumerateStereoisomersWithRandomBitsAccess,
 };

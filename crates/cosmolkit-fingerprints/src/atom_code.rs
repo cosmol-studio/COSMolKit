@@ -375,9 +375,9 @@ pub fn atom_code<'a>(
         if let Some(value) = input.topology.atoms[atom_id.index()].prop("_CIPCode") {
             let cip_code =
                 property_value_to_string(value).map_err(AtomCodeError::PropertyString)?;
-            if cip_code == "R" {
+            if cip_code.as_bytes() == b"R" {
                 code |= 1 << 9;
-            } else if cip_code == "S" {
+            } else if cip_code.as_bytes() == b"S" {
                 code |= 2 << 9;
             }
         }

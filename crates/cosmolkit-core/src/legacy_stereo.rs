@@ -146,8 +146,10 @@ fn is_legal_legacy_center(
         }
         15 | 33 => true,
         16 | 34 => {
-            valence.explicit_valence[center.index()] == 4
-                || (valence.explicit_valence[center.index()] == 3 && atom.formal_charge() == 1)
+            // Source getValence observes the stored signed-width E field.
+            // Reuse its existing owner; no fresh assignment or allocation.
+            let explicit = crate::valence::cached_explicit_valence(atom, Some(valence))?;
+            explicit == 4 || (explicit == 3 && atom.formal_charge() == 1)
         }
         _ => false,
     };
@@ -443,9 +445,10 @@ fn rerank_atoms(
         invariant += match atom
             .prop("_CIPCode")
             .and_then(|value| value.as_string().ok())
+            .map(|value| value.as_bytes())
         {
-            Some("S") => 10,
-            Some("R") => 20,
+            Some(b"S") => 10,
+            Some(b"R") => 20,
             _ => 0,
         };
         for neighbor in topology.adjacency.neighbors_of(index) {
@@ -815,10 +818,10 @@ fn assign_legacy_stereochemistry_impl(
     let rings = ring_update.as_ref().unwrap_or(source_rings);
     for atom in &mut topology.atoms {
         if clean_it {
-            atom.clear_prop("_CIPCode");
-            atom.clear_prop("_ChiralityPossible");
-            atom.clear_prop("_ringStereochemCand");
-            atom.clear_prop("_ringStereoAtoms");
+            atom.clear_prop("_CIPCode")?;
+            atom.clear_prop("_ChiralityPossible")?;
+            atom.clear_prop("_ringStereochemCand")?;
+            atom.clear_prop("_ringStereoAtoms")?;
         }
     }
     // RDKit✔️✔️: bool hasStereoAtoms = false;  // flagPossibleStereoCenters;
@@ -877,7 +880,7 @@ fn assign_legacy_stereochemistry_impl(
     // RDKit✔️✔️:   }
     for bond_index in 0..topology.bonds.len() {
         if clean_it {
-            topology.bonds[bond_index].clear_prop("_CIPCode");
+            topology.bonds[bond_index].clear_prop("_CIPCode")?;
         }
         let bond = topology.bonds[bond_index].clone();
         let source_should_detect =
@@ -1422,7 +1425,7 @@ mod state_owner_tests {
             let value = match row[3].as_str() {
                 "1" => PropertyValue::Int(parse(&row[5])),
                 "6" => PropertyValue::UInt(parse::<u32>(&row[5])),
-                "3" => PropertyValue::String(unquote(&row[5])),
+                "3" => PropertyValue::String((unquote(&row[5])).into()),
                 kind => panic!("unmodeled fixed atom/bond kind {kind}"),
             };
             let index: usize = parse(&row[1][1..]);
@@ -1456,7 +1459,7 @@ mod state_owner_tests {
                 .collect::<Vec<_>>();
             for key in ["_CIPRank", "_CIPCode", "_ChiralityPossible"] {
                 assert_eq!(
-                    atom.is_prop_computed(key),
+                    atom.is_prop_computed(key).unwrap(),
                     source_keys.iter().any(|k| k == key)
                 );
             }

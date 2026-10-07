@@ -337,8 +337,17 @@ impl Conformer3D {
     fn coordinates(&self) -> Vec<[f64; 3]> {
         self.inner.coordinates().to_vec()
     }
-    fn props(&self) -> std::collections::BTreeMap<String, String> {
-        self.inner.props().clone()
+    fn props(&self, py: Python<'_>) -> PyResult<std::collections::BTreeMap<String, String>> {
+        self.inner
+            .props()
+            .iter()
+            .map(|(key, value)| {
+                Ok((
+                    crate::canonical_sdf::decode_source_text(py, key)?,
+                    crate::canonical_sdf::decode_source_text(py, value)?,
+                ))
+            })
+            .collect()
     }
 }
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {

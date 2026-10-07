@@ -4,6 +4,10 @@ use cosmolkit_types::{BondOrder, ChiralTag};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParserCarrierError {
+    #[error("parser property string conversion failed: {0}")]
+    PropertyString(#[from] crate::PropertyStringError),
+    #[error("atom property operation failed: {0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
     #[error("invalid detached model: {0}")]
     Model(String),
 }
@@ -23,7 +27,7 @@ pub trait ParserAtom: sealed::AtomCarrier {
     fn chiral_permutation(&self) -> Option<u32>;
     fn atomic_number(&self) -> u8;
     fn prop(&self, key: &str) -> Option<&PropertyValue>;
-    fn clear_prop(&mut self, key: &str);
+    fn clear_prop(&mut self, key: &str) -> Result<(), cosmolkit_model::AtomPropertyError>;
     fn set_attachment_point(&mut self, value: i32);
     fn set_chiral_tag(&mut self, value: ChiralTag);
     fn set_chiral_permutation(&mut self, value: Option<u32>);
@@ -46,11 +50,11 @@ macro_rules! parser_atom_access {
             fn prop(&self, key: &str) -> Option<&PropertyValue> {
                 <$ty>::prop(self, key)
             }
-            fn clear_prop(&mut self, key: &str) {
-                <$ty>::clear_prop(self, key);
+            fn clear_prop(&mut self, key: &str) -> Result<(), cosmolkit_model::AtomPropertyError> {
+                <$ty>::clear_prop(self, key)
             }
             fn set_attachment_point(&mut self, value: i32) {
-                <$ty>::set_prop(self, "_fromAttachPoint", value)
+                <$ty>::set_prop(self, "_fromAttchpt", value)
                     .expect("the internal attachment-point property key is non-empty");
             }
             fn set_chiral_tag(&mut self, value: ChiralTag) {
@@ -306,7 +310,7 @@ pub fn parser_chirality_assignments<
         .collect())
 }
 
-pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) {
+pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) -> Result<(), ParserCarrierError> {
     // RDKit❗✔️: void CleanupAfterParsing(RWMol *mol) {
     // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
     // RDKit❗✔️:   for (auto atom : mol->atoms()) {
@@ -353,15 +357,16 @@ pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) {
     // RDKit❗✔️: }
     // Linear carrier passes and constant-sized property keys preserve source cost.
     for atom in atoms.iter_mut() {
-        atom.clear_prop("_RingClosures");
-        atom.clear_prop("_SmilesStart");
+        atom.clear_prop("_RingClosures")?;
+        atom.clear_prop("_SmilesStart")?;
         if atom.atomic_number() == 0 {
-            match atom
+            let label = atom
                 .prop("atomLabel")
-                .and_then(|value| value.as_string().ok())
-            {
-                Some("_AP1") => atom.set_attachment_point(1),
-                Some("_AP2") => atom.set_attachment_point(2),
+                .map(crate::property_value_to_string)
+                .transpose()?;
+            match label.as_ref().map(|value| value.as_bytes()) {
+                Some(b"_AP1") => atom.set_attachment_point(1),
+                Some(b"_AP2") => atom.set_attachment_point(2),
                 _ => {}
             }
         }
@@ -381,16 +386,21 @@ pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) {
             }
         }
     }
+    Ok(())
 }
-pub fn cleanup_parser_substance_groups(groups: &[cosmolkit_model::SubstanceGroup]) {
-    // RDKit✔️✔️:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
-    // RDKit✔️✔️:     sg.clearProp("_cxsmilesindex");
-    // RDKit✔️✔️:   }
+pub fn cleanup_parser_substance_groups(
+    groups: &[cosmolkit_model::SubstanceGroup],
+) -> Result<(), cosmolkit_model::MoleculePropertyError> {
+    // RDKit✔️❌:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
+    // RDKit✔️❌:     sg.clearProp("_cxsmilesindex");
+    // RDKit✔️❌:   }
     // C++ auto (without &) copies each group. Clearing the local copy cannot
     // change the original carrier. Clone one group at a time, matching the
-    // source per-group allocation and linear property-copy cost.
+    // source per-group copy and linear property cost. Canonical tree storage
+    // plus source-order key copies add allocations versus the source Dict.
     for group in groups {
         let mut local = group.clone();
-        local.clear_prop("_cxsmilesindex");
+        local.clear_prop("_cxsmilesindex")?;
     }
+    Ok(())
 }

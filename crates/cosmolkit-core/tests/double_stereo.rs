@@ -233,7 +233,8 @@ fn ring_rank_and_conformer_rows_fail_before_assignment() {
         &empty_rings(&source),
         Some(&nonfinite),
     )
-    .unwrap();
+    .unwrap()
+    .topology;
     let mut expected = source.clone();
     expected.bonds[0].set_direction(BondDirection::EndUpRight);
     expected.bonds[2].set_direction(BondDirection::EndDownRight);
@@ -460,13 +461,15 @@ fn reference_selection_distinguishes_normal_cx_and_stored_endpoint_order() {
     );
     let normal =
         with_double_bond_stereo_reference(base.clone(), BondId::new(0), BondStereo::Any, false)
-            .unwrap();
+            .unwrap()
+            .topology;
     assert_eq!(
         normal.bonds[0].stereo_atoms(),
         Some([AtomId::new(0), AtomId::new(5)])
     );
-    let cx =
-        with_double_bond_stereo_reference(base, BondId::new(0), BondStereo::Any, true).unwrap();
+    let cx = with_double_bond_stereo_reference(base, BondId::new(0), BondStereo::Any, true)
+        .unwrap()
+        .topology;
     assert_eq!(
         cx.bonds[0].stereo_atoms(),
         Some([AtomId::new(0), AtomId::new(4)])
@@ -482,7 +485,8 @@ fn reference_selection_distinguishes_normal_cx_and_stored_endpoint_order() {
     );
     let reversed =
         with_double_bond_stereo_reference(reversed, BondId::new(1), BondStereo::Any, false)
-            .unwrap();
+            .unwrap()
+            .topology;
     assert_eq!(
         reversed.bonds[1].stereo_atoms(),
         Some([AtomId::new(3), AtomId::new(0)])
@@ -630,7 +634,7 @@ fn cleanup_modes_preserve_unknown_metadata_and_requested_slashes() {
     assert_eq!(single.bonds[0].direction(), BondDirection::None);
     assert_eq!(
         single.bonds[0].prop("_UnknownStereo"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::Int(1))
     );
     assert_eq!(single.bonds[1].direction(), BondDirection::EndDownRight);
     assert_eq!(single.bonds[2].direction(), BondDirection::EitherDouble);
@@ -646,7 +650,7 @@ fn cleanup_modes_preserve_unknown_metadata_and_requested_slashes() {
     );
     assert_eq!(
         all_preserve_slashes.bonds[2].prop("_UnknownStereo"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::Int(1))
     );
 
     topology.bonds[1].set_direction(BondDirection::BeginWedge);
@@ -661,8 +665,9 @@ fn cleanup_modes_preserve_unknown_metadata_and_requested_slashes() {
 #[test]
 fn neighbor_direction_generation_uses_existing_stereo_and_reference_flips() {
     let source = four_atom_chain(BondDirection::None, BondDirection::None, BondStereo::E);
-    let result =
-        set_double_bond_neighbor_directions(source.clone(), &empty_rings(&source), None).unwrap();
+    let result = set_double_bond_neighbor_directions(source.clone(), &empty_rings(&source), None)
+        .unwrap()
+        .topology;
     assert!(has_stereo_bond_direction(result.bonds[0].direction()));
     assert!(has_stereo_bond_direction(result.bonds[2].direction()));
     assert_eq!(result.bonds[0].direction(), result.bonds[2].direction());
@@ -684,7 +689,8 @@ fn neighbor_direction_generation_uses_existing_stereo_and_reference_flips() {
         &empty_rings(&reversed_refs),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .topology;
     assert!(
         result
             .bonds
@@ -708,7 +714,8 @@ fn conformer_geometry_marks_linear_unknown_and_assigns_nonlinear_directions() {
     );
     let linear_result =
         set_double_bond_neighbor_directions(source.clone(), &empty_rings(&source), Some(&linear))
-            .unwrap();
+            .unwrap()
+            .topology;
     assert_eq!(linear_result.bonds[1].stereo(), BondStereo::Any);
     assert_eq!(
         linear_result.bonds[1].stereo_atoms(),
@@ -727,7 +734,8 @@ fn conformer_geometry_marks_linear_unknown_and_assigns_nonlinear_directions() {
     );
     let bent_result =
         set_double_bond_neighbor_directions(source.clone(), &empty_rings(&source), Some(&bent))
-            .unwrap();
+            .unwrap()
+            .topology;
     assert!(has_stereo_bond_direction(bent_result.bonds[0].direction()));
     assert!(has_stereo_bond_direction(bent_result.bonds[2].direction()));
 }

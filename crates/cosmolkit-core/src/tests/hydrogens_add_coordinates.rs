@@ -115,8 +115,8 @@ fn disabled_placement_grows_all_conformers_and_preserves_every_old_value() {
             Conformer3D::new(11, vec![[3.0, 4.0, 5.0]], true).with_prop("source", "three"),
             Conformer3D::new(12, vec![[-1.0, 2.0, 0.0]], false).with_prop("flat", "yes"),
         ],
-        source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         source_conformer_order: None,
+        source_coordinate_dim: Some(CoordinateDimension::ThreeD),
     };
     let coordinates_snapshot = coordinates.clone();
     let output =
@@ -135,9 +135,9 @@ fn disabled_placement_grows_all_conformers_and_preserves_every_old_value() {
     assert_eq!(
         output.coordinates.conformers_2d[0]
             .props()
-            .get("source")
-            .map(String::as_str),
-        Some("two")
+            .get(b"source".as_slice())
+            .map(|value| value.as_bytes()),
+        Some(b"two".as_slice())
     );
     assert_eq!(
         output.coordinates.conformers_2d[0].coordinates(),
@@ -154,9 +154,9 @@ fn disabled_placement_grows_all_conformers_and_preserves_every_old_value() {
     assert_eq!(
         output.coordinates.conformers_3d[1]
             .props()
-            .get("flat")
-            .map(String::as_str),
-        Some("yes")
+            .get(b"flat".as_slice())
+            .map(|value| value.as_bytes()),
+        Some(b"yes".as_slice())
     );
     assert_eq!(
         output.coordinates.conformers_3d[1].coordinates(),

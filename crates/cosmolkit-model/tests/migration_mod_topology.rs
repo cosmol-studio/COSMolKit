@@ -923,16 +923,40 @@ fn q01_b1_endpoint_remap_preserves_non_endpoint_vector() {
     source.bonds[1]
         .set_computed_prop("_MolFileBondEndPts", vec![1_i32, -2, 1])
         .unwrap();
+    assert_eq!(
+        source.bonds[1].prop("_MolFileBondEndPts"),
+        Some(&PropertyValue::IntVector(vec![1, -2, 1]))
+    );
     let before = source.clone();
     let mut batch = source.begin_batch_edit().unwrap();
     batch.remove_atom(atom_id(0)).unwrap();
     let (result, _mapping) = batch.finish().unwrap();
     assert_eq!(source, before);
-    assert_eq!(
-        result.bonds[0].prop("_MolFileBondEndPts"),
-        Some(&PropertyValue::IntVector(vec![1, -2, 1]))
+    assert_eq!(result.bonds[0].prop("_MolFileBondEndPts"), None);
+    assert!(
+        !result.bonds[0]
+            .is_prop_computed("_MolFileBondEndPts")
+            .unwrap()
     );
-    assert!(result.bonds[0].is_prop_computed("_MolFileBondEndPts"));
     assert_eq!(result.bonds[0].begin(), atom_id(0));
     assert_eq!(result.bonds[0].end(), atom_id(1));
+    let mut ordinary = source.clone();
+    ordinary.bonds[1].clear_prop("_MolFileBondEndPts");
+    ordinary.bonds[1]
+        .set_prop("_MolFileBondEndPts", vec![1_i32, -2, 1])
+        .unwrap();
+    let ordinary_before = ordinary.clone();
+    let mut batch = ordinary.begin_batch_edit().unwrap();
+    batch.remove_atom(atom_id(0)).unwrap();
+    let (ordinary_result, _) = batch.finish().unwrap();
+    assert_eq!(ordinary, ordinary_before);
+    assert_eq!(
+        ordinary_result.bonds[0].prop("_MolFileBondEndPts"),
+        Some(&PropertyValue::IntVector(vec![1, -2, 1]))
+    );
+    assert!(
+        !ordinary_result.bonds[0]
+            .is_prop_computed("_MolFileBondEndPts")
+            .unwrap()
+    );
 }

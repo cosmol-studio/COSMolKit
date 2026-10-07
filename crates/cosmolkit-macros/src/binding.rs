@@ -3,7 +3,7 @@
 //! This module emits metadata and compile-time type assertions only. It does
 //! not generate public API methods, runtime behavior, or domain algorithms.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::status::FunctionStatus;
 
@@ -52,6 +52,12 @@ enum TypeRole {
     Parameter,
     Result,
     Error,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PythonProperty {
+    Getter,
+    Setter,
 }
 
 #[derive(Clone)]
@@ -131,6 +137,7 @@ struct BindingEntry {
     owner: Owner,
     rust: Path,
     python: LitStr,
+    python_property: Option<PythonProperty>,
     javascript: LitStr,
     feature: LitStr,
     requires: Vec<LitStr>,
@@ -157,6 +164,7 @@ struct BindingEntryDraft {
     owner: Option<Ident>,
     rust: Option<Path>,
     python: Option<LitStr>,
+    python_property: Option<Ident>,
     javascript: Option<LitStr>,
     feature: Option<LitStr>,
     requires: Option<Vec<LitStr>>,
@@ -217,6 +225,7 @@ fn parse_binding_entry(
             "owner" => set_once(&mut draft.owner, input.parse()?, &key)?,
             "rust" => set_once(&mut draft.rust, input.parse()?, &key)?,
             "python" => set_once(&mut draft.python, input.parse()?, &key)?,
+            "python_property" => set_once(&mut draft.python_property, input.parse()?, &key)?,
             "javascript" => set_once(&mut draft.javascript, input.parse()?, &key)?,
             "feature" => set_once(&mut draft.feature, input.parse()?, &key)?,
             "requires" => {
@@ -266,6 +275,23 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
     let owner = parse_owner(&owner_ident)?;
     let rust = required(draft.rust, "rust")?;
     let python = required(draft.python, "python")?;
+    let python_property = draft
+        .python_property
+        .map(|value| match value.to_string().as_str() {
+            "getter" => Ok(PythonProperty::Getter),
+            "setter" => Ok(PythonProperty::Setter),
+            _ => Err(syn::Error::new_spanned(
+                value,
+                "python_property must be getter or setter",
+            )),
+        })
+        .transpose()?;
+    if python_property.is_some() && item != ItemClass::Callable {
+        return Err(syn::Error::new_spanned(
+            &python,
+            "python_property requires a callable accessor",
+        ));
+    }
     let javascript = required(draft.javascript, "javascript")?;
     let feature = required(draft.feature, "feature")?;
     require_nonempty(&semantic_id, "semantic_id")?;
@@ -350,6 +376,7 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         owner,
         rust,
         python,
+        python_property,
         javascript,
         feature,
         requires,
@@ -402,6 +429,7 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
                 &entry.javascript,
                 payload,
                 retain_in_place_suffix,
+                entry.python_property,
             )?;
         } else {
             validate_type_names(
@@ -412,16 +440,23 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
             )?;
         }
     }
-    let mut python = HashSet::new();
+    let mut python = HashMap::new();
     let mut javascript = HashSet::new();
     for entry in entries {
         let owner = projection_owner_key(entry);
-        insert_unique(
-            &mut python,
-            format!("{owner}:{}", entry.python.value()),
-            &entry.python,
-            "duplicate Python binding projection in one owner scope",
-        )?;
+        let key = format!("{owner}:{}", entry.python.value());
+        if let Some(previous) = python.insert(key, entry.python_property) {
+            if !matches!(
+                (previous, entry.python_property),
+                (Some(PythonProperty::Getter), Some(PythonProperty::Setter))
+                    | (Some(PythonProperty::Setter), Some(PythonProperty::Getter))
+            ) {
+                return Err(syn::Error::new_spanned(
+                    &entry.python,
+                    "duplicate Python binding projection in one owner scope",
+                ));
+            }
+        }
         insert_unique(
             &mut javascript,
             format!("{owner}:{}", entry.javascript.value()),
@@ -440,6 +475,7 @@ fn validate_callable(
     javascript: &LitStr,
     payload: &CallablePayload,
     retain_in_place_suffix: bool,
+    python_property: Option<PythonProperty>,
 ) -> syn::Result<()> {
     if (payload.kind == CallableKind::Instance) != payload.receiver.is_some() {
         return Err(syn::Error::new_spanned(
@@ -496,7 +532,46 @@ fn validate_callable(
             ));
         }
     }
-    if python.value() != rust_name {
+    let expected_python = match python_property {
+        Some(PythonProperty::Getter) => {
+            if payload.kind != CallableKind::Instance
+                || payload.receiver != Some(Receiver::Shared)
+                || payload.state != StateModel::ReadOnly
+                || !payload.parameters.is_empty()
+            {
+                return Err(syn::Error::new_spanned(
+                    python,
+                    "Python getter requires a shared, zero-argument read-only accessor",
+                ));
+            }
+            rust_name.as_str()
+        }
+        Some(PythonProperty::Setter) => {
+            if payload.kind != CallableKind::Instance
+                || payload.receiver != Some(Receiver::Mutable)
+                || payload.state != StateModel::InPlace
+                || payload.parameters.len() != 1
+                || !matches!(&payload.output, Type::Tuple(tuple) if tuple.elems.is_empty())
+            {
+                return Err(syn::Error::new_spanned(
+                    python,
+                    "Python setter requires a mutable, single-argument unit accessor",
+                ));
+            }
+            rust_name.strip_prefix("set_").ok_or_else(|| {
+                syn::Error::new_spanned(python, "Python setter requires a Rust set_ accessor")
+            })?
+        }
+        None if owner == Owner::Type
+            && payload.kind == CallableKind::Static
+            && rust_name == "new"
+            && python.value() == "__new__" =>
+        {
+            "__new__"
+        }
+        None => rust_name.as_str(),
+    };
+    if python.value() != expected_python {
         return Err(syn::Error::new_spanned(
             python,
             "Python callable name must equal the canonical Rust name",
@@ -851,6 +926,11 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
         let owner = owner_tokens(entry.owner);
         let rust = &entry.rust;
         let python = &entry.python;
+        let python_property = match entry.python_property {
+            None => quote!(None),
+            Some(PythonProperty::Getter) => quote!(Some(crate::BindingPropertyAccess::Getter)),
+            Some(PythonProperty::Setter) => quote!(Some(crate::BindingPropertyAccess::Setter)),
+        };
         let javascript = &entry.javascript;
         let feature = &entry.feature;
         let status = match (&entry.callable, &entry.status) {
@@ -927,7 +1007,7 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             #(#cfg)*
             crate::BindingContractEntry {
                 semantic_id: #semantic_id, item: #item, owner: #owner,
-                rust_path: stringify!(#rust), python_name: #python, javascript_name: #javascript,
+                rust_path: stringify!(#rust), python_name: #python, python_property: #python_property, javascript_name: #javascript,
                 feature: #feature, required_capabilities: &[#(#requires),*], status: #status,
                 callable: #callable, type_role: #role,
             }

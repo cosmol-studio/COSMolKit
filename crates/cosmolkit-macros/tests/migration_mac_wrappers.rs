@@ -142,7 +142,7 @@ fn untyped_in_place_and_default_aliases_preserve_abort_finish_and_arguments() {
     ));
 
     assert!(output.contains(
-        "ifletErr(error)=crate::operations::normalize_impl(&mutparts,mode,enabled){parts.abort_in_place();returnErr(error);}parts.finish_in_place()"
+        "ifletErr(error)=crate::operations::normalize_impl(&mutparts,mode,enabled){parts.abort_in_place();returnErr(<crate::ops::OperationErroras::core::convert::From<crate::ops::OperationError>>::from(error));}parts.finish_in_place().map_err(<crate::ops::OperationErroras::core::convert::From<crate::ops::OperationError>>::from)"
     ));
     assert!(output.contains("self.normalize(3,true)"));
     assert!(output.contains("self.normalize_with_params_(3,true)"));

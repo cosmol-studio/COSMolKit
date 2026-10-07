@@ -3,7 +3,9 @@ from __future__ import annotations
 import ast
 import inspect
 from collections import Counter
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import cast
 
 import cosmolkit
 
@@ -21,9 +23,13 @@ def _stub_exports(module: ast.Module) -> set[str]:
             isinstance(target, ast.Name) and target.id == "__all__"
             for target in node.targets
         ):
-            value = ast.literal_eval(node.value)
+            value = cast(object, ast.literal_eval(node.value))
             assert isinstance(value, list)
-            return set(value)
+            names: set[str] = set()
+            for name in cast(list[object], value):
+                assert isinstance(name, str)
+                names.add(name)
+            return names
     raise AssertionError("generated cosmolkit.pyi has no __all__ declaration")
 
 
@@ -51,7 +57,7 @@ def test_generated_stub_covers_every_public_runtime_function_once() -> None:
 
     runtime_functions = {
         name
-        for name, value in vars(cosmolkit).items()
+        for name, value in cast(Mapping[str, object], vars(cosmolkit)).items()
         if not name.startswith("_") and inspect.isroutine(value)
     }
     stub_functions = set(declarations)
@@ -62,191 +68,86 @@ def test_generated_stub_covers_every_public_runtime_function_once() -> None:
     assert "_rebuild_molecule_from_pickle" not in stub_functions
 
 
-def test_assign_chiral_tags_methods_match_generated_stub_and_runtime_surface() -> None:
-    molecule_class = _stub_class(_stub_module(), "Molecule")
-    methods = [
-        node
-        for node in molecule_class.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name
-        in {
-            "with_chiral_tags_from_structure",
-            "assign_chiral_tags_from_structure_",
-        }
+def _assert_registered_method_surface(
+    module: ast.Module, class_name: str, name: str, arguments: list[str], result: str
+) -> None:
+    declarations = [
+        node for node in _stub_class(module, class_name).body
+        if isinstance(node, ast.FunctionDef) and node.name == name
     ]
+    assert len(declarations) == 1
+    method = declarations[0]
+    assert [arg.arg for arg in method.args.posonlyargs + method.args.args] == arguments
+    assert not method.args.defaults and not method.args.kwonlyargs
+    assert method.returns is not None and ast.unparse(method.returns) == result
+    owner = cast(type[object], getattr(cosmolkit, class_name))
+    runtime = cast(Callable[..., object], getattr(owner, name))
+    signature = inspect.signature(runtime)
+    assert list(signature.parameters) == arguments
+    assert all(cast(object, parameter.default) is inspect.Parameter.empty for parameter in signature.parameters.values())
 
-    assert Counter(method.name for method in methods) == {
-        "with_chiral_tags_from_structure": 1,
-        "assign_chiral_tags_from_structure_": 1,
-    }
-    for method in methods:
-        assert [argument.arg for argument in method.args.args] == [
-            "self",
-            "conf_id",
-            "replace_existing_tags",
-        ]
-        assert len(method.args.defaults) == 2
-        assert all(
-            isinstance(default, ast.Constant) and default.value is Ellipsis
-            for default in method.args.defaults
-        )
 
-    assert str(inspect.signature(cosmolkit.Molecule.with_chiral_tags_from_structure)) == (
-        "(self, /, conf_id=-1, replace_existing_tags=True)"
-    )
-    assert str(inspect.signature(cosmolkit.Molecule.assign_chiral_tags_from_structure_)) == (
-        "(self, /, conf_id=-1, replace_existing_tags=True)"
-    )
+def test_assign_chiral_tags_methods_match_generated_stub_and_runtime_surface() -> None:
+    module = _stub_module()
+    # Canonical bindings use StructureTagParams instead of positional flags.
+    for name, arguments, result in [
+        ("with_chiral_tags_from_structure", ["self"], "Molecule"),
+        ("assign_chiral_tags_from_structure_", ["self"], "None"),
+        ("with_chiral_tags_from_structure_with_params", ["self", "params"], "Molecule"),
+        ("assign_chiral_tags_from_structure_with_params_", ["self", "params"], "None"),
+    ]:
+        _assert_registered_method_surface(module, "Molecule", name, arguments, result)
 
 
 def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() -> None:
     module = _stub_module()
-    scalar_arguments = [
-        "self",
-        "layers",
-        "min_path",
-        "max_path",
-        "fp_size",
-        "atom_counts",
-        "set_only_bits",
-        "branched_paths",
-        "from_atoms",
-    ]
-    batch_arguments = [*scalar_arguments, "n_jobs", "progress_bar"]
-    scalar_defaults = [
-        Ellipsis,
-        Ellipsis,
-        Ellipsis,
-        Ellipsis,
-        None,
-        None,
-        Ellipsis,
-        None,
-    ]
-    batch_defaults = [*scalar_defaults, None, None]
-    expected_methods = {
-        "Molecule": {
-            "fingerprint_layered": (
-                scalar_arguments,
-                scalar_defaults,
-                "Fingerprint",
-            ),
-            "fingerprint_layered_with_output": (
-                scalar_arguments,
-                scalar_defaults,
-                "LayeredFingerprintResult",
-            ),
-        },
-        "MoleculeBatch": {
-            "fingerprint_layered_list": (
-                batch_arguments,
-                batch_defaults,
-                "builtins.list[typing.Optional[Fingerprint]]",
-            ),
-            "fingerprint_layered_with_output_list": (
-                batch_arguments,
-                batch_defaults,
-                "builtins.list[typing.Optional[LayeredFingerprintResult]]",
-            ),
-        },
-    }
+    for class_name, name, arguments, result in [
+        ("Molecule", "layered_fingerprint", ["self"], "Fingerprint"),
+        ("Molecule", "layered_fingerprint_with_params", ["self", "params"], "Fingerprint"),
+        ("Molecule", "layered_fingerprint_with_output", ["self"], "LayeredFingerprintResult"),
+        ("Molecule", "layered_fingerprint_with_output_with_params", ["self", "params"], "LayeredFingerprintResult"),
+        ("MoleculeBatch", "fingerprint_layered_list", ["self"], "builtins.list[typing.Optional[Fingerprint]]"),
+        ("MoleculeBatch", "fingerprint_layered_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[Fingerprint]]"),
+        ("MoleculeBatch", "fingerprint_layered_with_output_list", ["self"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
+        ("MoleculeBatch", "fingerprint_layered_with_output_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
+    ]:
+        _assert_registered_method_surface(module, class_name, name, arguments, result)
 
-    for class_name, expected in expected_methods.items():
-        class_node = _stub_class(module, class_name)
-        declarations = [
-            node
-            for node in class_node.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name in expected
-        ]
-        assert Counter(method.name for method in declarations) == {
-            method_name: 1 for method_name in expected
-        }
-        methods = {method.name: method for method in declarations}
-        for method_name, (arguments, defaults, return_type) in expected.items():
-            method = methods[method_name]
-            assert [argument.arg for argument in method.args.args] == arguments
-            assert len(method.args.defaults) == len(arguments) - 1
-            assert [ast.literal_eval(default) for default in method.args.defaults] == defaults
-            assert method.returns is not None
-            assert ast.unparse(method.returns) == return_type
-
-    expected_runtime_signatures = {
-        cosmolkit.Molecule.fingerprint_layered: (
-            "(self, /, layers=4294967295, min_path=1, max_path=7, fp_size=2048, "
-            "atom_counts=None, set_only_bits=None, branched_paths=True, from_atoms=None)"
-        ),
-        cosmolkit.Molecule.fingerprint_layered_with_output: (
-            "(self, /, layers=4294967295, min_path=1, max_path=7, fp_size=2048, "
-            "atom_counts=None, set_only_bits=None, branched_paths=True, from_atoms=None)"
-        ),
-        cosmolkit.MoleculeBatch.fingerprint_layered_list: (
-            "(self, /, layers=4294967295, min_path=1, max_path=7, fp_size=2048, "
-            "atom_counts=None, set_only_bits=None, branched_paths=True, from_atoms=None, "
-            "n_jobs=None, progress_bar=None)"
-        ),
-        cosmolkit.MoleculeBatch.fingerprint_layered_with_output_list: (
-            "(self, /, layers=4294967295, min_path=1, max_path=7, fp_size=2048, "
-            "atom_counts=None, set_only_bits=None, branched_paths=True, from_atoms=None, "
-            "n_jobs=None, progress_bar=None)"
-        ),
-    }
-    for runtime_method, expected_signature in expected_runtime_signatures.items():
-        assert str(inspect.signature(runtime_method)) == expected_signature
-
-    result_class = _stub_class(module, "LayeredFingerprintResult")
-    result_methods = {
-        node.name: node
-        for node in result_class.body
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name in {"fingerprint", "atom_counts"}
-    }
-    assert set(result_methods) == {"fingerprint", "atom_counts"}
-    assert result_methods["fingerprint"].returns is not None
-    assert result_methods["atom_counts"].returns is not None
-    assert ast.unparse(result_methods["fingerprint"].returns) == "Fingerprint"
-    assert ast.unparse(result_methods["atom_counts"].returns) == (
-        "typing.Optional[builtins.list[builtins.int]]"
-    )
+    _assert_registered_method_surface(module, "LayeredFingerprintResult", "fingerprint", ["self"], "Fingerprint")
+    _assert_registered_method_surface(module, "LayeredFingerprintResult", "atom_counts", ["self"], "typing.Optional[builtins.list[builtins.int]]")
 
 
 def test_pattern_fingerprint_methods_match_generated_stub_and_runtime_surface() -> None:
     module = _stub_module()
+    for class_name, name, arguments, result in [
+        ("Molecule", "pattern_fingerprint", ["self"], "Fingerprint"),
+        ("Molecule", "pattern_fingerprint_with_params", ["self", "params"], "Fingerprint"),
+        ("MoleculeBatch", "pattern_fingerprint_list", ["self"], "builtins.list[typing.Optional[Fingerprint]]"),
+        ("MoleculeBatch", "pattern_fingerprint_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[Fingerprint]]"),
+    ]:
+        _assert_registered_method_surface(module, class_name, name, arguments, result)
+
+
+def test_typed_parameters_preserve_source_defaults_in_runtime_and_stub() -> None:
+    module = _stub_module()
     cases = [
-        (
-            "Molecule",
-            "pattern_fingerprint",
-            ["self", "n_bits", "tautomeric"],
-            "Fingerprint",
-            "(self, /, n_bits=2048, tautomeric=False)",
-        ),
-        (
-            "MoleculeBatch",
-            "pattern_fingerprint_list",
-            ["self", "n_bits", "tautomeric", "n_jobs", "progress_bar"],
-            "builtins.list[typing.Optional[Fingerprint]]",
-            "(self, /, n_bits=2048, tautomeric=False, n_jobs=None, progress_bar=None)",
-        ),
+        ("StructureTagParams", {"conformer_id": -1, "replace_existing_tags": True}),
+        ("LayeredFingerprintParams", {
+            "layers": 4294967295, "min_path": 1, "max_path": 7, "fp_size": 2048,
+            "atom_counts": None, "set_only_bits": None, "branched_paths": True, "from_atoms": None,
+        }),
+        ("PatternFingerprintParams", {"n_bits": 2048, "tautomeric": False}),
     ]
-
-    for class_name, method_name, arguments, return_annotation, runtime_signature in cases:
-        class_node = _stub_class(module, class_name)
-        methods = [
-            node
-            for node in class_node.body
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and node.name == method_name
-        ]
-        assert len(methods) == 1
-        method = methods[0]
-        assert [argument.arg for argument in method.args.args] == arguments
-        assert len(method.args.defaults) == len(arguments) - 1
-        assert all(
-            isinstance(default, ast.Constant) and default.value is Ellipsis
-            for default in method.args.defaults[:2]
-        )
-        assert method.returns is not None
-        assert ast.unparse(method.returns) == return_annotation
-
-        runtime_method = getattr(getattr(cosmolkit, class_name), method_name)
-        assert str(inspect.signature(runtime_method)) == runtime_signature
+    for class_name, expected in cases:
+        constructor = next(node for node in _stub_class(module, class_name).body if isinstance(node, ast.FunctionDef) and node.name == "__new__")
+        defaults: list[object] = []
+        for value in constructor.args.kw_defaults:
+            assert value is not None
+            defaults.append(cast(object, ast.literal_eval(value)))
+        assert dict(zip(
+            [arg.arg for arg in constructor.args.kwonlyargs],
+            defaults, strict=True,
+        )) == expected
+        constructor_fn = cast(Callable[[], object], getattr(cosmolkit, class_name))
+        params = constructor_fn()
+        assert {name: cast(object, getattr(params, name)) for name in expected} == expected

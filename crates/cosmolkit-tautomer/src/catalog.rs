@@ -556,7 +556,7 @@ impl Clone for TautomerCatalog {
 impl TautomerTransform {
     /// Construct a transform from an already compiled SMARTS query.
     pub fn new(
-        name: impl Into<String>,
+        name: impl Into<cosmolkit_model::PropertyText>,
         query: QueryGraph,
         bond_types: Vec<BondOrder>,
         charges: Vec<i32>,
@@ -579,8 +579,15 @@ impl TautomerTransform {
     }
 
     #[must_use]
-    pub fn name(&self) -> &str {
-        self.query.query().prop("_Name").unwrap_or("")
+    pub fn name(&self) -> &cosmolkit_model::PropertyText {
+        // The private constructor always installs this String-tag property,
+        // including an empty name; callers borrow the immutable query only.
+        // Return the same counted bytes without decoding or absent fallback.
+        self.query
+            .query()
+            .name()
+            .expect("transform constructor installs a String-tag name")
+            .expect("transform constructor installs its name")
     }
 
     #[must_use]

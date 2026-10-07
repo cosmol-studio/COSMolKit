@@ -70,6 +70,7 @@ def test_comments_strings_attributes_and_wrong_owners_do_not_count() -> None:
         "def assign_valence_(self): ...\n",
         "class Other:\n    def assign_valence_(self): ...\n",
         "class Molecule:\n    @property\n    def assign_valence_(self): ...\n",
+        "class Molecule:\n    @property\n    def assign_valence_(self): ...\n    @assign_valence_.setter\n    def assign_valence_(self, value): ...\n",
     ]:
         assert len(check_contract(stub, json.dumps(entries))) == 1
 
@@ -102,3 +103,21 @@ def test_invalid_stub_and_registry_fail_explicitly() -> None:
         _ = check_contract("class:", "[]")
     with pytest.raises(json.JSONDecodeError):
         _ = check_contract("", "not json")
+
+
+def test_explicit_constructor_projection() -> None:
+    entries = [_entry("Params.new", "__new__", "type")]
+    assert check_contract("class Params:\n    def __new__(cls): ...\n", json.dumps(entries)) == []
+    assert len(check_contract("class Params:\n    def new(cls): ...\n", json.dumps(entries))) == 1
+
+
+def test_explicit_property_access_requires_descriptor_not_method() -> None:
+    getter = {**_entry("Params.limit", "limit", "type"), "python_property": "getter"}
+    setter = {**_entry("Params.set_limit", "limit", "type"), "python_property": "setter"}
+    readonly = "class Params:\n    @property\n    def limit(self) -> int: ...\n"
+    writable = readonly + "    @limit.setter\n    def limit(self, value: int) -> None: ...\n"
+    assert check_contract(readonly, json.dumps([getter])) == []
+    assert len(check_contract(readonly, json.dumps([setter]))) == 1
+    assert check_contract(writable, json.dumps([getter, setter])) == []
+    assert check_contract("class Params:\n    limit: int\n", json.dumps([getter, setter])) == []
+    assert len(check_contract("class Params:\n    def limit(self): ...\n", json.dumps([getter, setter]))) == 2

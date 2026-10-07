@@ -107,7 +107,9 @@ pub enum TautomerRunError {
     Callback(String),
 }
 
-pub(crate) fn canonical_smiles(view: TautomerRecordView<'_>) -> Result<String, TautomerRunError> {
+pub(crate) fn canonical_smiles(
+    view: TautomerRecordView<'_>,
+) -> Result<cosmolkit_model::PropertyText, TautomerRunError> {
     Ok(cosmolkit_smiles::write_smiles(
         cosmolkit_smiles::SmilesRecordView {
             topology: view.topology,
@@ -167,6 +169,7 @@ pub(crate) fn kekulized(candidate: &TautomerRecord) -> Result<TautomerRecord, Ta
         },
         None,
         Some(&candidate.rings),
+        Some(&candidate.valence),
     )?;
     let mut result = candidate.clone();
     result.topology = assignment.topology;
@@ -174,12 +177,9 @@ pub(crate) fn kekulized(candidate: &TautomerRecord) -> Result<TautomerRecord, Ta
         result.rings = rings;
     }
     if let Some(valence) = assignment.final_valence {
-        for atom in assignment.refreshed_valence_atoms {
-            result.valence.explicit_valence[atom.index()] = valence.explicit_valence[atom.index()];
-            result.valence.implicit_hydrogens[atom.index()] =
-                valence.implicit_hydrogens[atom.index()];
-        }
+        result.valence = valence;
     }
+
     Ok(result)
 }
 pub(crate) fn query_matches(
@@ -265,9 +265,10 @@ pub(crate) fn assign_stereo(candidate: &mut TautomerRecord) -> Result<(), Tautom
     if let Some(rings) = assignment.ring_update {
         candidate.rings = rings;
     }
+    // RDKit❗✔️: mol.setProp(common_properties::_StereochemDone, 1, true);
     candidate
         .properties
-        .set_computed_prop("_StereochemDone", "1")?;
+        .set_computed_prop("_StereochemDone", 1_i32)?;
     Ok(())
 }
 fn is_stereo_beyond_any(stereo: BondStereo) -> bool {
@@ -364,7 +365,9 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
             // RDKit✔️❌:       if (tautAtom->hasProp(common_properties::_CIPCode)) {
             // RDKit✔️❌:         tautAtom->clearProp(common_properties::_CIPCode);
             // RDKit✔️❌:       }
-            tautomer_atom.clear_prop("_CIPCode");
+            if tautomer_atom.prop("_CIPCode").is_some() {
+                tautomer_atom.clear_prop("_CIPCode")?;
+            }
         } else {
             // RDKit✔️❌:     } else {
             // RDKit✔️❌:       modified |= (tautAtom->getChiralTag() != atom->getChiralTag());
@@ -532,7 +535,7 @@ pub(crate) fn set_tautomer_stereo_and_isotopic_hydrogens(
     } else {
         // RDKit✔️❌:   } else {
         // RDKit✔️❌:     taut.setProp(common_properties::_StereochemDone, 1);
-        tautomer.properties.set_prop("_StereochemDone", "1")?;
+        tautomer.properties.set_prop("_StereochemDone", 1_i32)?;
         // RDKit✔️❌:   }
     }
     // RDKit✔️❌:   return modified;
@@ -547,7 +550,7 @@ pub(crate) fn apply_tautomer_transform_match(
     match_result: &SubstructMatchResult,
     current_modified_atoms: &BTreeSet<AtomId>,
     current_modified_bonds: &BTreeSet<BondId>,
-    contains_smiles: &dyn Fn(&str) -> bool,
+    contains_smiles: &dyn Fn(&cosmolkit_model::PropertyText) -> bool,
     options: TautomerParams,
 ) -> Result<TautomerExpansionAttempt<Arc<TautomerRecord>>, TautomerRunError> {
     // RDKit✔️❌:           RWMOL_SPTR product(new RWMol(*kmol));
@@ -734,6 +737,16 @@ pub(crate) fn apply_tautomer_transform_match(
     // RDKit✔️❌:           } catch (const KekulizeException &) {
     // RDKit✔️❌:             continue;
     // RDKit✔️❌:           }
+    // BEGIN RDKIT CPP FUNCTION MolOps::sanitizeMol entry property clearing
+    // RDKit✔️❌:   // clear out any cached properties
+    // RDKit✔️❌:   mol.clearComputedProps();
+    // END RDKIT CPP FUNCTION MolOps::sanitizeMol entry property clearing
+    // The topology-only sanitizer owns atom/bond clearing. Its detached
+    // molecule-property companion must run first, as ROMol clears RDProps
+    // before the atom and bond loops. Keep one existing property-block clone;
+    // moving it here adds no scan/allocation or chemistry fallback.
+    let mut properties = candidate.properties.clone();
+    properties.clear_computed_props()?;
     let assignment = match sanitize_topology(
         &topology,
         &SanitizeParams {
@@ -759,10 +772,18 @@ pub(crate) fn apply_tautomer_transform_match(
     let rings = assignment
         .final_rings
         .expect("SET_AROMATICITY initializes the source ring state");
-    let mut properties = candidate.properties.clone();
-    properties.clear_computed_props();
+    // RDKit❗✔️: int narom = 0;
+    // RDKit❗✔️: mol.setProp(common_properties::numArom, narom, true);
     if let Some(count) = assignment.aromatic_ring_count {
-        properties.set_computed_prop("numArom", count.to_string())?;
+        properties.set_computed_prop(
+            "numArom",
+            i32::try_from(count).map_err(|_| cosmolkit_core::SanitizeError::Aromaticity {
+                stage: cosmolkit_core::SanitizeStage::SetAromaticity,
+                source: cosmolkit_core::AromaticityError::IntegerOverflow {
+                    field: "source numArom int",
+                },
+            })?,
+        )?;
     }
     let mut product = TautomerRecord {
         topology: assignment.topology,

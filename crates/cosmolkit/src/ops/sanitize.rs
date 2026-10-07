@@ -102,10 +102,11 @@ pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationErro
 
     parts.install_topology(assignment.topology)?;
     parts.record_topology_edit(TopologyEditKind::Local)?;
-    // Only the owner's final PROPERTIES stage certifies valence for the
-    // committed topology. Retain that result without calculating it again;
-    // other stage selections must remove both stored values and validity.
-    if let Some(valence) = assignment.final_valence {
+    // RDKit✔️✔️:     mol.updatePropertyCache(true);
+    // RDKit✔️✔️:     mol.updatePropertyCache(false);
+    // Both source branches leave actual atom scalar fields. Move the already
+    // computed strict or nonstrict owner result; perform no second assignment.
+    if let Some(valence) = assignment.final_valence.or(assignment.non_strict_valence) {
         let mut cache = parts.checkout_derived_cache()?;
         cache.install_valence_assignment(valence);
         parts.install_derived_cache(cache)?;
@@ -141,9 +142,17 @@ pub(crate) fn sanitize_impl(params: &SanitizeParams) -> Result<(), OperationErro
     // The runtime's computed-property clearing must precede publication of
     // this already calculated source scalar. Use the declared property cap.
     if let Some(count) = assignment.aromatic_ring_count {
+        let count = i32::try_from(count).map_err(|_| {
+            OperationError::Sanitize(cosmolkit_core::SanitizeError::Aromaticity {
+                stage: cosmolkit_core::SanitizeStage::SetAromaticity,
+                source: cosmolkit_core::AromaticityError::IntegerOverflow {
+                    field: "source numArom int",
+                },
+            })
+        })?;
         let mut properties = parts.checkout_properties()?;
         let write = properties
-            .set_computed_prop("numArom", count.to_string())
+            .set_computed_prop("numArom", count)
             .map_err(OperationError::InvalidProperty);
         parts.install_properties(properties)?;
         write?;
@@ -232,7 +241,7 @@ mod ring_live_tests {
                     );
                     assert_eq!(
                         cache.valid_states().contains(DerivedState::VALENCE),
-                        operations.contains(SanitizeOperations::PROPERTIES),
+                        true,
                         "{label}: VALENCE validity"
                     );
                     if symm {
@@ -480,7 +489,13 @@ mod tests {
                             assert!(cache.valid_ring_info().is_none());
                         }
                     } else {
-                        assert_eq!(cache.valence_assignment(), None);
+                        let expected = cosmolkit_core::assign_valence_with_options_for_topology(
+                            output.topology(),
+                            cosmolkit_core::ValenceModel::RdkitLike,
+                            false,
+                        )
+                        .unwrap();
+                        assert_eq!(cache.valence_assignment(), Some(&expected));
                         // KEKULIZE-only: the ring-aware owner acquires SSSR
                         // exactly when aromatic kekulization work runs
                         // (K-RING frozen table: absent + mark=true acquires
@@ -489,7 +504,7 @@ mod tests {
                         if operations == SanitizeOperations::KEKULIZE && aromatic {
                             assert_eq!(
                                 cache.valid_states(),
-                                DerivedState::RINGS,
+                                DerivedState::VALENCE.union(DerivedState::RINGS),
                                 "kekulize-only aromatic installs SSSR"
                             );
                             let rings = cache.valid_ring_info().unwrap();
@@ -497,11 +512,14 @@ mod tests {
                             assert_eq!(rings.find_type(), cosmolkit_core::RingFindType::Sssr);
                             assert_eq!(rings.atom_rings().len(), 1);
                         } else {
-                            assert_eq!(cache.valid_states(), DerivedState::NONE);
+                            assert_eq!(cache.valid_states(), DerivedState::VALENCE);
                             assert!(cache.valid_ring_info().is_none());
                         }
                     }
-                    assert_eq!(output.property("source"), Some("retained"));
+                    assert_eq!(
+                        output.property("source"),
+                        Some(&crate::PropertyValue::String("retained".into()))
+                    );
                     assert_eq!(source, observer);
                     assert_eq!(source.derived_cache_runtime(), &original_cache_value);
                     assert!(std::sync::Arc::ptr_eq(

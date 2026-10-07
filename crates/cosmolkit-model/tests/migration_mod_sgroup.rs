@@ -4,6 +4,14 @@ use cosmolkit_model::{
     SubstanceGroup, SubstanceGroupId, SubstanceGroupKind,
 };
 
+// Decode only the unchanged known UTF-8 expected fixtures at this test boundary.
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+}
+fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+    fixture_text(value.as_string().expect("original string fixture kind"))
+}
+
 fn atom(index: usize) -> AtomId {
     AtomId::new(index)
 }
@@ -152,6 +160,7 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
         .with_attach_points(vec![attach_point.clone()])
         .with_cstates(vec![cstate])
         .with_prop("vendor", "kept")
+        .expect("valid original property fixture")
         .with_data_field("raw-1")
         .with_data_field("raw-2");
 
@@ -167,18 +176,18 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
     assert_eq!(group.bond_role(bond(3)), SGroupBondRole::Crossing);
     assert_eq!(group.parent_atoms(), &[atom(1)]);
     assert_eq!(group.parent(), Some(sgroup(0)));
-    assert_eq!(group.label(), Some("label"));
+    assert_eq!(group.label().map(fixture_text), Some("label"));
     assert_eq!(
         group.connection(),
         Some(&SGroupConnection::Unknown("CX".into()))
     );
-    assert_eq!(group.subtype(), Some("ALT"));
+    assert_eq!(group.subtype().map(fixture_text), Some("ALT"));
     assert_eq!(
         group.bracket_style(),
         Some(&SGroupBracketStyle::Unknown("BX".into()))
     );
-    assert_eq!(group.expansion_state(), Some("expanded"));
-    assert_eq!(group.class(), Some("CHEM"));
+    assert_eq!(group.expansion_state().map(fixture_text), Some("expanded"));
+    assert_eq!(group.class().map(fixture_text), Some("CHEM"));
     assert_eq!(group.component_number(), Some(3));
     assert_eq!(group.display(), Some(&display));
     assert_eq!(group.data(), Some(&data));
@@ -186,10 +195,17 @@ fn substance_group_defaults_and_builders_preserve_all_typed_state() {
     assert_eq!(group.cstates(), &[cstate]);
     assert_eq!(group.clone(), group);
     assert_eq!(
-        group.props().get("vendor").map(String::as_str),
+        group.props().get("vendor".as_bytes()).map(fixture_value),
         Some("kept")
     );
-    assert_eq!(group.data_fields(), &["raw-1", "raw-2"]);
+    assert_eq!(
+        group
+            .data_fields()
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        &["raw-1", "raw-2"]
+    );
 }
 
 #[test]
@@ -270,9 +286,15 @@ fn substance_group_mutators_preserve_order_and_remove_only_first_match() {
     });
     group.display_mut().display_tag = Some("tag".into());
     group.data_mut().values.push("value".into());
-    group.set_prop("keep", "yes");
-    group.set_prop("clear", "me");
-    group.clear_prop("clear");
+    group
+        .set_prop("keep", "yes")
+        .expect("valid original property fixture");
+    group
+        .set_prop("clear", "me")
+        .expect("valid original property fixture");
+    group
+        .clear_prop("clear")
+        .expect("valid original property fixture");
 
     group.remove_atom(atom(1));
     group.remove_parent_atom(atom(1));
@@ -303,29 +325,48 @@ fn substance_group_mutators_preserve_order_and_remove_only_first_match() {
     assert_eq!(group.rdkit_sequence_id(), Some(11));
     assert_eq!(group.external_id(), Some(12));
     assert_eq!(group.parent(), Some(sgroup(3)));
-    assert_eq!(group.label(), Some("SUP"));
+    assert_eq!(group.label().map(fixture_text), Some("SUP"));
     assert_eq!(group.connection(), Some(&SGroupConnection::HeadToTail));
-    assert_eq!(group.subtype(), Some("RAN"));
+    assert_eq!(group.subtype().map(fixture_text), Some("RAN"));
     assert_eq!(
         group.bracket_style(),
         Some(&SGroupBracketStyle::Parenthesis)
     );
-    assert_eq!(group.expansion_state(), Some("contracted"));
-    assert_eq!(group.class(), Some("AA"));
+    assert_eq!(
+        group.expansion_state().map(fixture_text),
+        Some("contracted")
+    );
+    assert_eq!(group.class().map(fixture_text), Some("AA"));
     assert_eq!(group.component_number(), Some(8));
-    assert_eq!(group.data_fields(), &["a", "b"]);
+    assert_eq!(
+        group
+            .data_fields()
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        &["a", "b"]
+    );
     assert_eq!(
         group
             .display()
-            .and_then(|value| value.display_tag.as_deref()),
+            .and_then(|value| value.display_tag.as_ref().map(fixture_text)),
         Some("tag")
     );
     assert_eq!(
-        group.data().expect("data").values.as_slice(),
-        &[String::from("value")]
+        group
+            .data()
+            .expect("data")
+            .values
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        &["value"]
     );
-    assert_eq!(group.props().get("keep").map(String::as_str), Some("yes"));
-    assert!(!group.props().contains_key("clear"));
+    assert_eq!(
+        group.props().get("keep".as_bytes()).map(fixture_value),
+        Some("yes")
+    );
+    assert!(!group.props().contains_key("clear".as_bytes()));
 }
 
 #[test]
@@ -402,6 +443,7 @@ fn fully_populated_group() -> SubstanceGroup {
             vector: [4.0, 5.0, 6.0],
         }])
         .with_prop("vendor", "property")
+        .expect("valid original property fixture")
         .with_data_field("raw")
 }
 
@@ -449,6 +491,7 @@ fn substance_group_remap_maps_every_reference_and_preserves_other_state() {
             vector: [4.0, 5.0, 6.0],
         }])
         .with_prop("vendor", "property")
+        .expect("valid original property fixture")
         .with_data_field("raw");
     assert_eq!(remapped, expected);
 }

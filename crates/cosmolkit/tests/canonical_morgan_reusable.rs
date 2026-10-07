@@ -68,7 +68,7 @@ fn fixed_source_cco_full_four_outputs_and_complete_metadata() {
         generator.info_string().unwrap(),
         "Common arguments : countSimulation=0 fpSize=2048 bitsPerFeature=1 includeChirality=0 --- MorganArguments onlyNonzeroInvariants=0 radius=3 --- MorganEnvironmentGenerator --- MorganInvariantGenerator includeRingMembership=1 --- MorganInvariantGenerator useBondTypes=1 useChirality=0"
     );
-    let value: Value = serde_json::from_str(&generator.to_json().unwrap()).unwrap();
+    let value: Value = serde_json::from_slice(generator.to_json().unwrap().as_bytes()).unwrap();
     assert_eq!(
         value,
         json!({"name":"FingerprintGenerator","fingerprintArguments":{"type":"MorganArguments","onlyNonzeroInvariants":"false","radius":"3","countSimulation":"false","fpSize":"2048","numBitsPerFeature":"1","includeChirality":"false","countBounds":["1","2","4","8"]},"atomEnvironmentGenerator":{"type":"MorganEnvGenerator"},"atomInvariantsGenerator":{"type":"MorganAtomInvGenerator","includeRingMembership":"true"},"bondInvariantsGenerator":{"type":"MorganBondInvGenerator","useBondTypes":"true","useChirality":"false"}})
@@ -101,7 +101,7 @@ fn settings_alias_lifetime_and_immutable_snapshot_cover_all_live_fields() {
     let mut owned = another.count_bounds().unwrap();
     owned.push(99);
     assert_eq!(another.count_bounds().unwrap(), [1, 3, 5]);
-    let value: Value = serde_json::from_str(&generator.to_json().unwrap()).unwrap();
+    let value: Value = serde_json::from_slice(generator.to_json().unwrap().as_bytes()).unwrap();
     assert_eq!(value["fingerprintArguments"]["includeChirality"], "true");
     assert_eq!(value["bondInvariantsGenerator"]["useChirality"], "false");
     drop(generator);
@@ -123,7 +123,7 @@ fn explicit_source_provider_precedence_and_independent_query_copy_lifetime() {
         MorganFingerprintGenerator::new(Some(&params), Some(&atom), Some(&bond)).unwrap();
     assert!(!bond.use_bond_types());
     assert!(bond.include_chirality());
-    let value: Value = serde_json::from_str(&explicit.to_json().unwrap()).unwrap();
+    let value: Value = serde_json::from_slice(explicit.to_json().unwrap().as_bytes()).unwrap();
     assert_eq!(
         value["atomInvariantsGenerator"]["includeRingMembership"],
         "true"
@@ -138,8 +138,8 @@ fn explicit_source_provider_precedence_and_independent_query_copy_lifetime() {
     );
     let molecule = Molecule::from_smiles("CCO").unwrap();
     let patterns = vec![
-        cosmolkit::search::from_smarts("[C]").unwrap(),
-        cosmolkit::search::from_smarts("[O]").unwrap(),
+        cosmolkit::parse_smarts("[C]").unwrap(),
+        cosmolkit::parse_smarts("[O]").unwrap(),
     ];
     let provider = MorganAtomInvariantsGenerator::features(Some(patterns));
     let params = MorganParams {
@@ -221,7 +221,7 @@ fn full_raw_additional_output_and_present_empty_roots_reinitialize_owner_values(
 #[test]
 fn source_json_missing_providers_keep_null_preconditions_and_custom_precedence() {
     let generator = default_generator();
-    let mut value: Value = serde_json::from_str(&generator.to_json().unwrap()).unwrap();
+    let mut value: Value = serde_json::from_slice(generator.to_json().unwrap().as_bytes()).unwrap();
     value
         .as_object_mut()
         .unwrap()
@@ -264,7 +264,10 @@ fn source_json_arguments_and_provider_flags_survive_restore_without_factory_vali
     settings.set_include_redundant_environments(true).unwrap();
     settings.set_count_bounds(vec![]).unwrap();
     settings.set_bits_per_feature(0).unwrap();
-    let restored = MorganFingerprintGenerator::from_json(&generator.to_json().unwrap()).unwrap();
+    let restored = MorganFingerprintGenerator::from_json(
+        std::str::from_utf8(generator.to_json().unwrap().as_bytes()).expect("source JSON UTF8"),
+    )
+    .unwrap();
     assert!(restored.settings().include_chirality().unwrap());
     assert!(
         !restored
@@ -284,9 +287,9 @@ fn source_json_arguments_and_provider_flags_survive_restore_without_factory_vali
             .len(),
         6
     );
-    let json = generator
-        .to_json()
-        .unwrap()
+    let source_json = generator.to_json().unwrap();
+    let json = std::str::from_utf8(source_json.as_bytes())
+        .expect("source JSON UTF8")
         .replace("\"fpSize\":\"2048\"", "\"fpSize\":1,\"fpSize\":2")
         .replace(
             "\"includeChirality\":\"true\"",

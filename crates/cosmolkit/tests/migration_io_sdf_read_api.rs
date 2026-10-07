@@ -235,7 +235,10 @@ fn sdf_public_property_lists_and_typed_sgroup_survive_runtime_install() {
         },
     )
     .unwrap();
-    assert_eq!(raw.properties().prop("atom.prop.Label"), Some("left right"));
+    assert_eq!(
+        raw.properties().prop("atom.prop.Label"),
+        Some(&cosmolkit::PropertyValue::from("left right"))
+    );
     assert!(raw.properties().sdf_property_lists().is_empty());
     assert_eq!(
         raw.molecule().unwrap().topology().atoms[0].prop("Label"),
@@ -256,24 +259,32 @@ fn sdf_public_errors_are_structured_and_do_not_modify_existing_values() {
         v2000_atom(0.0, 0.0, 0.0, "C"),
         v2000_atom(1.0, 0.0, 0.0, "O")
     );
-    // FileParserUtils.h::applyMolListProp warns and returns before setting
-    // items on a count mismatch, without consulting strict parsing.
+    // User-approved strict policy reports a count error; non-strict parsing
+    // retains the pinned source's raw field without expanding its items.
     for strict_parsing in [true, false] {
-        let record = SdfRecord::from_sdf_with_params(
+        let result = SdfRecord::from_sdf_with_params(
             &bad_list,
             &SdfReadParams {
                 strict_parsing,
                 ..SdfReadParams::default()
             },
-        )
-        .unwrap();
+        );
+        if strict_parsing {
+            assert!(matches!(result,
+                Err(SdfError::Read(cosmolkit::SdfReadError::PropertyListCount {
+                    target: "atom", name, actual: 1, expected: 2,
+                })) if name == "atom.prop.Label"
+            ));
+            continue;
+        }
+        let record = result.unwrap();
         assert_eq!(
             record.data_fields(),
-            &[("atom.prop.Label".to_owned(), "only-one".to_owned())]
+            &[("atom.prop.Label".into(), "only-one".into())]
         );
         assert_eq!(
             record.properties().prop("atom.prop.Label"),
-            Some("only-one")
+            Some(&cosmolkit::PropertyValue::from("only-one"))
         );
         assert!(record.properties().sdf_property_lists().is_empty());
         let molecule = record.molecule().unwrap();
@@ -298,7 +309,10 @@ fn sdf_public_errors_are_structured_and_do_not_modify_existing_values() {
         },
     )
     .unwrap();
-    assert_eq!(raw.properties().prop("atom.prop.Label"), Some("only-one"));
+    assert_eq!(
+        raw.properties().prop("atom.prop.Label"),
+        Some(&cosmolkit::PropertyValue::from("only-one"))
+    );
     let source = Molecule::from_sdf(&v2000_one_atom("C", 0.0)).unwrap();
     let cloned = source.clone();
     let _ = Molecule::from_sdf("not a molfile");

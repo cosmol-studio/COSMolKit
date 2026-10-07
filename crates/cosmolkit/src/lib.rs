@@ -77,6 +77,8 @@ mod batch;
 #[doc(hidden)]
 pub mod ops;
 #[cfg(feature = "cap-io")]
+pub use cosmolkit_io::SdfReadError;
+#[cfg(feature = "cap-io")]
 mod sdf;
 #[cfg(feature = "cap-batch")]
 pub use batch::{
@@ -109,8 +111,8 @@ pub use cosmolkit_search::{
 #[doc(hidden)]
 pub use binding_contract::{
     BINDING_CONTRACT, BindingCallableContract, BindingContractEntry, BindingDefault, BindingItem,
-    BindingKind, BindingOwner, BindingParameterContract, BindingReceiver, BindingTypeRole,
-    FunctionStatus, StateModel,
+    BindingKind, BindingOwner, BindingParameterContract, BindingPropertyAccess, BindingReceiver,
+    BindingTypeRole, FunctionStatus, StateModel,
 };
 #[cfg(feature = "cap-bio")]
 mod bio;
@@ -203,6 +205,8 @@ pub use legacy_topological_torsion::LegacyTopologicalTorsionParams;
 #[cfg(feature = "cap-fingerprints")]
 mod topological_torsion;
 pub(crate) use ops::DerivedState;
+#[cfg(cosmolkit_runtime_privacy_probe)]
+pub(crate) use ops::LazyOutputProbeAccess;
 #[cfg(feature = "cap-stereo")]
 pub(crate) use ops::PotentialStereoAccess;
 #[cfg(feature = "cap-stereo")]
@@ -402,7 +406,7 @@ mod maccs_fingerprint;
 #[cfg(feature = "cap-fingerprints")]
 pub use cosmolkit_fingerprints::{MaccsFingerprintError, MaccsFingerprintParams};
 
-#[cfg(feature = "cap-conformer")]
+#[cfg(any(feature = "cap-conformer", feature = "cap-stereoisomers"))]
 mod conformer_projection;
 
 #[cfg(feature = "cap-conformer")]
@@ -448,16 +452,29 @@ pub use cosmolkit_fingerprints::{
 #[cfg(feature = "cap-io")]
 mod molecular_io;
 #[cfg(feature = "cap-io")]
-mod sdf_supplier;
+mod property_text;
 #[cfg(feature = "cap-io")]
-pub use cosmolkit_core::PropertyStringError;
+mod sdf_supplier;
 #[cfg(feature = "cap-io")]
 pub use molecular_io::{
     Mol2PostError, Mol2ReadError, Mol2ReadParams, Mol2Type, MolBlockWriteParams,
     MolCoordinateSelection, MolWriteError, MolecularIoError, SdfFormat, XyzReadError,
     XyzWriteError, XyzWriteParams,
 };
+#[cfg(feature = "cap-stereoisomers")]
+pub use ops::StereoisomerIterator;
+#[cfg(feature = "cap-io")]
+pub use property_text::{PropertyStringError, property_value_to_text};
 #[cfg(feature = "cap-io")]
 pub use sdf_supplier::{
     SdfDataset, SdfDatasetIterator, SdfReader, SdfRecordMetadata, SdfRecordStream,
+};
+
+#[cfg(feature = "cap-stereoisomers")]
+mod stereoisomers;
+#[cfg(feature = "cap-stereoisomers")]
+pub(crate) use ops::{EnumerateStereoisomersAccess, EnumerateStereoisomersWithRandomBitsAccess};
+#[cfg(feature = "cap-stereoisomers")]
+pub use stereoisomers::{
+    EnumerationError, EnumerationRunError, StereoisomerOptions, StereoisomerRandomSource,
 };

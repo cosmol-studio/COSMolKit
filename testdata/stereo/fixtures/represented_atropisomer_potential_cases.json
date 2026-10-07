@@ -1,0 +1,1994 @@
+{
+  "source_library": "RDKit",
+  "version": "2026.03.1",
+  "source_file": "Code/GraphMol/FindStereo.cpp",
+  "source_sha256": "a08815d17dad417897a6e7c4abac8b1f2c99e7f1d32da90e9b3edc4e4450ba0a",
+  "license": "BSD-3-Clause",
+  "scope": "represented single-bond atropisomer degree/clean/flag_possible regressions",
+  "cases": [
+    {
+      "begin_degree": 1,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 1,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            4
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 1,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            0,
+            3,
+            4
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            4
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            4
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 1,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            0,
+            3,
+            4
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            4
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            4
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 1,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            0,
+            3,
+            4
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            4
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            4
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 1,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            0,
+            3,
+            4
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            null,
+            3,
+            4
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 2,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 0,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 0,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 0,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 0,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            null
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 0,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "stereo_type": 1,
+          "centered_on": 1,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            0,
+            4,
+            5
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 0,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "stereo_type": 1,
+          "centered_on": 1,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            0,
+            4,
+            5
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 5,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "bond_stereo_after": 6
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 0,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "stereo_type": 1,
+          "centered_on": 1,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            0,
+            4,
+            5
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "records": [
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "records": [
+        {
+          "stereo_type": 1,
+          "centered_on": 0,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            1,
+            2,
+            3
+          ]
+        },
+        {
+          "stereo_type": 1,
+          "centered_on": 1,
+          "specified": 0,
+          "descriptor": 0,
+          "permutation": 0,
+          "controlling_atoms": [
+            0,
+            4,
+            5
+          ]
+        },
+        {
+          "stereo_type": 7,
+          "centered_on": 0,
+          "specified": 1,
+          "descriptor": 6,
+          "permutation": 0,
+          "controlling_atoms": [
+            2,
+            3,
+            4,
+            5
+          ]
+        }
+      ],
+      "bond_stereo_after": 7
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 3,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 1,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 1,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 2,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 2,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 3,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 3,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 4,
+      "stereo": 6,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": false,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": false,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    },
+    {
+      "begin_degree": 4,
+      "end_degree": 4,
+      "stereo": 7,
+      "clean": true,
+      "flag_possible": true,
+      "error": {
+        "kind": "ValueError",
+        "message": "invalid atom degree in getStereoInfo(bond)"
+      }
+    }
+  ]
+}

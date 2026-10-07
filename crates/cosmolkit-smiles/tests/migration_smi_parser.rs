@@ -42,11 +42,27 @@ fn valence_transport_stereo_completion_marker_follows_source_flag_product() {
                         finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier)
                             .unwrap();
                     if sanitize || remove_hydrogens {
-                        assert_eq!(output.properties.prop("_StereochemDone"), Some("1"));
-                        assert!(output.properties.is_prop_computed("_StereochemDone"));
+                        assert_eq!(
+                            output.properties.prop("_StereochemDone"),
+                            Some(&PropertyValue::Int(1))
+                        );
+                        assert!(
+                            output
+                                .properties
+                                .is_prop_computed("_StereochemDone")
+                                .unwrap()
+                        );
                     } else {
-                        assert_eq!(output.properties.prop("_StereochemDone"), initial);
-                        assert!(!output.properties.is_prop_computed("_StereochemDone"));
+                        assert_eq!(
+                            output.properties.prop("_StereochemDone"),
+                            initial.map(PropertyValue::from).as_ref()
+                        );
+                        assert!(
+                            !output
+                                .properties
+                                .is_prop_computed("_StereochemDone")
+                                .unwrap()
+                        );
                     }
                 }
             }
@@ -141,6 +157,18 @@ fn stereo_finalization_prefers_two_d_coordinates_and_keeps_stored_state() {
         ],
         true,
     ));
+    let unknown_order = record.clone();
+    assert!(matches!(
+        finalize_smiles_stereo(unknown_order, &params, &mut None, &mut None),
+        Err(cosmolkit_smiles::SmilesStereoError::Coordinates(
+            cosmolkit_model::CoordinateValidationError::MissingSourceConformerOrder
+        ))
+    ));
+    // The fixture itself appends 2D first, then 3D. Record this source fact.
+    record.coordinates.source_conformer_order = Some(vec![
+        cosmolkit_model::CoordinateDimension::TwoD,
+        cosmolkit_model::CoordinateDimension::ThreeD,
+    ]);
     let source = record.clone();
     let mut ring_carrier: Option<cosmolkit_core::RingInfo> = None;
     let output = finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier).unwrap();
@@ -189,8 +217,14 @@ fn stereo_finalization_prefers_two_d_coordinates_and_keeps_stored_state() {
         );
     }
     assert_eq!(output.coordinates, source.coordinates);
-    assert_eq!(output.properties.name(), Some("sample"));
-    assert_eq!(source.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        output.properties.name(),
+        Some(&cosmolkit_model::PropertyText::from("sample"))
+    );
+    assert_eq!(
+        source.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
     assert_eq!(output.properties.prop("_needsDetectBondStereo"), None);
     assert_eq!(output.topology.bonds[1].stereo(), BondStereo::Z);
     assert_eq!(
@@ -324,9 +358,12 @@ fn cx_and_name_policies_are_atomic_and_explicit() {
         parse_smiles("CC |$left;right$| sample name", &Default::default()).expect("CX and name");
     assert_eq!(
         record.topology.atoms[0].prop("atomLabel"),
-        Some(&PropertyValue::String("left".to_owned()))
+        Some(&PropertyValue::String("left".into()))
     );
-    assert_eq!(record.properties.name(), Some("sample name"));
+    assert_eq!(
+        record.properties.name(),
+        Some(&cosmolkit_model::PropertyText::from("sample name"))
+    );
 
     let no_cx = parse_smiles(
         "CC |plain name|",
@@ -336,7 +373,10 @@ fn cx_and_name_policies_are_atomic_and_explicit() {
         },
     )
     .expect("name without CX");
-    assert_eq!(no_cx.properties.name(), Some("|plain name|"));
+    assert_eq!(
+        no_cx.properties.name(),
+        Some(&cosmolkit_model::PropertyText::from("|plain name|"))
+    );
 
     let strict = parse_smiles("CC |rb:0:0|", &Default::default()).unwrap_err();
     assert!(matches!(strict, SmilesParseError::UnsupportedCx(_)));
@@ -348,7 +388,10 @@ fn cx_and_name_policies_are_atomic_and_explicit() {
         },
     )
     .expect("non-strict CX recovery");
-    assert_eq!(recovered.properties.prop("_CXSMILES_Data"), Some(""));
+    assert_eq!(
+        recovered.properties.prop("_CXSMILES_Data"),
+        Some(&PropertyValue::from(""))
+    );
     assert_eq!(recovered.properties.name(), None);
 }
 

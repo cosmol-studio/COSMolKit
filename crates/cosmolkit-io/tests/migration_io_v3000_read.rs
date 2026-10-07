@@ -12,11 +12,19 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo};
 
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+
 fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
-    match value {
-        Some(PropertyValue::String(value)) => Some(value),
-        _ => None,
-    }
+    value.map(|value| {
+        fixture_text(
+            value
+                .as_string()
+                .expect("source text property must have String tag"),
+        )
+    })
 }
 
 #[test]
@@ -404,8 +412,8 @@ fn v3k_sg_bond_refs_use_one_based_rows_not_bookmarks_and_preserve_order() {
                 .collect::<Vec<_>>(),
             vec![0, 0]
         );
-        assert!(!group.props().contains_key("XBHEAD"));
-        assert!(!group.props().contains_key("XBCORR"));
+        assert!(!group.props().contains_key("XBHEAD".as_bytes()));
+        assert!(!group.props().contains_key("XBCORR".as_bytes()));
     }
 }
 
@@ -484,7 +492,7 @@ fn v3k_sg_data_strict_fielddata_uses_the_source_200_byte_boundary() {
         };
         assert_eq!(
             topology.substance_groups[0].data().unwrap().values[0],
-            "a".repeat(length.min(200)),
+            "a".repeat(length.min(200)).into(),
             "source strict boundary at {length} bytes"
         );
 
@@ -495,7 +503,7 @@ fn v3k_sg_data_strict_fielddata_uses_the_source_200_byte_boundary() {
         };
         assert_eq!(
             topology.substance_groups[0].data().unwrap().values[0],
-            value,
+            value.into(),
             "non-strict source path preserves {length} bytes"
         );
     }
@@ -510,21 +518,45 @@ fn v3k_sg_data_utf8_cut_is_an_explicit_rust_text_boundary() {
     else {
         panic!("ordinary DAT carrier must remain concrete");
     };
-    assert_eq!(topology.substance_groups[0].data().unwrap().values, [exact]);
+    assert_eq!(
+        topology.substance_groups[0]
+            .data()
+            .unwrap()
+            .values
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        [exact]
+    );
 
     let split = format!("{}é", "a".repeat(199));
     let labels = format!("ATOMS=(1 20) FIELDDATA=\"{split}\"");
-    assert!(matches!(
-        v3k_sg_data_record(&labels, true),
-        Err(SdfReadError::Parse(message))
-            if message.contains("FIELDDATA 200-byte truncation splits UTF-8")
-    ));
+    // Pinned ParseV3000ParseLabel uses std::string::substr(0, 200).
+    // Canonical PropertyText retains the split UTF-8 byte without conversion.
+    let MolBlockRecord::Concrete { topology, .. } =
+        v3k_sg_data_record(&labels, true).expect("native 200-byte truncation")
+    else {
+        panic!("ordinary DAT carrier must remain concrete");
+    };
+    let values = &topology.substance_groups[0].data().unwrap().values;
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0].as_bytes(), &split.as_bytes()[..200]);
+    assert!(std::str::from_utf8(values[0].as_bytes()).is_err());
     let MolBlockRecord::Concrete { topology, .. } =
         v3k_sg_data_record(&labels, false).expect("non-strict UTF-8 value")
     else {
         panic!("ordinary DAT carrier must remain concrete");
     };
-    assert_eq!(topology.substance_groups[0].data().unwrap().values, [split]);
+    assert_eq!(
+        topology.substance_groups[0]
+            .data()
+            .unwrap()
+            .values
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        [split]
+    );
 }
 
 #[test]
@@ -541,13 +573,25 @@ fn v3k_sg_data_preserves_typed_metadata_empty_values_escapes_and_order() {
             panic!("ordinary DAT carrier must remain concrete");
         };
         let data = topology.substance_groups[0].data().unwrap();
-        assert_eq!(data.field_name.as_deref(), Some("FIELD NAME"));
-        assert_eq!(data.field_type.as_deref(), Some("TYPE"));
-        assert_eq!(data.field_info.as_deref(), Some("UNIT INFO"));
-        assert_eq!(data.field_display.as_deref(), Some("DISPLAY SPEC"));
-        assert_eq!(data.query_type.as_deref(), Some("PQ"));
-        assert_eq!(data.query_op.as_deref(), Some("="));
-        assert_eq!(data.values, ["", "a\"b"]);
+        assert_eq!(
+            data.field_name.as_ref().map(fixture_text),
+            Some("FIELD NAME")
+        );
+        assert_eq!(data.field_type.as_ref().map(fixture_text), Some("TYPE"));
+        assert_eq!(
+            data.field_info.as_ref().map(fixture_text),
+            Some("UNIT INFO")
+        );
+        assert_eq!(
+            data.field_display.as_ref().map(fixture_text),
+            Some("DISPLAY SPEC")
+        );
+        assert_eq!(data.query_type.as_ref().map(fixture_text), Some("PQ"));
+        assert_eq!(data.query_op.as_ref().map(fixture_text), Some("="));
+        assert_eq!(
+            data.values.iter().map(fixture_text).collect::<Vec<_>>(),
+            ["", "a\"b"]
+        );
     }
 }
 
@@ -564,8 +608,14 @@ fn v3k_sg_data_special_fields_remain_typed_until_mol_postprocessing() {
     };
     assert_eq!(topology.substance_groups.len(), 1);
     let data = topology.substance_groups[0].data().unwrap();
-    assert_eq!(data.field_name.as_deref(), Some("MRV_IMPLICIT_H"));
-    assert_eq!(data.values, ["5"]);
+    assert_eq!(
+        data.field_name.as_ref().map(fixture_text),
+        Some("MRV_IMPLICIT_H")
+    );
+    assert_eq!(
+        data.values.iter().map(fixture_text).collect::<Vec<_>>(),
+        ["5"]
+    );
     assert_eq!(topology.atoms[1].explicit_hydrogens(), 0);
     assert_eq!(string_property(topology.atoms[1].prop("_ZBO_H")), None);
 }
@@ -585,14 +635,24 @@ fn v3k_sg_text_labels_preserve_canonical_known_values_without_raw_duplicates() {
             panic!("ordinary SGroup carrier must remain concrete");
         };
         let group = &topology.substance_groups[0];
-        assert_eq!(group.label(), Some("final label"));
-        assert_eq!(group.expansion_state(), Some("E"));
+        assert_eq!(group.label().map(fixture_text), Some("final label"));
+        assert_eq!(group.expansion_state().map(fixture_text), Some("E"));
         assert_eq!(
             group.bracket_style(),
             Some(&SGroupBracketStyle::Parenthesis)
         );
-        for key in ["LABEL", "ESTATE", "BRKTYP"] {
-            assert!(!group.props().contains_key(key), "duplicate raw {key}");
+        // Native dictionary bytes are retained by the canonical property store;
+        // the typed views above read the same stored values.
+        for (key, value) in [
+            ("LABEL", "final label"),
+            ("ESTATE", "E"),
+            ("BRKTYP", "PAREN"),
+        ] {
+            assert_eq!(
+                group.props().get(key.as_bytes()),
+                Some(&PropertyValue::String(value.into())),
+                "native {key}"
+            );
         }
     }
 }
@@ -610,11 +670,14 @@ fn v3k_sg_text_labels_preserve_unvalidated_and_unknown_raw_metadata() {
     };
     let props = topology.substance_groups[0].props();
     assert_eq!(
-        props.get("NATREPLACE").map(String::as_str),
+        string_property(props.get("NATREPLACE".as_bytes())),
         Some("not/a/known/template")
     );
-    assert_eq!(props.get("VENDOR").map(String::as_str), Some("a\"b"));
-    assert_eq!(props.get("EMPTY").map(String::as_str), Some(""));
+    assert_eq!(
+        string_property(props.get("VENDOR".as_bytes())),
+        Some("a\"b")
+    );
+    assert_eq!(string_property(props.get("EMPTY".as_bytes())), Some(""));
 }
 
 #[test]
@@ -625,7 +688,7 @@ fn v3k_sg_text_labels_preserve_source_bracket_style_values() {
         ("", SGroupBracketStyle::None),
         (
             "vendor-style",
-            SGroupBracketStyle::Unknown("vendor-style".to_owned()),
+            SGroupBracketStyle::Unknown("vendor-style".into()),
         ),
     ] {
         let labels = format!("BRKTYP={source}");
@@ -636,7 +699,10 @@ fn v3k_sg_text_labels_preserve_source_bracket_style_values() {
         };
         let group = &topology.substance_groups[0];
         assert_eq!(group.bracket_style(), Some(&expected), "{source:?}");
-        assert!(!group.props().contains_key("BRKTYP"));
+        assert_eq!(
+            group.props().get(b"BRKTYP".as_slice()),
+            Some(&PropertyValue::String(source.into()))
+        );
     }
 }
 
@@ -666,10 +732,10 @@ fn v3k_sg_text_labels_never_flatten_typed_bond_references() {
             .collect::<Vec<_>>(),
         [0, 0]
     );
-    assert!(!group.props().contains_key("XBHEAD"));
-    assert!(!group.props().contains_key("XBCORR"));
+    assert!(!group.props().contains_key("XBHEAD".as_bytes()));
+    assert!(!group.props().contains_key("XBCORR".as_bytes()));
     assert_eq!(
-        group.props().get("NATREPLACE").map(String::as_str),
+        string_property(group.props().get("NATREPLACE".as_bytes())),
         Some("AA/X")
     );
 
@@ -694,9 +760,9 @@ fn v3k_sg_defaults_apply_only_when_explicit_labels_are_absent() {
             panic!("ordinary SGroup carrier must remain concrete");
         };
         let group = &topology.substance_groups[0];
-        assert_eq!(group.class(), Some("AA"));
-        assert_eq!(group.label(), Some("default"));
-        assert_eq!(group.expansion_state(), Some("E"));
+        assert_eq!(group.class().map(fixture_text), Some("AA"));
+        assert_eq!(group.label().map(fixture_text), Some("default"));
+        assert_eq!(group.expansion_state().map(fixture_text), Some("E"));
         assert_eq!(
             group.bracket_style(),
             Some(&SGroupBracketStyle::Parenthesis)
@@ -708,7 +774,10 @@ fn v3k_sg_defaults_apply_only_when_explicit_labels_are_absent() {
         else {
             panic!("ordinary SGroup carrier must remain concrete");
         };
-        assert_eq!(topology.substance_groups[0].label(), Some("explicit"));
+        assert_eq!(
+            topology.substance_groups[0].label().map(fixture_text),
+            Some("explicit")
+        );
     }
 }
 
@@ -727,10 +796,10 @@ fn v3k_sg_defaults_preserve_explicit_precedence_and_default_encounter_order() {
             panic!("ordinary SGroup carrier must remain concrete");
         };
         let group = &topology.substance_groups[0];
-        assert_eq!(group.label(), Some("explicit"));
-        assert_eq!(group.expansion_state(), Some("E"));
+        assert_eq!(group.label().map(fixture_text), Some("explicit"));
+        assert_eq!(group.expansion_state().map(fixture_text), Some("E"));
         assert_eq!(
-            group.props().get("VENDOR").map(String::as_str),
+            string_property(group.props().get("VENDOR".as_bytes())),
             Some("second")
         );
     }
@@ -752,8 +821,8 @@ fn v3k_sg_defaults_skip_overridden_quote_and_parenthesis_with_source_cursor_rule
             panic!("ordinary SGroup carrier must remain concrete");
         };
         let group = &topology.substance_groups[0];
-        assert_eq!(group.label(), Some("explicit"));
-        assert_eq!(group.expansion_state(), Some("E"));
+        assert_eq!(group.label().map(fixture_text), Some("explicit"));
+        assert_eq!(group.expansion_state().map(fixture_text), Some("E"));
     }
 
     assert!(matches!(
@@ -808,8 +877,14 @@ fn v3k_sg_identity_sorts_sequence_keys_and_assigns_compact_canonical_ids() {
         assert_eq!(topology.substance_groups[1].rdkit_sequence_id(), Some(20));
         assert_eq!(topology.substance_groups[0].external_id(), Some(30));
         assert_eq!(topology.substance_groups[1].external_id(), Some(200));
-        assert_eq!(topology.substance_groups[0].label(), Some("three"));
-        assert_eq!(topology.substance_groups[1].label(), Some("twenty"));
+        assert_eq!(
+            topology.substance_groups[0].label().map(fixture_text),
+            Some("three")
+        );
+        assert_eq!(
+            topology.substance_groups[1].label().map(fixture_text),
+            Some("twenty")
+        );
     }
 }
 
@@ -830,7 +905,10 @@ fn v3k_sg_identity_duplicate_sequence_is_first_wins_and_count_checked() {
     };
     assert_eq!(topology.substance_groups.len(), 1);
     assert_eq!(topology.substance_groups[0].external_id(), Some(10));
-    assert_eq!(topology.substance_groups[0].label(), Some("first"));
+    assert_eq!(
+        topology.substance_groups[0].label().map(fixture_text),
+        Some("first")
+    );
 }
 
 #[test]
@@ -923,7 +1001,10 @@ fn v3k_sg_identity_unknown_count_and_early_end_have_safe_source_shaped_terminati
         panic!("ordinary SGroup carrier must remain concrete");
     };
     assert_eq!(topology.substance_groups.len(), 1);
-    assert_eq!(topology.substance_groups[0].label(), Some("one"));
+    assert_eq!(
+        topology.substance_groups[0].label().map(fixture_text),
+        Some("one")
+    );
 }
 
 #[test]
@@ -939,7 +1020,10 @@ fn v3k_sg_identity_type_validation_preserves_strictness_policy() {
         panic!("ordinary SGroup carrier must remain concrete");
     };
     assert_eq!(topology.substance_groups.len(), 1);
-    assert_eq!(topology.substance_groups[0].label(), Some("x"));
+    assert_eq!(
+        topology.substance_groups[0].label().map(fixture_text),
+        Some("x")
+    );
 }
 
 #[test]
@@ -964,7 +1048,12 @@ fn v3k_sg_parent_resolves_forward_unsorted_sequence_to_compact_typed_id() {
             topology.substance_groups[1].parent(),
             Some(topology.substance_groups[0].id())
         );
-        assert!(!topology.substance_groups[1].props().contains_key("PARENT"));
+        assert_eq!(
+            topology.substance_groups[1]
+                .props()
+                .get(b"PARENT".as_slice()),
+            Some(&PropertyValue::UInt(3))
+        );
     }
 }
 
@@ -982,7 +1071,10 @@ fn v3k_sg_parent_missing_target_errors_strictly_and_drops_complete_child_non_str
         panic!("ordinary SGroup carrier must remain concrete");
     };
     assert_eq!(topology.substance_groups.len(), 1);
-    assert_eq!(topology.substance_groups[0].label(), Some("sibling"));
+    assert_eq!(
+        topology.substance_groups[0].label().map(fixture_text),
+        Some("sibling")
+    );
     assert_eq!(topology.substance_groups[0].id().index(), 0);
 }
 
@@ -1008,7 +1100,10 @@ fn v3k_sg_parent_dropped_parent_cascades_without_removing_independent_siblings()
     };
     assert_eq!(topology.substance_groups.len(), 1);
     assert_eq!(topology.substance_groups[0].rdkit_sequence_id(), Some(4));
-    assert_eq!(topology.substance_groups[0].label(), Some("sibling"));
+    assert_eq!(
+        topology.substance_groups[0].label().map(fixture_text),
+        Some("sibling")
+    );
 }
 
 #[test]
@@ -1032,7 +1127,7 @@ fn v3k_sg_parent_malformed_child_drops_only_that_group_non_strictly() {
         topology
             .substance_groups
             .iter()
-            .map(|group| group.label())
+            .map(|group| group.label().map(fixture_text))
             .collect::<Vec<_>>(),
         vec![Some("parent"), Some("sibling")]
     );
@@ -1065,7 +1160,10 @@ fn v3k_sg_parent_formatted_signs_overflow_and_duplicate_sequence_follow_owner_ru
         panic!("ordinary SGroup carrier must remain concrete");
     };
     assert_eq!(topology.substance_groups.len(), 1);
-    assert_eq!(topology.substance_groups[0].label(), Some("parent"));
+    assert_eq!(
+        topology.substance_groups[0].label().map(fixture_text),
+        Some("parent")
+    );
 
     // std::map::emplace retains the first sequence-2 row and therefore its
     // parent relation. The duplicate row cannot overwrite temporary metadata.
@@ -1084,7 +1182,10 @@ fn v3k_sg_parent_formatted_signs_overflow_and_duplicate_sequence_follow_owner_ru
     else {
         panic!("ordinary SGroup carrier must remain concrete");
     };
-    assert_eq!(topology.substance_groups[1].label(), Some("first-child"));
+    assert_eq!(
+        topology.substance_groups[1].label().map(fixture_text),
+        Some("first-child")
+    );
     assert_eq!(
         topology.substance_groups[1].parent(),
         Some(topology.substance_groups[0].id())
@@ -1220,7 +1321,11 @@ fn v3k_sg_formatted_double_brkxyz_preserves_stream_failure_destination_reuse() {
                 .copied()
                 .collect::<Vec<_>>();
             assert_eq!(actual, expected, "value={value:?}, strict={strict_parsing}");
-            assert_eq!(group.label(), None, "failbit stops following labels");
+            assert_eq!(
+                group.label().map(fixture_text),
+                None,
+                "failbit stops following labels"
+            );
         }
     }
 }
@@ -1242,7 +1347,7 @@ fn v3k_sg_formatted_double_accepts_source_finite_spellings_and_c_locale_whitespa
         .collect::<Vec<_>>();
     let expected = [1.0_f64, -2.0, 0.5, 1.0, 100.0, -0.01, 0.0, -0.0, 3.0].map(f64::to_bits);
     assert_eq!(actual, expected);
-    assert_eq!(group.label(), Some("after"));
+    assert_eq!(group.label().map(fixture_text), Some("after"));
 }
 
 #[test]
@@ -1386,7 +1491,11 @@ fn v3k_sg_formatted_double_cstate_preserves_malformed_exponent_and_overflow_fail
                 &expected,
                 "components={components:?}, strict={strict_parsing}"
             );
-            assert_eq!(group.label(), None, "failbit stops following labels");
+            assert_eq!(
+                group.label().map(fixture_text),
+                None,
+                "failbit stops following labels"
+            );
         }
     }
 }
@@ -1450,13 +1559,22 @@ fn v3k_sg_sap_resolves_aidx_zero_and_explicit_nonsequential_bookmarks() {
     assert_eq!(group.attach_points().len(), 3);
     assert_eq!(group.attach_points()[0].atom, AtomId::new(2));
     assert_eq!(group.attach_points()[0].leaving_atom, Some(AtomId::new(2)));
-    assert_eq!(group.attach_points()[0].label.as_deref(), Some("lo"));
+    assert_eq!(
+        group.attach_points()[0].label.as_ref().map(fixture_text),
+        Some("lo")
+    );
     assert_eq!(group.attach_points()[1].atom, AtomId::new(0));
     assert_eq!(group.attach_points()[1].leaving_atom, None);
-    assert_eq!(group.attach_points()[1].label.as_deref(), Some("ZZ"));
+    assert_eq!(
+        group.attach_points()[1].label.as_ref().map(fixture_text),
+        Some("ZZ")
+    );
     assert_eq!(group.attach_points()[2].atom, AtomId::new(1));
     assert_eq!(group.attach_points()[2].leaving_atom, Some(AtomId::new(0)));
-    assert_eq!(group.attach_points()[2].label.as_deref(), Some("XY"));
+    assert_eq!(
+        group.attach_points()[2].label.as_ref().map(fixture_text),
+        Some("XY")
+    );
 }
 
 #[test]
@@ -1475,13 +1593,13 @@ fn v3k_sg_sap_preserves_formatted_conversion_and_label_last_byte_behavior() {
     assert_eq!(points.len(), 3);
     assert_eq!(points[0].atom, AtomId::new(0));
     assert_eq!(points[0].leaving_atom, None);
-    assert_eq!(points[0].label.as_deref(), Some("PP"));
+    assert_eq!(points[0].label.as_ref().map(fixture_text), Some("PP"));
     assert_eq!(points[1].atom, AtomId::new(0));
     assert_eq!(points[1].leaving_atom, Some(AtomId::new(1)));
-    assert_eq!(points[1].label.as_deref(), Some("A"));
+    assert_eq!(points[1].label.as_ref().map(fixture_text), Some("A"));
     assert_eq!(points[2].atom, AtomId::new(1));
     assert_eq!(points[2].leaving_atom, None);
-    assert_eq!(points[2].label.as_deref(), Some("AB)"));
+    assert_eq!(points[2].label.as_ref().map(fixture_text), Some("AB)"));
 }
 
 #[test]
@@ -1493,8 +1611,8 @@ fn v3k_sg_sap_empty_and_utf8_labels_use_the_canonical_text_boundary() {
         panic!("concrete record expected");
     };
     let points = topology.substance_groups[0].attach_points();
-    assert_eq!(points[0].label.as_deref(), Some(""));
-    assert_eq!(points[1].label.as_deref(), Some("é"));
+    assert_eq!(points[0].label.as_ref().map(fixture_text), Some(""));
+    assert_eq!(points[1].label.as_ref().map(fixture_text), Some("é"));
 
     assert!(matches!(
         v3k_sg_sap_record("SAP=(3 10 20 é", true),
@@ -1578,7 +1696,10 @@ fn v3k_sg_scalar_labels_accept_every_source_vocabulary_value() {
         else {
             panic!("concrete record expected");
         };
-        assert_eq!(topology.substance_groups[0].subtype(), Some(subtype));
+        assert_eq!(
+            topology.substance_groups[0].subtype().map(fixture_text),
+            Some(subtype)
+        );
     }
 
     for (source, expected) in [
@@ -1621,7 +1742,10 @@ fn v3k_sg_scalar_labels_accept_every_source_vocabulary_value() {
         else {
             panic!("concrete record expected");
         };
-        assert_eq!(topology.substance_groups[0].class(), Some(class));
+        assert_eq!(
+            topology.substance_groups[0].class().map(fixture_text),
+            Some(class)
+        );
     }
 }
 
@@ -1668,8 +1792,8 @@ fn v3k_sg_strings_empty_value_retains_the_following_label() {
             panic!("ordinary SGroup carrier must remain concrete");
         };
         let group = &topology.substance_groups[0];
-        assert_eq!(group.label(), Some(""));
-        assert_eq!(group.expansion_state(), Some("E"));
+        assert_eq!(group.label().map(fixture_text), Some(""));
+        assert_eq!(group.expansion_state().map(fixture_text), Some("E"));
     }
 }
 
@@ -1686,8 +1810,8 @@ fn v3k_sg_strings_doubled_quotes_equals_and_trailing_trim_match_source() {
             panic!("ordinary SGroup carrier must remain concrete");
         };
         let group = &topology.substance_groups[0];
-        assert_eq!(group.label(), Some("a\"b=c"));
-        assert_eq!(group.expansion_state(), Some("E"));
+        assert_eq!(group.label().map(fixture_text), Some("a\"b=c"));
+        assert_eq!(group.expansion_state().map(fixture_text), Some("E"));
 
         let MolBlockRecord::Concrete { topology, .. } =
             v3k_sg_string_record("LABEL=a=b ESTATE=E", strict_parsing)
@@ -1696,8 +1820,8 @@ fn v3k_sg_strings_doubled_quotes_equals_and_trailing_trim_match_source() {
             panic!("ordinary SGroup carrier must remain concrete");
         };
         let group = &topology.substance_groups[0];
-        assert_eq!(group.label(), Some("a=b"));
-        assert_eq!(group.expansion_state(), Some("E"));
+        assert_eq!(group.label().map(fixture_text), Some("a=b"));
+        assert_eq!(group.expansion_state().map(fixture_text), Some("E"));
     }
 }
 
@@ -1727,8 +1851,8 @@ fn v3k_sg_strings_tabs_are_value_whitespace_but_not_label_separators() {
             panic!("ordinary SGroup carrier must remain concrete");
         };
         let group = &topology.substance_groups[0];
-        assert_eq!(group.label(), Some("value"));
-        assert_eq!(group.expansion_state(), Some("E"));
+        assert_eq!(group.label().map(fixture_text), Some("value"));
+        assert_eq!(group.expansion_state().map(fixture_text), Some("E"));
     }
 
     assert!(v3k_sg_string_record("LABEL=value\tESTATE=E", true).is_err());
@@ -1753,7 +1877,10 @@ fn v3k_sg_arrays_zero_and_max_counts_preserve_typed_state_in_both_modes() {
         };
         assert_eq!(topology.substance_groups.len(), 1);
         assert!(topology.substance_groups[0].atoms().is_empty());
-        assert_eq!(topology.substance_groups[0].label(), Some("empty"));
+        assert_eq!(
+            topology.substance_groups[0].label().map(fixture_text),
+            Some("empty")
+        );
 
         let MolBlockRecord::Concrete { topology, .. } =
             v3k_sg_array_record("ATOMS=(2 1 2) LABEL=full", strict_parsing)
@@ -1770,7 +1897,7 @@ fn v3k_sg_arrays_zero_and_max_counts_preserve_typed_state_in_both_modes() {
                 .collect::<Vec<_>>(),
             vec![0, 1]
         );
-        assert_eq!(group.label(), Some("full"));
+        assert_eq!(group.label().map(fixture_text), Some("full"));
 
         let MolBlockRecord::Concrete { topology, .. } =
             v3k_sg_array_record("BRKXYZ=(9 1 2 3 4 5 6 7 8 9)", strict_parsing)
@@ -1834,7 +1961,7 @@ fn v3k_sg_arrays_parentheses_and_shared_cursor_match_source() {
                     .collect::<Vec<_>>(),
                 vec![0, 1]
             );
-            assert_eq!(group.label(), Some("kept"));
+            assert_eq!(group.label().map(fixture_text), Some("kept"));
         }
 
         let MolBlockRecord::Concrete { topology, .. } =
@@ -3674,7 +3801,7 @@ fn v3k_linknodes_zero_and_empty_rows_do_not_install_a_property() {
         else {
             panic!("ordinary atom must remain concrete");
         };
-        assert_eq!(properties.prop("_MolFileLinkNodes"), None);
+        assert_eq!(properties.prop("_molLinkNodes"), None);
     }
 }
 
@@ -3697,8 +3824,10 @@ fn v3k_linknodes_uppercase_and_accumulate_in_source_order() {
         panic!("ordinary atom must remain concrete");
     };
     assert_eq!(
-        properties.prop("_MolFileLinkNodes"),
-        Some("FIRST MIXEDCASE|SECOND LOWER")
+        properties.prop("_molLinkNodes"),
+        Some(&PropertyValue::String(
+            "FIRST MIXEDCASE|SECOND LOWER".into()
+        ))
     );
 }
 
@@ -3723,11 +3852,23 @@ fn v3k_linknodes_continuations_preserve_other_detached_properties() {
     else {
         panic!("ordinary atom must remain concrete");
     };
-    assert_eq!(properties.prop("_MolFileLinkNodes"), Some("ALPHA BETA"));
-    assert_eq!(properties.name(), Some("named"));
-    assert_eq!(properties.prop("_MolFileInfo"), Some("  Generator 2D"));
-    assert_eq!(properties.prop("_MolFileComments"), Some("comment"));
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("1"));
+    assert_eq!(
+        properties.prop("_molLinkNodes"),
+        Some(&PropertyValue::String("ALPHA BETA".into()))
+    );
+    assert_eq!(properties.name().map(fixture_text), Some("named"));
+    assert_eq!(
+        properties.prop("_MolFileInfo"),
+        Some(&PropertyValue::String("  Generator 2D".into()))
+    );
+    assert_eq!(
+        properties.prop("_MolFileComments"),
+        Some(&PropertyValue::String("comment".into()))
+    );
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("1".into()))
+    );
 }
 
 #[test]
@@ -4006,7 +4147,10 @@ fn v3k_counts_omits_zero_count_blocks_without_panic() {
             .all(|conformer| conformer.coordinates().is_empty())
     );
     assert!(coordinates.conformers_3d.is_empty());
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("0"));
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("0".into()))
+    );
 }
 
 #[test]
@@ -4036,7 +4180,10 @@ fn v3k_counts_leading_plus_is_zero_atoms() {
         panic!("zero-atom record must be concrete");
     };
     assert!(topology.atoms.is_empty());
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("0"));
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("0".into()))
+    );
 }
 
 #[test]
@@ -4057,7 +4204,10 @@ fn v3k_counts_unsigned_overflow_is_zero_atoms() {
         panic!("zero-atom record must be concrete");
     };
     assert!(topology.atoms.is_empty());
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("0"));
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("0".into()))
+    );
 }
 
 #[test]
@@ -4075,7 +4225,10 @@ fn v3k_counts_chiral_flag_unsigned_boundaries() {
     else {
         panic!("zero-atom record must be concrete");
     };
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("4294967295"));
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("4294967295".into()))
+    );
 
     let overflow = v3000_with_outer_and_inner(
         "  0  0  0  0  0  0  0  0  0  0999",
@@ -4087,7 +4240,10 @@ fn v3k_counts_chiral_flag_unsigned_boundaries() {
     else {
         panic!("zero-atom record must be concrete");
     };
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("0"));
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("0".into()))
+    );
 }
 
 #[test]
@@ -4107,7 +4263,10 @@ fn v3k_counts_optional_fields_absent_and_present() {
     assert_eq!(topology.atoms.len(), 1);
     assert_eq!(coordinates.conformers_2d.len(), 1);
     assert_eq!(coordinates.conformers_2d[0].coordinates().len(), 1);
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("0"));
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("0".into()))
+    );
 
     let present = v3000_with_outer_and_inner(outer, "1 0 0 0 1", &[atom]);
     let MolBlockRecord::Concrete { properties, .. } =
@@ -4115,7 +4274,10 @@ fn v3k_counts_optional_fields_absent_and_present() {
     else {
         panic!("atom record must be concrete");
     };
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("1"));
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("1".into()))
+    );
 }
 
 #[test]
@@ -5868,8 +6030,14 @@ fn v3k_rbcnt_minus_two_sets_deferred_scan_state_and_unsigned_sentinel() {
         string_property(record.query.atoms()[0].prop("molRingBondCount")),
         Some("-2")
     );
-    assert_eq!(record.properties.prop("_NeedsQueryScan"), Some("1"));
-    assert_eq!(record.query.prop("_NeedsQueryScan"), Some("1"));
+    assert_eq!(
+        record.properties.prop("_NeedsQueryScan"),
+        Some(&PropertyValue::String("1".into()))
+    );
+    assert_eq!(
+        record.query.prop("_NeedsQueryScan"),
+        Some(&PropertyValue::String("1".into()))
+    );
 }
 
 #[test]
@@ -6748,7 +6916,7 @@ fn v3k_record_finish_concrete_retains_complete_typed_state_and_properties() {
     assert_eq!(group.cstates()[0].vector(), &[1.25, -2.5, 3.75]);
     assert_eq!(group.attach_points()[0].atom, AtomId::new(1));
     assert_eq!(group.attach_points()[0].leaving_atom, Some(AtomId::new(0)));
-    assert_eq!(group.label(), Some("unit"));
+    assert_eq!(group.label().map(fixture_text), Some("unit"));
     assert_eq!(topology.stereo_groups.len(), 1);
     assert_eq!(topology.stereo_groups[0].kind(), StereoGroupKind::Or);
     assert_eq!(topology.stereo_groups[0].id(), Some(1));
@@ -6765,13 +6933,19 @@ fn v3k_record_finish_concrete_retains_complete_typed_state_and_properties() {
         coordinates.source_coordinate_dim,
         Some(CoordinateDimension::ThreeD)
     );
-    assert_eq!(properties.name(), Some("concrete finish"));
-    assert_eq!(properties.prop("_MolFileInfo"), Some("  COSMolKit 3D"));
+    assert_eq!(properties.name().map(fixture_text), Some("concrete finish"));
+    assert_eq!(
+        properties.prop("_MolFileInfo"),
+        Some(&PropertyValue::String("  COSMolKit 3D".into()))
+    );
     assert_eq!(
         properties.prop("_MolFileComments"),
-        Some("concrete comments")
+        Some(&PropertyValue::String("concrete comments".into()))
     );
-    assert_eq!(properties.prop("_MolFileChiralFlag"), Some("1"));
+    assert_eq!(
+        properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("1".into()))
+    );
 }
 
 #[test]
@@ -6807,23 +6981,52 @@ fn v3k_record_finish_query_retains_carriers_metadata_and_deferred_scan_state() {
     let groups = query_substance_groups(&record.query);
     assert_eq!(groups[0].atoms(), [AtomId::new(0)]);
     assert_eq!(
-        groups[0].data().unwrap().field_name.as_deref(),
+        groups[0]
+            .data()
+            .unwrap()
+            .field_name
+            .as_ref()
+            .map(fixture_text),
         Some("note")
     );
-    assert_eq!(groups[0].data().unwrap().values, ["value"]);
-    assert_eq!(record.properties.name(), Some("query finish"));
+    assert_eq!(
+        groups[0]
+            .data()
+            .unwrap()
+            .values
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        ["value"]
+    );
+    assert_eq!(
+        record.properties.name().map(fixture_text),
+        Some("query finish")
+    );
     assert_eq!(
         record.properties.prop("_MolFileInfo"),
-        Some("  COSMolKit 2D")
+        Some(&PropertyValue::String("  COSMolKit 2D".into()))
     );
     assert_eq!(
         record.properties.prop("_MolFileComments"),
-        Some("query comments")
+        Some(&PropertyValue::String("query comments".into()))
     );
-    assert_eq!(record.properties.prop("_MolFileChiralFlag"), Some("1"));
-    assert_eq!(record.properties.prop("_NeedsQueryScan"), Some("1"));
-    assert_eq!(record.query.name(), Some("query finish"));
-    assert_eq!(record.query.prop("_NeedsQueryScan"), Some("1"));
+    assert_eq!(
+        record.properties.prop("_MolFileChiralFlag"),
+        Some(&PropertyValue::String("1".into()))
+    );
+    assert_eq!(
+        record.properties.prop("_NeedsQueryScan"),
+        Some(&PropertyValue::String("1".into()))
+    );
+    assert_eq!(
+        record.query.name().unwrap().map(fixture_text),
+        Some("query finish")
+    );
+    assert_eq!(
+        record.query.prop("_NeedsQueryScan"),
+        Some(&PropertyValue::String("1".into()))
+    );
 }
 
 #[test]

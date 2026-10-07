@@ -376,7 +376,10 @@ fn invalid_construction_fails_before_authoritative_installation_with_exact_error
         ))
     ));
     assert_eq!(source.num_atoms(), 0);
-    assert_eq!(source.properties().name(), Some("unchanged"));
+    assert_eq!(
+        source.properties().name(),
+        Some(&cosmolkit::PropertyText::from("unchanged"))
+    );
 }
 
 #[test]

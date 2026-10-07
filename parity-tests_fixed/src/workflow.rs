@@ -210,8 +210,23 @@ pub(crate) fn inputs(spec: &Spec, cases: &Corpus) -> Result<Value> {
             json!([{"cases": cases.molecules, "workers": 1}, {"cases": cases.molecules, "workers": 4}]),
         ),
         Spec::Special(s) => {
-            serde_json::from_slice(&read(&directory().join("testdata").join(s.fixture))?)
-                .map_err(|e| e.to_string())
+            let mut fixture: Value =
+                serde_json::from_slice(&read(&directory().join("testdata").join(s.fixture))?)
+                    .map_err(|e| e.to_string())?;
+            if matches!(
+                s.schema,
+                registry::SpecialRegressionSchema::BioMmcifSwitches
+            ) {
+                fixture["flags"] = json!(crate::bio_mmcif::FLAGS);
+                for case in fixture["cases"].as_array_mut().ok_or("missing BIO cases")? {
+                    let source = case["input"].as_str().ok_or("missing BIO input")?;
+                    case["text"] = json!(
+                        String::from_utf8(read(&input_path(&format!("../{source}"))?)?)
+                            .map_err(|e| e.to_string())?
+                    );
+                }
+            }
+            Ok(fixture)
         }
     }
 }
@@ -302,8 +317,7 @@ fn identity(
     output: &[u8],
     rows: usize,
 ) -> Result<Manifest> {
-    let pin = if matches!(*spec, Spec::Corpus(t) if t.operation == registry::Operation::BioPdbOutput)
-    {
+    let pin = if reference::uses_gemmi(spec) {
         "gemmi.json"
     } else {
         "rdkit.json"
@@ -475,7 +489,7 @@ mod tests {
     use super::*;
     #[test]
     fn registry_keys_and_cargo_declarations_share_one_census() {
-        assert_eq!(registry::TASKS.len(), 108);
+        assert_eq!(registry::TASKS.len(), 109);
         let mut unique = BTreeSet::new();
         for task in registry::TASKS {
             assert_eq!(
@@ -494,7 +508,7 @@ mod tests {
         assert!(plan(&Selection::Corpus("fingerprint_5000".into())).is_err());
         let smoke = plan(&Selection::Corpus("smiles_smoke".into())).unwrap();
         assert_eq!(smoke.cases.molecules.len(), 3);
-        assert_eq!(smoke.specs.len(), 107);
+        assert_eq!(smoke.specs.len(), 108);
         let bio = plan(&Selection::Corpus("bio_small".into())).unwrap();
         assert_eq!(bio.cases.bio_cases.len(), 2);
         assert_eq!(bio.specs.len(), 2);
@@ -509,14 +523,23 @@ mod tests {
     #[test]
     fn special_regressions_have_separate_fixed_inputs() {
         let special = plan(&Selection::Special("all".into())).unwrap();
-        assert_eq!(special.specs.len(), 2);
-        let fixture = inputs(&special.specs[0], &special.cases).unwrap();
+        assert_eq!(special.specs.len(), 4);
+        let structure = special
+            .specs
+            .iter()
+            .find(|spec| spec.key() == "structure_tags")
+            .unwrap();
+        let fixture = inputs(structure, &special.cases).unwrap();
         assert_eq!(
             fixture["cases"].as_array().unwrap().len()
                 + fixture["octahedral_switch_cases"].as_array().unwrap().len(),
             77
         );
         assert!(special.cases.molecules.is_empty());
+        let focused = plan(&Selection::Special("tautomer_focused".into())).unwrap();
+        let fixture = inputs(&focused.specs[0], &focused.cases).unwrap();
+        assert_eq!(fixture["cases"].as_array().unwrap().len(), 18);
+        assert_eq!(fixture["branches"].as_array().unwrap().len(), 8);
     }
     #[test]
     fn expected_data_identity_binds_parameters_output_and_selection() {
@@ -611,7 +634,7 @@ mod tests {
     #[test]
     fn task_selection_is_exact_and_must_apply_to_the_corpus() {
         let selection = Selection::Corpus("smiles_smoke".into());
-        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 107);
+        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 108);
         for key in ["num_heavy_atoms_smiles", "batch_smiles"] {
             let selected = plan_task(&selection, Some(key)).unwrap();
             assert_eq!(selected.specs.len(), 1);
@@ -660,7 +683,12 @@ mod tests {
         assert_eq!(snapshots.len(), 1);
         assert_eq!(fs::read_dir(isolated.path()).unwrap().count(), 1);
 
-        let another = plan(&selected.selection).unwrap().specs[0];
+        let another = plan(&selected.selection)
+            .unwrap()
+            .specs
+            .into_iter()
+            .find(|spec| spec.key() == "smiles_read_smiles")
+            .unwrap();
         selected.specs.push(another);
         let error = load_references(&selected, isolated.path()).err().unwrap();
         assert!(error.contains("smiles_read_smiles"));

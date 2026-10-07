@@ -103,6 +103,12 @@ fn s33_interleave_oc_co_components(record: &SmilesRecord) -> SmilesRecord {
     interleaved
 }
 
+// These original fixtures compare UTF-8 source strings. Decode only at the
+// test observation boundary: invalid bytes fail instead of being substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
 #[test]
 fn component_atom_selection_rejects_duplicate_and_out_of_range_indices() {
     let parsed = record("CC.O");
@@ -126,7 +132,7 @@ fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
     let mut duplicate_atom = record("CC");
     replace_atom_id(&mut duplicate_atom, 1, AtomId::new(0));
     assert_eq!(
-        write_smiles(&duplicate_atom),
+        write_smiles(&duplicate_atom).map(fixture_writer_text),
         Err(SmilesParseError::Model(
             "atom at position 1 has id 0, expected 1".to_owned()
         ))
@@ -135,7 +141,7 @@ fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
     let mut out_of_range_atom = record("CC");
     replace_atom_id(&mut out_of_range_atom, 1, AtomId::new(4));
     assert_eq!(
-        write_smiles(&out_of_range_atom),
+        write_smiles(&out_of_range_atom).map(fixture_writer_text),
         Err(SmilesParseError::Model(
             "atom at position 1 has id 4, expected 1".to_owned()
         ))
@@ -144,7 +150,7 @@ fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
     let mut duplicate_bond = record("CCC");
     replace_bond_id(&mut duplicate_bond, 1, BondId::new(0));
     assert_eq!(
-        write_smiles(&duplicate_bond),
+        write_smiles(&duplicate_bond).map(fixture_writer_text),
         Err(SmilesParseError::Model(
             "bond at position 1 has id 0, expected 1".to_owned()
         ))
@@ -153,7 +159,7 @@ fn canonical_writer_rejects_duplicate_and_out_of_range_model_row_ids() {
     let mut out_of_range_bond = record("CC");
     replace_bond_id(&mut out_of_range_bond, 0, BondId::new(4));
     assert_eq!(
-        write_smiles(&out_of_range_bond),
+        write_smiles(&out_of_range_bond).map(fixture_writer_text),
         Err(SmilesParseError::Model(
             "bond at position 0 has id 4, expected 0".to_owned()
         ))
@@ -174,7 +180,7 @@ fn canonical_writer_rejects_duplicate_edges_before_fragment_mapping() {
             original.stereo_atoms(),
         ));
     assert_eq!(
-        write_smiles(&duplicate_edge),
+        write_smiles(&duplicate_edge).map(fixture_writer_text),
         Err(SmilesParseError::Model(
             "adjacency does not match topology".to_owned()
         ))
@@ -184,7 +190,13 @@ fn canonical_writer_rejects_duplicate_edges_before_fragment_mapping() {
 #[test]
 fn canonical_writer_keeps_pinned_disconnected_component_outputs() {
     for (input, expected) in [("OCC", "CCO"), ("N.CCO", "CCO.N")] {
-        assert_eq!(write_smiles(&record(input)).unwrap(), expected, "{input}");
+        assert_eq!(
+            write_smiles(&record(input))
+                .map(fixture_writer_text)
+                .unwrap(),
+            expected,
+            "{input}"
+        );
     }
 }
 
@@ -263,14 +275,18 @@ fn canonical_writer_projects_isomeric_rank_flags_to_pinned_outputs() {
     ] {
         params.do_isomeric_smiles = true;
         assert_eq!(
-            write_smiles_with_params(&record(input), &params).unwrap(),
+            write_smiles_with_params(&record(input), &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             isomeric,
             "isomeric {input}"
         );
 
         params.do_isomeric_smiles = false;
         assert_eq!(
-            write_smiles_with_params(&record(input), &params).unwrap(),
+            write_smiles_with_params(&record(input), &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             nonisomeric,
             "nonisomeric {input}"
         );
@@ -282,13 +298,17 @@ fn canonical_writer_ignore_atom_maps_changes_traversal_and_preserves_labels() {
     let mapped = record("[NH2:1]c1ccccc1");
     let mut params = SmilesWriteParams::default();
     assert_eq!(
-        write_smiles_with_params(&mapped, &params).unwrap(),
+        write_smiles_with_params(&mapped, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "c1ccc([NH2:1])cc1"
     );
 
     params.ignore_atom_map_numbers = true;
     assert_eq!(
-        write_smiles_with_params(&mapped, &params).unwrap(),
+        write_smiles_with_params(&mapped, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "[NH2:1]c1ccccc1"
     );
 }
@@ -306,14 +326,26 @@ fn canonical_cycle_discovery_resolves_symmetric_ranks_and_preserves_closures() {
     unique_ranks.sort_unstable();
     unique_ranks.dedup();
     assert_eq!(unique_ranks.len(), symmetric_ring.topology.atoms.len());
-    assert_eq!(write_smiles(&symmetric_ring).unwrap(), "C1CCCCC1");
+    assert_eq!(
+        write_smiles(&symmetric_ring)
+            .map(fixture_writer_text)
+            .unwrap(),
+        "C1CCCCC1"
+    );
 
     // Pinned catch_tests.cpp #5585 asserts this exact output and traversal order.
-    assert_eq!(write_smiles(&record("OC1CCCN1")).unwrap(), "OC1CCCN1");
+    assert_eq!(
+        write_smiles(&record("OC1CCCN1"))
+            .map(fixture_writer_text)
+            .unwrap(),
+        "OC1CCCN1"
+    );
 
     // The pinned RDKit oracle returns this closure ordering for a three-ring cage.
     assert_eq!(
-        write_smiles(&record("C1C2C3C1C2C3")).unwrap(),
+        write_smiles(&record("C1C2C3C1C2C3"))
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1C2C3CC2C13"
     );
 }
@@ -325,7 +357,13 @@ fn canonical_stack_orders_branch_children_from_the_rank_map() {
         ("FC(C)(N)O", "CC(N)(O)F"),
         ("CC(=O)N(C)O", "CC(=O)N(C)O"),
     ] {
-        assert_eq!(write_smiles(&record(input)).unwrap(), expected, "{input}");
+        assert_eq!(
+            write_smiles(&record(input))
+                .map(fixture_writer_text)
+                .unwrap(),
+            expected,
+            "{input}"
+        );
     }
 }
 
@@ -347,7 +385,9 @@ fn canonical_writer_preserves_pinned_tetrahedral_ring_stereo_permutations() {
         ),
     ] {
         assert_eq!(
-            write_smiles_with_params(&record(input), &params).unwrap(),
+            write_smiles_with_params(&record(input), &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "{input}"
         );
@@ -378,7 +418,11 @@ fn canonical_writer_decodes_signed_ring_relative_stereo_ids_in_source_order() {
             .set_prop("_ringStereoAtoms", vec![second_relation])
             .unwrap();
 
-        assert_eq!(write_smiles(&parsed).unwrap(), expected, "{input}");
+        assert_eq!(
+            write_smiles(&parsed).map(fixture_writer_text).unwrap(),
+            expected,
+            "{input}"
+        );
     }
 }
 
@@ -395,7 +439,7 @@ fn canonical_writer_reports_source_bad_any_cast_for_malformed_ring_stereo_proper
             .unwrap();
 
         assert_eq!(
-            write_smiles(&parsed),
+            write_smiles(&parsed).map(fixture_writer_text),
             Err(source_error.clone()),
             "{encoded:?}"
         );
@@ -424,7 +468,9 @@ fn canonical_writer_does_not_propagate_from_a_broken_relative_stereo_center() {
     // Pinned RDKit MolToSmiles, rootedAtAtom=1, emits this when the source
     // center has _brokenChirality, even though it retains its ring reference.
     assert_eq!(
-        write_smiles_with_params(&parsed, &params).unwrap(),
+        write_smiles_with_params(&parsed, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1(F)CC[C@H](Cl)CC1"
     );
 }
@@ -479,7 +525,9 @@ fn canonical_writer_maps_ring_relative_references_across_component_order() {
         // both disconnected component order and source-global signed refs are
         // preserved while the ring is prepared as a selected fragment.
         assert_eq!(
-            write_smiles_with_params(&parsed, &params).unwrap(),
+            write_smiles_with_params(&parsed, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "{input}"
         );
@@ -521,7 +569,9 @@ fn canonical_writer_orders_s33_components_with_the_pinned_standard_profile_and_p
         let before = input_record.clone();
         let params = s33_standard_writer_params(isomeric);
         assert_eq!(
-            write_smiles_with_params(&input_record, &params).unwrap(),
+            write_smiles_with_params(&input_record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "{input}; isomeric={isomeric}"
         );
@@ -531,7 +581,9 @@ fn canonical_writer_orders_s33_components_with_the_pinned_standard_profile_and_p
     let source_order = s33_standard_writer_input("OC.CO");
     let before = source_order.clone();
     assert_eq!(
-        write_smiles_with_params(&source_order, &s33_standard_writer_params(true)).unwrap(),
+        write_smiles_with_params(&source_order, &s33_standard_writer_params(true))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CO.CO",
         "equal-text components in source order"
     );
@@ -540,7 +592,9 @@ fn canonical_writer_orders_s33_components_with_the_pinned_standard_profile_and_p
     let interleaved = s33_interleave_oc_co_components(&source_order);
     let before = interleaved.clone();
     assert_eq!(
-        write_smiles_with_params(&interleaved, &s33_standard_writer_params(true)).unwrap(),
+        write_smiles_with_params(&interleaved, &s33_standard_writer_params(true))
+            .map(fixture_writer_text)
+            .unwrap(),
         "CO.CO",
         "equal-text components after [0,2,1,3] input permutation"
     );
@@ -575,7 +629,9 @@ fn canonical_writer_gates_tagged_nonpotential_chirality_after_clean_stereo_prepa
         };
 
         assert_eq!(
-            write_smiles_with_params(&input, &params).unwrap(),
+            write_smiles_with_params(&input, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "clean_stereo={clean_stereo}, _StereochemDone present={done_marker_present}"
         );
@@ -605,7 +661,9 @@ fn canonical_writer_preserves_valid_tetrahedral_and_nontetrahedral_guard_paths()
         };
 
         assert_eq!(
-            write_smiles_with_params(&input, &params).unwrap(),
+            write_smiles_with_params(&input, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             "F[C@H](Cl)Br",
             "clean_stereo={clean_stereo}, _StereochemDone present={done_marker_present}"
         );
@@ -615,7 +673,9 @@ fn canonical_writer_preserves_valid_tetrahedral_and_nontetrahedral_guard_paths()
     let nontetrahedral = record("[Pt@SP1](F)(Cl)(Br)I");
     let before = nontetrahedral.clone();
     assert_eq!(
-        write_smiles(&nontetrahedral).unwrap(),
+        write_smiles(&nontetrahedral)
+            .map(fixture_writer_text)
+            .unwrap(),
         "[F][Pt@SP1]([Cl])([Br])[I]"
     );
     assert_eq!(

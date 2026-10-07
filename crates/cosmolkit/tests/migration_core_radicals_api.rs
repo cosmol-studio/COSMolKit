@@ -185,7 +185,10 @@ fn value_operation_assigns_rows_and_preserves_mapping_coordinates_stereo_and_pro
     coordinate_views::assert_shared_coordinates(&source, &output);
     assert_eq!(source.coordinates_2d(), output.coordinates_2d());
     assert_eq!(source.conformers_3d(), output.conformers_3d());
-    assert_eq!(output.property("source"), Some("preserved"));
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(
         output.atom(AtomId::new(0)).unwrap().prop("atom-label"),
         Some(&cosmolkit_model::PropertyValue::from("carbon"))
@@ -203,7 +206,10 @@ fn value_operation_assigns_rows_and_preserves_mapping_coordinates_stereo_and_pro
     assert!(format!("{output:?}").contains("derived_cache_is_empty: true"));
 
     assert_eq!(source.atom(AtomId::new(0)).unwrap().radical_electrons(), 7);
-    assert_eq!(source.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        source.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
     assert_eq!(
         source.atom(AtomId::new(0)).unwrap().prop("_CIPCode"),
         Some(&cosmolkit_model::PropertyValue::from("R"))

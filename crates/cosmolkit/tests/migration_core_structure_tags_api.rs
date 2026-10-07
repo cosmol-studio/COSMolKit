@@ -255,7 +255,10 @@ fn value_and_inplace_defaults_match_the_detached_owner_and_are_deterministic() {
         source.to_builder().coordinates()
     );
     coordinate_views::assert_shared_coordinates(&short, &source);
-    assert_eq!(short.property("source"), Some("preserved"));
+    assert_eq!(
+        short.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(short.property("_StereochemDone"), None);
     assert_eq!(short.property("_CIPComputed"), None);
     assert_eq!(
@@ -279,7 +282,10 @@ fn value_and_inplace_defaults_match_the_detached_owner_and_are_deterministic() {
     assert!(std::ptr::eq(source.topology(), observer.topology()));
     coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
-    assert_eq!(source.property("_StereochemDone"), Some("1"));
+    assert_eq!(
+        source.property("_StereochemDone"),
+        Some(&cosmolkit::PropertyValue::from("1"))
+    );
 }
 
 #[test]
@@ -332,7 +338,10 @@ fn explicit_conformer_selection_and_replace_flag_follow_source_order() {
         replace.to_builder().coordinates(),
         source.to_builder().coordinates()
     );
-    assert_eq!(replace.property("source"), Some("preserved"));
+    assert_eq!(
+        replace.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
 }
 
 #[test]

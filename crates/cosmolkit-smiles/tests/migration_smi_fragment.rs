@@ -114,6 +114,7 @@ fn write_fragment_cx(record: &SmilesRecord, fields: CxSmilesFields, atoms: &[usi
         coordinate_selection: CxCoordinateSelection::Auto,
     };
     write_fragment_cx_smiles(record, &params, &atom_ids, None, None, None, None, None)
+        .map(fixture_writer_text)
         .unwrap_or_else(|error| panic!("fixed fragment CX writer input failed: {error}"))
 }
 
@@ -123,7 +124,10 @@ fn assert_output(
     atom_order: &[usize],
     bond_order: &[usize],
 ) {
-    assert_eq!(output.text, text);
+    assert_eq!(
+        std::str::from_utf8(output.text.as_bytes()).expect("exact fragment fixture UTF-8 bytes"),
+        text
+    );
     assert_eq!(
         output.atom_order,
         atom_order
@@ -156,6 +160,12 @@ fn add_group(
         )
         .with_id(7),
     );
+}
+
+// Original source-text fixtures decode only at this observation boundary.
+// Invalid UTF-8 fails; the complete byte payload is never substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
 }
 
 #[test]
@@ -606,7 +616,9 @@ fn fragment_writer_gates_tagged_nonpotential_chirality_by_source_marker_presence
         let output = write_fragment(&input, &params, &[0, 1, 2], None, None, None, None, None);
 
         assert_eq!(
-            output.text, expected,
+            std::str::from_utf8(output.text.as_bytes())
+                .expect("exact fragment fixture UTF-8 bytes"),
+            expected,
             "clean_stereo={clean_stereo}, _StereochemDone present={done_marker_present}"
         );
         assert_eq!(
@@ -638,7 +650,9 @@ fn fragment_writer_preserves_valid_tetrahedral_and_nontetrahedral_guard_paths() 
         let output = write_fragment(&input, &params, &[0, 1, 2, 3], None, None, None, None, None);
 
         assert_eq!(
-            output.text, "F[C@H](Cl)Br",
+            std::str::from_utf8(output.text.as_bytes())
+                .expect("exact fragment fixture UTF-8 bytes"),
+            "F[C@H](Cl)Br",
             "clean_stereo={clean_stereo}, _StereochemDone present={done_marker_present}"
         );
         assert_eq!(input, before, "writer changed the valid tetrahedral input");
@@ -656,7 +670,10 @@ fn fragment_writer_preserves_valid_tetrahedral_and_nontetrahedral_guard_paths() 
         None,
         None,
     );
-    assert_eq!(output.text, "[F][Pt@SP1]([Cl])([Br])[I]");
+    assert_eq!(
+        std::str::from_utf8(output.text.as_bytes()).expect("exact fragment fixture UTF-8 bytes"),
+        "[F][Pt@SP1]([Cl])([Br])[I]"
+    );
     assert_eq!(
         nontetrahedral, before,
         "writer changed non-tetrahedral input"
@@ -695,7 +712,11 @@ fn fragment_writer_reuses_retained_ring_rows_for_nitrogen_and_skips_broken_cente
         Some(&source_rings),
         Some(&existing_valence),
     );
-    assert_eq!(ring_output.text, "CC1[N@@](F)C1");
+    assert_eq!(
+        std::str::from_utf8(ring_output.text.as_bytes())
+            .expect("exact fragment fixture UTF-8 bytes"),
+        "CC1[N@@](F)C1"
+    );
     assert_eq!(ring_nitrogen, ring_before);
     assert_eq!(source_rings, source_rings_before);
     assert_eq!(existing_valence, existing_valence_before);

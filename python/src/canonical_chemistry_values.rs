@@ -468,6 +468,9 @@ pub(crate) fn sanitize_pyerr(py: Python<'_>, source: ck::SanitizeError) -> PyErr
         E::Atropisomers { .. } => "Atropisomers",
         E::Chirality { .. } => "Chirality",
         E::AdjustHs { .. } => "AdjustHs",
+        E::MoleculeProperty(_) => "MoleculeProperty",
+        E::BondProperty(_) => "BondProperty",
+        E::AtomProperty(_) => "AtomProperty",
     };
     let error = crate::canonical_values::annotate(
         py,
@@ -479,6 +482,7 @@ pub(crate) fn sanitize_pyerr(py: Python<'_>, source: ck::SanitizeError) -> PyErr
     let attributes = || -> PyResult<()> {
         let value = error.value(py);
         match &source {
+            E::MoleculeProperty(_) | E::BondProperty(_) | E::AtomProperty(_) => {}
             E::InvalidOperations { bits, unknown_bits } => {
                 value.setattr("bits", *bits)?;
                 value.setattr("unknown_bits", *unknown_bits)?;

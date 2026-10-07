@@ -15,6 +15,8 @@ use super::{
 /// Structured failure used while a capability is not yet implemented.
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationError {
+    #[cfg(feature = "cap-stereoisomers")]
+    Enumeration(crate::EnumerationRunError),
     #[cfg(feature = "cap-alignment")]
     Alignment(crate::AlignmentError),
     #[cfg(feature = "cap-conformer")]
@@ -101,9 +103,11 @@ pub enum OperationError {
     InvalidTopologyEdit(TopologyEditError),
     InvalidCoordinates(CoordinateValidationError),
     InvalidProperty(MoleculePropertyError),
+    AtomProperty(cosmolkit_model::AtomPropertyError),
+    BondProperty(cosmolkit_model::BondValueError),
     InvalidPropertyList {
         target: &'static str,
-        name: String,
+        name: crate::PropertyText,
         values: usize,
         expected: usize,
     },
@@ -156,6 +160,15 @@ pub enum OperationError {
         actual: usize,
         expected: usize,
     },
+    InvalidReconstructionOrigin {
+        operation: &'static str,
+        entity: &'static str,
+        destination: usize,
+        input: usize,
+        row: usize,
+        input_count: usize,
+        row_count: Option<usize>,
+    },
     Algorithm {
         operation: &'static str,
         detail: String,
@@ -165,6 +178,8 @@ pub enum OperationError {
 impl fmt::Display for OperationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "cap-stereoisomers")]
+            Self::Enumeration(error) => error.fmt(formatter),
             #[cfg(feature = "cap-alignment")]
             Self::Alignment(error) => error.fmt(formatter),
             Self::UnsupportedFeature { operation, source } => write!(
@@ -270,6 +285,8 @@ impl fmt::Display for OperationError {
             Self::InvalidTopologyEdit(error) => error.fmt(formatter),
             Self::InvalidCoordinates(error) => error.fmt(formatter),
             Self::InvalidProperty(error) => error.fmt(formatter),
+            Self::AtomProperty(error) => error.fmt(formatter),
+            Self::BondProperty(error) => error.fmt(formatter),
             Self::InvalidPropertyList {
                 target,
                 name,
@@ -277,7 +294,7 @@ impl fmt::Display for OperationError {
                 expected,
             } => write!(
                 formatter,
-                "{target} SDF property list `{name}` has {values} rows, expected {expected}"
+                "{target} SDF property list `{name:?}` has {values} rows, expected {expected}"
             ),
             Self::InvalidDerivedCache {
                 state,
@@ -336,6 +353,18 @@ impl fmt::Display for OperationError {
                 formatter,
                 "operation `{operation}` returned {actual} {field} rows, expected {expected}"
             ),
+            Self::InvalidReconstructionOrigin {
+                operation,
+                entity,
+                destination,
+                input,
+                row,
+                input_count,
+                row_count,
+            } => write!(
+                formatter,
+                "operation `{operation}` has invalid {entity} destination {destination} origin input {input} row {row}; {input_count} inputs, row count {row_count:?}"
+            ),
             #[cfg(feature = "cap-conformer")]
             Self::Conformer(error) => write!(formatter, "conformer operation failed: {error}"),
             Self::Algorithm { operation, detail } => {
@@ -354,6 +383,12 @@ impl fmt::Display for OperationError {
 impl std::error::Error for OperationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            #[cfg(feature = "cap-stereoisomers")]
+            Self::Enumeration(error) => Some(error),
+            Self::InvalidCoordinates(error) => Some(error),
+            Self::InvalidProperty(error) => Some(error),
+            Self::AtomProperty(error) => Some(error),
+            Self::BondProperty(error) => Some(error),
             #[cfg(feature = "cap-alignment")]
             Self::Alignment(error) => Some(error),
             #[cfg(feature = "cap-conformer")]

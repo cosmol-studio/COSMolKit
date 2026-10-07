@@ -35,6 +35,15 @@ UFF retains its exact-bit comparison. Parameter-availability queries are include
 Tautomer enumeration and canonicalization are ordinary registered corpus tasks;
 the long-conjugated tautomer case is a special regression below.
 
+`molalign_smiles` preserves the six-operation alignment/RMSD comparison on
+`smiles_small` (152 molecules) or `smiles_5000`. It compares RMSD, transforms,
+atom maps, conformer order/IDs, every coordinate and source preservation.
+Floating fields retain the original absolute `1e-8` tolerance; maps and IDs
+are exact. The same prepare command supplies native conformers and parameters.
+Reference transport preserves native float bits in both preparation and tests
+(`serde_json/float_roundtrip`); it must not round the inputs independently of
+the native results.
+
 MACCS, Topological, Layered, Pattern, fuzzy AND and fuzzy OR are registered
 SMILES corpus tasks. Each molecule gets **one** reproducible parameter combination
 per task (seed `0x434b465020261007`, keyed by task, case ID and SMILES).
@@ -51,8 +60,21 @@ cargo run -p cosmolkit-parity-tests-fixed --release -- prepare --special all --t
 cargo test -p cosmolkit-parity-tests-fixed --release --features cosmolkit/op-contracts-strict --test special_regression
 ```
 
-For one special regression, replace `all` with `structure_tags` or
-`tautomer_long_conjugated`, then use the same name as Cargo's test filter.
+For one special regression, replace `all` with `structure_tags`,
+`tautomer_long_conjugated`, `tautomer_focused`, `molalign_focused`, or
+`bio_mmcif_switches`, then use the same name as
+Cargo's test filter. The focused tautomer matrix keeps 18 inputs, eight profiles
+and all 136 valid enumeration branches; it is not part of ordinary crate tests.
+MolAlign retains its 14 fixed boundary calls, including typed errors, through
+the same preparation and comparison workflow; no external oracle directory
+environment variable is needed.
+
+`bio_mmcif_switches` reuses the existing `bio/sample.pdb` and `bio/sample.cif`
+inputs. It compares exact mmCIF output bytes with pinned Gemmi for its 32
+Python-exposed single-switch profiles under both global defaults (128 calls).
+The `modres` single-switch profile is not covered: Gemmi 0.7.5 does not expose
+it in Python. Preparation does not compile or invoke a C++ oracle. This is separate
+from `bio_pdb_output_pdb`/`bio_pdb_output_cif`, which both produce PDB output.
 
 Inputs: `testdata/`. Generated references and checksums: `expected/`.
 Results: `reports/`. Preparation uses `.venv/bin/python` with pinned RDKit

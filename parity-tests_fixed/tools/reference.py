@@ -55,6 +55,30 @@ def descriptor_case(case):
     return build_record(case["smiles"])
 
 
+def molalign_corpus_case(wrapped):
+    from _generate_molalign_golden import corpus_case, record_for_call
+    recipe = wrapped["MolAlign"]
+    case = corpus_case(recipe["row"], recipe["case"]["smiles"])
+    record = record_for_call(case, 0, case["calls"][0])
+    prepared = dict(recipe, preparation={key: record[key] for key in
+                    ("case_id", "call_index", "operation", "source", "parameters")})
+    # RDKit's mutating result is compared with CK's returned value. CK's
+    # non-mutating public API must additionally preserve its source molecule.
+    record["source_after"] = record["before"]
+    return {"input": {"MolAlign": prepared}, "output": {"MolAlign": record}}
+
+
+def molalign_focused_call(payload):
+    from _generate_molalign_golden import record_for_call
+    return record_for_call(*payload)
+
+
+def tautomer_special_case(payload):
+    from _tautomer_oracle import build_record
+    case, branches = payload
+    return build_record(case, {"branches": branches}, [branch["name"] for branch in branches])
+
+
 def tautomer_case(payload):
     from _tautomer_oracle import parse_molecule, enumerate_branch, canonicalize_branch
     original = payload
@@ -219,17 +243,40 @@ def bio_case(original):
     return {"input":original,"output":{"BioPdbOutput":{"text":text,"error":None}}}
 
 
+def bio_mmcif_switch_case(payload):
+    import gemmi
+    case, all_groups, flag = payload
+    with tempfile.TemporaryDirectory(prefix="fixed-gemmi-mmcif-") as folder:
+        # A PDB structure's name comes from its filename and becomes the CIF block name.
+        source = Path(folder) / Path(case["input"]).name
+        source.write_text(case["text"], encoding="utf-8")
+        # Match the original C++ read_structure_file (no merge_chain_parts).
+        structure = gemmi.read_structure(str(source), merge_chain_parts=False)
+        groups = gemmi.MmcifOutputGroups(all_groups)
+        setattr(groups, flag, True if flag == "auth_all" else not all_groups)
+        text = structure.make_mmcif_document(groups).as_string()
+    value = True if flag == "auth_all" else not all_groups
+    return {"case_id": case["case_id"], "all_groups": all_groups,
+            "flag": flag, "value": value, "text": text}
+
+
 def generate(request):
     threads = request["threads"]
     if not isinstance(threads,int) or threads < 1:
         raise ValueError("threads must be positive")
     kind = request["kind"]
     progress = Progress(request["task"])
-    if kind == "corpus" and request["generator"] in ("generate_bio_pdb_output_pdb", "generate_bio_pdb_output_cif"):
+    if kind == "bio_mmcif_switches" or (kind == "corpus" and request["generator"] in ("generate_bio_pdb_output_pdb", "generate_bio_pdb_output_cif")):
         import gemmi
         pin = json.loads((PACKAGE / "testdata/reference/gemmi.json").read_text())
         if gemmi.__version__ != pin["version"]:
             raise RuntimeError(f"Gemmi version {gemmi.__version__} != {pin['version']}")
+        if kind == "bio_mmcif_switches":
+            fixture = request["input"]
+            return parallel(bio_mmcif_switch_case,
+                            [(case, all_groups, flag) for case in fixture["cases"]
+                             for all_groups in (False, True) for flag in fixture["flags"]],
+                            threads, progress)
         return parallel(bio_case, request["input"], threads, progress)
     from rdkit import rdBase
     pin = json.loads((PACKAGE / "testdata/reference/rdkit.json").read_text())
@@ -248,19 +295,20 @@ def generate(request):
         cases = fixture["cases"] + [octahedral_case(case) for case in fixture["octahedral_switch_cases"]]
         with ThreadPoolExecutor(max_workers=threads) as pool:
             return collect(pool, structure_case, [{"defaults":fixture["defaults"],"case":case} for case in cases], progress)
-    if kind == "tautomer_long_conjugated":
-        from _tautomer_oracle import build_record
+    if kind in ("tautomer_long_conjugated", "tautomer_focused"):
         fixture = request["input"]
-        profile = {"branches":fixture["branches"]}
-        rows = []
-        progress(0, len(fixture["cases"]))
-        for case in fixture["cases"]:
-            rows.append(build_record(case, profile, ["default","v1"]))
-            progress(len(rows), len(fixture["cases"]))
-        return rows
+        return parallel(tautomer_special_case,
+                        [(case, fixture["branches"]) for case in fixture["cases"]],
+                        threads, progress)
+    if kind == "molalign_focused":
+        return parallel(molalign_focused_call,
+                        [(case, index, call) for case in request["input"]["cases"]
+                         for index, call in enumerate(case["calls"])], threads, progress)
     if kind != "corpus":
         raise ValueError(f"unknown recipe {kind}")
     generator = request["generator"]
+    if generator == "generate_molalign":
+        return parallel(molalign_corpus_case, request["input"], threads, progress)
     if generator == "generate_fingerprint":
         from fingerprints import fingerprint_case
         return parallel(fingerprint_case, request["input"], threads, progress)

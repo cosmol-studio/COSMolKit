@@ -125,6 +125,7 @@ pub fn finish_mol2_record(
             record.topology = crate::mol_post::detect_double_bond_stereochemistry(
                 record.topology,
                 &record.coordinates,
+                &mut record.properties,
             )
             .map_err(|e: MolPostError| Mol2PostError::stage("BondStereo", e))?;
             let result = cosmolkit_core::remove_hydrogens_with_params(
@@ -152,6 +153,7 @@ pub fn finish_mol2_record(
             record.topology = crate::mol_post::detect_double_bond_stereochemistry(
                 record.topology,
                 &record.coordinates,
+                &mut record.properties,
             )
             .map_err(|e| Mol2PostError::stage("BondStereo", e))?;
         }
@@ -176,9 +178,27 @@ pub fn finish_mol2_record(
             valence: Some(valence),
             rings: Some(rings),
         };
+        // RDKit❗✔️: void assignStereochemistry(ROMol &mol, bool cleanIt, bool force,
+        // RDKit❗✔️:                            bool flagPossibleStereoCenters) {
+        // RDKit❗✔️:   if (!force && mol.hasProp(common_properties::_StereochemDone)) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (mol.needsUpdatePropertyCache()) {
+        // RDKit❗✔️:     mol.updatePropertyCache(false);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (!Chirality::getUseLegacyStereoPerception()) {
+        // RDKit❗✔️:     Chirality::stereoPerception(mol, cleanIt, flagPossibleStereoCenters);
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     Chirality::legacyStereoPerception(mol, cleanIt, flagPossibleStereoCenters);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   mol.setProp(common_properties::_StereochemDone, 1, true);
+        // RDKit❗✔️: }
+        // Source sets integer 1 as computed only after perception; no text retagging.
         record
             .properties
-            .set_computed_prop("_StereochemDone", "1")
+            .set_computed_prop("_StereochemDone", cosmolkit_model::PropertyValue::Int(1))
             .map_err(|e| Mol2PostError::stage("StereoMetadata", e))?;
     }
     Ok(record)

@@ -38,10 +38,24 @@ fn main() {
             println!("cargo:rustc-cfg=parity_corpus_{format}");
         } else {
             assert!(
-                ["all", "structure_tags", "tautomer_long_conjugated"].contains(&name.as_str()),
+                [
+                    "all",
+                    "bio_mmcif_switches",
+                    "structure_tags",
+                    "tautomer_long_conjugated",
+                    "tautomer_focused",
+                    "molalign_focused"
+                ]
+                .contains(&name.as_str()),
                 "unknown special regression: {name}"
             );
-            for key in ["structure_tags", "tautomer_long_conjugated"] {
+            for key in [
+                "bio_mmcif_switches",
+                "structure_tags",
+                "tautomer_long_conjugated",
+                "tautomer_focused",
+                "molalign_focused",
+            ] {
                 println!("cargo:rustc-check-cfg=cfg(parity_special_{key})");
                 if name == "all" || name == key {
                     println!("cargo:rustc-cfg=parity_special_{key}");

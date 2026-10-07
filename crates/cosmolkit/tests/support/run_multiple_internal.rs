@@ -1,10 +1,16 @@
 use std::sync::Arc;
 
-use cosmolkit_model::{Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Conformer2D, CoordinateBlock, Element, MoleculeProperties, SdfPropertyList, SdfPropertyListTarget, TopologyBlock};
+use cosmolkit_model::{
+    Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Conformer2D, CoordinateBlock,
+    Element, MoleculeProperties, SdfPropertyList, SdfPropertyListTarget, TopologyBlock,
+};
 
 use super::*;
 use crate::molecule::DerivedCacheBlock;
-use crate::ops::{BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, MappingRequirement, MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, FunctionStatus, TopologyEditKind};
+use crate::ops::{
+    BlockAccess, CipStatePolicy, DerivedEffects, DerivedState, FunctionStatus, MappingRequirement,
+    MoleculeOpKind, OperationDomain, ParityPolicy, SemanticPreconditionSet, TopologyEditKind,
+};
 
 struct MultipleAccess;
 
@@ -101,7 +107,10 @@ fn properties(name: &str) -> MoleculeProperties {
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Atom,
             "atom_rows",
-            vec![Some(cosmolkit_model::PropertyValue::from("c")), Some(cosmolkit_model::PropertyValue::from("n"))],
+            vec![
+                Some(cosmolkit_model::PropertyValue::from("c")),
+                Some(cosmolkit_model::PropertyValue::from("n")),
+            ],
         ))
         .with_sdf_property_list(SdfPropertyList::new(
             SdfPropertyListTarget::Bond,
@@ -159,11 +168,8 @@ fn source_reads_enforce_each_declared_block_independently() {
     ] {
         let mut fields = base_fields();
         fields.access = BlockAccess::new(allowed, BlockSet::NONE);
-        let parts = MultiOutputOpParts::<MultipleAccess>::new(
-            &source,
-            spec(denied_name, fields),
-        )
-        .unwrap();
+        let parts =
+            MultiOutputOpParts::<MultipleAccess>::new(&source, spec(denied_name, fields)).unwrap();
         let (allowed_result, denied_result) = if allowed == BlockSet::TOPOLOGY {
             (
                 parts.source_topology_runtime().map(|_| ()),
@@ -242,7 +248,10 @@ fn one_many_order_and_duplicate_candidates_are_preserved() {
     .unwrap();
     let one = one.finish().unwrap();
     assert_eq!(one.len(), 1);
-    assert_eq!(one[0].properties().name(), Some("one"));
+    assert_eq!(
+        one[0].properties().name().map(|value| value.as_bytes()),
+        Some(b"one".as_slice())
+    );
 
     let candidates = ["first", "duplicate", "duplicate", "last"]
         .into_iter()
@@ -260,9 +269,24 @@ fn one_many_order_and_duplicate_candidates_are_preserved() {
         .finish()
         .unwrap()
         .into_iter()
-        .map(|candidate| candidate.properties().name().unwrap().to_owned())
+        .map(|candidate| {
+            candidate
+                .properties()
+                .name()
+                .map(|value| value.as_bytes())
+                .unwrap()
+                .to_owned()
+        })
         .collect::<Vec<_>>();
-    assert_eq!(names, ["first", "duplicate", "duplicate", "last"]);
+    assert_eq!(
+        names,
+        [
+            b"first".as_slice(),
+            b"duplicate".as_slice(),
+            b"duplicate".as_slice(),
+            b"last".as_slice()
+        ]
+    );
 }
 
 #[test]
@@ -415,20 +439,26 @@ fn invalidate_clears_each_candidate_cache_without_touching_source() {
     let outputs = parts.finish().unwrap();
     assert_eq!(outputs.len(), 2);
     for output in outputs {
-        assert!(!output
-            .derived_cache_runtime()
-            .valid_states()
-            .contains(DerivedState::RINGS));
-        assert!(output
-            .derived_cache_runtime()
-            .valid_states()
-            .contains(DerivedState::STEREO));
+        assert!(
+            !output
+                .derived_cache_runtime()
+                .valid_states()
+                .contains(DerivedState::RINGS)
+        );
+        assert!(
+            output
+                .derived_cache_runtime()
+                .valid_states()
+                .contains(DerivedState::STEREO)
+        );
     }
     assert_eq!(source, before);
-    assert!(source
-        .derived_cache_runtime()
-        .valid_states()
-        .contains(DerivedState::RINGS));
+    assert!(
+        source
+            .derived_cache_runtime()
+            .valid_states()
+            .contains(DerivedState::RINGS)
+    );
 }
 
 #[test]
@@ -469,20 +499,16 @@ fn preserve_requires_unchanged_input_proof_per_candidate() {
 fn cip_clear_and_tautomer_transition_are_applied_per_candidate() {
     let source = molecule();
     let mut computed = source.properties().clone();
-    computed
-        .set_computed_prop("_CIPComputed", "true")
-        .unwrap();
+    computed.set_computed_prop("_CIPComputed", "true").unwrap();
     let mut clear_fields = base_fields();
     clear_fields.access = BlockAccess::new(
         BlockSet::COORDINATES,
         BlockSet::TOPOLOGY.union(BlockSet::PROPERTIES),
     );
     clear_fields.cip = CipStatePolicy::ClearComputed;
-    let mut clear = MultiOutputOpParts::<MultipleAccess>::new(
-        &source,
-        spec("clear-cip", clear_fields),
-    )
-    .unwrap();
+    let mut clear =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("clear-cip", clear_fields))
+            .unwrap();
     clear
         .emit_all_runtime(vec![(
             source.topology().clone(),
@@ -566,4 +592,565 @@ fn source_shape_has_one_private_owner_and_no_branch_runtime() {
         assert!(!multiple.contains(forbidden));
     }
     assert!(!manifest.contains("cosmolkit ="));
+}
+
+fn lazy_fields() -> SpecFields {
+    SpecFields {
+        output: MoleculeOpOutput::LazyMultiple,
+        ..base_fields()
+    }
+}
+
+fn lazy_tuple(source: &Molecule) -> (TopologyBlock, Option<CoordinateBlock>, MoleculeProperties) {
+    (source.topology().clone(), None, source.properties().clone())
+}
+
+#[test]
+fn lazy_missing_empty_duplicate_and_cardinality_mismatch_are_distinct() {
+    let source = molecule();
+    let operation = spec("lazy-state", lazy_fields());
+    let missing = MultiOutputOpParts::<MultipleAccess>::new(&source, operation)
+        .unwrap()
+        .finish_lazy();
+    assert!(matches!(
+        missing,
+        Err(OperationError::IncompleteCommit {
+            operation: "lazy-state",
+            block: "outputs"
+        })
+    ));
+    let mut parts = MultiOutputOpParts::<MultipleAccess>::new(&source, operation).unwrap();
+    assert_eq!(
+        parts.emit_all_runtime(Vec::new()),
+        Err(OperationError::OutputMismatch {
+            operation: "lazy-state",
+            expected: MoleculeOpOutput::Multiple,
+            actual: MoleculeOpOutput::LazyMultiple
+        })
+    );
+    parts.emit_lazy_runtime(std::iter::empty()).unwrap();
+    assert!(matches!(
+        parts.emit_lazy_runtime(std::iter::empty()),
+        Err(OperationError::OperationContract {
+            field: "outputs",
+            ..
+        })
+    ));
+    let mut empty = parts.finish_lazy().unwrap();
+    assert!(empty.next().is_none());
+    assert!(empty.next().is_none());
+    assert_eq!(empty.yielded_count(), 0);
+    let mut eager =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("eager-state", base_fields()))
+            .unwrap();
+    assert_eq!(
+        eager.emit_lazy_runtime(std::iter::empty()),
+        Err(OperationError::OutputMismatch {
+            operation: "eager-state",
+            expected: MoleculeOpOutput::LazyMultiple,
+            actual: MoleculeOpOutput::Multiple
+        })
+    );
+    assert!(matches!(
+        eager.finish_lazy(),
+        Err(OperationError::OutputMismatch {
+            expected: MoleculeOpOutput::LazyMultiple,
+            actual: MoleculeOpOutput::Multiple,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn lazy_prefix_pulls_exactly_requested_candidates_and_keeps_unchanged_blocks_shared() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let source = molecule();
+    let pulls = Arc::new(AtomicUsize::new(0));
+    let observed = Arc::clone(&pulls);
+    let detached = lazy_tuple(&source);
+    // An unbounded stream cannot be eagerly collected. Consume a small prefix.
+    let stream = std::iter::from_fn(move || {
+        observed.fetch_add(1, Ordering::SeqCst);
+        Some(Ok(detached.clone()))
+    });
+    let mut parts =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-prefix", lazy_fields()))
+            .unwrap();
+    parts.emit_lazy_runtime(stream).unwrap();
+    assert_eq!(pulls.load(Ordering::SeqCst), 0);
+    let mut outputs = parts.finish_lazy().unwrap();
+    assert_eq!(pulls.load(Ordering::SeqCst), 0);
+    for expected in 1..=7 {
+        let output = outputs.next().unwrap().unwrap();
+        assert_eq!(pulls.load(Ordering::SeqCst), expected);
+        assert_eq!(outputs.yielded_count(), expected);
+        assert_eq!(output, source);
+        assert!(Arc::ptr_eq(
+            &output.topology_arc_runtime(),
+            &source.topology_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(
+            &output.coordinates_arc_runtime(),
+            &source.coordinates_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(
+            &output.properties_arc_runtime(),
+            &source.properties_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(
+            &output.derived_cache_arc_runtime(),
+            &source.derived_cache_arc_runtime()
+        ));
+    }
+    drop(outputs);
+    assert_eq!(pulls.load(Ordering::SeqCst), 7);
+}
+
+#[test]
+fn lazy_snapshot_outlives_input_and_remains_independent_of_later_replacement() {
+    let mut source = molecule();
+    let before = source.clone();
+    let expected_coordinates = Arc::clone(&source.coordinates_arc_runtime());
+    let detached = lazy_tuple(&source);
+    let mut parts =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-lifetime", lazy_fields()))
+            .unwrap();
+    parts
+        .emit_lazy_runtime(std::iter::once(Ok(detached)))
+        .unwrap();
+    let mut outputs = parts.finish_lazy().unwrap();
+    source = Molecule::from_parts(
+        TopologyBlock::default(),
+        CoordinateBlock::default(),
+        MoleculeProperties::default(),
+    )
+    .unwrap();
+    assert_ne!(source, before);
+    drop(source);
+    let output = outputs.next().unwrap().unwrap();
+    assert_eq!(output, before);
+    assert!(Arc::ptr_eq(
+        &output.coordinates_arc_runtime(),
+        &expected_coordinates
+    ));
+    assert_eq!(outputs.yielded_count(), 1);
+    assert!(outputs.next().is_none());
+    assert!(outputs.next().is_none());
+}
+
+#[test]
+fn lazy_callback_error_is_deferred_retains_success_count_and_fuses() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let source = molecule();
+    let before = source.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = Arc::clone(&calls);
+    let candidate = lazy_tuple(&source);
+    let error = OperationError::AccessDenied {
+        operation: "callback",
+        block: "user-source",
+    };
+    let stream = std::iter::from_fn(move || match observed.fetch_add(1, Ordering::SeqCst) {
+        0 => Some(Ok(candidate.clone())),
+        _ => Some(Err(error.clone())),
+    });
+    let mut parts =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-callback", lazy_fields()))
+            .unwrap();
+    parts.emit_lazy_runtime(stream).unwrap();
+    let mut outputs = parts.finish_lazy().unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(outputs.next().unwrap().unwrap(), source);
+    assert_eq!(outputs.yielded_count(), 1);
+    assert_eq!(
+        outputs.next(),
+        Some(Err(OperationError::AccessDenied {
+            operation: "callback",
+            block: "user-source"
+        }))
+    );
+    assert_eq!(outputs.yielded_count(), 1);
+    for _ in 0..3 {
+        assert!(outputs.next().is_none());
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(source, before);
+}
+
+#[test]
+fn lazy_invalid_candidate_at_each_position_rejects_before_counting_and_fuses() {
+    let source = molecule();
+    let before = source.clone();
+    for bad_index in 0..3 {
+        let mut candidates = vec![Ok(lazy_tuple(&source)); 3];
+        candidates[bad_index].as_mut().unwrap().1 = Some(CoordinateBlock {
+            conformers_2d: vec![Conformer2D::new(3, vec![[0.0, 0.0]])],
+            ..Default::default()
+        });
+        let mut parts =
+            MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-invalid", lazy_fields()))
+                .unwrap();
+        parts.emit_lazy_runtime(candidates.into_iter()).unwrap();
+        let mut outputs = parts.finish_lazy().unwrap();
+        for _ in 0..bad_index {
+            outputs.next().unwrap().unwrap();
+        }
+        assert!(matches!(
+            outputs.next(),
+            Some(Err(OperationError::InvalidCoordinates(_)))
+        ));
+        assert_eq!(outputs.yielded_count(), bad_index);
+        assert!(outputs.next().is_none());
+        assert!(outputs.next().is_none());
+        assert_eq!(source, before);
+    }
+}
+
+#[test]
+fn lazy_declared_write_preserves_order_duplicates_and_shares_other_blocks() {
+    let source = molecule();
+    let mut fields = lazy_fields();
+    fields.access = BlockAccess::new(
+        BlockSet::TOPOLOGY.union(BlockSet::COORDINATES),
+        BlockSet::PROPERTIES,
+    );
+    let topology = source.topology().clone();
+    let candidates = ["first", "duplicate", "duplicate", "last"]
+        .into_iter()
+        .map(move |name| Ok((topology.clone(), None, properties(name))));
+    let mut parts =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-order", fields)).unwrap();
+    parts.emit_lazy_runtime(candidates).unwrap();
+    let mut outputs = parts.finish_lazy().unwrap();
+    for name in ["first", "duplicate", "duplicate", "last"] {
+        let output = outputs.next().unwrap().unwrap();
+        assert_eq!(
+            output.properties().name().map(|value| value.as_bytes()),
+            Some(name.as_bytes())
+        );
+        assert!(!Arc::ptr_eq(
+            &output.properties_arc_runtime(),
+            &source.properties_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(
+            &output.topology_arc_runtime(),
+            &source.topology_arc_runtime()
+        ));
+        assert!(Arc::ptr_eq(
+            &output.coordinates_arc_runtime(),
+            &source.coordinates_arc_runtime()
+        ));
+    }
+    assert!(outputs.next().is_none());
+    assert_eq!(outputs.yielded_count(), 4);
+}
+
+#[test]
+fn lazy_access_mapping_and_preservation_contracts_fail_closed_per_candidate() {
+    let source = molecule();
+    let changed = (source.topology().clone(), None, properties("changed"));
+    let mut fields = lazy_fields();
+    let mut parts =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-access", fields)).unwrap();
+    parts
+        .emit_lazy_runtime(std::iter::once(Ok(changed.clone())))
+        .unwrap();
+    let mut outputs = parts.finish_lazy().unwrap();
+    assert_eq!(
+        outputs.next(),
+        Some(Err(OperationError::AccessDenied {
+            operation: "lazy-access",
+            block: "properties"
+        }))
+    );
+    assert_eq!(outputs.yielded_count(), 0);
+    assert!(outputs.next().is_none());
+
+    fields.access = BlockAccess::new(
+        BlockSet::COORDINATES,
+        BlockSet::TOPOLOGY
+            .union(BlockSet::PROPERTIES)
+            .union(BlockSet::DERIVED_CACHE),
+    );
+    fields.edit = TopologyEditKind::Renumbering;
+    fields.mapping = MappingRequirement::Required;
+    let mut topology = source.topology().clone();
+    topology.atoms.swap(0, 1);
+    let mut parts =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-mapping", fields)).unwrap();
+    parts
+        .emit_lazy_runtime(std::iter::once(Ok((
+            topology,
+            None,
+            source.properties().clone(),
+        ))))
+        .unwrap();
+    let mut outputs = parts.finish_lazy().unwrap();
+    assert!(matches!(
+        outputs.next(),
+        Some(Err(OperationError::MappingContract {
+            operation: "lazy-mapping",
+            ..
+        }))
+    ));
+    assert_eq!(outputs.yielded_count(), 0);
+    assert!(outputs.next().is_none());
+
+    fields.edit = TopologyEditKind::None;
+    fields.mapping = MappingRequirement::None;
+    fields.effects = DerivedEffects::new(
+        DerivedState::NONE,
+        DerivedState::RINGS,
+        DerivedState::NONE,
+        DerivedState::NONE,
+    );
+    let mut parts =
+        MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-preserve", fields)).unwrap();
+    parts
+        .emit_lazy_runtime(std::iter::once(Ok(changed)))
+        .unwrap();
+    let mut outputs = parts.finish_lazy().unwrap();
+    assert!(matches!(
+        outputs.next(),
+        Some(Err(OperationError::DerivedEffectContract {
+            operation: "lazy-preserve",
+            action: "preserve",
+            ..
+        }))
+    ));
+    assert_eq!(outputs.yielded_count(), 0);
+    assert!(outputs.next().is_none());
+}
+
+#[test]
+fn lazy_stream_releases_captured_state_on_error_end_or_iterator_drop() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct DropProbe(Arc<AtomicUsize>);
+    impl Drop for DropProbe {
+        fn drop(&mut self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    let source = molecule();
+    for termination in ["error", "end", "drop"] {
+        let drops = Arc::new(AtomicUsize::new(0));
+        let probe = DropProbe(Arc::clone(&drops));
+        let detached = lazy_tuple(&source);
+        let stream = std::iter::from_fn(move || {
+            let _keep_alive = &probe;
+            match termination {
+                "error" => Some(Err(OperationError::AccessDenied {
+                    operation: "drop-test",
+                    block: "callback",
+                })),
+                "end" => None,
+                _ => Some(Ok(detached.clone())),
+            }
+        });
+        let mut parts =
+            MultiOutputOpParts::<MultipleAccess>::new(&source, spec("lazy-drop", lazy_fields()))
+                .unwrap();
+        parts.emit_lazy_runtime(stream).unwrap();
+        let mut outputs = parts.finish_lazy().unwrap();
+        assert_eq!(drops.load(Ordering::SeqCst), 0);
+        if termination != "drop" {
+            let _ = outputs.next();
+            assert_eq!(drops.load(Ordering::SeqCst), 1);
+        }
+        drop(outputs);
+        assert_eq!(drops.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[cfg(all(feature = "cap-stereoisomers", feature = "cap-smiles"))]
+#[test]
+fn source_stereoisomer_no_center_clears_atom_code_without_finalization_and_shares_unchanged_blocks()
+{
+    let base = Molecule::from_smiles("CC").unwrap();
+    let mut topology = base.topology().clone();
+    topology.atoms[0]
+        .set_computed_prop("_CIPCode", "R")
+        .unwrap();
+    let mut properties = base.properties().clone();
+    properties.set_computed_prop("_CIPComputed", true).unwrap();
+    properties
+        .set_computed_prop("preexisting_computed", "retained")
+        .unwrap();
+    let source = Molecule::from_parts(
+        topology,
+        base.coordinate_block_runtime().clone(),
+        properties,
+    )
+    .unwrap();
+    let before = source.clone();
+    let mut stream = source.enumerate_stereoisomers().unwrap();
+    assert_eq!(stream.yielded_count(), 0);
+    let output = stream.next().unwrap().unwrap();
+    // Pinned EnumerateStereoisomers.py: atom.ClearProp before no-center yield;
+    // the no-center return bypasses ClearComputedProps and final assignment.
+    assert!(output.topology().atoms[0].prop("_CIPCode").is_none());
+    assert_eq!(
+        output.properties().prop("_CIPComputed"),
+        source.properties().prop("_CIPComputed")
+    );
+    assert_eq!(
+        output.properties().prop("preexisting_computed"),
+        source.properties().prop("preexisting_computed")
+    );
+    assert_eq!(
+        output.properties().prop("_MolFileChiralFlag"),
+        source.properties().prop("_MolFileChiralFlag")
+    );
+    assert!(!Arc::ptr_eq(
+        &output.topology_arc_runtime(),
+        &source.topology_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &output.coordinates_arc_runtime(),
+        &source.coordinates_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &output.properties_arc_runtime(),
+        &source.properties_arc_runtime()
+    ));
+    assert_eq!(stream.yielded_count(), 1);
+    assert!(stream.next().is_none());
+    assert!(stream.next().is_none());
+    assert_eq!(source, before);
+    assert!(Arc::ptr_eq(
+        &source.topology_arc_runtime(),
+        &before.topology_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &source.derived_cache_arc_runtime(),
+        &before.derived_cache_arc_runtime()
+    ));
+}
+
+#[cfg(all(feature = "cap-stereoisomers", feature = "cap-smiles"))]
+#[test]
+fn source_stereoisomer_candidates_clear_computed_then_keep_legacy_assigned_codes() {
+    let base = Molecule::from_smiles("CC(F)Cl").unwrap();
+    let mut properties = base.properties().clone();
+    properties.set_computed_prop("_CIPComputed", true).unwrap();
+    properties
+        .set_computed_prop("preexisting_computed", "discarded")
+        .unwrap();
+    properties.set_prop("persistent", "retained").unwrap();
+    let source = Molecule::from_parts(
+        base.topology().clone(),
+        base.coordinate_block_runtime().clone(),
+        properties,
+    )
+    .unwrap();
+    let before = source.clone();
+    let outputs = source
+        .enumerate_stereoisomers()
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(outputs.len(), 2);
+    let mut codes = Vec::new();
+    for output in outputs {
+        let Some(cosmolkit_model::PropertyValue::String(code)) =
+            output.topology().atoms[1].prop("_CIPCode")
+        else {
+            panic!("legacy candidate lost assigned CIP code")
+        };
+        codes.push(code.as_bytes().to_owned());
+        // Native ClearComputedProps then legacy AssignStereochemistry does not
+        // recreate the unrelated modern-CIP computed marker.
+        assert!(output.properties().prop("_CIPComputed").is_none());
+        assert!(output.properties().prop("preexisting_computed").is_none());
+        assert_eq!(
+            output.properties().prop("persistent"),
+            source.properties().prop("persistent")
+        );
+        assert_eq!(
+            output.properties().prop("_StereochemDone"),
+            Some(&cosmolkit_model::PropertyValue::Bool(true))
+        );
+        assert!(Arc::ptr_eq(
+            &output.coordinates_arc_runtime(),
+            &source.coordinates_arc_runtime()
+        ));
+    }
+    codes.sort();
+    assert_eq!(codes, vec![b"R".to_vec(), b"S".to_vec()]);
+    assert_eq!(source, before);
+    assert!(Arc::ptr_eq(
+        &source.topology_arc_runtime(),
+        &before.topology_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &source.properties_arc_runtime(),
+        &before.properties_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &source.derived_cache_arc_runtime(),
+        &before.derived_cache_arc_runtime()
+    ));
+}
+
+#[cfg(all(feature = "cap-stereoisomers", feature = "cap-smiles"))]
+#[test]
+fn source_stereoisomer_callback_failure_is_deferred_structured_atomic_and_fused() {
+    use std::error::Error;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let source = Molecule::from_smiles("CC(F)=CC(Cl)C").unwrap();
+    let before = source.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let options = crate::StereoisomerOptions {
+        max_isomers: 3,
+        ..Default::default()
+    };
+    let mut stream = source
+        .enumerate_stereoisomers_with_random_bits(
+            &options,
+            Box::new(move |width| {
+                assert_eq!(width, 2);
+                match observed.fetch_add(1, Ordering::SeqCst) {
+                    0 => Ok(num_bigint::BigUint::from(0u8)),
+                    _ => Err("injected-source-error".to_owned()),
+                }
+            }),
+        )
+        .unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    let output = stream.next().unwrap().unwrap();
+    assert_eq!(stream.yielded_count(), 1);
+    let error = stream.next().unwrap().unwrap_err();
+    let OperationError::Enumeration(detail) = error else {
+        panic!("callback failure changed category")
+    };
+    assert!(
+        matches!(detail.source().unwrap().downcast_ref::<crate::EnumerationError>(),Some(crate::EnumerationError::RandomBitsSource{bit_count:2,message}) if message=="injected-source-error")
+    );
+    assert_eq!(stream.yielded_count(), 1);
+    for _ in 0..3 {
+        assert!(stream.next().is_none());
+    }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_eq!(source, before);
+    assert!(Arc::ptr_eq(
+        &source.topology_arc_runtime(),
+        &before.topology_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &source.coordinates_arc_runtime(),
+        &before.coordinates_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &source.properties_arc_runtime(),
+        &before.properties_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &source.derived_cache_arc_runtime(),
+        &before.derived_cache_arc_runtime()
+    ));
+    assert!(Arc::ptr_eq(
+        &output.coordinates_arc_runtime(),
+        &source.coordinates_arc_runtime()
+    ));
 }

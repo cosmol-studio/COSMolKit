@@ -362,3 +362,110 @@ pub(crate) fn json_value_as_u32(
         "{name} must be a 32-bit integer"
     )))
 }
+
+/// Append one counted property-tree string leaf, with source byte escaping.
+pub(crate) fn append_json_byte_string(
+    output: &mut cosmolkit_model::PropertyText,
+    value: &cosmolkit_model::PropertyText,
+) {
+    // Boost1.85❗✔️:     template<class Ch>
+    // Boost1.85❗✔️:     std::basic_string<Ch> create_escapes(const std::basic_string<Ch> &s)
+    // Boost1.85❗✔️:     {
+    // Boost1.85❗✔️:         std::basic_string<Ch> result;
+    // Boost1.85❗✔️:         typename std::basic_string<Ch>::const_iterator b = s.begin();
+    // Boost1.85❗✔️:         typename std::basic_string<Ch>::const_iterator e = s.end();
+    // Boost1.85❗✔️:         while (b != e)
+    // Boost1.85❗✔️:         {
+    // Boost1.85❗✔️:             typedef typename make_unsigned<Ch>::type UCh;
+    // Boost1.85❗✔️:             UCh c(*b);
+    // Boost1.85❗✔️:             // This assumes an ASCII superset. But so does everything in PTree.
+    // Boost1.85❗✔️:             // We escape everything outside ASCII, because this code can't
+    // Boost1.85❗✔️:             // handle high unicode characters.
+    // Boost1.85❗✔️:             if (c == 0x20 || c == 0x21 || (c >= 0x23 && c <= 0x2E) ||
+    // Boost1.85❗✔️:                 (c >= 0x30 && c <= 0x5B) || (c >= 0x5D && c <= 0xFF))
+    // Boost1.85❗✔️:                 result += *b;
+    // Boost1.85❗✔️:             else if (*b == Ch('\b')) result += Ch('\\'), result += Ch('b');
+    // Boost1.85❗✔️:             else if (*b == Ch('\f')) result += Ch('\\'), result += Ch('f');
+    // Boost1.85❗✔️:             else if (*b == Ch('\n')) result += Ch('\\'), result += Ch('n');
+    // Boost1.85❗✔️:             else if (*b == Ch('\r')) result += Ch('\\'), result += Ch('r');
+    // Boost1.85❗✔️:             else if (*b == Ch('\t')) result += Ch('\\'), result += Ch('t');
+    // Boost1.85❗✔️:             else if (*b == Ch('/')) result += Ch('\\'), result += Ch('/');
+    // Boost1.85❗✔️:             else if (*b == Ch('"'))  result += Ch('\\'), result += Ch('"');
+    // Boost1.85❗✔️:             else if (*b == Ch('\\')) result += Ch('\\'), result += Ch('\\');
+    // Boost1.85❗✔️:             else
+    // Boost1.85❗✔️:             {
+    // Boost1.85❗✔️:                 const char *hexdigits = "0123456789ABCDEF";
+    // Boost1.85❗✔️:                 unsigned long u = (std::min)(static_cast<unsigned long>(
+    // Boost1.85❗✔️:                                                  static_cast<UCh>(*b)),
+    // Boost1.85❗✔️:                                              0xFFFFul);
+    // Boost1.85❗✔️:                 unsigned long d1 = u / 4096; u -= d1 * 4096;
+    // Boost1.85❗✔️:                 unsigned long d2 = u / 256; u -= d2 * 256;
+    // Boost1.85❗✔️:                 unsigned long d3 = u / 16; u -= d3 * 16;
+    // Boost1.85❗✔️:                 unsigned long d4 = u;
+    // Boost1.85❗✔️:                 result += Ch('\\'); result += Ch('u');
+    // Boost1.85❗✔️:                 result += Ch(hexdigits[d1]); result += Ch(hexdigits[d2]);
+    // Boost1.85❗✔️:                 result += Ch(hexdigits[d3]); result += Ch(hexdigits[d4]);
+    // Boost1.85❗✔️:             }
+    // Boost1.85❗✔️:             ++b;
+    // Boost1.85❗✔️:         }
+    // Boost1.85❗✔️:         return result;
+    // Boost1.85❗✔️:     }
+    // Behavior: Boost's Ch=char specialization converts each char to unsigned
+    // before its ASCII-superset range check. Bytes 0x80..0xff remain bytes;
+    // control characters and slash use the exact source escape spelling.
+    // Complexity: one linear pass into the existing output, no decoding,
+    // secondary Unicode representation or intermediate escaped allocation.
+    // Output quotes are the source write_json_helper leaf delimiters.
+    // Boost1.85❗✔️:             stream << Ch('"') << data << Ch('"');
+    output.push_byte(b'"');
+    for &byte in value.as_bytes() {
+        match byte {
+            0x20 | 0x21 | 0x23..=0x2e | 0x30..=0x5b | 0x5d..=0xff => output.push_byte(byte),
+            b'\x08' => output.extend_bytes(b"\\b"),
+            b'\x0c' => output.extend_bytes(b"\\f"),
+            b'\n' => output.extend_bytes(b"\\n"),
+            b'\r' => output.extend_bytes(b"\\r"),
+            b'\t' => output.extend_bytes(b"\\t"),
+            b'/' => output.extend_bytes(b"\\/"),
+            b'"' => output.extend_bytes(b"\\\""),
+            b'\\' => output.extend_bytes(b"\\\\"),
+            _ => {
+                output.extend_bytes(b"\\u00");
+                output.push_byte(b"0123456789ABCDEF"[(byte >> 4) as usize]);
+                output.push_byte(b"0123456789ABCDEF"[(byte & 15) as usize]);
+            }
+        }
+    }
+    output.push_byte(b'"');
+}
+
+#[cfg(test)]
+mod counted_json_leaf_regressions {
+    use super::append_json_byte_string;
+    use cosmolkit_model::PropertyText;
+
+    #[test]
+    fn property_tree_char_leaf_retains_opaque_bytes_and_source_escape_spelling() {
+        for (input, expected) in [
+            (b"".as_slice(), b"\"\"".as_slice()),
+            (
+                b"\0\x01\x1f".as_slice(),
+                b"\"\\u0000\\u0001\\u001F\"".as_slice(),
+            ),
+            (
+                b"\x08\x0c\n\r\t".as_slice(),
+                b"\"\\b\\f\\n\\r\\t\"".as_slice(),
+            ),
+            (b"/\"\\".as_slice(), b"\"\\/\\\"\\\\\"".as_slice()),
+            (b"\x7f\x80\xff".as_slice(), b"\"\x7f\x80\xff\"".as_slice()),
+            (b"R\0S\xff".as_slice(), b"\"R\\u0000S\xff\"".as_slice()),
+        ] {
+            let value = PropertyText::from_bytes(input);
+            let before = value.clone();
+            let mut output = PropertyText::from("prefix");
+            append_json_byte_string(&mut output, &value);
+            assert_eq!(&output.as_bytes()[6..], expected);
+            assert_eq!(value, before);
+        }
+    }
+}

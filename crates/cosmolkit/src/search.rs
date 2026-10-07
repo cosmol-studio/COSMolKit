@@ -38,7 +38,7 @@ pub fn compile_query(query: &QueryGraph) -> Result<crate::CompiledQuery, crate::
 pub fn write_smarts(
     query: &QueryGraph,
     params: &crate::SmartsWriteParams,
-) -> Result<String, crate::SmartsWriteError> {
+) -> Result<crate::PropertyText, crate::SmartsWriteError> {
     cosmolkit_search::query_graph_to_smarts(query, params)
 }
 
@@ -46,11 +46,47 @@ pub fn write_smarts(
 pub fn write_cx_smarts(
     query: &QueryGraph,
     params: &crate::SmartsWriteParams,
-) -> Result<String, crate::SmartsWriteError> {
+) -> Result<crate::PropertyText, crate::SmartsWriteError> {
     cosmolkit_search::query_graph_to_cx_smarts(query, params)
 }
 
 impl Molecule {
+    /// Serialize concrete rows without changing live molecule state.
+    pub fn to_smarts(&self) -> Result<crate::PropertyText, crate::SmartsWriteError> {
+        self.to_smarts_with_params(&crate::SmartsWriteParams::default())
+    }
+
+    pub fn to_smarts_with_params(
+        &self,
+        params: &crate::SmartsWriteParams,
+    ) -> Result<crate::PropertyText, crate::SmartsWriteError> {
+        cosmolkit_search::topology_to_smarts(
+            self.topology(),
+            self.coordinate_block_runtime(),
+            self.properties(),
+            params,
+            false,
+        )
+    }
+
+    /// Serialize concrete rows without changing live molecule state.
+    pub fn to_cx_smarts(&self) -> Result<crate::PropertyText, crate::SmartsWriteError> {
+        self.to_cx_smarts_with_params(&crate::SmartsWriteParams::default())
+    }
+
+    pub fn to_cx_smarts_with_params(
+        &self,
+        params: &crate::SmartsWriteParams,
+    ) -> Result<crate::PropertyText, crate::SmartsWriteError> {
+        cosmolkit_search::topology_to_smarts(
+            self.topology(),
+            self.coordinate_block_runtime(),
+            self.properties(),
+            params,
+            true,
+        )
+    }
+
     fn detached_search_target(&self) -> cosmolkit_search::SearchTarget<'_> {
         #[cfg(any(
             feature = "cap-valence",
@@ -256,7 +292,12 @@ mod original_smarts_public_regressions {
         let cache = molecule.derived_cache_arc_runtime();
         let topology = molecule.topology_arc_runtime();
         let target = molecule.detached_search_target();
-        assert!(target.valence().is_none());
+        let actual = target
+            .valence()
+            .expect("AddHs moves refreshed source scalar rows");
+        let expected_valence =
+            cosmolkit_core::assign_valence(molecule.topology(), &Default::default()).unwrap();
+        assert_eq!(actual, &expected_valence);
         let rings = target.ring_info().unwrap();
         assert_eq!(rings.num_rings(), 6);
         assert_eq!(
@@ -308,7 +349,10 @@ mod original_smarts_public_regressions {
             rings,
             molecule.detached_search_target().ring_info().unwrap()
         ));
-        assert!(molecule.detached_search_target().valence().is_none());
+        assert_eq!(
+            molecule.detached_search_target().valence(),
+            Some(&expected_valence)
+        );
         // Independent valence preparation must also retain sparse ring rows.
         let assigned = molecule.with_assigned_valence().unwrap();
         assert!(assigned.detached_search_target().valence().is_some());

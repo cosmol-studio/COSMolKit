@@ -224,7 +224,7 @@ pub(super) const NEEDS_EXPLICIT_HYDROGENS_WARNING_MESSAGE: &str =
 fn append_fixed_charge_flag(
     atom: &Atom,
     total_valence: i32,
-    atom_key: &mut String,
+    atom_key: &mut cosmolkit_model::PropertyText,
     tolerate_charge_mismatch: bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> bool {
@@ -348,7 +348,7 @@ fn append_fixed_charge_flag(
         || formal_charge == required_valence
         || tolerate_charge_mismatch
     {
-        atom_key.push_str(suffix);
+        atom_key.extend_bytes(suffix.as_bytes());
     } else {
         diagnostics.push(UffTypingDiagnostic {
             atom_id: Some(atom.id()),
@@ -362,7 +362,7 @@ fn append_fixed_charge_flag(
 fn append_valence_only_charge_flag(
     atom: &Atom,
     total_valence: i32,
-    atom_key: &mut String,
+    atom_key: &mut cosmolkit_model::PropertyText,
     tolerate_charge_mismatch: bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> bool {
@@ -570,10 +570,10 @@ fn append_valence_only_charge_flag(
     };
 
     if total_valence == required_valence {
-        atom_key.push_str(suffix);
+        atom_key.extend_bytes(suffix.as_bytes());
     } else {
         if tolerate_charge_mismatch {
-            atom_key.push_str(suffix);
+            atom_key.extend_bytes(suffix.as_bytes());
         }
         diagnostics.push(UffTypingDiagnostic {
             atom_id: Some(atom.id()),
@@ -587,7 +587,7 @@ fn append_valence_only_charge_flag(
 fn check_unsuffixed_main_group_charge(
     atom: &Atom,
     total_valence: i32,
-    _atom_key: &mut String,
+    _atom_key: &mut cosmolkit_model::PropertyText,
     _tolerate_charge_mismatch: bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> bool {
@@ -624,7 +624,7 @@ fn check_unsuffixed_main_group_charge(
 fn append_phosphorus_charge_flag(
     atom: &Atom,
     total_valence: i32,
-    atom_key: &mut String,
+    atom_key: &mut cosmolkit_model::PropertyText,
     tolerate_charge_mismatch: bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> bool {
@@ -650,11 +650,11 @@ fn append_phosphorus_charge_flag(
     };
 
     match total_valence {
-        3 => atom_key.push_str("+3"),
-        5 => atom_key.push_str("+5"),
+        3 => atom_key.extend_bytes(b"+3"),
+        5 => atom_key.extend_bytes(b"+5"),
         _ => {
             if tolerate_charge_mismatch {
-                atom_key.push_str("+5");
+                atom_key.extend_bytes(b"+5");
             }
             diagnostics.push(UffTypingDiagnostic {
                 atom_id: Some(atom.id()),
@@ -669,7 +669,7 @@ fn append_phosphorus_charge_flag(
 fn append_sulfur_charge_flag(
     atom: &Atom,
     total_valence: i32,
-    atom_key: &mut String,
+    atom_key: &mut cosmolkit_model::PropertyText,
     tolerate_charge_mismatch: bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> bool {
@@ -704,12 +704,12 @@ fn append_sulfur_charge_flag(
     }
 
     match total_valence {
-        2 => atom_key.push_str("+2"),
-        4 => atom_key.push_str("+4"),
-        6 => atom_key.push_str("+6"),
+        2 => atom_key.extend_bytes(b"+2"),
+        4 => atom_key.extend_bytes(b"+4"),
+        6 => atom_key.extend_bytes(b"+6"),
         _ => {
             if tolerate_charge_mismatch {
-                atom_key.push_str("+6");
+                atom_key.extend_bytes(b"+6");
             }
             diagnostics.push(UffTypingDiagnostic {
                 atom_id: Some(atom.id()),
@@ -724,7 +724,7 @@ fn append_sulfur_charge_flag(
 fn rewrite_rhenium_charge_flag(
     atom: &Atom,
     _total_valence: i32,
-    atom_key: &mut String,
+    atom_key: &mut cosmolkit_model::PropertyText,
     tolerate_charge_mismatch: bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> bool {
@@ -745,12 +745,12 @@ fn rewrite_rhenium_charge_flag(
     }
 
     if tolerate_charge_mismatch {
-        if atom_key.as_str() == "Re6" {
+        if atom_key.as_bytes() == b"Re6" {
             atom_key.clear();
-            atom_key.push_str("Re6+5");
-        } else if atom_key.as_str() == "Re3" {
+            atom_key.extend_bytes(b"Re6+5");
+        } else if atom_key.as_bytes() == b"Re3" {
             atom_key.clear();
-            atom_key.push_str("Re3+7");
+            atom_key.extend_bytes(b"Re3+7");
         }
     }
 
@@ -765,7 +765,7 @@ fn rewrite_rhenium_charge_flag(
 fn append_lanthanide_charge_flag(
     atom: &Atom,
     total_valence: i32,
-    atom_key: &mut String,
+    atom_key: &mut cosmolkit_model::PropertyText,
     tolerate_charge_mismatch: bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) -> bool {
@@ -789,10 +789,10 @@ fn append_lanthanide_charge_flag(
     }
 
     match total_valence {
-        6 => atom_key.push_str("+3"),
+        6 => atom_key.extend_bytes(b"+3"),
         _ => {
             if tolerate_charge_mismatch {
-                atom_key.push_str("+3");
+                atom_key.extend_bytes(b"+3");
             }
             diagnostics.push(UffTypingDiagnostic {
                 atom_id: Some(atom.id()),
@@ -807,7 +807,7 @@ fn append_lanthanide_charge_flag(
 fn add_atom_charge_flags(
     atom: &Atom,
     total_valence: i32,
-    atom_key: &mut String,
+    atom_key: &mut cosmolkit_model::PropertyText,
     tolerate_charge_mismatch: bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
 ) {
@@ -1070,7 +1070,7 @@ fn atom_label_prefix(
     hybridization: Hybridization,
     mut atom_has_conjugated_bond: impl FnMut() -> bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
-) -> Result<String, UffTypingError> {
+) -> Result<cosmolkit_model::PropertyText, UffTypingError> {
     // BEGIN RDKIT CPP FUNCTION UFF::Tools::getAtomLabel prefix/hybridization (AtomTyper.cpp:415-498)
     // RDKit❗✔️: std::string getAtomLabel(const Atom *atom) {
     // RDKit❗✔️:   PRECONDITION(atom, "bad atom");
@@ -1188,7 +1188,9 @@ fn atom_label_prefix(
     // one value conversion. The source scans its ordered Dict rows linearly;
     // the model's ordered PropertyStore uses one BTreeMap lookup, with no
     // intermediate property clone or additional scan. The converted symbol
-    // requires the output String allocation that the source also performs.
+    // requires the output byte buffer allocation that the source also performs.
+    // Canonical PropertyText retains NUL and opaque dummy-label bytes; the
+    // source suffix branches append bytes without any Unicode conversion.
     // Cached state keeps the source's branch-lazy incident-bond scan here;
     // supplied rows use an O(1) indexed conjugation-flag read.
     let atomic_number = atom.atomic_number();
@@ -1199,16 +1201,16 @@ fn atom_label_prefix(
             }
             None => rdkit_element_symbol(atomic_number)
                 .map_err(UffTypingError::CoreValence)?
-                .to_owned(),
+                .into(),
         }
     } else {
         rdkit_element_symbol(atomic_number)
             .map_err(UffTypingError::CoreValence)?
-            .to_owned()
+            .into()
     };
     let mut atom_key = atom_symbol;
     if atom_key.len() == 1 {
-        atom_key.push('_');
+        atom_key.push_byte(b'_');
     }
 
     if atomic_number != 0 {
@@ -1226,7 +1228,7 @@ fn atom_label_prefix(
         {
             match atomic_number {
                 12 | 13 | 14 | 15 | 50 | 51 | 52 | 81 | 82 | 83 | 84 => {
-                    atom_key.push('3');
+                    atom_key.push_byte(b'3');
                     if hybridization != Hybridization::Sp3 {
                         diagnostics.push(UffTypingDiagnostic {
                             atom_id: Some(atom.id()),
@@ -1236,7 +1238,7 @@ fn atom_label_prefix(
                     }
                 }
                 80 => {
-                    atom_key.push('1');
+                    atom_key.push_byte(b'1');
                     if hybridization != Hybridization::Sp {
                         diagnostics.push(UffTypingDiagnostic {
                             atom_id: Some(atom.id()),
@@ -1247,22 +1249,22 @@ fn atom_label_prefix(
                 }
                 _ => match hybridization {
                     Hybridization::S => {}
-                    Hybridization::Sp => atom_key.push('1'),
+                    Hybridization::Sp => atom_key.push_byte(b'1'),
                     Hybridization::Sp2 => {
                         // This borrowed callable is evaluated at the source
                         // expression; aromatic atoms short-circuit its bond scan.
                         if (atom.is_aromatic() || atom_has_conjugated_bond())
                             && matches!(atomic_number, 6 | 7 | 8 | 16)
                         {
-                            atom_key.push('R');
+                            atom_key.push_byte(b'R');
                         } else {
-                            atom_key.push('2');
+                            atom_key.push_byte(b'2');
                         }
                     }
-                    Hybridization::Sp3 => atom_key.push('3'),
-                    Hybridization::Sp2d => atom_key.push('4'),
-                    Hybridization::Sp3d => atom_key.push('5'),
-                    Hybridization::Sp3d2 => atom_key.push('6'),
+                    Hybridization::Sp3 => atom_key.push_byte(b'3'),
+                    Hybridization::Sp2d => atom_key.push_byte(b'4'),
+                    Hybridization::Sp3d => atom_key.push_byte(b'5'),
+                    Hybridization::Sp3d2 => atom_key.push_byte(b'6'),
                     Hybridization::Unspecified | Hybridization::Other => {
                         diagnostics.push(UffTypingDiagnostic {
                             atom_id: Some(atom.id()),
@@ -1284,7 +1286,7 @@ fn get_atom_label(
     hybridization: Hybridization,
     atom_has_conjugated_bond: impl FnMut() -> bool,
     diagnostics: &mut Vec<UffTypingDiagnostic>,
-) -> Result<String, UffTypingError> {
+) -> Result<cosmolkit_model::PropertyText, UffTypingError> {
     // BEGIN RDKIT CPP FUNCTION UFF::Tools::getAtomLabel (AtomTyper.cpp:415-503)
     // RDKit❗✔️: std::string getAtomLabel(const Atom *atom) {
     // RDKit❗✔️:   PRECONDITION(atom, "bad atom");
@@ -3191,9 +3193,10 @@ mod tests {
             );
             let mut diagnostics = Vec::new();
             assert_eq!(
-                atom_label_prefix(&atom, hybridization, || false, &mut diagnostics)
-                    .expect("source-supported element label"),
-                expected,
+                (atom_label_prefix(&atom, hybridization, || false, &mut diagnostics)
+                    .expect("source-supported element label"))
+                .as_bytes(),
+                (expected).as_bytes(),
             );
             assert!(diagnostics.is_empty());
         }
@@ -3213,9 +3216,10 @@ mod tests {
             let mut diagnostics = Vec::new();
 
             assert_eq!(
-                atom_label_prefix(&atom, Hybridization::S, || false, &mut diagnostics)
-                    .expect("source fallback returns the element symbol"),
-                expected,
+                (atom_label_prefix(&atom, Hybridization::S, || false, &mut diagnostics)
+                    .expect("source fallback returns the element symbol"))
+                .as_bytes(),
+                (expected).as_bytes(),
             );
             assert_eq!(atom, before);
             assert!(diagnostics.is_empty());
@@ -3225,7 +3229,7 @@ mod tests {
     #[test]
     fn uff_sync_symbol_projects_typed_dummy_labels_only_for_dummies() {
         let cases = [
-            (PropertyValue::String("R".to_owned()), "R_"),
+            (PropertyValue::String("R".into()), "R_"),
             (PropertyValue::Int(0), "0_"),
             (PropertyValue::Int(-17), "-17"),
             (PropertyValue::Double(-0.0), "-0"),
@@ -3248,9 +3252,10 @@ mod tests {
                 };
 
                 assert_eq!(
-                    atom_label_prefix(&atom, Hybridization::S, || false, &mut diagnostics)
-                        .expect("all four modeled property kinds have source spellings"),
-                    expected,
+                    (atom_label_prefix(&atom, Hybridization::S, || false, &mut diagnostics)
+                        .expect("all four modeled property kinds have source spellings"))
+                    .as_bytes(),
+                    (expected).as_bytes(),
                     "property={property:?}, atomic_number={atomic_number}",
                 );
                 assert_eq!(atom, before);
@@ -3313,9 +3318,10 @@ mod tests {
                 let mut diagnostics = Vec::new();
                 let expected = format!("{}{}3", symbol, if symbol.len() == 1 { "_" } else { "" });
                 assert_eq!(
-                    atom_label_prefix(&atom, hybridization, || false, &mut diagnostics)
-                        .expect("source-supported forced label"),
-                    expected,
+                    (atom_label_prefix(&atom, hybridization, || false, &mut diagnostics)
+                        .expect("source-supported forced label"))
+                    .as_bytes(),
+                    (expected).as_bytes(),
                     "atomic number {atomic_number}, hybridization {hybridization:?}",
                 );
                 let expected_diagnostics = if expected_warning {
@@ -3338,9 +3344,10 @@ mod tests {
             let atom = label_atom(80, next_id, hybridization, false, None);
             let mut diagnostics = Vec::new();
             assert_eq!(
-                atom_label_prefix(&atom, hybridization, || false, &mut diagnostics)
-                    .expect("source-supported Hg label"),
-                "Hg1",
+                (atom_label_prefix(&atom, hybridization, || false, &mut diagnostics)
+                    .expect("source-supported Hg label"))
+                .as_bytes(),
+                ("Hg1").as_bytes(),
             );
             let expected_diagnostics = if expected_warning {
                 vec![UffTypingDiagnostic {
@@ -3405,14 +3412,15 @@ mod tests {
                         );
                         let mut diagnostics = Vec::new();
                         assert_eq!(
-                            atom_label_prefix(
+                            (atom_label_prefix(
                                 &atom,
                                 hybridization,
                                 || atom_has_conjugated_bond,
                                 &mut diagnostics,
                             )
-                            .expect("source-supported element label"),
-                            expected,
+                            .expect("source-supported element label"))
+                            .as_bytes(),
+                            (expected).as_bytes(),
                             "atomic number {atomic_number}, hybridization {hybridization:?}, aromatic {aromatic}, conjugated {atom_has_conjugated_bond}",
                         );
                         let expected_diagnostics = expected_diagnostic
@@ -3499,7 +3507,10 @@ mod tests {
                         Hybridization::Sp3d2 => "6",
                         Hybridization::Unspecified | Hybridization::Other => "",
                     };
-                    assert_eq!(actual, format!("{symbol}{suffix}"));
+                    assert_eq!(
+                        (actual).as_bytes(),
+                        (format!("{symbol}{suffix}")).as_bytes()
+                    );
                     let expected_diagnostics = if matches!(
                         hybridization,
                         Hybridization::Unspecified | Hybridization::Other
@@ -3541,7 +3552,7 @@ mod tests {
                         &mut diagnostics,
                     )
                     .expect("fixed source special-element branch has a label");
-                    assert_eq!(actual, expected_label);
+                    assert_eq!((actual).as_bytes(), (expected_label).as_bytes());
                     let expected_warning = if forced_sp3 {
                         (hybridization != Hybridization::Sp3)
                             .then_some(FORCED_SP3_HYBRIDIZATION_WARNING_MESSAGE)
@@ -3570,7 +3581,7 @@ mod tests {
             let mut calls = 0;
             let mut diagnostics = Vec::new();
             assert_eq!(
-                get_atom_label(
+                (get_atom_label(
                     &atom,
                     2,
                     Hybridization::Sp2,
@@ -3580,8 +3591,9 @@ mod tests {
                     },
                     &mut diagnostics
                 )
-                .expect("source getAtomLabel forwards its lazy conjugation input"),
-                expected,
+                .expect("source getAtomLabel forwards its lazy conjugation input"))
+                .as_bytes(),
+                (expected).as_bytes(),
             );
             assert_eq!(calls, expected_calls);
             assert!(diagnostics.is_empty());
@@ -3629,9 +3641,10 @@ mod tests {
                 };
                 let mut diagnostics = Vec::new();
                 assert_eq!(
-                    atom_label_prefix(&atom, hybridization, || false, &mut diagnostics)
-                        .expect("source-supported alkali/halogen label"),
-                    expected,
+                    (atom_label_prefix(&atom, hybridization, || false, &mut diagnostics)
+                        .expect("source-supported alkali/halogen label"))
+                    .as_bytes(),
+                    (expected).as_bytes(),
                     "atomic number {atomic_number}, hybridization {hybridization:?}",
                 );
                 assert!(diagnostics.is_empty());
@@ -3646,9 +3659,10 @@ mod tests {
             let atom = label_atom(atomic_number, id, Hybridization::Sp, false, None);
             let mut diagnostics = Vec::new();
             assert_eq!(
-                atom_label_prefix(&atom, Hybridization::Sp, || false, &mut diagnostics)
-                    .expect("source-supported default-valence sentinel label"),
-                format!("{symbol}1"),
+                (atom_label_prefix(&atom, Hybridization::Sp, || false, &mut diagnostics)
+                    .expect("source-supported default-valence sentinel label"))
+                .as_bytes(),
+                (format!("{symbol}1")).as_bytes(),
             );
             assert!(diagnostics.is_empty());
             id += 1;
@@ -3657,14 +3671,15 @@ mod tests {
         let atom = label_atom(117, id, Hybridization::Unspecified, false, None);
         let mut diagnostics = Vec::new();
         assert_eq!(
-            atom_label_prefix(
+            (atom_label_prefix(
                 &atom,
                 Hybridization::Unspecified,
                 || false,
                 &mut diagnostics
             )
-            .expect("source-supported default-valence sentinel label"),
-            "Ts",
+            .expect("source-supported default-valence sentinel label"))
+            .as_bytes(),
+            ("Ts").as_bytes(),
         );
         assert_eq!(
             diagnostics,
@@ -3708,9 +3723,10 @@ mod tests {
             let atom = label_atom(6, 45_000 + offset, hybridization, aromatic, None);
             let mut diagnostics = Vec::new();
             assert_eq!(
-                get_atom_label(&atom, 0, hybridization, || conjugated, &mut diagnostics)
-                    .expect("carbon has a source-defined label"),
-                expected,
+                (get_atom_label(&atom, 0, hybridization, || conjugated, &mut diagnostics)
+                    .expect("carbon has a source-defined label"))
+                .as_bytes(),
+                (expected).as_bytes(),
                 "hybridization {hybridization:?}",
             );
             let expected_diagnostics = error
@@ -3757,15 +3773,16 @@ mod tests {
             );
             let mut diagnostics = Vec::new();
             assert_eq!(
-                get_atom_label(
+                (get_atom_label(
                     &atom,
                     2,
                     Hybridization::Sp2,
                     || conjugated,
                     &mut diagnostics
                 )
-                .expect("source-supported aromatic/conjugated label"),
-                expected,
+                .expect("source-supported aromatic/conjugated label"))
+                .as_bytes(),
+                (expected).as_bytes(),
                 "atomic number {atomic_number}, aromatic {aromatic}, conjugated {conjugated}",
             );
             assert!(diagnostics.is_empty());
@@ -3813,15 +3830,16 @@ mod tests {
             let atom = label_atom(atomic_number, 45_200 + offset, hybridization, false, None);
             let mut diagnostics = Vec::new();
             assert_eq!(
-                get_atom_label(
+                (get_atom_label(
                     &atom,
                     total_valence,
                     hybridization,
                     || false,
                     &mut diagnostics
                 )
-                .expect("source-supported charge label"),
-                expected,
+                .expect("source-supported charge label"))
+                .as_bytes(),
+                (expected).as_bytes(),
                 "atomic number {atomic_number}, valence {total_valence}",
             );
             let expected_diagnostics = if charge_error {
@@ -3842,30 +3860,32 @@ mod tests {
         let dummy = label_atom(0, 45_300, Hybridization::Unspecified, false, Some("D"));
         let mut diagnostics = Vec::new();
         assert_eq!(
-            get_atom_label(
+            (get_atom_label(
                 &dummy,
                 0,
                 Hybridization::Unspecified,
                 || false,
                 &mut diagnostics,
             )
-            .expect("dummyLabel supplies the source symbol"),
-            "D_",
+            .expect("dummyLabel supplies the source symbol"))
+            .as_bytes(),
+            ("D_").as_bytes(),
         );
         assert!(diagnostics.is_empty());
 
         let magnesium = label_atom(12, 45_301, Hybridization::Other, false, None);
         diagnostics.clear();
         assert_eq!(
-            get_atom_label(
+            (get_atom_label(
                 &magnesium,
                 0,
                 Hybridization::Other,
                 || false,
                 &mut diagnostics
             )
-            .expect("source tolerance keeps the charge suffix"),
-            "Mg3+2",
+            .expect("source tolerance keeps the charge suffix"))
+            .as_bytes(),
+            ("Mg3+2").as_bytes(),
         );
         assert_eq!(
             diagnostics,
@@ -3886,15 +3906,16 @@ mod tests {
         let sulfur = label_atom(16, 45_302, Hybridization::Unspecified, false, None);
         diagnostics.clear();
         assert_eq!(
-            get_atom_label(
+            (get_atom_label(
                 &sulfur,
                 0,
                 Hybridization::Unspecified,
                 || false,
                 &mut diagnostics,
             )
-            .expect("non-SP2 sulfur keeps the tolerated source suffix"),
-            "S_+6",
+            .expect("non-SP2 sulfur keeps the tolerated source suffix"))
+            .as_bytes(),
+            ("S_+6").as_bytes(),
         );
         assert_eq!(
             diagnostics,
@@ -4240,7 +4261,7 @@ mod tests {
                             formal_charge,
                             tolerate_charge_mismatch,
                         );
-                        let mut atom_key = String::from("matrix-prefix");
+                        let mut atom_key = cosmolkit_model::PropertyText::from("matrix-prefix");
                         let mut diagnostics = Vec::new();
 
                         add_atom_charge_flags(
@@ -4252,8 +4273,8 @@ mod tests {
                         );
 
                         assert_eq!(
-                            atom_key,
-                            format!("matrix-prefix{expected_suffix}"),
+                            (atom_key).as_bytes(),
+                            (format!("matrix-prefix{expected_suffix}")).as_bytes(),
                             "atomic number {atomic_number}, valence {total_valence}, formal charge {formal_charge}, tolerance {tolerate_charge_mismatch}",
                         );
                         let expected_diagnostics = if emits_error {
@@ -4296,7 +4317,7 @@ mod tests {
                     } else {
                         required_valence + 1
                     };
-                    let mut atom_key = String::from("fixed-prefix");
+                    let mut atom_key = cosmolkit_model::PropertyText::from("fixed-prefix");
                     let mut diagnostics = Vec::new();
 
                     assert!(append_fixed_charge_flag(
@@ -4311,7 +4332,11 @@ mod tests {
                     } else {
                         String::from("fixed-prefix")
                     };
-                    assert_eq!(atom_key, expected_key, "atomic number {atomic_number}");
+                    assert_eq!(
+                        atom_key.as_bytes(),
+                        expected_key.as_bytes(),
+                        "atomic number {atomic_number}"
+                    );
                     if appends {
                         assert!(diagnostics.is_empty(), "atomic number {atomic_number}");
                     } else {
@@ -4331,7 +4356,7 @@ mod tests {
                 let other_positive_charge = if required_valence == 1 { 2 } else { 1 };
                 let atom = fixed_atom(atomic_number, other_positive_charge, atom_index);
                 let atom_id = atom.id();
-                let mut atom_key = String::from("kept-prefix");
+                let mut atom_key = cosmolkit_model::PropertyText::from("kept-prefix");
                 let mut diagnostics = Vec::new();
 
                 assert!(append_fixed_charge_flag(
@@ -4341,7 +4366,11 @@ mod tests {
                     false,
                     &mut diagnostics,
                 ));
-                assert_eq!(atom_key, "kept-prefix", "atomic number {atomic_number}");
+                assert_eq!(
+                    (atom_key).as_bytes(),
+                    ("kept-prefix").as_bytes(),
+                    "atomic number {atomic_number}"
+                );
                 assert_mismatch_diagnostic(&diagnostics, atom_id);
                 atom_index += 1;
             }
@@ -4352,7 +4381,7 @@ mod tests {
     fn cf3d_typ_t01_nonmember_is_not_handled_or_mutated() {
         let atom = fixed_atom(1, 6, 20_000);
         for tolerate in [false, true] {
-            let mut atom_key = String::from("kept-prefix");
+            let mut atom_key = cosmolkit_model::PropertyText::from("kept-prefix");
             let mut diagnostics = Vec::new();
             assert!(!append_fixed_charge_flag(
                 &atom,
@@ -4361,7 +4390,7 @@ mod tests {
                 tolerate,
                 &mut diagnostics,
             ));
-            assert_eq!(atom_key, "kept-prefix");
+            assert_eq!((atom_key).as_bytes(), ("kept-prefix").as_bytes());
             assert!(diagnostics.is_empty());
         }
     }
@@ -4388,7 +4417,7 @@ mod tests {
                             } else {
                                 required_valence + 1
                             };
-                            let mut atom_key = String::from("t02-prefix");
+                            let mut atom_key = cosmolkit_model::PropertyText::from("t02-prefix");
                             let mut diagnostics = Vec::new();
 
                             assert!(append_valence_only_charge_flag(
@@ -4403,7 +4432,11 @@ mod tests {
                             } else {
                                 String::from("t02-prefix")
                             };
-                            assert_eq!(atom_key, expected_key, "atomic number {atomic_number}");
+                            assert_eq!(
+                                atom_key.as_bytes(),
+                                expected_key.as_bytes(),
+                                "atomic number {atomic_number}"
+                            );
                             if valence_matches {
                                 assert!(diagnostics.is_empty(), "atomic number {atomic_number}");
                             } else {
@@ -4425,7 +4458,7 @@ mod tests {
     fn cf3d_typ_t02_nonmember_is_not_handled_or_mutated() {
         let atom = fixed_atom(1, 3, 40_000);
         for tolerate_charge_mismatch in [false, true] {
-            let mut atom_key = String::from("t02-prefix");
+            let mut atom_key = cosmolkit_model::PropertyText::from("t02-prefix");
             let mut diagnostics = Vec::new();
             assert!(!append_valence_only_charge_flag(
                 &atom,
@@ -4434,7 +4467,7 @@ mod tests {
                 tolerate_charge_mismatch,
                 &mut diagnostics,
             ));
-            assert_eq!(atom_key, "t02-prefix");
+            assert_eq!((atom_key).as_bytes(), ("t02-prefix").as_bytes());
             assert!(diagnostics.is_empty());
         }
     }
@@ -4455,7 +4488,7 @@ mod tests {
                         };
                         let atom = fixed_atom(atomic_number, formal_charge, atom_index);
                         let atom_id = atom.id();
-                        let mut atom_key = String::from("t03-prefix");
+                        let mut atom_key = cosmolkit_model::PropertyText::from("t03-prefix");
                         let mut diagnostics = Vec::new();
 
                         assert!(check_unsuffixed_main_group_charge(
@@ -4465,7 +4498,11 @@ mod tests {
                             tolerate_charge_mismatch,
                             &mut diagnostics,
                         ));
-                        assert_eq!(atom_key, "t03-prefix", "atomic number {atomic_number}");
+                        assert_eq!(
+                            (atom_key).as_bytes(),
+                            ("t03-prefix").as_bytes(),
+                            "atomic number {atomic_number}"
+                        );
                         if total_valence == required_valence {
                             assert!(diagnostics.is_empty(), "atomic number {atomic_number}");
                         } else {
@@ -4486,7 +4523,7 @@ mod tests {
     fn cf3d_typ_t03_nonmember_is_not_handled_or_mutated() {
         let atom = fixed_atom(1, 0, 60_000);
         for tolerate_charge_mismatch in [false, true] {
-            let mut atom_key = String::from("t03-prefix");
+            let mut atom_key = cosmolkit_model::PropertyText::from("t03-prefix");
             let mut diagnostics = Vec::new();
             assert!(!check_unsuffixed_main_group_charge(
                 &atom,
@@ -4495,7 +4532,7 @@ mod tests {
                 tolerate_charge_mismatch,
                 &mut diagnostics,
             ));
-            assert_eq!(atom_key, "t03-prefix");
+            assert_eq!((atom_key).as_bytes(), ("t03-prefix").as_bytes());
             assert!(diagnostics.is_empty());
         }
     }
@@ -4510,7 +4547,7 @@ mod tests {
                 for formal_charge in [0, 3, 5] {
                     let atom = fixed_atom(15, formal_charge, atom_index);
                     let atom_id = atom.id();
-                    let mut atom_key = String::from("t04-prefix");
+                    let mut atom_key = cosmolkit_model::PropertyText::from("t04-prefix");
                     let mut diagnostics = Vec::new();
 
                     assert!(append_phosphorus_charge_flag(
@@ -4527,7 +4564,10 @@ mod tests {
                         _ if tolerate_charge_mismatch => "+5",
                         _ => "",
                     };
-                    assert_eq!(atom_key, format!("t04-prefix{expected_suffix}"));
+                    assert_eq!(
+                        (atom_key).as_bytes(),
+                        (format!("t04-prefix{expected_suffix}")).as_bytes()
+                    );
                     if matches!(total_valence, 3 | 5) {
                         assert!(diagnostics.is_empty());
                     } else {
@@ -4572,7 +4612,7 @@ mod tests {
                                 .with_hybridization(hybridization),
                         );
                         let atom_id = atom.id();
-                        let mut atom_key = String::from("t05-prefix");
+                        let mut atom_key = cosmolkit_model::PropertyText::from("t05-prefix");
                         let mut diagnostics = Vec::new();
 
                         assert!(append_sulfur_charge_flag(
@@ -4595,8 +4635,8 @@ mod tests {
                             }
                         };
                         assert_eq!(
-                            atom_key,
-                            format!("t05-prefix{expected_suffix}"),
+                            (atom_key).as_bytes(),
+                            (format!("t05-prefix{expected_suffix}")).as_bytes(),
                             "hybridization={hybridization:?}, valence={total_valence}, tolerance={tolerate_charge_mismatch}, charge={formal_charge}"
                         );
 
@@ -4621,7 +4661,7 @@ mod tests {
     #[test]
     fn cf3d_typ_t05_non_sulfur_is_not_handled_or_mutated() {
         let atom = fixed_atom(6, 0, 120_000);
-        let mut atom_key = String::from("t05-non-sulfur-prefix");
+        let mut atom_key = cosmolkit_model::PropertyText::from("t05-non-sulfur-prefix");
         let mut diagnostics = Vec::new();
 
         assert!(!append_sulfur_charge_flag(
@@ -4631,7 +4671,7 @@ mod tests {
             true,
             &mut diagnostics,
         ));
-        assert_eq!(atom_key, "t05-non-sulfur-prefix");
+        assert_eq!((atom_key).as_bytes(), ("t05-non-sulfur-prefix").as_bytes());
         assert!(diagnostics.is_empty());
     }
 
@@ -4645,7 +4685,7 @@ mod tests {
                         let atom = fixed_atom(75, formal_charge, atom_id_value);
                         let atom_id = atom.id();
                         atom_id_value += 1;
-                        let mut atom_key = String::from(input_key);
+                        let mut atom_key = cosmolkit_model::PropertyText::from(input_key);
                         let mut diagnostics = Vec::new();
 
                         assert!(rewrite_rhenium_charge_flag(
@@ -4661,7 +4701,7 @@ mod tests {
                         } else {
                             input_key
                         };
-                        assert_eq!(atom_key, expected_key);
+                        assert_eq!((atom_key).as_bytes(), (expected_key).as_bytes());
                         assert_mismatch_diagnostic(&diagnostics, atom_id);
                     }
                 }
@@ -4672,7 +4712,7 @@ mod tests {
     #[test]
     fn cf3d_typ_t06_non_rhenium_is_not_handled_or_mutated() {
         let atom = fixed_atom(74, 5, 1_000);
-        let mut atom_key = String::from("Re6");
+        let mut atom_key = cosmolkit_model::PropertyText::from("Re6");
         let mut diagnostics = Vec::new();
 
         assert!(!rewrite_rhenium_charge_flag(
@@ -4682,7 +4722,7 @@ mod tests {
             true,
             &mut diagnostics,
         ));
-        assert_eq!(atom_key, "Re6");
+        assert_eq!((atom_key).as_bytes(), ("Re6").as_bytes());
         assert!(diagnostics.is_empty());
     }
 
@@ -4696,7 +4736,7 @@ mod tests {
                     let atom = fixed_atom(atomic_number, 0, atom_index);
                     let atom_id = atom.id();
                     atom_index += 1;
-                    let mut atom_key = String::from("t07-prefix");
+                    let mut atom_key = cosmolkit_model::PropertyText::from("t07-prefix");
                     let mut diagnostics = Vec::new();
 
                     let is_lanthanide = (57..=71).contains(&atomic_number);
@@ -4718,7 +4758,10 @@ mod tests {
                         } else {
                             ""
                         };
-                    assert_eq!(atom_key, format!("t07-prefix{expected_suffix}"));
+                    assert_eq!(
+                        (atom_key).as_bytes(),
+                        (format!("t07-prefix{expected_suffix}")).as_bytes()
+                    );
 
                     if is_lanthanide && total_valence != 6 {
                         assert_mismatch_diagnostic(&diagnostics, atom_id);
@@ -7458,8 +7501,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "0_"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("0_").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7473,8 +7517,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "C_"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("C_").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7492,8 +7537,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "1_"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("1_").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7507,8 +7553,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "C_"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("C_").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7526,8 +7573,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "2147483646"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("2147483646").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7541,8 +7589,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "C_"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("C_").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7560,8 +7609,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "2147483647"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("2147483647").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7575,8 +7625,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "C_"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("C_").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7594,8 +7645,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "2147483648"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("2147483648").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7609,8 +7661,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "C_"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("C_").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7628,8 +7681,9 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "4294967295"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("4294967295").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
@@ -7643,10 +7697,46 @@ mod uint_complete_source_condition_cells {
         let before = a.clone();
         let mut diagnostics = vec![];
         assert_eq!(
-            atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap(),
-            "C_"
+            (atom_label_prefix(&a, Hybridization::S, || false, &mut diagnostics).unwrap())
+                .as_bytes(),
+            ("C_").as_bytes()
         );
         assert_eq!(diagnostics, vec![]);
         assert_eq!(a, before);
+    }
+}
+
+#[cfg(test)]
+mod canonical_byte_label_regressions {
+    use super::*;
+    use cosmolkit_model::Element;
+    use cosmolkit_model::{AtomSpec, PropertyText, PropertyValue};
+    #[test]
+    fn opaque_dummy_label_bytes_reach_exact_parameter_key_lookup() {
+        let parameters = ParamCollection::get_params("").unwrap();
+        for (input, expected) in [
+            (b"\xff".as_slice(), b"\xff_".as_slice()),
+            (b"\xff\0".as_slice(), b"\xff\0".as_slice()),
+            (b"C_3\0".as_slice(), b"C_3\0".as_slice()),
+            (b"C_3".as_slice(), b"C_3".as_slice()),
+        ] {
+            let atom = Atom::from_spec(
+                AtomId::new(0),
+                AtomSpec::new(Element::from_atomic_number(0).unwrap())
+                    .with_prop(
+                        "dummyLabel",
+                        PropertyValue::String(PropertyText::from_bytes(input)),
+                    )
+                    .unwrap(),
+            );
+            let before = atom.clone();
+            let mut diagnostics = Vec::new();
+            let label =
+                get_atom_label(&atom, 0, Hybridization::S, || false, &mut diagnostics).unwrap();
+            assert_eq!(label.as_bytes(), expected);
+            assert_eq!(parameters.get(&label).is_some(), expected == b"C_3");
+            assert!(diagnostics.is_empty());
+            assert_eq!(atom, before);
+        }
     }
 }

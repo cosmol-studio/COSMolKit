@@ -129,6 +129,7 @@ fn chain_molecule() -> Molecule {
             .with_prop("source", "three-d"),
         ],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        // The original detached fixture contains no historical append order.
         source_conformer_order: None,
     };
     let properties = MoleculeProperties::default()
@@ -156,6 +157,7 @@ fn chain_molecule_with_conformer_ids(two_d_ids: &[usize], three_d_ids: &[usize])
             })
             .collect(),
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        // The original detached fixture contains no historical append order.
         source_conformer_order: None,
     };
     Molecule::from_parts(
@@ -342,8 +344,14 @@ fn value_semantics_unchanged_blocks_and_failure_atomicity() {
 
     assert!(std::ptr::eq(source.topology(), output.topology()));
     assert!(std::ptr::eq(source.properties(), output.properties()));
-    assert_eq!(output.property("source"), Some("preserved"));
-    assert_eq!(output.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
+    assert_eq!(
+        output.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
     assert_eq!(
         output.atom(AtomId::new(0)).unwrap().prop("_CIPCode"),
         Some(&cosmolkit_model::PropertyValue::from("R"))

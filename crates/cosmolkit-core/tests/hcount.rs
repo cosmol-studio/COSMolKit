@@ -251,11 +251,12 @@ fn signed_source_accumulator_overflow_is_structured() {
     );
     assert_eq!(
         total_hydrogen_count(&input, &assignment(vec![i32::MAX]), AtomId::new(0), false,),
-        Err(ValenceError::HydrogenCountOverflow {
+        // Atom.h stores d_implicitValence in int8; this original i32::MAX
+        // input becomes -1 before Atom::getNumImplicitHs checks initialization.
+        // Preserve the high input and its typed failure instead of bypassing
+        // that getter and reaching an impossible wide-field accumulator.
+        Err(ValenceError::ImplicitValenceCacheNotInitialized {
             atom: AtomId::new(0),
-            explicit: 1,
-            implicit: i32::MAX as u32,
-            neighbor_hydrogens: 0,
         })
     );
 }

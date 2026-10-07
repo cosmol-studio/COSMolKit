@@ -6,8 +6,8 @@ use crate::{SanitizeError, SanitizeParams, sanitize_topology};
 use cosmolkit_model::{
     Atom, AtomId, AtomMapping, Bond, BondId, BondMapping, BondStereo, ChiralTag, Conformer2D,
     Conformer3D, CoordinateBlock, CoordinateDimension, CoordinateValidationError,
-    MappingValidationError, MoleculeProperties, StereoGroup, SubstanceGroup, SubstanceGroupId,
-    TopologyBlock, TopologyEditError, TopologyMapping, TopologyValidationError,
+    MappingValidationError, MoleculeProperties, PropertyText, StereoGroup, SubstanceGroup,
+    SubstanceGroupId, TopologyBlock, TopologyEditError, TopologyMapping, TopologyValidationError,
 };
 
 const MASK_WORD_BITS: usize = usize::BITS as usize;
@@ -45,7 +45,7 @@ impl FragmentCoordinates3D<'_> {
 struct FragmentConformer2D<'a> {
     id: usize,
     coordinates: &'a [[f64; 2]],
-    props: &'a BTreeMap<String, String>,
+    props: &'a BTreeMap<PropertyText, PropertyText>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -53,7 +53,7 @@ struct FragmentConformer3D<'a> {
     id: usize,
     coordinates: FragmentCoordinates3D<'a>,
     is_3d: bool,
-    props: &'a BTreeMap<String, String>,
+    props: &'a BTreeMap<PropertyText, PropertyText>,
 }
 
 /// Borrowed conformer rows and metadata used by detached fragment copying.
@@ -144,7 +144,7 @@ impl<'a> FragmentCoordinateView<'a> {
         conformers_3d_before: &'a [Conformer3D],
         selected_id: usize,
         selected_is_3d: bool,
-        selected_props: &'a BTreeMap<String, String>,
+        selected_props: &'a BTreeMap<PropertyText, PropertyText>,
         selected_kernel_rows: &'a [&'a [f64]],
         conformers_3d_after: &'a [Conformer3D],
         source_coordinate_dim: Option<CoordinateDimension>,
@@ -408,7 +408,7 @@ fn get_subset_info_for_atom_path(
 fn copy_selected_atoms(
     reference: &TopologyBlock,
     selection_info: &mut FragmentSubsetInfo,
-) -> Vec<Atom> {
+) -> Result<Vec<Atom>, cosmolkit_model::AtomPropertyError> {
     // The UFF-FRAG specialization fixes copyAsQuery=false and uses detached
     // concrete atoms; query lowering and live-molecule ownership are outside it.
     // BEGIN RDKIT CPP FUNCTION copySelectedAtomsAndBonds concrete atom loop
@@ -442,13 +442,13 @@ fn copy_selected_atoms(
 
         let new_id = AtomId::new(copied_atoms.len());
         let mut extracted_atom = ref_atom.clone().with_id(new_id);
-        extracted_atom.clear_computed_props();
+        extracted_atom.clear_computed_props()?;
 
         copied_atoms.push(extracted_atom);
         selection_info.atom_mapping.insert(ref_atom.id(), new_id);
     }
 
-    copied_atoms
+    Ok(copied_atoms)
 }
 
 fn copy_selected_bonds(
@@ -1302,7 +1302,7 @@ fn copy_full_molecule_remove_atoms_outside_component_with_view(
     let mut molecule_properties = source_properties.clone();
     molecule_properties.remap_topology(mapping.atoms().new_to_old(), mapping.bonds().new_to_old());
     if removed_atom {
-        clear_subset_computed_props(&mut topology, &mut molecule_properties);
+        clear_subset_computed_props(&mut topology, &mut molecule_properties)?;
     }
 
     Ok(FullCopyComponent {
@@ -1425,7 +1425,7 @@ fn sanitize_subset_if_requested(
 fn clear_subset_computed_props(
     topology: &mut TopologyBlock,
     molecule_properties: &mut MoleculeProperties,
-) {
+) -> Result<(), TopologyEditError> {
     // BEGIN RDKIT CPP FUNCTION copyMolSubset clearComputedProps=true and ROMol::clearComputedProps
     // RDKit✔️🔝: if (options.clearComputedProps) {
     // RDKit✔️🔝:   // this clears atom/bond and molecule computed props
@@ -1482,13 +1482,15 @@ fn clear_subset_computed_props(
     // Complexity: one atom and bond traversal plus each carrier's computed
     // keys. BTreeMap removal avoids RDKit Dict's per-key linear vector scan;
     // this preserves key membership semantics with logarithmic lookup.
-    molecule_properties.clear_computed_props();
+    molecule_properties.clear_computed_props()?;
     for atom in &mut topology.atoms {
-        atom.clear_computed_props();
+        atom.clear_computed_props()?;
     }
     for bond in &mut topology.bonds {
-        bond.clear_computed_props();
+        bond.clear_computed_props()
+            .map_err(TopologyEditError::InvalidBond)?;
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1501,6 +1503,14 @@ struct AtomPathSubsetCopy {
 
 #[derive(Debug, thiserror::Error)]
 enum AtomPathSubsetCopyError {
+    #[error(transparent)]
+    ComputedProperties(#[from] TopologyEditError),
+    #[error("molecule property operation failed: {0}")]
+    MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
+    #[error("bond property operation failed: {0}")]
+    BondProperty(#[from] cosmolkit_model::BondValueError),
+    #[error("atom property operation failed: {0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
     #[error(transparent)]
     BondCopy(#[from] SelectedBondCopyError),
     #[error(transparent)]
@@ -1654,7 +1664,7 @@ fn copy_mol_subset_atom_path_with_view(
     let mut selection_info = FragmentSubsetInfo::default();
     get_subset_info_for_atom_path(source_topology, path, &mut selection_info);
 
-    let atoms = copy_selected_atoms(source_topology, &mut selection_info);
+    let atoms = copy_selected_atoms(source_topology, &mut selection_info)?;
     let bonds = copy_selected_bonds(source_topology, &mut selection_info)?;
     let substance_groups =
         copy_selected_substance_groups(&source_topology.substance_groups, &selection_info)?;
@@ -1678,7 +1688,7 @@ fn copy_mol_subset_atom_path_with_view(
     // A new source RWMol starts with no copied molecule-level property map;
     // clearComputedProps=true then runs after optional sanitation.
     let mut molecule_properties = MoleculeProperties::default();
-    clear_subset_computed_props(&mut topology, &mut molecule_properties);
+    clear_subset_computed_props(&mut topology, &mut molecule_properties)?;
 
     Ok(AtomPathSubsetCopy {
         topology,
@@ -1828,6 +1838,12 @@ enum OrderedFragmentBuildError {
 
 #[derive(Debug, thiserror::Error)]
 enum MoleculeFragmentsFailure {
+    #[error("computed property clearing failed for fragment {component_index}: {source}")]
+    FinalComputedProperties {
+        component_index: usize,
+        #[source]
+        source: cosmolkit_model::MoleculePropertyError,
+    },
     #[error(transparent)]
     Build(#[from] OrderedFragmentBuildError),
     #[error("final sanitation failed for fragment {component_index}: {source}")]
@@ -1904,6 +1920,9 @@ impl MoleculeFragmentsError {
                 component_index,
                 ..
             })
+            | MoleculeFragmentsFailure::FinalComputedProperties {
+                component_index, ..
+            }
             | MoleculeFragmentsFailure::FinalSanitize {
                 component_index, ..
             } => Some(*component_index),
@@ -2187,7 +2206,16 @@ pub fn get_molecule_fragments_with_coordinate_view(
 
     if sanitize_fragments {
         for (component_index, fragment) in fragments.iter_mut().enumerate() {
-            fragment.copy.molecule_properties.clear_computed_props();
+            fragment
+                .copy
+                .molecule_properties
+                .clear_computed_props()
+                .map_err(|source| MoleculeFragmentsError {
+                    failure: MoleculeFragmentsFailure::FinalComputedProperties {
+                        component_index,
+                        source,
+                    },
+                })?;
             let sanitized = sanitize_topology(&fragment.copy.topology, &SanitizeParams::default())
                 .map_err(|source| MoleculeFragmentsError {
                     failure: MoleculeFragmentsFailure::FinalSanitize {
@@ -2206,6 +2234,11 @@ pub fn get_molecule_fragments_with_coordinate_view(
             copy: fragment.copy,
         })
         .collect())
+}
+
+#[cfg(test)]
+fn fixed_property_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("fixed fixture text is UTF8")
 }
 
 #[cfg(test)]
@@ -2497,8 +2530,8 @@ mod cf3d_frag_f07_tests {
                 )
                 .with_prop("subset-only", "drop"),
             ],
-            source_coordinate_dim: Some(CoordinateDimension::TwoD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::TwoD),
         };
         let original_one = one.clone();
         let one_view = FragmentCoordinateView::from_coordinate_block(&one);
@@ -2506,8 +2539,8 @@ mod cf3d_frag_f07_tests {
         let expected_subset = CoordinateBlock {
             conformers_2d: vec![Conformer2D::new(41, vec![[3.0, 4.0]])],
             conformers_3d: vec![Conformer3D::new(41, vec![[4.0, 5.0, 6.0]], false)],
-            source_coordinate_dim: Some(CoordinateDimension::TwoD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::TwoD),
         };
 
         assert_eq!(
@@ -2575,8 +2608,8 @@ mod cf3d_frag_f07_tests {
                 )
                 .with_prop("kind", "3d-second"),
             ],
-            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         };
         let original_source = source.clone();
         let atom_mapping = BTreeMap::from([
@@ -2605,8 +2638,8 @@ mod cf3d_frag_f07_tests {
                     false,
                 ),
             ],
-            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         };
 
         assert_eq!(copy_subset_coordinates(&source, &atom_mapping), expected);
@@ -2628,8 +2661,8 @@ mod cf3d_frag_f07_tests {
                 Conformer3D::new(9, vec![[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]], false)
                     .with_prop("copy", "preserved-second-3d"),
             ],
-            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         };
         let original_source = source.clone();
         let source_view = FragmentCoordinateView::from_coordinate_block(&source);
@@ -2884,46 +2917,57 @@ mod cf3d_frag_f09_tests {
             for (index, atom) in topology.atoms.iter().enumerate() {
                 assert_eq!(
                     atom.prop("ordinary-atom"),
-                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                        "atom-{index}"
-                    )))
+                    Some(&cosmolkit_model::PropertyValue::String(
+                        (format!("atom-{index}")).into()
+                    ))
                 );
                 assert_eq!(
                     atom.prop("ring-cache-note"),
-                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                        "atom-note-{index}"
-                    )))
+                    Some(&cosmolkit_model::PropertyValue::String(
+                        (format!("atom-note-{index}")).into()
+                    ))
                 );
                 assert_eq!(atom.prop("computed-ring-cache"), None);
-                assert!(!atom.is_prop_computed("computed-ring-cache"));
+                assert!(!atom.is_prop_computed("computed-ring-cache").unwrap());
             }
             for (index, bond) in topology.bonds.iter().enumerate() {
                 assert_eq!(
                     bond.prop("ordinary-bond"),
-                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                        "bond-{index}"
-                    )))
+                    Some(&cosmolkit_model::PropertyValue::String(
+                        (format!("bond-{index}")).into()
+                    ))
                 );
                 assert_eq!(
                     bond.prop("ring-cache-note"),
-                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                        "bond-note-{index}"
-                    )))
+                    Some(&cosmolkit_model::PropertyValue::String(
+                        (format!("bond-note-{index}")).into()
+                    ))
                 );
                 assert_eq!(bond.prop("computed-ring-cache"), None);
-                assert!(!bond.is_prop_computed("computed-ring-cache"));
+                assert!(!bond.is_prop_computed("computed-ring-cache").unwrap());
             }
-            assert_eq!(molecule_properties.name(), Some("ring-cache-clear"));
+            assert_eq!(
+                molecule_properties.name().map(super::fixed_property_text),
+                Some("ring-cache-clear")
+            );
             assert_eq!(
                 molecule_properties.prop("ordinary-molecule"),
-                Some("retained")
+                Some(&cosmolkit_model::PropertyValue::String("retained".into()))
             );
             assert_eq!(
                 molecule_properties.prop("ring-cache-note"),
-                Some("ordinary value")
+                Some(&cosmolkit_model::PropertyValue::String(
+                    "ordinary value".into()
+                ))
             );
             assert_eq!(molecule_properties.prop("computed-ring-cache"), None);
-            assert!(molecule_properties.computed_prop_names().is_empty());
+            assert!(
+                molecule_properties
+                    .computed_prop_names()
+                    .unwrap()
+                    .expect("cleared computed StringVector exists")
+                    .is_empty()
+            );
             assert_eq!(source_topology, original_topology);
             assert_eq!(source_properties, original_properties);
         }
@@ -3146,7 +3190,7 @@ mod cf3d_frag_f03_tests {
         let original = graph.clone();
         let mut selection = selection(4, &[1, 3]);
 
-        let copied = copy_selected_atoms(&graph, &mut selection);
+        let copied = copy_selected_atoms(&graph, &mut selection).unwrap();
 
         assert_eq!(copied.len(), 2);
         assert_eq!(copied[0].id(), AtomId::new(0));
@@ -3187,17 +3231,17 @@ mod cf3d_frag_f03_tests {
         assert_eq!(
             copied_atom.prop("ordinary"),
             Some(&cosmolkit_model::PropertyValue::String(
-                "source-1".to_owned()
+                ("source-1".to_owned()).into()
             ))
         );
         assert_eq!(copied_atom.prop("_cache"), None);
-        assert!(!copied_atom.is_prop_computed("_cache"));
+        assert!(!copied_atom.is_prop_computed("_cache").unwrap());
 
         assert_eq!(copied[1].temporary_flags(), u64::MAX);
         assert_eq!(
             copied[1].prop("ordinary"),
             Some(&cosmolkit_model::PropertyValue::String(
-                "source-3".to_owned()
+                ("source-3".to_owned()).into()
             ))
         );
         assert_eq!(copied[1].prop("_cache"), None);
@@ -3206,7 +3250,7 @@ mod cf3d_frag_f03_tests {
         assert_eq!(
             graph.atoms[1].prop("_cache"),
             Some(&cosmolkit_model::PropertyValue::String(
-                "computed-1".to_owned()
+                ("computed-1".to_owned()).into()
             ))
         );
     }
@@ -3217,7 +3261,7 @@ mod cf3d_frag_f03_tests {
         let original = graph.clone();
         let mut selection = selection(2, &[]);
 
-        let copied = copy_selected_atoms(&graph, &mut selection);
+        let copied = copy_selected_atoms(&graph, &mut selection).unwrap();
 
         assert!(copied.is_empty());
         assert!(selection.atom_mapping.is_empty());
@@ -3414,17 +3458,17 @@ mod cf3d_frag_f04_tests {
             );
             assert_eq!(
                 copied_bond.prop("ordinary"),
-                Some(&cosmolkit_model::PropertyValue::String(format!(
-                    "bond-{row}"
-                )))
+                Some(&cosmolkit_model::PropertyValue::String(
+                    (format!("bond-{row}")).into()
+                ))
             );
             assert_eq!(
                 copied_bond.prop("_computed"),
-                Some(&cosmolkit_model::PropertyValue::String(format!(
-                    "cache-{row}"
-                )))
+                Some(&cosmolkit_model::PropertyValue::String(
+                    (format!("cache-{row}")).into()
+                ))
             );
-            assert!(copied_bond.is_prop_computed("_computed"));
+            assert!(copied_bond.is_prop_computed("_computed").unwrap());
             assert_eq!(copied_bond.temporary_flags(), 1_u64 << row);
         }
     }
@@ -3522,17 +3566,17 @@ mod cf3d_frag_f04_tests {
         for (new_row, source_row) in [(0, 1), (1, 3)] {
             assert_eq!(
                 copied[new_row].prop("ordinary"),
-                Some(&cosmolkit_model::PropertyValue::String(format!(
-                    "bond-{source_row}"
-                )))
+                Some(&cosmolkit_model::PropertyValue::String(
+                    (format!("bond-{source_row}")).into()
+                ))
             );
             assert_eq!(
                 copied[new_row].prop("_computed"),
-                Some(&cosmolkit_model::PropertyValue::String(format!(
-                    "cache-{source_row}"
-                )))
+                Some(&cosmolkit_model::PropertyValue::String(
+                    (format!("cache-{source_row}")).into()
+                ))
             );
-            assert!(copied[new_row].is_prop_computed("_computed"));
+            assert!(copied[new_row].is_prop_computed("_computed").unwrap());
             assert_eq!(copied[new_row].temporary_flags(), 1_u64 << source_row);
         }
 
@@ -3542,12 +3586,12 @@ mod cf3d_frag_f04_tests {
         for (new_row, source_row) in [(0, 1), (1, 3)] {
             assert_eq!(
                 copied[new_row].prop("ordinary"),
-                Some(&cosmolkit_model::PropertyValue::String(format!(
-                    "bond-{source_row}"
-                )))
+                Some(&cosmolkit_model::PropertyValue::String(
+                    (format!("bond-{source_row}")).into()
+                ))
             );
             assert_eq!(copied[new_row].prop("_computed"), None);
-            assert!(!copied[new_row].is_prop_computed("_computed"));
+            assert!(!copied[new_row].is_prop_computed("_computed").unwrap());
             assert_eq!(copied[new_row].temporary_flags(), 1_u64 << source_row);
         }
     }
@@ -3673,18 +3717,18 @@ mod cf3d_frag_f05_tests {
                 [7.0, 8.0, 9.0],
             ])],
             field_position: Some([2.5, 3.5]),
-            display_tag: Some("source-display".to_owned()),
+            display_tag: Some("source-display".into()),
         };
         let attach_point = SGroupAttachPoint {
             atom: atom(5),
             leaving_atom: Some(atom(0)),
-            label: Some("R1".to_owned()),
+            label: Some("R1".into()),
             order: Some(1),
         };
         let cstate = SGroupCState::new(bond(4), [1.25, -2.5, 3.75]);
         let data = SGroupData {
-            field_name: Some("FIELD".to_owned()),
-            values: vec!["source-value".to_owned()],
+            field_name: Some("FIELD".into()),
+            values: vec!["source-value".into()],
             ..SGroupData::default()
         };
         let mut first = group(0, vec![atom(3), atom(1)], vec![], vec![atom(4)])
@@ -3699,6 +3743,7 @@ mod cf3d_frag_f05_tests {
             .with_attach_points(vec![attach_point.clone()])
             .with_cstates(vec![cstate])
             .with_prop("source-key", "source-value")
+            .unwrap()
             .with_data_field("field-one")
             .with_data_field("field-two");
         first.push_bond_with_role(bond(2), SGroupBondRole::Contained);
@@ -3744,20 +3789,35 @@ mod cf3d_frag_f05_tests {
         );
         assert_eq!(copied[0].display(), Some(&display));
         assert_eq!(copied[0].data(), Some(&data));
-        assert_eq!(copied[0].label(), Some("polymer"));
+        assert_eq!(
+            copied[0].label().map(super::fixed_property_text),
+            Some("polymer")
+        );
         assert_eq!(copied[0].connection(), Some(&SGroupConnection::HeadToTail));
-        assert_eq!(copied[0].subtype(), Some("source-subtype"));
+        assert_eq!(
+            copied[0].subtype().map(super::fixed_property_text),
+            Some("source-subtype")
+        );
         assert_eq!(
             copied[0].props(),
-            &BTreeMap::from([("source-key".to_owned(), "source-value".to_owned())])
+            &BTreeMap::from([(
+                "source-key".into(),
+                cosmolkit_model::PropertyValue::String("source-value".into())
+            )])
         );
-        assert_eq!(copied[0].data_fields(), &["field-one", "field-two"]);
+        assert_eq!(
+            copied[0].data_fields(),
+            &["field-one".into(), "field-two".into()]
+        );
 
         assert_eq!(copied[1].atoms(), &[]);
         assert_eq!(copied[1].bonds(), &[]);
         assert_eq!(copied[1].parent_atoms(), &[]);
         assert_eq!(copied[1].parent(), Some(SubstanceGroupId::new(0)));
-        assert_eq!(copied[1].label(), Some("empty-selected"));
+        assert_eq!(
+            copied[1].label().map(super::fixed_property_text),
+            Some("empty-selected")
+        );
     }
 
     #[test]
@@ -3955,8 +4015,8 @@ mod cf3d_frag_f10_tests {
                 )
                 .with_prop("kind", "source-3d"),
             ],
-            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         };
 
         (topology, coordinates)
@@ -4016,8 +4076,8 @@ mod cf3d_frag_f10_tests {
                 ],
                 false,
             )],
-            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         }
     }
 
@@ -4063,8 +4123,9 @@ mod cf3d_frag_f10_tests {
                         .iter()
                         .map(|atom| atom.prop("source-row").unwrap().clone())
                         .collect::<Vec<_>>(),
-                    ["atom-0", "atom-1", "atom-2", "atom-3", "atom-4", "atom-5",]
-                        .map(|value| cosmolkit_model::PropertyValue::String(value.to_owned()))
+                    ["atom-0", "atom-1", "atom-2", "atom-3", "atom-4", "atom-5",].map(|value| {
+                        cosmolkit_model::PropertyValue::String((value.to_owned()).into())
+                    })
                 );
                 assert!(
                     copied
@@ -4110,8 +4171,8 @@ mod cf3d_frag_f10_tests {
             CoordinateBlock {
                 conformers_2d: vec![Conformer2D::new(31, Vec::new())],
                 conformers_3d: vec![Conformer3D::new(45, Vec::new(), false)],
-                source_coordinate_dim: Some(CoordinateDimension::ThreeD),
                 source_conformer_order: None,
+                source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             }
         );
 
@@ -4135,7 +4196,7 @@ mod cf3d_frag_f10_tests {
                 .map(|atom| atom.prop("source-row").unwrap().clone())
                 .collect::<Vec<_>>(),
             ["atom-0", "atom-2", "atom-4"]
-                .map(|value| cosmolkit_model::PropertyValue::String(value.to_owned()))
+                .map(|value| cosmolkit_model::PropertyValue::String((value.to_owned()).into()))
         );
         assert!(gapped.topology.atoms.iter().all(|atom| !atom.is_aromatic()));
         assert_eq!(
@@ -4150,8 +4211,8 @@ mod cf3d_frag_f10_tests {
                     vec![[0.0, 10.0, 20.0], [2.0, 12.0, 22.0], [4.0, 14.0, 24.0]],
                     false,
                 )],
-                source_coordinate_dim: Some(CoordinateDimension::ThreeD),
                 source_conformer_order: None,
+                source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             }
         );
         assert_eq!(source_topology, original_topology);
@@ -4503,8 +4564,8 @@ mod cf3d_frag_f15_tests {
         let coordinates = CoordinateBlock {
             conformers_2d,
             conformers_3d,
-            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         };
         let properties = MoleculeProperties::default()
             .with_name("source-molecule")
@@ -4518,9 +4579,9 @@ mod cf3d_frag_f15_tests {
                 "atom-values",
                 (0..atom_count)
                     .map(|row| {
-                        Some(cosmolkit_model::PropertyValue::String(format!(
-                            "atom-value-{row}"
-                        )))
+                        Some(cosmolkit_model::PropertyValue::String(
+                            (format!("atom-value-{row}")).into(),
+                        ))
                     })
                     .collect(),
             ))
@@ -4529,9 +4590,9 @@ mod cf3d_frag_f15_tests {
                 "bond-values",
                 (0..component_count)
                     .map(|row| {
-                        Some(cosmolkit_model::PropertyValue::String(format!(
-                            "bond-value-{row}"
-                        )))
+                        Some(cosmolkit_model::PropertyValue::String(
+                            (format!("bond-value-{row}")).into(),
+                        ))
                     })
                     .collect(),
             ));
@@ -4568,19 +4629,23 @@ mod cf3d_frag_f15_tests {
         assert_eq!(copied.topology.atoms[1].id(), AtomId::new(1));
         assert_eq!(
             copied.topology.atoms[0].prop("source-row"),
-            Some(&cosmolkit_model::PropertyValue::String(format!(
-                "atom-{first_atom}"
-            )))
+            Some(&cosmolkit_model::PropertyValue::String(
+                (format!("atom-{first_atom}")).into()
+            ))
         );
         assert_eq!(
             copied.topology.atoms[1].prop("source-row"),
-            Some(&cosmolkit_model::PropertyValue::String(format!(
-                "atom-{}",
-                first_atom + 1
-            )))
+            Some(&cosmolkit_model::PropertyValue::String(
+                (format!("atom-{}", first_atom + 1)).into()
+            ))
         );
         assert!(copied.topology.atoms.iter().all(|atom| {
-            atom.prop("atom-cache").is_none() && atom.computed_prop_names().is_empty()
+            atom.prop("atom-cache").is_none()
+                && atom
+                    .computed_prop_names()
+                    .unwrap()
+                    .expect("cleared computed StringVector exists")
+                    .is_empty()
         }));
         let bond = &copied.topology.bonds[0];
         assert_eq!(bond.id(), BondId::new(0));
@@ -4590,12 +4655,17 @@ mod cf3d_frag_f15_tests {
         assert_eq!(bond.stereo_atoms(), Some([AtomId::new(0), AtomId::new(1)]));
         assert_eq!(
             bond.prop("source-row"),
-            Some(&cosmolkit_model::PropertyValue::String(format!(
-                "bond-{selected_component}"
-            )))
+            Some(&cosmolkit_model::PropertyValue::String(
+                (format!("bond-{selected_component}")).into()
+            ))
         );
         assert!(bond.prop("bond-cache").is_none());
-        assert!(bond.computed_prop_names().is_empty());
+        assert!(
+            bond.computed_prop_names()
+                .unwrap()
+                .expect("cleared computed StringVector exists")
+                .is_empty()
+        );
 
         assert_eq!(copied.topology.substance_groups.len(), 1);
         let group = &copied.topology.substance_groups[0];
@@ -4603,7 +4673,7 @@ mod cf3d_frag_f15_tests {
         assert_eq!(group.atoms(), &[AtomId::new(0), AtomId::new(1)]);
         assert_eq!(group.bonds(), &[BondId::new(0)]);
         assert_eq!(
-            group.label(),
+            group.label().map(super::fixed_property_text),
             Some(format!("group-{selected_component}")).as_deref()
         );
         assert_eq!(copied.topology.stereo_groups.len(), 1);
@@ -4681,45 +4751,57 @@ mod cf3d_frag_f15_tests {
             assert_eq!(copied_conf.props(), source_conf.props());
         }
 
-        assert_eq!(copied.molecule_properties.name(), Some("source-molecule"));
-        assert_eq!(copied.molecule_properties.prop("ordinary"), Some("keep-me"));
+        assert_eq!(
+            copied
+                .molecule_properties
+                .name()
+                .map(super::fixed_property_text),
+            Some("source-molecule")
+        );
+        assert_eq!(
+            copied.molecule_properties.prop("ordinary"),
+            Some(&cosmolkit_model::PropertyValue::String("keep-me".into()))
+        );
         assert!(
             !copied
                 .molecule_properties
                 .is_prop_computed("molecule-cache")
+                .unwrap()
         );
         assert_eq!(copied.molecule_properties.prop("molecule-cache"), None);
         assert_eq!(
             copied.molecule_properties.sdf_data_fields(),
-            &[("FIELD".to_owned(), "source-value".to_owned())]
+            &[("FIELD".into(), "source-value".into())]
         );
         assert_eq!(copied.molecule_properties.sdf_property_lists().len(), 2);
         let atom_values = copied.molecule_properties.sdf_property_lists()[0].values();
         assert_eq!(
             atom_values,
             &[
-                Some(cosmolkit_model::PropertyValue::String(format!(
-                    "atom-value-{first_atom}"
-                ))),
-                Some(cosmolkit_model::PropertyValue::String(format!(
-                    "atom-value-{}",
-                    first_atom + 1
-                )))
+                Some(cosmolkit_model::PropertyValue::String(
+                    (format!("atom-value-{first_atom}")).into()
+                )),
+                Some(cosmolkit_model::PropertyValue::String(
+                    (format!("atom-value-{}", first_atom + 1)).into()
+                ))
             ]
         );
         let bond_values = copied.molecule_properties.sdf_property_lists()[1].values();
         assert_eq!(
             bond_values,
-            &[Some(cosmolkit_model::PropertyValue::String(format!(
-                "bond-value-{selected_component}"
-            )))]
+            &[Some(cosmolkit_model::PropertyValue::String(
+                (format!("bond-value-{selected_component}")).into()
+            ))]
         );
         assert_eq!(source.validate(), Ok(()));
         assert_eq!(
             source_coordinates.validate_for_atom_count(source.atoms.len()),
             Ok(())
         );
-        assert_eq!(source_properties.name(), Some("source-molecule"));
+        assert_eq!(
+            source_properties.name().map(super::fixed_property_text),
+            Some("source-molecule")
+        );
     }
 
     #[test]
@@ -4739,15 +4821,26 @@ mod cf3d_frag_f15_tests {
         assert_eq!(copied.molecule_properties, properties);
         assert_eq!(copied.mapping, TopologyMapping::identity(4, 2));
         assert!(copied.topology.atoms.iter().all(|atom| {
-            atom.prop("atom-cache").is_some() && atom.computed_prop_names().contains("atom-cache")
+            atom.prop("atom-cache").is_some()
+                && atom
+                    .computed_prop_names()
+                    .unwrap()
+                    .expect("computed StringVector exists")
+                    .contains(&"atom-cache".into())
         }));
         assert!(copied.topology.bonds.iter().all(|bond| {
-            bond.prop("bond-cache").is_some() && bond.computed_prop_names().contains("bond-cache")
+            bond.prop("bond-cache").is_some()
+                && bond
+                    .computed_prop_names()
+                    .unwrap()
+                    .expect("computed StringVector exists")
+                    .contains(&"bond-cache".into())
         }));
         assert!(
             copied
                 .molecule_properties
                 .is_prop_computed("molecule-cache")
+                .unwrap()
         );
         assert_eq!((source, coordinates, properties), original);
     }
@@ -4819,8 +4912,8 @@ mod cf3d_frag_f16_tests {
         CoordinateBlock {
             conformers_2d,
             conformers_3d,
-            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         }
     }
 
@@ -4970,20 +5063,18 @@ mod cf3d_frag_f16_tests {
                 .iter()
                 .all(|conformer| conformer.coordinates().len() == atom_count)
         );
-        assert!(
-            copied
-                .coordinates
-                .conformers_2d
-                .iter()
-                .all(|conformer| conformer.props().get("source-conformer").is_some())
-        );
-        assert!(
-            copied
-                .coordinates
-                .conformers_3d
-                .iter()
-                .all(|conformer| conformer.props().get("source-conformer").is_some())
-        );
+        assert!(copied.coordinates.conformers_2d.iter().all(|conformer| {
+            conformer
+                .props()
+                .get("source-conformer".as_bytes())
+                .is_some()
+        }));
+        assert!(copied.coordinates.conformers_3d.iter().all(|conformer| {
+            conformer
+                .props()
+                .get("source-conformer".as_bytes())
+                .is_some()
+        }));
         assert_eq!(
             copied.coordinates.source_coordinate_dim,
             Some(CoordinateDimension::ThreeD)
@@ -4991,27 +5082,35 @@ mod cf3d_frag_f16_tests {
     }
 
     fn assert_molecule_properties(copied: &FullCopyComponent) {
-        assert_eq!(copied.molecule_properties.name(), Some("source-molecule"));
+        assert_eq!(
+            copied
+                .molecule_properties
+                .name()
+                .map(super::fixed_property_text),
+            Some("source-molecule")
+        );
         assert_eq!(
             copied
                 .molecule_properties
                 .props()
-                .get("ordinary-molecule")
-                .map(String::as_str),
+                .get("ordinary-molecule".as_bytes())
+                .map(|v| v.as_string().expect("fixed StringTag"))
+                .map(super::fixed_property_text),
             Some("retained")
         );
         assert!(
             copied
                 .molecule_properties
                 .is_prop_computed("computed-molecule")
+                .unwrap()
         );
         assert_eq!(
             copied
                 .molecule_properties
                 .sdf_data_fields()
                 .iter()
-                .find(|(key, _)| key == "SOURCE")
-                .map(|(_, value)| value.as_str()),
+                .find(|(key, _)| key.as_bytes() == b"SOURCE")
+                .map(|(_, value)| super::fixed_property_text(value)),
             Some("full-copy")
         );
     }
@@ -5043,13 +5142,15 @@ mod cf3d_frag_f16_tests {
         assert_eq!(
             copied.topology.atoms[0].prop("ordinary-atom"),
             Some(&cosmolkit_model::PropertyValue::String(
-                "singleton".to_owned()
+                ("singleton".to_owned()).into()
             ))
         );
         assert!(
             copied.topology.atoms[0]
                 .computed_prop_names()
-                .contains("computed-atom")
+                .unwrap()
+                .expect("computed StringVector exists")
+                .contains(&"computed-atom".into())
         );
         assert_eq!(
             (source_topology, source_coordinates, source_properties),
@@ -5083,7 +5184,10 @@ mod cf3d_frag_f16_tests {
         assert_eq!(copied.topology.stereo_groups[0].id(), Some(17));
         assert_eq!(copied.topology.stereo_groups[0].write_id(), 29);
         assert!(copied.topology.bonds.iter().all(|bond| {
-            bond.computed_prop_names().contains("computed-bond")
+            bond.computed_prop_names()
+                .unwrap()
+                .expect("computed StringVector exists")
+                .contains(&"computed-bond".into())
                 && bond.prop("ordinary-bond").is_some()
         }));
 
@@ -5150,8 +5254,8 @@ mod cf3d_frag_f17_tests {
                 )
                 .with_prop("source-conformer", "3d-source"),
             ],
-            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
             source_conformer_order: None,
+            source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         }
     }
 
@@ -5312,13 +5416,12 @@ mod cf3d_frag_f17_tests {
                 assert_eq!(copied_atom.id(), AtomId::new(new_row));
                 assert_eq!(
                     copied_atom.prop("source-atom"),
-                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                        "atom-{}",
-                        old_atom.index()
-                    )))
+                    Some(&cosmolkit_model::PropertyValue::String(
+                        (format!("atom-{}", old_atom.index())).into()
+                    ))
                 );
                 assert_eq!(
-                    copied_atom.is_prop_computed("computed-atom"),
+                    copied_atom.is_prop_computed("computed-atom").unwrap(),
                     component_count == 1
                 );
             }
@@ -5329,19 +5432,22 @@ mod cf3d_frag_f17_tests {
                 assert_eq!(copied_bond.stereo(), source_bond.stereo());
                 assert_eq!(
                     copied_bond.prop("source-bond"),
-                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                        "bond-{}",
-                        old_bond.index()
-                    )))
+                    Some(&cosmolkit_model::PropertyValue::String(
+                        (format!("bond-{}", old_bond.index())).into()
+                    ))
                 );
                 assert_eq!(
-                    copied_bond.is_prop_computed("computed-bond"),
+                    copied_bond.is_prop_computed("computed-bond").unwrap(),
                     component_count == 1
                 );
             }
 
             assert_eq!(
-                fragment.copy.molecule_properties.name(),
+                fragment
+                    .copy
+                    .molecule_properties
+                    .name()
+                    .map(super::fixed_property_text),
                 retained_full_properties.then_some("fragment-source")
             );
             assert_eq!(
@@ -5349,15 +5455,17 @@ mod cf3d_frag_f17_tests {
                     .copy
                     .molecule_properties
                     .props()
-                    .get("ordinary-molecule")
-                    .map(String::as_str),
+                    .get("ordinary-molecule".as_bytes())
+                    .map(|v| v.as_string().expect("fixed StringTag"))
+                    .map(super::fixed_property_text),
                 retained_full_properties.then_some("kept-by-full-copy")
             );
             assert_eq!(
                 fragment
                     .copy
                     .molecule_properties
-                    .is_prop_computed("computed-molecule"),
+                    .is_prop_computed("computed-molecule")
+                    .unwrap(),
                 component_count == 1
             );
 
@@ -5380,8 +5488,8 @@ mod cf3d_frag_f17_tests {
                 assert_eq!(
                     fragment.copy.coordinates.conformers_2d[0]
                         .props()
-                        .get("source-conformer")
-                        .map(String::as_str),
+                        .get("source-conformer".as_bytes())
+                        .map(super::fixed_property_text),
                     (!fast_subset).then_some("2d-source")
                 );
                 assert_eq!(fragment.copy.coordinates.conformers_3d[0].id(), 73);
@@ -5393,8 +5501,8 @@ mod cf3d_frag_f17_tests {
                 assert_eq!(
                     fragment.copy.coordinates.conformers_3d[0]
                         .props()
-                        .get("source-conformer")
-                        .map(String::as_str),
+                        .get("source-conformer".as_bytes())
+                        .map(super::fixed_property_text),
                     (!fast_subset).then_some("3d-source")
                 );
                 assert_eq!(
@@ -5608,13 +5716,12 @@ mod cf3d_frag_f17_tests {
                                 assert_eq!(atom.id(), AtomId::new(new_row));
                                 assert_eq!(
                                     atom.prop("source-atom"),
-                                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                                        "atom-{}",
-                                        old_atom.index()
-                                    )))
+                                    Some(&cosmolkit_model::PropertyValue::String(
+                                        (format!("atom-{}", old_atom.index())).into()
+                                    ))
                                 );
                                 assert_eq!(
-                                    atom.is_prop_computed("computed-atom"),
+                                    atom.is_prop_computed("computed-atom").unwrap(),
                                     retained_computed_properties
                                 );
                             }
@@ -5623,29 +5730,36 @@ mod cf3d_frag_f17_tests {
                                 assert_eq!(bond.id(), BondId::new(new_row));
                                 assert_eq!(
                                     bond.prop("source-bond"),
-                                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                                        "bond-{}",
-                                        old_bond.index()
-                                    )))
+                                    Some(&cosmolkit_model::PropertyValue::String(
+                                        (format!("bond-{}", old_bond.index())).into()
+                                    ))
                                 );
                                 assert_eq!(
-                                    bond.is_prop_computed("computed-bond"),
+                                    bond.is_prop_computed("computed-bond").unwrap(),
                                     retained_computed_properties
                                 );
                             }
 
                             assert_eq!(
-                                fragment.molecule_properties().name(),
+                                fragment
+                                    .molecule_properties()
+                                    .name()
+                                    .map(super::fixed_property_text),
                                 retained_full_properties.then_some("fragment-source")
                             );
                             assert_eq!(
                                 fragment.molecule_properties().prop("ordinary-molecule"),
-                                retained_full_properties.then_some("kept-by-full-copy")
+                                retained_full_properties.then_some(
+                                    &cosmolkit_model::PropertyValue::String(
+                                        "kept-by-full-copy".into()
+                                    )
+                                )
                             );
                             assert_eq!(
                                 fragment
                                     .molecule_properties()
-                                    .is_prop_computed("computed-molecule"),
+                                    .is_prop_computed("computed-molecule")
+                                    .unwrap(),
                                 retained_computed_properties
                             );
 
@@ -5769,6 +5883,7 @@ mod cf3d_frag_f17_tests {
             unsanitized[0]
                 .molecule_properties()
                 .is_prop_computed("computed-molecule")
+                .unwrap()
         );
 
         let sanitized =
@@ -5780,20 +5895,21 @@ mod cf3d_frag_f17_tests {
             !sanitized[0]
                 .molecule_properties()
                 .is_prop_computed("computed-molecule")
+                .unwrap()
         );
         assert!(
             sanitized[0]
                 .topology()
                 .atoms
                 .iter()
-                .all(|atom| !atom.is_prop_computed("computed-atom"))
+                .all(|atom| !atom.is_prop_computed("computed-atom").unwrap())
         );
         assert!(
             sanitized[0]
                 .topology()
                 .bonds
                 .iter()
-                .all(|bond| !bond.is_prop_computed("computed-bond"))
+                .all(|bond| !bond.is_prop_computed("computed-bond").unwrap())
         );
         assert_eq!(
             (topology, coordinates, properties),

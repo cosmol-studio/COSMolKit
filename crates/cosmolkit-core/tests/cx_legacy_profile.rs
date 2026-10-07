@@ -374,15 +374,15 @@ fn cx_legacy_clean_flag_controls_stereo_property_cleanup() {
     let clean_false = assign_with_flags(input.clone(), false, false).unwrap();
     assert_eq!(
         clean_false.atoms[0].prop("_CIPCode"),
-        Some(&PropertyValue::String("S".to_owned()))
+        Some(&PropertyValue::String("S".to_owned().into()))
     );
     assert_eq!(
         clean_false.atoms[0].prop("_ChiralityPossible"),
-        Some(&PropertyValue::String("0".to_owned()))
+        Some(&PropertyValue::String("0".to_owned().into()))
     );
     assert_eq!(
         clean_false.atoms[0].prop("_ringStereochemCand"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::String("1".to_owned().into()))
     );
     assert_eq!(
         clean_false.atoms[0].prop("_ringStereoAtoms"),
@@ -390,7 +390,7 @@ fn cx_legacy_clean_flag_controls_stereo_property_cleanup() {
     );
     assert_eq!(
         clean_false.bonds[5].prop("_CIPCode"),
-        Some(&PropertyValue::String("Z".to_owned()))
+        Some(&PropertyValue::String("Z".to_owned().into()))
     );
 
     let clean_true = assign_with_flags(input.clone(), true, false).unwrap();
@@ -401,11 +401,11 @@ fn cx_legacy_clean_flag_controls_stereo_property_cleanup() {
     assert_eq!(clean_true.bonds[5].prop("_CIPCode"), None);
     assert_eq!(
         clean_true.atoms[0].prop("user_marker"),
-        Some(&PropertyValue::String("keep".to_owned()))
+        Some(&PropertyValue::String("keep".to_owned().into()))
     );
     assert_eq!(
         clean_true.bonds[5].prop("user_marker"),
-        Some(&PropertyValue::String("keep".to_owned()))
+        Some(&PropertyValue::String("keep".to_owned().into()))
     );
     assert_eq!(
         input, before,

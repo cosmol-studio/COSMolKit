@@ -5,8 +5,8 @@
 
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondOrder, BondSpec, Conformer2D, Conformer3D,
-    CoordinateBlock, MoleculeProperties, StereoGroup, SubstanceGroup, SubstanceGroupId,
-    TopologyBlock, TopologyEditError, TopologyMapping,
+    CoordinateBlock, CoordinateDimension, MoleculeProperties, StereoGroup, SubstanceGroup,
+    SubstanceGroupId, TopologyBlock, TopologyEditError, TopologyMapping,
 };
 
 use crate::{Molecule, OperationError};

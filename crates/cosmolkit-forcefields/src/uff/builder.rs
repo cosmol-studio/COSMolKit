@@ -551,7 +551,10 @@ fn add_nonbonded(
     conformers_3d_before: &[Conformer3D],
     selected_conformer_id: usize,
     selected_conformer_is_3d: bool,
-    selected_conformer_props: &BTreeMap<String, String>,
+    selected_conformer_props: &BTreeMap<
+        cosmolkit_model::PropertyText,
+        cosmolkit_model::PropertyText,
+    >,
     conformers_3d_after: &[Conformer3D],
     source_coordinate_dim: Option<CoordinateDimension>,
     source_conformer_order: Option<&[CoordinateDimension]>,
@@ -3227,7 +3230,8 @@ pub(super) struct UffConformerContext<'a> {
     pub(super) before: &'a [Conformer3D],
     pub(super) selected_id: usize,
     pub(super) selected_is_3d: bool,
-    pub(super) selected_props: &'a BTreeMap<String, String>,
+    pub(super) selected_props:
+        &'a BTreeMap<cosmolkit_model::PropertyText, cosmolkit_model::PropertyText>,
     pub(super) after: &'a [Conformer3D],
     pub(super) source_dimension: Option<CoordinateDimension>,
     pub(super) source_order: Option<&'a [CoordinateDimension]>,
@@ -9701,8 +9705,12 @@ mod tests {
             assert_eq!(copied.conformers_2d.len(), 1);
             assert_eq!(copied.conformers_2d[0].id(), 41);
             assert_eq!(
-                copied.conformers_2d[0].props().get("origin").unwrap(),
-                "2d-41"
+                copied.conformers_2d[0]
+                    .props()
+                    .get(b"origin".as_slice())
+                    .unwrap()
+                    .as_bytes(),
+                b"2d-41"
             );
             assert_eq!(
                 copied
@@ -9724,9 +9732,13 @@ mod tests {
                 copied
                     .conformers_3d
                     .iter()
-                    .map(|conformer| conformer.props().get("origin").unwrap().as_str())
+                    .map(|conformer| conformer
+                        .props()
+                        .get(b"origin".as_slice())
+                        .unwrap()
+                        .as_bytes())
                     .collect::<Vec<_>>(),
-                vec!["3d-73", "3d-11", "3d-5"]
+                vec![b"3d-73".as_slice(), b"3d-11".as_slice(), b"3d-5".as_slice()]
             );
         }
         assert_eq!(
@@ -12231,22 +12243,22 @@ mod tests {
                 [component as f64, 1.0, 0.0],
             ])],
             field_position: Some([component as f64 + 0.25, 0.75]),
-            display_tag: Some(format!("display-{component}")),
+            display_tag: Some(format!("display-{component}").into()),
         })
         .with_data(SGroupData {
-            field_name: Some(format!("field-{component}")),
-            field_type: Some("STRING".to_owned()),
-            field_info: Some(format!("info-{component}")),
-            field_display: Some("plain".to_owned()),
-            units: Some("unit".to_owned()),
-            query_type: Some("query".to_owned()),
-            query_op: Some("equal".to_owned()),
-            values: vec![format!("value-{component}")],
+            field_name: Some(format!("field-{component}").into()),
+            field_type: Some("STRING".to_owned().into()),
+            field_info: Some(format!("info-{component}").into()),
+            field_display: Some("plain".to_owned().into()),
+            units: Some("unit".to_owned().into()),
+            query_type: Some("query".to_owned().into()),
+            query_op: Some("equal".to_owned().into()),
+            values: vec![format!("value-{component}").into()],
         })
         .with_attach_points(vec![SGroupAttachPoint {
             atom: AtomId::new(atom_start),
             leaving_atom: Some(AtomId::new(atom_start + 1)),
-            label: Some(format!("attach-{component}")),
+            label: Some(format!("attach-{component}").into()),
             order: Some(1),
         }])
         .with_cstates(vec![SGroupCState::new(
@@ -12254,6 +12266,7 @@ mod tests {
             [component as f64 + 0.5, 1.25, -2.0],
         )])
         .with_prop("sgroup-property", format!("sgroup-{component}"))
+        .unwrap()
         .with_data_field(format!("data-field-{component}"))
     }
 
@@ -12330,10 +12343,18 @@ mod tests {
                 SdfPropertyListTarget::Atom,
                 "atom-values",
                 [
-                    Some(cosmolkit_model::PropertyValue::String("atom-0".to_owned())),
-                    Some(cosmolkit_model::PropertyValue::String("atom-1".to_owned())),
-                    Some(cosmolkit_model::PropertyValue::String("atom-2".to_owned())),
-                    Some(cosmolkit_model::PropertyValue::String("atom-3".to_owned())),
+                    Some(cosmolkit_model::PropertyValue::String(
+                        "atom-0".to_owned().into(),
+                    )),
+                    Some(cosmolkit_model::PropertyValue::String(
+                        "atom-1".to_owned().into(),
+                    )),
+                    Some(cosmolkit_model::PropertyValue::String(
+                        "atom-2".to_owned().into(),
+                    )),
+                    Some(cosmolkit_model::PropertyValue::String(
+                        "atom-3".to_owned().into(),
+                    )),
                 ]
                 .to_vec(),
             ))
@@ -12341,8 +12362,12 @@ mod tests {
                 SdfPropertyListTarget::Bond,
                 "bond-values",
                 [
-                    Some(cosmolkit_model::PropertyValue::String("bond-0".to_owned())),
-                    Some(cosmolkit_model::PropertyValue::String("bond-1".to_owned())),
+                    Some(cosmolkit_model::PropertyValue::String(
+                        "bond-0".to_owned().into(),
+                    )),
+                    Some(cosmolkit_model::PropertyValue::String(
+                        "bond-1".to_owned().into(),
+                    )),
                 ]
                 .to_vec(),
             ));
@@ -12585,12 +12610,17 @@ mod tests {
                 let atom = &fragment.topology().atoms[local_row];
                 assert_eq!(
                     atom.prop("source-atom"),
-                    Some(&cosmolkit_model::PropertyValue::String(format!(
-                        "atom-{source_row}"
-                    )))
+                    Some(&cosmolkit_model::PropertyValue::String(
+                        format!("atom-{source_row}").into()
+                    ))
                 );
                 assert!(atom.prop("computed-atom").is_none());
-                assert!(atom.computed_prop_names().is_empty());
+                assert!(
+                    atom.computed_prop_names()
+                        .unwrap()
+                        .unwrap_or(&[])
+                        .is_empty()
+                );
                 assert_eq!(
                     atom.temporary_flags(),
                     0xF0F0_0000_0000_0000 | source_row as u64
@@ -12602,12 +12632,17 @@ mod tests {
             assert_eq!(bond.end(), AtomId::new(1));
             assert_eq!(
                 bond.prop("source-bond"),
-                Some(&cosmolkit_model::PropertyValue::String(format!(
-                    "bond-{component}"
-                )))
+                Some(&cosmolkit_model::PropertyValue::String(
+                    format!("bond-{component}").into()
+                ))
             );
             assert!(bond.prop("computed-bond").is_none());
-            assert!(bond.computed_prop_names().is_empty());
+            assert!(
+                bond.computed_prop_names()
+                    .unwrap()
+                    .unwrap_or(&[])
+                    .is_empty()
+            );
             assert_eq!(
                 bond.temporary_flags(),
                 0x0F0F_0000_0000_0000 | component as u64
@@ -12691,37 +12726,40 @@ mod tests {
 
             let copied_properties = fragment.molecule_properties();
             assert_eq!(
-                copied_properties.name(),
-                Some("UFF-FRAG integration source")
+                copied_properties.name().map(|text| text.as_bytes()),
+                Some(b"UFF-FRAG integration source".as_slice())
             );
             assert_eq!(
                 copied_properties.prop("ordinary-molecule"),
-                Some("retained")
+                Some(&cosmolkit_model::PropertyValue::String("retained".into()))
             );
             assert!(copied_properties.prop("computed-molecule").is_none());
-            assert!(!copied_properties.is_prop_computed("computed-molecule"));
+            assert!(
+                !copied_properties
+                    .is_prop_computed("computed-molecule")
+                    .unwrap()
+            );
             assert_eq!(
                 copied_properties.sdf_data_fields(),
-                &[("SOURCE".to_owned(), "integration".to_owned())]
+                &[("SOURCE".into(), "integration".into())]
             );
             assert_eq!(copied_properties.sdf_property_lists().len(), 2);
             assert_eq!(
                 copied_properties.sdf_property_lists()[0].values(),
                 &[
-                    Some(cosmolkit_model::PropertyValue::String(format!(
-                        "atom-{first_source_atom}"
-                    ))),
-                    Some(cosmolkit_model::PropertyValue::String(format!(
-                        "atom-{}",
-                        first_source_atom + 1
-                    ))),
+                    Some(cosmolkit_model::PropertyValue::String(
+                        format!("atom-{first_source_atom}").into()
+                    )),
+                    Some(cosmolkit_model::PropertyValue::String(
+                        format!("atom-{}", first_source_atom + 1).into()
+                    )),
                 ]
             );
             assert_eq!(
                 copied_properties.sdf_property_lists()[1].values(),
-                &[Some(cosmolkit_model::PropertyValue::String(format!(
-                    "bond-{component}"
-                )))]
+                &[Some(cosmolkit_model::PropertyValue::String(
+                    format!("bond-{component}").into()
+                ))]
             );
         }
 

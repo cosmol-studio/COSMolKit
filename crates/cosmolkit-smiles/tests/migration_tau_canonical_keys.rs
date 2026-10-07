@@ -1,6 +1,12 @@
 use cosmolkit_smiles::{
     SmilesParseParams, SmilesRecord, finalize_smiles_stereo, parse_smiles, write_smiles,
 };
+// Original source-text fixtures decode only at this observation boundary.
+// Invalid UTF-8 fails; the complete byte payload is never substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
 #[test]
 fn source_tautomer_canonical_keys_retain_the_pinned_fragment_order() {
     // Pinned TAU focused expected default rows: these are already canonical
@@ -35,6 +41,9 @@ fn source_tautomer_canonical_keys_retain_the_pinned_fragment_order() {
             &mut rings,
         )
         .unwrap();
-        assert_eq!(write_smiles(&record).unwrap(), text);
+        assert_eq!(
+            write_smiles(&record).map(fixture_writer_text).unwrap(),
+            text
+        );
     }
 }

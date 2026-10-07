@@ -82,6 +82,7 @@ pub(crate) enum PreservationProof {
     CoordinateOnly,
     StableAtomCoordinates,
     StereoCleanup,
+    StereoisomerRingFamilies,
     StructureTagAssignment {
         clear_stereochem_done: bool,
     },
@@ -123,6 +124,9 @@ pub(crate) struct OpParts<'a, Access> {
     derived_cache: WorkingBlock<DerivedCacheBlock>,
     topology_edit: Option<TopologyEditKind>,
     topology_mapping: Option<TopologyMapping>,
+    // Only the multiple runtime sets this after checking actual input counts
+    // against every typed origin. An ordinary operation cannot manufacture it.
+    reconstruction_validated: bool,
     remapped_blocks: BlockSet,
     effect_trace: EffectTrace,
     in_place_target: Option<&'a mut Molecule>,
@@ -184,6 +188,7 @@ impl<'a, Access> OpParts<'a, Access> {
             derived_cache: WorkingBlock::Shared,
             topology_edit: None,
             topology_mapping: None,
+            reconstruction_validated: false,
             remapped_blocks: BlockSet::NONE,
             effect_trace: EffectTrace::default(),
             in_place_target,
@@ -696,6 +701,7 @@ impl<'a, Access> OpParts<'a, Access> {
         after: &TopologyBlock,
         actual_edit: Option<TopologyEditKind>,
         mapping: Option<&TopologyMapping>,
+        reconstruction_validated: bool,
     ) -> Result<(), OperationError> {
         let expected_edit = spec.topology_edit;
         let expected_actual = (expected_edit != TopologyEditKind::None).then_some(expected_edit);
@@ -738,6 +744,19 @@ impl<'a, Access> OpParts<'a, Access> {
         let old_bond_count = before.bonds.len();
         let new_bond_count = after.bonds.len();
         match spec.requires_mapping {
+            MappingRequirement::Reconstruction => {
+                if !reconstruction_validated
+                    || mapping.is_some()
+                    || expected_edit != TopologyEditKind::Reconstruction
+                    || spec.output != MoleculeOpOutput::Multiple
+                {
+                    return Err(OperationError::MappingContract {
+                        operation: spec.method,
+                        issue: "reconstruction requires checked typed row origins",
+                        requirement: spec.requires_mapping,
+                    });
+                }
+            }
             MappingRequirement::None => {
                 if mapping.is_some() {
                     return Err(OperationError::MappingContract {
@@ -819,6 +838,7 @@ impl<'a, Access> OpParts<'a, Access> {
             candidate_topology,
             self.topology_edit,
             self.topology_mapping.as_ref(),
+            self.reconstruction_validated,
         )?;
 
         if self.spec.auto_remap.intersects(BlockSet::TOPOLOGY)
@@ -982,7 +1002,53 @@ impl<'a, Access> OpParts<'a, Access> {
             ));
         }
 
+        // ROOT CK-474bdce: exact existing AddHs source scalar transition only.
+        let canonical_add_hs = spec.method == "with_hydrogens_with_params"
+            && spec.output == MoleculeOpOutput::Single
+            && spec.kind == crate::MoleculeOpKind::Strong
+            && spec.topology_edit == TopologyEditKind::Appending
+            && spec.requires_mapping == MappingRequirement::Required
+            && spec.cip_state == CipStatePolicy::ClearComputed
+            && spec.access.read().is_empty()
+            && spec.access.write()
+                == BlockSet::TOPOLOGY
+                    .union(BlockSet::COORDINATES)
+                    .union(BlockSet::PROPERTIES)
+                    .union(BlockSet::DERIVED_CACHE)
+            && effects.operation_defined == DerivedState::VALENCE;
+        // USER approval ROOT CK-4b988 repeats the exact generated Weak shapes.
+        let canonical_weak_source = spec.kind == crate::MoleculeOpKind::Weak
+            && spec.topology_edit == TopologyEditKind::Local
+            && spec.output == MoleculeOpOutput::Single
+            && spec.requires_mapping == MappingRequirement::None
+            && spec.access.read().is_empty()
+            && spec.access.write()
+                == BlockSet::TOPOLOGY
+                    .union(BlockSet::PROPERTIES)
+                    .union(BlockSet::DERIVED_CACHE)
+            && effects.operation_defined == DerivedState::VALENCE
+            && effects.recompute == DerivedState::RINGS
+            && ((spec.method == "with_kekulized_bonds_with_params"
+                && spec.cip_state == CipStatePolicy::Preserve
+                && effects.preserve
+                    == DerivedState::RING_FAMILIES.union(DerivedState::COORDINATES)
+                && effects.invalidate
+                    == DerivedState::AROMATICITY
+                        .union(DerivedState::STEREO)
+                        .union(DerivedState::DRAWING)
+                        .union(DerivedState::FINGERPRINT))
+                || (spec.method == "sanitize_with_params"
+                    && spec.cip_state == CipStatePolicy::ClearComputed
+                    && effects.preserve == DerivedState::COORDINATES
+                    && effects.invalidate
+                        == DerivedState::RING_FAMILIES
+                            .union(DerivedState::AROMATICITY)
+                            .union(DerivedState::STEREO)
+                            .union(DerivedState::DRAWING)
+                            .union(DerivedState::FINGERPRINT)));
         if !effects.operation_defined.is_empty()
+            && !canonical_add_hs
+            && !canonical_weak_source
             && (!(matches!(
                 spec.method,
                 "without_hydrogens" | "without_hydrogens_with_params"
@@ -992,7 +1058,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 spec,
                 "operation_defined",
                 effects.operation_defined,
-                "only valence in the hydrogen-removal family is allow-listed",
+                "only approved exact hydrogen and Weak valence source transitions are allow-listed",
             ));
         }
 
@@ -1019,6 +1085,34 @@ impl<'a, Access> OpParts<'a, Access> {
                     operation: spec.method,
                     policy: spec.cip_state,
                     issue: "assign requires an exact CIP operation with topology and properties write authority",
+                });
+            }
+            CipStatePolicy::StereoisomerSourceTransition
+                if !matches!(
+                    spec.method,
+                    "enumerate_stereoisomers_with_options"
+                        | "enumerate_stereoisomers_with_random_bits"
+                ) || !writes_cip_blocks
+                    || spec.may_mutate
+                        != BlockSet::TOPOLOGY
+                            .union(BlockSet::COORDINATES)
+                            .union(BlockSet::PROPERTIES)
+                            .union(BlockSet::DERIVED_CACHE)
+                    || spec.output != MoleculeOpOutput::LazyMultiple
+                    || spec.kind != crate::MoleculeOpKind::Weak
+                    || spec.topology_edit != TopologyEditKind::None
+                    || spec.requires_mapping != MappingRequirement::None
+                    || !spec.access.read().is_empty()
+                    || spec.access.write()
+                        != BlockSet::TOPOLOGY
+                            .union(BlockSet::COORDINATES)
+                            .union(BlockSet::PROPERTIES)
+                            .union(BlockSet::DERIVED_CACHE) =>
+            {
+                return Err(OperationError::CipStateContract {
+                    operation: spec.method,
+                    policy: spec.cip_state,
+                    issue: "stereoisomer source transition requires the exact lazy enumeration identity and four write-owned blocks",
                 });
             }
             CipStatePolicy::TautomerSourceTransition
@@ -1290,6 +1384,44 @@ impl<'a, Access> OpParts<'a, Access> {
                     ));
                 }
             }
+            PreservationProof::StereoisomerRingFamilies => {
+                let source = self.source.topology();
+                let candidate = self.current_topology_candidate()?;
+                let same_rows = source.atoms.len() == candidate.atoms.len()
+                    && source
+                        .atoms
+                        .iter()
+                        .zip(&candidate.atoms)
+                        .all(|(a, b)| a.id() == b.id())
+                    && source.bonds.len() == candidate.bonds.len()
+                    && source.bonds.iter().zip(&candidate.bonds).all(|(a, b)| {
+                        a.id() == b.id()
+                            && a.begin() == b.begin()
+                            && a.end() == b.end()
+                            && a.order() == b.order()
+                    })
+                    && source.adjacency == candidate.adjacency;
+                if self.spec.cip_state != CipStatePolicy::StereoisomerSourceTransition
+                    || states != DerivedState::RING_FAMILIES
+                    || !same_rows
+                    || self
+                        .current_cache_candidate()?
+                        .valid_states()
+                        .intersection(states)
+                        != self
+                            .source
+                            .derived_cache_runtime()
+                            .valid_states()
+                            .intersection(states)
+                {
+                    return Err(Self::effect_error(
+                        self.spec,
+                        "preserve",
+                        states,
+                        "source stereoisomer ring-family graph proof failed",
+                    ));
+                }
+            }
             PreservationProof::StereoCleanup => {
                 let candidate = self.current_topology_candidate()?;
                 let source = self.source.topology();
@@ -1343,6 +1475,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     ["_chiralPermutation", "_NonExplicit3DChirality"];
                 let candidate = self.current_topology_candidate()?;
                 let source = self.source.topology();
+                let mut property_error: Option<OperationError> = None;
                 let atoms_only_change_structure_tags = candidate.atoms.len() == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(
                         |(candidate_atom, source_atom)| {
@@ -1355,12 +1488,18 @@ impl<'a, Access> OpParts<'a, Access> {
                                         return false;
                                     }
                                 } else {
-                                    expected.clear_prop(key);
+                                    if let Err(error) = expected.clear_prop(key) {
+                                        property_error = Some(OperationError::AtomProperty(error));
+                                        return false;
+                                    }
                                 }
                             }
                             expected == *candidate_atom
                         },
                     );
+                if let Some(error) = property_error {
+                    return Err(error);
+                }
                 let topology_identity_is_stable = atoms_only_change_structure_tags
                     && candidate.bonds == source.bonds
                     && candidate.substance_groups == source.substance_groups
@@ -1369,7 +1508,9 @@ impl<'a, Access> OpParts<'a, Access> {
 
                 let mut expected_properties = self.source.properties().clone();
                 if clear_stereochem_done {
-                    expected_properties.clear_prop("_StereochemDone");
+                    expected_properties
+                        .clear_prop("_StereochemDone")
+                        .map_err(OperationError::InvalidProperty)?;
                 }
                 let preserved_blocks_are_unchanged = self.current_coordinates_candidate()?
                     == self.source.coordinate_block_runtime()
@@ -1393,10 +1534,16 @@ impl<'a, Access> OpParts<'a, Access> {
                 }
             }
             PreservationProof::CipLabelAssignment => {
+                // Strict preservation compares source-shaped computed metadata
+                // after replaying only the already owned CIP fields. Every other
+                // key, tag, computed membership/order and chemical field remains
+                // compared exactly. Replaying metadata adds O(P) strict-check
+                // work to the existing cloned comparison; it grants no new key.
                 const ATOM_KEYS: [&str; 2] = ["_CIPCode", "_CIPNeighborOrder"];
                 const BOND_KEYS: [&str; 2] = ["_CIPCode", "_CIPNeighborOrder"];
                 let candidate = self.current_topology_candidate()?;
                 let source = self.source.topology();
+                let mut property_error: Option<OperationError> = None;
                 let atoms_only_change_cip = candidate.atoms.len() == source.atoms.len()
                     && candidate.atoms.iter().zip(&source.atoms).all(
                         |(candidate_atom, source_atom)| {
@@ -1408,8 +1555,31 @@ impl<'a, Access> OpParts<'a, Access> {
                             // them in a fixed order invents a constraint absent
                             // from the operation contract.
                             for key in ATOM_KEYS {
-                                expected.clear_prop(key);
-                                actual.clear_prop(key);
+                                // Native RDProps setProp(computed=true) creates
+                                // computed metadata even when it was absent.
+                                // Recreate only this existing owned key's effect
+                                // before stripping it from both comparison values.
+                                let replay = (|| {
+                                    if candidate_atom.is_prop_computed(key).map_err(
+                                        cosmolkit_model::AtomPropertyError::ComputedListKind,
+                                    )? {
+                                        if let Some(value) = candidate_atom.prop(key) {
+                                            expected.set_computed_prop(key, value)?;
+                                        }
+                                    }
+                                    Ok::<_, cosmolkit_model::AtomPropertyError>(())
+                                })();
+                                if let Err(error) = replay {
+                                    property_error = Some(OperationError::AtomProperty(error));
+                                    return false;
+                                }
+                                if let Err(error) = expected
+                                    .clear_prop(key)
+                                    .and_then(|_| actual.clear_prop(key))
+                                {
+                                    property_error = Some(OperationError::AtomProperty(error));
+                                    return false;
+                                }
                             }
                             expected == actual
                         },
@@ -1452,12 +1622,38 @@ impl<'a, Access> OpParts<'a, Access> {
                                 return false;
                             }
                             for key in BOND_KEYS {
-                                expected.clear_prop(key);
-                                actual.clear_prop(key);
+                                // Native RDProps setProp(computed=true) creates
+                                // computed metadata even when it was absent.
+                                // Recreate only this existing owned key's effect
+                                // before stripping it from both comparison values.
+                                let replay = (|| {
+                                    if candidate_bond.is_prop_computed(key).map_err(
+                                        cosmolkit_model::BondValueError::ComputedListKind,
+                                    )? {
+                                        if let Some(value) = candidate_bond.prop(key) {
+                                            expected.set_computed_prop(key, value)?;
+                                        }
+                                    }
+                                    Ok::<_, cosmolkit_model::BondValueError>(())
+                                })();
+                                if let Err(error) = replay {
+                                    property_error = Some(OperationError::BondProperty(error));
+                                    return false;
+                                }
+                                if let Err(error) = expected
+                                    .clear_prop(key)
+                                    .and_then(|_| actual.clear_prop(key))
+                                {
+                                    property_error = Some(OperationError::BondProperty(error));
+                                    return false;
+                                }
                             }
                             expected == actual
                         },
                     );
+                if let Some(error) = property_error {
+                    return Err(error);
+                }
                 let topology_identity_is_stable = atoms_only_change_cip
                     && bonds_only_change_cip
                     && candidate.adjacency == source.adjacency
@@ -1465,12 +1661,18 @@ impl<'a, Access> OpParts<'a, Access> {
                     && candidate.stereo_groups == source.stereo_groups;
 
                 let mut expected_properties = self.source.properties().clone();
-                expected_properties.clear_prop("_CIPComputed");
+                expected_properties
+                    .clear_prop("_CIPComputed")
+                    .map_err(OperationError::InvalidProperty)?;
                 if let Some(value) = self.current_properties_candidate()?.prop("_CIPComputed") {
                     let result = if self
                         .current_properties_candidate()?
                         .is_prop_computed("_CIPComputed")
-                    {
+                        .map_err(|error| {
+                            OperationError::InvalidProperty(
+                                cosmolkit_model::MoleculePropertyError::ComputedListKind(error),
+                            )
+                        })? {
                         expected_properties.set_computed_prop("_CIPComputed", value)
                     } else {
                         expected_properties.set_prop("_CIPComputed", value)
@@ -1797,6 +1999,7 @@ impl<'a, Access> OpParts<'a, Access> {
                 let coordinate_metadata = coordinates.conformers_2d
                     == old_coordinates.conformers_2d
                     && coordinates.source_coordinate_dim == old_coordinates.source_coordinate_dim
+                    && coordinates.source_conformer_order == old_coordinates.source_conformer_order
                     && coordinates.conformers_3d.len() == old_coordinates.conformers_3d.len()
                     && coordinates
                         .conformers_3d
@@ -1811,9 +2014,11 @@ impl<'a, Access> OpParts<'a, Access> {
                         .validate_for_atom_count(source.atoms.len())
                         .is_ok();
                 let mut expected_properties = self.source.properties().clone();
+                // Exact native tag and computed-list lifecycle; every other
+                // property and its source insertion order remain checked.
                 if expected_properties.prop("_MMFFSanitized").is_none() {
                     expected_properties
-                        .set_computed_prop("_MMFFSanitized", "1")
+                        .set_computed_prop("_MMFFSanitized", 1_i32)
                         .map_err(OperationError::InvalidProperty)?;
                 }
                 let properties_match = self.current_properties_candidate()? == &expected_properties;
@@ -1938,7 +2143,15 @@ impl<'a, Access> OpParts<'a, Access> {
         {
             for key in ATOM_KEYS {
                 if candidate.prop(key) != source.prop(key)
-                    || candidate.is_prop_computed(key) != source.is_prop_computed(key)
+                    || candidate.is_prop_computed(key).map_err(|error| {
+                        OperationError::AtomProperty(
+                            cosmolkit_model::AtomPropertyError::ComputedListKind(error),
+                        )
+                    })? != source.is_prop_computed(key).map_err(|error| {
+                        OperationError::AtomProperty(
+                            cosmolkit_model::AtomPropertyError::ComputedListKind(error),
+                        )
+                    })?
                 {
                     return Ok(false);
                 }
@@ -1951,7 +2164,15 @@ impl<'a, Access> OpParts<'a, Access> {
         {
             for key in BOND_KEYS {
                 if candidate.prop(key) != source.prop(key)
-                    || candidate.is_prop_computed(key) != source.is_prop_computed(key)
+                    || candidate.is_prop_computed(key).map_err(|error| {
+                        OperationError::BondProperty(
+                            cosmolkit_model::BondValueError::ComputedListKind(error),
+                        )
+                    })? != source.is_prop_computed(key).map_err(|error| {
+                        OperationError::BondProperty(
+                            cosmolkit_model::BondValueError::ComputedListKind(error),
+                        )
+                    })?
                 {
                     return Ok(false);
                 }
@@ -1959,8 +2180,22 @@ impl<'a, Access> OpParts<'a, Access> {
         }
         Ok(candidate_properties.prop("_CIPComputed")
             == self.source.properties().prop("_CIPComputed")
-            && candidate_properties.is_prop_computed("_CIPComputed")
-                == self.source.properties().is_prop_computed("_CIPComputed"))
+            && candidate_properties
+                .is_prop_computed("_CIPComputed")
+                .map_err(|error| {
+                    OperationError::InvalidProperty(
+                        cosmolkit_model::MoleculePropertyError::ComputedListKind(error),
+                    )
+                })?
+                == self
+                    .source
+                    .properties()
+                    .is_prop_computed("_CIPComputed")
+                    .map_err(|error| {
+                        OperationError::InvalidProperty(
+                            cosmolkit_model::MoleculePropertyError::ComputedListKind(error),
+                        )
+                    })?)
     }
 
     pub(super) fn apply_cip_policy_runtime(&mut self) -> Result<(), OperationError> {
@@ -1985,22 +2220,45 @@ impl<'a, Access> OpParts<'a, Access> {
             CipStatePolicy::ClearComputed => {
                 self.ensure_write_access(BlockSet::TOPOLOGY, "topology")?;
                 self.ensure_write_access(BlockSet::PROPERTIES, "properties")?;
-                let mut topology = self.current_topology_candidate()?.clone();
-                let mut properties = self.current_properties_candidate()?.clone();
-                for atom in &mut topology.atoms {
-                    atom.clear_computed_props();
-                }
-                for bond in &mut topology.bonds {
-                    bond.clear_computed_props();
-                }
-                properties.clear_computed_props();
-                self.topology = WorkingBlock::Installed(topology);
-                self.properties = WorkingBlock::Installed(properties);
+                // Move existing installed blocks; shared inputs materialize
+                // once through the canonical COW lifecycle. Always return both
+                // owned blocks before propagating a checked property failure.
+                let mut topology = self.checkout_topology_runtime()?;
+                let mut properties = match self.checkout_properties_runtime() {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.install_topology_runtime(topology)?;
+                        return Err(error);
+                    }
+                };
+                let result = (|| -> Result<(), OperationError> {
+                    for atom in &mut topology.atoms {
+                        atom.clear_computed_props()
+                            .map_err(OperationError::AtomProperty)?;
+                    }
+                    for bond in &mut topology.bonds {
+                        bond.clear_computed_props()
+                            .map_err(OperationError::BondProperty)?;
+                    }
+                    properties
+                        .clear_computed_props()
+                        .map_err(OperationError::InvalidProperty)?;
+                    Ok(())
+                })();
+                self.install_topology_runtime(topology)?;
+                self.install_properties_runtime(properties)?;
+                result?;
             }
             CipStatePolicy::Assign => {
                 let properties = self.current_properties_candidate()?;
                 if properties.prop("_CIPComputed").is_none()
-                    || !properties.is_prop_computed("_CIPComputed")
+                    || !properties
+                        .is_prop_computed("_CIPComputed")
+                        .map_err(|error| {
+                            OperationError::InvalidProperty(
+                                cosmolkit_model::MoleculePropertyError::ComputedListKind(error),
+                            )
+                        })?
                 {
                     return Err(OperationError::CipStateContract {
                         operation: self.spec.method,
@@ -2008,6 +2266,14 @@ impl<'a, Access> OpParts<'a, Access> {
                         issue: "assignment did not install computed _CIPComputed evidence",
                     });
                 }
+            }
+            CipStatePolicy::StereoisomerSourceTransition => {
+                // The exact source owner clears _CIPCode during preprocessing,
+                // then ClearComputedProps(false) and legacy AssignStereochemistry
+                // for enumerated candidates. The no-center yield skips that
+                // finalization. Every candidate still uses shared runtime
+                // mapping, effect, block-access and invariant validators.
+                // This policy grants no commit authority to its owner/body.
             }
             CipStatePolicy::TautomerSourceTransition => {
                 // The source-backed tautomer owner produces the complete
@@ -2149,6 +2415,7 @@ impl<'a, Access> OpParts<'a, Access> {
             candidate_topology,
             self.topology_edit,
             self.topology_mapping.as_ref(),
+            self.reconstruction_validated,
         )?;
 
         let missing = self.spec.auto_remap.difference(self.remapped_blocks);
@@ -2327,6 +2594,7 @@ pub(super) fn validate_multiple_candidate(
     coordinates: Option<CoordinateBlock>,
     properties: MoleculeProperties,
     prepared_cache: Option<super::multiple::PreparedCacheValues>,
+    reconstruction_validated: bool,
 ) -> Result<
     (
         Arc<TopologyBlock>,
@@ -2356,6 +2624,16 @@ pub(super) fn validate_multiple_candidate(
             .zip(&topology.bonds)
             .all(|(before, after)| before.id() == after.id());
     let mapping = match spec.requires_mapping {
+        MappingRequirement::Reconstruction => {
+            if !reconstruction_validated {
+                return Err(OperationError::MappingContract {
+                    operation: spec.method,
+                    issue: "candidate has no checked reconstruction origins",
+                    requirement: spec.requires_mapping,
+                });
+            }
+            None
+        }
         MappingRequirement::None => None,
         MappingRequirement::Identity | MappingRequirement::Required if row_identity_unchanged => {
             Some(TopologyMapping::identity(
@@ -2412,14 +2690,24 @@ pub(super) fn validate_multiple_candidate(
     let mut candidate = OpParts::<()> {
         spec,
         source: source.operation_snapshot_runtime(false, spec.method)?,
-        topology: WorkingBlock::Installed(topology),
+        topology: if topology == *source.topology() {
+            WorkingBlock::Shared
+        } else {
+            WorkingBlock::Installed(topology)
+        },
         coordinates: coordinates
+            .filter(|value| value != source.coordinate_block_runtime())
             .map(WorkingBlock::Installed)
             .unwrap_or(WorkingBlock::Shared),
-        properties: WorkingBlock::Installed(properties),
+        properties: if properties == *source.properties() {
+            WorkingBlock::Shared
+        } else {
+            WorkingBlock::Installed(properties)
+        },
         derived_cache: WorkingBlock::Shared,
         topology_edit: (spec.topology_edit != TopologyEditKind::None).then_some(spec.topology_edit),
         topology_mapping: mapping,
+        reconstruction_validated,
         remapped_blocks: spec.auto_remap,
         effect_trace: EffectTrace::default(),
         in_place_target: None,
@@ -2428,11 +2716,18 @@ pub(super) fn validate_multiple_candidate(
     };
 
     OpParts::<()>::validate_effect_contract(spec)?;
-    let prepared_states = if prepared_cache.is_some() {
-        DerivedState::VALENCE.union(DerivedState::RINGS)
-    } else {
-        DerivedState::NONE
-    };
+    let mut prepared_states = DerivedState::NONE;
+    #[cfg(any(
+        feature = "cap-tautomer",
+        feature = "cap-reaction",
+        feature = "cap-stereoisomers"
+    ))]
+    if let Some(values) = &prepared_cache {
+        prepared_states = DerivedState::VALENCE;
+        if values.rings.is_some() {
+            prepared_states = prepared_states.union(DerivedState::RINGS);
+        }
+    }
     let clear = spec
         .derived_effects
         .recompute
@@ -2442,21 +2737,33 @@ pub(super) fn validate_multiple_candidate(
     if !clear.is_empty() {
         candidate.clear_cache_runtime(clear)?;
     }
-    #[cfg(feature = "cap-tautomer")]
+    #[cfg(any(
+        feature = "cap-tautomer",
+        feature = "cap-reaction",
+        feature = "cap-stereoisomers"
+    ))]
     if let Some(values) = prepared_cache {
         let mut cache = candidate.checkout_derived_cache_runtime()?;
         cache.install_valence_assignment(values.valence);
-        cache.install_ring_info(values.rings);
+        if let Some(rings) = values.rings {
+            cache.install_ring_info(rings);
+        }
         candidate.install_derived_cache_runtime(cache)?;
-        candidate.mark_cache_updated_runtime(DerivedState::VALENCE.union(DerivedState::RINGS))?;
+        candidate.mark_cache_updated_runtime(prepared_states)?;
     }
-    #[cfg(not(feature = "cap-tautomer"))]
+    #[cfg(not(any(
+        feature = "cap-tautomer",
+        feature = "cap-reaction",
+        feature = "cap-stereoisomers"
+    )))]
     debug_assert!(prepared_cache.is_none());
     candidate.apply_cip_policy_runtime()?;
     if !spec.derived_effects.preserve.is_empty() {
         candidate.prove_preserved_runtime(
             spec.derived_effects.preserve,
-            if !prepared_states.is_empty() {
+            if spec.cip_state == CipStatePolicy::StereoisomerSourceTransition {
+                PreservationProof::StereoisomerRingFamilies
+            } else if !prepared_states.is_empty() {
                 PreservationProof::StableAtomCoordinates
             } else {
                 PreservationProof::UnchangedInput

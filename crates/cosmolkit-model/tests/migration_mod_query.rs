@@ -1,3 +1,9 @@
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+}
+fn fixture_value(value: &cosmolkit_model::PropertyValue) -> &str {
+    fixture_text(value.as_string().expect("original string fixture kind"))
+}
 use std::collections::BTreeMap;
 
 use cosmolkit_model::{
@@ -11,7 +17,9 @@ use cosmolkit_model::{
 };
 
 fn string_atom_prop(value: Option<&PropertyValue>) -> Option<&str> {
-    value.and_then(|value| value.as_string().ok())
+    value
+        .and_then(|value| value.as_string().ok())
+        .map(fixture_text)
 }
 
 fn carbon(id: usize) -> QueryAtom {
@@ -596,13 +604,13 @@ fn query_atom_and_bond_cover_default_parts_access_and_mutation() {
 fn recursive_query_covers_empty_graph_provenance_set_serial_and_deep_clone() {
     let empty = RecursiveStructureQuery::new();
     assert!(empty.query_graph().is_none());
-    assert_eq!(empty.source_smarts(), None);
+    assert_eq!(empty.source_smarts().map(fixture_text), None);
     assert_eq!(empty.serial_number(), 0);
 
     let mut recursive = RecursiveStructureQuery::from_query_graph(graph(1, Vec::new()), 17)
         .with_source_smarts("[#6]");
     assert_eq!(recursive.query_graph().unwrap().num_atoms(), 1);
-    assert_eq!(recursive.source_smarts(), Some("[#6]"));
+    assert_eq!(recursive.source_smarts().map(fixture_text), Some("[#6]"));
     assert_eq!(recursive.serial_number(), 17);
     recursive.insert_atom_index(3);
     assert!(recursive.contains_atom_index(3));
@@ -616,7 +624,14 @@ fn recursive_query_covers_empty_graph_provenance_set_serial_and_deep_clone() {
         .query_graph_mut()
         .unwrap()
         .set_prop("changed", "second");
-    assert_eq!(clone.query_graph().unwrap().prop("changed"), Some("first"));
+    assert_eq!(
+        clone
+            .query_graph()
+            .unwrap()
+            .prop("changed")
+            .map(fixture_value),
+        Some("first")
+    );
     assert_eq!(clone, clone.clone());
 
     recursive.set_query_graph(graph(2, vec![single_bond(0, 0, 1)]));
@@ -628,6 +643,7 @@ fn query_graph_covers_accessors_properties_coordinates_and_stereo_groups() {
     let mut graph = graph(2, vec![single_bond(0, 0, 1)])
         .with_name("ethane query")
         .with_prop("origin", "test")
+        .unwrap()
         .with_2d_coordinate_block(vec![[0.0, 0.0], [1.0, 0.0]])
         .unwrap();
     graph.set_prop("mutable", "yes");
@@ -652,10 +668,13 @@ fn query_graph_covers_accessors_properties_coordinates_and_stereo_groups() {
     assert_eq!(graph.bonds().len(), 1);
     assert!(graph.bond(1).is_none());
     assert_eq!(graph.adjacency(), &[vec![(1, 0)], vec![(0, 0)]]);
-    assert_eq!(graph.name(), Some("ethane query"));
-    assert_eq!(graph.prop("origin"), Some("test"));
     assert_eq!(
-        graph.props().get("mutable").map(String::as_str),
+        graph.name().unwrap().map(fixture_text),
+        Some("ethane query")
+    );
+    assert_eq!(graph.prop("origin").map(fixture_value), Some("test"));
+    assert_eq!(
+        graph.props().get("mutable".as_bytes()).map(fixture_value),
         Some("yes")
     );
     assert_eq!(graph.coordinates_2d().unwrap().len(), 2);
@@ -767,19 +786,19 @@ fn query_graph_reports_stereo_coordinate_and_adjacency_errors() {
         ],
         Vec::new(),
     );
-    // ROMol::addConformer(conf, false) appends duplicate IDs in source order.
-    let duplicate_coordinates = duplicate_coordinates.unwrap();
+    // ROMol::addConformer(assignId=false) appends both exact source rows.
+    let duplicate_coordinates =
+        duplicate_coordinates.expect("source permits duplicate conformer IDs");
     assert_eq!(duplicate_coordinates.conformers_3d().len(), 2);
-    assert_eq!(duplicate_coordinates.conformers_3d()[0].id(), 4);
-    assert_eq!(duplicate_coordinates.conformers_3d()[1].id(), 4);
-    assert_eq!(
-        duplicate_coordinates.conformers_3d()[0].coordinates(),
-        &[[0.0, 0.0, 0.0]]
-    );
-    assert_eq!(
-        duplicate_coordinates.conformers_3d()[1].coordinates(),
-        &[[1.0, 0.0, 0.0]]
-    );
+    for (row, expected) in duplicate_coordinates
+        .conformers_3d()
+        .iter()
+        .zip([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    {
+        assert_eq!(row.id(), 4);
+        assert_eq!(row.coordinates(), &[expected]);
+        assert!(row.is_3d());
+    }
 
     let stereo_group_atom_error = QueryGraph::from_parts(
         vec![carbon(0)],
@@ -1133,11 +1152,13 @@ fn query_atom_identity_change_clone_mapping_and_common_mutation_preserve_carrier
     assert_eq!(raw.hybridization(), Hybridization::Sp2);
     assert_eq!(string_atom_prop(raw.prop("user")), Some("kept"));
     assert_eq!(string_atom_prop(raw.prop("computed")), Some("kept"));
-    assert!(raw.is_prop_computed("computed"));
+    assert!(raw.is_prop_computed("computed").unwrap());
     assert_eq!(
         raw.computed_prop_names()
+            .unwrap()
+            .expect("computed list exists")
             .iter()
-            .map(String::as_str)
+            .map(fixture_text)
             .collect::<Vec<_>>(),
         ["computed"]
     );

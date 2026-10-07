@@ -94,6 +94,16 @@ fn atom_code_cow_borrow_escape(parts: &mut OpParts<'_, crate::WithAtomPairAtomCo
     });
 }
 
+// Complete the compile-only lazy operation declared in the probe registry.
+// An empty detached stream exercises the generated emitter without chemistry.
+pub(crate) fn lazy_output_probe_impl(
+    parts: &mut crate::MultiOutputOpParts<'_, super::LazyOutputProbeAccess>,
+) -> Result<(), OperationError> {
+    let _ = parts.topology()?;
+    let _ = parts.properties()?;
+    parts.emit_lazy(std::iter::empty())
+}
+
 pub(crate) fn preserve_cache_read_probe_impl(
     parts: &mut OpParts<'_, PreserveCacheReadProbeAccess>,
 ) -> Result<(), OperationError> {

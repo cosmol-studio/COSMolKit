@@ -1,3 +1,4 @@
+use cosmolkit_model::PropertyText;
 use std::fmt;
 
 /// A syntax error reported while reading a CX extension block.
@@ -38,6 +39,9 @@ pub struct CxParseProgress {
     consumed: usize,
     complete: bool,
     error: Option<CxParseError>,
+    // Native terminal diagnostic; output follows successful replay of all
+    // earlier source effects. Syntax scanning alone cannot decide that order.
+    source_warning: Option<Vec<u8>>,
 }
 
 impl CxParseProgress {
@@ -54,6 +58,30 @@ impl CxParseProgress {
             consumed,
             complete,
             error,
+            source_warning: None,
+        }
+    }
+
+    pub(crate) fn with_source_warning(mut self, warning: Option<Vec<u8>>) -> Self {
+        self.source_warning = warning;
+        self
+    }
+
+    /// Emit the captured terminal source diagnostic only after earlier graph
+    /// effects were replayed successfully. Result-only syntax adapters have no
+    /// graph effects to replay and emit before translating their syntax error.
+    #[doc(hidden)]
+    pub fn emit_source_warning(&self) {
+        // RDKit✔️✔️:           BOOST_LOG(rdWarningLog)
+        // RDKit✔️✔️:               << "unrecognized rb value: " << n2 << std::endl;
+        // Source payload is already captured from the converted native count,
+        // not recovered from message text or reparsed input. Preserve bytes,
+        // newline and flush with nonthrowing source-default I/O. RDLog enable
+        // flags, alternate sinks and prefix formatting remain unmodeled.
+        use std::io::Write;
+        if let Some(warning) = &self.source_warning {
+            let mut output = std::io::stderr().lock();
+            let _ = output.write_all(warning).and_then(|_| output.flush());
         }
     }
 
@@ -165,8 +193,8 @@ impl ParsedCxExtensions {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CxRecord {
     Coordinates(CxCoordinates),
-    AtomLabels(Vec<Option<String>>),
-    AtomValues(Vec<Option<String>>),
+    AtomLabels(Vec<Option<PropertyText>>),
+    AtomValues(Vec<Option<PropertyText>>),
     AtomProperties(Vec<CxAtomProperty>),
     CoordinateBonds(CxCoordinateBonds),
     ZeroBonds(Vec<usize>),
@@ -182,7 +210,7 @@ pub enum CxRecord {
     WedgedBonds(Vec<CxWedgeBond>),
     DoubleBondStereo(CxDoubleBondStereo),
     Radicals(Vec<CxRadical>),
-    Unknown(String),
+    Unknown(PropertyText),
 }
 
 /// CX coordinate conformer values. Empty entries represent omitted points.
@@ -197,8 +225,8 @@ pub struct CxCoordinates {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CxAtomProperty {
     pub atom: usize,
-    pub name: String,
-    pub value: String,
+    pub name: PropertyText,
+    pub value: PropertyText,
 }
 
 /// A CX coordinate or hydrogen bond annotation.
@@ -310,12 +338,12 @@ pub struct CxLinkNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CxDataSGroup {
     pub atoms: Vec<usize>,
-    pub field_name: String,
-    pub data: String,
-    pub query_op: String,
-    pub field_info: String,
-    pub field_tag: String,
-    pub coordinates: Option<String>,
+    pub field_name: PropertyText,
+    pub data: PropertyText,
+    pub query_op: PropertyText,
+    pub field_info: PropertyText,
+    pub field_tag: PropertyText,
+    pub coordinates: Option<PropertyText>,
 }
 
 /// One parent-to-children relationship from an `SgH:` record.
@@ -328,10 +356,10 @@ pub struct CxSGroupHierarchy {
 /// A polymer substance-group syntax record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CxPolymerSGroup {
-    pub type_code: String,
+    pub type_code: PropertyText,
     pub atoms: Vec<usize>,
-    pub label: String,
-    pub connect: String,
+    pub label: PropertyText,
+    pub connect: PropertyText,
     pub head_crossings: Vec<usize>,
     pub tail_crossings: Vec<usize>,
 }

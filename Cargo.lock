@@ -189,7 +189,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cosmolkit"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-batch",
@@ -208,6 +208,7 @@ dependencies = [
  "cosmolkit-smiles",
  "cosmolkit-stereo",
  "cosmolkit-tautomer",
+ "num-bigint",
  "serde",
  "serde_json",
  "sha2",
@@ -216,7 +217,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-alignment"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -227,7 +228,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-batch"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-io",
  "cosmolkit-model",
@@ -238,7 +239,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-bio"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-model",
  "cosmolkit-types",
@@ -248,7 +249,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-conformer"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-alignment",
  "cosmolkit-core",
@@ -264,7 +265,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-core"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-model",
  "cosmolkit-ringdecomposer",
@@ -276,11 +277,15 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-cx"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
+dependencies = [
+ "cosmolkit-core",
+ "cosmolkit-model",
+]
 
 [[package]]
 name = "cosmolkit-depict"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -294,7 +299,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-descriptors"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -306,7 +311,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-fingerprints"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -318,7 +323,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-forcefields"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-io",
@@ -330,7 +335,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-inchi"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "bytemuck",
  "hexf-parse",
@@ -340,7 +345,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-io"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-bio",
  "cosmolkit-core",
@@ -357,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-macros"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -375,7 +380,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-model"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-types",
  "serde_json",
@@ -416,11 +421,11 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-py"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit",
  "glam",
- "num-bigint 0.5.1",
+ "num-bigint",
  "numpy",
  "pyo3",
  "pyo3-build-config",
@@ -430,19 +435,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "cosmolkit-reaction"
+version = "0.5.0-rc.12"
+dependencies = [
+ "cosmolkit-core",
+ "cosmolkit-cx",
+ "cosmolkit-model",
+ "cosmolkit-search",
+ "cosmolkit-smiles",
+ "cosmolkit-types",
+ "thiserror",
+]
+
+[[package]]
 name = "cosmolkit-ringdecomposer"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-search"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
  "cosmolkit-model",
+ "cosmolkit-smiles",
  "cosmolkit-types",
  "serde_json",
  "thiserror",
@@ -450,7 +469,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-smiles"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-cx",
@@ -461,17 +480,20 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-stereo"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
+ "cosmolkit-conformer",
  "cosmolkit-core",
  "cosmolkit-model",
+ "cosmolkit-smiles",
  "cosmolkit-types",
+ "num-bigint",
  "thiserror",
 ]
 
 [[package]]
 name = "cosmolkit-tautomer"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit-core",
  "cosmolkit-model",
@@ -485,7 +507,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-types"
-version = "0.5.0-rc.11"
+version = "0.5.0-rc.12"
 dependencies = [
  "serde",
  "serde_json",
@@ -494,7 +516,7 @@ dependencies = [
 
 [[package]]
 name = "cosmolkit-wasm"
-version = "0.5.0-rc.4"
+version = "0.5.0-rc.12"
 dependencies = [
  "cosmolkit",
 ]
@@ -1162,16 +1184,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "num-bigint"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93e7820bc0a80a0238e650327316f929ba18d5be054b647490a3a6a339f3e7c0"
-dependencies = [
- "num-integer",
- "num-traits",
-]
-
-[[package]]
 name = "num-complex"
 version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1363,7 +1375,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "700d18fa267b73b9b521fd7e13580e2f446916f176cacee1ab63fcc8191f1655"
 dependencies = [
  "libc",
- "num-bigint 0.4.8",
+ "num-bigint",
  "num-traits",
  "once_cell",
  "portable-atomic",
@@ -1640,7 +1652,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4cdaf8ee5c1473b993b398c174641d3aa9da847af36e8d5eb8291930b72f31a5"
 dependencies = [
  "is-macro",
- "num-bigint 0.4.8",
+ "num-bigint",
  "rustpython-parser-core",
  "static_assertions",
 ]
@@ -1656,7 +1668,7 @@ dependencies = [
  "itertools 0.11.0",
  "lalrpop-util",
  "log",
- "num-bigint 0.4.8",
+ "num-bigint",
  "num-traits",
  "phf",
  "phf_codegen",

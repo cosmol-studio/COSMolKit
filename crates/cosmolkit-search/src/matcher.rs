@@ -56,6 +56,12 @@ pub enum SubstructMatchError {
     PeriodicTable(#[from] PeriodicTableError),
     #[error(transparent)]
     PropertyString(#[from] cosmolkit_core::PropertyStringError),
+    #[error("reading substructure property {property}: {source}")]
+    PropertyInteger {
+        property: &'static str,
+        #[source]
+        source: cosmolkit_core::PropertyIntReadError,
+    },
     #[error(transparent)]
     QueryContext(#[from] super::query_behavior::QueryMatchContextError),
 }
@@ -896,8 +902,8 @@ fn property_equal_as_strings(
 }
 
 fn property_compat(
-    properties1: &BTreeMap<String, PropertyValue>,
-    properties2: &BTreeMap<String, PropertyValue>,
+    properties1: &BTreeMap<cosmolkit_model::PropertyText, PropertyValue>,
+    properties2: &BTreeMap<cosmolkit_model::PropertyText, PropertyValue>,
     properties: &[String],
 ) -> Result<bool, cosmolkit_core::PropertyStringError> {
     // RDKit✔️🔝: bool propertyCompat(const RDProps *r1, const RDProps *r2,
@@ -927,7 +933,10 @@ fn property_compat(
     // Both implementations scan requested properties and allocate their
     // converted strings; BTreeMap lookup is O(log N) versus Dict's O(N).
     for property in properties {
-        if !property_equal_as_strings(properties1.get(property), properties2.get(property))? {
+        if !property_equal_as_strings(
+            properties1.get(property.as_bytes()),
+            properties2.get(property.as_bytes()),
+        )? {
             return Ok(false);
         }
     }
@@ -1171,7 +1180,7 @@ fn atom_matches(query_atom: &QueryAtom, mol_atom: &Atom, mol: &SearchTarget<'_>)
 fn recursive_smarts_root_matches(
     atom: &Atom,
     recursive_query: &crate::query_behavior::RecursiveStructureQuery,
-    mol: &SearchTarget<'_>,
+    _mol: &SearchTarget<'_>,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
 ) -> bool {
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/QueryOps.h :: RecursiveStructureQuery
@@ -1219,23 +1228,14 @@ fn recursive_smarts_root_matches(
             .unwrap_or(false);
     }
 
-    let Some(query) = recursive_query.query_graph() else {
-        return false;
-    };
-    substruct_match_impl(
-        mol,
-        query,
-        &SubstructMatchParams {
-            max_matches: 1000,
-            uniquify: false,
-            use_chirality: false,
-            specified_stereo_query_matches_unspecified: false,
-            ..Default::default()
-        },
-    )
-    .unwrap_or_default()
-    .into_iter()
-    .any(|matched| matched.atom_mapping.first().copied() == Some(atom.id().index()))
+    // RDKit❗✔️:   if (params.recursionPossible) {
+    // RDKit❗✔️:     detail::SUBQUERY_MAP subqueryMap;
+    // RDKit❗✔️:   }
+    // Recursive matches are prepared by the canonical MatchSubqueries path.
+    // With recursion disabled the source's newly parsed set remains empty;
+    // its Match method only checks set membership, without starting VF2.
+    // O(1), no hidden preparation or swallowed nested-match error.
+    false
 }
 
 fn atom_query_predicate_matches_for_substruct(
@@ -1245,7 +1245,7 @@ fn atom_query_predicate_matches_for_substruct(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     match pred {
         // RDKit✔️✔️: Chiral SMARTS labels are not ordinary atom-compatibility
         // constraints when `useChirality` is false. AtomLabelFunctor and
@@ -1277,7 +1277,7 @@ fn evaluate_atom_query(
     params: &SubstructMatchParams,
     recursive_cache: Option<&RecursiveQueryMatchCache>,
     query_ctx: &QueryMatchContext,
-) -> Result<bool, PeriodicTableError> {
+) -> Result<bool, SubstructMatchError> {
     match query {
         crate::QueryNode::Predicate(pred) => atom_query_predicate_matches_for_substruct(
             atom,
@@ -1417,7 +1417,7 @@ fn evaluate_bond_query(
     bond: &Bond,
     mol: &SearchTarget<'_>,
     query_ctx: &QueryMatchContext,
-) -> bool {
+) -> Result<bool, SubstructMatchError> {
     match query {
         crate::QueryNode::Predicate(pred) => {
             bond_predicate_matches_with_context(bond, pred, mol, query_ctx)
@@ -1431,7 +1431,7 @@ fn evaluate_bond_query(
         crate::QueryNode::Xor(children) => xor_query_match(children, false, |child| {
             evaluate_bond_query(child, bond, mol, query_ctx)
         }),
-        crate::QueryNode::Not(child) => !evaluate_bond_query(child, bond, mol, query_ctx),
+        crate::QueryNode::Not(child) => Ok(!evaluate_bond_query(child, bond, mol, query_ctx)?),
     }
 }
 
@@ -3274,7 +3274,7 @@ fn rdkit_match_final_check(
     // Complexity review: this adds the source-equivalent O(Q) dispatcher and
     // its selected generic-group matcher only when the option is enabled.
     if params.use_generic_matchers {
-        if !crate::generic_groups::generic_atom_matcher(mol, query, c2) {
+        if !crate::generic_groups::generic_atom_matcher(mol, query, c2)? {
             return Ok(false);
         }
     }
@@ -3856,17 +3856,30 @@ fn recursive_matcher(
             Some(recursive_cache),
         ),
     }?;
-    let root_index = query
-        .prop("_queryRootAtom")
-        .and_then(|value| value.parse::<i32>().ok())
-        .map_or(0, |root_index| root_index as u32 as usize);
     let mut match_starts = vec![false; mol.num_atoms()];
-    for matched in matches.into_iter().take(local_params.max_matches) {
+    let mut appended = 0usize;
+    for matched in matches {
+        // The source reads this property only for a successful VF2 result.
+        let root_index = match query.prop("_queryRootAtom") {
+            None => 0,
+            Some(value) => cosmolkit_core::property_value_to_int(value).map_err(|source| {
+                SubstructMatchError::PropertyInteger {
+                    property: "_queryRootAtom",
+                    source,
+                }
+            })? as u32 as usize,
+        };
         if let Some(&root_atom_idx) = matched.get(root_index)
             && root_atom_idx != NULL_NODE
             && root_atom_idx < match_starts.len()
         {
             match_starts[root_atom_idx] = true;
+            appended += 1;
+        } else if query.prop("_queryRootAtom").is_some() {
+            eprintln!("no match found for queryRootAtom");
+        }
+        if appended == local_params.max_matches {
+            break;
         }
     }
     Ok(match_starts)
@@ -4599,7 +4612,7 @@ fn bond_compat(
             mol_bond,
             mol,
             query_ctx,
-        )
+        )?
     } else if params.aromatic_matches_conjugated
         && !query_has_query
         && !target_has_query
@@ -4613,7 +4626,7 @@ fn bond_compat(
     {
         true
     } else {
-        evaluate_bond_query(query_bond.predicate(), mol_bond, mol, query_ctx)
+        evaluate_bond_query(query_bond.predicate(), mol_bond, mol, query_ctx)?
     };
     if !matches {
         return Ok(false);
@@ -4928,7 +4941,10 @@ mod q86_atom_dispatch_tests {
         QueryGraph::from_parts(
             vec![atom],
             Vec::new(),
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -5157,7 +5173,10 @@ mod q86_bond_dispatch_tests {
         QueryGraph::from_parts(
             atoms,
             vec![bond],
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -5558,6 +5577,36 @@ pub fn try_get_substruct_matches_with_params_and_context(
     params: &SubstructMatchParams,
     query_context: &QueryMatchContext,
 ) -> SubstructMatchResultList {
+    query_matches_with_params_and_context::<FullMatchResultProjection>(
+        mol,
+        query,
+        params,
+        query_context,
+    )
+}
+
+/// Same canonical matcher, projecting only source atom pairs.
+#[doc(hidden)]
+pub fn try_get_substruct_atom_matches_with_params_and_context(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    query_context: &QueryMatchContext,
+) -> Result<Vec<Vec<usize>>, SubstructMatchError> {
+    query_matches_with_params_and_context::<AtomOnlyMatchResultProjection>(
+        mol,
+        query,
+        params,
+        query_context,
+    )
+}
+
+fn query_matches_with_params_and_context<P: MatchResultProjection>(
+    mol: &SearchTarget<'_>,
+    query: &QueryGraph,
+    params: &SubstructMatchParams,
+    query_context: &QueryMatchContext,
+) -> Result<Vec<P::Output>, SubstructMatchError> {
     // This narrow entry retains the canonical preflight, recursive-query
     // preparation, VF2 implementation, final checks, and result ordering. It
     // only lets callers that run several immutable queries against one target
@@ -5576,7 +5625,7 @@ pub fn try_get_substruct_matches_with_params_and_context(
             Some(query_context),
         )?;
     }
-    substruct_match_impl_with_recursive_cache_and_context::<FullMatchResultProjection>(
+    substruct_match_impl_with_recursive_cache_and_context::<P>(
         mol,
         query,
         params,
@@ -5754,7 +5803,10 @@ mod q33_plain_atom_tests {
         QueryGraph::from_parts(
             atoms,
             bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -6057,7 +6109,10 @@ mod uff_one_fix_result_projection_tests {
         QueryGraph::from_parts(
             atoms,
             bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -6194,7 +6249,10 @@ mod uff_one_fix_result_projection_tests {
         let query = QueryGraph::from_parts(
             vec![recursive_atom],
             Vec::new(),
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -6380,7 +6438,10 @@ mod search_projection_p01_tests {
         QueryGraph::from_parts(
             atoms,
             bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -7090,7 +7151,10 @@ mod search_shared_perf_s04_tests {
         QueryGraph::from_parts(
             query_atoms,
             query_bonds,
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -7340,7 +7404,10 @@ mod search_shared_perf_s05_tests {
         QueryGraph::from_parts(
             atoms,
             Vec::new(),
-            Default::default(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -8037,7 +8104,10 @@ mod search_shared_perf_s08_tests {
                 ]),
             )],
             Vec::new(),
-            BTreeMap::new(),
+            Vec::<(
+                cosmolkit_model::PropertyText,
+                cosmolkit_model::PropertyValue,
+            )>::new(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -8210,7 +8280,10 @@ mod dative_endpoint_dispatch_tests {
             let query = QueryGraph::from_parts(
                 atoms,
                 vec![bond],
-                Default::default(),
+                Vec::<(
+                    cosmolkit_model::PropertyText,
+                    cosmolkit_model::PropertyValue,
+                )>::new(),
                 vec![],
                 vec![],
                 vec![],
@@ -8256,7 +8329,7 @@ mod uint_compat_proposed_tests {
             assert!(
                 !property_equal_as_strings(
                     Some(&a),
-                    Some(&PropertyValue::String(format!("0{text}")))
+                    Some(&PropertyValue::String(format!("0{text}").into()))
                 )
                 .unwrap()
             );

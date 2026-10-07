@@ -1204,8 +1204,11 @@ fn update_neighbor_layer(
     // the source's temporary string: in the frozen model, Int, Double, and
     // Bool can never compare equal to R or S. Adding a new PropertyValue
     // variant makes this exhaustive match fail to compile until its source
-    // conversion is reviewed. The upstream-only unsigned, float, vector, and
-    // Any tags stay visibly unsupported rather than defaulting silently.
+    // conversion is reviewed. Upstream Float and Any tags remain unmodeled;
+    // the frozen UInt and vector tags are handled by the proof below.
+    // All modeled vectors start with the source literal `[` and so cannot
+    // compare equal to the single bytes R/S; StringVector elements retain all
+    // counted bytes. UInt decimal spelling likewise cannot be R/S.
     // Complexity review: Atom::prop performs one O(log p) BTreeMap lookup
     // instead of the source Dict's O(p) vector scan. Direct tag inspection is
     // O(1) and allocation-free, avoiding lexical conversion while preserving
@@ -1220,8 +1223,8 @@ fn update_neighbor_layer(
     // None is the source isolated-center return; the caller marks that center
     // dead and leaves its already-zero next-layer invariant in place.
     // For modeled property kinds, only String can equal R or S; Int, Double
-    // and Bool retain default salt 1. Unsigned, float, vector and Any tags remain
-    // explicitly unsupported under the current model.
+    // and Bool retain default salt 1. Modeled UInt and both vector tags retain
+    // the same source default salt; unmodeled Float/Any remain absent.
     // Complexity review: source and Rust use one reusable O(d) scratch row,
     // O(d log d) pair sorting, O(d) hashing, and O(E/64) packed-word union per
     // incident neighbor. The fixed LP64 block width matches Boost's default
@@ -1288,12 +1291,13 @@ fn update_neighbor_layer(
     if include_chirality && looks_chiral {
         chiral_atoms.set(atom_index);
         let chirality_salt = match atom.prop("_CIPCode") {
-            Some(PropertyValue::String(cip)) => match cip.as_str() {
-                "R" => 3,
-                "S" => 2,
+            Some(PropertyValue::String(cip)) => match cip.as_bytes() {
+                b"R" => 3,
+                b"S" => 2,
                 _ => 1,
             },
             Some(PropertyValue::IntVector(_))
+            | Some(PropertyValue::StringVector(_))
             | Some(PropertyValue::Int(_))
             | Some(PropertyValue::UInt(_))
             | Some(PropertyValue::Double(_))
@@ -3955,7 +3959,7 @@ mod tests {
         let mut calls = 0usize;
         for include_chirality in [false, true] {
             for (chiral_tag, cip_code, salted_hashes, should_be_chiral) in CASES {
-                let cip_property = cip_code.map(|code| PropertyValue::String(code.to_owned()));
+                let cip_property = cip_code.map(|code| PropertyValue::String(code.into()));
                 let topology = m07_topology(chiral_tag, cip_property);
                 for (layer_index, layer) in LAYERS.into_iter().enumerate() {
                     let mut chiral_atoms = MorganChiralAtoms::new(topology.atoms.len());
@@ -3999,7 +4003,7 @@ mod tests {
             PropertyValue::Int(17),
             PropertyValue::Double(1.25),
             PropertyValue::Bool(true),
-            PropertyValue::String("other".to_owned()),
+            PropertyValue::String("other".into()),
         ];
         let mut calls = 0usize;
 
@@ -4031,7 +4035,7 @@ mod tests {
         const BOND_INVARIANTS: [u32; 4] = [1; 4];
         let topology = m07_topology(
             ChiralTag::TetrahedralCw,
-            Some(PropertyValue::String("R".to_owned())),
+            Some(PropertyValue::String("R".into())),
         );
         let duplicate_neighbors = [0x1234_5678, 5, 5, 8, 11];
         let unique_neighbors = [0x1234_5678, 5, 6, 8, 11];
@@ -4083,7 +4087,7 @@ mod tests {
         const CUSTOM_BOND_INVARIANTS: [u32; 4] = [2, 1, 1, 1];
         let topology = m07_topology(
             ChiralTag::TetrahedralCw,
-            Some(PropertyValue::String("R".to_owned())),
+            Some(PropertyValue::String("R".into())),
         );
         let mut chiral_atoms = MorganChiralAtoms::new(topology.atoms.len());
 
@@ -5281,20 +5285,26 @@ mod tests {
                                     assert_eq!(
                                         selected_properties.prop("_StereochemDone"),
                                         if should_prepare {
-                                            Some("1")
+                                            Some(cosmolkit_model::PropertyValue::Int(1))
                                         } else {
-                                            done_value
+                                            done_value.map(|value| {
+                                                cosmolkit_model::PropertyValue::String(value.into())
+                                            })
                                         }
+                                        .as_ref()
                                     );
                                     assert_eq!(
-                                        selected_properties.is_prop_computed("_StereochemDone"),
+                                        selected_properties
+                                            .is_prop_computed("_StereochemDone")
+                                            .unwrap(),
                                         should_prepare
                                     );
                                     assert_eq!(
                                         selected_topology.atoms[1]
                                             .prop("_CIPCode")
-                                            .and_then(|value| value.as_string().ok()),
-                                        should_prepare.then_some("R"),
+                                            .and_then(|value| value.as_string().ok())
+                                            .map(|value| value.as_bytes()),
+                                        should_prepare.then_some(b"R".as_slice()),
                                         "only the source-selected prepared copy has assigned CIP"
                                     );
 
@@ -5366,6 +5376,34 @@ mod tests {
         );
         assert_eq!(original.topology, original_topology_before);
         assert_eq!(original.properties, original_properties_before);
+    }
+
+    #[test]
+    fn canonical_cip_byte_and_vector_tags_keep_source_default_salt() {
+        for value in [
+            PropertyValue::String(cosmolkit_model::PropertyText::from_bytes(b"R\0")),
+            PropertyValue::String(cosmolkit_model::PropertyText::from_bytes(b"R\xff")),
+            PropertyValue::StringVector(vec!["R".into()]),
+            PropertyValue::StringVector(Vec::new()),
+            PropertyValue::UInt(u32::MAX),
+        ] {
+            let topology = m07_topology(ChiralTag::TetrahedralCw, Some(value));
+            let before = topology.clone();
+            let mut chiral_atoms = MorganChiralAtoms::new(topology.atoms.len());
+            let actual = m07_layer_code(
+                &topology,
+                1,
+                true,
+                &[0x1234_5678, 11, 22, 33, 44],
+                &[1; 4],
+                &mut chiral_atoms,
+            );
+            assert_eq!(
+                actual, 1_586_609_967,
+                "original pinned M07 unlabeled salt hash"
+            );
+            assert_eq!(topology, before);
+        }
     }
 }
 

@@ -1450,9 +1450,15 @@ pub fn assign_chiral_tags_from_structure(
         {
             working.atoms[index].set_chiral_tag(tag);
             working.atoms[index].set_chiral_permutation(Some(permutation));
-            working.atoms[index].set_prop("_chiralPermutation", permutation.to_string())?;
+            working.atoms[index].set_prop(
+                "_chiralPermutation",
+                cosmolkit_model::PropertyValue::UInt(permutation),
+            )?;
             if !explicit[index] {
-                working.atoms[index].set_prop("_NonExplicit3DChirality", "1")?;
+                working.atoms[index].set_prop(
+                    "_NonExplicit3DChirality",
+                    cosmolkit_model::PropertyValue::Int(1),
+                )?;
             }
             continue;
         }
@@ -1506,7 +1512,10 @@ pub fn assign_chiral_tags_from_structure(
         }
         working.atoms[index].set_chiral_tag(tag.unwrap_or(ChiralTag::Unspecified));
         if tag.is_some() && !explicit[index] {
-            working.atoms[index].set_prop("_NonExplicit3DChirality", "1")?;
+            working.atoms[index].set_prop(
+                "_NonExplicit3DChirality",
+                cosmolkit_model::PropertyValue::Int(1),
+            )?;
         }
     }
 

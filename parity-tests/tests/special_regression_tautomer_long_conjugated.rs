@@ -1,7 +1,7 @@
 //! Fixed source regression, not expansion over the SMILES corpus.
 //! Reuse the original detached comparison boundary and every compared field.
 #[allow(dead_code)]
-#[path = "../../crates/cosmolkit-tautomer/tests/support/oracle.rs"]
+#[path = "../../parity-tests_fixed/tests/support/tautomer.rs"]
 mod oracle;
 
 #[test]

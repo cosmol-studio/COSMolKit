@@ -364,23 +364,55 @@ impl From<TemplateError> for Coordinate2DTemplateError {
 /// already-public search, path, and matrix causes remain source-chain leaves.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Coordinate2DLayoutError {
-    AtomIndexOutOfRange { atom: usize, atom_count: usize },
-    AtomAlreadyEmbedded { atom: usize },
-    AtomNotEmbedded { atom: usize },
-    NotEnoughEmbeddedNeighbors { atom: usize, count: usize },
+    AtomIndexOutOfRange {
+        atom: usize,
+        atom_count: usize,
+    },
+    AtomAlreadyEmbedded {
+        atom: usize,
+    },
+    AtomNotEmbedded {
+        atom: usize,
+    },
+    NotEnoughEmbeddedNeighbors {
+        atom: usize,
+        count: usize,
+    },
     CoincidentPoints,
     InvalidAngle,
     NoCommonAtoms,
     MismatchedTopology,
-    EmptyAttachment { atom: usize },
-    NonTetrahedralNoLigand { centre: usize },
-    NonTetrahedralLigandOverflow { centre: usize },
-    CisTransBondInvalid { bond: usize },
-    CollisionBondInvalid { bond: usize },
-    UndefinedSamplingDistance { first: usize, second: usize },
-    AtomCountTooLarge { atom_count: usize },
-    InvalidRankProperty { atom: usize, key: &'static str },
-    GeometryNotEnoughNeighbors { atom: usize, count: usize },
+    EmptyAttachment {
+        atom: usize,
+    },
+    NonTetrahedralNoLigand {
+        centre: usize,
+    },
+    NonTetrahedralLigandOverflow {
+        centre: usize,
+    },
+    CisTransBondInvalid {
+        bond: usize,
+    },
+    CollisionBondInvalid {
+        bond: usize,
+    },
+    UndefinedSamplingDistance {
+        first: usize,
+        second: usize,
+    },
+    AtomCountTooLarge {
+        atom_count: usize,
+    },
+    InvalidRankProperty {
+        atom: usize,
+        key: &'static str,
+        source: cosmolkit_core::PropertyUIntReadError,
+    },
+    GeometryNotEnoughNeighbors {
+        atom: usize,
+        count: usize,
+    },
     TemplateMatch(cosmolkit_search::SubstructMatchError),
     GraphPath(cosmolkit_core::PathError),
     GraphDistance(cosmolkit_core::MatrixError),
@@ -434,8 +466,11 @@ impl fmt::Display for Coordinate2DLayoutError {
                     "atom count {atom_count} exceeds depiction limits"
                 )
             }
-            Self::InvalidRankProperty { atom, key } => {
-                write!(formatter, "atom {atom} has invalid rank property {key}")
+            Self::InvalidRankProperty { atom, key, source } => {
+                write!(
+                    formatter,
+                    "atom {atom} has invalid rank property {key}: {source}"
+                )
             }
             Self::GeometryNotEnoughNeighbors { atom, count } => {
                 write!(formatter, "atom {atom} has only {count} geometry neighbors")
@@ -454,6 +489,7 @@ impl fmt::Display for Coordinate2DLayoutError {
 impl Error for Coordinate2DLayoutError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
+            Self::InvalidRankProperty { source, .. } => Some(source),
             Self::TemplateMatch(source) => Some(source),
             Self::GraphPath(source) => Some(source),
             Self::GraphDistance(source) => Some(source),
@@ -472,7 +508,6 @@ impl Error for Coordinate2DLayoutError {
             | Self::CollisionBondInvalid { .. }
             | Self::UndefinedSamplingDistance { .. }
             | Self::AtomCountTooLarge { .. }
-            | Self::InvalidRankProperty { .. }
             | Self::GeometryNotEnoughNeighbors { .. } => None,
         }
     }
@@ -487,8 +522,8 @@ impl From<GeometryError> for Coordinate2DLayoutError {
             GeometryError::AtomCountTooLarge { atom_count } => {
                 Self::AtomCountTooLarge { atom_count }
             }
-            GeometryError::InvalidRankProperty { atom, key } => {
-                Self::InvalidRankProperty { atom, key }
+            GeometryError::InvalidRankProperty { atom, key, source } => {
+                Self::InvalidRankProperty { atom, key, source }
             }
             GeometryError::NotEnoughNeighbors { atom, count } => {
                 Self::GeometryNotEnoughNeighbors { atom, count }
@@ -954,7 +989,7 @@ pub struct DrawingInput<'a> {
 pub fn render_svg(
     input: DrawingInput<'_>,
     options: &DepictOptions,
-) -> Result<String, DrawingError> {
+) -> Result<Vec<u8>, DrawingError> {
     render_svg_with_identity(input, options, draw::SvgIdentity::PinnedSource)
 }
 
@@ -963,7 +998,7 @@ pub fn render_svg(
 pub fn render_cosmolkit_svg(
     input: DrawingInput<'_>,
     options: &DepictOptions,
-) -> Result<String, DrawingError> {
+) -> Result<Vec<u8>, DrawingError> {
     render_svg_with_identity(input, options, draw::SvgIdentity::Cosmolkit)
 }
 
@@ -971,7 +1006,7 @@ fn render_svg_with_identity(
     input: DrawingInput<'_>,
     options: &DepictOptions,
     identity: draw::SvgIdentity,
-) -> Result<String, DrawingError> {
+) -> Result<Vec<u8>, DrawingError> {
     if options.width == 0 || options.height == 0 {
         return Err(DrawingError::InvalidDimensions {
             width: options.width,
@@ -1421,7 +1456,7 @@ mod d2_probe1_tests {
                     "1" => PropertyValue::Int(parse(&value)),
                     "6" => PropertyValue::UInt(parse::<u32>(&value)),
                     "2" => PropertyValue::Double(f64::from_bits(parse(&value))),
-                    "3" => PropertyValue::String(value),
+                    "3" => PropertyValue::String(value.into()),
                     "5" => PropertyValue::Bool(match value.as_str() {
                         "0" => false,
                         "1" => true,

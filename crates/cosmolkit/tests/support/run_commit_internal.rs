@@ -665,7 +665,7 @@ fn finish_rejects_coordinate_and_typed_property_row_invariants() {
                 } else {
                     "bond"
                 },
-                name: name.to_owned(),
+                name: name.into(),
                 values,
                 expected,
             })
@@ -701,9 +701,15 @@ fn untouched_and_staged_value_success_construct_once_and_preserve_source() {
     staged.install_properties_runtime(properties).unwrap();
     staged.apply_cip_policy_runtime().unwrap();
     let output = staged.finish().unwrap();
-    assert_eq!(output.properties().name(), Some("result"));
+    assert_eq!(
+        output.properties().name().map(|value| value.as_bytes()),
+        Some(b"result".as_slice())
+    );
     assert_eq!(output.runtime_constructions(), 1);
-    assert_eq!(source.properties().name(), Some("source"));
+    assert_eq!(
+        source.properties().name().map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
+    );
     assert_eq!(source, before);
 }
 
@@ -736,7 +742,10 @@ fn in_place_install_is_atomic_for_failure_and_success() {
     transaction.install_properties_runtime(properties).unwrap();
     transaction.apply_cip_policy_runtime().unwrap();
     transaction.finish_in_place().unwrap();
-    assert_eq!(target.properties().name(), Some("installed"));
+    assert_eq!(
+        target.properties().name().map(|value| value.as_bytes()),
+        Some(b"installed".as_slice())
+    );
     assert_eq!(target.runtime_constructions(), 1);
 }
 

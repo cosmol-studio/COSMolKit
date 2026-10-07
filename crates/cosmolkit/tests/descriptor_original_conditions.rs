@@ -205,7 +205,10 @@ fn stereo_center_counts_match_pinned_rdkit_without_mutating_the_caller() {
         .unwrap()
         .with_assigned_rings()
         .unwrap();
-    assert_eq!(preassigned.properties().prop("_StereochemDone"), Some("1"));
+    assert_eq!(
+        preassigned.properties().prop("_StereochemDone"),
+        Some(&cosmolkit::PropertyValue::from("1"))
+    );
     let before = preassigned.clone();
     assert_eq!(preassigned.num_atom_stereo_centers().unwrap(), 1);
     assert_eq!(

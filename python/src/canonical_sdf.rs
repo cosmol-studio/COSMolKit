@@ -191,6 +191,37 @@ pub(crate) struct SdfRecord {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SdfRecord {
+    fn index(&self) -> usize {
+        self.inner.index()
+    }
+    fn to_mol(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_mol()
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_mol_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_mol_with_params(&params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_sdf(&self, py: Python<'_>) -> PyResult<String> {
+        self.inner
+            .to_sdf()
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
+    fn to_sdf_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_molecular_io::MolBlockWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_sdf_with_params(&params.inner)
+            .map_err(|e| crate::canonical_molecular_io::error_pyerr(py, e))
+    }
     #[staticmethod]
     fn from_sdf(py: Python<'_>, input: &str) -> PyResult<Self> {
         ck::SdfRecord::from_sdf(input)
@@ -227,8 +258,37 @@ impl SdfRecord {
             .map_err(|error| sdf_pyerr(py, error))
     }
 
-    fn data_fields(&self) -> Vec<(String, String)> {
-        self.inner.data_fields().to_vec()
+    fn data_fields(&self, py: Python<'_>) -> PyResult<Vec<(String, String)>> {
+        self.inner
+            .data_fields()
+            .iter()
+            .map(|(key, value)| Ok((decode_source_text(py, key)?, decode_source_text(py, value)?)))
+            .collect()
+    }
+
+    #[staticmethod]
+    fn from_query_graph(
+        py: Python<'_>,
+        query: &QueryGraph,
+        properties: &MoleculeProperties,
+    ) -> PyResult<Self> {
+        ck::SdfRecord::from_query_graph(query.inner.clone(), properties.inner.clone())
+            .map(|inner| Self { inner })
+            .map_err(|error| sdf_pyerr(py, error))
+    }
+
+    fn title(&self, py: Python<'_>) -> PyResult<Option<String>> {
+        self.inner
+            .title()
+            .map(|text| decode_source_text(py, text))
+            .transpose()
+    }
+
+    fn data_field(&self, py: Python<'_>, name: &str) -> PyResult<Option<String>> {
+        self.inner
+            .data_field(name)
+            .map(|text| decode_source_text(py, text))
+            .transpose()
     }
 
     fn properties(&self) -> MoleculeProperties {
@@ -249,6 +309,14 @@ impl SdfRecord {
     fn source_coordinate_dim(&self) -> Option<CoordinateDimension> {
         self.inner.source_coordinate_dim().map(Into::into)
     }
+}
+
+// Decode only at the Python string boundary. CPython retains the original
+// counted bytes on UnicodeDecodeError; chemistry storage never decodes them.
+pub(crate) fn decode_source_text(py: Python<'_>, text: &ck::PropertyText) -> PyResult<String> {
+    pyo3::types::PyBytes::new(py, text.as_bytes())
+        .call_method1("decode", ("utf-8", "strict"))?
+        .extract::<String>()
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {

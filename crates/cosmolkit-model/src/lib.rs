@@ -12,9 +12,11 @@ mod cip;
 mod coordinates;
 mod mapping;
 mod properties;
+mod property_text;
 mod property_value;
 mod query;
 mod sgroup;
+mod source_atom_facts;
 mod stereo;
 mod topology;
 mod valence;
@@ -35,6 +37,10 @@ pub use mapping::{AtomMapping, BondMapping, MappingValidationError, TopologyMapp
 pub use properties::{
     MoleculeProperties, MoleculePropertyError, SdfPropertyList, SdfPropertyListTarget,
 };
+#[doc(hidden)]
+pub use property_text::PropertyText;
+#[doc(hidden)]
+pub use property_value::MissingPropertyError;
 pub use property_value::{PropertyValue, PropertyValueError, PropertyValueKind};
 pub use query::{
     AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery, BondQueryPredicate,
@@ -60,4 +66,13 @@ pub use cosmolkit_types::{
 
 pub use valence::{AtomMetadata, ValenceError, ValencePhase};
 
+#[doc(hidden)]
+pub use source_atom_facts::SourceAtomValenceFacts;
+
 pub use stereo::{LigandRef, TetrahedralStereo};
+
+#[doc(hidden)]
+pub use sgroup::merge_absolute_stereo_groups;
+
+#[doc(hidden)]
+pub use sgroup::insert_stereo_groups;

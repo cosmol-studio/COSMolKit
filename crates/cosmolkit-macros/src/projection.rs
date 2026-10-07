@@ -276,7 +276,7 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
     let marker = access_marker(&operation.name)?;
     let class = match operation.fields.output {
         MoleculeOutput::Single => BodyClass::MoleculeSingle,
-        MoleculeOutput::Multiple => BodyClass::MoleculeMultiple,
+        MoleculeOutput::Multiple | MoleculeOutput::LazyMultiple => BodyClass::MoleculeMultiple,
     }
     .discriminator();
     let read = molecule_block_mask(&operation.fields.access.read);
@@ -522,7 +522,7 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
                 #(#methods)*
             }
         },
-        MoleculeOutput::Multiple => {
+        MoleculeOutput::Multiple | MoleculeOutput::LazyMultiple => {
             let read_methods = operation.fields.access.read.iter().chain(&operation.fields.access.write).filter_map(|block| match block {
                 MoleculeBlock::Topology => Some(quote! {
                     pub(crate) fn topology(&self) -> Result<&cosmolkit_model::TopologyBlock, crate::OperationError> {
@@ -545,11 +545,13 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
                     }
                 }),
             });
-            let prepared_emission = if operation
-                .fields
-                .access
-                .write
-                .contains(&MoleculeBlock::DerivedCache)
+            let prepared_emission = if operation.fields.output == MoleculeOutput::Multiple
+                && operation
+                    .fields
+                    .access
+                    .write
+                    .contains(&MoleculeBlock::DerivedCache)
+                && operation.fields.requires_mapping != MappingRequirement::Reconstruction
             {
                 quote! {
                     #[cfg(feature="cap-tautomer")]
@@ -560,22 +562,61 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
             } else {
                 quote! {}
             };
+            let lazy_prepared = if operation.fields.output == MoleculeOutput::LazyMultiple
+                && operation
+                    .fields
+                    .access
+                    .write
+                    .contains(&MoleculeBlock::DerivedCache)
+            {
+                quote! {
+                    #[cfg(feature="cap-stereoisomers")]
+                    pub(crate) fn emit_lazy_prepared<I>(&mut self, candidates: I) -> Result<(), crate::OperationError>
+                    where I: Iterator<Item=Result<(cosmolkit_model::TopologyBlock, Option<cosmolkit_model::CoordinateBlock>, cosmolkit_model::MoleculeProperties, cosmolkit_core::ValenceAssignment, cosmolkit_core::RingInfo), crate::OperationError>> + Send + 'static {
+                        self.emit_lazy_prepared_runtime(candidates)
+                    }
+                }
+            } else {
+                quote! {}
+            };
+            let emission = if operation.fields.output == MoleculeOutput::LazyMultiple {
+                quote! {
+                    pub(crate) fn emit_lazy<I>(&mut self, candidates: I) -> Result<(), crate::OperationError>
+                    where I: Iterator<Item=Result<(cosmolkit_model::TopologyBlock, Option<cosmolkit_model::CoordinateBlock>, cosmolkit_model::MoleculeProperties), crate::OperationError>> + Send + 'static {
+                        self.emit_lazy_runtime(candidates)
+                    }
+                    #lazy_prepared
+                }
+            } else if operation.fields.requires_mapping == MappingRequirement::Reconstruction {
+                quote! {
+                    pub(crate) fn reconstruction_inputs<'b>(
+                        &mut self, inputs: &'b [&'b crate::Molecule],
+                    ) -> Result<Vec<cosmolkit_reaction::ReactionInput<'b>>, crate::OperationError> {
+                        self.reconstruction_inputs_runtime(inputs)
+                    }
+                    pub(crate) fn emit_reconstructed(
+                        &mut self, products: Vec<cosmolkit_reaction::ReactionProduct>,
+                    ) -> Result<(), crate::OperationError> {
+                        self.emit_reconstructed_runtime(products)
+                    }
+                }
+            } else {
+                quote! {
+                    pub(crate) fn emit_all(
+                        &mut self,
+                        candidates: Vec<(cosmolkit_model::TopologyBlock, cosmolkit_model::CoordinateBlock, cosmolkit_model::MoleculeProperties)>,
+                    ) -> Result<(), crate::OperationError> {
+                        self.emit_all_runtime(candidates)
+                    }
+                }
+            };
             quote! {
                 #(#cfg_attrs)*
                 impl<'a> crate::MultiOutputOpParts<'a, #marker> {
                     #(#read_methods)*
                     #prepared_emission
 
-                    pub(crate) fn emit_all(
-                        &mut self,
-                        candidates: Vec<(
-                            cosmolkit_model::TopologyBlock,
-                            cosmolkit_model::CoordinateBlock,
-                            cosmolkit_model::MoleculeProperties,
-                        )>,
-                    ) -> Result<(), crate::OperationError> {
-                        self.emit_all_runtime(candidates)
-                    }
+                    #emission
                 }
             }
         }

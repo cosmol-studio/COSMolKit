@@ -30,7 +30,7 @@ fn graph() -> QueryGraph {
             )
         })
         .collect();
-    QueryGraph::from_parts(atoms, bonds, Default::default(), vec![], vec![], vec![]).unwrap()
+    QueryGraph::from_parts(atoms, bonds, std::collections::BTreeMap::<cosmolkit_model::PropertyText, cosmolkit_model::PropertyValue>::new(), vec![], vec![], vec![]).unwrap()
 }
 #[test]
 fn zero_query_identity_is_retained_and_only_actual_hydrogen_is_filtered() {

@@ -8,13 +8,23 @@ use std::{
     process::{Command, Stdio},
 };
 
+pub(crate) fn uses_gemmi(spec: &Spec) -> bool {
+    matches!(*spec, Spec::Corpus(t) if t.operation == registry::Operation::BioPdbOutput)
+        || matches!(*spec, Spec::Special(s) if matches!(s.schema, registry::SpecialRegressionSchema::BioMmcifSwitches))
+}
+
 pub(crate) fn source_digest(spec: &Spec) -> Result<String> {
-    let mut paths = vec![directory().join("tools/reference.py")];
+    // JSON decoding is part of preparation: float_roundtrip must preserve the
+    // native f64 inputs, including rank-deficient alignment coordinates.
+    let mut paths = vec![
+        directory().join("tools/reference.py"),
+        directory().join("Cargo.toml"),
+    ];
     if matches!(*spec, Spec::Corpus(t) if matches!(t.operation, registry::Operation::Fingerprint(_)))
     {
         paths.push(directory().join("tools/fingerprints.py"));
     }
-    if matches!(*spec, Spec::Corpus(t) if t.operation == registry::Operation::BioPdbOutput) {
+    if uses_gemmi(spec) {
         paths.push(directory().join("testdata/reference/gemmi.json"));
     } else {
         paths.push(directory().join("src/descriptors.rs"));
@@ -26,6 +36,7 @@ pub(crate) fn source_digest(spec: &Spec) -> Result<String> {
                 "tools/testdata/rdkit/_tautomer_oracle.py",
                 "tools/testdata/rdkit/tautomer_profile.json",
                 "tools/testdata/rdkit/_generate_tetrahedral_stereo_geometry.py",
+                "tools/testdata/rdkit/_generate_molalign_golden.py",
             ]
             .map(|p| root().join(p)),
         );
@@ -127,6 +138,7 @@ pub(crate) fn generate(
         Spec::Batch => json!({"kind":"batch_smiles","input":inputs,"threads":threads}),
         Spec::Corpus(task) => {
             let parameters = match task.operation {
+                registry::Operation::MolAlign => Ok(Value::Null),
                 registry::Operation::Fingerprint(_) => Ok(Value::Null),
                 registry::Operation::SmilesWrite => {
                     serde_json::to_value(crate::smiles_write::profiles())
@@ -154,4 +166,30 @@ pub(crate) fn generate(
     };
     request["task"] = json!(spec.key());
     serde_json::from_value(invoke(&request)?).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn reference_transport_preserves_native_coordinate_bits() {
+        // Actual native MolAlign coordinates from the retained failing rows.
+        // Reading them in normal `prepare` builds must match test builds;
+        // enabling float_roundtrip only through a dev-dependency is too late.
+        for expected in [
+            0.9389657496748851_f64,
+            0.012999633836427429,
+            0.9999155011900349,
+            0.43526753128646156,
+            1.0457859682280435,
+            0.9857534564380883,
+            -0.0,
+        ] {
+            let encoded = serde_json::to_vec(&expected).unwrap();
+            let value: serde_json::Value = serde_json::from_slice(&encoded).unwrap();
+            assert_eq!(value.as_f64().unwrap().to_bits(), expected.to_bits());
+            let persisted = serde_json::to_vec(&value).unwrap();
+            let decoded: f64 = serde_json::from_slice(&persisted).unwrap();
+            assert_eq!(decoded.to_bits(), expected.to_bits());
+        }
+    }
 }

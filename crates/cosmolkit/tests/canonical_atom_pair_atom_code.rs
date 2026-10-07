@@ -79,14 +79,21 @@ fn modern_missing_marker_installs_owner_assignment_atomically() {
             .prop("_CIPCode"),
         Some(&PropertyValue::from("S"))
     );
-    assert_eq!(output.molecule.properties().prop("_CIPComputed"), Some("1"));
+    assert_eq!(
+        output.molecule.properties().prop("_CIPComputed"),
+        Some(&PropertyValue::Bool(true))
+    );
     assert!(
         output
             .molecule
             .properties()
             .is_prop_computed("_CIPComputed")
+            .unwrap()
     );
-    assert_eq!(output.molecule.property("user"), Some("preserved"));
+    assert_eq!(
+        output.molecule.property("user"),
+        Some(&PropertyValue::from("preserved"))
+    );
     assert!(!std::ptr::eq(source.topology(), output.molecule.topology()));
     assert!(!std::ptr::eq(
         source.properties(),
@@ -115,13 +122,14 @@ fn present_false_and_true_use_presence_not_truth_and_keep_ordinary_marker() {
         assert_eq!(result.code, 36);
         assert_eq!(
             result.molecule.properties().prop("_CIPComputed"),
-            Some(if value { "1" } else { "0" })
+            Some(&PropertyValue::from(if value { "1" } else { "0" }))
         );
         assert!(
             !result
                 .molecule
                 .properties()
                 .is_prop_computed("_CIPComputed")
+                .unwrap()
         );
         shared(&source, &result.molecule);
     }

@@ -7,7 +7,14 @@ fn canonical_methods_return_ordered_source_values_and_keep_source_immutable() {
     let source = Molecule::from_smiles("CC(C)=O").unwrap();
     let before = source.clone();
     let result = source.enumerate_tautomers().unwrap();
-    assert_eq!(result.canonical_smiles(), ["C=C(C)O", "CC(C)=O"]);
+    assert_eq!(
+        result
+            .canonical_smiles()
+            .into_iter()
+            .map(|text| text.as_bytes())
+            .collect::<Vec<_>>(),
+        ["C=C(C)O".as_bytes(), "CC(C)=O".as_bytes()]
+    );
     assert_eq!(result.status(), TautomerEnumerationStatus::Completed);
     assert_eq!(
         result
@@ -18,7 +25,7 @@ fn canonical_methods_return_ordered_source_values_and_keep_source_immutable() {
     );
     assert_eq!(
         source.canonical_tautomer().unwrap().to_smiles().unwrap(),
-        "CC(C)=O"
+        cosmolkit::PropertyText::from("CC(C)=O")
     );
     assert_eq!(source, before);
     assert!(result.get(2).is_none());
@@ -26,7 +33,7 @@ fn canonical_methods_return_ordered_source_values_and_keep_source_immutable() {
     assert_eq!(result.clone(), result);
 }
 struct Cancel {
-    calls: Mutex<Vec<(usize, Vec<String>)>>,
+    calls: Mutex<Vec<(usize, Vec<PropertyText>)>>,
 }
 impl TautomerEnumerationCallback for Cancel {
     fn should_continue(
@@ -35,7 +42,7 @@ impl TautomerEnumerationCallback for Cancel {
         result: TautomerProgress<'_>,
     ) -> Result<bool, TautomerRunError> {
         assert_eq!(source.num_atoms(), 4);
-        assert_eq!(source.to_smiles()?, "CC(C)=O");
+        assert_eq!(source.to_smiles()?, PropertyText::from("CC(C)=O"));
         self.calls.lock().unwrap().push((
             result.len(),
             result.entries().map(|(key, _)| key.to_owned()).collect(),
@@ -54,12 +61,19 @@ fn callback_inspects_borrowed_progress_and_cancels_before_apply() {
     params.set_callback(Some(callback.clone()));
     let result = source.enumerate_tautomers_with_params(&params).unwrap();
     assert_eq!(result.status(), TautomerEnumerationStatus::Canceled);
-    assert_eq!(result.canonical_smiles(), ["CC(C)=O"]);
+    assert_eq!(
+        result
+            .canonical_smiles()
+            .into_iter()
+            .map(|text| text.as_bytes())
+            .collect::<Vec<_>>(),
+        ["CC(C)=O".as_bytes()]
+    );
     assert!(result.modified_atoms().is_empty());
     assert!(result.modified_bonds().is_empty());
     assert_eq!(
         callback.calls.lock().unwrap().as_slice(),
-        [(1, vec!["CC(C)=O".to_owned()])]
+        [(1, vec![PropertyText::from("CC(C)=O")])]
     );
     assert_eq!(source, before);
     params.set_callback(None);
@@ -110,7 +124,7 @@ fn callback_and_scorer_errors_preserve_source_and_structured_error() {
 struct FavorEnol;
 impl TautomerScorer for FavorEnol {
     fn score(&self, m: TautomerMoleculeView<'_>) -> Result<i32, TautomerRunError> {
-        Ok(if m.to_smiles()? == "C=C(C)O" {
+        Ok(if m.to_smiles()?.as_bytes() == b"C=C(C)O" {
             100
         } else {
             -100
@@ -128,7 +142,7 @@ fn custom_scorer_and_terms_use_canonical_public_configuration() {
             .unwrap()
             .to_smiles()
             .unwrap(),
-        "C=C(C)O"
+        cosmolkit::PropertyText::from("C=C(C)O")
     );
     assert_eq!(default_tautomer_score_terms().len(), 12);
     let score = source
@@ -159,7 +173,7 @@ fn limits_and_current_v1_custom_catalogs_keep_source_defaults() {
             .unwrap()
             .to_smiles()
             .unwrap(),
-        "CC(C)=O"
+        cosmolkit::PropertyText::from("CC(C)=O")
     );
     let limited = current.clone().with_max_transforms(0);
     assert_eq!(

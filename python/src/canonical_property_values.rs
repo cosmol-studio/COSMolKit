@@ -13,6 +13,7 @@ pub(crate) enum PropertyValueKind {
     Int,
     UInt,
     IntVector,
+    StringVector,
     Double,
     Bool,
 }
@@ -23,6 +24,7 @@ impl From<ck::PropertyValueKind> for PropertyValueKind {
             ck::PropertyValueKind::Int => Self::Int,
             ck::PropertyValueKind::UInt => Self::UInt,
             ck::PropertyValueKind::IntVector => Self::IntVector,
+            ck::PropertyValueKind::StringVector => Self::StringVector,
             ck::PropertyValueKind::Double => Self::Double,
             ck::PropertyValueKind::Bool => Self::Bool,
         }
@@ -31,7 +33,7 @@ impl From<ck::PropertyValueKind> for PropertyValueKind {
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct PropertyValue {
-    inner: ck::PropertyValue,
+    pub(crate) inner: ck::PropertyValue,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
@@ -39,10 +41,11 @@ impl PropertyValue {
     fn kind(&self) -> PropertyValueKind {
         self.inner.kind().into()
     }
-    fn as_string(&self, py: Python<'_>) -> PyResult<&str> {
+    fn as_string(&self, py: Python<'_>) -> PyResult<String> {
         self.inner
             .as_string()
             .map_err(|e| crate::canonical_atom_bond::property_pyerr(py, e))
+            .and_then(|text| crate::canonical_sdf::decode_source_text(py, text))
     }
     fn as_int(&self, py: Python<'_>) -> PyResult<i32> {
         self.inner
@@ -92,8 +95,8 @@ impl SdfPropertyList {
             ck::SdfPropertyListTarget::Bond => SdfPropertyListTarget::Bond,
         }
     }
-    fn name(&self) -> &str {
-        self.inner.name()
+    fn name(&self, py: Python<'_>) -> PyResult<String> {
+        crate::canonical_sdf::decode_source_text(py, self.inner.name())
     }
     fn values(&self) -> Vec<Option<PropertyValue>> {
         self.inner
@@ -111,23 +114,59 @@ pub(crate) struct MoleculeProperties {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MoleculeProperties {
-    fn name(&self) -> Option<&str> {
-        self.inner.name()
+    fn name(&self, py: Python<'_>) -> PyResult<Option<String>> {
+        self.inner
+            .name()
+            .map(|text| crate::canonical_sdf::decode_source_text(py, text))
+            .transpose()
     }
-    fn props(&self) -> BTreeMap<String, String> {
-        self.inner.props().clone()
+    fn props(&self, py: Python<'_>) -> PyResult<BTreeMap<String, PropertyValue>> {
+        self.inner
+            .props()
+            .iter()
+            .map(|(key, value)| {
+                Ok((
+                    crate::canonical_sdf::decode_source_text(py, key)?,
+                    PropertyValue {
+                        inner: value.clone(),
+                    },
+                ))
+            })
+            .collect()
     }
-    fn prop(&self, key: &str) -> Option<&str> {
-        self.inner.prop(key)
+    fn prop(&self, key: &str) -> Option<PropertyValue> {
+        self.inner
+            .prop(key)
+            .cloned()
+            .map(|inner| PropertyValue { inner })
     }
-    fn is_prop_computed(&self, key: &str) -> bool {
-        self.inner.is_prop_computed(key)
+    fn is_prop_computed(&self, py: Python<'_>, key: &str) -> PyResult<bool> {
+        self.inner
+            .is_prop_computed(key)
+            .map_err(|e| crate::canonical_atom_bond::property_pyerr(py, e))
     }
-    fn computed_prop_names(&self) -> Vec<String> {
-        self.inner.computed_prop_names().iter().cloned().collect()
+    fn computed_prop_names(&self, py: Python<'_>) -> PyResult<Vec<String>> {
+        let names = self
+            .inner
+            .computed_prop_names()
+            .map_err(|e| crate::canonical_atom_bond::property_pyerr(py, e))?;
+        names
+            .unwrap_or_default()
+            .iter()
+            .map(|text| crate::canonical_sdf::decode_source_text(py, text))
+            .collect()
     }
-    fn sdf_data_fields(&self) -> Vec<(String, String)> {
-        self.inner.sdf_data_fields().to_vec()
+    fn sdf_data_fields(&self, py: Python<'_>) -> PyResult<Vec<(String, String)>> {
+        self.inner
+            .sdf_data_fields()
+            .iter()
+            .map(|(key, value)| {
+                Ok((
+                    crate::canonical_sdf::decode_source_text(py, key)?,
+                    crate::canonical_sdf::decode_source_text(py, value)?,
+                ))
+            })
+            .collect()
     }
     fn sdf_property_lists(&self) -> Vec<SdfPropertyList> {
         self.inner
@@ -138,7 +177,61 @@ impl MoleculeProperties {
             .collect()
     }
 }
+
+pyo3::create_exception!(
+    cosmolkit,
+    PropertyStringError,
+    pyo3::exceptions::PyValueError
+);
+
+#[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
+#[pyfunction]
+fn property_value_to_text(py: Python<'_>, value: &PropertyValue) -> PyResult<String> {
+    let text = ck::property_value_to_text(&value.inner)
+        .map_err(|source| property_string_pyerr(py, source))?;
+    crate::canonical_sdf::decode_source_text(py, &text)
+}
+
+pub(crate) fn property_string_pyerr(py: Python<'_>, source: ck::PropertyStringError) -> PyErr {
+    let error = crate::canonical_values::annotate(
+        py,
+        PropertyStringError::new_err(source.to_string()),
+        "properties",
+        "UnsupportedKind",
+        &source,
+    );
+    let value_kind = PropertyValueKind::from(source.kind());
+    let kind = pyo3::types::PyCFunction::new_closure(
+        py,
+        Some(c"kind"),
+        None,
+        move |args: &Bound<'_, pyo3::types::PyTuple>,
+              kwargs: Option<&Bound<'_, pyo3::types::PyDict>>|
+              -> PyResult<PropertyValueKind> {
+            if !args.is_empty() || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
+                return Err(pyo3::exceptions::PyTypeError::new_err(
+                    "kind() takes no arguments",
+                ));
+            }
+            Ok(value_kind)
+        },
+    );
+    match kind.and_then(|kind| {
+        error.value(py).setattr("error_kind", "UnsupportedKind")?;
+        error.value(py).setattr("value_kind", value_kind)?;
+        error.value(py).setattr("kind", kind)
+    }) {
+        Ok(()) => error,
+        Err(error) => error,
+    }
+}
+
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add(
+        "PropertyStringError",
+        module.py().get_type::<PropertyStringError>(),
+    )?;
+    module.add_function(wrap_pyfunction!(property_value_to_text, module)?)?;
     module.add_class::<PropertyValueKind>()?;
     module.add_class::<PropertyValue>()?;
     module.add_class::<MoleculeProperties>()?;

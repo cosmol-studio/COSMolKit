@@ -130,7 +130,11 @@ fn public_cx_double_bond_stereo_finishes_after_sanitize_or_remove_hydrogens() {
                 let finalized = sanitize || remove_hydrogens;
                 assert_eq!(
                     molecule.properties().prop("_needsDetectBondStereo"),
-                    if finalized { None } else { Some("1") },
+                    if finalized {
+                        None
+                    } else {
+                        Some(&cosmolkit_model::PropertyValue::Int(1))
+                    },
                     "{input} {params:?}"
                 );
                 let bonds = &molecule.topology().bonds;
@@ -223,7 +227,10 @@ fn public_constructor_preserves_cx_name_stereo_and_properties() {
         molecule.topology().atoms[1].chiral_tag(),
         ChiralTag::TetrahedralCcw
     );
-    assert_eq!(molecule.properties().name(), Some("sample name"));
+    assert_eq!(
+        molecule.properties().name(),
+        Some(&cosmolkit_model::PropertyText::from("sample name"))
+    );
 }
 
 #[test]

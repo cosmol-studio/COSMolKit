@@ -517,11 +517,46 @@ fn mqn_prepared_cache_errors_noimplicit_and_preservation() {
         atom.set_no_implicit(false);
     }
     large.valence.implicit_hydrogens.fill(i32::MAX);
-    check(&large, "three_N_donor_unsigned_wrap");
+    // Preserve the original three-N wide-cache input as the source's signed
+    // byte initialization failure, including both force policies and inputs.
+    assert_eq!(
+        error(&large),
+        DescriptorError::Valence {
+            function: "mqns",
+            source: ValenceError::ImplicitValenceCacheNotInitialized {
+                atom: AtomId::new(0)
+            }
+        }
+    );
+    // NoImplicit bypasses even that negative stored cache. All 42 bins remain
+    // independently literal, and every original frozen vector stays retained.
+    for atom in &mut large.topology.atoms {
+        atom.set_no_implicit(true);
+    }
+    check(&large, "three_N_noimplicit_negative_cache");
+    for atom in &mut large.topology.atoms {
+        atom.set_no_implicit(false);
+        atom.set_explicit_hydrogens(255);
+    }
+    large.valence.implicit_hydrogens.fill(i32::MAX - 128); // stored int8_t 127
+    check(&large, "three_N_maximum_cached_hydrogens");
+    for bad_atom in 0..3 {
+        large.valence.implicit_hydrogens.fill(127);
+        large.valence.implicit_hydrogens[bad_atom] = i32::MAX;
+        assert_eq!(
+            error(&large),
+            DescriptorError::Valence {
+                function: "mqns",
+                source: ValenceError::ImplicitValenceCacheNotInitialized {
+                    atom: AtomId::new(bad_atom)
+                }
+            }
+        );
+    }
 }
 
 // Full literal vectors frozen in lane receipts before test writing.
-const FROZEN: [(&str, [u32; 42]); 63] = [
+const FROZEN: [(&str, [u32; 42]); 65] = [
     (
         "empty",
         [
@@ -961,6 +996,20 @@ const FROZEN: [(&str, [u32; 42]); 63] = [
         [
             0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 3, 2147483645, 3, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+    ),
+    (
+        "three_N_noimplicit_negative_cache",
+        [
+            0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+    ),
+    (
+        "three_N_maximum_cached_hydrogens",
+        [
+            0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 3, 3, 1146, 3, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ],
     ),
 ];

@@ -154,6 +154,7 @@ fn stereo_type(value: ck::PotentialStereoType) -> &'static str {
         ck::PotentialStereoType::AtomOctahedral => "atom_octahedral",
         ck::PotentialStereoType::BondDouble => "bond_double",
         ck::PotentialStereoType::BondCumuleneEven => "bond_cumulene_even",
+        ck::PotentialStereoType::BondAtropisomer => "bond_atropisomer",
     }
 }
 fn specified(value: ck::PotentialStereoSpecified) -> &'static str {
@@ -172,6 +173,8 @@ fn descriptor(value: ck::PotentialStereoDescriptor) -> &'static str {
         }
         ck::PotentialStereoDescriptor::BondCis => "bond_cis",
         ck::PotentialStereoDescriptor::BondTrans => "bond_trans",
+        ck::PotentialStereoDescriptor::BondAtropCw => "bond_atrop_cw",
+        ck::PotentialStereoDescriptor::BondAtropCcw => "bond_atrop_ccw",
     }
 }
 fn enum_value(py: Python<'_>, name: &str, value: &str) -> PyResult<Py<PyAny>> {
@@ -406,7 +409,8 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
             ck::PotentialStereoType::AtomTrigonalBipyramidal,
             ck::PotentialStereoType::AtomOctahedral,
             ck::PotentialStereoType::BondDouble,
-            ck::PotentialStereoType::BondCumuleneEven
+            ck::PotentialStereoType::BondCumuleneEven,
+            ck::PotentialStereoType::BondAtropisomer
         ]
     );
     vocabulary!(
@@ -426,7 +430,9 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
             ck::PotentialStereoDescriptor::TetrahedralClockwise,
             ck::PotentialStereoDescriptor::TetrahedralCounterclockwise,
             ck::PotentialStereoDescriptor::BondCis,
-            ck::PotentialStereoDescriptor::BondTrans
+            ck::PotentialStereoDescriptor::BondTrans,
+            ck::PotentialStereoDescriptor::BondAtropCw,
+            ck::PotentialStereoDescriptor::BondAtropCcw
         ]
     );
     Ok(())

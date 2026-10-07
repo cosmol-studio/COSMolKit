@@ -18,12 +18,16 @@ fn enumeration_clears_computed_ring_stereo_before_transforming_candidates_like_r
 
     assert_eq!(result.status(), TautomerEnumerationStatus::Completed);
     assert_eq!(
-        result.canonical_smiles(),
+        result
+            .canonical_smiles()
+            .into_iter()
+            .map(|text| text.as_bytes())
+            .collect::<Vec<_>>(),
         [
-            "N=C(C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1)C(O)N1CCCC1",
-            "NC(=C(O)N1CCCC1)C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1",
-            "NC(=C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1)C(O)N1CCCC1",
-            "NC(C(=O)N1CCCC1)C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1",
+            "N=C(C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1)C(O)N1CCCC1".as_bytes(),
+            "NC(=C(O)N1CCCC1)C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1".as_bytes(),
+            "NC(=C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1)C(O)N1CCCC1".as_bytes(),
+            "NC(C(=O)N1CCCC1)C1CC[C@H](NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1".as_bytes(),
         ]
     );
     assert_eq!(
@@ -58,7 +62,7 @@ fn enumeration_clears_computed_ring_stereo_before_transforming_candidates_like_r
             .expect("select CHEMBL23979 canonical tautomer")
             .to_smiles()
             .expect("write CHEMBL23979 canonical tautomer"),
-        "NC(C(=O)N1CCCC1)C1CCC(NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1"
+        cosmolkit::PropertyText::from("NC(C(=O)N1CCCC1)C1CCC(NS(=O)(=O)c2ccc(OC(F)(F)F)cc2)CC1")
     );
 }
 
@@ -69,13 +73,17 @@ fn enumeration_rekeys_stale_computed_double_bond_stereo_like_rdkit_chembl12724()
     let params = TautomerParams::default().with_reassign_stereo(false);
     let result = molecule.enumerate_tautomers_with_params(&params).unwrap();
     assert_eq!(
-        result.canonical_smiles(),
+        result
+            .canonical_smiles()
+            .into_iter()
+            .map(|text| text.as_bytes())
+            .collect::<Vec<_>>(),
         [
-            "COc1ccc(OC)c(/C=N/N=C(N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1",
-            "COc1ccc(OC)c(/C=N/NC(=N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1",
-            "COc1ccc(OC)c(/C=N/NC(N)=NO)c1.Cc1ccc(S(=O)(=O)O)cc1",
-            "COc1ccc(OC)c(/C=N/NC(N)N=O)c1.Cc1ccc(S(=O)(=O)O)cc1",
-            "COc1ccc(OC)c(C=NN=C(N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1",
+            "COc1ccc(OC)c(/C=N/N=C(N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1".as_bytes(),
+            "COc1ccc(OC)c(/C=N/NC(=N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1".as_bytes(),
+            "COc1ccc(OC)c(/C=N/NC(N)=NO)c1.Cc1ccc(S(=O)(=O)O)cc1".as_bytes(),
+            "COc1ccc(OC)c(/C=N/NC(N)N=O)c1.Cc1ccc(S(=O)(=O)O)cc1".as_bytes(),
+            "COc1ccc(OC)c(C=NN=C(N)NO)c1.Cc1ccc(S(=O)(=O)O)cc1".as_bytes(),
         ]
     );
     assert_eq!(
@@ -111,7 +119,7 @@ fn enumeration_rekeys_stale_computed_double_bond_stereo_like_rdkit_chembl12724()
             .expect("select CHEMBL12724 canonical tautomer")
             .to_smiles()
             .expect("write CHEMBL12724 canonical tautomer"),
-        "COc1ccc(OC)c(C=NNC(N)=NO)c1.Cc1ccc(S(=O)(=O)O)cc1"
+        cosmolkit::PropertyText::from("COc1ccc(OC)c(C=NNC(N)=NO)c1.Cc1ccc(S(=O)(=O)O)cc1")
     );
 }
 
@@ -146,7 +154,10 @@ fn canonical_selection_iterable_computes_lexical_ties_and_matches_result_path() 
     let result =
         cosmolkit::canonical_tautomer_from_molecules_with_params(&inputs, &score_params(|_| Ok(9)))
             .unwrap();
-    assert_eq!(result.to_smiles().unwrap(), "C");
+    assert_eq!(
+        result.to_smiles().unwrap(),
+        cosmolkit::PropertyText::from("C")
+    );
     assert_eq!(inputs, before);
     let source = Molecule::from_smiles("CC(C)=O").unwrap();
     let result = source.enumerate_tautomers().unwrap();
@@ -180,8 +191,14 @@ fn iterable_empty_minimum_scores_and_single_score_skip_preserve_source_condition
         &score_params(|_| panic!("source size-one branch skips scoring")),
     )
     .unwrap();
-    assert_eq!(result.to_smiles().unwrap(), "C");
-    assert_eq!(result.property("_StereochemDone"), Some("1"));
+    assert_eq!(
+        result.to_smiles().unwrap(),
+        cosmolkit::PropertyText::from("C")
+    );
+    assert_eq!(
+        result.property("_StereochemDone"),
+        Some(&cosmolkit::PropertyValue::Int(1))
+    );
 }
 #[test]
 fn iterable_retains_duplicate_values_and_first_tie_identity_without_sorting() {
@@ -210,6 +227,12 @@ fn iterable_retains_duplicate_values_and_first_tie_identity_without_sorting() {
     )
     .unwrap();
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3);
-    assert_eq!(result.property("source"), Some("first"));
-    assert_eq!(inputs[1].property("source"), Some("second"));
+    assert_eq!(
+        result.property("source"),
+        Some(&cosmolkit::PropertyValue::from("first"))
+    );
+    assert_eq!(
+        inputs[1].property("source"),
+        Some(&cosmolkit::PropertyValue::from("second"))
+    );
 }

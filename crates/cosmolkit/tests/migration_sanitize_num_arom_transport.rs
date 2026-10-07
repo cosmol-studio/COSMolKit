@@ -34,10 +34,10 @@ fn sanitize_num_arom_constructor_and_operation_transport() {
             .unwrap();
             assert_eq!(
                 output.properties().prop("numArom"),
-                Some(expected),
+                Some(&cosmolkit::PropertyValue::Int(expected.parse().unwrap())),
                 "line {line}, remove_hydrogens={remove_hydrogens}"
             );
-            assert!(output.properties().is_prop_computed("numArom"));
+            assert!(output.properties().is_prop_computed("numArom").unwrap());
         }
         let source = Molecule::from_smiles_with_params(
             input,
@@ -54,10 +54,10 @@ fn sanitize_num_arom_constructor_and_operation_transport() {
             .unwrap();
         assert_eq!(
             output.properties().prop("numArom"),
-            Some(expected),
+            Some(&cosmolkit::PropertyValue::Int(expected.parse().unwrap())),
             "line {line}, sanitize operation"
         );
-        assert!(output.properties().is_prop_computed("numArom"));
+        assert!(output.properties().is_prop_computed("numArom").unwrap());
         assert_eq!(source, peer);
         assert_eq!(source.properties().prop("numArom"), None);
         let cleared = output
@@ -66,6 +66,9 @@ fn sanitize_num_arom_constructor_and_operation_transport() {
             })
             .unwrap();
         assert_eq!(cleared.properties().prop("numArom"), None);
-        assert_eq!(output.properties().prop("numArom"), Some(expected));
+        assert_eq!(
+            output.properties().prop("numArom"),
+            Some(&cosmolkit::PropertyValue::Int(expected.parse().unwrap()))
+        );
     }
 }

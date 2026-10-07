@@ -108,21 +108,21 @@ impl Molecule {
     }
 
     /// Serialize without changing molecule state or installing writer caches.
-    pub fn to_smiles(&self) -> Result<String, SmilesWriteError> {
+    pub fn to_smiles(&self) -> Result<crate::PropertyText, SmilesWriteError> {
         self.to_smiles_with_params(&crate::SmilesWriteParams::default())
     }
 
     pub fn to_smiles_with_params(
         &self,
         params: &crate::SmilesWriteParams,
-    ) -> Result<String, SmilesWriteError> {
+    ) -> Result<crate::PropertyText, SmilesWriteError> {
         Ok(cosmolkit_smiles::write_smiles_with_params(
             self.smiles_view(),
             params,
         )?)
     }
 
-    pub fn to_cx_smiles(&self) -> Result<String, SmilesWriteError> {
+    pub fn to_cx_smiles(&self) -> Result<crate::PropertyText, SmilesWriteError> {
         self.to_cx_smiles_with_params(&crate::CxSmilesWriteParams::default())
     }
 
@@ -130,14 +130,17 @@ impl Molecule {
     pub fn to_cx_smiles_with_params(
         &self,
         params: &crate::CxSmilesWriteParams,
-    ) -> Result<String, SmilesWriteError> {
+    ) -> Result<crate::PropertyText, SmilesWriteError> {
         Ok(cosmolkit_smiles::write_cx_smiles_with_params(
             self.smiles_view(),
             params,
         )?)
     }
 
-    pub fn to_fragment_smiles(&self, atoms: &[crate::AtomId]) -> Result<String, SmilesWriteError> {
+    pub fn to_fragment_smiles(
+        &self,
+        atoms: &[crate::AtomId],
+    ) -> Result<crate::PropertyText, SmilesWriteError> {
         Ok(cosmolkit_smiles::write_fragment_smiles_output(
             self.smiles_view(),
             &crate::SmilesWriteParams::default(),
@@ -154,7 +157,7 @@ impl Molecule {
     pub fn to_fragment_smiles_with_params(
         &self,
         params: &FragmentSmilesWriteParams,
-    ) -> Result<String, SmilesWriteError> {
+    ) -> Result<crate::PropertyText, SmilesWriteError> {
         Ok(cosmolkit_smiles::write_fragment_smiles_output(
             self.smiles_view(),
             &params.smiles,
@@ -171,7 +174,7 @@ impl Molecule {
     pub fn to_fragment_cx_smiles(
         &self,
         atoms: &[crate::AtomId],
-    ) -> Result<String, SmilesWriteError> {
+    ) -> Result<crate::PropertyText, SmilesWriteError> {
         Ok(cosmolkit_smiles::write_fragment_cx_smiles(
             self.smiles_view(),
             &crate::CxSmilesWriteParams::default(),
@@ -187,7 +190,7 @@ impl Molecule {
     pub fn to_fragment_cx_smiles_with_params(
         &self,
         params: &FragmentCxSmilesWriteParams,
-    ) -> Result<String, SmilesWriteError> {
+    ) -> Result<crate::PropertyText, SmilesWriteError> {
         Ok(cosmolkit_smiles::write_fragment_cx_smiles(
             self.smiles_view(),
             &params.cx,
@@ -203,7 +206,11 @@ impl Molecule {
     /// Preserve source ordering and duplicates. Seeds 1..=i32::MAX reseed;
     /// zero and high-bit u32 seeds continue the shared stream, matching the
     /// source's u32-to-i32 cast and positive-only reseeding condition.
-    pub fn to_random_smiles(&self, count: u32, seed: u32) -> Result<Vec<String>, SmilesWriteError> {
+    pub fn to_random_smiles(
+        &self,
+        count: u32,
+        seed: u32,
+    ) -> Result<Vec<crate::PropertyText>, SmilesWriteError> {
         self.to_random_smiles_with_params(count, seed, &crate::RandomSmilesWriteParams::default())
     }
 
@@ -212,7 +219,7 @@ impl Molecule {
         count: u32,
         seed: u32,
         params: &crate::RandomSmilesWriteParams,
-    ) -> Result<Vec<String>, SmilesWriteError> {
+    ) -> Result<Vec<crate::PropertyText>, SmilesWriteError> {
         Ok(cosmolkit_smiles::write_random_smiles_vector(
             self.smiles_view(),
             count,
@@ -342,12 +349,25 @@ impl Molecule {
                 &topology,
                 &cosmolkit_core::SanitizeParams::default(),
             )?;
+            // RDKit❗✔️: int narom = 0;
             // RDKit✔️✔️: mol.setProp(common_properties::numArom, narom, true);
             // Transport the existing aromaticity owner's computed property.
-            properties.clear_computed_props();
+            properties
+                .clear_computed_props()
+                .map_err(OperationError::InvalidProperty)?;
             if let Some(count) = result.aromatic_ring_count {
                 properties
-                    .set_computed_prop("numArom", count.to_string())
+                    .set_computed_prop(
+                        "numArom",
+                        i32::try_from(count).map_err(|_| {
+                            cosmolkit_core::SanitizeError::Aromaticity {
+                                stage: cosmolkit_core::SanitizeStage::SetAromaticity,
+                                source: cosmolkit_core::AromaticityError::IntegerOverflow {
+                                    field: "source numArom int",
+                                },
+                            }
+                        })?,
+                    )
                     .map_err(OperationError::InvalidProperty)?;
             }
             topology = result.topology;
@@ -371,7 +391,7 @@ impl Molecule {
             record.topology,
             record.coordinates,
             record.properties,
-            if params.sanitize { final_valence } else { None },
+            final_valence,
             final_rings,
         )
         .map_err(SmilesError::Construction)

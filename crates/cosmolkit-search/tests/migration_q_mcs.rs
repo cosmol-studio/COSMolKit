@@ -140,7 +140,15 @@ fn q134_entry_threshold_multi_candidate_and_store_all_keep_result_context() {
     assert_eq!(result.query.as_ref().unwrap().num_bonds(), 2);
     // Result carriers are source dummy query atoms; the atom-number predicates
     // and emitted SMARTS retain the oxygen identity from the second query.
-    assert!(result.smarts.contains("[#8]"), "{}", result.smarts);
+    assert!(
+        result
+            .smarts
+            .as_bytes()
+            .windows(4)
+            .any(|bytes| bytes == b"[#8]"),
+        "{:?}",
+        result.smarts
+    );
 
     params.store_all = true;
     let multi_all = find_mcs(&views, &params).unwrap();
@@ -150,7 +158,7 @@ fn q134_entry_threshold_multi_candidate_and_store_all_keep_result_context() {
         multi_all
             .degenerate
             .keys()
-            .any(|smarts| smarts.contains("[#8]"))
+            .any(|smarts| smarts.as_bytes().windows(4).any(|bytes| bytes == b"[#8]"))
     );
 
     let equal = path(3);

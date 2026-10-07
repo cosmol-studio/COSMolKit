@@ -28,6 +28,16 @@ class ReleaseBumpTests(unittest.TestCase):
         self.assertEqual(manifest["dependencies"]["cosmolkit"]["version"], "0.5.0-rc.9")
         self.assertEqual(tomllib.loads(updated["python/pyproject.toml"])["project"]["version"], "0.5.0rc9")
 
+    def test_wasm_package_and_dependency_move_together(self):
+        for version in ("0.5.1-rc.10", "0.5.1"):
+            with self.subTest(version=version):
+                updated = bump.prepare_updates(self.original, version)
+                manifest = tomllib.loads(updated["wasm/Cargo.toml"])
+                self.assertEqual(manifest["package"]["version"], version)
+                self.assertEqual(manifest["dependencies"]["cosmolkit"]["version"], version)
+                self.assertEqual(manifest["package"]["publish"], False)
+                self.assertEqual(bump.prepare_updates(updated, version), updated)
+
     def test_every_existing_internal_path_dependency_is_covered(self):
         updated = bump.prepare_updates(self.original, "0.5.1-rc.10")
         workspace = tomllib.loads(updated["Cargo.toml"])
@@ -94,6 +104,7 @@ class ReleaseBumpTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(path), "0.5.1-rc.10", "--dry-run"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--- python/Cargo.toml", result.stdout)
+        self.assertIn("--- wasm/Cargo.toml", result.stdout)
         self.assertIn("Would then run cargo update --workspace.", result.stdout)
         for version in ("0.5", "0.5.0-rc.", "0.5.0-rc.09", "0.5.0-beta.1"):
             with self.subTest(version=version):

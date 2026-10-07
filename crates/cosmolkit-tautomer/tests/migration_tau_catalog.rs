@@ -175,7 +175,7 @@ fn transform_lines_parse_two_columns_with_source_defaults() {
         .expect("valid line")
         .expect("transform");
 
-    assert_eq!(transform.name(), "Simplename");
+    assert_eq!(fixed_reference_text(transform.name()), "Simplename");
     assert_eq!(transform.query().num_atoms(), 2);
     assert!(transform.bond_types().is_empty());
     assert!(transform.charges().is_empty());
@@ -187,7 +187,7 @@ fn transform_lines_parse_three_columns_and_remove_ascii_spaces() {
         .expect("valid line")
         .expect("transform");
 
-    assert_eq!(transform.name(), "Bondedit");
+    assert_eq!(fixed_reference_text(transform.name()), "Bondedit");
     assert_eq!(
         transform.bond_types(),
         &[BondOrder::Double, BondOrder::Single]
@@ -256,7 +256,7 @@ fn transform_lines_over_four_columns_store_the_source_empty_transform() {
     let transform = transform_from_line("one\ttwo\tthree\tfour\tfive")
         .expect("source empty query")
         .expect("transform");
-    assert_eq!(transform.name(), "");
+    assert_eq!(fixed_reference_text(transform.name()), "");
     assert_eq!(transform.query().num_atoms(), 0);
     assert_eq!(transform.query().num_bonds(), 0);
     assert!(transform.bond_types().is_empty());
@@ -272,7 +272,7 @@ fn catalog_reader_reads_stream_comments_blank_lines_and_early_eof() {
     assert_eq!(
         transforms
             .iter()
-            .map(TautomerTransform::name)
+            .map(|transform| fixed_reference_text(transform.name()))
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -287,7 +287,7 @@ fn catalog_reader_bounded_stream_counts_only_emitted_transforms() {
     assert_eq!(
         transforms
             .iter()
-            .map(TautomerTransform::name)
+            .map(|transform| fixed_reference_text(transform.name()))
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -315,7 +315,7 @@ fn catalog_reader_file_entry_preserves_source_order() {
     assert_eq!(
         transforms
             .iter()
-            .map(TautomerTransform::name)
+            .map(|transform| fixed_reference_text(transform.name()))
             .collect::<Vec<_>>(),
         ["first", "second", "third"]
     );
@@ -330,10 +330,10 @@ fn catalog_reader_embedded_definitions_use_the_same_constructor() {
     let transforms =
         read_transforms_from_definitions(&definitions).expect("read embedded definitions");
 
-    assert_eq!(transforms[0].name(), "first");
+    assert_eq!(fixed_reference_text(transforms[0].name()), "first");
     assert_eq!(transforms[0].bond_types(), &[BondOrder::Double]);
     assert_eq!(transforms[0].charges(), &[1, 0]);
-    assert_eq!(transforms[1].name(), "second");
+    assert_eq!(fixed_reference_text(transforms[1].name()), "second");
     assert_eq!(transforms[1].bond_types(), &[BondOrder::Single]);
     assert_eq!(transforms[1].charges(), &[0, -1]);
 }
@@ -399,7 +399,11 @@ fn assert_builtin_catalog(
     for (index, (transform, &(name, smarts, bonds, charges))) in
         actual.iter().zip(expected).enumerate()
     {
-        assert_eq!(transform.name(), name, "name at source row {index}");
+        assert_eq!(
+            fixed_reference_text(transform.name()),
+            name,
+            "name at source row {index}"
+        );
         let expected_query = query(smarts);
         let plan = CompiledQuery::compile(transform.query().clone())
             .expect("each of73 real compiled plans");
@@ -492,11 +496,14 @@ fn catalog_object_constructs_from_file_data_and_v1_sources() {
         file_catalog
             .transforms()
             .iter()
-            .map(TautomerTransform::name)
+            .map(|transform| fixed_reference_text(transform.name()))
             .collect::<Vec<_>>(),
         ["file-first", "file-second"]
     );
-    assert_eq!(data_catalog.transforms()[0].name(), "data");
+    assert_eq!(
+        fixed_reference_text(data_catalog.transforms()[0].name()),
+        "data"
+    );
     assert_eq!(
         data_catalog.transforms()[0].bond_types(),
         &[BondOrder::Double]
@@ -512,7 +519,7 @@ fn catalog_object_indexing_returns_an_independent_value_and_checks_bounds() {
     let mut edited = returned.query().clone();
     edited.atom_mut(0).expect("atom").set_formal_charge(-1);
     let edited = TautomerTransform::new(
-        returned.name(),
+        fixed_reference_text(returned.name()),
         edited,
         vec![BondOrder::Double],
         returned.charges().to_vec(),
@@ -536,7 +543,7 @@ fn catalog_object_clone_and_clone_from_have_independent_value_semantics() {
     let cloned = source.clone();
     let returned = cloned.transform(0).expect("clone row");
     let changed = TautomerTransform::new(
-        returned.name(),
+        fixed_reference_text(returned.name()),
         returned.query().clone(),
         vec![BondOrder::Double],
         returned.charges().to_vec(),
@@ -579,7 +586,7 @@ fn transform_construction_preserves_name_query_and_source_ordered_edits() {
     )
     .expect("valid transform");
 
-    assert_eq!(transform.name(), "ordered");
+    assert_eq!(fixed_reference_text(transform.name()), "ordered");
     assert_eq!(transform.query().num_atoms(), 3);
     assert_eq!(transform.query().num_bonds(), 2);
     assert_eq!(
@@ -608,10 +615,10 @@ fn transform_clone_has_independent_value_semantics() {
         cloned.charges().to_vec(),
     )
     .expect("independent change");
-    assert_eq!(original.name(), "original");
+    assert_eq!(fixed_reference_text(original.name()), "original");
     assert_eq!(original.query().atoms()[0].formal_charge(), 0);
     assert_eq!(original.bond_types()[0], BondOrder::Double);
-    assert_eq!(cloned.name(), "clone");
+    assert_eq!(fixed_reference_text(cloned.name()), "clone");
     assert_eq!(cloned.query().atoms()[0].formal_charge(), -1);
     assert_eq!(cloned.bond_types()[0], BondOrder::Triple);
 }
@@ -635,13 +642,21 @@ fn transform_clone_from_replaces_every_source_owned_field() {
 
 #[test]
 fn transform_keeps_and_reuses_the_compiled_query_value() {
-    let compiled = query("[O]-[C]=[C]").with_prop("compiled-sentinel", "present");
+    let compiled = query("[O]-[C]=[C]")
+        .with_prop("compiled-sentinel", "present")
+        .unwrap();
     let shared_atoms = compiled.atoms().as_ptr();
 
     let transform = TautomerTransform::new("compiled", compiled, Vec::new(), Vec::new())
         .expect("valid transform");
 
-    assert_eq!(transform.query().prop("compiled-sentinel"), Some("present"));
+    assert_eq!(
+        transform
+            .query()
+            .prop("compiled-sentinel")
+            .map(|value| fixed_reference_text(value.as_string().unwrap())),
+        Some("present")
+    );
     assert_eq!(transform.query().atoms().as_ptr(), shared_atoms);
 }
 
@@ -697,7 +712,7 @@ fn exactly_511_payload_with_newline_continues_to_next_line() {
     let mut r = Cursor::new(bytes);
     let c = TautomerCatalog::from_reader(&mut r, -1).expect("getline source");
     assert_eq!(c.transforms().len(), 1);
-    assert_eq!(c.transforms()[0].name(), "valid");
+    assert_eq!(fixed_reference_text(c.transforms()[0].name()), "valid");
 }
 #[test]
 fn exactly_511_payload_at_eof_terminates_without_extra_transform() {
@@ -714,7 +729,7 @@ fn overlong_line_parses_truncated_prefix_and_leaves_unread_suffix() {
     let mut r = Cursor::new(bytes);
     let c = TautomerCatalog::from_reader(&mut r, -1).expect("truncated source prefix");
     assert_eq!(c.transforms().len(), 1);
-    assert_eq!(c.transforms()[0].name(), "first");
+    assert_eq!(fixed_reference_text(c.transforms()[0].name()), "first");
     assert_eq!(r.position(), 511);
 }
 #[test]
@@ -727,7 +742,7 @@ fn source_c_string_nul_truncates_parse_but_consumes_full_physical_line() {
     assert_eq!(
         c.transforms()
             .iter()
-            .map(TautomerTransform::name)
+            .map(|transform| fixed_reference_text(transform.name()))
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
@@ -735,9 +750,15 @@ fn source_c_string_nul_truncates_parse_but_consumes_full_physical_line() {
 #[test]
 fn direct_tuple_fields_keep_spaces_and_source_name_metadata() {
     let c = TautomerCatalog::from_data(&[("name with spaces", "[O]-[C]", "-", "")]).expect("tuple");
-    assert_eq!(c.transforms()[0].name(), "name with spaces");
     assert_eq!(
-        c.transforms()[0].query().prop("_Name"),
+        fixed_reference_text(c.transforms()[0].name()),
+        "name with spaces"
+    );
+    assert_eq!(
+        c.transforms()[0]
+            .query()
+            .prop("_Name")
+            .map(|value| fixed_reference_text(value.as_string().unwrap())),
         Some("name with spaces")
     );
 }
@@ -790,4 +811,8 @@ fn stream_error_retains_the_original_io_cause() {
         error.source().expect("cause").to_string(),
         "broken catalog stream"
     );
+}
+
+fn fixed_reference_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("original fixed ASCII reference text")
 }

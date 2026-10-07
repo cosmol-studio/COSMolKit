@@ -283,10 +283,23 @@ fn atom_code_include_legacy_all_tags_and_done_presence_source_product() {
                 let r = result.unwrap();
                 assert_eq!(r.code(), expected);
                 assert_eq!(r.topology(), &before_t);
-                assert_eq!(r.properties().prop("_CIPComputed"), after_done);
-                assert_eq!(r.properties().prop("sentry"), Some("retained"));
+                // Pinned CIPLabeler.cpp assigns true with the native Bool tag.
+                // Original present String records are preserved by hasProp.
+                let expected_done = after_done.map(|text| {
+                    if done.is_none() {
+                        assert_eq!(text, "1", "original source assignment cell");
+                        PropertyValue::Bool(true)
+                    } else {
+                        PropertyValue::String(text.into())
+                    }
+                });
+                assert_eq!(r.properties().prop("_CIPComputed"), expected_done.as_ref());
+                assert_eq!(
+                    r.properties().prop("sentry"),
+                    Some(&PropertyValue::String("retained".into()))
+                );
                 if done.is_none() && after_done.is_some() {
-                    assert!(r.properties().is_prop_computed("_CIPComputed"));
+                    assert!(r.properties().is_prop_computed("_CIPComputed").unwrap());
                 }
             }
             None => assert!(matches!(
@@ -340,8 +353,11 @@ fn modern_fixture(smiles: &str, expected: u32, label: &str) {
         r.topology().atoms[1].prop("_CIPCode"),
         Some(&PropertyValue::String(label.into()))
     );
-    assert_eq!(r.properties().prop("_CIPComputed"), Some("1"));
-    assert!(r.properties().is_prop_computed("_CIPComputed"));
+    assert_eq!(
+        r.properties().prop("_CIPComputed"),
+        Some(&PropertyValue::Bool(true))
+    );
+    assert!(r.properties().is_prop_computed("_CIPComputed").unwrap());
     assert_eq!(r.topology().bonds, original.bonds);
     assert_eq!(r.topology().atoms.len(), original.atoms.len());
 }

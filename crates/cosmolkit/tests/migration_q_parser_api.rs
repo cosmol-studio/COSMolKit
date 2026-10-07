@@ -81,6 +81,10 @@ mod enabled {
         SmartsParseParams, StateModel, search::parse_smarts_with_params as parse_smarts,
     };
 
+    fn fixture_text(text: &cosmolkit::PropertyText) -> &str {
+        std::str::from_utf8(text.as_bytes()).expect("original parser fixture is UTF-8")
+    }
+
     fn parse(text: &str) -> QueryGraph {
         let graph = parse_smarts(text, &SmartsParseParams::default()).unwrap();
         graph.validate().unwrap();
@@ -346,7 +350,10 @@ mod enabled {
         params.replacements.insert("O".to_owned(), "N".to_owned());
         let before = params.clone();
         let graph = parse_smarts("O-O\tOriginal O\u{00a0}", &params).unwrap();
-        assert_eq!(graph.name(), Some("Original O\u{00a0}"));
+        assert_eq!(
+            graph.name().unwrap().map(fixture_text),
+            Some("Original O\u{00a0}")
+        );
         assert_eq!((graph.num_atoms(), graph.num_bonds()), (2, 1));
         assert!(
             graph
@@ -364,16 +371,19 @@ mod enabled {
         let graph = parse(text);
         assert_eq!(
             graph.atom(0).unwrap().prop("atomLabel"),
-            Some(&PropertyValue::String("label".to_owned()))
+            Some(&PropertyValue::String("label".into()))
         );
-        assert_eq!(graph.prop("_CXSMILES_Data"), Some("|$label$|"));
-        assert_eq!(graph.name(), Some("note"));
+        assert_eq!(
+            graph.prop("_CXSMILES_Data"),
+            Some(&PropertyValue::String("|$label$|".into()))
+        );
+        assert_eq!(graph.name().unwrap().map(fixture_text), Some("note"));
         let no_name = SmartsParseParams {
             parse_name: false,
             ..Default::default()
         };
         let graph = parse_smarts(text, &no_name).unwrap();
-        assert_eq!(graph.name(), None);
+        assert_eq!(graph.name().unwrap().map(fixture_text), None);
         assert!(matches!(
             parse_smarts("C note", &no_name),
             Err(SmartsParseError::CxSmiles(_))
@@ -382,13 +392,23 @@ mod enabled {
             strict_cxsmiles: false,
             ..no_name.clone()
         };
-        assert_eq!(parse_smarts("C note", &lenient).unwrap().name(), None);
+        assert_eq!(
+            parse_smarts("C note", &lenient)
+                .unwrap()
+                .name()
+                .unwrap()
+                .map(fixture_text),
+            None
+        );
         let no_cx = SmartsParseParams {
             allow_cxsmiles: false,
             ..Default::default()
         };
         let graph = parse_smarts(text, &no_cx).unwrap();
-        assert_eq!(graph.name(), Some("|$label$| note"));
+        assert_eq!(
+            graph.name().unwrap().map(fixture_text),
+            Some("|$label$| note")
+        );
         assert_eq!(graph.atom(0).unwrap().prop("atomLabel"), None);
         assert!(matches!(
             parse_smarts("C |sense|", &Default::default()),
@@ -411,22 +431,28 @@ mod enabled {
             ("C |$label$ s:0:x| ignored", "|$label$ s:0:", Some("label")),
         ] {
             let graph = parse_smarts(text, &params).unwrap();
-            assert_eq!(graph.prop("_CXSMILES_Data"), Some(prefix));
-            assert_eq!(graph.name(), None);
+            assert_eq!(
+                graph.prop("_CXSMILES_Data"),
+                Some(&PropertyValue::String(prefix.into()))
+            );
+            assert_eq!(graph.name().unwrap().map(fixture_text), None);
             assert_eq!(
                 graph.atom(0).unwrap().prop("atomLabel"),
                 label
-                    .map(|value| PropertyValue::String(value.to_owned()))
+                    .map(|value| PropertyValue::String(value.into()))
                     .as_ref()
             );
         }
         let graph = parse_smarts("C-C |$label$ wU:0.0,1.0| ignored", &params).unwrap();
-        assert_eq!(graph.prop("_CXSMILES_Data"), Some("|$label$ wU:0.0,1.0"));
+        assert_eq!(
+            graph.prop("_CXSMILES_Data"),
+            Some(&PropertyValue::String("|$label$ wU:0.0,1.0".into()))
+        );
         assert_eq!(
             graph.bond(0).unwrap().bond().direction(),
             cosmolkit::BondDirection::BeginWedge
         );
-        assert_eq!(graph.name(), None);
+        assert_eq!(graph.name().unwrap().map(fixture_text), None);
     }
 
     #[test]
@@ -534,10 +560,15 @@ mod enabled {
             ("* |$_AP3$|", None),
         ] {
             assert_eq!(
-                parse(text).atom(0).unwrap().prop("_fromAttachPoint"),
+                parse(text).atom(0).unwrap().prop("_fromAttchpt"),
                 value.map(PropertyValue::Int).as_ref(),
                 "{text}"
             );
+        }
+        // types.h spells the common property value _fromAttchpt.
+        // Retain the old literal as an explicit absence check.
+        for text in ["* |$_AP1$|", "* |$_AP2$|"] {
+            assert_eq!(parse(text).atom(0).unwrap().prop("_fromAttachPoint"), None);
         }
         let params = SmartsParseParams {
             skip_cleanup: true,
@@ -548,7 +579,7 @@ mod enabled {
                 .unwrap()
                 .atom(0)
                 .unwrap()
-                .prop("_fromAttachPoint"),
+                .prop("_fromAttchpt"),
             None
         );
     }

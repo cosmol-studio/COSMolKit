@@ -11,56 +11,42 @@ use std::{
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondQueryPredicate,
     BondSpec, Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties,
-    PropertyValue, QueryAtom, QueryBond, QueryGraph, QueryNode, RecursiveStructureQuery,
-    SdfPropertyList, SdfPropertyListTarget, SubstanceGroup, TemplateAttachment,
-    TemplateAttachmentOrder, TopologyBlock, query_substance_groups, replace_query_substance_groups,
+    PropertyText, PropertyValue, QueryAtom, QueryBond, QueryGraph, QueryNode,
+    RecursiveStructureQuery, SdfPropertyList, SdfPropertyListTarget, SubstanceGroup,
+    TemplateAttachment, TemplateAttachmentOrder, TopologyBlock, query_substance_groups,
+    replace_query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Element};
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SdfReadError {
-    #[error(
-        "query-bearing SDF record cannot be represented as a concrete molecule; use a query-preserving record reader"
-    )]
+    MolPost(crate::MolPostError),
     QueryRecord,
-    #[error("empty molfile block")]
     Empty,
-    #[error("invalid V2000 counts line")]
     Counts,
-    #[error("invalid {kind} field on line {line}: {value}")]
     Field {
         kind: &'static str,
         line: usize,
         value: String,
     },
-    #[error("unsupported molfile format: {0}")]
     Unsupported(&'static str),
-    #[error("{0}")]
     Parse(String),
-    #[error("invalid detached topology: {0}")]
-    Topology(#[from] cosmolkit_model::TopologyValidationError),
-    #[error("invalid detached coordinates: {0}")]
-    Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
-    #[error("invalid detached query graph: {0}")]
-    QueryGraph(#[from] cosmolkit_model::QueryGraphError),
-    #[error("invalid atom property: {0}")]
-    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
-    #[error("invalid bond value: {0}")]
-    BondValue(#[from] cosmolkit_model::BondValueError),
-    #[error("invalid molecule property: {0}")]
-    MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
-    #[error("SDF {target} property list '{name}' has {actual} values, expected {expected}")]
+    Topology(cosmolkit_model::TopologyValidationError),
+    Coordinates(cosmolkit_model::CoordinateValidationError),
+    QueryGraph(cosmolkit_model::QueryGraphError),
+    AtomProperty(cosmolkit_model::AtomPropertyError),
+    BondValue(cosmolkit_model::BondValueError),
+    MoleculeProperty(cosmolkit_model::MoleculePropertyError),
     PropertyListCount {
         target: &'static str,
         name: String,
         actual: usize,
         expected: usize,
     },
-    #[error(
-        "ERROR: Index error (idx = {index}) :  we do not have enough mol blocks ({record_count} records)"
-    )]
-    RecordIndexOutOfRange { index: usize, record_count: usize },
-    #[error("SDF record {index} at byte {byte_offset}, line {line_offset} failed: {source}")]
+    RecordIndexOutOfRange {
+        index: usize,
+        record_count: usize,
+    },
     Record {
         index: usize,
         byte_offset: u64,
@@ -69,8 +55,102 @@ pub enum SdfReadError {
     },
 }
 
+impl std::fmt::Display for SdfReadError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MolPost(error) => write!(formatter, "MolBlock finalization before SDF properties failed: {error}"),
+            Self::QueryRecord => formatter.write_str("query-bearing SDF record cannot be represented as a concrete molecule; use a query-preserving record reader"),
+            Self::Empty => formatter.write_str("empty molfile block"),
+            Self::Counts => formatter.write_str("invalid V2000 counts line"),
+            Self::Field { kind, line, value } => write!(formatter, "invalid {kind} field on line {line}: {value}"),
+            Self::Unsupported(format) => write!(formatter, "unsupported molfile format: {format}"),
+            Self::Parse(message) => formatter.write_str(message),
+            Self::Topology(error) => write!(formatter, "invalid detached topology: {error}"),
+            Self::Coordinates(error) => write!(formatter, "invalid detached coordinates: {error}"),
+            Self::QueryGraph(error) => write!(formatter, "invalid detached query graph: {error}"),
+            Self::AtomProperty(error) => write!(formatter, "invalid atom property: {error}"),
+            Self::BondValue(error) => write!(formatter, "invalid bond value: {error}"),
+            Self::MoleculeProperty(error) => write!(formatter, "invalid molecule property: {error}"),
+            Self::PropertyListCount { target, name, actual, expected } => write!(formatter, "SDF {target} property list '{name}' has {actual} values, expected {expected}"),
+            Self::RecordIndexOutOfRange { index, record_count } => write!(formatter, "ERROR: Index error (idx = {index}) :  we do not have enough mol blocks ({record_count} records)"),
+            Self::Record { index, byte_offset, line_offset, source } => write!(formatter, "SDF record {index} at byte {byte_offset}, line {line_offset} failed: {source}"),
+        }
+    }
+}
+
+impl std::error::Error for SdfReadError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::MolPost(error) => Some(error),
+            Self::Topology(error) => Some(error),
+            Self::Coordinates(error) => Some(error),
+            Self::QueryGraph(error) => Some(error),
+            Self::AtomProperty(error) => Some(error),
+            Self::BondValue(error) => Some(error),
+            Self::MoleculeProperty(error) => Some(error),
+            // Expose the concrete cause rather than Box's Error implementation,
+            // whose source() would skip that cause and hide a leaf's category.
+            Self::Record { source, .. } => Some(source.as_ref()),
+            Self::QueryRecord
+            | Self::Empty
+            | Self::Counts
+            | Self::Field { .. }
+            | Self::Unsupported(_)
+            | Self::Parse(_)
+            | Self::PropertyListCount { .. }
+            | Self::RecordIndexOutOfRange { .. } => None,
+        }
+    }
+}
+
+impl From<crate::MolPostError> for SdfReadError {
+    fn from(error: crate::MolPostError) -> Self {
+        Self::MolPost(error)
+    }
+}
+
+impl From<cosmolkit_model::TopologyValidationError> for SdfReadError {
+    fn from(error: cosmolkit_model::TopologyValidationError) -> Self {
+        Self::Topology(error)
+    }
+}
+
+impl From<cosmolkit_model::CoordinateValidationError> for SdfReadError {
+    fn from(error: cosmolkit_model::CoordinateValidationError) -> Self {
+        Self::Coordinates(error)
+    }
+}
+
+impl From<cosmolkit_model::QueryGraphError> for SdfReadError {
+    fn from(error: cosmolkit_model::QueryGraphError) -> Self {
+        Self::QueryGraph(error)
+    }
+}
+
+impl From<cosmolkit_model::AtomPropertyError> for SdfReadError {
+    fn from(error: cosmolkit_model::AtomPropertyError) -> Self {
+        Self::AtomProperty(error)
+    }
+}
+
+impl From<cosmolkit_model::BondValueError> for SdfReadError {
+    fn from(error: cosmolkit_model::BondValueError) -> Self {
+        Self::BondValue(error)
+    }
+}
+
+impl From<cosmolkit_model::MoleculePropertyError> for SdfReadError {
+    fn from(error: cosmolkit_model::MoleculePropertyError) -> Self {
+        Self::MoleculeProperty(error)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SdfWriteError {
+    #[error("invalid source string property: {0}")]
+    Property(#[from] cosmolkit_core::PropertyStringError),
+    #[error("invalid unsigned molfile property: {0}")]
+    UnsignedProperty(#[from] cosmolkit_core::PropertyUIntReadError),
     #[error(
         "property {property} UInt {value} causes positive_overflow converting to signed int at atom {atom:?} bond {bond:?}"
     )]
@@ -86,6 +166,10 @@ pub enum SdfWriteError {
     Topology(#[from] cosmolkit_model::TopologyValidationError),
     #[error("detached coordinates are invalid: {0}")]
     Coordinates(#[from] cosmolkit_model::CoordinateValidationError),
+    #[error(transparent)]
+    IntegerProperty(#[from] cosmolkit_core::PropertyIntReadError),
+    #[error(transparent)]
+    PropertyValue(#[from] cosmolkit_model::PropertyValueError),
     #[error("unsupported bond order {0:?}")]
     BondOrder(BondOrder),
     #[error("unsupported detached molfile atom state: {0}")]
@@ -104,25 +188,21 @@ pub(super) fn model_int_property(value: &PropertyValue) -> Result<i32, ()> {
         PropertyValue::Int(value) => Ok(*value),
         PropertyValue::UInt(value) => i32::try_from(*value).map_err(|_| ()),
         PropertyValue::String(value) => parse_rdkit_int(value),
-        PropertyValue::IntVector(_) | PropertyValue::Double(_) | PropertyValue::Bool(_) => Err(()),
+        PropertyValue::IntVector(_)
+        | PropertyValue::StringVector(_)
+        | PropertyValue::Double(_)
+        | PropertyValue::Bool(_) => Err(()),
     }
 }
 
-pub(super) fn model_string_property(
-    value: &PropertyValue,
-) -> Result<std::borrow::Cow<'_, str>, SdfWriteError> {
-    // RDKit❗✔️:         rdvalue_tostring(i.val, res);
-    // Use the sole source vector formatter; scalar wrong-kind debt retained.
-    match value {
-        PropertyValue::String(value) => Ok(std::borrow::Cow::Borrowed(value)),
-        PropertyValue::UInt(value) => Ok(std::borrow::Cow::Owned(value.to_string())),
-        PropertyValue::IntVector(value) => Ok(std::borrow::Cow::Owned(
-            cosmolkit_core::int_vector_to_string(value),
-        )),
-        _ => Err(SdfWriteError::Atom(
-            "molfile property has a non-string value kind",
-        )),
-    }
+pub(super) fn model_string_property(value: &PropertyValue) -> Result<PropertyText, SdfWriteError> {
+    // RDKit❗✔️:   template <typename T>
+    // RDKit❗✔️:   bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit❗✔️:     return d_props.getValIfPresent(key, res);
+    // RDKit❗✔️:   }
+    // The canonical source getter creates output bytes without retagging the
+    // stored value. One counted buffer, with no Unicode conversion.
+    Ok(cosmolkit_core::property_value_to_string(value)?)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -252,11 +332,9 @@ pub enum SdfCoordinateMode {
 
 /// Controls SDF data-field handling after a MolBlock has been parsed.
 ///
-/// Chemistry finalization options such as sanitization, hydrogen removal, and
-/// attachment-point expansion belong to the live-molecule runtime and are
-/// intentionally not represented at this detached syntax boundary. Coordinate
-/// interpretation is included because it must be selected before that
-/// finalization chooses its 2D or 3D stereochemistry branch.
+/// The caller selects detached MolBlock finalization explicitly. When selected,
+/// it runs before SDF fields, using the sole existing IO postprocessing owner.
+/// Syntax-only callers retain their explicit unfinalized graph boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SdfDataReadParams {
     /// Apply strict MolBlock checks and reject non-header content between SDF
@@ -267,6 +345,8 @@ pub struct SdfDataReadParams {
     /// Select how the parsed source conformer is interpreted and stored before
     /// chemistry finalization.
     pub coordinate_mode: SdfCoordinateMode,
+    /// Source MolBlock policy before reading fields; None requests syntax only.
+    pub mol_post: Option<crate::MolPostParams>,
 }
 
 impl Default for SdfDataReadParams {
@@ -279,6 +359,7 @@ impl Default for SdfDataReadParams {
             strict_parsing: true,
             process_property_lists: true,
             coordinate_mode: SdfCoordinateMode::Preserve,
+            mol_post: None,
         }
     }
 }
@@ -562,9 +643,9 @@ impl<R: BufRead> SdfGraphReader<R> {
         // RDKit✔️❌:     if (res) {
         // RDKit✔️❌:       this->readMolProps(*res);
         // RDKit✔️❌:     }
-        // This detached reader buffers one full record before parsing it, so
-        // recovery and ordering match while memory use is worse than RDKit's
-        // stream-positioned MolBlock/data-field path.
+        // This detached reader buffers the MolBlock prefix and retains raw field
+        // bytes while parsing them in source order. The retained raw record is
+        // additional memory versus RDKit's stream-positioned parser.
         if self.end {
             return Ok(None);
         }
@@ -746,7 +827,7 @@ pub(super) fn rdkit_substr(text: &str, start: usize, len: usize) -> &str {
 /// Pinned FileParserUtils::toUnsigned with acceptSpaces=true. All reader
 /// callers use the same screened from_chars conversion; a permitted leading
 /// plus cannot convert and leaves the initialized result at zero.
-pub(super) fn parse_rdkit_unsigned(text: &str) -> Result<u32, ()> {
+pub(super) fn parse_rdkit_unsigned(text: impl AsRef<[u8]>) -> Result<u32, ()> {
     // RDKit✔️✔️: unsigned int toUnsigned(const std::string_view input, bool acceptSpaces) {
     // RDKit✔️✔️:   // don't need to worry about locale stuff here because
     // RDKit✔️✔️:   // we're not going to have delimiters
@@ -778,14 +859,19 @@ pub(super) fn parse_rdkit_unsigned(text: &str) -> Result<u32, ()> {
     // RDKit✔️✔️:   std::from_chars(txt, txt + sz, res);
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
-    let checked = text.split_once('\0').map_or(text, |(prefix, _)| prefix);
+    let text = text.as_ref();
+    let checked = &text[..text
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(text.len())];
     if !checked
-        .bytes()
+        .iter()
+        .copied()
         .all(|byte| byte.is_ascii_digit() || byte == b' ' || byte == b'+')
     {
         return Err(());
     }
-    let input = checked.trim_start_matches(' ');
+    let input = &checked[checked.iter().take_while(|&&byte| byte == b' ').count()..];
     if input.is_empty() {
         return Ok(0);
     }
@@ -793,7 +879,7 @@ pub(super) fn parse_rdkit_unsigned(text: &str) -> Result<u32, ()> {
     // the first non-space character. A leading `+` is not a recognized sign,
     // and overflow leaves the initialized `res` at `0`.
     let mut res: u32 = 0;
-    for byte in input.bytes() {
+    for byte in input.iter().copied() {
         if !byte.is_ascii_digit() {
             break;
         }
@@ -983,7 +1069,7 @@ fn parse_rdkit_atoi(text: &str) -> i32 {
     long_value as i32
 }
 
-pub(super) fn parse_rdkit_int(text: &str) -> Result<i32, ()> {
+pub(super) fn parse_rdkit_int(text: impl AsRef<[u8]>) -> Result<i32, ()> {
     // BEGIN RDKIT CPP FUNCTION FileParserUtils::toInt(std::string_view, bool)
     // RDKit✔️✔️: int toInt(const std::string_view input, bool acceptSpaces) {
     // RDKit✔️✔️:   // don't need to worry about locale stuff here because
@@ -1020,26 +1106,37 @@ pub(super) fn parse_rdkit_int(text: &str) -> Result<i32, ()> {
     // END RDKIT CPP FUNCTION FileParserUtils::toInt(std::string_view, bool)
     // This helper implements the source default `acceptSpaces=true`. Both
     // versions perform one linear screening/conversion pass without allocating.
-    let checked = text.split_once('\0').map_or(text, |(prefix, _)| prefix);
+    let bytes = text.as_ref();
+    let checked = bytes.split(|&byte| byte == 0).next().unwrap_or_default();
     if !checked
-        .bytes()
-        .all(|byte| byte.is_ascii_digit() || byte == b'+' || byte == b'-' || byte == b' ')
+        .iter()
+        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'+' | b'-' | b' '))
     {
         return Err(());
     }
-    let input = checked.trim_start_matches(' ');
-    if input.is_empty() || input.starts_with('+') {
+    let input = checked.trim_ascii_start();
+    // Screening permits only SP as whitespace; from_chars rejects leading +.
+    if input.is_empty() || input[0] == b'+' {
         return Ok(0);
     }
-    let sign_len = usize::from(input.starts_with('-'));
-    let digit_count = input[sign_len..]
-        .bytes()
-        .take_while(u8::is_ascii_digit)
-        .count();
-    if digit_count == 0 {
-        return Ok(0);
+    let negative = input[0] == b'-';
+    let digits = &input[usize::from(negative)..];
+    let mut result = 0_i32;
+    for byte in digits.iter().take_while(|byte| byte.is_ascii_digit()) {
+        let digit = i32::from(*byte - b'0');
+        let next = result.checked_mul(10).and_then(|value| {
+            if negative {
+                value.checked_sub(digit)
+            } else {
+                value.checked_add(digit)
+            }
+        });
+        match next {
+            Some(value) => result = value,
+            None => return Ok(0),
+        }
     }
-    Ok(input[..sign_len + digit_count].parse().unwrap_or(0))
+    Ok(result)
 }
 
 pub(super) fn parse_rdkit_double(text: &str) -> Result<f64, ()> {
@@ -1782,7 +1879,8 @@ fn read_forward_sdf_record_text<R: BufRead>(
             params.into(),
             &mut chirality_possible,
             &progress,
-        );
+        )
+        .and_then(|mol_block| prepare_sdf_graph_record(mol_block, chirality_possible, params));
         match parsed {
             Err(_) if progress.exhausted.get() && !raw.hit_eof => continue,
             Err(source) => {
@@ -1807,48 +1905,30 @@ fn read_forward_sdf_record_text<R: BufRead>(
                     record: Err(source),
                 }));
             }
-            Ok(mol_block) => {
+            Ok(record) => {
                 let mol_byte_len = raw
                     .text
                     .split_inclusive('\n')
                     .take(progress.consumed_lines.get())
                     .map(str::len)
                     .sum::<usize>();
-                let mut in_value = false;
-                let mut recovering = false;
-                while !raw.hit_eof {
-                    let Some(line) = append_line(reader, &mut raw)? else {
-                        break;
-                    };
-                    let content = strip_terminal_cr(line.strip_suffix('\n').unwrap_or(&line));
-                    if recovering {
+                // Parse fields as the source consumes them, not after buffering
+                // future fields. Recovery begins at the actual failed field.
+                let buffered_fields = raw.text[mol_byte_len..].to_owned();
+                let mut buffered_lines = buffered_fields.split_inclusive('\n');
+                let mut next_data_line = || match buffered_lines.next() {
+                    Some(line) => Ok(Some(line.to_owned())),
+                    None => append_line(reader, &mut raw),
+                };
+                let record = finish_sdf_graph_record_fields(record, &mut next_data_line, params);
+                if record.is_err() {
+                    while let Some(line) = next_data_line()? {
+                        let content = strip_terminal_cr(line.strip_suffix('\n').unwrap_or(&line));
                         if is_sdf_record_delimiter(content) {
                             break;
                         }
-                    } else if in_value {
-                        if strip_sdf_line(content).is_empty()
-                            && !starts_with_sdf_continuation_space(content)
-                        {
-                            in_value = false;
-                        }
-                    } else if is_sdf_record_delimiter(content) {
-                        break;
-                    } else {
-                        let stripped = strip_sdf_line(content);
-                        if stripped.starts_with('>') {
-                            in_value = true;
-                        } else if !stripped.is_empty() && params.strict_parsing {
-                            recovering = true;
-                        }
                     }
                 }
-                let data_lines = raw.text[mol_byte_len..].lines().collect::<Vec<_>>();
-                let record = finish_sdf_graph_record_fields(
-                    mol_block,
-                    chirality_possible,
-                    &data_lines,
-                    params,
-                );
                 return Ok(Some(ForwardSdfRecord { raw, record }));
             }
         }
@@ -2055,7 +2135,8 @@ fn parse_sdf_data_header(line: &str) -> Option<String> {
 }
 
 fn parse_sdf_data_fields(
-    lines: &[&str],
+    record: &mut MolBlockRecord,
+    mut next_line: impl FnMut() -> Result<Option<String>, SdfReadError>,
     params: SdfDataReadParams,
 ) -> Result<Vec<(String, String)>, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION ForwardSDMolSupplier::readMolProps
@@ -2116,61 +2197,64 @@ fn parse_sdf_data_fields(
     // RDKit✔️❌:           }
     // RDKit✔️❌:         }
     // RDKit✔️❌:           mol.setProp(dlabel, prop);
+    // RDKit✔️❌:           if (df_processPropertyLists) {
+    // RDKit✔️❌:             // apply this as an atom property list if that's appropriate
+    // RDKit✔️❌:             FileParserUtils::processMolPropertyList(mol, dlabel);
+    // RDKit✔️❌:           }
     // RDKit✔️❌:       }
     // RDKit✔️❌:     } else {
     // RDKit✔️❌:         if (d_params.strictParsing) {
     // RDKit✔️❌:           throw FileParseException("Problems encountered parsing data fields");
     // RDKit✔️❌:       }
-    // COSMolKit buffers a record and its line references before parsing, while
-    // RDKit consumes a stream in-place. Behavior matches, but the extra record
-    // allocation is materially more expensive.
+    // One shared line source serves direct and forward reads. Field installation
+    // and list expansion happen before fetching the next header; future data
+    // cannot supersede an earlier error. The forward framer still retains raw
+    // bytes, an additional record allocation versus the source stream.
     let mut fields = Vec::new();
-    let mut index = 0;
-    while index < lines.len() {
-        let line = strip_terminal_cr(lines[index]);
+    let mut next = next_line()?;
+    while let Some(line) = next.take() {
+        let line = strip_terminal_cr(line.strip_suffix('\n').unwrap_or(&line));
         if is_sdf_record_delimiter(line) {
             break;
         }
         let stripped = strip_sdf_line(line);
         if stripped.is_empty() {
-            index += 1;
+            next = next_line()?;
             continue;
         }
-        if !stripped.starts_with('>') && params.strict_parsing {
-            return Err(SdfReadError::Parse(
-                "Problems encountered parsing data fields".to_owned(),
-            ));
-        }
-
         if !stripped.starts_with('>') {
-            index += 1;
+            if params.strict_parsing {
+                return Err(SdfReadError::Parse(
+                    "Problems encountered parsing data fields".to_owned(),
+                ));
+            }
+            next = next_line()?;
             continue;
         }
-
         let Some(name) = parse_sdf_data_header(stripped) else {
-            index += 1;
-            while index < lines.len() && !strip_sdf_line(lines[index]).is_empty() {
-                if is_sdf_record_delimiter(strip_terminal_cr(lines[index])) {
+            loop {
+                let Some(line) = next_line()? else {
+                    return Err(SdfReadError::Parse(
+                        "End of data field name not found".to_owned(),
+                    ));
+                };
+                let line = strip_terminal_cr(line.strip_suffix('\n').unwrap_or(&line));
+                if strip_sdf_line(line).is_empty() {
+                    break;
+                }
+                if is_sdf_record_delimiter(line) {
                     return Err(SdfReadError::Parse(
                         "End of data field name not found".to_owned(),
                     ));
                 }
-                index += 1;
             }
-            if index >= lines.len() {
-                return Err(SdfReadError::Parse(
-                    "End of data field name not found".to_owned(),
-                ));
-            }
-            index += 1;
+            next = next_line()?;
             continue;
         };
-
-        index += 1;
         let mut value = String::new();
         let mut value_line_count = 0;
-        while index < lines.len() {
-            let line = strip_terminal_cr(lines[index]);
+        while let Some(line) = next_line()? {
+            let line = strip_terminal_cr(line.strip_suffix('\n').unwrap_or(&line));
             if strip_sdf_line(line).is_empty() && !starts_with_sdf_continuation_space(line) {
                 break;
             }
@@ -2179,10 +2263,27 @@ fn parse_sdf_data_fields(
             }
             value.push_str(line);
             value_line_count += 1;
-            index += 1;
         }
-        fields.push((name, value));
-        index += usize::from(index < lines.len());
+        // Install and expand this field before reading the next header.
+        let field = (name, value);
+        match &mut *record {
+            MolBlockRecord::Concrete { properties, .. } => {
+                *properties = std::mem::take(properties)
+                    .with_prop(&field.0, &field.1)?
+                    .with_sdf_data_field(&field.0, &field.1);
+            }
+            MolBlockRecord::Query(query) => {
+                query.query.set_prop(&field.0, &field.1)?;
+                query.properties = std::mem::take(&mut query.properties)
+                    .with_prop(&field.0, &field.1)?
+                    .with_sdf_data_field(&field.0, &field.1);
+            }
+        }
+        if params.process_property_lists {
+            apply_sdf_property_lists(record, std::slice::from_ref(&field), params.strict_parsing)?;
+        }
+        fields.push(field);
+        next = next_line()?;
     }
     // END RDKIT CPP FUNCTION
     Ok(fields)
@@ -2327,7 +2428,9 @@ fn parse_sdf_property_list_values(
     value: &str,
     item_count: usize,
     value_kind: SdfPropertyListValueKind,
-) -> Option<Vec<Option<PropertyValue>>> {
+    target: SdfPropertyListTarget,
+    strict_parsing: bool,
+) -> Result<Option<Vec<Option<PropertyValue>>>, SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION applyMolListProp
     // RDKit✔️✔️: void applyMolListProp(ROMol &mol, const std::string &pn,
     // RDKit✔️✔️:                       const std::string &prefix,
@@ -2384,15 +2487,25 @@ fn parse_sdf_property_list_values(
         eprintln!("Missing value marker for property {field_name} is empty.");
     }
     if tokens.len() - first_token != item_count {
+        // Explicit user policy: strict parsing reports the mismatch instead
+        // of the pinned source's warning-only return. Non-strict parsing
+        // preserves that source behavior. Check before assigning any item.
+        if strict_parsing {
+            return Err(SdfReadError::PropertyListCount {
+                target: match target {
+                    SdfPropertyListTarget::Atom => "atom",
+                    SdfPropertyListTarget::Bond => "bond",
+                },
+                name: field_name.to_owned(),
+                actual: tokens.len() - first_token,
+                expected: item_count,
+            });
+        }
         eprintln!(
             "Property list {field_name} has incompatible size, {} elements found; expecting {item_count}. Ignoring it.",
             tokens.len()
         );
-        // This is the source-defined warning/return, including strict mode.
-        // The raw molecular field was retained before this helper is called.
-        // None denotes no expansion; it is not an unavailable capability or
-        // an error converted into a successful empty molecule.
-        return None;
+        return Ok(None);
     }
     let values = tokens[first_token..]
         .iter()
@@ -2403,7 +2516,7 @@ fn parse_sdf_property_list_values(
             }
             let parsed = match value_kind {
                 SdfPropertyListValueKind::String => {
-                    Some(PropertyValue::String((*token).to_owned()))
+                    Some(PropertyValue::String((*token).into()))
                 }
                 SdfPropertyListValueKind::Int => token.parse::<i32>().ok().map(PropertyValue::Int),
                 SdfPropertyListValueKind::Double => {
@@ -2421,8 +2534,8 @@ fn parse_sdf_property_list_values(
             parsed
         })
         .collect();
-    // Behavior: source count mismatch returns before any row assignment,
-    // independent of MolFile strictParsing; lexical conversion failures skip
+    // Behavior: non-strict source count mismatch returns before assignment;
+    // strict mismatch follows the approved project policy. Conversion failures skip
     // only their own rows. The warning messages use the source field name,
     // token count before marker removal and post-marker item indices.
     // Complexity: one linear compressed-token pass and one linear conversion
@@ -2430,12 +2543,13 @@ fn parse_sdf_property_list_values(
     // performs comparable bounded formatting/output. No graph clone, repeated
     // item lookup or field-state clone is introduced.
     // END RDKIT CPP FUNCTION
-    Some(values)
+    Ok(Some(values))
 }
 
 fn apply_sdf_property_lists(
     record: &mut MolBlockRecord,
     data_fields: &[(String, String)],
+    strict_parsing: bool,
 ) -> Result<(), SdfReadError> {
     // BEGIN RDKIT CPP FUNCTION processMolPropertyLists
     // RDKit✔️✔️: inline void processMolPropertyLists(
@@ -2462,8 +2576,14 @@ fn apply_sdf_property_lists(
                 query.query.num_bonds()
             }
         };
-        let Some(values) =
-            parse_sdf_property_list_values(field_name, field_value, item_count, value_kind)
+        let Some(values) = parse_sdf_property_list_values(
+            field_name,
+            field_value,
+            item_count,
+            value_kind,
+            target,
+            strict_parsing,
+        )?
         else {
             continue;
         };
@@ -5396,7 +5516,7 @@ fn apply_v2000_property_lines(
             "M  APO" => parse_v2000_apo_line(line, line_number, atoms, params)?,
             "M  LIN" => {
                 let value = parse_v2000_lin_line(line, line_number, atoms.len())?;
-                molfile_properties.insert("_MolFileLinkNodes".to_owned(), value);
+                molfile_properties.insert("_molLinkNodes".to_owned(), value);
             }
             "M  MRV" => parse_v2000_marvin_smarts_line(line, line_number, atoms)?,
             _ => {}
@@ -5694,7 +5814,7 @@ fn read_v2000_record_detached_with_progress(
             .collect::<Vec<_>>();
         let mut query_props = properties.props().clone();
         if let Some(name) = properties.name() {
-            query_props.insert("_Name".to_owned(), name.to_owned());
+            query_props.insert("_Name".into(), PropertyValue::String(name.clone()));
         }
         let mut query = QueryGraph::from_parts(
             query_atoms,
@@ -8492,9 +8612,10 @@ fn read_v3000_record_detached_with_progress(
         properties = properties.with_prop("_NeedsQueryScan", "1")?;
     }
     if !link_nodes.is_empty() {
-        // COSMolKit keeps the established cross-format key used by detached
-        // CXSMILES and the live-molecule runtime for RDKit's `_molLinkNodes`.
-        properties = properties.with_prop("_MolFileLinkNodes", link_nodes.join("|"))?;
+        // RDKit✔️✔️:       mol->setProp(common_properties::molFileLinkNodes, existing);
+        // RDKit✔️✔️: inline constexpr std::string_view molFileLinkNodes = "_molLinkNodes";
+        // The native property key is identical across parsed formats and CXSMILES.
+        properties = properties.with_prop("_molLinkNodes", link_nodes.join("|"))?;
     }
     let has_query = atoms.iter().any(|(_, query)| query.is_some())
         || bonds.iter().any(|bond| bond.query.is_some());
@@ -8531,7 +8652,7 @@ fn read_v3000_record_detached_with_progress(
             .collect::<Vec<_>>();
         let mut query_props = properties.props().clone();
         if let Some(name) = properties.name() {
-            query_props.insert("_Name".to_owned(), name.to_owned());
+            query_props.insert("_Name".into(), PropertyValue::String(name.clone()));
         }
         let mut query = QueryGraph::from_parts(
             query_atoms,
@@ -8605,14 +8726,8 @@ pub fn read_mol_graph_record_detached_with_params(
     // The existing CTAB owner stops at M END; no SDF field parser is invoked.
     // This wrapper allocates no extra input copy and preserves its stereo bit.
     let mut chirality_possible = false;
-    let mut mol_block = read_v2000_record_detached(block, params.into(), &mut chirality_possible)?;
-    apply_sdf_coordinate_mode(&mut mol_block, params.coordinate_mode)?;
-    Ok(SdfGraphRecord {
-        mol_block,
-        data_fields: Vec::new(),
-        chirality_possible,
-        post_state: Default::default(),
-    })
+    let mol_block = read_v2000_record_detached(block, params.into(), &mut chirality_possible)?;
+    prepare_sdf_graph_record(mol_block, chirality_possible, params)
 }
 
 /// Read the first detached record in an SDF text block.
@@ -8638,44 +8753,53 @@ pub fn read_sdf_graph_record_detached_with_params(
         .take(progress.consumed_lines.get())
         .map(str::len)
         .sum::<usize>();
-    let data_lines = block[mol_byte_len..].lines().collect::<Vec<_>>();
-    finish_sdf_graph_record_fields(mol_block, chirality_possible, &data_lines, params)
+    let record = prepare_sdf_graph_record(mol_block, chirality_possible, params)?;
+    let mut data_lines = block[mol_byte_len..].split_inclusive('\n');
+    finish_sdf_graph_record_fields(record, || Ok(data_lines.next().map(str::to_owned)), params)
+}
+
+fn prepare_sdf_graph_record(
+    mut mol_block: MolBlockRecord,
+    chirality_possible: bool,
+    params: SdfDataReadParams,
+) -> Result<SdfGraphRecord, SdfReadError> {
+    // Pinned MolFileParser.cpp::MolFromMolDataStream, before supplier fields:
+    // RDKit❗✔️:   if (res) {
+    // RDKit❗✔️:     FileParserUtils::finishMolProcessing(res.get(), chiralityPossible, params);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // Pinned ForwardSDMolSupplier.cpp::_next:
+    // RDKit❗✔️:     MolFromMolDataStream(*dp_inStream, line, d_params).swap(res);
+    // RDKit❗✔️:     d_line = line;
+    // RDKit❗✔️:     if (res) {
+    // RDKit❗✔️:       this->readMolProps(*res);
+    // RDKit❗✔️:     }
+    // The existing detached finalizer receives the parser's original bit and
+    // empty SDF fields. Move graph/state once without cloning or replaying the
+    // chemical stages. Coordinate coercion is the explicitly selected CK policy.
+    apply_sdf_coordinate_mode(&mut mol_block, params.coordinate_mode)?;
+    let record = SdfGraphRecord {
+        mol_block,
+        data_fields: Vec::new(),
+        chirality_possible,
+        post_state: Default::default(),
+    };
+    match params.mol_post {
+        Some(post) => Ok(record.finish_mol_post(post)?),
+        None => Ok(record),
+    }
 }
 
 fn finish_sdf_graph_record_fields(
-    mut mol_block: MolBlockRecord,
-    chirality_possible: bool,
-    data_lines: &[&str],
+    mut record: SdfGraphRecord,
+    next_line: impl FnMut() -> Result<Option<String>, SdfReadError>,
     params: SdfDataReadParams,
 ) -> Result<SdfGraphRecord, SdfReadError> {
-    apply_sdf_coordinate_mode(&mut mol_block, params.coordinate_mode)?;
-    let data_fields = parse_sdf_data_fields(data_lines, params)?;
-    match &mut mol_block {
-        MolBlockRecord::Concrete { properties, .. } => {
-            for (name, value) in &data_fields {
-                *properties = std::mem::take(properties)
-                    .with_prop(name, value)?
-                    .with_sdf_data_field(name, value);
-            }
-        }
-        MolBlockRecord::Query(record) => {
-            for (name, value) in &data_fields {
-                record.query.set_prop(name, value);
-                record.properties = std::mem::take(&mut record.properties)
-                    .with_prop(name, value)?
-                    .with_sdf_data_field(name, value);
-            }
-        }
-    }
-    if params.process_property_lists {
-        apply_sdf_property_lists(&mut mol_block, &data_fields)?;
-    }
-    Ok(SdfGraphRecord {
-        mol_block,
-        data_fields,
-        chirality_possible,
-        post_state: Default::default(),
-    })
+    // Source readMolProps installs and expands each field in encounter order.
+    // The parser retains its native anchors; this helper moves the ordered
+    // buffers and preserves the finalizer's derived state without another run.
+    record.data_fields = parse_sdf_data_fields(&mut record.mol_block, next_line, params)?;
+    Ok(record)
 }
 
 /// Read the first concrete detached record in an SDF text block.
@@ -8735,7 +8859,8 @@ fn v2000_writer_atom_symbol(atom: &Atom) -> Result<&str, SdfWriteError> {
         .prop("dummyLabel")
         .and_then(|value| value.as_string().ok())
     {
-        Some(label @ ("Pol" | "Mod")) => Ok(label),
+        Some(label) if label.as_bytes() == b"Pol" => Ok("Pol"),
+        Some(label) if label.as_bytes() == b"Mod" => Ok("Mod"),
         _ => Err(SdfWriteError::Atom(
             "dummy/query atoms require query-aware V2000 serialization",
         )),
@@ -8762,6 +8887,23 @@ fn atom_int_prop(atom: &Atom, names: &[&str], source_reads: bool) -> Result<i32,
     // here. Skip new vectors there, retaining original scalar conditions/debt.
     for name in names {
         if let Some(value) = atom.prop(name) {
+            if source_reads {
+                // Reuse the sole numeric converter while retaining the
+                // writer's known atom/key context for positive_overflow.
+                return cosmolkit_core::property_value_to_int(value).map_err(
+                    |source| match source {
+                        cosmolkit_core::PropertyIntReadError::UnsignedOverflow { value } => {
+                            SdfWriteError::UnsignedPropertyOverflow {
+                                atom: Some(atom.id()),
+                                bond: None,
+                                property: (*name).to_owned(),
+                                value,
+                            }
+                        }
+                        other => SdfWriteError::IntegerProperty(other),
+                    },
+                );
+            }
             if let PropertyValue::UInt(value) = value {
                 if !source_reads {
                     continue;
@@ -8791,7 +8933,10 @@ fn atom_int_prop(atom: &Atom, names: &[&str], source_reads: bool) -> Result<i32,
     Ok(0)
 }
 
-fn v2000_writer_atom_line(atom: &Atom, coordinate: [f64; 3]) -> Result<String, SdfWriteError> {
+fn v2000_writer_atom_line(
+    atom: &Atom,
+    coordinate: [f64; 3],
+) -> Result<PropertyText, SdfWriteError> {
     // BEGIN RDKIT CPP FUNCTION GetMolFileAtomProperties / GetMolFileAtomLine
     // RDKit✔️✔️:   totValence = 0;
     // RDKit✔️✔️:   atomMapNumber = 0;
@@ -8805,11 +8950,14 @@ fn v2000_writer_atom_line(atom: &Atom, coordinate: [f64; 3]) -> Result<String, S
     // Raw `molParity` is retained when no detached stereochemical
     // post-processing has replaced it; geometric parity generation remains a
     // separate IO gap, so only that source line is marked behavior-partial.
-    let symbol = v2000_writer_atom_symbol(atom)?;
+    let mut symbol = PropertyText::from(v2000_writer_atom_symbol(atom)?);
+    while symbol.len() < 3 {
+        symbol.push_byte(b' ');
+    }
     format_v2000_atom_line(
         atom,
         coordinate,
-        symbol,
+        symbol.as_bytes(),
         atom.mol_parity().unwrap_or(0),
         atom_int_prop(atom, &["_MolFileHCount"], false)?,
         atom_int_prop(atom, &["molStereoCare", "_MolFileStereoCare"], false)?,
@@ -8824,14 +8972,14 @@ fn v2000_writer_atom_line(atom: &Atom, coordinate: [f64; 3]) -> Result<String, S
 pub(super) fn format_v2000_atom_line(
     atom: &Atom,
     coordinate: [f64; 3],
-    symbol: &str,
+    symbol: &[u8],
     parity: i32,
     h_count: i32,
     stereo_care: i32,
     total_valence: i32,
     inversion: i32,
     exact_change: i32,
-) -> Result<String, SdfWriteError> {
+) -> Result<PropertyText, SdfWriteError> {
     // RDKit❗❌: const std::string GetMolFileAtomLine(const Atom *atom, const Conformer *conf,
     // RDKit❗❌:                                      boost::dynamic_bitset<> &queryListAtoms) {
     // RDKit❗❌:   PRECONDITION(atom, "");
@@ -8890,23 +9038,39 @@ pub(super) fn format_v2000_atom_line(
     // RDKit❗❌:   res += dest;
     // RDKit❗❌:   return res;
     // RDKit❗❌: }
-    Ok(format!(
-        "{:>10.4}{:>10.4}{:>10.4} {symbol:<3}{:>2}{:>3}{:>3}{:>3}{:>3}{:>3}  0{:>3}{:>3}{:>3}{:>3}{:>3}",
-        coordinate[0],
-        coordinate[1],
-        coordinate[2],
-        0,
-        0,
-        parity,
-        h_count,
-        stereo_care,
-        total_valence,
-        atom_int_prop(atom, &["molRxnRole"], true)?,
-        atom_int_prop(atom, &["molRxnComponent"], true)?,
-        atom.atom_map().unwrap_or(0),
-        inversion,
-        exact_change
-    ))
+    // Source snprintf observes c_str() up to NUL, pads %3s to a byte width,
+    // and emits at most 127 bytes into dest[128]. Raw symbols never decode.
+    let symbol = symbol.split(|&byte| byte == 0).next().unwrap_or_default();
+    let mut output: PropertyText = format!(
+        "{:>10.4}{:>10.4}{:>10.4} ",
+        coordinate[0], coordinate[1], coordinate[2]
+    )
+    .into();
+    for _ in symbol.len()..3 {
+        output.push_byte(b' ');
+    }
+    output.extend_bytes(symbol);
+    output.extend_bytes(
+        format!(
+            "{:>2}{:>3}{:>3}{:>3}{:>3}{:>3}  0{:>3}{:>3}{:>3}{:>3}{:>3}",
+            0,
+            0,
+            parity,
+            h_count,
+            stereo_care,
+            total_valence,
+            atom_int_prop(atom, &["molRxnRole"], true)?,
+            atom_int_prop(atom, &["molRxnComponent"], true)?,
+            atom.atom_map().unwrap_or(0),
+            inversion,
+            exact_change
+        )
+        .as_bytes(),
+    );
+    if output.len() > 127 {
+        return Ok(output.as_bytes()[..127].into());
+    }
+    Ok(output)
 }
 
 fn v2000_writer_bond_type(bond: &Bond) -> Result<u32, SdfWriteError> {
@@ -8951,17 +9115,17 @@ fn v2000_writer_bond_line(bond: &Bond) -> Result<String, SdfWriteError> {
     // END RDKIT CPP FUNCTION
 }
 
-fn append_v2000_counted_property(output: &mut String, label: &str, entries: &[(usize, i32)]) {
+fn append_v2000_counted_property(output: &mut PropertyText, label: &str, entries: &[(usize, i32)]) {
     for chunk in entries.chunks(8) {
-        output.push_str(&format!("M  {label}{:>3}", chunk.len()));
+        output.extend_bytes((&format!("M  {label}{:>3}", chunk.len())).as_ref());
         for (index, value) in chunk {
-            output.push_str(&format!(" {index:>3} {value:>3}"));
+            output.extend_bytes((&format!(" {index:>3} {value:>3}")).as_ref());
         }
-        output.push('\n');
+        output.push_byte(b'\n');
     }
 }
 
-fn append_v2000_atom_properties(output: &mut String, topology: &TopologyBlock) {
+fn append_v2000_atom_properties(output: &mut PropertyText, topology: &TopologyBlock) {
     // BEGIN RDKIT CPP FUNCTION GetMolFileChargeInfo
     // RDKit✔️✔️:     if (atom->getFormalCharge() != 0) {
     // RDKit✔️✔️:       ++nChgs;
@@ -9026,7 +9190,7 @@ pub fn write_v2000_detached(
     topology: &TopologyBlock,
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
-) -> Result<String, SdfWriteError> {
+) -> Result<PropertyText, SdfWriteError> {
     topology.validate()?;
     coordinates.validate_for_atom_count(topology.atoms.len())?;
     if topology.atoms.len() > 999
@@ -9040,7 +9204,10 @@ pub fn write_v2000_detached(
             "V2000 cannot encode enhanced stereo groups; use V3000".to_owned(),
         ));
     }
-    let title = properties.name().unwrap_or_default();
+    let title = properties
+        .name()
+        .map(PropertyText::as_bytes)
+        .unwrap_or_default();
     let coords = coordinates
         .conformers_3d
         .first()
@@ -9064,38 +9231,57 @@ pub fn write_v2000_detached(
     // RDKit✔️✔️:     res += text;
     // RDKit✔️✔️: }
     // RDKit✔️✔️:     res += "\n";
-    let info = properties.prop("_MolFileInfo").unwrap_or("  COSMolKit");
-    let comments = properties.prop("_MolFileComments").unwrap_or_default();
+    let info = properties
+        .prop("_MolFileInfo")
+        .map(model_string_property)
+        .transpose()?
+        .unwrap_or_else(|| "  COSMolKit".into());
+    let comments = properties
+        .prop("_MolFileComments")
+        .map(model_string_property)
+        .transpose()?
+        .unwrap_or_default();
     let chiral_flag = properties
         .prop("_MolFileChiralFlag")
-        .and_then(|value| value.parse::<u32>().ok())
+        .map(cosmolkit_core::property_value_to_uint)
+        .transpose()?
         .unwrap_or(0);
-    let mut output = format!(
-        "{title}\n{info}\n{comments}\n{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}999 V2000\n",
-        topology.atoms.len(),
-        topology.bonds.len(),
-        0,
-        topology.substance_groups.len(),
-        chiral_flag,
-        0,
-        0,
-        0,
-        0,
-        0,
+    let mut output = PropertyText::new();
+    output.extend_bytes(title);
+    output.push_byte(b'\n');
+    output.extend_bytes(info.as_bytes());
+    output.push_byte(b'\n');
+    output.extend_bytes(comments.as_bytes());
+    output.push_byte(b'\n');
+    output.extend_bytes(
+        format!(
+            "{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}{:>3}999 V2000\n",
+            topology.atoms.len(),
+            topology.bonds.len(),
+            0,
+            topology.substance_groups.len(),
+            chiral_flag,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+        .as_bytes(),
     );
     for (atom, point) in topology.atoms.iter().zip(coords) {
-        output.push_str(&v2000_writer_atom_line(atom, point)?);
-        output.push('\n');
+        output.extend_bytes((&v2000_writer_atom_line(atom, point)?).as_ref());
+        output.push_byte(b'\n');
     }
     for bond in &topology.bonds {
-        output.push_str(&v2000_writer_bond_line(bond)?);
-        output.push('\n');
+        output.extend_bytes((&v2000_writer_bond_line(bond)?).as_ref());
+        output.push_byte(b'\n');
     }
     // RDKit✔️✔️:     res += GetMolFileChargeInfo(tmol);
     append_v2000_atom_properties(&mut output, topology);
-    output.push_str(&crate::sdf_sgroups::write_v2000_sgroups(topology)?);
+    output.extend_bytes((&crate::sdf_sgroups::write_v2000_sgroups(topology)?).as_ref());
     // RDKit✔️✔️:   res += "M  END\n";
-    output.push_str("M  END\n");
+    output.extend_bytes(("M  END\n").as_ref());
     // END RDKIT CPP FUNCTION
     Ok(output)
 }
@@ -9105,7 +9291,7 @@ pub fn write_sdf_record_detached(
     topology: &TopologyBlock,
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
-) -> Result<String, SdfWriteError> {
+) -> Result<PropertyText, SdfWriteError> {
     let mut output = write_v2000_detached(topology, coordinates, properties)?;
     for (name, value) in properties.sdf_data_fields() {
         // BEGIN RDKIT CPP FUNCTION _writePropToStream
@@ -9116,18 +9302,28 @@ pub fn write_sdf_record_detached(
         // RDKit✔️✔️:       pval.find("\n\n") != std::string::npos) {
         // RDKit✔️✔️:   return;
         // RDKit✔️✔️: }
-        if name.contains('\n') || value.contains("\r\n\r\n") || value.contains("\n\n") {
+        if name.as_bytes().contains(&b'\n')
+            || value
+                .as_bytes()
+                .windows(4)
+                .any(|bytes| bytes == b"\r\n\r\n")
+            || value.as_bytes().windows(2).any(|bytes| bytes == b"\n\n")
+        {
             continue;
         }
         // RDKit✔️✔️:   (*dp_ostream) << ">  <" << name << ">  ";
         // RDKit✔️✔️:   (*dp_ostream) << "\n";
         // RDKit✔️✔️:   (*dp_ostream) << pval << "\n";
         // RDKit✔️✔️:   (*dp_ostream) << "\n";
-        output.push_str(&format!(">  <{name}>  \n{value}\n\n"));
+        output.extend_bytes(b">  <");
+        output.extend_bytes(name.as_bytes());
+        output.extend_bytes(b">  \n");
+        output.extend_bytes(value.as_bytes());
+        output.extend_bytes(b"\n\n");
         // END RDKIT CPP FUNCTION
     }
     // RDKit✔️✔️:   (*dp_ostream) << "$$$$\n";
-    output.push_str("$$$$\n");
+    output.extend_bytes(("$$$$\n").as_ref());
     Ok(output)
 }
 
@@ -9139,7 +9335,8 @@ fn v3000_writer_atom_symbol(atom: &Atom) -> Result<&str, SdfWriteError> {
         .prop("dummyLabel")
         .and_then(|value| value.as_string().ok())
     {
-        Some(label @ ("Pol" | "Mod")) => Ok(label),
+        Some(label) if label.as_bytes() == b"Pol" => Ok("Pol"),
+        Some(label) if label.as_bytes() == b"Mod" => Ok("Mod"),
         _ => Err(SdfWriteError::Atom(
             "dummy/query atoms require query-aware V3000 serialization",
         )),
@@ -9147,7 +9344,7 @@ fn v3000_writer_atom_symbol(atom: &Atom) -> Result<&str, SdfWriteError> {
 }
 
 pub(super) fn append_v3000_atom_int_prop(
-    output: &mut String,
+    output: &mut PropertyText,
     atom: &Atom,
     key: &str,
     label: &str,
@@ -9165,22 +9362,15 @@ pub(super) fn append_v3000_atom_int_prop(
     // RDKit❗✔️: }
     // END RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
 
-    if let Some(value) = atom.prop(key) {
-        let value = match value {
-            PropertyValue::UInt(number) => {
-                i32::try_from(*number).map_err(|_| SdfWriteError::UnsignedPropertyOverflow {
-                    atom: Some(atom.id()),
-                    bond: None,
-                    property: key.to_owned(),
-                    value: *number,
-                })?
-            }
-            value => model_int_property(value).map_err(|()| {
-                SdfWriteError::Atom("molfile integer property has an invalid value")
-            })?,
-        };
+    if atom.prop(key).is_some() {
+        // Share the source integer read and its existing writer context;
+        // conversion finishes before any output byte is appended.
+        let value = atom_int_prop(atom, &[key], true)?;
         if value != 0 {
-            output.push_str(&format!(" {label}={value}"));
+            output.push_byte(b' ');
+            output.extend_bytes(label.as_bytes());
+            output.push_byte(b'=');
+            output.extend_bytes(value.to_string().as_bytes());
         }
     }
     Ok(())
@@ -9190,7 +9380,7 @@ fn v3000_writer_atom_line(
     topology: &TopologyBlock,
     atom: &Atom,
     coordinate: [f64; 3],
-) -> Result<String, SdfWriteError> {
+) -> Result<PropertyText, SdfWriteError> {
     // BEGIN RDKIT CPP FUNCTION GetV3000MolFileAtomLine
     // RDKit❗✔️:   ss << "M  V30 " << atom->getIdx() + 1;
     // RDKit❗✔️:   std::string symbol = AtomGetMolFileSymbol(atom, false, queryListAtoms);
@@ -9280,7 +9470,7 @@ fn v3000_writer_atom_line(
     // runtime geometry/valence services, so those source branches remain
     // partial while their persisted representation is round-trippable.
     let symbol = v3000_writer_atom_symbol(atom)?;
-    let mut output = format!(
+    let mut output: PropertyText = format!(
         "M  V30 {} {} {:.6} {:.6} {:.6} {}",
         atom.id().index() + 1,
         symbol,
@@ -9288,17 +9478,18 @@ fn v3000_writer_atom_line(
         coordinate[1],
         coordinate[2],
         atom.atom_map().unwrap_or(0)
-    );
+    )
+    .into();
     if let Some(parity) = atom.mol_parity()
         && parity != 0
     {
-        output.push_str(&format!(" CFG={parity}"));
+        output.extend_bytes((&format!(" CFG={parity}")).as_ref());
     }
     if atom.formal_charge() != 0 {
-        output.push_str(&format!(" CHG={}", atom.formal_charge()));
+        output.extend_bytes((&format!(" CHG={}", atom.formal_charge())).as_ref());
     }
     if let Some(isotope) = atom.isotope() {
-        output.push_str(&format!(" MASS={isotope}"));
+        output.extend_bytes((&format!(" MASS={isotope}")).as_ref());
     }
     let radical_electrons = atom.radical_electrons();
     if radical_electrons != 0
@@ -9307,10 +9498,9 @@ fn v3000_writer_atom_line(
             .neighbors_of(atom.id().index())
             .is_empty()
     {
-        output.push_str(&format!(
-            " RAD={}",
-            if radical_electrons % 2 == 1 { 2 } else { 3 }
-        ));
+        output.extend_bytes(
+            (&format!(" RAD={}", if radical_electrons % 2 == 1 { 2 } else { 3 })).as_ref(),
+        );
     }
     // Source total valence comes from structure, not this property getter.
     // Retain old scalar output debt; vectors take the source no-read branch.
@@ -9321,14 +9511,17 @@ fn v3000_writer_atom_line(
         let total_valence = model_int_property(total_valence)
             .map_err(|()| SdfWriteError::Atom("molTotValence has an invalid value"))?;
         if total_valence != 0 {
-            output.push_str(&format!(
-                " VAL={}",
-                if total_valence == 15 {
-                    -1
-                } else {
-                    total_valence
-                }
-            ));
+            output.extend_bytes(
+                (&format!(
+                    " VAL={}",
+                    if total_valence == 15 {
+                        -1
+                    } else {
+                        total_valence
+                    }
+                ))
+                    .as_ref(),
+            );
         }
     }
     append_v3000_atom_properties(&mut output, atom, false)?;
@@ -9337,7 +9530,7 @@ fn v3000_writer_atom_line(
 }
 
 pub(super) fn append_v3000_atom_properties(
-    output: &mut String,
+    output: &mut PropertyText,
     atom: &Atom,
     source_query_fields: bool,
 ) -> Result<(), SdfWriteError> {
@@ -9488,13 +9681,14 @@ pub(super) fn append_v3000_atom_properties(
     append_v3000_atom_int_prop(output, atom, "molAttachPoint", "ATTCHPT")?;
     append_v3000_atom_int_prop(output, atom, "molAtomSeqId", "SEQID")?;
     if let Some(value) = atom.prop("molAtomSeqName") {
-        output.push_str(&format!(" SEQNAME={}", model_string_property(value)?));
+        output.extend_bytes(b" SEQNAME=");
+        output.extend_bytes(model_string_property(value)?.as_bytes());
     }
     append_v3000_atom_int_prop(output, atom, "molRxnExactChange", "EXACHG")?;
     if let Some(value) = atom.mol_inversion_flag()
         && matches!(value, 1 | 2)
     {
-        output.push_str(&format!(" INVRET={value}"));
+        output.extend_bytes((&format!(" INVRET={value}")).as_ref());
     }
     append_v3000_atom_int_prop(output, atom, "molStereoCare", "STBOX")?;
     if source_query_fields {
@@ -9510,7 +9704,8 @@ pub(super) fn append_v3000_atom_properties(
         }
     }
     if let Some(value) = atom.prop("molAtomClass") {
-        output.push_str(&format!(" CLASS={}", model_string_property(value)?));
+        output.extend_bytes(b" CLASS=");
+        output.extend_bytes(model_string_property(value)?.as_bytes());
     }
     Ok(())
 }
@@ -9529,7 +9724,7 @@ fn v3000_writer_bond_type(bond: &Bond) -> Result<u32, SdfWriteError> {
     }
 }
 
-fn v3000_writer_bond_line(bond: &Bond) -> Result<String, SdfWriteError> {
+fn v3000_writer_bond_line(bond: &Bond) -> Result<PropertyText, SdfWriteError> {
     // BEGIN RDKIT COMPLETE PROPOSED CPP FUNCTION: third_party/rdkit/Code/RDGeneral/RDValue-taggedunion.h:441-450
     // RDKit❗✔️: template <>
     // RDKit❗✔️: inline int rdvalue_cast<int>(RDValue_cast_t v) {
@@ -9570,13 +9765,14 @@ fn v3000_writer_bond_line(bond: &Bond) -> Result<String, SdfWriteError> {
     // Direction state is serialized directly. Runtime-only wedge selection and
     // endpoint reversal remain outside this detached writer.
     let bond_type = v3000_writer_bond_type(bond)?;
-    let mut output = format!(
+    let mut output: PropertyText = format!(
         "M  V30 {} {} {} {}",
         bond.id().index() + 1,
         bond_type,
         bond.begin().index() + 1,
         bond.end().index() + 1
-    );
+    )
+    .into();
     let configuration = match bond.direction() {
         BondDirection::BeginWedge => Some(1),
         BondDirection::Unknown | BondDirection::EitherDouble => Some(2),
@@ -9584,7 +9780,7 @@ fn v3000_writer_bond_line(bond: &Bond) -> Result<String, SdfWriteError> {
         _ => None,
     };
     if let Some(configuration) = configuration {
-        output.push_str(&format!(" CFG={configuration}"));
+        output.extend_bytes((&format!(" CFG={configuration}")).as_ref());
     }
     append_v3000_bond_properties(&mut output, bond)?;
     // END RDKIT CPP FUNCTION
@@ -9592,7 +9788,7 @@ fn v3000_writer_bond_line(bond: &Bond) -> Result<String, SdfWriteError> {
 }
 
 pub(super) fn append_v3000_bond_properties(
-    output: &mut String,
+    output: &mut PropertyText,
     bond: &Bond,
 ) -> Result<(), SdfWriteError> {
     // RDKit❗❌: const std::string GetV3000MolFileBondLine(
@@ -9674,8 +9870,9 @@ pub(super) fn append_v3000_bond_properties(
             ));
         }
         let value = model_string_property(value)?;
-        if value != "0" {
-            output.push_str(&format!(" RXCTR={value}"));
+        if value.as_bytes() != b"0" {
+            output.extend_bytes(b" RXCTR=");
+            output.extend_bytes(value.as_bytes());
         }
     }
     for (key, label) in [
@@ -9685,8 +9882,11 @@ pub(super) fn append_v3000_bond_properties(
     ] {
         if let Some(value) = bond.prop(key) {
             let value = model_string_property(value)?;
-            if value != "0" {
-                output.push_str(&format!(" {label}={value}"));
+            if value.as_bytes() != b"0" {
+                output.push_byte(b' ');
+                output.extend_bytes(label.as_bytes());
+                output.push_byte(b'=');
+                output.extend_bytes(value.as_bytes());
             }
         }
     }
@@ -9698,10 +9898,13 @@ pub fn write_v3000_detached(
     topology: &TopologyBlock,
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
-) -> Result<String, SdfWriteError> {
+) -> Result<PropertyText, SdfWriteError> {
     topology.validate()?;
     coordinates.validate_for_atom_count(topology.atoms.len())?;
-    let title = properties.name().unwrap_or_default();
+    let title = properties
+        .name()
+        .map(PropertyText::as_bytes)
+        .unwrap_or_default();
     let selected_3d = coordinates.conformers_3d.first();
     let selected_2d = coordinates.conformers_2d.first();
     let points = selected_3d
@@ -9729,11 +9932,20 @@ pub fn write_v3000_detached(
     } else {
         "     RDKit"
     };
-    let info = properties.prop("_MolFileInfo").unwrap_or(default_info);
-    let comments = properties.prop("_MolFileComments").unwrap_or_default();
+    let info = properties
+        .prop("_MolFileInfo")
+        .map(model_string_property)
+        .transpose()?
+        .unwrap_or_else(|| default_info.into());
+    let comments = properties
+        .prop("_MolFileComments")
+        .map(model_string_property)
+        .transpose()?
+        .unwrap_or_default();
     let chiral_flag = properties
         .prop("_MolFileChiralFlag")
-        .and_then(|value| value.parse::<u32>().ok())
+        .map(cosmolkit_core::property_value_to_uint)
+        .transpose()?
         .unwrap_or(0);
     // BEGIN RDKIT CPP FUNCTION outputMolToMolBlock / getV3000CTAB
     // RDKit✔️✔️:   if (tmol.getPropIfPresent(common_properties::_Name, text)) {
@@ -9776,42 +9988,52 @@ pub fn write_v3000_detached(
     // RDKit✔️✔️:   std::string res = "M  V30 BEGIN CTAB\n";
     // RDKit✔️✔️:   ss << "M  V30 COUNTS " << nAtoms << " " << nBonds << " " << nSGroups << " "
     // RDKit✔️✔️:      << num3DConstraints << " " << chiralFlag << "\n";
-    let mut output = format!(
-        "{title}\n{info}\n{comments}\n  0  0  0  0  0  0  0  0  0  0999 V3000\nM  V30 BEGIN CTAB\nM  V30 COUNTS {} {} {} 0 {}\n",
+    let mut output = PropertyText::new();
+    output.extend_bytes(title);
+    output.push_byte(b'\n');
+    output.extend_bytes(info.as_bytes());
+    output.push_byte(b'\n');
+    output.extend_bytes(comments.as_bytes());
+    output.push_byte(b'\n');
+    output.extend_bytes(format!(
+        "  0  0  0  0  0  0  0  0  0  0999 V3000\nM  V30 BEGIN CTAB\nM  V30 COUNTS {} {} {} 0 {}\n",
         topology.atoms.len(),
         topology.bonds.len(),
         topology.substance_groups.len(),
         chiral_flag
-    );
+    ).as_bytes());
     if !topology.atoms.is_empty() {
         // RDKit✔️✔️:   res += "M  V30 BEGIN ATOM\n";
-        output.push_str("M  V30 BEGIN ATOM\n");
+        output.extend_bytes(("M  V30 BEGIN ATOM\n").as_ref());
         for (atom, point) in topology.atoms.iter().zip(points) {
-            output.push_str(&v3000_writer_atom_line(topology, atom, point)?);
-            output.push('\n');
+            output.extend_bytes((&v3000_writer_atom_line(topology, atom, point)?).as_ref());
+            output.push_byte(b'\n');
         }
         // RDKit✔️✔️:   res += "M  V30 END ATOM\n";
-        output.push_str("M  V30 END ATOM\n");
+        output.extend_bytes(("M  V30 END ATOM\n").as_ref());
     }
     if !topology.bonds.is_empty() {
         // RDKit✔️✔️:     res += "M  V30 BEGIN BOND\n";
-        output.push_str("M  V30 BEGIN BOND\n");
+        output.extend_bytes(("M  V30 BEGIN BOND\n").as_ref());
         for bond in &topology.bonds {
-            output.push_str(&v3000_writer_bond_line(bond)?);
-            output.push('\n');
+            output.extend_bytes((&v3000_writer_bond_line(bond)?).as_ref());
+            output.push_byte(b'\n');
         }
         // RDKit✔️✔️:     res += "M  V30 END BOND\n";
-        output.push_str("M  V30 END BOND\n");
+        output.extend_bytes(("M  V30 END BOND\n").as_ref());
     }
-    if let Some(link_nodes) = properties.prop("_MolFileLinkNodes") {
-        for link_node in link_nodes.split('|') {
-            output.push_str(&format!("M  V30 LINKNODE {link_node}\n"));
+    if let Some(link_nodes) = properties.prop("_molLinkNodes") {
+        let link_nodes = model_string_property(link_nodes)?;
+        for link_node in link_nodes.as_bytes().split(|&byte| byte == b'|') {
+            output.extend_bytes(b"M  V30 LINKNODE ");
+            output.extend_bytes(link_node);
+            output.push_byte(b'\n');
         }
     }
-    output.push_str(&crate::sdf_sgroups::write_v3000_typed_blocks(topology)?);
+    output.extend_bytes((&crate::sdf_sgroups::write_v3000_typed_blocks(topology)?).as_ref());
     // RDKit✔️✔️:   res += "M  V30 END CTAB\n";
     // RDKit✔️✔️:   res += "M  END\n";
-    output.push_str("M  V30 END CTAB\nM  END\n");
+    output.extend_bytes(("M  V30 END CTAB\nM  END\n").as_ref());
     // END RDKIT CPP FUNCTION
     Ok(output)
 }
@@ -9838,10 +10060,13 @@ mod tests {
     };
 
     fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
-        match value {
-            Some(PropertyValue::String(value)) => Some(value),
-            _ => None,
-        }
+        value.map(|value| {
+            super::fixture_text(
+                value
+                    .as_string()
+                    .expect("source text property must have String tag"),
+            )
+        })
     }
 
     #[test]
@@ -9937,11 +10162,16 @@ mod tests {
     fn v2000_detached_reader_and_writer_round_trip_core_graph() {
         let input = "ethanol\n  test\n\n  3  2  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    2.1000    1.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0  0  0  0\n  2  3  1  0  0  0  0\nM  END\n";
         let (topology, coordinates, properties) = read_v2000_detached(input).expect("read");
-        let output = write_v2000_detached(&topology, &coordinates, &properties).expect("write");
+        let output = write_v2000_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
+            .expect("write");
         let (roundtrip, _, roundtrip_properties) = read_v2000_detached(&output).expect("roundtrip");
         assert_eq!(roundtrip.atoms.len(), 3);
         assert_eq!(roundtrip.bonds.len(), 2);
-        assert_eq!(roundtrip_properties.name(), Some("ethanol"));
+        assert_eq!(
+            roundtrip_properties.name().map(super::fixture_text),
+            Some("ethanol")
+        );
     }
 
     #[test]
@@ -10154,7 +10384,10 @@ mod tests {
             Some("1")
         );
         assert_eq!(topology.atoms[0].formal_charge(), 0);
-        assert_eq!(properties.prop("_MolFileLinkNodes"), Some("1 3 1 1 2"));
+        assert_eq!(
+            properties.prop("_molLinkNodes"),
+            Some(&PropertyValue::String("1 3 1 1 2".into()))
+        );
     }
 
     #[test]
@@ -10247,12 +10480,19 @@ mod tests {
         );
         assert_eq!(
             properties.prop("_MolFileInfo"),
-            Some("  source            2D")
+            Some(&PropertyValue::String("  source            2D".into()))
         );
-        assert_eq!(properties.prop("_MolFileComments"), Some("comment"));
-        assert_eq!(properties.prop("_MolFileChiralFlag"), Some("1"));
+        assert_eq!(
+            properties.prop("_MolFileComments"),
+            Some(&PropertyValue::String("comment".into()))
+        );
+        assert_eq!(
+            properties.prop("_MolFileChiralFlag"),
+            Some(&PropertyValue::String("1".into()))
+        );
 
         let output = write_v2000_detached(&topology, &CoordinateBlock::default(), &properties)
+            .map(super::fixture_writer_text)
             .expect("write preserved atom state");
         assert!(output.contains("M  CHG  1   2  -1\n"));
         assert!(output.contains("M  RAD  1   1   2\n"));
@@ -10268,7 +10508,7 @@ mod tests {
         assert_eq!(roundtrip.bonds[0].stereo(), BondStereo::Any);
         assert_eq!(
             roundtrip_properties.prop("_MolFileComments"),
-            Some("comment")
+            Some(&PropertyValue::String("comment".into()))
         );
     }
 
@@ -10287,7 +10527,7 @@ mod tests {
         assert_eq!(group.atoms(), &[AtomId::new(0), AtomId::new(1)]);
         assert_eq!(group.parent_atoms(), &[AtomId::new(0)]);
         assert_eq!(group.bonds(), &[BondId::new(0)]);
-        assert_eq!(group.label(), Some("Me"));
+        assert_eq!(group.label().map(super::fixture_text), Some("Me"));
     }
 
     #[test]
@@ -10309,9 +10549,9 @@ mod tests {
         let (topology, _, _) = read_v2000_detached(&input).expect("read typed SGroups");
         let sup = &topology.substance_groups[0];
         assert_eq!(sup.rdkit_sequence_id(), Some(1));
-        assert_eq!(sup.subtype(), Some("ALT"));
+        assert_eq!(sup.subtype().map(super::fixture_text), Some("ALT"));
         assert_eq!(sup.connection(), Some(&SGroupConnection::HeadToTail));
-        assert_eq!(sup.expansion_state(), Some("E"));
+        assert_eq!(sup.expansion_state().map(super::fixture_text), Some("E"));
         assert_eq!(
             sup.display().unwrap().brackets[0].points,
             [[0.0, 1.0, 0.0], [2.0, 3.0, 0.0], [0.0, 0.0, 0.0]]
@@ -10320,31 +10560,53 @@ mod tests {
         assert_eq!(sup.cstates()[0].vector, [0.5, 0.25, 0.0]);
         assert_eq!(sup.attach_points()[0].atom, AtomId::new(0));
         assert_eq!(sup.attach_points()[0].leaving_atom, Some(AtomId::new(1)));
-        assert_eq!(sup.attach_points()[0].label.as_deref(), Some("AP"));
+        assert_eq!(
+            sup.attach_points()[0]
+                .label
+                .as_ref()
+                .map(super::fixture_text),
+            Some("AP")
+        );
 
         let dat = &topology.substance_groups[1];
         assert_eq!(dat.rdkit_sequence_id(), Some(2));
         assert_eq!(dat.parent(), Some(sup.id()));
         assert_eq!(dat.component_number(), Some(5));
-        assert_eq!(dat.class(), Some("CLASS"));
+        assert_eq!(dat.class().map(super::fixture_text), Some("CLASS"));
         assert_eq!(
             dat.bracket_style(),
             Some(&cosmolkit_model::SGroupBracketStyle::Parenthesis)
         );
         let data = dat.data().unwrap();
-        assert_eq!(data.field_name.as_deref(), Some("FIELD"));
-        assert_eq!(data.field_type.as_deref(), Some("T"));
-        assert_eq!(data.field_info.as_deref(), Some("INFO"));
-        assert_eq!(data.query_type.as_deref(), Some("Q"));
-        assert_eq!(data.query_op.as_deref(), Some("OP"));
-        assert_eq!(data.field_display.as_deref(), Some("display spec"));
-        assert_eq!(data.values, ["first valuesecond value"]);
+        assert_eq!(
+            data.field_name.as_ref().map(super::fixture_text),
+            Some("FIELD")
+        );
+        assert_eq!(data.field_type.as_ref().map(super::fixture_text), Some("T"));
+        assert_eq!(
+            data.field_info.as_ref().map(super::fixture_text),
+            Some("INFO")
+        );
+        assert_eq!(data.query_type.as_ref().map(super::fixture_text), Some("Q"));
+        assert_eq!(data.query_op.as_ref().map(super::fixture_text), Some("OP"));
+        assert_eq!(
+            data.field_display.as_ref().map(super::fixture_text),
+            Some("display spec")
+        );
+        assert_eq!(
+            data.values
+                .iter()
+                .map(super::fixture_text)
+                .collect::<Vec<_>>(),
+            ["first valuesecond value"]
+        );
 
         let output = write_v2000_detached(
             &topology,
             &CoordinateBlock::default(),
             &MoleculeProperties::default(),
         )
+        .map(super::fixture_writer_text)
         .expect("write typed V2000 SGroups");
         assert_eq!(&output.lines().nth(3).unwrap()[9..12], "  2");
         assert!(output.contains("M  STY"));
@@ -10352,13 +10614,24 @@ mod tests {
         let (roundtrip, _, _) =
             read_v2000_detached(&output).expect("roundtrip typed V2000 SGroups");
         assert_eq!(roundtrip.substance_groups.len(), 2);
-        assert_eq!(roundtrip.substance_groups[0].subtype(), Some("ALT"));
+        assert_eq!(
+            roundtrip.substance_groups[0]
+                .subtype()
+                .map(super::fixture_text),
+            Some("ALT")
+        );
         assert_eq!(
             roundtrip.substance_groups[1].parent(),
             Some(roundtrip.substance_groups[0].id())
         );
         assert_eq!(
-            roundtrip.substance_groups[1].data().unwrap().values,
+            roundtrip.substance_groups[1]
+                .data()
+                .unwrap()
+                .values
+                .iter()
+                .map(super::fixture_text)
+                .collect::<Vec<_>>(),
             ["first valuesecond value"]
         );
     }
@@ -10421,7 +10694,13 @@ mod tests {
             retained.attach_points()[0].leaving_atom,
             Some(AtomId::new(3))
         );
-        assert_eq!(retained.attach_points()[0].label.as_deref(), Some("  "));
+        assert_eq!(
+            retained.attach_points()[0]
+                .label
+                .as_ref()
+                .map(super::fixture_text),
+            Some("  ")
+        );
     }
 
     #[test]
@@ -10497,18 +10776,68 @@ mod tests {
             read_v2000_detached(&input).expect("read UTF-8 SGroup data");
         let expected = format!("{ascii_prefix}界");
         assert_eq!(
-            topology.substance_groups[0].data().unwrap().values,
+            topology.substance_groups[0]
+                .data()
+                .unwrap()
+                .values
+                .iter()
+                .map(super::fixture_text)
+                .collect::<Vec<_>>(),
             [expected.as_str()]
         );
 
+        // Native BuildV2000SCDSEDLines + FormatV2000StringField use
+        // std::string byte lengths and 69-byte slices, including UTF-8 cuts.
+        // Preserve the original 68 ASCII + three-byte character counterexample.
         let output = write_v2000_detached(&topology, &coordinates, &properties)
-            .expect("write UTF-8 SGroup data");
-        assert!(output.contains(&format!("M  SCD   1 {ascii_prefix}\n")));
-        assert!(output.contains("M  SED   1 界\n"));
-        let (roundtrip, _, _) = read_v2000_detached(&output).expect("roundtrip UTF-8 SGroup data");
+            .expect("write source SGroup bytes");
+        let scd_prefix = b"M  SCD   1 ";
+        let sed_prefix = b"M  SED   1 ";
+        let scd = output
+            .as_bytes()
+            .split(|&byte| byte == b'\n')
+            .find_map(|line| line.strip_prefix(scd_prefix))
+            .expect("SCD payload");
+        let sed = output
+            .as_bytes()
+            .split(|&byte| byte == b'\n')
+            .find_map(|line| line.strip_prefix(sed_prefix))
+            .expect("SED payload");
+        assert_eq!(scd, &expected.as_bytes()[..69]);
+        assert_eq!(sed, &expected.as_bytes()[69..]);
+        assert_eq!([scd, sed].concat(), expected.as_bytes());
+        let invalid = std::str::from_utf8(output.as_bytes()).unwrap_err();
+        let scd_offset = output
+            .as_bytes()
+            .windows(scd_prefix.len())
+            .position(|bytes| bytes == scd_prefix)
+            .expect("SCD record");
+        assert_eq!(invalid.valid_up_to(), scd_offset + scd_prefix.len() + 68);
+        assert_eq!(invalid.error_len(), Some(1));
+
+        // Retain a complete UTF-8 roundtrip when the same source byte boundary
+        // is aligned: 66 ASCII + three-byte character, then three ASCII bytes.
+        let aligned_prefix = "a".repeat(66);
+        let aligned_input = input
+            .replace(&ascii_prefix, &aligned_prefix)
+            .replace("M  SED   1 界", "M  SED   1 界aaa");
+        let aligned_expected = format!("{aligned_prefix}界aaa");
+        let (topology, coordinates, properties) =
+            read_v2000_detached(&aligned_input).expect("read aligned UTF-8 SGroup");
         assert_eq!(
-            roundtrip.substance_groups[0].data().unwrap().values,
-            [expected]
+            topology.substance_groups[0].data().unwrap().values[0].as_bytes(),
+            aligned_expected.as_bytes()
+        );
+        let output = write_v2000_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
+            .expect("write aligned UTF-8 SGroup");
+        assert!(output.contains(&format!("M  SCD   1 {aligned_prefix}界\n")));
+        assert!(output.contains("M  SED   1 aaa\n"));
+        let (roundtrip, _, _) =
+            read_v2000_detached(&output).expect("roundtrip aligned UTF-8 SGroup");
+        assert_eq!(
+            roundtrip.substance_groups[0].data().unwrap().values[0].as_bytes(),
+            aligned_expected.as_bytes()
         );
     }
 
@@ -10613,8 +10942,14 @@ mod tests {
             panic!("query properties must produce a query record");
         };
         assert_eq!(record.query.num_atoms(), 3);
-        assert_eq!(record.properties.prop("_NeedsQueryScan"), Some("1"));
-        assert_eq!(record.query.prop("_NeedsQueryScan"), Some("1"));
+        assert_eq!(
+            record.properties.prop("_NeedsQueryScan"),
+            Some(&PropertyValue::String("1".into()))
+        );
+        assert_eq!(
+            record.query.prop("_NeedsQueryScan"),
+            Some(&PropertyValue::String("1".into()))
+        );
         assert_eq!(
             record.query.atoms()[0].predicate(),
             &QueryNode::and(vec![
@@ -10637,6 +10972,8 @@ mod tests {
         );
         assert_eq!(record.query.atoms()[1].isotope(), Some(7));
         assert_eq!(
+            // QueryAtom::expandQuery + mergeNullQFirst swaps AtomNull
+            // for the non-null degree predicate under COMPOSITE_AND.
             record.query.atoms()[1].predicate(),
             &QueryNode::predicate(AtomQueryPredicate::ExplicitDegree(2))
         );
@@ -10693,19 +11030,22 @@ mod tests {
             record.data_fields,
             vec![("ID".to_owned(), "abc".to_owned())]
         );
-        assert_eq!(record.properties.prop("ID"), Some("abc"));
+        assert_eq!(
+            record.properties.prop("ID"),
+            Some(&PropertyValue::String("abc".into()))
+        );
         let output =
             write_sdf_record_detached(&record.topology, &record.coordinates, &record.properties)
+                .map(super::fixture_writer_text)
                 .expect("write SDF record");
         assert!(output.contains(">  <ID>  \nabc\n"));
         assert!(output.ends_with("$$$$\n"));
     }
 
     #[test]
-    fn sdf_property_list_source_mismatch_is_warning_only_for_both_strict_modes_and_graph_kinds() {
-        // Author regression proposal: FileParserUtils.h::applyMolListProp
-        // warns/returns on count mismatch without consulting strictParsing.
-        // Original parity inputs and existing assertions remain unchanged.
+    fn sdf_property_list_count_policy_covers_both_strict_modes_and_graph_kinds() {
+        // User policy: strict mismatches fail structurally; non-strict mode
+        // retains FileParserUtils.h::applyMolListProp's warning-only return.
         for strict_parsing in [false, true] {
             for symbol in ["C", "Q"] {
                 for target in ["atom", "bond"] {
@@ -10731,21 +11071,37 @@ mod tests {
                                 name,
                                 value
                             );
-                            let record = super::read_sdf_graph_record_detached_with_params(
+                            let result = super::read_sdf_graph_record_detached_with_params(
                                 &input,
                                 SdfDataReadParams {
                                     strict_parsing,
                                     ..SdfDataReadParams::default()
                                 },
-                            )
-                            .expect("source count mismatch retains the record");
+                            );
+                            if strict_parsing {
+                                assert!(matches!(result,
+                                    Err(SdfReadError::PropertyListCount {
+                                        target: actual_target,
+                                        name: actual_name,
+                                        actual,
+                                        expected,
+                                    }) if actual_target == target && actual_name == name
+                                        && actual == super::split_sdf_property_list_tokens(value).len()
+                                        && expected == if target == "atom" { 2 } else { 1 }
+                                ));
+                                continue;
+                            }
+                            let record = result.expect("non-strict mismatch retains the record");
                             match record.mol_block {
                                 MolBlockRecord::Concrete {
                                     topology,
                                     properties,
                                     ..
                                 } => {
-                                    assert_eq!(properties.prop(&name), Some(*value));
+                                    assert_eq!(
+                                        properties.prop(&name),
+                                        Some(&PropertyValue::String((*value).into()))
+                                    );
                                     assert_eq!(properties.sdf_property_lists().len(), 2);
                                     assert!(
                                         topology.atoms.iter().all(|a| a.prop("Mismatch").is_none())
@@ -10763,7 +11119,10 @@ mod tests {
                                     );
                                 }
                                 MolBlockRecord::Query(query) => {
-                                    assert_eq!(query.properties.prop(&name), Some(*value));
+                                    assert_eq!(
+                                        query.properties.prop(&name),
+                                        Some(&PropertyValue::String((*value).into()))
+                                    );
                                     assert_eq!(query.properties.sdf_property_lists().len(), 2);
                                     assert!(
                                         query
@@ -10805,15 +11164,30 @@ mod tests {
                     let input = format!(
                         "zero list\n  test\n\n  0  0  0  0  0  0  0  0  0  0999 V2000\nM  END\n>  <{name}>\n{value}\n\n$$$$\n"
                     );
-                    let record = read_sdf_record_detached_with_params(
+                    let result = read_sdf_record_detached_with_params(
                         &input,
                         SdfDataReadParams {
                             strict_parsing,
                             ..SdfDataReadParams::default()
                         },
-                    )
-                    .expect("source zero-table mismatch or empty marker returns without error");
-                    assert_eq!(record.properties.prop(&name), Some(value));
+                    );
+                    if strict_parsing && value != "[?]" {
+                        assert!(matches!(result,
+                            Err(SdfReadError::PropertyListCount {
+                                target: actual_target,
+                                name: actual_name,
+                                actual,
+                                expected: 0,
+                            }) if actual_target == target && actual_name == name
+                                && actual == super::split_sdf_property_list_tokens(value).len()
+                        ));
+                        continue;
+                    }
+                    let record = result.expect("non-strict mismatch or exact empty marker list");
+                    assert_eq!(
+                        record.properties.prop(&name),
+                        Some(&PropertyValue::String(value.into()))
+                    );
                     // [?] with zero items is an exact custom-marker list and
                     // is represented as an empty typed list, as the source
                     // loop assigns no rows. Other payloads mismatch.
@@ -10829,7 +11203,15 @@ mod tests {
     #[test]
     fn sdf_property_list_source_missing_marker_and_lexical_failure_are_per_item() {
         let parse = |value, count, kind| {
-            super::parse_sdf_property_list_values("atom.prop.Example", value, count, kind)
+            super::parse_sdf_property_list_values(
+                "atom.prop.Example",
+                value,
+                count,
+                kind,
+                super::SdfPropertyListTarget::Atom,
+                true,
+            )
+            .unwrap()
         };
         // The source recognizes a leading marker only at nItems + 1;
         // otherwise a bracketed first token is an ordinary item value.
@@ -10905,11 +11287,11 @@ mod tests {
         let record = read_sdf_record_detached(&input).expect("read property lists");
         assert_eq!(
             record.topology.atoms[0].prop("Label"),
-            Some(&PropertyValue::String("C1".to_owned()))
+            Some(&PropertyValue::String("C1".into()))
         );
         assert_eq!(
             record.topology.atoms[1].prop("Label"),
-            Some(&PropertyValue::String("O1".to_owned()))
+            Some(&PropertyValue::String("O1".into()))
         );
         assert_eq!(
             record.topology.atoms[0].prop("Score"),
@@ -10931,7 +11313,7 @@ mod tests {
         );
         assert_eq!(
             record.topology.bonds[0].prop("Label"),
-            Some(&PropertyValue::String("single".to_owned()))
+            Some(&PropertyValue::String("single".into()))
         );
         assert_eq!(record.properties.sdf_property_lists().len(), 5);
         assert_eq!(
@@ -10966,7 +11348,10 @@ mod tests {
             },
         )
         .expect("read property list without applying it");
-        assert_eq!(record.properties.prop("atom.iprop.Score"), Some("7"));
+        assert_eq!(
+            record.properties.prop("atom.iprop.Score"),
+            Some(&PropertyValue::String("7".into()))
+        );
         assert_eq!(record.topology.atoms[0].prop("Score"), None);
         assert!(record.properties.sdf_property_lists().is_empty());
     }
@@ -10997,11 +11382,11 @@ mod tests {
         };
         assert_eq!(
             query_record.query.atoms()[0].prop("Label"),
-            Some(&PropertyValue::String("any".to_owned()))
+            Some(&PropertyValue::String("any".into()))
         );
         assert_eq!(
             query_record.query.atoms()[1].prop("Label"),
-            Some(&PropertyValue::String("oxygen".to_owned()))
+            Some(&PropertyValue::String("oxygen".into()))
         );
         assert_eq!(
             query_record.query.bonds()[0].bond().prop("Score"),
@@ -11018,8 +11403,9 @@ mod tests {
             .with_sdf_data_field("ID", "abc")
             .with_sdf_data_field("bad\nname", "ignored")
             .with_sdf_data_field("BAD_VALUE", "one\n\ntwo");
-        let output =
-            write_sdf_record_detached(&topology, &coordinates, &properties).expect("write fields");
+        let output = write_sdf_record_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
+            .expect("write fields");
         assert!(output.contains(">  <ID>  \nabc\n\n"));
         assert!(!output.contains("bad\nname"));
         assert!(!output.contains("BAD_VALUE"));
@@ -11029,13 +11415,17 @@ mod tests {
     fn v3000_detached_reader_and_writer_round_trip_core_graph() {
         let input = "ethanol\n  test\n\n  0  0  0  0  0  0  0  0999 V3000\nM  V30 BEGIN CTAB\nM  V30 COUNTS 2 1 0 0 0\nM  V30 BEGIN ATOM\nM  V30 1 C 0.0 0.0 0.0 0\nM  V30 2 O 1.2 0.0 0.0 0\nM  V30 END ATOM\nM  V30 BEGIN BOND\nM  V30 1 1 1 2\nM  V30 END BOND\nM  V30 END CTAB\nM  END\n";
         let (topology, coordinates, properties) = read_v3000_detached(input).expect("read V3000");
-        let output =
-            write_v3000_detached(&topology, &coordinates, &properties).expect("write V3000");
+        let output = write_v3000_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
+            .expect("write V3000");
         let (roundtrip, _, roundtrip_properties) =
             read_v3000_detached(&output).expect("roundtrip V3000");
         assert_eq!(roundtrip.atoms.len(), 2);
         assert_eq!(roundtrip.bonds.len(), 1);
-        assert_eq!(roundtrip_properties.name(), Some("ethanol"));
+        assert_eq!(
+            roundtrip_properties.name().map(super::fixture_text),
+            Some("ethanol")
+        );
     }
 
     #[test]
@@ -11131,8 +11521,14 @@ mod tests {
                 QueryNode::predicate(AtomQueryPredicate::RingBondCount(0xDEAD_BEEF_u32 as i32,)),
             ])
         );
-        assert_eq!(record.properties.prop("_NeedsQueryScan"), Some("1"));
-        assert_eq!(record.query.prop("_NeedsQueryScan"), Some("1"));
+        assert_eq!(
+            record.properties.prop("_NeedsQueryScan"),
+            Some(&PropertyValue::String("1".into()))
+        );
+        assert_eq!(
+            record.query.prop("_NeedsQueryScan"),
+            Some(&PropertyValue::String("1".into()))
+        );
 
         // RBCNT above 4 clamps to an EQUALITY query on 4 (only the V2000
         // `M  RBC` line builds the LESS-EQUAL form).
@@ -11434,9 +11830,18 @@ mod tests {
             string_property(bond.prop("_MolFileBondAttach")),
             Some("ANY")
         );
-        assert_eq!(properties.prop("_MolFileComments"), Some("comment"));
-        assert_eq!(properties.prop("_MolFileChiralFlag"), Some("1"));
-        assert_eq!(properties.prop("_MolFileLinkNodes"), Some("1 2 2 10 20"));
+        assert_eq!(
+            properties.prop("_MolFileComments"),
+            Some(&PropertyValue::String("comment".into()))
+        );
+        assert_eq!(
+            properties.prop("_MolFileChiralFlag"),
+            Some(&PropertyValue::String("1".into()))
+        );
+        assert_eq!(
+            properties.prop("_molLinkNodes"),
+            Some(&PropertyValue::String("1 2 2 10 20".into()))
+        );
         // Pinned ParseV3000CTAB sets the flag without erasing the second
         // atom's negative-zero Z. Preserve XYZ while retaining 2D perception.
         assert!(coordinates.conformers_2d.is_empty());
@@ -11452,6 +11857,7 @@ mod tests {
         );
 
         let output = write_v3000_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
             .expect("write preserved V3000 state");
         assert!(output.contains(" CHG=-1"));
         assert!(output.contains(" MASS=13"));
@@ -11464,8 +11870,8 @@ mod tests {
         assert_eq!(roundtrip.atoms[0].mol_parity(), Some(1));
         assert_eq!(roundtrip.bonds[0].direction(), BondDirection::BeginDash);
         assert_eq!(
-            roundtrip_properties.prop("_MolFileLinkNodes"),
-            Some("1 2 2 10 20")
+            roundtrip_properties.prop("_molLinkNodes"),
+            Some(&PropertyValue::String("1 2 2 10 20".into()))
         );
     }
 
@@ -11519,7 +11925,10 @@ mod tests {
         };
         assert_eq!(record.query.num_atoms(), 2);
         assert_eq!(record.query.num_bonds(), 1);
-        assert_eq!(record.query.name(), Some("query"));
+        assert_eq!(
+            record.query.name().unwrap().map(super::fixture_text),
+            Some("query")
+        );
         assert_eq!(
             record.query.atoms()[0].predicate(),
             &QueryNode::and(vec![
@@ -11573,10 +11982,13 @@ mod tests {
         let MolBlockRecord::Query(query_record) = record.mol_block else {
             panic!("wildcard SDF record must remain a query graph");
         };
-        assert_eq!(query_record.query.prop("ID"), Some("query-17"));
+        assert_eq!(
+            query_record.query.prop("ID"),
+            Some(&PropertyValue::String("query-17".into()))
+        );
         assert_eq!(
             query_record.properties.sdf_data_fields(),
-            &[("ID".to_owned(), "query-17".to_owned())]
+            &[("ID".into(), "query-17".into())]
         );
     }
 
@@ -11624,7 +12036,7 @@ mod tests {
         assert_eq!(sup.atoms(), &[AtomId::new(0)]);
         assert_eq!(sup.bonds(), &[BondId::new(0)]);
         assert_eq!(sup.bond_role(BondId::new(0)), SGroupBondRole::Crossing);
-        assert_eq!(sup.label(), Some("Me"));
+        assert_eq!(sup.label().map(super::fixture_text), Some("Me"));
         assert_eq!(sup.connection(), Some(&SGroupConnection::HeadToTail));
         assert_eq!(
             sup.display().unwrap().brackets[0].points,
@@ -11634,20 +12046,41 @@ mod tests {
         assert_eq!(sup.cstates()[0].vector, [0.5, 0.25, 0.0]);
         assert_eq!(sup.attach_points()[0].atom, AtomId::new(0));
         assert_eq!(sup.attach_points()[0].leaving_atom, Some(AtomId::new(1)));
-        assert_eq!(sup.attach_points()[0].label.as_deref(), Some("AP"));
+        assert_eq!(
+            sup.attach_points()[0]
+                .label
+                .as_ref()
+                .map(super::fixture_text),
+            Some("AP")
+        );
 
         let dat = &topology.substance_groups[1];
         assert_eq!(dat.kind(), &SubstanceGroupKind::Data);
         assert_eq!(dat.parent(), Some(sup.id()));
         assert_eq!(dat.component_number(), Some(5));
         let data = dat.data().unwrap();
-        assert_eq!(data.field_name.as_deref(), Some("FIELD"));
-        assert_eq!(data.field_type.as_deref(), Some("T"));
-        assert_eq!(data.field_info.as_deref(), Some("INFO"));
-        assert_eq!(data.query_type.as_deref(), Some("Q"));
-        assert_eq!(data.query_op.as_deref(), Some("OP"));
-        assert_eq!(data.field_display.as_deref(), Some("display spec"));
-        assert_eq!(data.values, ["payload"]);
+        assert_eq!(
+            data.field_name.as_ref().map(super::fixture_text),
+            Some("FIELD")
+        );
+        assert_eq!(data.field_type.as_ref().map(super::fixture_text), Some("T"));
+        assert_eq!(
+            data.field_info.as_ref().map(super::fixture_text),
+            Some("INFO")
+        );
+        assert_eq!(data.query_type.as_ref().map(super::fixture_text), Some("Q"));
+        assert_eq!(data.query_op.as_ref().map(super::fixture_text), Some("OP"));
+        assert_eq!(
+            data.field_display.as_ref().map(super::fixture_text),
+            Some("display spec")
+        );
+        assert_eq!(
+            data.values
+                .iter()
+                .map(super::fixture_text)
+                .collect::<Vec<_>>(),
+            ["payload"]
+        );
 
         assert_eq!(topology.stereo_groups.len(), 2);
         assert_eq!(topology.stereo_groups[0].kind(), StereoGroupKind::Absolute);
@@ -11662,6 +12095,7 @@ mod tests {
             &CoordinateBlock::default(),
             &MoleculeProperties::default(),
         )
+        .map(super::fixture_writer_text)
         .expect("write typed V3000 state");
         assert!(output.contains("M  V30 COUNTS 2 1 2 0 0"));
         assert!(output.contains("M  V30 BEGIN SGROUP"));
@@ -11671,13 +12105,24 @@ mod tests {
         assert_eq!(topology.stereo_groups[1].write_id(), 0);
         let (roundtrip, _, _) = read_v3000_detached(&output).expect("roundtrip typed V3000 state");
         assert_eq!(roundtrip.substance_groups.len(), 2);
-        assert_eq!(roundtrip.substance_groups[0].label(), Some("Me"));
+        assert_eq!(
+            roundtrip.substance_groups[0]
+                .label()
+                .map(super::fixture_text),
+            Some("Me")
+        );
         assert_eq!(
             roundtrip.substance_groups[1].parent(),
             Some(roundtrip.substance_groups[0].id())
         );
         assert_eq!(
-            roundtrip.substance_groups[1].data().unwrap().values,
+            roundtrip.substance_groups[1]
+                .data()
+                .unwrap()
+                .values
+                .iter()
+                .map(super::fixture_text)
+                .collect::<Vec<_>>(),
             ["payload"]
         );
         let expected_roundtrip_stereo_groups = vec![
@@ -11737,13 +12182,28 @@ mod tests {
         assert_eq!(groups[1].parent(), Some(groups[0].id()));
         assert_eq!(groups[1].atoms(), &[AtomId::new(1)]);
         let data = groups[1].data().expect("typed DAT payload");
-        assert_eq!(data.field_name.as_deref(), Some("FIELD"));
-        assert_eq!(data.field_type.as_deref(), Some("T"));
-        assert_eq!(data.field_info.as_deref(), Some("INFO"));
-        assert_eq!(data.query_type.as_deref(), Some("Q"));
-        assert_eq!(data.query_op.as_deref(), Some("OP"));
-        assert_eq!(data.field_display.as_deref(), Some("display"));
-        assert_eq!(data.values, ["payload"]);
+        assert_eq!(
+            data.field_name.as_ref().map(super::fixture_text),
+            Some("FIELD")
+        );
+        assert_eq!(data.field_type.as_ref().map(super::fixture_text), Some("T"));
+        assert_eq!(
+            data.field_info.as_ref().map(super::fixture_text),
+            Some("INFO")
+        );
+        assert_eq!(data.query_type.as_ref().map(super::fixture_text), Some("Q"));
+        assert_eq!(data.query_op.as_ref().map(super::fixture_text), Some("OP"));
+        assert_eq!(
+            data.field_display.as_ref().map(super::fixture_text),
+            Some("display")
+        );
+        assert_eq!(
+            data.values
+                .iter()
+                .map(super::fixture_text)
+                .collect::<Vec<_>>(),
+            ["payload"]
+        );
     }
 
     #[test]
@@ -11860,12 +12320,13 @@ mod tests {
             group.crossing_bond_correspondence(),
             &[BondId::new(1), BondId::new(1), BondId::new(0)]
         );
-        assert!(!group.props().contains_key("XBHEAD"));
-        assert!(!group.props().contains_key("XBCORR"));
+        assert!(!group.props().contains_key("XBHEAD".as_bytes()));
+        assert!(!group.props().contains_key("XBCORR".as_bytes()));
         topology.substance_groups = vec![group];
         topology.validate().expect("canonical typed SGroup state");
 
         let output = write_v3000_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
             .expect("write canonical typed SGroup state");
         assert!(output.contains(" XBHEAD=(3 3 1 3)"));
         assert!(output.contains(" XBCORR=(3 2 2 1)"));
@@ -12022,7 +12483,7 @@ mod tests {
             .expect("non-strict generic V3000 SGroup type");
         assert_eq!(
             topology.substance_groups[0].kind(),
-            &SubstanceGroupKind::Generic("BAD".to_owned())
+            &SubstanceGroupKind::Generic("BAD".into())
         );
 
         let duplicate = input
@@ -12049,8 +12510,14 @@ mod tests {
         let stream = format!("{one}$$$$\n{two}$$$$\n");
         let records = read_sdf_records_detached(&stream).expect("read SDF stream");
         assert_eq!(records.len(), 2);
-        assert_eq!(records[0].properties.name(), Some("one"));
-        assert_eq!(records[1].properties.name(), Some("two"));
+        assert_eq!(
+            records[0].properties.name().map(super::fixture_text),
+            Some("one")
+        );
+        assert_eq!(
+            records[1].properties.name().map(super::fixture_text),
+            Some("two")
+        );
     }
 
     #[test]
@@ -12065,7 +12532,14 @@ mod tests {
                 ("SPACES".to_owned(), "  \n\t".to_owned()),
             ]
         );
-        assert_eq!(record.properties.sdf_data_fields(), record.data_fields);
+        assert_eq!(
+            record.properties.sdf_data_fields(),
+            record
+                .data_fields
+                .iter()
+                .map(|(key, value)| (key.into(), value.into()))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -12126,7 +12600,10 @@ mod tests {
             records[0].data_fields,
             vec![("TEXT".to_owned(), "inside $$$$ value".to_owned())]
         );
-        assert_eq!(records[1].properties.name(), Some("two"));
+        assert_eq!(
+            records[1].properties.name().map(super::fixture_text),
+            Some("two")
+        );
     }
 
     #[test]
@@ -12136,8 +12613,15 @@ mod tests {
         let records = read_sdf_records_detached(&format!("{first}{second}"))
             .expect("read blank-title stream");
         assert_eq!(records.len(), 2);
-        assert_eq!(records[0].properties.name(), Some(""));
-        assert_eq!(records[1].properties.name(), Some("named"));
+        // MolFromMolDataStream sets _Name even when the title is empty.
+        assert_eq!(
+            records[0].properties.name().map(super::fixture_text),
+            Some("")
+        );
+        assert_eq!(
+            records[1].properties.name().map(super::fixture_text),
+            Some("named")
+        );
     }
 
     #[test]
@@ -12280,13 +12764,13 @@ mod uint_sdf_proposed_tests {
                     value
                 })
             );
-            let mut output = String::new();
+            let mut output = cosmolkit_model::PropertyText::new();
             let result = append_v3000_atom_int_prop(&mut output, &atom, "molRxnRole", "RXNROLE");
             match expected {
                 Some(number) => {
                     assert_eq!(result, Ok(()));
                     assert_eq!(
-                        output,
+                        super::fixture_text(&output),
                         if number == 0 {
                             String::new()
                         } else {
@@ -12304,11 +12788,13 @@ mod uint_sdf_proposed_tests {
                             value
                         })
                     );
-                    assert_eq!(output, "");
+                    assert_eq!(output.as_bytes(), b"");
                 }
             }
             assert_eq!(
-                model_string_property(&PropertyValue::UInt(value)).unwrap(),
+                model_string_property(&PropertyValue::UInt(value))
+                    .map(super::fixture_writer_text)
+                    .unwrap(),
                 match value {
                     0 => "0",
                     1 => "1",
@@ -12342,7 +12828,7 @@ mod uint_sdf_rxctr_proposed_tests {
                     .with_prop("molReactStatus", PropertyValue::UInt(number))
                     .unwrap(),
             );
-            let result = v3000_writer_bond_line(&bond);
+            let result = v3000_writer_bond_line(&bond).map(super::fixture_writer_text);
             if number > 2147483647 {
                 assert_eq!(
                     result,
@@ -12368,7 +12854,9 @@ mod uint_sdf_rxctr_proposed_tests {
             );
             let graph = TopologyBlock::try_from_parts(vec![atom], vec![], vec![], vec![]).unwrap();
             let original = graph.clone();
-            let row = v3000_writer_atom_line(&graph, &graph.atoms[0], [0.0; 3]).unwrap();
+            let row = v3000_writer_atom_line(&graph, &graph.atoms[0], [0.0; 3])
+                .map(super::fixture_writer_text)
+                .unwrap();
             assert!(!row.contains(" VAL="));
             assert_eq!(graph, original);
         }
@@ -12442,7 +12930,9 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = bond.clone();
-        let line = v3000_writer_bond_line(&bond).unwrap();
+        let line = v3000_writer_bond_line(&bond)
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert_eq!(line.contains(" RXCTR="), false);
         assert_eq!(bond, before);
     }
@@ -12457,7 +12947,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
-        assert!(a.is_prop_computed("molHCount"));
+        assert!(a.is_prop_computed("molHCount").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_0
@@ -12471,7 +12961,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
-        assert!(a.is_prop_computed("molStereoCare"));
+        assert!(a.is_prop_computed("molStereoCare").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_0
@@ -12485,7 +12975,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
-        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert!(a.is_prop_computed("molExactChangeFlag").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_0
@@ -12499,11 +12989,13 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
-        assert!(a.is_prop_computed("molTotValence"));
+        assert!(a.is_prop_computed("molTotValence").unwrap());
         assert_eq!(a, before);
         let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
         let before = g.clone();
-        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3])
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert!(!line.contains(" VAL="));
         assert_eq!(g, before);
     }
@@ -12569,7 +13061,9 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = bond.clone();
-        let line = v3000_writer_bond_line(&bond).unwrap();
+        let line = v3000_writer_bond_line(&bond)
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert_eq!(line.contains(" RXCTR="), true);
         assert!(line.ends_with(" RXCTR=1"));
         assert_eq!(bond, before);
@@ -12585,7 +13079,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
-        assert!(a.is_prop_computed("molHCount"));
+        assert!(a.is_prop_computed("molHCount").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_1
@@ -12599,7 +13093,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
-        assert!(a.is_prop_computed("molStereoCare"));
+        assert!(a.is_prop_computed("molStereoCare").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_1
@@ -12613,7 +13107,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
-        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert!(a.is_prop_computed("molExactChangeFlag").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_1
@@ -12627,11 +13121,13 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
-        assert!(a.is_prop_computed("molTotValence"));
+        assert!(a.is_prop_computed("molTotValence").unwrap());
         assert_eq!(a, before);
         let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
         let before = g.clone();
-        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3])
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert!(!line.contains(" VAL="));
         assert_eq!(g, before);
     }
@@ -12700,7 +13196,9 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = bond.clone();
-        let line = v3000_writer_bond_line(&bond).unwrap();
+        let line = v3000_writer_bond_line(&bond)
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert_eq!(line.contains(" RXCTR="), true);
         assert!(line.ends_with(" RXCTR=2147483646"));
         assert_eq!(bond, before);
@@ -12716,7 +13214,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
-        assert!(a.is_prop_computed("molHCount"));
+        assert!(a.is_prop_computed("molHCount").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_2147483646
@@ -12730,7 +13228,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
-        assert!(a.is_prop_computed("molStereoCare"));
+        assert!(a.is_prop_computed("molStereoCare").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_2147483646
@@ -12744,7 +13242,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
-        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert!(a.is_prop_computed("molExactChangeFlag").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_2147483646
@@ -12758,11 +13256,13 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
-        assert!(a.is_prop_computed("molTotValence"));
+        assert!(a.is_prop_computed("molTotValence").unwrap());
         assert_eq!(a, before);
         let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
         let before = g.clone();
-        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3])
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert!(!line.contains(" VAL="));
         assert_eq!(g, before);
     }
@@ -12831,7 +13331,9 @@ mod uint_complete_source_condition_cells {
                 .unwrap(),
         );
         let before = bond.clone();
-        let line = v3000_writer_bond_line(&bond).unwrap();
+        let line = v3000_writer_bond_line(&bond)
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert_eq!(line.contains(" RXCTR="), true);
         assert!(line.ends_with(" RXCTR=2147483647"));
         assert_eq!(bond, before);
@@ -12847,7 +13349,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
-        assert!(a.is_prop_computed("molHCount"));
+        assert!(a.is_prop_computed("molHCount").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_2147483647
@@ -12861,7 +13363,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
-        assert!(a.is_prop_computed("molStereoCare"));
+        assert!(a.is_prop_computed("molStereoCare").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_2147483647
@@ -12875,7 +13377,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
-        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert!(a.is_prop_computed("molExactChangeFlag").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_2147483647
@@ -12889,11 +13391,13 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
-        assert!(a.is_prop_computed("molTotValence"));
+        assert!(a.is_prop_computed("molTotValence").unwrap());
         assert_eq!(a, before);
         let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
         let before = g.clone();
-        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3])
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert!(!line.contains(" VAL="));
         assert_eq!(g, before);
     }
@@ -12992,7 +13496,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = bond.clone();
         assert_eq!(
-            v3000_writer_bond_line(&bond),
+            v3000_writer_bond_line(&bond).map(super::fixture_writer_text),
             Err(SdfWriteError::UnsignedPropertyOverflow {
                 atom: None,
                 bond: Some(BondId::new(0)),
@@ -13013,7 +13517,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
-        assert!(a.is_prop_computed("molHCount"));
+        assert!(a.is_prop_computed("molHCount").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_2147483648
@@ -13027,7 +13531,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
-        assert!(a.is_prop_computed("molStereoCare"));
+        assert!(a.is_prop_computed("molStereoCare").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_2147483648
@@ -13041,7 +13545,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
-        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert!(a.is_prop_computed("molExactChangeFlag").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_2147483648
@@ -13055,11 +13559,13 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
-        assert!(a.is_prop_computed("molTotValence"));
+        assert!(a.is_prop_computed("molTotValence").unwrap());
         assert_eq!(a, before);
         let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
         let before = g.clone();
-        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3])
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert!(!line.contains(" VAL="));
         assert_eq!(g, before);
     }
@@ -13158,7 +13664,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = bond.clone();
         assert_eq!(
-            v3000_writer_bond_line(&bond),
+            v3000_writer_bond_line(&bond).map(super::fixture_writer_text),
             Err(SdfWriteError::UnsignedPropertyOverflow {
                 atom: None,
                 bond: Some(BondId::new(0)),
@@ -13179,7 +13685,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molHCount"], false), Ok(0));
-        assert!(a.is_prop_computed("molHCount"));
+        assert!(a.is_prop_computed("molHCount").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molStereoCare_4294967295
@@ -13193,7 +13699,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molStereoCare"], false), Ok(0));
-        assert!(a.is_prop_computed("molStereoCare"));
+        assert!(a.is_prop_computed("molStereoCare").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molExactChangeFlag_4294967295
@@ -13207,7 +13713,7 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molExactChangeFlag"], false), Ok(0));
-        assert!(a.is_prop_computed("molExactChangeFlag"));
+        assert!(a.is_prop_computed("molExactChangeFlag").unwrap());
         assert_eq!(a, before);
     }
     // FROZEN UINT CONDITION: NO_READ_SDF_molTotValence_4294967295
@@ -13221,11 +13727,13 @@ mod uint_complete_source_condition_cells {
         );
         let before = a.clone();
         assert_eq!(atom_int_prop(&a, &["molTotValence"], false), Ok(0));
-        assert!(a.is_prop_computed("molTotValence"));
+        assert!(a.is_prop_computed("molTotValence").unwrap());
         assert_eq!(a, before);
         let g = TopologyBlock::try_from_parts(vec![a], vec![], vec![], vec![]).unwrap();
         let before = g.clone();
-        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3]).unwrap();
+        let line = v3000_writer_atom_line(&g, &g.atoms[0], [0.0; 3])
+            .map(super::fixture_writer_text)
+            .unwrap();
         assert!(!line.contains(" VAL="));
         assert_eq!(g, before);
     }
@@ -13233,42 +13741,72 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_text_consumer_io_sdftext_0_sdf() {
         let v = PropertyValue::UInt(0_u32);
-        assert_eq!(model_string_property(&v).unwrap(), "0");
+        assert_eq!(
+            model_string_property(&v)
+                .map(super::fixture_writer_text)
+                .unwrap(),
+            "0"
+        );
         assert_eq!(v, PropertyValue::UInt(0_u32));
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_1
     #[test]
     fn uint_cell_text_consumer_io_sdftext_1_sdf() {
         let v = PropertyValue::UInt(1_u32);
-        assert_eq!(model_string_property(&v).unwrap(), "1");
+        assert_eq!(
+            model_string_property(&v)
+                .map(super::fixture_writer_text)
+                .unwrap(),
+            "1"
+        );
         assert_eq!(v, PropertyValue::UInt(1_u32));
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_2147483646
     #[test]
     fn uint_cell_text_consumer_io_sdftext_2147483646_sdf() {
         let v = PropertyValue::UInt(2147483646_u32);
-        assert_eq!(model_string_property(&v).unwrap(), "2147483646");
+        assert_eq!(
+            model_string_property(&v)
+                .map(super::fixture_writer_text)
+                .unwrap(),
+            "2147483646"
+        );
         assert_eq!(v, PropertyValue::UInt(2147483646_u32));
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_2147483647
     #[test]
     fn uint_cell_text_consumer_io_sdftext_2147483647_sdf() {
         let v = PropertyValue::UInt(2147483647_u32);
-        assert_eq!(model_string_property(&v).unwrap(), "2147483647");
+        assert_eq!(
+            model_string_property(&v)
+                .map(super::fixture_writer_text)
+                .unwrap(),
+            "2147483647"
+        );
         assert_eq!(v, PropertyValue::UInt(2147483647_u32));
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_2147483648
     #[test]
     fn uint_cell_text_consumer_io_sdftext_2147483648_sdf() {
         let v = PropertyValue::UInt(2147483648_u32);
-        assert_eq!(model_string_property(&v).unwrap(), "2147483648");
+        assert_eq!(
+            model_string_property(&v)
+                .map(super::fixture_writer_text)
+                .unwrap(),
+            "2147483648"
+        );
         assert_eq!(v, PropertyValue::UInt(2147483648_u32));
     }
     // FROZEN UINT CONDITION: TEXT_CONSUMER_io/SDFtext_4294967295
     #[test]
     fn uint_cell_text_consumer_io_sdftext_4294967295_sdf() {
         let v = PropertyValue::UInt(4294967295_u32);
-        assert_eq!(model_string_property(&v).unwrap(), "4294967295");
+        assert_eq!(
+            model_string_property(&v)
+                .map(super::fixture_writer_text)
+                .unwrap(),
+            "4294967295"
+        );
         assert_eq!(v, PropertyValue::UInt(4294967295_u32));
     }
 }
@@ -13334,6 +13872,17 @@ mod source007_default_and_null_proposals {
             QueryNode::and(vec![first, c])
         );
     }
+}
+
+#[cfg(test)]
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+#[cfg(test)]
+fn fixture_writer_text(value: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(value.into_bytes())
+        .expect("original writer fixture must retain exact UTF-8 bytes")
 }
 
 #[cfg(test)]

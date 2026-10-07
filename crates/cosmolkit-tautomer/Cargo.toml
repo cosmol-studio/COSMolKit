@@ -12,12 +12,12 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [dependencies]
-cosmolkit-model = { version = "0.5.0-rc.11", path = "../cosmolkit-model" }
+cosmolkit-model = { version = "0.5.0-rc.12", path = "../cosmolkit-model" }
 
-cosmolkit-search = { version = "0.5.0-rc.11", path = "../cosmolkit-search" }
-cosmolkit-types = { version = "0.5.0-rc.11", path = "../cosmolkit-types" }
-cosmolkit-core = { version = "0.5.0-rc.11", path = "../cosmolkit-core" }
-cosmolkit-smiles = { version = "0.5.0-rc.11", path = "../cosmolkit-smiles" }
+cosmolkit-search = { version = "0.5.0-rc.12", path = "../cosmolkit-search" }
+cosmolkit-types = { version = "0.5.0-rc.12", path = "../cosmolkit-types" }
+cosmolkit-core = { version = "0.5.0-rc.12", path = "../cosmolkit-core" }
+cosmolkit-smiles = { version = "0.5.0-rc.12", path = "../cosmolkit-smiles" }
 thiserror = "2"
 
 [dev-dependencies]

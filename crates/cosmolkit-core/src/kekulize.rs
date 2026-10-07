@@ -154,11 +154,10 @@ impl Default for KekulizeParams {
 #[derive(Debug, Clone, PartialEq)]
 pub struct KekulizeAssignment {
     pub topology: TopologyBlock,
-    /// Source-equivalent valence cache used by the final postcondition, absent
-    /// on the source early return. It retains the pre-kekulization rows and
-    /// refreshes only neutral aromatic N/P rows updated by the source branch.
-    /// Only `refreshed_valence_atoms` may replace a caller's intermediate cache;
-    /// every other caller row must remain unchanged.
+    /// Actual source scalar state after selected implicit updates and neutral
+    /// aromatic N/P normalization. Unselected rows retain their input state.
+    /// Nonaromatic returns retain selected writes; atoms-none retains input.
+    /// `refreshed_valence_atoms` identifies explicit N/P normalization only.
     pub final_valence: Option<ValenceAssignment>,
     pub refreshed_valence_atoms: Vec<AtomId>,
     /// Final ring-state transport for the Kekulize ring-update calling
@@ -299,13 +298,16 @@ fn selected_bond_has_type_query(
     ))
 }
 
-fn checked_total_valence(valence: &ValenceAssignment, atom: AtomId) -> Result<i32, KekulizeError> {
-    valence.explicit_valence[atom.index()]
-        .checked_add(valence.implicit_hydrogens[atom.index()])
-        .ok_or(KekulizeError::IntegerOverflow {
-            atom,
-            field: "total valence",
-        })
+fn checked_total_valence(
+    valence: &ValenceAssignment,
+    atom: &cosmolkit_model::Atom,
+) -> Result<i32, KekulizeError> {
+    // RDKit✔️✔️: unsigned int Atom::getTotalValence() const {
+    // RDKit✔️✔️:   return getValence(ValenceType::EXPLICIT) + getValence(ValenceType::IMPLICIT);
+    // RDKit✔️✔️: }
+    // Unique O(1) cached getters retain signed storage, initialization errors
+    // and the source NoImplicit branch; no topology calculation occurs here.
+    Ok(crate::valence::cached_total_valence(atom, valence)?)
 }
 
 /// Cold selection assembly retained by the owning selection tests: the same
@@ -319,7 +321,7 @@ fn prepare_kekulize_selection(
     bonds_in_play: &[bool],
     query_state: Option<QueryStateRef<'_>>,
 ) -> Result<PreparedKekulizeSelection, KekulizeError> {
-    let core = prepare_kekulize_core(topology, atoms_in_play, bonds_in_play, query_state)?;
+    let core = prepare_kekulize_core(topology, atoms_in_play, bonds_in_play, query_state, None)?;
     let rings = if core.found_aromatic {
         // BEGIN RDKIT CPP FUNCTION KekulizeFragment ring selection
         // RDKit✔️✔️: VECT_INT_VECT allringsSSSR;
@@ -370,6 +372,7 @@ fn prepare_kekulize_core(
     atoms_in_play: &[bool],
     bonds_in_play: &[bool],
     query_state: Option<QueryStateRef<'_>>,
+    source_valence: Option<&ValenceAssignment>,
 ) -> Result<PreparedKekulizeCore, KekulizeError> {
     topology.validate()?;
     // BEGIN RDKIT CPP FUNCTION: third_party/rdkit/Code/GraphMol/Kekulize.cpp :: KekulizeFragment selection
@@ -436,13 +439,30 @@ fn prepare_kekulize_core(
         }
     }
 
-    let valence = crate::assign_valence_with_options_from_parts(
-        &topology.atoms,
-        &topology.bonds,
-        &topology.adjacency,
-        ValenceModel::RdkitLike,
-        false,
-    )?;
+    // Stored Atom fields are source input, including initialized stale E.
+    // A cold detached value starts at source -1 sentinels. Only selected rows
+    // below are calculated, in atom order; unselected fields remain exact.
+    let mut valence = match source_valence {
+        Some(existing) => {
+            for (field, actual) in [
+                ("explicit valence", existing.explicit_valence.len()),
+                ("implicit valence", existing.implicit_hydrogens.len()),
+            ] {
+                if actual != topology.atoms.len() {
+                    return Err(KekulizeError::MatchingStateLength {
+                        field,
+                        expected: topology.atoms.len(),
+                        actual,
+                    });
+                }
+            }
+            existing.clone()
+        }
+        None => ValenceAssignment {
+            explicit_valence: vec![-1; topology.atoms.len()],
+            implicit_hydrogens: vec![-1; topology.atoms.len()],
+        },
+    };
     let mut original_total_valences = vec![0; topology.atoms.len()];
     let mut dummy_atoms = vec![false; topology.atoms.len()];
     // RDKit✔️✔️: auto numAtoms = mol.getNumAtoms();
@@ -466,7 +486,38 @@ fn prepare_kekulize_core(
             continue;
         }
         let atom_id = AtomId::new(atom_idx);
-        original_total_valences[atom_idx] = checked_total_valence(&valence, atom_id)?;
+        // RDKit✔️✔️: int Atom::calcImplicitValence(bool strict) {
+        // RDKit✔️✔️:   if (d_explicitValence == -1) {
+        // RDKit✔️✔️:     calcExplicitValence(strict);
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   bool checkIt = false;
+        // RDKit✔️✔️:   d_implicitValence = calculateImplicitValence(*this, strict, checkIt);
+        // RDKit✔️✔️:   return d_implicitValence;
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: std::int8_t d_implicitValence, d_explicitValence;
+        let explicit = i32::from(valence.explicit_valence[atom_idx] as i8);
+        valence.explicit_valence[atom_idx] = if explicit == -1 {
+            crate::assign_explicit_valence_for_atom_from_parts(
+                &topology.atoms,
+                &topology.bonds,
+                &topology.adjacency,
+                atom_id,
+                false,
+            )?
+        } else {
+            explicit
+        };
+        valence.implicit_hydrogens[atom_idx] =
+            crate::assign_implicit_valence_for_atom_from_parts_with_explicit_valence(
+                &topology.atoms,
+                &topology.bonds,
+                &topology.adjacency,
+                atom_id,
+                valence.explicit_valence[atom_idx],
+                false,
+            )?;
+        original_total_valences[atom_idx] =
+            checked_total_valence(&valence, &topology.atoms[atom_idx])?;
         found_aromatic |= atom_is_aromatic_for_kekulize(topology, atom_id);
         dummy_atoms[atom_idx] = topology.atoms[atom_idx].atomic_number() == 0;
     }
@@ -1221,7 +1272,7 @@ fn mark_double_bond_candidates(
             // RDKit✔️✔️:     int nRadicals = at->getNumRadicalElectrons();
             // RDKit✔️✔️:     int totalDegree = at->getDegree() +
             // RDKit✔️✔️:                       at->getValence(Atom::ValenceType::IMPLICIT) - nToIgnore;
-            let total_bond_order = checked_total_valence(valence, atom_id)?;
+            let total_bond_order = checked_total_valence(valence, atom)?;
             let radical_electrons = i32::from(atom.radical_electrons());
             let degree = i32::try_from(topology.adjacency.neighbors_of(atom_id.index()).len())
                 .map_err(|_| KekulizeError::IntegerOverflow {
@@ -2230,16 +2281,29 @@ fn kekulize_fragment(
     params: &KekulizeParams,
     query_state: Option<QueryStateRef<'_>>,
     rings: Option<&RingInfo>,
+    source_valence: Option<&ValenceAssignment>,
 ) -> Result<KekulizeAssignment, KekulizeError> {
     // Step 1-2: selection dimensions/query validation, source selection and
     // valence work, then the atoms-none / no-aromatic early returns before
     // any ring fetch, validation or ranking (an otherwise unused supplied
     // assignment is never touched on these paths).
-    let prepared = prepare_kekulize_core(topology, atoms_in_play, bonds_in_play, query_state)?;
+    let prepared = prepare_kekulize_core(
+        topology,
+        atoms_in_play,
+        bonds_in_play,
+        query_state,
+        source_valence,
+    )?;
     if !prepared.found_aromatic {
         return Ok(KekulizeAssignment {
             topology: topology.clone(),
-            final_valence: None,
+            // atoms-none returns before scalar work; nonaromatic returns after
+            // selected calcImplicitValence writes. Move that exact state.
+            final_valence: if atoms_in_play.iter().any(|selected| *selected) {
+                Some(prepared.valence)
+            } else {
+                source_valence.cloned()
+            },
             refreshed_valence_atoms: Vec::new(),
             ring_update: None,
         });
@@ -2430,7 +2494,7 @@ fn kekulize_fragment(
         let atom_id = AtomId::new(atom_idx);
         // RDKit✔️✔️:     int val = atom->getTotalValence();
         // RDKit✔️✔️:     if (val != valences[atom->getIdx()]) {
-        let after = checked_total_valence(&final_valence, atom_id)?;
+        let after = checked_total_valence(&final_valence, &working.atoms[atom_idx])?;
         let before = prepared.original_total_valences[atom_idx];
         if after != before {
             // RDKit✔️✔️:       std::ostringstream errout;
@@ -2514,6 +2578,7 @@ pub fn kekulize_with_query_state_and_ring_info(
     params: &KekulizeParams,
     query_state: Option<QueryStateRef<'_>>,
     rings: Option<&RingInfo>,
+    source_valence: Option<&ValenceAssignment>,
 ) -> Result<KekulizeAssignment, KekulizeError> {
     if let Some(state) = query_state {
         state.validate_for_topology(topology)?;
@@ -2527,6 +2592,7 @@ pub fn kekulize_with_query_state_and_ring_info(
         params,
         query_state,
         rings,
+        source_valence,
     )
 }
 
@@ -2549,7 +2615,15 @@ pub fn kekulize_selected_fragment(
     // core masked owner performs source validation and all selected chemistry.
     // Cost: detached return ownership clones the topology, including the
     // source early-return path; the upstream caller mutates its private copy.
-    kekulize_fragment(topology, atoms_in_play, bonds_in_play, params, None, None)
+    kekulize_fragment(
+        topology,
+        atoms_in_play,
+        bonds_in_play,
+        params,
+        None,
+        None,
+        None,
+    )
 }
 
 #[doc(hidden)]
@@ -2580,6 +2654,7 @@ pub fn kekulize_with_query_state(
         &bonds_in_play,
         params,
         query_state,
+        None,
         None,
     )
 }
@@ -2655,7 +2730,7 @@ pub fn kekulize_if_possible_with_query_state_and_ring_info(
     // Applied moves its complete assignment, fallback retains its original clone.
     #[cfg(test)]
     drawing_ring_if_possible_probe::forward(topology, params, query_state.is_some(), rings);
-    match kekulize_with_query_state_and_ring_info(topology, params, query_state, rings) {
+    match kekulize_with_query_state_and_ring_info(topology, params, query_state, rings, None) {
         Ok(assignment) => Ok(KekulizeAttempt::Applied(assignment)),
         Err(KekulizeError::NotKekulizable { problem_atoms }) => {
             Ok(KekulizeAttempt::NotKekulizable {
@@ -2752,6 +2827,7 @@ impl<'a> CanonRankReadView<'a> {
         topology: &'a TopologyBlock,
         valence: &'a ValenceAssignment,
         rings: Option<&'a RingInfo>,
+        atoms_in_play: Option<&[bool]>,
     ) -> Result<Self, CanonicalRankError> {
         // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
         // RDKit✔️✔️:     MolOps::fastFindRings(mol);
@@ -2770,9 +2846,16 @@ impl<'a> CanonRankReadView<'a> {
                 implicit_len: valence.implicit_hydrogens.len(),
             });
         }
+        // RDKit✔️✔️:     if (atomsInPlay[i]) {
+        // RDKit✔️✔️:         advancedInitCanonAtom(mol, atomsi, i);
+        // Only selected fragment rows consume scalar fields. Unselected source
+        // -1 sentinels stay untouched; ordinary whole views still check all rows.
         for (atom_index, atom) in topology.atoms.iter().enumerate() {
-            if valence.explicit_valence[atom_index] < 0
-                || (!atom.no_implicit() && valence.implicit_hydrogens[atom_index] < 0)
+            if atoms_in_play.is_some_and(|mask| !mask[atom_index]) {
+                continue;
+            }
+            if crate::valence::cached_explicit_valence(atom, Some(valence)).is_err()
+                || crate::hcount::implicit_hydrogen_count(atom, valence).is_err()
             {
                 return Err(CanonicalRankError::PreparedValenceInvalid { atom_index });
             }
@@ -3075,7 +3158,7 @@ fn rank_fragment_atoms_engine(
     // RDKit✔️✔️:   detail::initFragmentCanonAtoms(mol, atoms, includeChirality, atomSymbols,
     // RDKit✔️✔️:                                  bondSymbols, atomsInPlay, bondsInPlay, true);
     let view = if let Some((valence, rings)) = prepared {
-        CanonRankReadView::from_prepared_state(topology, valence, rings)?
+        CanonRankReadView::from_prepared_state(topology, valence, rings, Some(atoms_in_play))?
     } else {
         CanonRankReadView::from_topology(topology)?
     };
@@ -3476,9 +3559,24 @@ fn init_fragment_canon_atoms<'a>(
         }
         atoms[atom_idx].p_symbol = atom_symbols.map(|symbols| symbols[atom_idx].as_str());
         let atom = &view.atoms[atom_idx];
+        // RDKit✔️✔️: void advancedInitCanonAtom(const ROMol &mol, Canon::canon_atom &atom,
+        // RDKit✔️✔️:                            const int &) {
+        // RDKit✔️✔️:   atom.totalNumHs = atom.atom->getTotalNumHs();
+        // RDKit✔️✔️:   atom.isRingStereoAtom =
+        // RDKit✔️✔️:       (atom.atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CW ||
+        // RDKit✔️✔️:        atom.atom->getChiralTag() == Atom::CHI_TETRAHEDRAL_CCW) &&
+        // RDKit✔️✔️:       atom.atom->hasProp(common_properties::_ringStereoAtoms);
+        // RDKit✔️✔️:   atom.hasRingNbr = hasRingNbr(mol, atom.atom);
+        // RDKit✔️✔️: }
+        // The same implicit getter applies to selected prepared fragment rows;
+        // NoImplicit and signed storage are source reads, never max(0) defaults.
+        // Explicit uint8 + nonnegative int8 is bounded by 382; O(1), no clone.
         atoms[atom_idx].total_num_hs = usize::from(atom.explicit_hydrogens())
-            + usize::try_from(view.valence.implicit_hydrogens[atom_idx].max(0))
-                .unwrap_or(usize::MAX);
+            + crate::hcount::implicit_hydrogen_count(atom, &view.valence).map_err(|_| {
+                CanonicalRankError::PreparedValenceInvalid {
+                    atom_index: atom_idx,
+                }
+            })? as usize;
         atoms[atom_idx].is_ring_atom = view.rings.num_atom_rings(atom.id()) > 0;
         atoms[atom_idx].is_ring_stereo_atom = matches!(
             atom.chiral_tag(),
@@ -5524,35 +5622,34 @@ fn canonical_rank_property_to_int(
     // Boost❗✔️:       static N smallest() { return static_cast<N>(1); }
     // Boost❗✔️:   } ;
     // END BOOST COMPLETE PROPOSED CPP FUNCTION: target/agent-handoff/Q01/B1/uint_complete_preparation_v1/official_source/include/boost/numeric/conversion/detail/bounds.hpp:19-29
-    use cosmolkit_model::{PropertyValue, PropertyValueKind};
     let property = "_CanonicalRankingNumber";
     let Some(value) = atom.prop(property) else {
         return Ok(0);
     };
-    let invalid_cast = |kind| CanonicalRankError::InvalidPropertyKind {
-        atom_index,
-        property,
-        kind,
-    };
-    match value {
-        PropertyValue::Int(value) => Ok(*value),
-        PropertyValue::UInt(value) => {
-            i32::try_from(*value).map_err(|_| CanonicalRankError::UnsignedRankOverflow {
+    crate::property_value_to_int(value).map_err(|error| match error {
+        crate::PropertyIntReadError::UnsignedOverflow { value } => {
+            CanonicalRankError::UnsignedRankOverflow {
                 atom_index,
                 property,
-                value: *value,
-            })
+                value,
+            }
         }
-        PropertyValue::String(value) => value
-            .trim_end_matches(|character| {
-                matches!(character, ' ' | '\t' | '\n' | '\r' | '\u{b}' | '\u{c}')
-            })
-            .parse::<i32>()
-            .map_err(|_| invalid_cast(PropertyValueKind::String)),
-        PropertyValue::Double(_) => Err(invalid_cast(PropertyValueKind::Double)),
-        PropertyValue::Bool(_) => Err(invalid_cast(PropertyValueKind::Bool)),
-        PropertyValue::IntVector(_) => Err(invalid_cast(PropertyValueKind::IntVector)),
-    }
+        crate::PropertyIntReadError::InvalidKind { kind } => {
+            CanonicalRankError::InvalidPropertyKind {
+                atom_index,
+                property,
+                kind,
+            }
+        }
+        crate::PropertyIntReadError::Lexical { .. }
+        | crate::PropertyIntReadError::SignedTextOverflow { .. } => {
+            CanonicalRankError::InvalidPropertyKind {
+                atom_index,
+                property,
+                kind: cosmolkit_model::PropertyValueKind::String,
+            }
+        }
+    })
 }
 
 fn compare_canon_atom_base_for_kekulize(
@@ -6882,7 +6979,8 @@ mod tests {
                         assert_eq!(input.bonds[0].order(), order);
                         assert_eq!(input.bonds[0].is_aromatic(), bond_flag);
                         let snapshot = input.clone();
-                        let result = prepare_kekulize_core(&input, &[true; 2], &[selected], None);
+                        let result =
+                            prepare_kekulize_core(&input, &[true; 2], &[selected], None, None);
                         calls += 1;
                         assert_eq!(input, snapshot, "retained input changed at call {calls}");
                         let prepared = result.unwrap();
@@ -7985,6 +8083,7 @@ mod tests {
                                     &params,
                                     None,
                                     ring_input.as_ref(),
+                                    None,
                                 );
                                 // Input immutability on success and error.
                                 assert_eq!(&graph, &graph_snapshot, "{label}: graph mutated");
@@ -8303,6 +8402,7 @@ mod tests {
                             &params,
                             Some(state),
                             Some(&rows),
+                            None,
                         );
                         assert_eq!(&graph, &graph_snapshot, "{label}: graph mutated");
                         assert_eq!(rows, rows_snapshot, "{label}: rows mutated");
@@ -8440,6 +8540,7 @@ mod tests {
                     },
                     None,
                     None,
+                    None,
                 )
                 .unwrap();
                 assert_eq!(assignment.topology, empty);
@@ -8477,10 +8578,18 @@ mod tests {
                     },
                     None,
                     Some(&supplied),
+                    None,
                 )
                 .unwrap();
                 assert_eq!(assignment.topology, acyclic);
-                assert!(assignment.final_valence.is_none());
+                // KekulizeFragment calculates selected I before !foundAromatic.
+                assert_eq!(
+                    assignment.final_valence,
+                    Some(ValenceAssignment {
+                        explicit_valence: vec![1, 1],
+                        implicit_hydrogens: vec![3, 3],
+                    })
+                );
                 assert!(assignment.ring_update.is_none());
             }
             assert_eq!(supplied, supplied_snapshot);
@@ -8503,6 +8612,7 @@ mod tests {
                     },
                     None,
                     Some(&mismatched),
+                    None,
                 )
                 .unwrap();
                 assert_eq!(assignment.topology, graph);
@@ -8519,6 +8629,7 @@ mod tests {
                     &KekulizeParams::default(),
                     None,
                     None,
+                    None
                 ),
                 Err(KekulizeError::AtomSelectionLength {
                     expected: 6,
@@ -8535,6 +8646,7 @@ mod tests {
                     &KekulizeParams::default(),
                     None,
                     None,
+                    None
                 ),
                 Err(KekulizeError::BondSelectionLength {
                     expected: 6,
@@ -8580,6 +8692,7 @@ mod tests {
                 &KekulizeParams::default(),
                 Some(foreign_state),
                 None,
+                None,
             );
             assert!(matches!(
                 result,
@@ -8603,6 +8716,7 @@ mod tests {
                     },
                     None,
                     Some(&wrong_atoms),
+                    None
                 ),
                 Err(KekulizeError::CanonicalRank(
                     CanonicalRankError::PreparedRingLength {
@@ -8630,6 +8744,7 @@ mod tests {
                     },
                     None,
                     Some(&wrong_bonds),
+                    None
                 ),
                 Err(KekulizeError::CanonicalRank(
                     CanonicalRankError::PreparedRingLength {
@@ -8658,6 +8773,7 @@ mod tests {
                 },
                 None,
                 Some(&reset),
+                None,
             )
             .unwrap();
             assert_eq!(reset, reset_snapshot);
@@ -8788,6 +8904,7 @@ mod tests {
                             },
                             None,
                             Some(&rows),
+                            None,
                         )
                         .unwrap();
                         assert_eq!(&graph, &graph_snapshot, "{label}: graph mutated");
@@ -8957,6 +9074,7 @@ mod tests {
                             },
                             None,
                             rings,
+                            None,
                         )
                         .unwrap_or_else(|error| panic!("{label}: {error:?}"));
                         // Immutability on every call.
@@ -9526,6 +9644,7 @@ mod tests {
                         &params,
                         None,
                         Some(&rings),
+                        None,
                     );
                     calls += 1;
                     assert_eq!(&graph, &graph_snapshot, "{label}: engine graph");
@@ -10097,7 +10216,8 @@ mod tests {
         let original_graph = graph.clone();
         let original_valence = valence.clone();
         let original_rings = rings.clone();
-        let view = CanonRankReadView::from_prepared_state(&graph, &valence, Some(&rings)).unwrap();
+        let view =
+            CanonRankReadView::from_prepared_state(&graph, &valence, Some(&rings), None).unwrap();
         assert!(matches!(view.valence, Cow::Borrowed(_)));
         assert!(matches!(view.rings, Cow::Borrowed(_)));
         let options = CanonicalRankParams::kekulize_fragment_default();
@@ -10137,7 +10257,8 @@ mod tests {
         let unknown = RingInfo::new(RingFindType::OtherOrUnknown, 2, 1);
         let original = unknown.clone();
         for supplied in [None, Some(&unknown)] {
-            let view = CanonRankReadView::from_prepared_state(&graph, &valence, supplied).unwrap();
+            let view =
+                CanonRankReadView::from_prepared_state(&graph, &valence, supplied, None).unwrap();
             assert!(matches!(view.valence, Cow::Borrowed(_)));
             assert!(matches!(view.rings, Cow::Owned(_)));
             assert!(view.rings.is_find_fast_or_better());
@@ -10171,11 +10292,11 @@ mod tests {
             crate::assign_valence_with_options_for_topology(&graph, ValenceModel::RdkitLike, false)
                 .unwrap();
         valence.implicit_hydrogens[0] = -1;
-        assert!(CanonRankReadView::from_prepared_state(&graph, &valence, None).is_ok());
+        assert!(CanonRankReadView::from_prepared_state(&graph, &valence, None, None).is_ok());
         let mut bad = valence.clone();
         bad.explicit_valence.pop();
         assert!(matches!(
-            CanonRankReadView::from_prepared_state(&graph, &bad, None),
+            CanonRankReadView::from_prepared_state(&graph, &bad, None, None),
             Err(CanonicalRankError::PreparedValenceLength {
                 atom_count: 2,
                 explicit_len: 1,
@@ -10185,12 +10306,12 @@ mod tests {
         bad = valence.clone();
         bad.implicit_hydrogens[1] = -1;
         assert!(matches!(
-            CanonRankReadView::from_prepared_state(&graph, &bad, None),
+            CanonRankReadView::from_prepared_state(&graph, &bad, None, None),
             Err(CanonicalRankError::PreparedValenceInvalid { atom_index: 1 })
         ));
         let wrong_rings = RingInfo::new(RingFindType::Fast, 1, 0);
         assert!(matches!(
-            CanonRankReadView::from_prepared_state(&graph, &valence, Some(&wrong_rings)),
+            CanonRankReadView::from_prepared_state(&graph, &valence, Some(&wrong_rings), None),
             Err(CanonicalRankError::PreparedRingLength {
                 expected_atoms: 2,
                 actual_atoms: 1,
@@ -11144,7 +11265,7 @@ mod q01_b1_scalar_rank_dependency_tests {
     #[test]
     fn q01_b1_rank_class_and_flag_guards_precede_integer_getters() {
         let source = [
-            source_atom(0, Some(PropertyValue::String("bad".to_owned()))),
+            source_atom(0, Some(PropertyValue::String(("bad".to_owned()).into()))),
             source_atom(1, Some(PropertyValue::IntVector(vec![]))),
         ];
         let mut atoms = source
@@ -11175,7 +11296,7 @@ mod q01_b1_scalar_rank_dependency_tests {
     #[test]
     fn q01_b1_rank_getter_order_uses_actual_comparator_side() {
         let source = [
-            source_atom(0, Some(PropertyValue::String("bad".to_owned()))),
+            source_atom(0, Some(PropertyValue::String(("bad".to_owned()).into()))),
             source_atom(1, Some(PropertyValue::Double(1.0))),
         ];
         let mut atoms = source
@@ -11211,7 +11332,7 @@ mod q01_b1_scalar_rank_dependency_tests {
     #[test]
     fn q01_b1_rank_modes_and_in_play_masks_preserve_source_no_read() {
         let source = [
-            source_atom(0, Some(PropertyValue::String("bad".to_owned()))),
+            source_atom(0, Some(PropertyValue::String(("bad".to_owned()).into()))),
             source_atom(1, Some(PropertyValue::Double(1.0))),
         ];
         let mut atoms = source
@@ -11245,7 +11366,7 @@ mod q01_b1_scalar_rank_dependency_tests {
     #[test]
     fn q01_b1_rank_hanoi_guard_and_recursive_error_order_are_source_exact() {
         let source = [
-            source_atom(0, Some(PropertyValue::String("bad".to_owned()))),
+            source_atom(0, Some(PropertyValue::String(("bad".to_owned()).into()))),
             source_atom(1, Some(PropertyValue::Int(1))),
             source_atom(2, Some(PropertyValue::Bool(true))),
             source_atom(3, Some(PropertyValue::Double(1.0))),
@@ -11529,6 +11650,181 @@ mod uint_source_comparator_proposed_tests {
             ),
             Err(overflow(2, 4294967295))
         );
+    }
+}
+
+#[cfg(test)]
+mod source_selected_scalar_transport {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Element, TopologyBlock};
+    fn graph() -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            (0..3)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    #[test]
+    fn selected_stale_explicit_fields_and_unselected_sentinels_survive_nonaromatic_return() {
+        let graph = graph();
+        for (stored, explicit, implicit) in [
+            (1, 1, 3),
+            (3, 3, 1),
+            (66, 66, 0),
+            (-1, 0, 4),
+            (255, 0, 4),
+            (256, 0, 4),
+        ] {
+            let cache = ValenceAssignment {
+                explicit_valence: vec![stored, -128, 77],
+                implicit_hydrogens: vec![-1, 255, 22],
+            };
+            let before = cache.clone();
+            let out = kekulize_fragment(
+                &graph,
+                &[true, false, false],
+                &[],
+                &KekulizeParams::default(),
+                None,
+                None,
+                Some(&cache),
+            )
+            .unwrap();
+            assert_eq!(out.topology, graph);
+            assert_eq!(
+                out.final_valence,
+                Some(ValenceAssignment {
+                    explicit_valence: vec![explicit, -128, 77],
+                    implicit_hydrogens: vec![implicit, 255, 22]
+                })
+            );
+            assert_eq!(cache, before);
+            assert!(out.ring_update.is_none());
+        }
+    }
+    #[test]
+    fn atoms_none_preserves_actual_cache_and_selected_negative_storage_errors() {
+        let graph = graph();
+        let cache = ValenceAssignment {
+            explicit_valence: vec![128, -2, 66],
+            implicit_hydrogens: vec![-1, -1, 17],
+        };
+        let before = cache.clone();
+        let none = kekulize_fragment(
+            &graph,
+            &[false; 3],
+            &[],
+            &KekulizeParams::default(),
+            None,
+            None,
+            Some(&cache),
+        )
+        .unwrap();
+        assert_eq!(none.final_valence, Some(before.clone()));
+        assert!(
+            matches!(kekulize_fragment(&graph, &[true, false, false], &[], &KekulizeParams::default(), None, None, Some(&cache)), Err(KekulizeError::Valence(ValenceError::ExplicitValenceCacheNotInitialized { atom })) if atom == AtomId::new(0))
+        );
+        assert_eq!(cache, before);
+        assert!(
+            kekulize_fragment(
+                &graph,
+                &[false; 3],
+                &[],
+                &KekulizeParams::default(),
+                None,
+                None,
+                None
+            )
+            .unwrap()
+            .final_valence
+            .is_none()
+        );
+    }
+}
+
+#[cfg(test)]
+mod source_prepared_fragment_hydrogen_getter {
+    use super::*;
+    #[test]
+    fn no_implicit_and_signed_width_are_observed_before_fragment_ranking() {
+        for (no_implicit, field) in [
+            (true, 77),
+            (true, -1),
+            (true, 128),
+            (false, 256),
+            (false, -256),
+        ] {
+            let topology = TopologyBlock::try_from_parts(
+                vec![
+                    Atom::from_spec(
+                        AtomId::new(0),
+                        cosmolkit_model::AtomSpec::new(cosmolkit_model::Element::C)
+                            .with_no_implicit(no_implicit),
+                    ),
+                    Atom::from_spec(
+                        AtomId::new(1),
+                        cosmolkit_model::AtomSpec::new(cosmolkit_model::Element::C),
+                    ),
+                ],
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap();
+            let value = ValenceAssignment {
+                explicit_valence: vec![0; 2],
+                implicit_hydrogens: vec![field, 0],
+            };
+            let before = value.clone();
+            let view =
+                CanonRankReadView::from_prepared_state(&topology, &value, None, Some(&[true; 2]))
+                    .unwrap();
+            let atoms =
+                init_fragment_canon_atoms(&view, &[true; 2], &[], false, None, None).unwrap();
+            assert_eq!(
+                atoms
+                    .iter()
+                    .map(|atom| atom.total_num_hs)
+                    .collect::<Vec<_>>(),
+                vec![0; 2]
+            );
+            // Source BreakTies distinguishes identical disconnected atoms.
+            assert_eq!(
+                rank_fragment_atoms_with_prepared_state(
+                    &topology,
+                    &value,
+                    None,
+                    &[true; 2],
+                    &[],
+                    None,
+                    None,
+                    &CanonicalRankParams::kekulize_fragment_default()
+                )
+                .unwrap(),
+                vec![0, 1]
+            );
+            let mut symmetric = CanonicalRankParams::kekulize_fragment_default();
+            symmetric.break_ties = false;
+            assert_eq!(
+                rank_fragment_atoms_with_prepared_state(
+                    &topology,
+                    &value,
+                    None,
+                    &[true; 2],
+                    &[],
+                    None,
+                    None,
+                    &symmetric
+                )
+                .unwrap(),
+                vec![0; 2]
+            );
+            assert_eq!(value, before);
+        }
     }
 }
 

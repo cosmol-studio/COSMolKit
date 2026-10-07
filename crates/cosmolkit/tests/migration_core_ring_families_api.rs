@@ -184,8 +184,14 @@ fn value_operation_installs_family_state_and_preserves_all_input_blocks() {
         source.topology().stereo_groups,
         output.topology().stereo_groups
     );
-    assert_eq!(output.property("source"), Some("preserved"));
-    assert_eq!(output.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
+    assert_eq!(
+        output.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
     assert_eq!(
         output.atom(AtomId::new(0)).unwrap().prop("_CIPCode"),
         Some(&cosmolkit_model::PropertyValue::from("R"))

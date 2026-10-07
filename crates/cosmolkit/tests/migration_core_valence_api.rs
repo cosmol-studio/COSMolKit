@@ -217,8 +217,14 @@ fn value_operation_commits_valid_cache_and_shares_every_untouched_block() {
     assert!(std::ptr::eq(source.topology(), output.topology()));
     coordinate_views::assert_shared_coordinates(&source, &output);
     assert!(std::ptr::eq(source.properties(), output.properties()));
-    assert_eq!(source.property("source"), Some("preserved"));
-    assert_eq!(output.property("source"), Some("preserved"));
+    assert_eq!(
+        source.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(
         source.topology().stereo_groups,
         output.topology().stereo_groups
@@ -383,10 +389,13 @@ fn atom_metadata_sanitize_false_removehs_never_reads_invalidated_valence() {
         .unwrap();
     let peer = removed.clone();
     assert_eq!(
-        removed.atom_metadata(false),
-        Err(ValenceError::ExplicitValenceCacheNotInitialized {
-            atom: AtomId::new(0)
-        })
+        removed
+            .atom_metadata(false)
+            .unwrap()
+            .iter()
+            .map(|row| row.explicit_valence)
+            .collect::<Vec<_>>(),
+        [4, 4, 2]
     );
     assert_eq!(
         removed
@@ -398,10 +407,13 @@ fn atom_metadata_sanitize_false_removehs_never_reads_invalidated_valence() {
         [1, 2, 1]
     );
     assert_eq!(
-        removed.atom_metadata(false),
-        Err(ValenceError::ExplicitValenceCacheNotInitialized {
-            atom: AtomId::new(0)
-        })
+        removed
+            .atom_metadata(false)
+            .unwrap()
+            .iter()
+            .map(|row| row.explicit_valence)
+            .collect::<Vec<_>>(),
+        [4, 4, 2]
     );
     assert_eq!(removed, peer);
     assert!(std::ptr::eq(removed.topology(), peer.topology()));

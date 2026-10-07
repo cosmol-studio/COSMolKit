@@ -52,3 +52,9 @@ mod canonical_pattern;
 mod conformer_binding;
 
 mod canonical_topological;
+
+mod canonical_molecular_io;
+
+mod canonical_sdf_supplier;
+
+mod canonical_stereoisomers;

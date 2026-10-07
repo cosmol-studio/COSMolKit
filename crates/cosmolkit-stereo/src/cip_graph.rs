@@ -18,6 +18,13 @@ use cosmolkit_types::{BondOrder, ChiralTag, Element};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CipLabelerError {
+    #[error("atom {atom} property {property} unsigned read failed: {source}")]
+    UnsignedPropertyRead {
+        atom: usize,
+        property: &'static str,
+        #[source]
+        source: cosmolkit_core::PropertyUIntReadError,
+    },
     #[error("atom {atom} property {property} has invalid kind {kind:?}")]
     InvalidPropertyKind {
         atom: usize,

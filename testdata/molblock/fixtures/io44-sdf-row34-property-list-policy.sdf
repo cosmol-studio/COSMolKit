@@ -1,0 +1,29 @@
+
+     RDKit          2D
+
+  2  1  0  0  0  0  0  0  0  0999 V2000
+    0.7500    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+   -0.7500    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0
+  1  2  1  0
+M  END
+>  <ID>
+record-1
+
+>  <BLANK_VALUE>
+
+>  <REPEATED>
+first
+
+>  <REPEATED>
+second
+
+>  <atom.prop.note>
+[missing] alpha beta
+
+>  <atom.iprop.rank>
+10 20 30 40 50 60 70 80 90 100
+
+>  <bond.prop.flag>
+one two three four five six seven eight nine
+
+$$$$

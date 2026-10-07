@@ -124,6 +124,10 @@ pub enum BondEndPointsParseErrorKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TopologyEditError {
+    #[error("molecule property operation failed: {0}")]
+    MoleculeProperty(#[from] crate::MoleculePropertyError),
+    #[error("atom property operation failed: {0}")]
+    AtomProperty(#[from] crate::AtomPropertyError),
     #[error("invalid source topology: {0}")]
     InvalidSource(TopologyValidationError),
     #[error("atom {atom} is out of range for {atom_count} atoms")]
@@ -134,7 +138,7 @@ pub enum TopologyEditError {
     BondEndPointsParse {
         bond: BondId,
         token_index: usize,
-        token: String,
+        token: crate::PropertyText,
         kind: BondEndPointsParseErrorKind,
     },
     #[error("bond {begin}-{end} already exists")]
@@ -166,12 +170,14 @@ pub enum TopologyEditError {
 
 /// Owned edit state for a detached topology value.
 ///
-/// The source copy is retained only to establish the mapping and abort/failure
-/// isolation. This type has no authority over a live `Molecule`.
+/// Original row counts establish the mapping. The owned working value and
+/// pending masks remain detached; this type has no live Molecule authority.
 #[derive(Debug, Clone)]
 pub struct TopologyBatchEdit {
-    source: TopologyBlock,
+    source_atom_count: usize,
+    source_bond_count: usize,
     working: TopologyBlock,
+    added_neighbors: Vec<Vec<crate::NeighborRef>>,
     remove_atoms: Vec<bool>,
     remove_bonds: Vec<bool>,
 }
@@ -236,16 +242,33 @@ impl TopologyBlock {
     pub fn begin_batch_edit(&self) -> Result<TopologyBatchEdit, TopologyEditError> {
         // RDKit✔️❌: dp_delAtoms.reset(new boost::dynamic_bitset<>(getNumAtoms()));
         // RDKit✔️❌: dp_delBonds.reset(new boost::dynamic_bitset<>(getNumBonds()));
-        //
-        // The detached editor deliberately clones the source so failure and
-        // abort cannot publish partial state. This is O(n) instead of RDKit's
-        // in-place O(n) bitset setup, hence the performance marker.
+        // The borrowed convenience entry still clones one working block to
+        // isolate the caller. Original row counts require no second copy.
+        self.clone().into_batch_edit()
+    }
+
+    /// Start the same detached editor by moving its sole working block.
+    #[doc(hidden)]
+    pub fn into_batch_edit(self) -> Result<TopologyBatchEdit, TopologyEditError> {
+        // RDKit❗✔️: void RWMol::beginBatchEdit() {
+        // RDKit❗✔️:   if (dp_delAtoms || dp_delBonds) {
+        // RDKit❗✔️:     throw ValueErrorException("Attempt to re-enter batchEdit mode");
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   dp_delAtoms.reset(new boost::dynamic_bitset<>(getNumAtoms()));
+        // RDKit❗✔️:   dp_delBonds.reset(new boost::dynamic_bitset<>(getNumBonds()));
+        // RDKit❗✔️: }
+        // An owned TopologyBlock is not already an editor, so re-entry cannot
+        // occur. Linear validity/mask setup and moved ownership avoid cloning.
         self.validate().map_err(TopologyEditError::InvalidSource)?;
+        let source_atom_count = self.atoms.len();
+        let source_bond_count = self.bonds.len();
         Ok(TopologyBatchEdit {
-            source: self.clone(),
-            working: self.clone(),
-            remove_atoms: vec![false; self.atoms.len()],
-            remove_bonds: vec![false; self.bonds.len()],
+            source_atom_count,
+            source_bond_count,
+            remove_atoms: vec![false; source_atom_count],
+            remove_bonds: vec![false; source_bond_count],
+            added_neighbors: vec![Vec::new(); source_atom_count],
+            working: self,
         })
     }
 
@@ -507,7 +530,7 @@ impl TopologyBlock {
     }
 }
 
-fn parse_endpts_decimal_prefix(token: &str) -> Result<(f64, usize), BondEndPointsParseErrorKind> {
+fn parse_endpts_decimal_prefix(token: &[u8]) -> Result<(f64, usize), BondEndPointsParseErrorKind> {
     // BEGIN RDKIT CPP FUNCTION RWMol::batchRemoveAtoms (ENDPTS conversions)
     // RDKit❗✔️: unsigned int num_ats = std::stod(*tokens.begin());
     // RDKit❗✔️: std::transform(beg, tokens.end(), std::back_inserter(oats),
@@ -517,9 +540,11 @@ fn parse_endpts_decimal_prefix(token: &str) -> Result<(f64, usize), BondEndPoint
     // decimal values and reasonable scientific notation use Rust's binary64
     // conversion after this ASCII scan. This does not claim equivalence for
     // every std::stod/libc spelling or rare rounding boundary.
-    // A scanned normal token is O(n), allocation-free; Rust parses the same
-    // slice once more, so this keeps linear complexity with a second scan.
-    let bytes = token.as_bytes();
+    // A scanned normal token is O(n). Only its grammar-selected ASCII number
+    // is copied to the same Rust float primitive; arbitrary property bytes
+    // are never decoded or rejected as text. The existing F13 numeric scope
+    // and framing remain unchanged; this adds an O(prefix) primitive buffer.
+    let bytes = token;
     let mut index = 0;
     while index < bytes.len()
         && bytes[index] != 0
@@ -565,7 +590,11 @@ fn parse_endpts_decimal_prefix(token: &str) -> Result<(f64, usize), BondEndPoint
 
     // Leading C whitespace contributes to std::stod's consumed index, but
     // Rust's FromStr grammar receives only the numeric slice.
-    let parsed = token[number_start..index]
+    let numeric: String = token[number_start..index]
+        .iter()
+        .map(|&byte| char::from(byte))
+        .collect();
+    let parsed = numeric
         .parse::<f64>()
         .map_err(|_| BondEndPointsParseErrorKind::OutOfRange)?;
     if !parsed.is_finite() {
@@ -590,6 +619,97 @@ fn endpts_value_to_u32(value: f64) -> Result<u32, BondEndPointsParseErrorKind> {
 }
 
 impl TopologyBatchEdit {
+    /// Borrow one checked atom row of this detached working value.
+    #[doc(hidden)]
+    pub fn atom_mut(&mut self, atom: AtomId) -> Result<&mut Atom, TopologyEditError> {
+        // RDKit❗✔️: Atom *ROMol::getAtomWithIdx(unsigned int idx) {
+        // RDKit❗✔️:   URANGE_CHECK(idx, getNumAtoms());
+        // RDKit❗✔️:
+        // RDKit❗✔️:   auto vd = boost::vertex(idx, d_graph);
+        // RDKit❗✔️:   auto res = d_graph[vd];
+        // RDKit❗✔️:   POSTCONDITION(res, "");
+        // RDKit❗✔️:   return res;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: const Atom *ROMol::getAtomWithIdx(unsigned int idx) const {
+        // RDKit❗✔️:   URANGE_CHECK(idx, getNumAtoms());
+        let atom_count = self.working.atoms.len();
+        self.working
+            .atoms
+            .get_mut(atom.index())
+            .ok_or(TopologyEditError::AtomOutOfRange { atom, atom_count })
+    }
+
+    /// Borrow one checked bond row without exposing the editor's storage.
+    #[doc(hidden)]
+    pub fn bond_mut(&mut self, bond: BondId) -> Result<&mut Bond, TopologyEditError> {
+        // RDKit❗✔️: Bond *ROMol::getBondWithIdx(unsigned int idx) {
+        // RDKit❗✔️:   return const_cast<Bond *>(static_cast<const ROMol *>(this)->getBondWithIdx(
+        // RDKit❗✔️:       idx));  // avoid code duplication
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: const Bond *ROMol::getBondWithIdx(unsigned int idx) const {
+        // RDKit❗✔️:   URANGE_CHECK(idx, getNumBonds());
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // boost::graph doesn't give us random-access to edges,
+        // RDKit❗✔️:   // so we have to iterate to it
+        // RDKit❗✔️:   auto [iter, end] = getEdges();
+        // RDKit❗✔️:   for (unsigned int i = 0; i < idx; i++) {
+        // RDKit❗✔️:     ++iter;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   const Bond *res = d_graph[*iter];
+        // RDKit❗✔️:
+        // RDKit❗✔️:   POSTCONDITION(res != nullptr, "Invalid bond requested");
+        // RDKit❗✔️:   return res;
+        // RDKit❗✔️: }
+        // Indexed canonical rows avoid ROMol's linear edge-index walk.
+        let bond_count = self.working.bonds.len();
+        self.working
+            .bonds
+            .get_mut(bond.index())
+            .ok_or(TopologyEditError::BondOutOfRange { bond, bond_count })
+    }
+
+    /// Source-visible edges include additions and pending removals until finish.
+    #[doc(hidden)]
+    pub fn bond_between_atoms(
+        &self,
+        begin: AtomId,
+        end: AtomId,
+    ) -> Result<Option<BondId>, TopologyEditError> {
+        // RDKit❗✔️: const Bond *ROMol::getBondBetweenAtoms(unsigned int idx1,
+        // RDKit❗✔️:                                        unsigned int idx2) const {
+        // RDKit❗✔️:   URANGE_CHECK(idx1, getNumAtoms());
+        // RDKit❗✔️:   URANGE_CHECK(idx2, getNumAtoms());
+        // RDKit❗✔️:   const Bond *res = nullptr;
+        // RDKit❗✔️:
+        // RDKit❗✔️:   auto [edge, found] = boost::edge(boost::vertex(idx1, d_graph),
+        // RDKit❗✔️:                                    boost::vertex(idx2, d_graph), d_graph);
+        // RDKit❗✔️:   if (found) {
+        // RDKit❗✔️:     res = d_graph[edge];
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   return res;
+        // RDKit❗✔️: }
+        for atom in [begin, end] {
+            if atom.index() >= self.working.atoms.len() {
+                return Err(TopologyEditError::AtomOutOfRange {
+                    atom,
+                    atom_count: self.working.atoms.len(),
+                });
+            }
+        }
+        // Original indexed neighbors plus appended rows retain source edge
+        // visibility and O(degree) lookup without rebuilding all adjacency.
+        Ok(self
+            .working
+            .adjacency
+            .neighbors_of(begin.index())
+            .iter()
+            .chain(self.added_neighbors[begin.index()].iter())
+            .find(|n| n.atom_index == end.index())
+            .map(|n| n.bond))
+    }
+
     pub fn add_atom(&mut self, spec: AtomSpec) -> AtomId {
         // RDKit✔️✔️: if (dp_delAtoms->size() < getNumAtoms()) {
         // RDKit✔️✔️:   dp_delAtoms->resize(getNumAtoms());
@@ -597,6 +717,7 @@ impl TopologyBatchEdit {
         let id = AtomId::new(self.working.atoms.len());
         self.working.atoms.push(Atom::from_spec(id, spec));
         self.remove_atoms.push(false);
+        self.added_neighbors.push(Vec::new());
         id
     }
 
@@ -631,18 +752,69 @@ impl TopologyBatchEdit {
                 },
             ));
         }
-        if self.working.bonds.iter().any(|bond| {
-            (bond.begin() == spec.begin() && bond.end() == spec.end())
-                || (bond.begin() == spec.end() && bond.end() == spec.begin())
-        }) {
+        if self.bond_between_atoms(spec.begin(), spec.end())?.is_some() {
             return Err(TopologyEditError::DuplicateBond {
                 begin: spec.begin(),
                 end: spec.end(),
             });
         }
         let id = BondId::new(self.working.bonds.len());
+        // RDKit❗✔️: unsigned int ROMol::addBond(Bond *bond_pin, bool takeOwnership) {
+        // RDKit❗✔️:   PRECONDITION(bond_pin, "null bond passed in");
+        // RDKit❗✔️:   PRECONDITION(!takeOwnership || !bond_pin->hasOwningMol() ||
+        // RDKit❗✔️:                    &bond_pin->getOwningMol() == this,
+        // RDKit❗✔️:                "cannot take ownership of an bond which already has an owner");
+        // RDKit❗✔️:   URANGE_CHECK(bond_pin->getBeginAtomIdx(), getNumAtoms());
+        // RDKit❗✔️:   URANGE_CHECK(bond_pin->getEndAtomIdx(), getNumAtoms());
+        // RDKit❗✔️:   PRECONDITION(bond_pin->getBeginAtomIdx() != bond_pin->getEndAtomIdx(),
+        // RDKit❗✔️:                "attempt to add self-bond");
+        // RDKit❗✔️:   PRECONDITION(!(boost::edge(bond_pin->getBeginAtomIdx(),
+        // RDKit❗✔️:                              bond_pin->getEndAtomIdx(), d_graph)
+        // RDKit❗✔️:                      .second),
+        // RDKit❗✔️:                "bond already exists");
+        // RDKit❗✔️:
+        // RDKit❗✔️:   Bond *bond_p;
+        // RDKit❗✔️:   if (!takeOwnership) {
+        // RDKit❗✔️:     bond_p = bond_pin->copy();
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     bond_p = bond_pin;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   bond_p->setOwningMol(this);
+        // RDKit❗✔️:   auto [which, ok] = boost::add_edge(bond_p->getBeginAtomIdx(),
+        // RDKit❗✔️:                                      bond_p->getEndAtomIdx(), d_graph);
+        // RDKit❗✔️:   CHECK_INVARIANT(ok, "bond could not be added");
+        // RDKit❗✔️:   d_graph[which] = bond_p;
+        // RDKit❗✔️:   bond_p->setIdx(numBonds);
+        // RDKit❗✔️:   numBonds++;
+        // RDKit❗✔️:   return numBonds;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (bondType == Bond::AROMATIC) {
+        // RDKit❗✔️:     b->setIsAromatic(1);
+        // RDKit❗✔️:     beginAtom->setIsAromatic(1);
+        // RDKit❗✔️:     endAtom->setIsAromatic(1);
+        // RDKit❗✔️:   }
+        let begin = spec.begin().index();
+        let end = spec.end().index();
+        let spec = if spec.query().is_none() && spec.order() == crate::BondOrder::Aromatic {
+            self.working.atoms[begin].set_aromatic(true);
+            self.working.atoms[end].set_aromatic(true);
+            spec.with_aromatic(true)
+        } else {
+            spec
+        };
         self.working.bonds.push(Bond::from_spec(id, spec));
-        self.remove_bonds.push(false);
+        self.added_neighbors[begin].push(crate::NeighborRef {
+            atom_index: end,
+            bond: id,
+        });
+        self.added_neighbors[end].push(crate::NeighborRef {
+            atom_index: begin,
+            bond: id,
+        });
+        self.remove_bonds
+            .push(self.remove_atoms[begin] || self.remove_atoms[end]);
         Ok(id)
     }
 
@@ -883,35 +1055,41 @@ impl TopologyBatchEdit {
                     // begins with '(' (including signed zero, Inf and NaN),
                     // so the source skips this branch. Avoid that unobserved
                     // allocation without moving formatting into the model.
-                    crate::PropertyValue::IntVector(_)
+                    // String-vector formatting begins with [, so the source
+                    // parenthesis guard also skips it for every raw payload.
+                    crate::PropertyValue::StringVector(_)
+                    | crate::PropertyValue::IntVector(_)
                     | crate::PropertyValue::Int(_)
                     | crate::PropertyValue::UInt(_)
                     | crate::PropertyValue::Double(_)
                     | crate::PropertyValue::Bool(_) => continue,
                 };
                 let Some(contents) = source_property
-                    .strip_prefix('(')
-                    .and_then(|value| value.strip_suffix(')'))
+                    .as_bytes()
+                    .strip_prefix(b"(")
+                    .and_then(|value| value.strip_suffix(b")"))
                 else {
                     continue;
                 };
 
-                let mut tokens = contents.split(' ').filter(|token| !token.is_empty());
+                let mut tokens = contents
+                    .split(|&byte| byte == b' ')
+                    .filter(|token| !token.is_empty());
                 let Some(count_token) = tokens.next() else {
                     return Err(TopologyEditError::BondEndPointsParse {
                         bond: bond_id,
                         token_index: 0,
-                        token: String::new(),
+                        token: crate::PropertyText::new(),
                         kind: BondEndPointsParseErrorKind::InvalidArgument,
                     });
                 };
                 let parse_token =
-                    |token: &str, token_index: usize| -> Result<u32, TopologyEditError> {
+                    |token: &[u8], token_index: usize| -> Result<u32, TopologyEditError> {
                         let (value, _) = parse_endpts_decimal_prefix(token).map_err(|kind| {
                             TopologyEditError::BondEndPointsParse {
                                 bond: bond_id,
                                 token_index,
-                                token: token.to_owned(),
+                                token: token.into(),
                                 kind,
                             }
                         })?;
@@ -919,7 +1097,7 @@ impl TopologyBatchEdit {
                             TopologyEditError::BondEndPointsParse {
                                 bond: bond_id,
                                 token_index,
-                                token: token.to_owned(),
+                                token: token.into(),
                                 kind,
                             }
                         })
@@ -948,8 +1126,10 @@ impl TopologyBatchEdit {
                 }
 
                 if endpoint_count == 0 {
-                    bond.clear_prop("_MolFileBondEndPts");
-                    bond.clear_prop("_MolFileBondAttach");
+                    bond.clear_prop("_MolFileBondEndPts")
+                        .map_err(TopologyEditError::InvalidBond)?;
+                    bond.clear_prop("_MolFileBondAttach")
+                        .map_err(TopologyEditError::InvalidBond)?;
                 } else {
                     let mut updated = format!("({endpoint_count} ");
                     for endpoint in endpoints {
@@ -963,8 +1143,8 @@ impl TopologyBatchEdit {
                 }
             }
         }
-        let old_atom_count = self.source.atoms.len();
-        let old_bond_count = self.source.bonds.len();
+        let old_atom_count = self.source_atom_count;
+        let old_bond_count = self.source_bond_count;
         let mut atom_old_to_new = vec![None; old_atom_count];
         let mut atom_new_to_old = Vec::new();
         let mut all_atom_to_new = vec![None; self.working.atoms.len()];
@@ -1281,14 +1461,40 @@ impl TopologyBatchEdit {
         mapping
             .validate_for_counts(old_atom_count, atoms.len(), old_bond_count, bonds.len())
             .map_err(TopologyEditError::InvalidMapping)?;
-        let topology = TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups)
-            .map_err(TopologyEditError::InvalidResult)?;
+        let mut topology =
+            TopologyBlock::try_from_parts(atoms, bonds, substance_groups, stereo_groups)
+                .map_err(TopologyEditError::InvalidResult)?;
+        // RDKit❗✔️:   // fix properties
+        // RDKit❗✔️:   clearComputedProps(true);
+        // RDKit❗✔️:   for (auto atom : atoms()) {
+        // RDKit❗✔️:     atom->clearComputedProps();
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   for (auto bond : bonds()) {
+        // RDKit❗✔️:     bond->clearComputedProps();
+        // RDKit❗✔️:   }
+        // RWMol's no-removal branch preserves these properties; molecule
+        // properties and ring validity stay at their canonical runtime owner.
+        if self.remove_atoms.iter().any(|removed| *removed)
+            || self.remove_bonds.iter().any(|removed| *removed)
+        {
+            for atom in &mut topology.atoms {
+                atom.clear_computed_props()?;
+            }
+            for bond in &mut topology.bonds {
+                bond.clear_computed_props()
+                    .map_err(TopologyEditError::InvalidBond)?;
+            }
+        }
         Ok((topology, mapping))
     }
 }
 
 #[cfg(test)]
 mod tests {
+    fn fixture_text(value: &crate::PropertyText) -> &str {
+        std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+    }
+
     use super::*;
     use crate::{
         AtomSpec, BondOrder, BondSpec, SGroupAttachPoint, SGroupBondRole, SGroupCState,
@@ -1807,8 +2013,8 @@ mod tests {
         ];
 
         for (token, expected_bits, expected_consumed) in cases {
-            let (value, consumed) =
-                parse_endpts_decimal_prefix(token).expect("fixed decimal prefix converts");
+            let (value, consumed) = parse_endpts_decimal_prefix(token.as_bytes())
+                .expect("fixed decimal prefix converts");
             assert_eq!(
                 value.to_bits(),
                 expected_bits,
@@ -1828,21 +2034,21 @@ mod tests {
             ("\x0c1", 2),
             ("\r1", 2),
         ] {
-            let (value, consumed) =
-                parse_endpts_decimal_prefix(token).expect("C whitespace precedes a number");
+            let (value, consumed) = parse_endpts_decimal_prefix(token.as_bytes())
+                .expect("C whitespace precedes a number");
             assert_eq!(value.to_bits(), 0x3ff0_0000_0000_0000, "{token:?}");
             assert_eq!(consumed, expected_consumed, "{token:?}");
         }
 
         for token in ["", " ", "\t\n\x0b\x0c\r", "abc", "+", "-", ".", "e1", "\0"] {
             assert_eq!(
-                parse_endpts_decimal_prefix(token),
+                parse_endpts_decimal_prefix(token.as_bytes()),
                 Err(BondEndPointsParseErrorKind::InvalidArgument),
                 "no-conversion classification for {token:?}"
             );
         }
         assert_eq!(
-            parse_endpts_decimal_prefix("1e309"),
+            parse_endpts_decimal_prefix("1e309".as_bytes()),
             Err(BondEndPointsParseErrorKind::OutOfRange)
         );
     }
@@ -1885,11 +2091,12 @@ mod tests {
         // prefix. The oracle classifies 1e-310 as OutOfRange; Rust's ordinary
         // f64 conversion accepts a finite subnormal here. Hexadecimal and
         // subnormal/underflow parity remain outside F13-NORMAL.
-        let (hex_prefix, hex_consumed) = parse_endpts_decimal_prefix("0x1p+2").unwrap();
+        let (hex_prefix, hex_consumed) = parse_endpts_decimal_prefix("0x1p+2".as_bytes()).unwrap();
         assert_eq!(hex_prefix.to_bits(), 0x0000_0000_0000_0000);
         assert_eq!(hex_consumed, 1);
 
-        let (rust_subnormal, subnormal_consumed) = parse_endpts_decimal_prefix("1e-310").unwrap();
+        let (rust_subnormal, subnormal_consumed) =
+            parse_endpts_decimal_prefix("1e-310".as_bytes()).unwrap();
         assert!(rust_subnormal.is_finite() && rust_subnormal > 0.0);
         assert_eq!(subnormal_consumed, 6);
     }
@@ -1915,37 +2122,37 @@ mod tests {
         assert_eq!(source, original, "batch edit does not mutate its source");
         assert_eq!(
             result.bonds[0].prop("_MolFileBondEndPts"),
-            Some(&crate::PropertyValue::String("(2 3 4)".to_owned()))
+            Some(&crate::PropertyValue::String("(2 3 4)".into()))
         );
         assert_eq!(
             result.bonds[0].prop("_MolFileBondAttach"),
-            Some(&crate::PropertyValue::String("ANY".to_owned()))
+            Some(&crate::PropertyValue::String("ANY".into()))
         );
         assert_eq!(result.bonds[1].prop("_MolFileBondEndPts"), None);
         assert_eq!(result.bonds[1].prop("_MolFileBondAttach"), None);
         assert_eq!(
             result.bonds[2].prop("_MolFileBondEndPts"),
-            Some(&crate::PropertyValue::String("raw 4 5".to_owned()))
+            Some(&crate::PropertyValue::String("raw 4 5".into()))
         );
         assert_eq!(
             result.bonds[2].prop("_MolFileBondAttach"),
-            Some(&crate::PropertyValue::String("ANY".to_owned()))
+            Some(&crate::PropertyValue::String("ANY".into()))
         );
         assert_eq!(
             result.bonds[3].prop("_MolFileBondEndPts"),
-            Some(&crate::PropertyValue::String("(2 2 3)".to_owned()))
+            Some(&crate::PropertyValue::String("(2 2 3)".into()))
         );
         assert_eq!(
             result.bonds[3].prop("_MolFileBondAttach"),
-            Some(&crate::PropertyValue::String("ANY".to_owned()))
+            Some(&crate::PropertyValue::String("ANY".into()))
         );
         assert_eq!(
             result.bonds[4].prop("_MolFileBondEndPts"),
-            Some(&crate::PropertyValue::String("(8 7)".to_owned()))
+            Some(&crate::PropertyValue::String("(8 7)".into()))
         );
         assert_eq!(
             result.bonds[4].prop("_MolFileBondAttach"),
-            Some(&crate::PropertyValue::String("ANY".to_owned()))
+            Some(&crate::PropertyValue::String("ANY".into()))
         );
     }
 
@@ -1954,7 +2161,7 @@ mod tests {
         let scalar_values = [
             (
                 "nonparenthesized String",
-                crate::PropertyValue::String("raw 4 5".to_owned()),
+                crate::PropertyValue::String("raw 4 5".into()),
             ),
             ("zero Int", crate::PropertyValue::Int(0)),
             ("negative Int", crate::PropertyValue::Int(-17)),
@@ -2006,7 +2213,7 @@ mod tests {
             );
             assert_eq!(
                 result.bonds[0].prop("_MolFileBondAttach"),
-                Some(&crate::PropertyValue::String("ANY".to_owned())),
+                Some(&crate::PropertyValue::String("ANY".into())),
                 "scalar skip leaves ATTACH unchanged for {case}"
             );
         }
@@ -2027,11 +2234,11 @@ mod tests {
         assert_eq!(mapping.bonds.old_to_new(), &[None, Some(BondId::new(0))]);
         assert_eq!(
             result.bonds[0].prop("_MolFileBondEndPts"),
-            Some(&crate::PropertyValue::String("(2 1 2)".to_owned()))
+            Some(&crate::PropertyValue::String("(2 1 2)".into()))
         );
         assert_eq!(
             result.bonds[0].prop("_MolFileBondAttach"),
-            Some(&crate::PropertyValue::String("ANY".to_owned()))
+            Some(&crate::PropertyValue::String("ANY".into()))
         );
     }
 
@@ -2048,11 +2255,11 @@ mod tests {
         assert_eq!(source, original);
         assert_eq!(
             result.bonds[0].prop("_MolFileBondEndPts"),
-            Some(&crate::PropertyValue::String("(2 3 4)".to_owned()))
+            Some(&crate::PropertyValue::String("(2 3 4)".into()))
         );
         assert_eq!(
             result.bonds[0].prop("_MolFileBondAttach"),
-            Some(&crate::PropertyValue::String("ANY".to_owned()))
+            Some(&crate::PropertyValue::String("ANY".into()))
         );
     }
 
@@ -2068,11 +2275,11 @@ mod tests {
         assert_eq!(source, original);
         assert_eq!(
             result.bonds[0].prop("_MolFileBondEndPts"),
-            Some(&crate::PropertyValue::String("(4294967295 3)".to_owned()))
+            Some(&crate::PropertyValue::String("(4294967295 3)".into()))
         );
         assert_eq!(
             result.bonds[0].prop("_MolFileBondAttach"),
-            Some(&crate::PropertyValue::String("ANY".to_owned()))
+            Some(&crate::PropertyValue::String("ANY".into()))
         );
     }
 
@@ -2138,7 +2345,7 @@ mod tests {
                 TopologyEditError::BondEndPointsParse {
                     bond: BondId::new(1),
                     token_index,
-                    token: token.to_owned(),
+                    token: token.into(),
                     kind,
                 },
                 "typed first-error context for {endpts:?}"
@@ -2172,9 +2379,20 @@ mod tests {
         let root = &result.substance_groups[0];
         assert_eq!(root.external_id(), Some(501));
         assert_eq!(root.rdkit_sequence_id(), Some(71));
-        assert_eq!(root.label(), Some("retained-root"));
-        assert_eq!(root.data_fields(), &["root-field"]);
-        assert_eq!(root.props().get("vendor").map(String::as_str), Some("keep"));
+        assert_eq!(root.label().map(fixture_text), Some("retained-root"));
+        assert_eq!(
+            root.data_fields()
+                .iter()
+                .map(fixture_text)
+                .collect::<Vec<_>>(),
+            &["root-field"]
+        );
+        assert_eq!(
+            root.props()
+                .get("vendor".as_bytes())
+                .map(|value| fixture_text(value.as_string().unwrap())),
+            Some("keep")
+        );
         assert_eq!(
             root.atoms(),
             &[AtomId::new(6), AtomId::new(0), AtomId::new(4)]

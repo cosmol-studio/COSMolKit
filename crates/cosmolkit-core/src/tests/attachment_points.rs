@@ -1,6 +1,7 @@
+use crate::attachment_points::attachment_query_rows;
+
 use crate::{
-    attachment_points::attachment_query_rows, expand_attachment_points,
-    hydrogens::place_terminal_attachment_coordinates, rdkit_rb0,
+    expand_attachment_points, hydrogens::place_terminal_attachment_coordinates, rdkit_rb0,
 };
 use cosmolkit_model::{
     Atom, AtomId, AtomQueryPredicate, AtomSpec, Bond, BondId, BondOrder, BondQueryPredicate,
@@ -86,7 +87,7 @@ fn attachment_query_transport_ordinary_rows_and_explicit_append_validation() {
     assert!(atoms.iter().all(QueryAtom::predicate_is_carrier_derived));
     assert_eq!(
         atoms[1].prop("_fromAttchpt"),
-        Some(&PropertyValue::String("2".to_owned()))
+        Some(&PropertyValue::String("2".to_owned().into()))
     );
     assert!(bonds[0].predicate_is_carrier_derived());
     assert!(matches!(
@@ -138,8 +139,8 @@ fn attachment_expansion_values_options_and_query_origins() {
                         Conformer3D::new(10, vec![[1.0, 2.0, -0.0]], false),
                         Conformer3D::new(11, vec![[2.0, 3.0, 0.5]], true),
                     ],
-                    source_coordinate_dim: Some(CoordinateDimension::ThreeD),
                     source_conformer_order: None,
+                    source_coordinate_dim: Some(CoordinateDimension::ThreeD),
                 };
                 let original_snapshot = original.clone();
                 let result = expand_attachment_points(
@@ -179,7 +180,7 @@ fn attachment_expansion_values_options_and_query_origins() {
                     let atom = &result.topology.atoms[offset + 1];
                     assert_eq!(
                         atom.prop("_fromAttchpt"),
-                        Some(&PropertyValue::String(label.to_owned()))
+                        Some(&PropertyValue::String(label.to_owned().into()))
                     );
                     assert_eq!(atom.atomic_number(), 0);
                     assert_eq!(result.topology.bonds[offset].begin(), AtomId::new(0));
@@ -301,7 +302,7 @@ fn attachment_expansion_preserves_explicit_query_and_rejects_invalid_inputs_atom
     assert!(bonds[0].predicate_is_carrier_derived());
     assert_eq!(
         source.atoms[0].prop("molAttachPoint"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::String("1".to_owned().into()))
     );
     assert!(
         expand_attachment_points(
@@ -331,7 +332,7 @@ fn attachment_expansion_preserves_explicit_query_and_rejects_invalid_inputs_atom
     );
     assert_eq!(
         source.atoms[0].prop("molAttachPoint"),
-        Some(&PropertyValue::String("1".to_owned()))
+        Some(&PropertyValue::String("1".to_owned().into()))
     );
 }
 
@@ -396,8 +397,8 @@ fn attachment_coordinates_ck_coord_001_mixed_flags_preserve_xyz_and_order() {
             Conformer3D::new(11, vec![[2.0, 2.0, 0.0], [0.0; 3]], true),
             Conformer3D::new(12, vec![[4.0, 5.0, 7.0], [0.0; 3]], false),
         ],
-        source_coordinate_dim: Some(CoordinateDimension::ThreeD),
         source_conformer_order: None,
+        source_coordinate_dim: Some(CoordinateDimension::ThreeD),
     };
     let snapshot = original.clone();
     let result = place_terminal_attachment_coordinates(

@@ -22,7 +22,9 @@ fn parts(source: &Molecule) -> OpParts<'_, crate::ops::WithMmffOptimizedAccess> 
         .unwrap();
     let mut parts = OpParts::new(source, spec).unwrap();
     let mut properties = parts.checkout_properties_runtime().unwrap();
-    properties.set_computed_prop("_MMFFSanitized", "1").unwrap();
+    properties
+        .set_computed_prop("_MMFFSanitized", 1_i32)
+        .unwrap();
     parts.install_properties_runtime(properties).unwrap();
     parts
 }
@@ -137,5 +139,59 @@ fn mmff_proof_preserves_actual_signed_zero_coordinate_result() {
         (-0.0f64).to_bits()
     );
     assert!(matches!(parts.coordinates, WorkingBlock::Installed(_)));
+    assert_source_unchanged(&source, &peer);
+}
+
+#[test]
+fn mmff_proof_rejects_equal_text_with_non_source_scalar_tags() {
+    for marker in [
+        cosmolkit_model::PropertyValue::String("1".into()),
+        cosmolkit_model::PropertyValue::UInt(1),
+        cosmolkit_model::PropertyValue::Bool(true),
+    ] {
+        let source = source();
+        let peer = source.clone();
+        let mut parts = parts(&source);
+        let mut properties = parts.checkout_properties_runtime().unwrap();
+        properties
+            .set_computed_prop("_MMFFSanitized", marker)
+            .unwrap();
+        parts.install_properties_runtime(properties).unwrap();
+        assert!(prove(&mut parts).is_err());
+        assert_source_unchanged(&source, &peer);
+    }
+}
+#[test]
+fn mmff_proof_rejects_coordinate_occurrence_metadata_changes() {
+    let source = source();
+    let peer = source.clone();
+    let mut parts = parts(&source);
+    let mut coordinates = parts.checkout_coordinates_runtime().unwrap();
+    assert_eq!(
+        coordinates.source_conformer_order,
+        Some(vec![cosmolkit_model::CoordinateDimension::ThreeD])
+    );
+    // The canonical builder already records this append. Removing the known
+    // occurrence order changes source metadata even for a single dimension.
+    coordinates.source_conformer_order = None;
+    parts.install_coordinates_runtime(coordinates).unwrap();
+    assert!(prove(&mut parts).is_err());
+    assert_source_unchanged(&source, &peer);
+}
+
+#[test]
+fn mmff_proof_allows_identical_canonical_coordinate_occurrence_metadata() {
+    let source = source();
+    let peer = source.clone();
+    let mut parts = parts(&source);
+    let mut coordinates = parts.checkout_coordinates_runtime().unwrap();
+    assert_eq!(
+        coordinates.source_conformer_order,
+        Some(vec![cosmolkit_model::CoordinateDimension::ThreeD])
+    );
+    coordinates.source_conformer_order = Some(vec![cosmolkit_model::CoordinateDimension::ThreeD]);
+    parts.install_coordinates_runtime(coordinates).unwrap();
+    prove(&mut parts).unwrap();
+    assert!(matches!(parts.coordinates, WorkingBlock::Shared));
     assert_source_unchanged(&source, &peer);
 }

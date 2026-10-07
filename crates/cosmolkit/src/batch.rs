@@ -578,8 +578,37 @@ impl MoleculeBatch {
         cosmolkit_batch::validate_record_errors(errors, BatchErrorMode::Strict)?;
         Ok(values)
     }
+    #[cfg(feature = "cap-fingerprints")]
+    /// Ordered source torsion fingerprints using the batch's stored runtime policy.
+    pub fn fingerprint_topological_torsion_list(
+        &self,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        self.fingerprint_topological_torsion_list_with_params(
+            &crate::TopologicalTorsionFingerprintParams::default(),
+            &BatchQueryParams::default(),
+        )
+    }
+    #[cfg(feature = "cap-fingerprints")]
+    /// Per-call overrides share the canonical ordered scheduler and typed errors.
+    pub fn fingerprint_topological_torsion_list_with_params(
+        &self,
+        options: &crate::TopologicalTorsionFingerprintParams,
+        params: &BatchQueryParams,
+    ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
+        // ROOT CK-d41: project-defined thin batch query. Chemistry remains in
+        // Molecule's canonical torsion query and the sole fingerprints owner.
+        // One immutable borrow per input; collection/error/tick costs are the
+        // accepted shared batch mechanism below, with no chemistry duplication.
+        self.collect(
+            "batch.topological_torsion_fingerprint",
+            "Computing Topological Torsion fingerprints",
+            params,
+            |m| m.topological_torsion_fingerprint_with_params(options, None),
+        )
+    }
+
     #[cfg(feature = "cap-smiles")]
-    pub fn to_smiles_list(&self) -> Result<Vec<Option<String>>, BatchValidationError> {
+    pub fn to_smiles_list(&self) -> Result<Vec<Option<crate::PropertyText>>, BatchValidationError> {
         self.to_smiles_list_with_params(
             &crate::SmilesWriteParams::default(),
             &BatchQueryParams::default(),
@@ -590,7 +619,7 @@ impl MoleculeBatch {
         &self,
         options: &crate::SmilesWriteParams,
         params: &BatchQueryParams,
-    ) -> Result<Vec<Option<String>>, BatchValidationError> {
+    ) -> Result<Vec<Option<crate::PropertyText>>, BatchValidationError> {
         // COSMolKit❗✔️: pinned d892ec3 properties/batch.rs::to_smiles_optional_list_with_params_and_runtime; same indexed order/all-result collection and scalar owner calls.
         // fn to_smiles_optional_list_with_params_and_runtime(
         //         &self,

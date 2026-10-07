@@ -10,10 +10,22 @@ pub(crate) fn add_hydrogens_impl(params: &AddHsParams) -> Result<(), OperationEr
     let topology = parts.checkout_topology()?;
     let coordinates = parts.checkout_coordinates()?;
     let properties = parts.checkout_properties()?;
-    let result =
-        cosmolkit_core::add_hydrogens_with_params(topology, coordinates, properties, params)
-            .map_err(OperationError::Hydrogen)?;
+    let mut cache = parts.checkout_derived_cache()?;
+    let source_valence = cache.valence_assignment().cloned();
+    let result = cosmolkit_core::add_hydrogens_with_source_valence(
+        topology,
+        coordinates,
+        properties,
+        params,
+        source_valence,
+    )
+    .map_err(OperationError::Hydrogen)?;
 
+    // ROOT CK-474bdce: publish actual selected-parent/new-H source scalars,
+    // retaining untouched rows through the canonical validated cache path.
+    cache.install_valence_assignment(result.final_valence);
+    parts.install_derived_cache(cache)?;
+    parts.mark_cache_updated(DerivedState::VALENCE)?;
     parts.install_topology(result.topology)?;
     parts.install_coordinates(result.coordinates)?;
     parts.install_properties(result.properties)?;
@@ -21,8 +33,7 @@ pub(crate) fn add_hydrogens_impl(params: &AddHsParams) -> Result<(), OperationEr
     parts.record_topology_mapping(result.mapping)?;
     parts.apply_runtime_remap()?;
     parts.clear_cache(
-        DerivedState::VALENCE
-            .union(DerivedState::AROMATICITY)
+        DerivedState::AROMATICITY
             .union(DerivedState::STEREO)
             .union(DerivedState::DRAWING)
             .union(DerivedState::FINGERPRINT),
@@ -180,10 +191,10 @@ mod ring_live_tests {
                             assert!(cache.valid_ring_info().is_none(), "{label}: absent");
                             assert!(cache.ring_info().is_none(), "{label}: storage cleared");
                         }
-                        // CK-VALENCE-001 stays independent of rings.
+                        // Source scalar rows survive compaction, independently of rings.
                         assert_eq!(
                             cache.valid_states().contains(DerivedState::VALENCE),
-                            sanitize,
+                            true,
                             "{label}: VALENCE validity"
                         );
                         // Value semantics and value/in-place agreement.
@@ -283,15 +294,18 @@ pub(crate) fn remove_hydrogens_impl(
     parts.record_topology_mapping(result.mapping)?;
     parts.apply_runtime_remap()?;
 
-    // CK-VALENCE-001: sanitize=false allows an unsanitized molecule, not a stale
-    // cache advertised as valid. Clear both the validity bit and stored value.
-    // For sanitize=true, only a complete final-topology assignment may be
-    // installed. None means unavailable, never a swallowed calculation error.
-    // The existing operation_defined effect permits both update and clear;
-    // it does not make historical RDKit cache values valid for current state.
-    if !params.sanitize {
-        parts.clear_cache(DerivedState::VALENCE)?;
-    } else if let Some(valence) = result.final_valence {
+    // BEGIN RDKIT CPP FUNCTION MolOps::removeHs source scalar publication
+    // RDKit✔️✔️:   for (auto atom : mol.atoms()) {
+    // RDKit✔️✔️:     atom->updatePropertyCache(false);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   mol.clearComputedProps(true);
+    // END RDKIT CPP FUNCTION MolOps::removeHs source scalar publication
+    // ROOT CK-4c0846 withdraws CK-VALENCE-001's intentional deviation.
+    // The owner's final, mapped scalar rows are source-observable materialized
+    // state even when they differ from a fresh topology calculation. Install
+    // them through the existing operation_defined effect and ordinary runtime
+    // coherence checks. This moves the carrier; no extra chemistry or clone.
+    if let Some(valence) = result.final_valence {
         let mut cache = parts.checkout_derived_cache()?;
         cache.install_valence_assignment(valence);
         parts.install_derived_cache(cache)?;
@@ -321,4 +335,195 @@ pub(crate) fn remove_hydrogens_impl(
             .union(DerivedState::FINGERPRINT),
     )?;
     parts.apply_cip_policy()
+}
+
+#[cfg(all(
+    test,
+    feature = "cap-smiles",
+    feature = "cap-hydrogens",
+    feature = "cap-valence",
+    feature = "cap-rings"
+))]
+mod add_source_scalar_live_tests {
+    use crate::{
+        AddHsParams, Atom, AtomId, AtomSpec, CoordinateBlock, DerivedState, Element, Molecule,
+        MoleculeProperties, OperationError, TopologyBlock,
+    };
+
+    #[test]
+    fn prepared_source_add_hs_publishes_source_scalars_and_preserves_peer_cow() {
+        for in_place in [false, true] {
+            let source = Molecule::from_smiles("CCO").unwrap();
+            let peer = source.clone();
+            let old_cache = source.derived_cache_arc_runtime();
+            let old_assignment = old_cache.valence_assignment().unwrap().clone();
+            let out = if in_place {
+                let mut out = source.clone();
+                out.add_hydrogens_().unwrap();
+                out
+            } else {
+                source.with_hydrogens().unwrap()
+            };
+            assert_eq!(out.num_atoms(), 9);
+            assert_eq!(out.num_bonds(), 8);
+            let cache = out.derived_cache_runtime();
+            assert!(cache.valid_states().contains(DerivedState::VALENCE));
+            let v = cache.valence_assignment().unwrap();
+            assert_eq!(v.explicit_valence, [4, 4, 2, 1, 1, 1, 1, 1, 1]);
+            assert_eq!(v.implicit_hydrogens, [0; 9]);
+            assert_eq!(peer.num_atoms(), 3);
+            assert_eq!(source.num_atoms(), 3);
+            assert_eq!(
+                peer.derived_cache_runtime().valence_assignment(),
+                Some(&old_assignment)
+            );
+            assert!(std::sync::Arc::ptr_eq(
+                &old_cache,
+                &source.derived_cache_arc_runtime()
+            ));
+            assert!(std::sync::Arc::ptr_eq(
+                &old_cache,
+                &peer.derived_cache_arc_runtime()
+            ));
+            assert_eq!(out.atom_metadata(false).unwrap().len(), 9);
+        }
+    }
+
+    #[test]
+    fn remove_then_add_reads_actual_stale_source_counts_before_refreshing_selected_parents() {
+        for in_place in [false, true] {
+            let expanded = Molecule::from_smiles("CCO")
+                .unwrap()
+                .with_hydrogens()
+                .unwrap();
+            let source = expanded
+                .without_hydrogens_with_params(&cosmolkit_core::RemoveHsParams {
+                    sanitize: false,
+                    ..Default::default()
+                })
+                .unwrap();
+            let peer = source.clone();
+            let before = source.derived_cache_arc_runtime();
+            assert_eq!(source.num_atoms(), 3);
+            assert_eq!(
+                before.valence_assignment().unwrap().explicit_valence,
+                [4, 4, 2]
+            );
+            assert_eq!(
+                before.valence_assignment().unwrap().implicit_hydrogens,
+                [0, 0, 0]
+            );
+            // Source snapshots the stale zero counts before parent refresh.
+            // A fresh-topology preparation would incorrectly append six Hs here.
+            let first = if in_place {
+                let mut out = source.clone();
+                out.add_hydrogens_().unwrap();
+                out
+            } else {
+                source.with_hydrogens().unwrap()
+            };
+            assert_eq!(first.num_atoms(), 3);
+            assert_eq!(first.num_bonds(), 2);
+            let valence = first.derived_cache_runtime().valence_assignment().unwrap();
+            assert_eq!(valence.explicit_valence, [1, 2, 1]);
+            assert_eq!(valence.implicit_hydrogens, [3, 2, 1]);
+            // The NEXT source call uses the actually refreshed counts.
+            let second = first.with_hydrogens().unwrap();
+            assert_eq!(second.num_atoms(), 9);
+            assert_eq!(second.num_bonds(), 8);
+            assert_eq!(
+                second
+                    .derived_cache_runtime()
+                    .valence_assignment()
+                    .unwrap()
+                    .implicit_hydrogens,
+                [0; 9]
+            );
+            assert_eq!(source, peer);
+            assert!(std::sync::Arc::ptr_eq(
+                &before,
+                &source.derived_cache_arc_runtime()
+            ));
+            assert!(std::sync::Arc::ptr_eq(
+                &before,
+                &peer.derived_cache_arc_runtime()
+            ));
+            assert_eq!(
+                source
+                    .derived_cache_runtime()
+                    .valence_assignment()
+                    .unwrap()
+                    .explicit_valence,
+                [4, 4, 2]
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_source_add_hs_retains_prepared_state_without_appending_again() {
+        let source = Molecule::from_smiles("CCO")
+            .unwrap()
+            .with_hydrogens()
+            .unwrap();
+        let peer = source.clone();
+        let out = source.with_hydrogens().unwrap();
+        assert_eq!(out.num_atoms(), 9);
+        assert_eq!(out.num_bonds(), 8);
+        assert_eq!(
+            out.derived_cache_runtime().valence_assignment(),
+            source.derived_cache_runtime().valence_assignment()
+        );
+        assert_eq!(source, peer);
+    }
+
+    #[test]
+    fn unprepared_implicit_source_is_a_structured_error_even_explicit_only() {
+        let source = Molecule::from_parts(
+            TopologyBlock::try_from_parts(
+                vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+                vec![],
+                vec![],
+                vec![],
+            )
+            .unwrap(),
+            CoordinateBlock::default(),
+            MoleculeProperties::default(),
+        )
+        .unwrap();
+        let peer = source.clone();
+        for explicit in [false, true] {
+            assert!(
+                matches!(source.with_hydrogens_with_params(&AddHsParams { explicit_only:explicit,..Default::default() }),Err(OperationError::Hydrogen(cosmolkit_core::HydrogenError::Valence(cosmolkit_core::ValenceError::ImplicitValenceCacheNotInitialized { atom })) ) if atom==AtomId::new(0))
+            );
+            assert_eq!(source, peer);
+            assert!(
+                source
+                    .derived_cache_runtime()
+                    .valence_assignment()
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn leaf_append_preserves_exact_source_ring_prefix_and_new_h_members_are_empty() {
+        let source = Molecule::from_smiles("C1CC1").unwrap();
+        let peer = source.clone();
+        let original = source
+            .derived_cache_runtime()
+            .valid_ring_info()
+            .unwrap()
+            .clone();
+        let out = source.with_hydrogens().unwrap();
+        assert_eq!(out.num_atoms(), 9);
+        let rings = out.derived_cache_runtime().valid_ring_info().unwrap();
+        assert_eq!(rings, &original);
+        assert_eq!(rings.atom_row_count(), 3);
+        assert_eq!(rings.bond_row_count(), 3);
+        for i in 3..out.num_atoms() {
+            assert_eq!(rings.atom_members(AtomId::new(i)), &[] as &[usize]);
+            assert_eq!(rings.num_atom_rings(AtomId::new(i)), 0);
+        }
+        assert_eq!(source, peer);
+    }
 }

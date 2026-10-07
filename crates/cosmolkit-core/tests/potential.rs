@@ -509,8 +509,104 @@ fn atropisomer_state_fails_closed_until_its_owner_unit_is_integrated() {
             &symmetric_empty_rings(&topology),
             &PotentialStereoParams::default(),
         ),
-        Err(PotentialStereoError::AtropisomerDependencyUnavailable {
+        // Original represented AtropCW input remains degree one at both ends.
+        // FindStereo.cpp getStereoInfo rejects its begin endpoint before the end.
+        Err(PotentialStereoError::InvalidBondDegree {
             bond: BondId::new(0),
+            endpoint: "begin",
+            degree: 1,
         })
     );
+}
+
+#[test]
+fn represented_atropisomer_exact_original_degree_tag_clean_possible_product() {
+    // Fixed observations are prepared independently; no oracle runs in tests.
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../testdata/stereo/fixtures/represented_atropisomer_potential_cases.json"
+    ))
+    .unwrap();
+    let cases = fixture["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 128);
+    let mut successful = 0;
+    let mut failures = 0;
+    for case in cases {
+        let left = case["begin_degree"].as_u64().unwrap() as usize;
+        let right = case["end_degree"].as_u64().unwrap() as usize;
+        let mut atoms = vec![atom(0, Element::C), atom(1, Element::C)];
+        let mut bonds = vec![bond(0, 0, 1, BondOrder::Single)];
+        for (endpoint, degree) in [(0, left), (1, right)] {
+            for element in [Element::F, Element::CL, Element::BR]
+                .into_iter()
+                .take(degree - 1)
+            {
+                let row = atoms.len();
+                atoms.push(atom(row, element));
+                bonds.push(bond(bonds.len(), endpoint, row, BondOrder::Single));
+            }
+        }
+        let mut input =
+            cosmolkit_core::sanitize_topology(&topology(atoms, bonds), &Default::default())
+                .unwrap()
+                .topology;
+        input.bonds[0]
+            .set_stereo(BondStereo::from_rdkit_code(case["stereo"].as_i64().unwrap()).unwrap())
+            .unwrap();
+        let before = input.clone();
+        let assignment = cosmolkit_core::assign_valence(&input, &Default::default()).unwrap();
+        let rings = symmetrized_sssr(&input, &Default::default()).unwrap();
+        let actual = potential_stereo(
+            &input,
+            &assignment,
+            &rings,
+            &PotentialStereoParams {
+                clean: case["clean"].as_bool().unwrap(),
+                flag_possible: case["flag_possible"].as_bool().unwrap(),
+                ..Default::default()
+            },
+        );
+        assert_eq!(input, before, "source isolation: {case}");
+        if case.get("error").is_some() {
+            assert_eq!(case["error"]["kind"], "ValueError");
+            assert_eq!(
+                case["error"]["message"],
+                "invalid atom degree in getStereoInfo(bond)"
+            );
+            let (endpoint, degree) = if !(2..=3).contains(&left) {
+                ("begin", left)
+            } else {
+                ("end", right)
+            };
+            assert_eq!(
+                actual,
+                Err(PotentialStereoError::InvalidBondDegree {
+                    bond: BondId::new(0),
+                    endpoint,
+                    degree
+                }),
+                "{case}"
+            );
+            failures += 1;
+        } else {
+            let result = actual.unwrap();
+            let records = result.stereo.iter().map(|record| serde_json::json!({
+                "stereo_type": record.stereo_type as usize + 1,
+                "specified": record.specified as usize,
+                "centered_on": match record.centered_on { PotentialStereoCenter::Atom(id)=>id.index(),PotentialStereoCenter::Bond(id)=>id.index() },
+                "descriptor": record.descriptor as usize,
+                "permutation":record.permutation,
+                "controlling_atoms":record.controlling_atoms.iter().map(|x|x.map(AtomId::index)).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>();
+            assert_eq!(serde_json::json!(records), case["records"], "{case}");
+            if let Some(cleaned) = result.cleaned_topology {
+                assert_eq!(
+                    cleaned.bonds[0].stereo().rdkit_code() as u64,
+                    case["bond_stereo_after"].as_u64().unwrap(),
+                    "{case}"
+                );
+            }
+            successful += 1;
+        }
+    }
+    assert_eq!((successful, failures), (32, 96));
 }

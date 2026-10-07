@@ -1,3 +1,7 @@
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("unchanged UTF-8 fixture bytes")
+}
+
 use cosmolkit_model::{
     Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension, CoordinateValidationError,
 };
@@ -29,7 +33,7 @@ fn coordinate_dimensions_and_empty_blocks_are_valid() {
         conformers_2d: vec![Conformer2D::new(5, Vec::new())],
         conformers_3d: vec![Conformer3D::new(5, Vec::new(), false)],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
-        source_conformer_order: None,
+        source_conformer_order: Some(vec![CoordinateDimension::TwoD, CoordinateDimension::ThreeD]),
     };
     assert_eq!(zero_atom_block.validate_for_atom_count(0), Ok(()));
 }
@@ -46,11 +50,11 @@ fn conformer_2d_preserves_bits_properties_ids_and_mutation() {
     assert_eq!(conformer.id(), 23);
     assert_eq!(bits_2d(conformer.coordinates()), bits_2d(&original));
     assert_eq!(
-        conformer.props().get("label").map(String::as_str),
+        conformer.props().get("label".as_bytes()).map(fixture_text),
         Some("replacement")
     );
     assert_eq!(
-        conformer.props().get("stable").map(String::as_str),
+        conformer.props().get("stable".as_bytes()).map(fixture_text),
         Some("yes")
     );
 
@@ -66,7 +70,7 @@ fn conformer_2d_preserves_bits_properties_ids_and_mutation() {
     );
     assert_eq!(conformer.id(), 23);
     assert_eq!(
-        conformer.props().get("stable").map(String::as_str),
+        conformer.props().get("stable".as_bytes()).map(fixture_text),
         Some("yes")
     );
     assert_eq!(conformer.validate_for_atom_count(2), Ok(()));
@@ -86,11 +90,11 @@ fn conformer_3d_preserves_bits_flags_properties_ids_and_mutation() {
         assert_eq!(conformer.is_3d(), is_3d);
         assert_eq!(bits_3d(conformer.coordinates()), bits_3d(&original));
         assert_eq!(
-            conformer.props().get("name").map(String::as_str),
+            conformer.props().get("name".as_bytes()).map(fixture_text),
             Some("after")
         );
         assert_eq!(
-            conformer.props().get("keep").map(String::as_str),
+            conformer.props().get("keep".as_bytes()).map(fixture_text),
             Some("value")
         );
 
@@ -218,7 +222,7 @@ fn nonfinite_3d_coordinates_preserve_all_axis_bits() {
 #[test]
 fn row_validation_rejects_mismatches_without_rejecting_source_values() {
     assert_eq!(
-        Conformer2D::new(40, vec![[f64::NAN, 0.0]]).validate_for_atom_count(2),
+        Conformer2D::new(40, vec![[f64::NAN, 0.0]]).validate_checked_for_atom_count(2),
         Err(CoordinateValidationError::RowCount {
             dimension: "2D",
             conformer: 40,
@@ -255,7 +259,7 @@ fn row_validation_rejects_mismatches_without_rejecting_source_values() {
         conformers_2d: vec![Conformer2D::new(1, vec![[-0.0, f64::MAX]])],
         conformers_3d: vec![Conformer3D::new(2, vec![[f64::MIN, 0.0, -0.0]], false)],
         source_coordinate_dim: Some(CoordinateDimension::TwoD),
-        source_conformer_order: None,
+        source_conformer_order: Some(vec![CoordinateDimension::TwoD, CoordinateDimension::ThreeD]),
     };
     assert_eq!(valid_mixed.validate_for_atom_count(1), Ok(()));
 }
@@ -284,7 +288,12 @@ fn remap_preserves_order_bits_properties_flags_and_source_dimension() {
             Conformer3D::new(99, three_d_second.to_vec(), false).with_prop("which", "3d-second"),
         ],
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
-        source_conformer_order: None,
+        source_conformer_order: Some(vec![
+            CoordinateDimension::TwoD,
+            CoordinateDimension::TwoD,
+            CoordinateDimension::ThreeD,
+            CoordinateDimension::ThreeD,
+        ]),
     };
 
     block.remap_topology(&[2, 0]);
@@ -328,29 +337,29 @@ fn remap_preserves_order_bits_properties_flags_and_source_dimension() {
     assert_eq!(
         block.conformers_2d[0]
             .props()
-            .get("which")
-            .map(String::as_str),
+            .get("which".as_bytes())
+            .map(fixture_text),
         Some("2d-first")
     );
     assert_eq!(
         block.conformers_2d[1]
             .props()
-            .get("which")
-            .map(String::as_str),
+            .get("which".as_bytes())
+            .map(fixture_text),
         Some("2d-second")
     );
     assert_eq!(
         block.conformers_3d[0]
             .props()
-            .get("which")
-            .map(String::as_str),
+            .get("which".as_bytes())
+            .map(fixture_text),
         Some("3d-first")
     );
     assert_eq!(
         block.conformers_3d[1]
             .props()
-            .get("which")
-            .map(String::as_str),
+            .get("which".as_bytes())
+            .map(fixture_text),
         Some("3d-second")
     );
     assert!(block.conformers_3d[0].is_3d());
@@ -388,7 +397,12 @@ fn remap_preserves_ids_for_identity_removal_reorder_and_empty_projection() {
             .with_prop("label", "3d-second"),
         ],
         source_coordinate_dim: Some(CoordinateDimension::TwoD),
-        source_conformer_order: None,
+        source_conformer_order: Some(vec![
+            CoordinateDimension::TwoD,
+            CoordinateDimension::TwoD,
+            CoordinateDimension::ThreeD,
+            CoordinateDimension::ThreeD,
+        ]),
     };
     original.validate_for_atom_count(3).unwrap();
     for kept in [&[0, 1, 2][..], &[0, 2], &[2, 0, 1], &[]] {

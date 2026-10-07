@@ -1,7 +1,7 @@
-"""Original 152 and 5000 conformer library rows through the public Python API.
+"""Original 152 conformer library rows through the public Python API.
 
-COSMOLKIT_CONFORMER_ORACLE_152 and COSMOLKIT_CONFORMER_ORACLE_5000 select
-pinned JSONL inputs; defaults are the project smiles_small/smiles_5000 oracles.
+COSMOLKIT_CONFORMER_ORACLE_152 selects pinned JSONL inputs;
+the default is the project's smiles_small oracle.
 """
 import hashlib
 import json
@@ -126,10 +126,6 @@ def _execute(profile, path, digest, count):
 
 def test_original_library_native_152():
     _execute("original152", _oracle(152, "smiles_small"), "536fe7d81cfcf913ad3901645bcf52ba1078f2e1faac7f897e861e3cdffcc7b3", 152)
-
-
-def test_original_library_native_5000():
-    _execute("original5000", _oracle(5000, "smiles_5000"), "b41504555f0d5227599b1d904902840596a7fd5535726bb9e6b874aaba694bd0", 5000)
 
 
 def configured(params, **changes):

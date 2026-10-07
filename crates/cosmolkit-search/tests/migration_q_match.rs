@@ -1215,12 +1215,42 @@ fn q80_tetrahedral_mapping_permutation_and_implicit_hydrogen_follow_source() {
     let query_bond_order = [(0, 1), (0, 2), (0, 3)];
     let coordinates = CoordinateBlock::default();
     let same_order_topology = q80_tetrahedral_target(query_tag, &query_bond_order, false);
-    let same_order_target = SearchTarget::new(
+    let same_order_topology_valence = cosmolkit_core::assign_valence_for_topology(
+        &same_order_topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+    )
+    .expect("explicit source updatePropertyCache preparation for unchanged Q80 fixture");
+    // Keep the original unprepared target as an explicit source-precondition
+    // control. getNumImplicitHs does not calculate missing cache implicitly.
+    let original_unprepared = SearchTarget::new(
         &same_order_topology,
         &coordinates,
         &same_order_topology.stereo_groups,
         None,
         None,
+    );
+    assert_eq!(
+        try_get_substruct_matches_with_params(
+            &original_unprepared,
+            &query,
+            &SubstructMatchParams::default()
+        ),
+        Err(SubstructMatchError::QueryContext(
+            cosmolkit_search::QueryMatchContextError::ValencePrecondition {
+                atom: 0,
+                field: "implicit_hydrogens",
+                getter: "getValence(IMPLICIT)",
+            }
+        ))
+    );
+    assert_eq!(same_order_topology_valence.explicit_valence, [3, 1, 1, 1]);
+    assert_eq!(same_order_topology_valence.implicit_hydrogens, [1, 0, 0, 0]);
+    let same_order_target = SearchTarget::new(
+        &same_order_topology,
+        &coordinates,
+        &same_order_topology.stereo_groups,
+        None,
+        Some(&same_order_topology_valence),
     );
     let use_chirality = SubstructMatchParams {
         use_chirality: true,
@@ -1234,12 +1264,17 @@ fn q80_tetrahedral_mapping_permutation_and_implicit_hydrogen_follow_source() {
 
     let reversed_bond_order = [(0, 3), (0, 2), (0, 1)];
     let same_tag_reversed_topology = q80_tetrahedral_target(query_tag, &reversed_bond_order, false);
+    let same_tag_reversed_topology_valence = cosmolkit_core::assign_valence_for_topology(
+        &same_tag_reversed_topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+    )
+    .expect("explicit source updatePropertyCache preparation for unchanged Q80 fixture");
     let same_tag_reversed_target = SearchTarget::new(
         &same_tag_reversed_topology,
         &coordinates,
         &same_tag_reversed_topology.stereo_groups,
         None,
-        None,
+        Some(&same_tag_reversed_topology_valence),
     );
     assert!(
         get_substruct_matches_with_params(&same_tag_reversed_target, &query, &use_chirality)
@@ -1253,12 +1288,17 @@ fn q80_tetrahedral_mapping_permutation_and_implicit_hydrogen_follow_source() {
         _ => unreachable!("the parsed Q80 query tag was checked above"),
     };
     let opposite_tag_topology = q80_tetrahedral_target(opposite_tag, &reversed_bond_order, false);
+    let opposite_tag_topology_valence = cosmolkit_core::assign_valence_for_topology(
+        &opposite_tag_topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+    )
+    .expect("explicit source updatePropertyCache preparation for unchanged Q80 fixture");
     let opposite_tag_target = SearchTarget::new(
         &opposite_tag_topology,
         &coordinates,
         &opposite_tag_topology.stereo_groups,
         None,
-        None,
+        Some(&opposite_tag_topology_valence),
     );
     assert_eq!(
         get_substruct_matches_with_params(&opposite_tag_target, &query, &use_chirality).len(),
@@ -1267,12 +1307,17 @@ fn q80_tetrahedral_mapping_permutation_and_implicit_hydrogen_follow_source() {
     );
 
     let no_implicit_h_topology = q80_tetrahedral_target(query_tag, &query_bond_order, true);
+    let no_implicit_h_topology_valence = cosmolkit_core::assign_valence_for_topology(
+        &no_implicit_h_topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+    )
+    .expect("explicit source updatePropertyCache preparation for unchanged Q80 fixture");
     let no_implicit_h_target = SearchTarget::new(
         &no_implicit_h_topology,
         &coordinates,
         &no_implicit_h_topology.stereo_groups,
         None,
-        None,
+        Some(&no_implicit_h_topology_valence),
     );
     assert!(
         get_substruct_matches_with_params(&no_implicit_h_target, &query, &use_chirality).is_empty(),
@@ -1285,8 +1330,19 @@ fn q80_stereo_options_match_source_unspecified_short_circuit() {
     let query = q80_tetrahedral_query(ChiralTag::TetrahedralCcw);
     let edge_order = [(0, 1), (0, 2), (0, 3)];
     let topology = q80_tetrahedral_target(ChiralTag::Unspecified, &edge_order, false);
+    let topology_valence = cosmolkit_core::assign_valence_for_topology(
+        &topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+    )
+    .expect("explicit source updatePropertyCache preparation for unchanged Q80 fixture");
     let coordinates = CoordinateBlock::default();
-    let target = SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+    let target = SearchTarget::new(
+        &topology,
+        &coordinates,
+        &topology.stereo_groups,
+        None,
+        Some(&topology_valence),
+    );
 
     let strict_stereo = SubstructMatchParams {
         use_chirality: true,
@@ -1319,12 +1375,17 @@ fn q80_stereo_options_match_source_unspecified_short_circuit() {
     );
 
     let no_h_topology = q80_tetrahedral_target(ChiralTag::Unspecified, &edge_order, true);
+    let no_h_topology_valence = cosmolkit_core::assign_valence_for_topology(
+        &no_h_topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+    )
+    .expect("explicit source updatePropertyCache preparation for unchanged Q80 fixture");
     let no_h_target = SearchTarget::new(
         &no_h_topology,
         &coordinates,
         &no_h_topology.stereo_groups,
         None,
-        None,
+        Some(&no_h_topology_valence),
     );
     assert!(
         get_substruct_matches_with_params(&no_h_target, &query, &allow_unspecified).is_empty(),
@@ -1579,8 +1640,19 @@ fn q83_extra_final_check_runs_before_stereo_rejection() {
     let edge_order = [(0, 1), (0, 2), (0, 3)];
     let query = q80_tetrahedral_query(ChiralTag::TetrahedralCw);
     let topology = q80_tetrahedral_target(ChiralTag::TetrahedralCcw, &edge_order, false);
+    let topology_valence = cosmolkit_core::assign_valence_for_topology(
+        &topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+    )
+    .expect("explicit source updatePropertyCache preparation for unchanged Q80 fixture");
     let coordinates = CoordinateBlock::default();
-    let target = SearchTarget::new(&topology, &coordinates, &topology.stereo_groups, None, None);
+    let target = SearchTarget::new(
+        &topology,
+        &coordinates,
+        &topology.stereo_groups,
+        None,
+        Some(&topology_valence),
+    );
     let final_check_calls = Arc::new(AtomicUsize::new(0));
     let calls_in_final_check = Arc::clone(&final_check_calls);
     let params = SubstructMatchParams {

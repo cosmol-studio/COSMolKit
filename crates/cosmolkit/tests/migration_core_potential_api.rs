@@ -281,7 +281,10 @@ fn both_public_callers_match_the_detached_oracle_and_preserve_input_order() {
         PotentialStereoSpecified::Unspecified
     );
     assert_eq!(short.stereo[0].controlling_atoms.len(), 4);
-    assert_eq!(source.property("source"), Some("preserved"));
+    assert_eq!(
+        source.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(
         source.to_builder().coordinates().conformers_2d[0]
             .coordinates()
@@ -318,7 +321,10 @@ fn clean_result_commits_only_source_defined_stereo_cleanup_and_cip_effects() {
         source.to_builder().coordinates()
     );
     coordinate_views::assert_shared_coordinates(&cleaned, &source);
-    assert_eq!(cleaned.property("source"), Some("preserved"));
+    assert_eq!(
+        cleaned.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(cleaned.property("_CIPComputed"), None);
     assert_eq!(
         cleaned.atom(AtomId::new(0)).unwrap().prop("atom-label"),
@@ -350,7 +356,10 @@ fn clean_result_commits_only_source_defined_stereo_cleanup_and_cip_effects() {
         source.bond(BondId::new(0)).unwrap().direction(),
         BondDirection::BeginWedge
     );
-    assert_eq!(source.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        source.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
 }
 
 #[test]
@@ -414,14 +423,19 @@ fn typed_valence_and_potential_stereo_failures_leave_the_source_unchanged() {
     assert_eq!(
         atrop.potential_stereo(),
         Err(OperationError::PotentialStereo(
-            PotentialStereoError::AtropisomerDependencyUnavailable {
+            PotentialStereoError::InvalidBondDegree {
                 bond: BondId::new(0),
+                endpoint: "begin",
+                degree: 1,
             }
         ))
     );
     assert_eq!(atrop, observer);
     assert!(std::ptr::eq(atrop.topology(), observer.topology()));
-    assert_eq!(atrop.property("source"), Some("atrop"));
+    assert_eq!(
+        atrop.property("source"),
+        Some(&cosmolkit::PropertyValue::from("atrop"))
+    );
 }
 
 #[test]

@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use cosmolkit_cx::parse_cx_extensions;
+use cosmolkit_cx::parse_cx_extensions_with_atom_window;
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondDirection, BondId, BondSpec, CoordinateBlock,
     MoleculeProperties, PropertyValue, TopologyBlock,
@@ -21,12 +21,17 @@ mod fragment;
 mod stereo;
 mod writer;
 
+#[doc(hidden)]
+pub use cx_writer::{CoordinateSource, select_cx_coordinates};
 pub use cx_writer::{
     CxCoordinateSelection, CxSmilesFields, CxSmilesWriteParams, write_cx_smiles,
     write_cx_smiles_with_params,
 };
 pub use finalize_stereo::{SmilesStereoError, finalize_smiles_stereo};
 pub use fragment::FragmentWriteInputError;
+#[doc(hidden)]
+pub use writer::{SmartsTraversalError, prepare_smarts_serialization_topology};
+
 pub use writer::{
     RandomSmilesWriteParams, SmilesWriteOutput, SmilesWriteParams, write_fragment_cx_smiles,
     write_fragment_smiles_output, write_random_smiles_vector, write_smiles,
@@ -79,8 +84,36 @@ impl SmilesRecordView<'_> {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmilesParseError {
+    #[error("detached writer topology edit failed: {0}")]
+    TopologyEdit(#[source] cosmolkit_model::TopologyEditError),
+    #[error("CX property value has the wrong source type: {0}")]
+    WriterPropertyKind(#[source] cosmolkit_model::PropertyValueError),
     #[error("invalid CX coordinate state: {0}")]
     Coordinates(#[source] cosmolkit_model::CoordinateValidationError),
+    #[error("source unsigned property read failed: {0}")]
+    WriterNumeric(#[source] cosmolkit_core::PropertyUIntReadError),
+    #[error("CX required property read failed at atom {atom:?}: {source}")]
+    WriterRequiredProperty {
+        atom: AtomId,
+        #[source]
+        source: cosmolkit_core::RequiredPropertyStringError,
+    },
+    #[error("property listing failed on atom {atom}: {source}")]
+    WriterPropertyList {
+        atom: cosmolkit_model::AtomId,
+        #[source]
+        source: cosmolkit_model::AtomPropertyError,
+    },
+    #[error("atom property operation failed: {0}")]
+    AtomProperty(#[from] cosmolkit_model::AtomPropertyError),
+    #[error("bond property operation failed: {0}")]
+    BondProperty(#[from] cosmolkit_model::BondValueError),
+    #[error("molecule property operation failed: {0}")]
+    MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
+    #[error("property value kind mismatch: {0}")]
+    PropertyKind(#[from] cosmolkit_model::PropertyValueError),
+    #[error("parser carrier finalization failed: {0}")]
+    ParserCarrier(#[from] cosmolkit_core::parser_helpers::ParserCarrierError),
     #[error("unsupported SMILES token '{token}' at byte {offset}")]
     Unsupported { token: char, offset: usize },
     #[error("invalid SMILES syntax at byte {offset}: {message}")]
@@ -125,6 +158,22 @@ pub enum SmilesParseError {
     EmptyReplacementKey,
     #[error("SMILES replacements do not converge; cyclic key '{key}' remains active")]
     ReplacementCycle { key: String },
+}
+
+impl From<cosmolkit_model::TopologyEditError> for SmilesParseError {
+    fn from(error: cosmolkit_model::TopologyEditError) -> Self {
+        // Rust-only typed transport: source clearComputedProps throws the
+        // underlying atom/bond property error. The detached edit wrapper must
+        // retain that same category and reason, rather than flatten to text.
+        match error {
+            cosmolkit_model::TopologyEditError::AtomProperty(source) => Self::AtomProperty(source),
+            cosmolkit_model::TopologyEditError::InvalidBond(source) => Self::BondProperty(source),
+            cosmolkit_model::TopologyEditError::MoleculeProperty(source) => {
+                Self::MoleculeProperty(source)
+            }
+            other => Self::TopologyEdit(other),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1093,8 +1142,14 @@ fn adjust_atom_chirality_flags(
         smiles_start_atoms,
     )
     .map_err(|error| match error {
+        cosmolkit_core::parser_helpers::ParserCarrierError::PropertyString(source) => {
+            SmilesParseError::WriterProperty(source)
+        }
         cosmolkit_core::parser_helpers::ParserCarrierError::Model(message) => {
             SmilesParseError::Model(message)
+        }
+        cosmolkit_core::parser_helpers::ParserCarrierError::AtomProperty(source) => {
+            SmilesParseError::AtomProperty(source)
         }
     })?;
     for (atom, (tag, permutation)) in atoms.iter_mut().zip(assignments) {
@@ -1104,15 +1159,18 @@ fn adjust_atom_chirality_flags(
     Ok(())
 }
 
-fn cleanup_after_parsing(record: &mut SmilesRecord) {
-    cosmolkit_core::parser_helpers::cleanup_parser_atoms(&mut record.topology.atoms);
+/// Complete delayed component cleanup after reaction-wide CX annotations.
+#[doc(hidden)]
+pub fn cleanup_after_parsing(record: &mut SmilesRecord) -> Result<(), SmilesParseError> {
+    cosmolkit_core::parser_helpers::cleanup_parser_atoms(&mut record.topology.atoms)?;
     for bond in &mut record.topology.bonds {
-        bond.clear_prop("_unspecifiedOrder");
-        bond.clear_prop(CXSMILES_BOND_IDX_PROP);
+        bond.clear_prop("_unspecifiedOrder")?;
+        bond.clear_prop(CXSMILES_BOND_IDX_PROP)?;
     }
     cosmolkit_core::parser_helpers::cleanup_parser_substance_groups(
         &record.topology.substance_groups,
-    );
+    )?;
+    Ok(())
 }
 
 /// Parse SMILES into detached topology, coordinate, and property blocks.
@@ -1378,7 +1436,7 @@ pub fn parse_smiles(
         // RDKit✔️✔️:   }
         // END RDKIT CPP FUNCTION handleCXPartAndName
         if params.allow_cxsmiles && cx.starts_with('|') {
-            match parse_cx_extensions(&cx) {
+            match parse_cx_extensions_with_atom_window(&cx, 0, record.topology.atoms.len()) {
                 Ok(parsed) => match cx_lowering::apply_cx_to_smiles_record(&mut record, &parsed) {
                     Ok(()) => {
                         record
@@ -1430,7 +1488,7 @@ pub fn parse_smiles(
     // RDKit✔️✔️:   }
     // END RDKIT CPP FUNCTION MolFromSmiles (cleanup gate)
     if !params.skip_cleanup {
-        cleanup_after_parsing(&mut record);
+        cleanup_after_parsing(&mut record)?;
     }
     record
         .topology
@@ -1450,7 +1508,7 @@ mod tests {
 
     fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
         match value {
-            Some(PropertyValue::String(value)) => Some(value),
+            Some(PropertyValue::String(value)) => Some(fixed_property_text(value)),
             _ => None,
         }
     }
@@ -1486,7 +1544,7 @@ mod tests {
             let copied = record.clone();
             assert_eq!(copied.topology, record.topology);
             let text = write_smiles(&copied).unwrap();
-            let roundtrip = parse_smiles(&text, &Default::default()).unwrap();
+            let roundtrip = parse_smiles(fixed_property_text(&text), &Default::default()).unwrap();
             assert_eq!(
                 roundtrip
                     .topology
@@ -1495,7 +1553,7 @@ mod tests {
                     .filter(|bond| bond.query().is_some())
                     .count(),
                 query_count,
-                "{smiles} -> {text}"
+                "{smiles} -> {text:?}"
             );
         }
     }
@@ -1503,7 +1561,10 @@ mod tests {
     fn parses_and_writes_detached_ethanol() {
         let record = parse_smiles("CCO", &Default::default()).expect("parse");
         assert_eq!(record.topology.atoms.len(), 3);
-        assert_eq!(write_smiles(&record).expect("write"), "CCO");
+        assert_eq!(
+            (write_smiles(&record).expect("write")).as_bytes(),
+            ("CCO").as_bytes()
+        );
         assert_eq!(
             parse_smiles("C%12CC%12", &Default::default())
                 .unwrap()
@@ -1526,10 +1587,18 @@ mod tests {
         // Source: `parse_coords` sets `is3D = true` for a third token but then
         // `conf->set3D(is3D && hasNonZeroZCoords(*conf))`, and
         // `get_coords_block` emits Z only for `conf.is3D()`. An all-zero Z
-        // column is therefore a 2D conformer, not 3D.
-        assert_eq!(record.coordinates.conformers_3d.len(), 0);
-        assert_eq!(record.coordinates.conformers_2d.len(), 1);
-        assert_eq!(record.properties.name(), Some("ethanol"));
+        // column sets is3D=false while retaining the source Point3D rows.
+        assert_eq!(record.coordinates.conformers_3d.len(), 1);
+        assert_eq!(record.coordinates.conformers_2d.len(), 0);
+        assert!(!record.coordinates.conformers_3d[0].is_3d());
+        assert_eq!(
+            record.coordinates.conformers_3d[0].coordinates(),
+            &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]
+        );
+        assert_eq!(
+            record.properties.name().map(|value| value.as_bytes()),
+            Some("ethanol".as_bytes())
+        );
     }
 
     #[test]
@@ -1564,10 +1633,16 @@ mod tests {
     #[test]
     fn preprocesses_plain_and_cx_names_like_rdkit() {
         let plain = parse_smiles("CC   ethanol sample", &Default::default()).unwrap();
-        assert_eq!(plain.properties.name(), Some("ethanol sample"));
+        assert_eq!(
+            plain.properties.name().map(|value| value.as_bytes()),
+            Some("ethanol sample".as_bytes())
+        );
 
         let cx = parse_smiles("CC |$foo;bar$| named sample", &Default::default()).unwrap();
-        assert_eq!(cx.properties.name(), Some("named sample"));
+        assert_eq!(
+            cx.properties.name().map(|value| value.as_bytes()),
+            Some("named sample".as_bytes())
+        );
         assert_eq!(
             string_property(cx.topology.atoms[0].prop("atomLabel")),
             Some("foo")
@@ -1581,7 +1656,10 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(no_cx.properties.name(), Some("|not cx when disabled|"));
+        assert_eq!(
+            no_cx.properties.name().map(|value| value.as_bytes()),
+            Some("|not cx when disabled|".as_bytes())
+        );
     }
 
     #[test]
@@ -1959,8 +2037,8 @@ mod tests {
         assert_eq!(wedge.topology.bonds[0].begin(), AtomId::new(1));
         assert_eq!(wedge.topology.bonds[0].end(), AtomId::new(0));
         assert_eq!(
-            string_property(wedge.topology.bonds[0].prop("_MolFileBondCfg")),
-            Some("1")
+            wedge.topology.bonds[0].prop("_MolFileBondCfg"),
+            Some(&cosmolkit_model::PropertyValue::UInt(1))
         );
         assert_eq!(wedge.properties.prop("_needsDetectAtomStereo"), None);
         assert_eq!(wedge.topology.atoms[1].chiral_tag(), ChiralTag::Unspecified);
@@ -1971,15 +2049,20 @@ mod tests {
             double.topology.bonds[1].stereo_atoms(),
             Some([AtomId::new(0), AtomId::new(3)])
         );
-        assert_eq!(double.properties.prop("_needsDetectBondStereo"), Some("1"));
+        assert_eq!(
+            double.properties.prop("_needsDetectBondStereo"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
     }
 
     #[test]
     fn lowers_cx_linknodes_sgroups_and_variable_attachments_like_rdkit() {
         let link = parse_smiles("C1CC1 |LN:1:1.3|", &Default::default()).unwrap();
         assert_eq!(
-            link.properties.prop("_MolFileLinkNodes"),
-            Some("1 3 2 2 1 2 3")
+            link.properties.prop("_molLinkNodes"),
+            Some(&cosmolkit_model::PropertyValue::String(
+                "1 3 2 2 1 2 3".into()
+            ))
         );
 
         let data = parse_smiles("CCO |SgD:2,1:FIELD:info::::|", &Default::default()).unwrap();
@@ -1988,10 +2071,13 @@ mod tests {
         assert_eq!(data_group.kind(), &SubstanceGroupKind::Data);
         assert_eq!(data_group.atoms(), &[AtomId::new(2), AtomId::new(1)]);
         assert_eq!(
-            data_group.props().get("FIELDNAME").map(String::as_str),
-            Some("FIELD")
+            data_group
+                .props()
+                .get("FIELDNAME".as_bytes())
+                .map(|value| cosmolkit_core::property_value_to_string(value).unwrap()),
+            Some(cosmolkit_model::PropertyText::from("FIELD"))
         );
-        assert_eq!(data_group.data_fields(), &["info".to_owned()]);
+        assert_eq!(data_group.data_fields(), &["info".into()]);
 
         let polymer = parse_smiles("CC |Sg:n:0::ht|", &Default::default()).unwrap();
         assert_eq!(polymer.topology.substance_groups.len(), 1);
@@ -2028,7 +2114,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(non_strict.topology.atoms.len(), 2);
-        assert_eq!(non_strict.properties.prop("_CXSMILES_Data"), Some(""));
+        assert_eq!(
+            non_strict.properties.prop("_CXSMILES_Data"),
+            Some(&cosmolkit_model::PropertyValue::String("".into()))
+        );
         assert_eq!(non_strict.properties.name(), None);
     }
 
@@ -2042,11 +2131,13 @@ mod tests {
                 .iter()
                 .all(|bond| bond.prop(CXSMILES_BOND_IDX_PROP).is_none())
         );
-        assert!(
-            record.topology.substance_groups.iter().all(|group| {
-                group.props().get("_cxsmilesindex").map(String::as_str) == Some("0")
-            })
-        );
+        assert!(record.topology.substance_groups.iter().all(|group| {
+            group
+                .props()
+                .get("_cxsmilesindex".as_bytes())
+                .map(|value| cosmolkit_core::property_value_to_string(value).unwrap())
+                == Some(cosmolkit_model::PropertyText::from("0"))
+        }));
     }
 }
 
@@ -2174,4 +2265,18 @@ mod uint_complete_source_condition_cells {
             Some(&cosmolkit_model::PropertyValue::UInt(4294967295_u32))
         );
     }
+}
+
+#[doc(hidden)]
+pub use cx_writer::select_cx_coordinates_from_sets;
+
+#[doc(hidden)]
+pub use cx_writer::format_cx_coordinate;
+
+#[doc(hidden)]
+pub use cx_writer::assign_stereo_group_ids;
+
+#[cfg(test)]
+fn fixed_property_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("original fixed fixture text is UTF8")
 }

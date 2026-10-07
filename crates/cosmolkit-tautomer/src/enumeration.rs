@@ -34,10 +34,12 @@ impl TautomerProgress<'_> {
     pub fn modified_bonds(&self) -> &BTreeSet<BondId> {
         &self.state.modified_bonds
     }
-    pub fn entries(&self) -> impl ExactSizeIterator<Item = (&str, &TautomerRecord)> {
+    pub fn entries(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&cosmolkit_model::PropertyText, &TautomerRecord)> {
         self.state.candidates.iter().map(|(key, candidate)| {
             (
-                key.as_str(),
+                key,
                 candidate
                     .tautomer
                     .as_deref()
@@ -58,7 +60,7 @@ pub trait TautomerEnumerationCallback: Send + Sync {
 /// Final detached candidates and source metadata, sorted by retained SMILES.
 #[derive(Debug, Clone, PartialEq)]
 pub struct TautomerEnumerationOutput {
-    pub entries: Vec<(String, TautomerRecord)>,
+    pub entries: Vec<(cosmolkit_model::PropertyText, TautomerRecord)>,
     pub status: TautomerEnumerationStatus,
     pub modified_atoms: BTreeSet<AtomId>,
     pub modified_bonds: BTreeSet<BondId>,
@@ -76,7 +78,7 @@ impl Default for TautomerEnumerationOutput {
 
 fn initialize_candidates_with_key(
     source: TautomerRecordView<'_>,
-    key: String,
+    key: cosmolkit_model::PropertyText,
 ) -> Result<(TautomerRecord, TautomerExpansionState<Arc<TautomerRecord>>), TautomerRunError> {
     // RDKit✔️❌:   ROMOL_SPTR taut(new ROMol(mol));
     // RDKit✔️❌:   if (taut->needsUpdatePropertyCache()) {
@@ -199,7 +201,9 @@ fn control_pruning_error(error: TautomerPruningError<TautomerRunError>) -> Tauto
 
 /// Select from retained source keys without recomputing SMILES or finalizing values.
 pub fn select_canonical_index_with<'a>(
-    candidates: impl ExactSizeIterator<Item = (&'a str, TautomerRecordView<'a>)>,
+    candidates: impl ExactSizeIterator<
+        Item = (&'a cosmolkit_model::PropertyText, TautomerRecordView<'a>),
+    >,
     scorer: impl FnMut(TautomerRecordView<'a>) -> Result<i32, TautomerRunError>,
 ) -> Result<usize, TautomerRunError> {
     select_canonical_index_by(candidates, scorer, |key, _| {
@@ -224,7 +228,8 @@ fn select_canonical_index_by<'a, E>(
     mut key: impl FnMut(
         E,
         TautomerRecordView<'a>,
-    ) -> Result<std::borrow::Cow<'a, str>, TautomerRunError>,
+    )
+        -> Result<std::borrow::Cow<'a, cosmolkit_model::PropertyText>, TautomerRunError>,
 ) -> Result<usize, TautomerRunError> {
     // RDKit✔️✔️:   ROMOL_SPTR bestMol;
     // RDKit✔️✔️:   if (tautRes.d_tautomers.size() == 1) {
@@ -269,7 +274,8 @@ fn select_canonical_index_by<'a, E>(
         return Ok(0);
     }
     let mut best_score = i32::MIN;
-    let mut best_smiles = std::borrow::Cow::Borrowed("");
+    let mut best_smiles: std::borrow::Cow<'a, cosmolkit_model::PropertyText> =
+        std::borrow::Cow::Owned(cosmolkit_model::PropertyText::new());
     let mut best = None;
     for (index, (metadata, candidate)) in candidates.enumerate() {
         let score = scorer(candidate)?;
@@ -306,7 +312,7 @@ pub fn pick_canonical_with(
         result
             .entries
             .iter()
-            .map(|(key, value)| (key.as_str(), value.view(coordinates))),
+            .map(|(key, value)| (key, value.view(coordinates))),
         scorer,
     )?;
     finalize_canonical_candidate(result.entries[index].1.view(coordinates))

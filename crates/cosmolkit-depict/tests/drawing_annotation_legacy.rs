@@ -68,9 +68,12 @@ const CASES: [Case; 8] = [
     },
 ];
 
-fn typed_note(key: &str, note: Option<&str>) -> BTreeMap<String, PropertyValue> {
+fn typed_note(
+    key: &str,
+    note: Option<&str>,
+) -> BTreeMap<cosmolkit_model::PropertyText, PropertyValue> {
     note.into_iter()
-        .map(|value| (key.to_owned(), PropertyValue::String(value.to_owned())))
+        .map(|value| (key.into(), PropertyValue::String(value.into())))
         .collect()
 }
 
@@ -126,13 +129,13 @@ fn drawing_annotation_legacy_product() {
             let mut atom_spec = AtomSpec::new(Element::C);
             if let Some(note) = case.atom {
                 atom_spec = atom_spec
-                    .with_prop("atomNote", PropertyValue::String(note.to_owned()))
+                    .with_prop("atomNote", PropertyValue::String(note.into()))
                     .unwrap();
             }
             let mut bond_spec = BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single);
             if let Some(note) = case.bond {
                 bond_spec = bond_spec
-                    .with_prop("bondNote", PropertyValue::String(note.to_owned()))
+                    .with_prop("bondNote", PropertyValue::String(note.into()))
                     .unwrap();
             }
             let topology = TopologyBlock::try_from_parts(
@@ -149,7 +152,7 @@ fn drawing_annotation_legacy_product() {
                 conformers_2d: vec![Conformer2D::new(0, vec![[0.0, 0.0], [1.5, 0.0]])],
                 conformers_3d: vec![],
                 source_coordinate_dim: Some(CoordinateDimension::TwoD),
-                source_conformer_order: None,
+                source_conformer_order: Some(vec![CoordinateDimension::TwoD]),
             };
             let mut properties = MoleculeProperties::default();
             if let Some(note) = case.molecule {
@@ -204,27 +207,42 @@ fn drawing_annotation_legacy_product() {
                 topology.bonds[0].props(),
                 &typed_note("bondNote", case.bond)
             );
+            assert!(topology.atoms.iter().all(|atom| {
+                atom.computed_prop_names()
+                    .unwrap()
+                    .is_none_or(<[_]>::is_empty)
+            }));
             assert!(
-                topology
-                    .atoms
-                    .iter()
-                    .all(|atom| atom.computed_prop_names().is_empty())
+                topology.bonds[0]
+                    .computed_prop_names()
+                    .unwrap()
+                    .is_none_or(<[_]>::is_empty)
             );
-            assert!(topology.bonds[0].computed_prop_names().is_empty());
             assert_eq!(
                 properties.props(),
                 &case
                     .molecule
                     .into_iter()
-                    .map(|note| ("molNote".to_owned(), note.to_owned()))
+                    .map(|note| (
+                        cosmolkit_model::PropertyText::from("molNote"),
+                        PropertyValue::from(note)
+                    ))
                     .collect::<BTreeMap<_, _>>()
             );
-            assert_eq!(properties.prop("molNote"), case.molecule);
+            assert_eq!(
+                properties.prop("molNote"),
+                case.molecule.map(PropertyValue::from).as_ref()
+            );
             assert!(properties.prop("atomNote").is_none());
             assert!(properties.name().is_none());
             assert!(properties.sdf_data_fields().is_empty());
             assert!(properties.sdf_property_lists().is_empty());
-            assert!(properties.computed_prop_names().is_empty());
+            assert!(
+                properties
+                    .computed_prop_names()
+                    .unwrap()
+                    .is_none_or(<[_]>::is_empty)
+            );
             coordinates.validate_for_atom_count(2).unwrap();
             assert_eq!(coordinates.conformers_2d.len(), 1);
             assert!(coordinates.conformers_3d.is_empty());
@@ -295,7 +313,7 @@ fn drawing_annotation_legacy_product() {
     for (label, repeat, result, expected) in outcomes {
         match result {
             Ok(svg) => {
-                let actual = svg.as_bytes();
+                let actual = svg.as_slice();
                 let equal = actual == expected.as_slice();
                 eprintln!(
                     "annotation outcome label={label} repeat={repeat} expected_bytes={} actual_bytes={} exact={equal}",

@@ -6,6 +6,12 @@ use cosmolkit_smiles::{
 };
 use cosmolkit_types::{BondOrder, ChiralTag};
 
+// Original source-text fixtures decode only at this observation boundary.
+// Invalid UTF-8 fails; the complete byte payload is never substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
 #[test]
 fn swap_counting_and_tetrahedral_helpers_cover_source_boundaries() {
     assert_eq!(stereo::count_swaps_to_interconvert::<u8>(&[], &[]), Ok(0));
@@ -197,6 +203,7 @@ fn parser_and_writer_preserve_tetrahedral_storage_and_traversal_order() {
                     ..Default::default()
                 },
             )
+            .map(fixture_writer_text)
             .unwrap(),
             noncanonical,
             "{input}"
@@ -229,7 +236,7 @@ fn parser_and_writer_roundtrip_sp_tb_oh_typed_permutations() {
             record.topology.atoms[atom_index].chiral_permutation(),
             Some(stored)
         );
-        let output = write_smiles(&record).unwrap();
+        let output = write_smiles(&record).map(fixture_writer_text).unwrap();
         assert_eq!(output, canonical, "{input}");
         let reparsed = parse_smiles(&output, &Default::default()).unwrap();
         let center = reparsed

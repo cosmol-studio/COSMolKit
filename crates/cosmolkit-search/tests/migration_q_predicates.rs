@@ -29,7 +29,10 @@ fn query_graph(atom: QueryAtom) -> QueryGraph {
     QueryGraph::from_parts(
         vec![atom],
         Vec::new(),
-        Default::default(),
+        Vec::<(
+            cosmolkit_model::PropertyText,
+            cosmolkit_model::PropertyValue,
+        )>::new(),
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -124,7 +127,10 @@ fn query_bond_predicate(predicate: BondQueryPredicate) -> QueryGraph {
     QueryGraph::from_parts(
         vec![left, right],
         vec![QueryBond::from_parts(bond, QueryNode::predicate(predicate))],
-        Default::default(),
+        Vec::<(
+            cosmolkit_model::PropertyText,
+            cosmolkit_model::PropertyValue,
+        )>::new(),
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -372,7 +378,7 @@ fn q34_mass_predicates_use_only_the_source_unknown_isotope_fallback() {
 }
 
 #[test]
-fn q35_degree_hydrogen_and_valence_predicates_use_current_topology() {
+fn q35_degree_hydrogen_and_valence_predicates_read_prepared_source_cache() {
     let target_atom = atom(Element::C, 0, None, 0);
     let stale_valence = ValenceAssignment {
         explicit_valence: vec![7],
@@ -380,9 +386,13 @@ fn q35_degree_hydrogen_and_valence_predicates_use_current_topology() {
     };
     let params = SubstructMatchParams::default();
 
-    // RDKit derives these values while updating the current atom property
-    // cache, then QueryOps reads that cache for degree, H, and valence tests.
-    // An unbound detached value must not override the isolated carbon topology.
+    // QueryOps reads the prepared Atom cache; evaluation does not update it.
+    // Preserve both the original cached values and the ordinary prepared carbon
+    // controls without speculatively assigning chemistry in SEARCH.
+    let current_valence = ValenceAssignment {
+        explicit_valence: vec![0],
+        implicit_hydrogens: vec![4],
+    };
     for predicate in [
         AtomQueryPredicate::HydrogenCount(4),
         AtomQueryPredicate::HasImplicitHydrogen,
@@ -398,7 +408,7 @@ fn q35_degree_hydrogen_and_valence_predicates_use_current_topology() {
         assert!(matches_with_valence(
             &query,
             target_atom.clone(),
-            &stale_valence,
+            &current_valence,
             &params,
         ));
     }
@@ -417,15 +427,38 @@ fn q35_degree_hydrogen_and_valence_predicates_use_current_topology() {
         assert!(!matches_with_valence(
             &query,
             target_atom.clone(),
+            &current_valence,
+            &params,
+        ));
+    }
+
+    for predicate in [
+        AtomQueryPredicate::HydrogenCount(0),
+        AtomQueryPredicate::ImplicitValence(0),
+        AtomQueryPredicate::ExplicitValence(7),
+        AtomQueryPredicate::TotalDegree(0),
+        AtomQueryPredicate::TotalValence(7),
+    ] {
+        assert!(matches_with_valence(
+            &query_atom_predicate(predicate),
+            target_atom.clone(),
             &stale_valence,
             &params,
         ));
     }
+    assert!(!matches_with_valence(
+        &query_atom_predicate(AtomQueryPredicate::HasImplicitHydrogen),
+        target_atom,
+        &stale_valence,
+        &params,
+    ));
 }
-
 #[test]
-fn q36_ring_queries_rebuild_current_state_and_preserve_integer_boundaries() {
+fn q36_ring_queries_read_prepared_state_and_preserve_integer_boundaries() {
     let triangle = cycle_topology(3);
+    let triangle_rings =
+        find_sssr_from_parts(triangle.atoms.len(), &triangle.bonds, &triangle.adjacency)
+            .expect("triangle SSSR initializes");
     for predicate in [
         AtomQueryPredicate::InRing,
         AtomQueryPredicate::InRingOfSize(3),
@@ -436,25 +469,48 @@ fn q36_ring_queries_rebuild_current_state_and_preserve_integer_boundaries() {
         assert!(matches_on_topology(
             &query_atom_predicate(predicate),
             &triangle,
-            None,
+            Some(&triangle_rings),
         ));
     }
 
-    let triangle_rings =
-        find_sssr_from_parts(triangle.atoms.len(), &triangle.bonds, &triangle.adjacency)
-            .expect("triangle SSSR initializes");
     let path = topology_with_edges(3, &[(0, 1), (1, 2)]);
-    assert!(!matches_on_topology(
+    // The original supplied triangle cache remains observable; the evaluator
+    // does not secretly replace it with current path rings.
+    assert!(matches_on_topology(
         &query_atom_predicate(AtomQueryPredicate::InRing),
         &path,
         Some(&triangle_rings),
     ));
     assert!(matches_on_topology(
-        &query_atom_predicate(AtomQueryPredicate::RingBondCount(0)),
+        &query_atom_predicate(AtomQueryPredicate::RingBondCount(2)),
         &path,
         Some(&triangle_rings),
     ));
 
+    let path_rings = find_sssr_from_parts(path.atoms.len(), &path.bonds, &path.adjacency)
+        .expect("path initialized empty SSSR");
+    assert!(!matches_on_topology(
+        &query_atom_predicate(AtomQueryPredicate::InRing),
+        &path,
+        Some(&path_rings)
+    ));
+    assert!(matches_on_topology(
+        &query_atom_predicate(AtomQueryPredicate::RingBondCount(0)),
+        &path,
+        Some(&path_rings)
+    ));
+    let coordinates = CoordinateBlock::default();
+    let missing = SearchTarget::new(&triangle, &coordinates, &triangle.stereo_groups, None, None);
+    assert!(matches!(
+        try_get_substruct_matches_with_params(
+            &missing,
+            &query_atom_predicate(AtomQueryPredicate::InRing),
+            &SubstructMatchParams::default()
+        ),
+        Err(SubstructMatchError::QueryContext(
+            cosmolkit_search::QueryMatchContextError::RingPrecondition { .. }
+        ))
+    ));
     // The source range helper returns -1 when no ring size meets a lower-only
     // bound, and INT_MAX when no ring size meets an upper-only bound.
     for predicate in [
@@ -464,11 +520,17 @@ fn q36_ring_queries_rebuild_current_state_and_preserve_integer_boundaries() {
         assert!(matches_on_topology(
             &query_atom_predicate(predicate),
             &path,
-            None,
+            Some(&path_rings),
         ));
     }
 
     let large_cycle = cycle_topology(256);
+    let large_rings = find_sssr_from_parts(
+        large_cycle.atoms.len(),
+        &large_cycle.bonds,
+        &large_cycle.adjacency,
+    )
+    .expect("full-width ring SSSR");
     for predicate in [
         AtomQueryPredicate::SmallestRingSize(256),
         AtomQueryPredicate::SmallestRingSizeGreaterEqual(255),
@@ -477,13 +539,13 @@ fn q36_ring_queries_rebuild_current_state_and_preserve_integer_boundaries() {
         assert!(matches_on_topology(
             &query_atom_predicate(predicate),
             &large_cycle,
-            None,
+            Some(&large_rings),
         ));
     }
     assert!(!matches_on_topology(
         &query_atom_predicate(AtomQueryPredicate::SmallestRingSizeLessEqual(255)),
         &large_cycle,
-        None,
+        Some(&large_rings),
     ));
 
     let mut flower_edges = Vec::with_capacity(256 * 3);
@@ -493,26 +555,41 @@ fn q36_ring_queries_rebuild_current_state_and_preserve_integer_boundaries() {
         flower_edges.extend([(0, first), (first, second), (second, 0)]);
     }
     let flower = topology_with_edges(513, &flower_edges);
+    let flower_rings = find_sssr_from_parts(flower.atoms.len(), &flower.bonds, &flower.adjacency)
+        .expect("full-width flower SSSR");
     assert!(matches_on_topology(
         &query_atom_predicate(AtomQueryPredicate::NumAtomRings(256)),
         &flower,
-        None,
+        Some(&flower_rings),
     ));
     assert!(matches_on_topology(
         &query_atom_predicate(AtomQueryPredicate::RingBondCount(512)),
         &flower,
-        None,
+        Some(&flower_rings),
     ));
-    assert!(!matches_on_topology(
+    // LessEqualQuery compares the stored threshold <= the source getter.
+    // The original threshold 1 therefore accepts ring-bond count 512 (or 2).
+    assert!(matches_on_topology(
         &query_atom_predicate(AtomQueryPredicate::RingBondCountLessEqual(1)),
         &flower,
-        None,
+        Some(&flower_rings),
+    ));
+    assert!(!matches_on_topology(
+        &query_atom_predicate(AtomQueryPredicate::Range(AtomRangeQuery::new(
+            AtomRangeBounds::LessEqual(513),
+            AtomRangeDataFunction::RingBondCount
+        ))),
+        &flower,
+        Some(&flower_rings),
     ));
 }
 
 #[test]
-fn q37_bond_ring_queries_initialize_absent_state_and_keep_fused_ring_counts() {
+fn q37_bond_ring_queries_read_prepared_state_and_keep_fused_ring_counts() {
     let acyclic = topology_with_edges(2, &[(0, 1)]);
+    let acyclic_rings =
+        find_sssr_from_parts(acyclic.atoms.len(), &acyclic.bonds, &acyclic.adjacency)
+            .expect("acyclic initialized empty rings");
     for predicate in [
         BondQueryPredicate::IsInRing(false),
         BondQueryPredicate::NumRingBonds(0),
@@ -529,7 +606,10 @@ fn q37_bond_ring_queries_initialize_absent_state_and_keep_fused_ring_counts() {
             .set_prop("q37-side", "right")
             .expect("target property is valid");
         assert!(matches_on_topology_with_params(
-            &query, &target, None, &params,
+            &query,
+            &target,
+            Some(&acyclic_rings),
+            &params,
         ));
     }
 
@@ -558,20 +638,20 @@ fn q37_bond_ring_queries_initialize_absent_state_and_keep_fused_ring_counts() {
         assert!(matches_on_topology_with_params(
             &query_bond_predicate(predicate),
             &fused,
-            None,
+            Some(&fused_rings),
             &params,
         ));
     }
     assert!(!matches_on_topology_with_params(
         &query_bond_predicate(BondQueryPredicate::NumRingBonds(1)),
         &fused,
-        None,
+        Some(&fused_rings),
         &params,
     ));
     assert!(!matches_on_topology_with_params(
         &query_bond_predicate(BondQueryPredicate::NumRingBondsLessEqual(1)),
         &fused,
-        None,
+        Some(&fused_rings),
         &params,
     ));
 
@@ -604,14 +684,14 @@ fn q37_bond_ring_queries_initialize_absent_state_and_keep_fused_ring_counts() {
         assert!(matches_on_topology_with_params(
             &query_bond_predicate(predicate),
             &many_fused,
-            None,
+            Some(&many_ring_info),
             &params,
         ));
     }
     assert!(!matches_on_topology_with_params(
         &query_bond_predicate(BondQueryPredicate::NumRingBondsLessEqual(255)),
         &many_fused,
-        None,
+        Some(&many_ring_info),
         &params,
     ));
 }

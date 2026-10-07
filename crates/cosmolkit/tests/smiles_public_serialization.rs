@@ -26,8 +26,8 @@ fn options(bits: u16) -> ck::SmilesWriteParams {
 }
 
 fn compare(
-    actual: Result<String, ck::SmilesWriteError>,
-    expected: Result<String, owner::SmilesParseError>,
+    actual: Result<ck::PropertyText, ck::SmilesWriteError>,
+    expected: Result<ck::PropertyText, owner::SmilesParseError>,
 ) {
     match (actual, expected) {
         (Ok(actual), Ok(expected)) => assert_eq!(actual, expected),
@@ -73,7 +73,10 @@ fn default_strings_errors_and_registry_are_public_contracts() {
         ("", ""),
     ] {
         let molecule = ck::Molecule::from_smiles(input).unwrap();
-        assert_eq!(molecule.to_smiles().unwrap(), expected);
+        assert_eq!(
+            molecule.to_smiles().unwrap().as_bytes(),
+            expected.as_bytes()
+        );
         assert_eq!(
             molecule.to_smiles().unwrap(),
             molecule.to_smiles_with_params(&Default::default()).unwrap()
@@ -131,8 +134,14 @@ fn fragment_option_matrix_preserves_original_ids_and_typed_failures() {
     let molecule = ck::Molecule::from_smiles("CCO").unwrap();
     let record = detached(&molecule);
     let atoms = vec![ck::AtomId::new(1), ck::AtomId::new(2)];
-    assert_eq!(molecule.to_fragment_smiles(&atoms).unwrap(), "CO");
-    assert_eq!(molecule.to_fragment_cx_smiles(&atoms).unwrap(), "CO");
+    assert_eq!(
+        molecule.to_fragment_smiles(&atoms).unwrap(),
+        ck::PropertyText::from("CO")
+    );
+    assert_eq!(
+        molecule.to_fragment_cx_smiles(&atoms).unwrap(),
+        ck::PropertyText::from("CO")
+    );
     let mut cases = 0;
     for bits in 0..256 {
         for bonds in [None, Some(vec![]), Some(vec![ck::BondId::new(1)])] {
@@ -213,8 +222,14 @@ fn random_vector_all_boolean_options_counts_and_seeds() {
     }
     assert_eq!(cases, 144);
     let methane = ck::Molecule::from_smiles("C").unwrap();
-    assert_eq!(methane.to_random_smiles(4, 42).unwrap(), vec!["C"; 4]);
-    assert_eq!(methane.to_random_smiles(4, 0).unwrap(), vec!["C"; 4]);
+    assert_eq!(
+        methane.to_random_smiles(4, 42).unwrap(),
+        vec![ck::PropertyText::from("C"); 4]
+    );
+    assert_eq!(
+        methane.to_random_smiles(4, 0).unwrap(),
+        vec![ck::PropertyText::from("C"); 4]
+    );
     assert_eq!(molecule.topology(), &record.topology);
 }
 
@@ -276,7 +291,7 @@ fn cx_field_selection_and_coordinate_ambiguity_matrix() {
     };
     assert_eq!(
         molecule.to_cx_smiles_with_params(&params).unwrap(),
-        "C |(1,2,)|"
+        ck::PropertyText::from("C |(1,2,)|")
     );
     let fragment = ck::FragmentCxSmilesWriteParams {
         cx: params,
@@ -287,7 +302,7 @@ fn cx_field_selection_and_coordinate_ambiguity_matrix() {
         molecule
             .to_fragment_cx_smiles_with_params(&fragment)
             .unwrap(),
-        "C |(1,2,)|"
+        ck::PropertyText::from("C |(1,2,)|")
     );
     assert_eq!(molecule.coordinates_2d(), Some(&[[1.0, 2.0]][..]));
     assert_eq!(molecule.conformers_3d(), &record.coordinates.conformers_3d);

@@ -212,7 +212,10 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
     coordinate_views::assert_shared_coordinates(&source, &output);
     assert_eq!(source.coordinates_2d(), output.coordinates_2d());
     assert_eq!(source.conformers_3d(), output.conformers_3d());
-    assert_eq!(output.property("source"), Some("preserved"));
+    assert_eq!(
+        output.property("source"),
+        Some(&cosmolkit::PropertyValue::from("preserved"))
+    );
     assert_eq!(
         output.atoms()[0].prop("atom-note"),
         Some(&cosmolkit_model::PropertyValue::from("atom-0"))
@@ -235,7 +238,10 @@ fn value_operation_preserves_identity_coordinates_stereo_and_ordinary_props() {
     assert!(format!("{output:?}").contains("derived_cache_is_empty: false"));
     assert!(source.atoms().iter().all(|atom| !atom.is_aromatic()));
     assert!(source.bonds().iter().all(|bond| !bond.is_aromatic()));
-    assert_eq!(source.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        source.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
     assert!(!std::ptr::eq(source.topology(), output.topology()));
     assert!(!std::ptr::eq(source.properties(), output.properties()));
 }
@@ -296,7 +302,10 @@ fn custom_model_failure_is_structured_and_atomic_for_value_and_inplace() {
     assert!(std::ptr::eq(target.topology(), observer.topology()));
     coordinate_views::assert_shared_coordinates(&target, &observer);
     assert!(std::ptr::eq(target.properties(), observer.properties()));
-    assert_eq!(target.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        target.property("_CIPComputed"),
+        Some(&cosmolkit::PropertyValue::from("true"))
+    );
 }
 
 #[test]

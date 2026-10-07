@@ -8,11 +8,19 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::{BondOrder, Element};
 
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+
 fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
-    match value {
-        Some(PropertyValue::String(value)) => Some(value),
-        _ => None,
-    }
+    value.map(|value| {
+        fixture_text(
+            value
+                .as_string()
+                .expect("source text property must have String tag"),
+        )
+    })
 }
 
 fn atom_line(symbol: &str, charge_code: i32) -> String {
@@ -276,7 +284,7 @@ fn rgroup_and_marvin_smarts_records_create_canonical_typed_queries() {
         matches!(
             predicate,
             AtomQueryPredicate::RecursiveSmarts(recursive)
-                if recursive.source_smarts() == Some("[#6,#7]")
+                if recursive.source_smarts().map(fixture_text) == Some("[#6,#7]")
                     && recursive.query_graph().is_some()
         )
     }));
@@ -336,7 +344,11 @@ fn aliases_extended_records_skip_and_termination_keep_exact_state() {
         Some("1")
     );
     assert_eq!(topology.atoms[0].formal_charge(), 0);
-    assert_eq!(properties.prop("_MolFileLinkNodes"), Some("1 3 1 1 2"));
+    assert_eq!(
+        properties.prop("_molLinkNodes"),
+        Some(&PropertyValue::String("1 3 1 1 2".into()))
+    );
+    assert_eq!(properties.prop("_MolFileLinkNodes"), None);
 
     let missing_end = input.replace("M  END\n", "");
     assert!(
@@ -429,10 +441,10 @@ fn every_typed_v2000_sgroup_record_resolves_ids_and_ordered_state() {
     assert_eq!(sup.atoms(), &[AtomId::new(0)]);
     assert_eq!(sup.parent_atoms(), &[AtomId::new(0)]);
     assert_eq!(sup.bonds(), &[BondId::new(0)]);
-    assert_eq!(sup.label(), Some("Me"));
-    assert_eq!(sup.subtype(), Some("ALT"));
+    assert_eq!(sup.label().map(fixture_text), Some("Me"));
+    assert_eq!(sup.subtype().map(fixture_text), Some("ALT"));
     assert_eq!(sup.connection(), Some(&SGroupConnection::HeadToTail));
-    assert_eq!(sup.expansion_state(), Some("E"));
+    assert_eq!(sup.expansion_state().map(fixture_text), Some("E"));
     assert_eq!(
         sup.display().unwrap().brackets[0].points,
         [[0.0, 1.0, 0.0], [2.0, 3.0, 0.0], [0.0, 0.0, 0.0]]
@@ -446,16 +458,22 @@ fn every_typed_v2000_sgroup_record_resolves_ids_and_ordered_state() {
     assert_eq!(dat.rdkit_sequence_id(), Some(2));
     assert_eq!(dat.parent(), Some(sup.id()));
     assert_eq!(dat.component_number(), Some(5));
-    assert_eq!(dat.class(), Some("CLASS"));
+    assert_eq!(dat.class().map(fixture_text), Some("CLASS"));
     assert_eq!(dat.bracket_style(), Some(&SGroupBracketStyle::Parenthesis));
     let data = dat.data().unwrap();
-    assert_eq!(data.field_name.as_deref(), Some("FIELD"));
-    assert_eq!(data.field_type.as_deref(), Some("T"));
-    assert_eq!(data.field_info.as_deref(), Some("INFO"));
-    assert_eq!(data.query_type.as_deref(), Some("Q"));
-    assert_eq!(data.query_op.as_deref(), Some("OP"));
-    assert_eq!(data.field_display.as_deref(), Some("display spec"));
-    assert_eq!(data.values, ["first valuesecond value"]);
+    assert_eq!(data.field_name.as_ref().map(fixture_text), Some("FIELD"));
+    assert_eq!(data.field_type.as_ref().map(fixture_text), Some("T"));
+    assert_eq!(data.field_info.as_ref().map(fixture_text), Some("INFO"));
+    assert_eq!(data.query_type.as_ref().map(fixture_text), Some("Q"));
+    assert_eq!(data.query_op.as_ref().map(fixture_text), Some("OP"));
+    assert_eq!(
+        data.field_display.as_ref().map(fixture_text),
+        Some("display spec")
+    );
+    assert_eq!(
+        data.values.iter().map(fixture_text).collect::<Vec<_>>(),
+        ["first valuesecond value"]
+    );
 }
 
 #[test]
@@ -547,7 +565,13 @@ fn data_sgroup_line_limit_and_property_blank_recovery_match_pinned_policy() {
         panic!("expected concrete DAT SGroup")
     };
     assert_eq!(
-        topology.substance_groups[0].data().unwrap().values,
+        topology.substance_groups[0]
+            .data()
+            .unwrap()
+            .values
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
         ["onetwothreefourend"]
     );
 
@@ -563,6 +587,8 @@ fn data_sgroup_line_limit_and_property_blank_recovery_match_pinned_policy() {
         .is_ok()
     );
 
+    // The first-line recovery is separate from the property loop; an unrecognized
+    // later empty line falls through its dispatch and the next M END is read.
     let later_blank = molblock(&[], &[], "M  CHG  0\n\nM  END\n");
     assert!(
         read_mol_block_detached_with_params(

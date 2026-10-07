@@ -43,7 +43,12 @@ fn transform_molecule() -> Molecule {
                 .with_prop("kind", "explicit"),
         ],
         source_coordinate_dim: None,
-        source_conformer_order: None,
+        source_conformer_order: Some(vec![
+            CoordinateDimension::TwoD,
+            CoordinateDimension::ThreeD,
+            CoordinateDimension::ThreeD,
+            CoordinateDimension::ThreeD,
+        ]),
     };
     let properties = MoleculeProperties::default()
         .with_name("transforms-public")
@@ -60,7 +65,10 @@ fn rows() -> Vec<Vec<f64>> {
 fn unchanged_graph(source: &Molecule, result: &Molecule) {
     assert!(std::ptr::eq(source.topology(), result.topology()));
     assert!(std::ptr::eq(source.properties(), result.properties()));
-    assert_eq!(result.property("_CIPComputed"), Some("true"));
+    assert_eq!(
+        result.property("_CIPComputed"),
+        Some(&PropertyValue::from("true"))
+    );
     assert_eq!(
         result.atom(AtomId::new(0)).unwrap().prop("_CIPCode"),
         Some(&cosmolkit_model::PropertyValue::from("R"))

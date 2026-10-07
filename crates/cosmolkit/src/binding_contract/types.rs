@@ -28,6 +28,13 @@ pub enum BindingReceiver {
     Owned,
 }
 
+/// Explicit Python descriptor projection of a Rust accessor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BindingPropertyAccess {
+    Getter,
+    Setter,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BindingDefault {
     Required,
@@ -88,6 +95,7 @@ pub struct BindingContractEntry {
     pub owner: BindingOwner,
     pub rust_path: &'static str,
     pub python_name: &'static str,
+    pub python_property: Option<BindingPropertyAccess>,
     pub javascript_name: &'static str,
     pub feature: &'static str,
     /// Additional capability selectors required together with the owning feature.

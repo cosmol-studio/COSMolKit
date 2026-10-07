@@ -241,7 +241,7 @@ impl MorganOperator {
             bonds
         ))
     }
-    pub fn to_json(&self) -> Result<String, MorganError> {
+    pub fn to_json(&self) -> Result<cosmolkit_model::PropertyText, MorganError> {
         // RDKit❗✔️: void FingerprintGenerator<OutputType>::toJSON(
         // RDKit❗✔️:     boost::property_tree::ptree &pt) const {
         // RDKit❗✔️:   pt.put("name", "FingerprintGenerator");
@@ -267,7 +267,7 @@ impl MorganOperator {
         // Complexity: O(bounds+query serialization); only explicit serialization
         // invokes the sole Search writer, never fingerprint calculation.
         let state = lock(&self.state)?;
-        let mut text = format!(
+        let mut text: cosmolkit_model::PropertyText = format!(
             "{{\"name\":\"FingerprintGenerator\",\"fingerprintArguments\":{},\"atomEnvironmentGenerator\":{{\"type\":\"MorganEnvGenerator\"}}",
             crate::argument_metadata::morgan_arguments_json(
                 state.backend.radius,
@@ -280,20 +280,23 @@ impl MorganOperator {
                     &state.backend.fingerprint_arguments.count_bounds
                 )
             )
-        );
+        ).into();
         if let Some(owner) = &state.atom_provider {
-            text.push_str(",\"atomInvariantsGenerator\":");
+            text.extend_bytes((",\"atomInvariantsGenerator\":").as_bytes());
             match owner {
-                AtomProvider::Connectivity => text.push_str(&format!(
-                    "{{\"type\":\"MorganAtomInvGenerator\",\"includeRingMembership\":\"{}\"}}",
-                    state
-                        .backend
-                        .atom_invariants
-                        .as_ref()
-                        .expect("connectivity owner")
-                        .include_ring_membership()
-                )),
-                AtomProvider::AtomPair(owner) => text.push_str(&owner.to_json()),
+                AtomProvider::Connectivity => text.extend_bytes(
+                    (&format!(
+                        "{{\"type\":\"MorganAtomInvGenerator\",\"includeRingMembership\":\"{}\"}}",
+                        state
+                            .backend
+                            .atom_invariants
+                            .as_ref()
+                            .expect("connectivity owner")
+                            .include_ring_membership()
+                    ))
+                        .as_bytes(),
+                ),
+                AtomProvider::AtomPair(owner) => text.extend_bytes((&owner.to_json()).as_bytes()),
                 AtomProvider::Features(owner) => {
                     // RDKit❗✔️: void MorganFeatureAtomInvGenerator::toJSON(
                     // RDKit❗✔️:     boost::property_tree::ptree &pt) const {
@@ -310,33 +313,33 @@ impl MorganOperator {
                     // RDKit❗✔️:   }
                     // RDKit❗✔️:   AtomInvariantsGenerator::toJSON(pt);
                     // RDKit❗✔️: }
-                    text.push_str("{\"type\":\"MorganFeatureAtomInvGenerator\"");
+                    text.extend_bytes(("{\"type\":\"MorganFeatureAtomInvGenerator\"").as_bytes());
                     if let Some(patterns) = owner.patterns() {
-                        text.push_str(",\"patternSMARTS\":");
+                        text.extend_bytes((",\"patternSMARTS\":").as_bytes());
                         if patterns.is_empty() {
-                            text.push_str("\"\"");
+                            text.extend_bytes(("\"\"").as_bytes());
                         } else {
-                            text.push('[');
+                            text.push_byte(b'[');
                             for (i, p) in patterns.iter().enumerate() {
                                 if i > 0 {
-                                    text.push(',');
+                                    text.push_byte(b',');
                                 }
                                 let smarts =
                                     query_graph_to_smarts(p, &SmartsWriteParams::default())?;
-                                text.push_str(&Value::String(smarts).to_string());
+                                crate::metadata::append_json_byte_string(&mut text, &smarts);
                             }
-                            text.push(']');
+                            text.push_byte(b']');
                         }
                     }
-                    text.push('}');
+                    text.push_byte(b'}');
                 }
             }
         }
         if let Some(owner) = &state.backend.bond_invariants {
             let (t, c) = owner.configuration();
-            text.push_str(&format!(",\"bondInvariantsGenerator\":{{\"type\":\"MorganBondInvGenerator\",\"useBondTypes\":\"{}\",\"useChirality\":\"{}\"}}",t,c));
+            text.extend_bytes((&format!(",\"bondInvariantsGenerator\":{{\"type\":\"MorganBondInvGenerator\",\"useBondTypes\":\"{}\",\"useChirality\":\"{}\"}}",t,c)).as_bytes());
         }
-        text.push('}');
+        text.push_byte(b'}');
         Ok(text)
     }
     pub fn from_json(json: &str) -> Result<Self, MorganError> {
@@ -796,7 +799,8 @@ mod tests {
     }
     #[test]
     fn source_self_ring_and_duplicate_bond_null_patterns_preserve_valid_query_order() {
-        let mut value: Value = serde_json::from_str(&generator().to_json().unwrap()).unwrap();
+        let mut value: Value =
+            serde_json::from_slice(generator().to_json().unwrap().as_bytes()).unwrap();
         value["fingerprintArguments"]["radius"] = Value::String("0".into());
         let molecule = TestMolecule::from_smiles("CCO").unwrap();
         for invalid in ["[C]11", "[C]1[C]1"] {
@@ -804,7 +808,8 @@ mod tests {
                 "type": "MorganFeatureAtomInvGenerator", "patternSMARTS": ["[C]", invalid, "[O]"]
             });
             let restored = MorganOperator::from_json(&value.to_string()).unwrap();
-            let json: Value = serde_json::from_str(&restored.to_json().unwrap()).unwrap();
+            let json: Value =
+                serde_json::from_slice(restored.to_json().unwrap().as_bytes()).unwrap();
             assert_eq!(
                 json["atomInvariantsGenerator"]["patternSMARTS"],
                 serde_json::json!(["C", "O"])
@@ -831,7 +836,8 @@ mod tests {
 
     #[test]
     fn generic_source_parser_category_is_propagated_without_string_classification() {
-        let mut value: Value = serde_json::from_str(&generator().to_json().unwrap()).unwrap();
+        let mut value: Value =
+            serde_json::from_slice(generator().to_json().unwrap().as_bytes()).unwrap();
         value["atomInvariantsGenerator"] = serde_json::json!({
             "type": "MorganFeatureAtomInvGenerator", "patternSMARTS": ["[C]", "C1CC", "[O]"]
         });
@@ -856,7 +862,7 @@ mod tests {
             g.info_string().unwrap(),
             "Common arguments : countSimulation=0 fpSize=2048 bitsPerFeature=1 includeChirality=0 --- MorganArguments onlyNonzeroInvariants=0 radius=3 --- MorganEnvironmentGenerator --- MorganInvariantGenerator includeRingMembership=1 --- MorganInvariantGenerator useBondTypes=1 useChirality=0"
         );
-        let value: Value = serde_json::from_str(&g.to_json().unwrap()).unwrap();
+        let value: Value = serde_json::from_slice(g.to_json().unwrap().as_bytes()).unwrap();
         assert_eq!(
             value,
             serde_json::json!({"name":"FingerprintGenerator","fingerprintArguments":{"type":"MorganArguments","onlyNonzeroInvariants":"false","radius":"3","countSimulation":"false","fpSize":"2048","numBitsPerFeature":"1","includeChirality":"false","countBounds":["1","2","4","8"]},"atomEnvironmentGenerator":{"type":"MorganEnvGenerator"},"atomInvariantsGenerator":{"type":"MorganAtomInvGenerator","includeRingMembership":"true"},"bondInvariantsGenerator":{"type":"MorganBondInvGenerator","useBondTypes":"true","useChirality":"false"}})
@@ -1031,7 +1037,7 @@ mod tests {
                 .nonzero_elements(),
             &BTreeMap::from([(0, 3)])
         );
-        let v: Value = serde_json::from_str(&empty.to_json().unwrap()).unwrap();
+        let v: Value = serde_json::from_slice(empty.to_json().unwrap().as_bytes()).unwrap();
         assert_eq!(v["atomInvariantsGenerator"]["patternSMARTS"], "");
         let c = parse_smarts("[C]", &SmartsParseParams::default()).unwrap();
         let o = parse_smarts("[O]", &SmartsParseParams::default()).unwrap();
@@ -1050,7 +1056,8 @@ mod tests {
                 .nonzero_elements(),
             &BTreeMap::from([(1, 2), (2, 1)])
         );
-        let restored = MorganOperator::from_json(&configured.to_json().unwrap()).unwrap();
+        let restored =
+            MorganOperator::from_json(fixed_json_text(&configured.to_json().unwrap())).unwrap();
         assert_eq!(
             restored.sparse_count(&input(&m), &call, None).unwrap(),
             configured.sparse_count(&input(&m), &call, None).unwrap()
@@ -1093,7 +1100,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let mut v: Value = serde_json::from_str(&g.to_json().unwrap()).unwrap();
+        let mut v: Value = serde_json::from_slice(g.to_json().unwrap().as_bytes()).unwrap();
         assert!(v["atomInvariantsGenerator"].get("patternSMARTS").is_none());
         v["atomInvariantsGenerator"]["patternSMARTS"] = serde_json::json!(["[C]", "[", "[O]"]);
         let restored = MorganOperator::from_json(&v.to_string()).unwrap();
@@ -1105,12 +1112,12 @@ mod tests {
                 .nonzero_elements(),
             &BTreeMap::from([(1, 2), (2, 1)])
         );
-        assert_eq!(serde_json::from_str::<Value>(&restored.to_json().unwrap()).unwrap()["atomInvariantsGenerator"]["patternSMARTS"].as_array().unwrap().len(),2);
+        assert_eq!(serde_json::from_slice::<Value>(restored.to_json().unwrap().as_bytes()).unwrap()["atomInvariantsGenerator"]["patternSMARTS"].as_array().unwrap().len(),2);
     }
     #[test]
     fn absent_json_providers_preserve_null_preconditions_even_for_empty_molecule() {
         let g = generator();
-        let mut value: Value = serde_json::from_str(&g.to_json().unwrap()).unwrap();
+        let mut value: Value = serde_json::from_slice(g.to_json().unwrap().as_bytes()).unwrap();
         value
             .as_object_mut()
             .unwrap()
@@ -1188,7 +1195,7 @@ mod tests {
             .unwrap();
         g.settings().set_count_bounds(vec![]).unwrap();
         g.settings().set_bits_per_feature(0).unwrap();
-        let restored = MorganOperator::from_json(&g.to_json().unwrap()).unwrap();
+        let restored = MorganOperator::from_json(fixed_json_text(&g.to_json().unwrap())).unwrap();
         assert!(restored.settings().include_chirality().unwrap());
         assert!(
             !restored
@@ -1245,7 +1252,7 @@ mod tests {
     #[test]
     fn known_independent_unmodeled_component_and_unknown_type_errors_remain_distinct() {
         let g = generator();
-        let mut value: Value = serde_json::from_str(&g.to_json().unwrap()).unwrap();
+        let mut value: Value = serde_json::from_slice(g.to_json().unwrap().as_bytes()).unwrap();
         value["atomInvariantsGenerator"]["type"] = Value::String("RDKitFPAtomInvGenerator".into());
         assert!(matches!(
             MorganOperator::from_json(&value.to_string()),
@@ -1266,4 +1273,9 @@ mod tests {
             Err(MorganError::Json(FingerprintJsonError::Parse(_)))
         ));
     }
+}
+
+#[cfg(test)]
+fn fixed_json_text(text: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(text.as_bytes()).expect("original fixed JSON fixture is UTF8")
 }

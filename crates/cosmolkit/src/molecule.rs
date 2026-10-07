@@ -21,10 +21,13 @@ pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-kekulize",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
+        feature = "cap-io",
+        feature = "cap-stereoisomers",
         feature = "cap-sanitize",
         feature = "cap-descriptors",
         feature = "cap-forcefields",
@@ -39,6 +42,8 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-stereo",
         feature = "cap-descriptors",
         feature = "cap-smiles",
+        feature = "cap-io",
+        feature = "cap-stereoisomers",
         feature = "cap-sanitize",
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
@@ -67,10 +72,13 @@ impl DerivedCacheBlock {
             && {
                 #[cfg(any(
                     feature = "cap-valence",
+                    feature = "cap-kekulize",
                     feature = "cap-stereo",
                     feature = "cap-fingerprints",
                     feature = "cap-hydrogens",
                     feature = "cap-smiles",
+                    feature = "cap-io",
+                    feature = "cap-stereoisomers",
                     feature = "cap-sanitize",
                     feature = "cap-descriptors",
                     feature = "cap-forcefields",
@@ -84,10 +92,13 @@ impl DerivedCacheBlock {
                 }
                 #[cfg(not(any(
                     feature = "cap-valence",
+                    feature = "cap-kekulize",
                     feature = "cap-stereo",
                     feature = "cap-fingerprints",
                     feature = "cap-hydrogens",
                     feature = "cap-smiles",
+                    feature = "cap-io",
+                    feature = "cap-stereoisomers",
                     feature = "cap-sanitize",
                     feature = "cap-descriptors",
                     feature = "cap-forcefields",
@@ -106,6 +117,8 @@ impl DerivedCacheBlock {
                     feature = "cap-stereo",
                     feature = "cap-descriptors",
                     feature = "cap-smiles",
+                    feature = "cap-io",
+                    feature = "cap-stereoisomers",
                     feature = "cap-sanitize",
                     feature = "cap-hydrogens",
                     feature = "cap-kekulize",
@@ -144,6 +157,8 @@ impl DerivedCacheBlock {
                     feature = "cap-stereo",
                     feature = "cap-descriptors",
                     feature = "cap-smiles",
+                    feature = "cap-io",
+                    feature = "cap-stereoisomers",
                     feature = "cap-sanitize",
                     feature = "cap-hydrogens",
                     feature = "cap-kekulize",
@@ -173,10 +188,13 @@ impl DerivedCacheBlock {
         self.valid = self.valid.difference(states);
         #[cfg(any(
             feature = "cap-valence",
+            feature = "cap-kekulize",
             feature = "cap-stereo",
             feature = "cap-fingerprints",
             feature = "cap-hydrogens",
             feature = "cap-smiles",
+            feature = "cap-io",
+            feature = "cap-stereoisomers",
             feature = "cap-sanitize",
             feature = "cap-descriptors",
             feature = "cap-forcefields",
@@ -193,6 +211,8 @@ impl DerivedCacheBlock {
             feature = "cap-stereo",
             feature = "cap-descriptors",
             feature = "cap-smiles",
+            feature = "cap-io",
+            feature = "cap-stereoisomers",
             feature = "cap-sanitize",
             feature = "cap-hydrogens",
             feature = "cap-kekulize",
@@ -221,10 +241,13 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-kekulize",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
+        feature = "cap-io",
+        feature = "cap-stereoisomers",
         feature = "cap-sanitize",
         feature = "cap-descriptors",
         feature = "cap-forcefields",
@@ -242,17 +265,21 @@ impl DerivedCacheBlock {
 
     #[cfg(any(
         feature = "cap-valence",
+        feature = "cap-kekulize",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
         feature = "cap-hydrogens",
         feature = "cap-smiles",
+        feature = "cap-io",
+        feature = "cap-stereoisomers",
         feature = "cap-sanitize",
         feature = "cap-descriptors",
         feature = "cap-forcefields",
         feature = "cap-tautomer",
         feature = "cap-hashing",
         feature = "cap-serialization",
-        feature = "cap-io"
+        feature = "cap-io",
+        feature = "cap-reaction"
     ))]
     pub(crate) fn valence_assignment(&self) -> Option<&cosmolkit_core::ValenceAssignment> {
         if self.valid.contains(DerivedState::VALENCE) {
@@ -267,6 +294,8 @@ impl DerivedCacheBlock {
         feature = "cap-stereo",
         feature = "cap-descriptors",
         feature = "cap-smiles",
+        feature = "cap-io",
+        feature = "cap-stereoisomers",
         feature = "cap-sanitize",
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
@@ -287,6 +316,8 @@ impl DerivedCacheBlock {
         feature = "cap-stereo",
         feature = "cap-descriptors",
         feature = "cap-smiles",
+        feature = "cap-io",
+        feature = "cap-stereoisomers",
         feature = "cap-sanitize",
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
@@ -310,6 +341,8 @@ impl DerivedCacheBlock {
         feature = "cap-stereo",
         feature = "cap-descriptors",
         feature = "cap-smiles",
+        feature = "cap-io",
+        feature = "cap-stereoisomers",
         feature = "cap-sanitize",
         feature = "cap-hydrogens",
         feature = "cap-kekulize",
@@ -319,7 +352,8 @@ impl DerivedCacheBlock {
         feature = "cap-tautomer",
         feature = "cap-hashing",
         feature = "cap-serialization",
-        feature = "cap-io"
+        feature = "cap-io",
+        feature = "cap-reaction"
     ))]
     pub(crate) fn valid_ring_info(&self) -> Option<&cosmolkit_core::RingInfo> {
         if self.valid.contains(DerivedState::RINGS) {
@@ -354,10 +388,13 @@ impl DerivedCacheBlock {
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
         #[cfg(any(
             feature = "cap-valence",
+            feature = "cap-kekulize",
             feature = "cap-stereo",
             feature = "cap-fingerprints",
             feature = "cap-hydrogens",
             feature = "cap-smiles",
+            feature = "cap-io",
+            feature = "cap-stereoisomers",
             feature = "cap-sanitize",
             feature = "cap-descriptors",
             feature = "cap-forcefields",
@@ -417,6 +454,8 @@ impl DerivedCacheBlock {
             feature = "cap-stereo",
             feature = "cap-descriptors",
             feature = "cap-smiles",
+            feature = "cap-io",
+            feature = "cap-stereoisomers",
             feature = "cap-sanitize",
             feature = "cap-hydrogens",
             feature = "cap-kekulize",
@@ -1057,7 +1096,7 @@ impl Molecule {
 
     /// Returns an ordinary molecule property by key.
     #[must_use]
-    pub fn property(&self, key: &str) -> Option<&str> {
+    pub fn property(&self, key: &str) -> Option<&crate::PropertyValue> {
         self.state.properties.prop(key)
     }
 
@@ -1230,7 +1269,7 @@ mod ring_live_constructor_tests {
                 // RINGS is independent of the CK-VALENCE-001 sanitize gate.
                 assert_eq!(
                     cache.valid_states().contains(DerivedState::VALENCE),
-                    sanitize,
+                    profile != "bothfalse",
                     "{label}: VALENCE validity"
                 );
                 match expected_quality {
@@ -1328,7 +1367,7 @@ mod ring_live_constructor_tests {
                 if sanitize || remove_hydrogens {
                     assert_eq!(
                         molecule.properties().prop("_StereochemDone"),
-                        Some("1"),
+                        Some(&crate::PropertyValue::Int(1)),
                         "{label}: done marker"
                     );
                 }
@@ -1589,10 +1628,10 @@ mod valence_cache_tests {
                     let cache = molecule.derived_cache_arc_runtime();
                     assert_eq!(
                         cache.valid_states().contains(DerivedState::VALENCE),
-                        sanitize,
+                        sanitize || remove_hydrogens,
                         "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens}"
                     );
-                    if sanitize {
+                    if sanitize || remove_hydrogens {
                         let expected = cosmolkit_core::assign_valence_with_options_for_topology(
                             molecule.topology(),
                             cosmolkit_core::ValenceModel::RdkitLike,
@@ -1600,13 +1639,15 @@ mod valence_cache_tests {
                         )
                         .unwrap();
                         assert_eq!(cache.valence_assignment(), Some(&expected), "{smiles}");
-                        assert_eq!(
-                            molecule.molecular_formula().unwrap(),
-                            formula,
-                            "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens} atoms={:?}",
-                            molecule.atoms()
-                        );
-                        assert!((molecule.molecular_weight().unwrap() - mass).abs() < 1e-9);
+                        if sanitize {
+                            assert_eq!(
+                                molecule.molecular_formula().unwrap(),
+                                formula,
+                                "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens} atoms={:?}",
+                                molecule.atoms()
+                            );
+                            assert!((molecule.molecular_weight().unwrap() - mass).abs() < 1e-9);
+                        }
                         let peer = molecule.clone();
                         let topology = molecule.topology_arc_runtime();
                         let coordinates = molecule.coordinates_arc_runtime();
@@ -1689,23 +1730,32 @@ mod valence_cache_tests {
             };
             let output = source.without_hydrogens_with_params(&params).unwrap();
             let cache = output.derived_cache_runtime();
-            assert_eq!(
-                cache.valid_states().contains(DerivedState::VALENCE),
-                sanitize
-            );
-            if sanitize {
-                let expected =
-                    cosmolkit_core::assign_valence(output.topology(), &Default::default()).unwrap();
-                assert_eq!(cache.valence_assignment(), Some(&expected));
+            assert!(cache.valid_states().contains(DerivedState::VALENCE));
+            let expected = if sanitize {
+                cosmolkit_core::assign_valence(output.topology(), &Default::default()).unwrap()
             } else {
-                assert!(cache.valence_assignment().is_none());
-                // Repeating a no-op deletion must not revive an invalid cache.
+                // ROMol::removeAtom compacts the existing scalar fields. It
+                // does not invalidate or recalculate this surviving C row.
+                cosmolkit_core::ValenceAssignment {
+                    explicit_valence: vec![1],
+                    implicit_hydrogens: vec![3],
+                }
+            };
+            assert_eq!(cache.valence_assignment(), Some(&expected));
+            if !sanitize {
                 let repeated = output.without_hydrogens_with_params(&params).unwrap();
-                assert!(
-                    repeated
-                        .derived_cache_runtime()
-                        .valence_assignment()
-                        .is_none()
+                // Each removeHs entry executes updatePropertyCache(false),
+                // even for a repeated no-deletion call. The prior output's
+                // compaction rows remain unchanged on its retained peer.
+                let refreshed = cosmolkit_core::assign_valence_with_options_for_topology(
+                    repeated.topology(),
+                    cosmolkit_core::ValenceModel::RdkitLike,
+                    false,
+                )
+                .unwrap();
+                assert_eq!(
+                    repeated.derived_cache_runtime().valence_assignment(),
+                    Some(&refreshed)
                 );
                 let recomputed = output.with_assigned_valence().unwrap();
                 assert!(
@@ -1714,11 +1764,9 @@ mod valence_cache_tests {
                         .valid_states()
                         .contains(DerivedState::VALENCE)
                 );
-                assert!(
-                    output
-                        .derived_cache_runtime()
-                        .valence_assignment()
-                        .is_none()
+                assert_eq!(
+                    output.derived_cache_runtime().valence_assignment(),
+                    Some(&expected)
                 );
             }
             cache.validate_for_atom_count(output.num_atoms()).unwrap();

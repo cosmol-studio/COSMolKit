@@ -11,10 +11,22 @@ edition.workspace = true
 readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
+[features]
+# Complete concrete/CX writer paths reuse the sole SMILES implementation.
+# Parsing, matching, MCS and ordinary/recursive SMARTS writing remain available
+# to lightweight internal consumers without this optional dependency.
+default = ["smiles-integration"]
+smiles-integration = ["dep:cosmolkit-smiles"]
+
 [dependencies]
-cosmolkit-cx = { version = "0.5.0-rc.11", path = "../cosmolkit-cx" }
-cosmolkit-core = { version = "0.5.0-rc.11", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.0-rc.11", path = "../cosmolkit-model" }
-cosmolkit-types = { version = "0.5.0-rc.11", path = "../cosmolkit-types" }
+cosmolkit-smiles = { version = "0.5.0-rc.12", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-cx = { version = "0.5.0-rc.12", path = "../cosmolkit-cx" }
+cosmolkit-core = { version = "0.5.0-rc.12", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.12", path = "../cosmolkit-model" }
+cosmolkit-types = { version = "0.5.0-rc.12", path = "../cosmolkit-types" }
 serde_json = "1"
 thiserror = "2"
+
+[[test]]
+name = "migration_q_writer"
+required-features = ["smiles-integration"]

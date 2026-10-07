@@ -19,6 +19,7 @@ pub(crate) fn kekulize_bonds_impl(params: &KekulizeParams) -> Result<(), Operati
         params,
         None,
         cache.valid_ring_info(),
+        cache.valence_assignment(),
     ) {
         Ok(assignment) => assignment,
         Err(error) => {
@@ -74,6 +75,14 @@ pub(crate) fn kekulize_bonds_impl(params: &KekulizeParams) -> Result<(), Operati
     // handled (validity reaffirmed when previously valid, explicit clear
     // when absent); Some(initialized) => move replacement; Some(reset) =>
     // clear. No local row copy.
+    // The source-selected owner returns actual atom scalar fields, including
+    // writes before nonaromatic early return. Move its rows without calculation.
+    let valence_updated = if let Some(valence) = assignment.final_valence {
+        cache.install_valence_assignment(valence);
+        true
+    } else {
+        false
+    };
     let old_rings_valid = cache.valid_states().contains(DerivedState::RINGS);
     match assignment.ring_update {
         Some(update) if update.is_initialized() => {
@@ -108,9 +117,13 @@ pub(crate) fn kekulize_bonds_impl(params: &KekulizeParams) -> Result<(), Operati
             }
         }
     }
+    if valence_updated {
+        parts.mark_cache_updated(DerivedState::VALENCE)?;
+    } else {
+        parts.clear_cache(DerivedState::VALENCE)?;
+    }
     parts.clear_cache(
-        DerivedState::VALENCE
-            .union(DerivedState::AROMATICITY)
+        DerivedState::AROMATICITY
             .union(DerivedState::STEREO)
             .union(DerivedState::DRAWING)
             .union(DerivedState::FINGERPRINT),

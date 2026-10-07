@@ -99,7 +99,7 @@ pub(crate) fn with_mmff_optimized_impl(
         // This constant-key write allocates one property value, never chemistry.
         if properties.prop("_MMFFSanitized").is_none() {
             properties
-                .set_computed_prop("_MMFFSanitized", "1")
+                .set_computed_prop("_MMFFSanitized", 1_i32)
                 .map_err(OperationError::InvalidProperty)?;
         }
         Ok::<_, OperationError>(outcome)
@@ -191,7 +191,7 @@ pub(crate) fn with_mmff_optimized_confs_impl(
         // This constant-key write allocates one property value, never chemistry.
         if properties.prop("_MMFFSanitized").is_none() {
             properties
-                .set_computed_prop("_MMFFSanitized", "1")
+                .set_computed_prop("_MMFFSanitized", 1_i32)
                 .map_err(OperationError::InvalidProperty)?;
         }
         Ok::<_, OperationError>(outcome)
@@ -678,13 +678,18 @@ mod original_public_optimization_tests {
             assert_eq!(source, peer);
             assert_eq!(
                 result.molecule.properties().prop("_MMFFSanitized"),
-                Some(if existing { "already" } else { "1" })
+                Some(&if existing {
+                    cosmolkit_model::PropertyValue::String("already".into())
+                } else {
+                    cosmolkit_model::PropertyValue::Int(1)
+                })
             );
             assert_eq!(
                 result
                     .molecule
                     .properties()
-                    .is_prop_computed("_MMFFSanitized"),
+                    .is_prop_computed("_MMFFSanitized")
+                    .unwrap(),
                 !existing
             );
             assert_eq!(
@@ -693,7 +698,7 @@ mod original_public_optimization_tests {
             );
             assert_eq!(
                 result.molecule.properties().prop("unchanged"),
-                Some("metadata")
+                Some(&cosmolkit_model::PropertyValue::String("metadata".into()))
             );
             assert_eq!(
                 result.molecule.derived_cache_runtime().ring_info(),

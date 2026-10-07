@@ -13,11 +13,19 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::{BondDirection, BondOrder, BondStereo, ChiralTag, Element, Hybridization};
 
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+
 fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
-    match value {
-        Some(PropertyValue::String(value)) => Some(value),
-        _ => None,
-    }
+    value.map(|value| {
+        fixture_text(
+            value
+                .as_string()
+                .expect("source text property must have String tag"),
+        )
+    })
 }
 
 fn atom(index: usize, element: Element) -> Atom {
@@ -65,7 +73,7 @@ fn concrete_or_explicit_query(topology: TopologyBlock, query: bool) -> MolBlockR
     let mut query = QueryGraph::from_parts(
         atoms,
         bonds,
-        Default::default(),
+        Vec::<(cosmolkit_model::PropertyText, PropertyValue)>::new(),
         vec![],
         vec![],
         topology.stereo_groups,
@@ -93,10 +101,10 @@ fn dat_group(
         .with_atoms(atoms)
         .with_bonds(bonds)
         .with_data(SGroupData {
-            field_name: field_name.map(str::to_owned),
-            query_type: query_type.map(str::to_owned),
-            query_op: query_op.map(str::to_owned),
-            values: values.iter().map(|value| (*value).to_owned()).collect(),
+            field_name: field_name.map(Into::into),
+            query_type: query_type.map(Into::into),
+            query_op: query_op.map(Into::into),
+            values: values.iter().map(|value| (*value).into()).collect(),
             ..SGroupData::default()
         })
 }
@@ -334,7 +342,7 @@ fn mol_post_attachment_options_and_invalid_local_value_are_atomic() {
     let original = invalid.clone();
     assert!(matches!(
         finish_mol_block_record(invalid.clone(), false, MolPostParams { expand_attachment_points: true, ..MolPostParams::default() }, None),
-        Err(MolPostError::AttachmentValue { atom, value }) if atom == AtomId::new(0) && value == "nonsense"
+        Err(MolPostError::AttachmentValue { atom, value }) if atom == AtomId::new(0) && value.as_bytes() == b"nonsense"
     ));
     assert_eq!(invalid, original);
 }
@@ -930,10 +938,13 @@ fn mol_post_legacy_closure_sets_stereochem_done_only_in_sanitize_branch() {
             };
             assert_eq!(
                 properties.prop("_StereochemDone"),
-                sanitize.then_some("1"),
+                sanitize.then_some(&PropertyValue::String("1".into())),
                 "query_record={query_record}, sanitize={sanitize}"
             );
-            assert_eq!(properties.is_prop_computed("_StereochemDone"), sanitize);
+            assert_eq!(
+                properties.is_prop_computed("_StereochemDone").unwrap(),
+                sanitize
+            );
         }
     }
 }
@@ -1223,7 +1234,7 @@ fn q05_query_identity_composition_mol_post_parameter_matrix_preserves_state_and_
         let mut source = read_mol_block_detached(&block).expect("parameter-matrix record");
         let retained_group = SubstanceGroup::new(
             SubstanceGroupId::new(0),
-            SubstanceGroupKind::Generic("SUP".to_owned()),
+            SubstanceGroupKind::Generic("SUP".into()),
         )
         .with_atoms(vec![AtomId::new(0), AtomId::new(1)]);
         match &mut source {
@@ -1279,7 +1290,10 @@ fn q05_query_identity_composition_mol_post_parameter_matrix_preserves_state_and_
                             coordinates.conformers_2d[0].coordinates().len(),
                             expected_atoms
                         );
-                        assert_eq!(properties.prop("retained"), Some("matrix"));
+                        assert_eq!(
+                            properties.prop("retained"),
+                            Some(&PropertyValue::String("matrix".into()))
+                        );
                         assert_eq!(topology.substance_groups.len(), 1);
                         assert_eq!(topology.substance_groups[0].atoms(), expected_group_atoms);
                     }
@@ -1287,7 +1301,10 @@ fn q05_query_identity_composition_mol_post_parameter_matrix_preserves_state_and_
                         assert!(query_record);
                         assert_eq!(record.query.num_atoms(), expected_atoms);
                         assert_eq!(record.query.coordinates_2d().unwrap().len(), expected_atoms);
-                        assert_eq!(record.properties.prop("retained"), Some("matrix"));
+                        assert_eq!(
+                            record.properties.prop("retained"),
+                            Some(&PropertyValue::String("matrix".into()))
+                        );
                         let groups = query_substance_groups(&record.query);
                         assert_eq!(groups.len(), 1);
                         assert_eq!(groups[0].atoms(), expected_group_atoms);
@@ -1314,7 +1331,7 @@ fn q05_query_identity_composition_ordinary_hydrogen_removal_remaps_typed_sgroups
         vec![
             SubstanceGroup::new(
                 SubstanceGroupId::new(0),
-                SubstanceGroupKind::Generic("SUP".to_owned()),
+                SubstanceGroupKind::Generic("SUP".into()),
             )
             .with_atoms(vec![AtomId::new(0), AtomId::new(1)]),
         ],
@@ -1350,7 +1367,7 @@ fn query_sgroups_concrete_promotion_installs_complete_groups_on_query_graph() {
     let groups = vec![
         SubstanceGroup::new(
             SubstanceGroupId::new(0),
-            SubstanceGroupKind::Generic("SUP".to_owned()),
+            SubstanceGroupKind::Generic("SUP".into()),
         )
         .with_atoms(vec![AtomId::new(0)])
         .with_label("promoted"),
@@ -1462,7 +1479,7 @@ fn query_sgroups_hydrogen_removal_updates_groups_and_consumes_source_smart_group
             ),
             SubstanceGroup::new(
                 SubstanceGroupId::new(1),
-                SubstanceGroupKind::Generic("SUP".to_owned()),
+                SubstanceGroupKind::Generic("SUP".into()),
             )
             .with_atoms(vec![AtomId::new(0), AtomId::new(2)])
             .with_label("removed with H"),
@@ -1523,25 +1540,43 @@ fn query_sgroups_hydrogen_removal_updates_groups_and_consumes_source_smart_group
     assert_eq!(groups.len(), 4, "unexpected retained SGroups: {groups:#?}");
     assert_eq!(groups[0].id(), SubstanceGroupId::new(0));
     assert_eq!(groups[0].atoms(), &[AtomId::new(0)]);
-    assert_eq!(groups[0].label(), Some("removed with H"));
+    assert_eq!(groups[0].label().map(fixture_text), Some("removed with H"));
     assert_eq!(groups[1].id(), SubstanceGroupId::new(1));
     assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
     assert_eq!(groups[1].atoms(), &[AtomId::new(1)]);
-    assert_eq!(groups[1].data().unwrap().values, ["child of removed group"]);
+    assert_eq!(
+        groups[1]
+            .data()
+            .unwrap()
+            .values
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        ["child of removed group"]
+    );
     assert_eq!(groups[2].id(), SubstanceGroupId::new(2));
     assert_eq!(groups[2].atoms(), &[AtomId::new(0), AtomId::new(1)]);
     assert_eq!(groups[2].bonds(), &[BondId::new(0)]);
     assert_eq!(groups[2].head_crossing_bonds(), &[BondId::new(0)]);
     assert_eq!(groups[2].crossing_bond_correspondence(), &[BondId::new(0)]);
-    assert_eq!(groups[2].label(), Some("survivor"));
+    assert_eq!(groups[2].label().map(fixture_text), Some("survivor"));
     assert_eq!(groups[3].id(), SubstanceGroupId::new(3));
     assert_eq!(groups[3].parent(), Some(SubstanceGroupId::new(2)));
     assert_eq!(groups[3].atoms(), &[AtomId::new(1)]);
-    assert_eq!(groups[3].data().unwrap().values, ["surviving child"]);
+    assert_eq!(
+        groups[3]
+            .data()
+            .unwrap()
+            .values
+            .iter()
+            .map(fixture_text)
+            .collect::<Vec<_>>(),
+        ["surviving child"]
+    );
     assert!(groups.iter().all(|group| {
         group
             .data()
-            .is_none_or(|data| data.query_type.as_deref() != Some("SMARTSQ"))
+            .is_none_or(|data| data.query_type.as_ref().map(fixture_text) != Some("SMARTSQ"))
     }));
 }
 
@@ -1591,7 +1626,7 @@ fn mol_post_query_closure_failure_is_atomic_for_query_records() {
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
         )],
         vec![],
-        Default::default(),
+        Vec::<(cosmolkit_model::PropertyText, PropertyValue)>::new(),
         vec![],
         vec![],
         vec![],
@@ -1771,7 +1806,10 @@ fn mol_post_processes_atom_properties_before_hyd_group() {
     };
     assert_eq!(topology.atoms[0].explicit_hydrogens(), 2);
     assert!(topology.atoms[0].no_implicit());
-    assert_eq!(string_property(topology.atoms[0].prop("_ZBO_H")), Some("1"));
+    assert_eq!(
+        topology.atoms[0].prop("_ZBO_H"),
+        Some(&PropertyValue::Bool(true))
+    );
     assert_eq!(
         string_property(topology.atoms[0].prop("molTotValence")),
         None
@@ -1934,8 +1972,8 @@ fn mol_post_smartsq_builds_typed_query_and_preserves_unconsumed_groups() {
         Some("[#7]")
     );
     assert_eq!(
-        string_property(record.query.atoms()[0].prop("_MolFileAtomQuery")),
-        Some("1")
+        record.query.atoms()[0].prop("_MolFileAtomQuery"),
+        Some(&PropertyValue::Int(1))
     );
     let groups = query_substance_groups(&record.query);
     assert_eq!(groups.len(), 1);
@@ -1976,9 +2014,7 @@ fn mol_post_query_scan_is_cleared_and_completed() {
     let query = QueryGraph::from_parts(
         vec![query_atom],
         Vec::<QueryBond>::new(),
-        [("_NeedsQueryScan".to_owned(), "1".to_owned())]
-            .into_iter()
-            .collect(),
+        [("_NeedsQueryScan".into(), PropertyValue::String("1".into()))],
         vec![],
         vec![],
         vec![],
@@ -2000,8 +2036,15 @@ fn mol_post_query_scan_is_cleared_and_completed() {
 
 fn explicit_query_record(atoms: Vec<QueryAtom>, bonds: Vec<QueryBond>) -> MolBlockRecord {
     MolBlockRecord::Query(QueryMolBlockRecord {
-        query: QueryGraph::from_parts(atoms, bonds, Default::default(), vec![], vec![], vec![])
-            .unwrap(),
+        query: QueryGraph::from_parts(
+            atoms,
+            bonds,
+            Vec::<(cosmolkit_model::PropertyText, PropertyValue)>::new(),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap(),
         properties: MoleculeProperties::default(),
         source_coordinate_dim: None,
     })
@@ -2023,7 +2066,7 @@ fn mol_post_explicit_query_provenance_preserves_unmarked_atom_predicates_and_mat
                         QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
                     )],
                     vec![],
-                    Default::default(),
+                    Vec::<(cosmolkit_model::PropertyText, PropertyValue)>::new(),
                     vec![],
                     vec![],
                     vec![],
@@ -2278,8 +2321,15 @@ fn mol_post_query_bond_state_survives_dat_processing() {
         raw_bond,
         QueryNode::predicate(BondQueryPredicate::Any),
     )];
-    let query =
-        QueryGraph::from_parts(atoms, bonds, Default::default(), vec![], vec![], vec![]).unwrap();
+    let query = QueryGraph::from_parts(
+        atoms,
+        bonds,
+        Vec::<(cosmolkit_model::PropertyText, PropertyValue)>::new(),
+        vec![],
+        vec![],
+        vec![],
+    )
+    .unwrap();
     let group = dat_group(
         0,
         Some("MRV_COORDINATE_BOND_TYPE"),
@@ -2367,10 +2417,30 @@ fn mol_post_query_predicate_sync_rebuilds_synthesized_aromatic_carriers() {
         record.query.stereo_groups().to_vec(),
     )
     .expect("aromatic target topology");
+    let operator = cosmolkit_search::QueryGraphOperator::new(&record.query);
     assert!(
-        !cosmolkit_search::QueryGraphOperator::new(&record.query)
-            .matches(&target)
-            .expect("query match")
+        matches!(
+            operator.matches(&target),
+            Err(cosmolkit_search::MatchError::Substruct(_))
+        ),
+        "bare detached topology lacks required source ring cache"
+    );
+    let rings = cosmolkit_core::find_sssr(&target, &Default::default())
+        .expect("source target ring preparation");
+    let coordinates = CoordinateBlock::default();
+    let prepared_target = cosmolkit_search::SearchTarget::new(
+        &target,
+        &coordinates,
+        &target.stereo_groups,
+        Some(&rings),
+        None,
+    );
+    assert!(
+        !operator
+            .compile()
+            .expect("compile original query predicates")
+            .matches_target(&prepared_target)
+            .expect("query match against source-prepared target")
             .is_empty(),
         "final carrier predicates must match the equivalent sanitized target"
     );

@@ -236,20 +236,19 @@ and a separate nonempty computed-name set at the same time. A sole new store
 using `__computedProps` as the computed-name vector cannot simply overwrite
 one with the other.
 
-The earlier blanket `LegacyComputedCollision` rejection proposal does **not**
-satisfy this draft's valid-legacy-read requirement. The implementation must
-define a lossless representation/conversion for admitted historical collision
-states before claiming complete legacy compatibility. Merely reading both
-into an IO-local legacy record does not prove that `from_binary()` can return
-a faithful current `Molecule`. Do not silently discard either value, stringify
-a vector, invent a delimiter, or mark a valid historical file corrupt.
+The user-approved legacy import policy is to read this conflicting slot as an
+empty computed-name vector, without reporting an error. The old ordinary value
+and independent computed flags are discarded for that property store; all other
+property values and molecule data remain intact. This is an explicit lossy
+legacy normalization, not a claim of lossless preservation of the conflict.
+Nonconflicting legacy properties keep their existing conversion behavior.
 
-In the current model, the ordinary value and computed-name membership already
-have independent storage. Archive 2.0 stores membership on each property entry;
-it does not reserve or reinterpret the ordinary `__computedProps` value. Both
-states survive legacy import and archive-2 round trips. No second runtime store
-or model representation change is introduced. A future model migration must
-continue preserving both states; this is not permission to overwrite either.
+The decoder retains the original conflicting value temporarily when validating
+legacy raw/canonical companion bytes, so normalization does not create a false
+integrity failure. That provenance is not molecule state and is not written to
+archive 2.0. The normalized empty vector survives archive-2 round trips. The
+archive-2 Müsli codec needs no legacy-specific decoding branch or compatibility
+field; format dispatch and normalization stay in the legacy decoder.
 
 ### Read limits and failure behavior
 

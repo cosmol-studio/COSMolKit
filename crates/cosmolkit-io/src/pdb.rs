@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomPdbResidueInfo, AtomSpec, Bond, BondId, BondSpec, Conformer2D,
-    Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties, TopologyBlock,
+    Conformer3D, CoordinateBlock, CoordinateDimension, MoleculeProperties, PropertyText,
+    TopologyBlock,
 };
 use cosmolkit_types::{BondOrder, Element};
 
@@ -35,6 +36,8 @@ pub enum PdbReadError {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PdbWriteError {
+    #[error(transparent)]
+    Property(#[from] cosmolkit_core::PropertyStringError),
     #[error("PDB conformer id {id} was not found")]
     ConformerNotFound { id: usize },
     #[error("detached PDB writer does not support {feature}")]
@@ -509,27 +512,28 @@ fn atom_from_record(
     Ok((Atom::from_spec(id, spec), serial, coordinates))
 }
 
-fn title_from_record(line: &str, max_len: usize) -> Option<String> {
-    // RDKit source: PDBParser.cpp lines 405-420
-    // RDKit✔️✔️: void PDBTitleLine(RWMol *mol, const char *ptr, unsigned int len) {
-    // RDKit✔️✔️:   PRECONDITION(mol, "bad mol");
-    // RDKit✔️✔️:   PRECONDITION(ptr, "bad char ptr");
-    // RDKit✔️✔️:   std::string title;
-    // RDKit✔️✔️:   while (ptr[len - 1] == ' ') {
-    // RDKit✔️✔️:     len--;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (ptr[len - 1] == ';') {
-    // RDKit✔️✔️:     len--;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (len > 21 && !strncmp(ptr + 10, " MOLECULE: ", 11)) {
-    // RDKit✔️✔️:     title = std::string(ptr + 21, len - 21);
-    // RDKit✔️✔️:   } else if (len > 10) {
-    // RDKit✔️✔️:     title = std::string(ptr + 10, len - 10);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   if (!title.empty()) {
-    // RDKit✔️✔️:     mol->setProp(common_properties::_Name, title);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
+fn title_from_record(line: &str, max_len: usize) -> Option<PropertyText> {
+    // RDKit❗✔️: void PDBTitleLine(RWMol *mol, const char *ptr, unsigned int len) {
+    // RDKit❗✔️:   PRECONDITION(mol, "bad mol");
+    // RDKit❗✔️:   PRECONDITION(ptr, "bad char ptr");
+    // RDKit❗✔️:   std::string title;
+    // RDKit❗✔️:   while (ptr[len - 1] == ' ') {
+    // RDKit❗✔️:     len--;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (ptr[len - 1] == ';') {
+    // RDKit❗✔️:     len--;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (len > 21 && !strncmp(ptr + 10, " MOLECULE: ", 11)) {
+    // RDKit❗✔️:     title = std::string(ptr + 21, len - 21);
+    // RDKit❗✔️:   } else if (len > 10) {
+    // RDKit❗✔️:     title = std::string(ptr + 10, len - 10);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!title.empty()) {
+    // RDKit❗✔️:     mol->setProp(common_properties::_Name, title);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // Source substring counts bytes, including a partial UTF-8 sequence.
+    // One borrowed scan followed by one owned title allocation, O(bytes).
     let bytes = line.as_bytes();
     let mut len = bytes.len().min(max_len);
     while len > 0 && bytes[len - 1] == b' ' {
@@ -545,10 +549,7 @@ fn title_from_record(line: &str, max_len: usize) -> Option<String> {
     } else {
         return None;
     };
-    std::str::from_utf8(&bytes[start..len])
-        .ok()
-        .filter(|title| !title.is_empty())
-        .map(str::to_owned)
+    (start < len).then(|| PropertyText::from_bytes(&bytes[start..len]))
 }
 
 pub(super) fn same_pdb_residue(left: &AtomPdbResidueInfo, right: &AtomPdbResidueInfo) -> bool {
@@ -1038,153 +1039,199 @@ fn pdb_atom_line(
     atom: &Atom,
     point: Option<[f64; 3]>,
     element_counts: &mut BTreeMap<u8, u32>,
-) -> String {
-    // RDKit source: PDBWriter.cpp lines 50-68
-    // RDKit✔️✔️:   std::string symb = atom->getSymbol();
-    // RDKit✔️✔️:   char at1, at2;
-    // RDKit✔️✔️:   switch (symb.length()) {
-    // RDKit✔️✔️:     case 0:
-    // RDKit✔️✔️:       at1 = ' ';
-    // RDKit✔️✔️:       at2 = 'X';
-    // RDKit✔️✔️:       break;
-    // RDKit✔️✔️:     case 1:
-    // RDKit✔️✔️:       at1 = ' ';
-    // RDKit✔️✔️:       at2 = symb[0];
-    // RDKit✔️✔️:       break;
-    // RDKit✔️✔️:     default:
-    // RDKit✔️✔️:       at1 = symb[0];
-    // RDKit✔️✔️:       at2 = symb[1];
-    // RDKit✔️✔️:       if (at2 >= 'a' && at2 <= 'z') {
-    // RDKit✔️✔️:         at2 -= 32;  // toupper
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       break;
-    // RDKit✔️✔️:   }
+) -> PropertyText {
+    // RDKit❗✔️: std::string GetPDBAtomLine(const Atom *atom, const Conformer *conf,
+    // RDKit❗✔️:                            std::map<unsigned int, unsigned int> &elem) {
+    // RDKit❗✔️:   PRECONDITION(atom, "bad atom");
+    // RDKit❗✔️:   std::stringstream ss;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string symb = atom->getSymbol();
+    // RDKit❗✔️:   char at1, at2;
+    // RDKit❗✔️:   switch (symb.length()) {
+    // RDKit❗✔️:     case 0:
+    // RDKit❗✔️:       at1 = ' ';
+    // RDKit❗✔️:       at2 = 'X';
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     case 1:
+    // RDKit❗✔️:       at1 = ' ';
+    // RDKit❗✔️:       at2 = symb[0];
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:     default:
+    // RDKit❗✔️:       at1 = symb[0];
+    // RDKit❗✔️:       at2 = symb[1];
+    // RDKit❗✔️:       if (at2 >= 'a' && at2 <= 'z') {
+    // RDKit❗✔️:         at2 -= 32;  // toupper
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       break;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   auto *info = (AtomPDBResidueInfo *)(atom->getMonomerInfo());
+    // RDKit❗✔️:   if (info && info->getMonomerType() == AtomMonomerInfo::PDBRESIDUE) {
+    // RDKit❗✔️:     ss << (info->getIsHeteroAtom() ? "HETATM" : "ATOM  ");
+    // RDKit❗✔️:     ss << std::setw(5) << atom->getIdx() + 1;
+    // RDKit❗✔️:     ss << ' ';
+    // RDKit❗✔️:     const std::string &name = info->getName();
+    // RDKit❗✔️:     if (name.empty()) {
+    // RDKit❗✔️:       std::string atnum = GetDefaultAtomNumber(atom, elem);
+    // RDKit❗✔️:       ss << at1 << at2 << atnum;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       ss << std::setw(4) << name.substr(0, 4);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     const char *ptr = info->getAltLoc().c_str();
+    // RDKit❗✔️:     if (*ptr == '\0') {
+    // RDKit❗✔️:       ptr = " ";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     ss << *ptr;
+    // RDKit❗✔️:     ss << std::setw(3) << info->getResidueName().substr(0, 3);
+    // RDKit❗✔️:     ss << ' ';
+    // RDKit❗✔️:     ptr = info->getChainId().c_str();
+    // RDKit❗✔️:     if (*ptr == '\0') {
+    // RDKit❗✔️:       ptr = " ";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     ss << *ptr;
+    // RDKit❗✔️:     ss << std::setw(4) << info->getResidueNumber();
+    // RDKit❗✔️:     ptr = info->getInsertionCode().c_str();
+    // RDKit❗✔️:     if (*ptr == '\0') {
+    // RDKit❗✔️:       ptr = " ";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     ss << *ptr;
+    // RDKit❗✔️:     ss << "   ";
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     info = (AtomPDBResidueInfo *)nullptr;
+    // RDKit❗✔️:     std::string atnum = GetDefaultAtomNumber(atom, elem);
+    // RDKit❗✔️:     ss << "HETATM";
+    // RDKit❗✔️:     ss << std::setw(5) << atom->getIdx() + 1;
+    // RDKit❗✔️:     ss << ' ';
+    // RDKit❗✔️:     ss << at1 << at2 << atnum;
+    // RDKit❗✔️:     ss << " UNL     1    ";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (conf) {
+    // RDKit❗✔️:     const RDGeom::Point3D pos = conf->getAtomPos(atom->getIdx());
+    // RDKit❗✔️:     ss << boost::format("%8.3f%8.3f%8.3f") % pos.x % pos.y % pos.z;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     ss << "   0.000   0.000   0.000";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (info) {
+    // RDKit❗✔️:     ss << boost::format("%6.2f%6.2f") % info->getOccupancy() %
+    // RDKit❗✔️:               info->getTempFactor();
+    // RDKit❗✔️:     ss << "          ";
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     ss << "  1.00  0.00          ";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   ss << at1;
+    // RDKit❗✔️:   ss << at2;
+    // RDKit❗✔️:   int charge = atom->getFormalCharge();
+    // RDKit❗✔️:   if (charge > 0 && charge < 10) {
+    // RDKit❗✔️:     ss << (char)('0' + charge);
+    // RDKit❗✔️:     ss << '+';
+    // RDKit❗✔️:   } else if (charge < 0 && charge > -10) {
+    // RDKit❗✔️:     ss << (char)('0' - charge);
+    // RDKit❗✔️:     ss << '-';
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     ss << "  ";
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return ss.str();
+    // RDKit❗✔️: }
+    // Source std::string::substr and setw measure bytes. Borrow explicit
+    // residue values; append counted slices directly, without Unicode edits.
+    // O(output bytes), one output buffer; no per-field string allocations.
     let symbol = atom.element().symbol().as_bytes();
     let (element_first, element_second) = match symbol {
         [] => (b' ', b'X'),
         [only] => (b' ', *only),
         [first, second, ..] => (*first, second.to_ascii_uppercase()),
     };
-    let mut line = String::with_capacity(80);
+    let mut line = PropertyText::new();
     if let Some(info) = atom.pdb_residue_info() {
-        // RDKit source: PDBWriter.cpp lines 70-100
-        // RDKit✔️✔️:   if (info && info->getMonomerType() == AtomMonomerInfo::PDBRESIDUE) {
-        // RDKit✔️✔️:     ss << (info->getIsHeteroAtom() ? "HETATM" : "ATOM  ");
-        // RDKit✔️✔️:     ss << std::setw(5) << atom->getIdx() + 1;
-        // RDKit✔️✔️:     ss << ' ';
-        // RDKit✔️✔️:     const std::string &name = info->getName();
-        // RDKit✔️✔️:     if (name.empty()) {
-        // RDKit✔️✔️:       std::string atnum = GetDefaultAtomNumber(atom, elem);
-        // RDKit✔️✔️:       ss << at1 << at2 << atnum;
-        // RDKit✔️✔️:     } else {
-        // RDKit✔️✔️:       ss << std::setw(4) << name.substr(0, 4);
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     const char *ptr = info->getAltLoc().c_str();
-        // RDKit✔️✔️:     if (*ptr == '\0') {
-        // RDKit✔️✔️:       ptr = " ";
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     ss << *ptr;
-        // RDKit✔️✔️:     ss << std::setw(3) << info->getResidueName().substr(0, 3);
-        // RDKit✔️✔️:     ss << ' ';
-        // RDKit✔️✔️:     ptr = info->getChainId().c_str();
-        // RDKit✔️✔️:     if (*ptr == '\0') {
-        // RDKit✔️✔️:       ptr = " ";
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     ss << *ptr;
-        // RDKit✔️✔️:     ss << std::setw(4) << info->getResidueNumber();
-        // RDKit✔️✔️:     ptr = info->getInsertionCode().c_str();
-        // RDKit✔️✔️:     if (*ptr == '\0') {
-        // RDKit✔️✔️:       ptr = " ";
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:     ss << *ptr;
-        // RDKit✔️✔️:     ss << "   ";
-        line.push_str(if info.is_hetero_atom() {
-            "HETATM"
+        line.extend_bytes(if info.is_hetero_atom() {
+            b"HETATM"
         } else {
-            "ATOM  "
+            b"ATOM  "
         });
-        line.push_str(&format!("{:>5} ", atom.id().index() + 1));
-        if info.atom_name().is_empty() {
-            line.push(char::from(element_first));
-            line.push(char::from(element_second));
-            line.push_str(&default_atom_number(atom.atomic_number(), element_counts));
+        line.extend_bytes(format!("{:>5} ", atom.id().index() + 1).as_bytes());
+        let name = info.atom_name().as_bytes();
+        if name.is_empty() {
+            line.push_byte(element_first);
+            line.push_byte(element_second);
+            line.extend_bytes(default_atom_number(atom.atomic_number(), element_counts).as_bytes());
         } else {
-            let name = info.atom_name().chars().take(4).collect::<String>();
-            line.push_str(&format!("{name:>4}"));
+            let name = &name[..name.len().min(4)];
+            for _ in name.len()..4 {
+                line.push_byte(b' ');
+            }
+            line.extend_bytes(name);
         }
-        line.push(info.alt_loc().chars().next().unwrap_or(' '));
-        let residue = info.residue_name().chars().take(3).collect::<String>();
-        line.push_str(&format!("{residue:>3} "));
-        line.push(info.chain_id().chars().next().unwrap_or(' '));
-        line.push_str(&format!("{:>4}", info.residue_number()));
-        line.push(info.insertion_code().chars().next().unwrap_or(' '));
-        line.push_str("   ");
+        line.push_byte(
+            info.alt_loc()
+                .as_bytes()
+                .first()
+                .copied()
+                .filter(|&b| b != 0)
+                .unwrap_or(b' '),
+        );
+        let residue = info.residue_name().as_bytes();
+        let residue = &residue[..residue.len().min(3)];
+        for _ in residue.len()..3 {
+            line.push_byte(b' ');
+        }
+        line.extend_bytes(residue);
+        line.push_byte(b' ');
+        line.push_byte(
+            info.chain_id()
+                .as_bytes()
+                .first()
+                .copied()
+                .filter(|&b| b != 0)
+                .unwrap_or(b' '),
+        );
+        line.extend_bytes(format!("{:>4}", info.residue_number()).as_bytes());
+        line.push_byte(
+            info.insertion_code()
+                .as_bytes()
+                .first()
+                .copied()
+                .filter(|&b| b != 0)
+                .unwrap_or(b' '),
+        );
+        line.extend_bytes(b"   ");
     } else {
-        // RDKit source: PDBWriter.cpp lines 101-109
-        // RDKit✔️✔️:   } else {
-        // RDKit✔️✔️:     info = (AtomPDBResidueInfo *)nullptr;
-        // RDKit✔️✔️:     std::string atnum = GetDefaultAtomNumber(atom, elem);
-        // RDKit✔️✔️:     ss << "HETATM";
-        // RDKit✔️✔️:     ss << std::setw(5) << atom->getIdx() + 1;
-        // RDKit✔️✔️:     ss << ' ';
-        // RDKit✔️✔️:     ss << at1 << at2 << atnum;
-        // RDKit✔️✔️:     ss << " UNL     1    ";
-        // RDKit✔️✔️:   }
-        line.push_str(&format!("HETATM{:>5} ", atom.id().index() + 1));
-        line.push(char::from(element_first));
-        line.push(char::from(element_second));
-        line.push_str(&default_atom_number(atom.atomic_number(), element_counts));
-        line.push_str(" UNL     1    ");
+        line.extend_bytes(format!("HETATM{:>5} ", atom.id().index() + 1).as_bytes());
+        line.push_byte(element_first);
+        line.push_byte(element_second);
+        line.extend_bytes(default_atom_number(atom.atomic_number(), element_counts).as_bytes());
+        line.extend_bytes(b" UNL     1    ");
     }
-
-    // RDKit source: PDBWriter.cpp lines 111-124
-    // RDKit✔️✔️:   if (conf) {
-    // RDKit✔️✔️:     const RDGeom::Point3D pos = conf->getAtomPos(atom->getIdx());
-    // RDKit✔️✔️:     ss << boost::format("%8.3f%8.3f%8.3f") % pos.x % pos.y % pos.z;
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     ss << "   0.000   0.000   0.000";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (info) {
-    // RDKit✔️✔️:     ss << boost::format("%6.2f%6.2f") % info->getOccupancy() %
-    // RDKit✔️✔️:               info->getTempFactor();
-    // RDKit✔️✔️:     ss << "          ";
-    // RDKit✔️✔️:   } else {
-    // RDKit✔️✔️:     ss << "  1.00  0.00          ";
-    // RDKit✔️✔️:   }
     let point = point.unwrap_or([0.0; 3]);
-    line.push_str(&format!(
-        "{:>8.3}{:>8.3}{:>8.3}",
-        point[0], point[1], point[2]
-    ));
+    line.extend_bytes(format!("{:>8.3}{:>8.3}{:>8.3}", point[0], point[1], point[2]).as_bytes());
     if let Some(info) = atom.pdb_residue_info() {
-        line.push_str(&format!(
-            "{:>6.2}{:>6.2}",
-            info.occupancy(),
-            info.temp_factor()
-        ));
-        line.push_str("          ");
+        line.extend_bytes(
+            format!("{:>6.2}{:>6.2}", info.occupancy(), info.temp_factor()).as_bytes(),
+        );
+        line.extend_bytes(b"          ");
     } else {
-        line.push_str("  1.00  0.00          ");
+        line.extend_bytes(b"  1.00  0.00          ");
     }
-    line.push(char::from(element_first));
-    line.push(char::from(element_second));
+    line.push_byte(element_first);
+    line.push_byte(element_second);
     let charge = atom.formal_charge();
     if (1..10).contains(&charge) {
-        line.push(char::from(b'0' + charge as u8));
-        line.push('+');
+        line.push_byte(b'0' + charge as u8);
+        line.push_byte(b'+');
     } else if (-9..0).contains(&charge) {
-        line.push(char::from(b'0' + (-charge) as u8));
-        line.push('-');
+        line.push_byte(b'0' + (-charge) as u8);
+        line.push_byte(b'-');
     } else {
-        line.push_str("  ");
+        line.extend_bytes(b"  ");
     }
     line
 }
 
 fn pdb_bond_lines(
     atom: AtomId,
-    bonds: &[Bond],
+    topology: &TopologyBlock,
     all: bool,
     both: bool,
     multiplicity: bool,
@@ -1231,14 +1278,11 @@ fn pdb_bond_lines(
     // RDKit✔️✔️:   }
     let source = atom.index() + 1;
     let mut destinations = Vec::new();
-    for bond in bonds {
-        let destination = if bond.begin() == atom {
-            bond.end().index() + 1
-        } else if bond.end() == atom {
-            bond.begin().index() + 1
-        } else {
-            continue;
-        };
+    // Caller validated dense IDs and canonical adjacency before writing.
+    // Visit each incident bond once as the source OBOND iterator does.
+    for neighbor in topology.adjacency.neighbors_of(atom.index()) {
+        let bond = &topology.bonds[neighbor.bond.index()];
+        let destination = neighbor.atom_index + 1;
         if destination < source && !both {
             continue;
         }
@@ -1276,45 +1320,68 @@ fn pdb_body(
     atom_count: &mut usize,
     ter_count: &mut usize,
     conect_count: &mut usize,
-) -> String {
-    let mut output = String::new();
-    let mut last = String::new();
+) -> PropertyText {
+    // RDKit❗✔️: std::string MolToPDBBody(const ROMol &mol, const Conformer *conf,
+    // RDKit❗✔️:                          unsigned int flavor, unsigned int &atm_count,
+    // RDKit❗✔️:                          unsigned int &ter_count, unsigned int &conect_count) {
+    // RDKit❗✔️:   std::string res;
+    // RDKit❗✔️:   std::string last;
+    // RDKit❗✔️:   std::map<unsigned int, unsigned int> elem;
+    // RDKit❗✔️:   for (ROMol::ConstAtomIterator atomIt = mol.beginAtoms();
+    // RDKit❗✔️:        atomIt != mol.endAtoms(); ++atomIt) {
+    // RDKit❗✔️:     last = GetPDBAtomLine(*atomIt, conf, elem);
+    // RDKit❗✔️:     res += last;
+    // RDKit❗✔️:     res += '\n';
+    // RDKit❗✔️:     atm_count++;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (ter_count == 0 && atm_count && (flavor & 32)) {
+    // RDKit❗✔️:     std::stringstream ss;
+    // RDKit❗✔️:     ss << "TER   ";
+    // RDKit❗✔️:     ss << std::setw(5) << atm_count + 1;
+    // RDKit❗✔️:     if (last.length() >= 27) {
+    // RDKit❗✔️:       ss << "      ";
+    // RDKit❗✔️:       ss << last.substr(17, 10);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     ss << '\n';
+    // RDKit❗✔️:     res += ss.str();
+    // RDKit❗✔️:     ter_count = 1;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   bool all = (flavor & 2) == 0;
+    // RDKit❗✔️:   bool both = (flavor & 4) != 0;
+    // RDKit❗✔️:   bool mult = (flavor & 8) == 0;
+    // RDKit❗✔️:   if (all || mult) {
+    // RDKit❗✔️:     for (ROMol::ConstAtomIterator atomIt = mol.beginAtoms();
+    // RDKit❗✔️:          atomIt != mol.endAtoms(); ++atomIt) {
+    // RDKit❗✔️:       res += GetPDBBondLines(*atomIt, all, both, mult, conect_count);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // Byte aggregation retains the source TER substring even when a field
+    // ends inside UTF-8. Indexed adjacency visits O(B) incident entries in
+    // total; destination sorting keeps source per-atom O(d log d) costs.
+    let mut output = PropertyText::new();
+    let mut last = PropertyText::new();
     let mut element_counts = BTreeMap::new();
     for atom in &topology.atoms {
         last = pdb_atom_line(
             atom,
-            conformer.map(|selected| selected.point(atom.id().index())),
+            conformer.map(|c| c.point(atom.id().index())),
             &mut element_counts,
         );
-        output.push_str(&last);
-        output.push('\n');
+        output.extend_bytes(last.as_bytes());
+        output.push_byte(b'\n');
         *atom_count += 1;
     }
-
-    // RDKit source: PDBWriter.cpp lines 242-263
-    // RDKit✔️✔️:   if (ter_count == 0 && atm_count && (flavor & 32)) {
-    // RDKit✔️✔️:     std::stringstream ss;
-    // RDKit✔️✔️:     ss << "TER   ";
-    // RDKit✔️✔️:     ss << std::setw(5) << atm_count + 1;
-    // RDKit✔️✔️:     if (last.length() >= 27) {
-    // RDKit✔️✔️:       ss << "      ";
-    // RDKit✔️✔️:       ss << last.substr(17, 10);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     ss << '\n';
-    // RDKit✔️✔️:     res += ss.str();
-    // RDKit✔️✔️:     ter_count = 1;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   bool all = (flavor & 2) == 0;
-    // RDKit✔️✔️:   bool both = (flavor & 4) != 0;
-    // RDKit✔️✔️:   bool mult = (flavor & 8) == 0;
     if *ter_count == 0 && *atom_count > 0 && flavor & 32 != 0 {
-        output.push_str(&format!("TER   {:>5}", *atom_count + 1));
+        output.extend_bytes(format!("TER   {:>5}", *atom_count + 1).as_bytes());
         if last.len() >= 27 {
-            output.push_str("      ");
-            output.push_str(&last[17..27]);
+            output.extend_bytes(b"      ");
+            output.extend_bytes(&last.as_bytes()[17..27]);
         }
-        output.push('\n');
+        output.push_byte(b'\n');
         *ter_count = 1;
     }
     let all = flavor & 2 == 0;
@@ -1322,14 +1389,10 @@ fn pdb_body(
     let multiplicity = flavor & 8 == 0;
     if all || multiplicity {
         for atom in &topology.atoms {
-            output.push_str(&pdb_bond_lines(
-                atom.id(),
-                &topology.bonds,
-                all,
-                both,
-                multiplicity,
-                conect_count,
-            ));
+            output.extend_bytes(
+                pdb_bond_lines(atom.id(), topology, all, both, multiplicity, conect_count)
+                    .as_bytes(),
+            );
         }
     }
     output
@@ -1339,47 +1402,160 @@ fn selected_conformers(
     coordinates: &CoordinateBlock,
     id: Option<usize>,
 ) -> Result<Vec<SelectedConformer<'_>>, PdbWriteError> {
-    if let Some(id) = id {
-        return coordinates
-            .conformers_3d
+    // RDKit❗✔️: const Conformer &ROMol::getConformer(int id) const {
+    // RDKit❗✔️:   // make sure we have more than one conformation
+    // RDKit❗✔️:   if (d_confs.size() == 0) {
+    // RDKit❗✔️:     throw ConformerException("No conformations available on the molecule");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (id < 0) {
+    // RDKit❗✔️:     return *(d_confs.front());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   auto cid = (unsigned int)id;
+    // RDKit❗✔️:   for (auto conf : d_confs) {
+    // RDKit❗✔️:     if (conf->getId() == cid) {
+    // RDKit❗✔️:       return *conf;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // we did not find a conformation with the specified ID
+    // RDKit❗✔️:   std::string mesg = "Can't find conformation with ID: ";
+    // RDKit❗✔️:   mesg += id;
+    // RDKit❗✔️:   throw ConformerException(mesg);
+    // RDKit❗✔️: }
+    // RDKit❗✔️: std::string MolToPDBBlock(const ROMol &imol, int confId, unsigned int flavor) {
+    // RDKit❗✔️:   RWMol rwmol(imol);
+    // RDKit❗✔️:   MolOps::Kekulize(rwmol);
+    // RDKit❗✔️:   Utils::LocaleSwitcher ls;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string res;
+    // RDKit❗✔️:   std::string name;
+    // RDKit❗✔️:   if (rwmol.getPropIfPresent(common_properties::_Name, name)) {
+    // RDKit❗✔️:     if (!name.empty()) {
+    // RDKit❗✔️:       res += "COMPND    ";
+    // RDKit❗✔️:       res += name;
+    // RDKit❗✔️:       res += '\n';
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int atm_count = 0;
+    // RDKit❗✔️:   unsigned int ter_count = 0;
+    // RDKit❗✔️:   unsigned int conect_count = 0;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   const Conformer *conf;
+    // RDKit❗✔️:   if (confId < 0 && rwmol.getNumConformers() > 1) {
+    // RDKit❗✔️:     int count = rwmol.getNumConformers();
+    // RDKit❗✔️:     for (confId = 0; confId < count; confId++) {
+    // RDKit❗✔️:       conf = &(rwmol.getConformer(confId));
+    // RDKit❗✔️:       std::stringstream ss;
+    // RDKit❗✔️:       ss << "MODEL     ";
+    // RDKit❗✔️:       ss << std::setw(4) << (confId + 1);
+    // RDKit❗✔️:       ss << "\n";
+    // RDKit❗✔️:       res += ss.str();
+    // RDKit❗✔️:       res +=
+    // RDKit❗✔️:           MolToPDBBody(rwmol, conf, flavor, atm_count, ter_count, conect_count);
+    // RDKit❗✔️:       res += "ENDMDL\n";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     if (confId < 0 && rwmol.getNumConformers() == 0) {
+    // RDKit❗✔️:       conf = nullptr;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       conf = &(rwmol.getConformer(confId));
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     res +=
+    // RDKit❗✔️:         MolToPDBBody(rwmol, conf, flavor, atm_count, ter_count, conect_count);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (flavor & 16) {
+    // RDKit❗✔️:     std::stringstream ss;
+    // RDKit❗✔️:     ss << "MASTER        0    0    0    0    0    0    0    0";
+    // RDKit❗✔️:     ss << std::setw(5) << atm_count;
+    // RDKit❗✔️:     ss << std::setw(5) << ter_count;
+    // RDKit❗✔️:     ss << std::setw(5) << conect_count;
+    // RDKit❗✔️:     ss << "    0\n";
+    // RDKit❗✔️:     res += ss.str();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   res += "END\n";
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // PDB's multi-conformer branch performs actual lookups 0..count; it
+    // does not enumerate stored IDs. Each lookup retains first occurrence
+    // across dimensions. O(C) validation + source O(C^2) multi-ID scans.
+    if let Some(order) = &coordinates.source_conformer_order {
+        let two = order
             .iter()
-            .find(|conformer| conformer.id() == id)
-            .map(SelectedConformer::ThreeD)
-            .or_else(|| {
-                coordinates
-                    .conformers_2d
-                    .iter()
-                    .find(|conformer| conformer.id() == id)
-                    .map(SelectedConformer::TwoD)
+            .filter(|&&d| d == CoordinateDimension::TwoD)
+            .count();
+        if two != coordinates.conformers_2d.len()
+            || order.len() - two != coordinates.conformers_3d.len()
+        {
+            return Err(
+                cosmolkit_model::CoordinateValidationError::SourceConformerOrder {
+                    two_d: two,
+                    three_d: order.len() - two,
+                    expected_two_d: coordinates.conformers_2d.len(),
+                    expected_three_d: coordinates.conformers_3d.len(),
+                }
+                .into(),
+            );
+        }
+    } else if !coordinates.conformers_2d.is_empty() && !coordinates.conformers_3d.is_empty() {
+        return Err(cosmolkit_model::CoordinateValidationError::MissingSourceConformerOrder.into());
+    }
+    let find = |id| {
+        let found = if let Some(order) = &coordinates.source_conformer_order {
+            let (mut two, mut three) = (0, 0);
+            order.iter().find_map(|dim| match dim {
+                CoordinateDimension::TwoD => {
+                    let c = &coordinates.conformers_2d[two];
+                    two += 1;
+                    (c.id() == id).then_some(SelectedConformer::TwoD(c))
+                }
+                CoordinateDimension::ThreeD => {
+                    let c = &coordinates.conformers_3d[three];
+                    three += 1;
+                    (c.id() == id).then_some(SelectedConformer::ThreeD(c))
+                }
             })
-            .map(|conformer| vec![conformer])
-            .ok_or(PdbWriteError::ConformerNotFound { id });
-    }
-    if !coordinates.conformers_2d.is_empty() && !coordinates.conformers_3d.is_empty() {
-        return Err(PdbWriteError::Unsupported {
-            feature: "implicit ordering of mixed 2D and 3D conformer stores",
-        });
-    }
-    Ok(coordinates
-        .conformers_3d
-        .iter()
-        .map(SelectedConformer::ThreeD)
-        .chain(
+        } else if coordinates.conformers_2d.is_empty() {
+            coordinates
+                .conformers_3d
+                .iter()
+                .find(|c| c.id() == id)
+                .map(SelectedConformer::ThreeD)
+        } else {
             coordinates
                 .conformers_2d
                 .iter()
-                .map(SelectedConformer::TwoD),
-        )
-        .collect())
+                .find(|c| c.id() == id)
+                .map(SelectedConformer::TwoD)
+        };
+        found.ok_or(PdbWriteError::ConformerNotFound { id })
+    };
+    if let Some(id) = id {
+        return Ok(vec![find(id)?]);
+    }
+    let count = coordinates.conformers_2d.len() + coordinates.conformers_3d.len();
+    if count > 1 {
+        return (0..count).map(find).collect();
+    }
+    Ok(match coordinates.first_source_conformer()? {
+        Some(cosmolkit_model::CoordinateSourceConformer::TwoD(c)) => {
+            vec![SelectedConformer::TwoD(c)]
+        }
+        Some(cosmolkit_model::CoordinateSourceConformer::ThreeD(c)) => {
+            vec![SelectedConformer::ThreeD(c)]
+        }
+        None => Vec::new(),
+    })
 }
 
-/// Write a source-aligned PDB block with explicit conformer/flavor controls.
 pub fn write_pdb_detached_with_params(
     topology: &TopologyBlock,
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
     params: PdbWriteParams,
-) -> Result<String, PdbWriteError> {
+) -> Result<PropertyText, PdbWriteError> {
     topology.validate()?;
     coordinates.validate_for_atom_count(topology.atoms.len())?;
     if topology
@@ -1397,18 +1573,75 @@ pub fn write_pdb_detached_with_params(
         });
     }
     let conformers = selected_conformers(coordinates, params.conformer_id)?;
-    let mut output = String::new();
-    if let Some(name) = properties.name().filter(|name| !name.is_empty()) {
-        // RDKit✔️✔️:   if (rwmol.getPropIfPresent(common_properties::_Name, name)) {
-        // RDKit✔️✔️:     if (!name.empty()) {
-        // RDKit✔️✔️:       res += "COMPND    ";
-        // RDKit✔️✔️:       res += name;
-        // RDKit✔️✔️:       res += '\n';
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:   }
-        output.push_str("COMPND    ");
-        output.push_str(name);
-        output.push('\n');
+    let mut output = PropertyText::new();
+    // RDKit❗✔️: std::string MolToPDBBlock(const ROMol &imol, int confId, unsigned int flavor) {
+    // RDKit❗✔️:   RWMol rwmol(imol);
+    // RDKit❗✔️:   MolOps::Kekulize(rwmol);
+    // RDKit❗✔️:   Utils::LocaleSwitcher ls;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::string res;
+    // RDKit❗✔️:   std::string name;
+    // RDKit❗✔️:   if (rwmol.getPropIfPresent(common_properties::_Name, name)) {
+    // RDKit❗✔️:     if (!name.empty()) {
+    // RDKit❗✔️:       res += "COMPND    ";
+    // RDKit❗✔️:       res += name;
+    // RDKit❗✔️:       res += '\n';
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int atm_count = 0;
+    // RDKit❗✔️:   unsigned int ter_count = 0;
+    // RDKit❗✔️:   unsigned int conect_count = 0;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   const Conformer *conf;
+    // RDKit❗✔️:   if (confId < 0 && rwmol.getNumConformers() > 1) {
+    // RDKit❗✔️:     int count = rwmol.getNumConformers();
+    // RDKit❗✔️:     for (confId = 0; confId < count; confId++) {
+    // RDKit❗✔️:       conf = &(rwmol.getConformer(confId));
+    // RDKit❗✔️:       std::stringstream ss;
+    // RDKit❗✔️:       ss << "MODEL     ";
+    // RDKit❗✔️:       ss << std::setw(4) << (confId + 1);
+    // RDKit❗✔️:       ss << "\n";
+    // RDKit❗✔️:       res += ss.str();
+    // RDKit❗✔️:       res +=
+    // RDKit❗✔️:           MolToPDBBody(rwmol, conf, flavor, atm_count, ter_count, conect_count);
+    // RDKit❗✔️:       res += "ENDMDL\n";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     if (confId < 0 && rwmol.getNumConformers() == 0) {
+    // RDKit❗✔️:       conf = nullptr;
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       conf = &(rwmol.getConformer(confId));
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     res +=
+    // RDKit❗✔️:         MolToPDBBody(rwmol, conf, flavor, atm_count, ter_count, conect_count);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (flavor & 16) {
+    // RDKit❗✔️:     std::stringstream ss;
+    // RDKit❗✔️:     ss << "MASTER        0    0    0    0    0    0    0    0";
+    // RDKit❗✔️:     ss << std::setw(5) << atm_count;
+    // RDKit❗✔️:     ss << std::setw(5) << ter_count;
+    // RDKit❗✔️:     ss << std::setw(5) << conect_count;
+    // RDKit❗✔️:     ss << "    0\n";
+    // RDKit❗✔️:     res += ss.str();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   res += "END\n";
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    let name = properties
+        .prop("_Name")
+        .map(cosmolkit_core::property_value_to_string)
+        .transpose()?;
+    if let Some(name) = name
+        .as_ref()
+        .or_else(|| properties.name())
+        .filter(|name| !name.is_empty())
+    {
+        output.extend_bytes(b"COMPND    ");
+        output.extend_bytes(name.as_bytes());
+        output.push_byte(b'\n');
     }
     let mut atom_count = 0;
     let mut ter_count = 0;
@@ -1430,26 +1663,32 @@ pub fn write_pdb_detached_with_params(
         // RDKit✔️✔️:     }
         // RDKit✔️✔️:   }
         for (index, conformer) in conformers.iter().copied().enumerate() {
-            output.push_str(&format!("MODEL     {:>4}\n", index + 1));
-            output.push_str(&pdb_body(
+            output.extend_bytes((&format!("MODEL     {:>4}\n", index + 1)).as_ref());
+            output.extend_bytes(
+                (&pdb_body(
+                    topology,
+                    Some(conformer),
+                    params.flavor,
+                    &mut atom_count,
+                    &mut ter_count,
+                    &mut conect_count,
+                ))
+                    .as_ref(),
+            );
+            output.extend_bytes(("ENDMDL\n").as_ref());
+        }
+    } else {
+        output.extend_bytes(
+            (&pdb_body(
                 topology,
-                Some(conformer),
+                conformers.first().copied(),
                 params.flavor,
                 &mut atom_count,
                 &mut ter_count,
                 &mut conect_count,
-            ));
-            output.push_str("ENDMDL\n");
-        }
-    } else {
-        output.push_str(&pdb_body(
-            topology,
-            conformers.first().copied(),
-            params.flavor,
-            &mut atom_count,
-            &mut ter_count,
-            &mut conect_count,
-        ));
+            ))
+                .as_ref(),
+        );
     }
     if params.flavor & 16 != 0 {
         // RDKit source: PDBWriter.cpp lines 310-317
@@ -1462,11 +1701,11 @@ pub fn write_pdb_detached_with_params(
         // RDKit✔️✔️:     ss << "    0\n";
         // RDKit✔️✔️:     res += ss.str();
         // RDKit✔️✔️:   }
-        output.push_str(&format!(
+        output.extend_bytes((&format!(
             "MASTER        0    0    0    0    0    0    0    0{atom_count:>5}{ter_count:>5}{conect_count:>5}    0\n"
-        ));
+        )).as_ref());
     }
-    output.push_str("END\n");
+    output.extend_bytes(("END\n").as_ref());
     Ok(output)
 }
 
@@ -1475,7 +1714,7 @@ pub fn write_pdb_detached(
     topology: &TopologyBlock,
     coordinates: &CoordinateBlock,
     properties: &MoleculeProperties,
-) -> Result<String, PdbWriteError> {
+) -> Result<PropertyText, PdbWriteError> {
     write_pdb_detached_with_params(topology, coordinates, properties, PdbWriteParams::default())
 }
 
@@ -1548,7 +1787,10 @@ mod tests {
         assert_eq!(info.alt_loc(), "A");
         assert_eq!(info.occupancy(), 0.5);
         assert_eq!(info.temp_factor(), 12.25);
-        assert_eq!(properties.name(), Some("FIXED STATE"));
+        assert_eq!(
+            properties.name().map(super::fixture_text),
+            Some("FIXED STATE")
+        );
         assert!(!coordinates.conformers_3d[0].is_3d());
         assert!(coordinates.conformers_3d[0].coordinates()[1][2].is_sign_negative());
     }
@@ -1958,7 +2200,9 @@ mod tests {
         ))
         .expect("seed PDB");
         topology.bonds[0].set_order(BondOrder::Double);
-        let output = write_pdb_detached(&topology, &coordinates, &properties).expect("write PDB");
+        let output = write_pdb_detached(&topology, &coordinates, &properties)
+            .map(super::fixture_writer_text)
+            .expect("write PDB");
         assert_eq!(
             output,
             "ATOM      1  N   GLY A   4       1.250  -2.500   0.000  0.75 11.50           N1+\n\
@@ -1983,15 +2227,37 @@ mod tests {
             ],
             ..CoordinateBlock::default()
         };
+        // Native MolToPDBBlock performs ID lookups 0..numConformers,
+        // rather than enumerating the original noncontiguous IDs 4 and 9.
+        assert!(matches!(
+            write_pdb_detached_with_params(
+                &topology,
+                &coordinates,
+                &MoleculeProperties::default().with_name("models"),
+                PdbWriteParams {
+                    conformer_id: None,
+                    flavor: 16 | 32
+                }
+            ),
+            Err(PdbWriteError::ConformerNotFound { id: 0 })
+        ));
+        let contiguous = CoordinateBlock {
+            conformers_3d: vec![
+                Conformer3D::new(0, vec![[1.0, 2.0, 3.0]], true),
+                Conformer3D::new(1, vec![[4.0, 5.0, 6.0]], true),
+            ],
+            ..CoordinateBlock::default()
+        };
         let output = write_pdb_detached_with_params(
             &topology,
-            &coordinates,
+            &contiguous,
             &MoleculeProperties::default().with_name("models"),
             PdbWriteParams {
                 conformer_id: None,
                 flavor: 16 | 32,
             },
         )
+        .map(super::fixture_writer_text)
         .expect("write models");
         assert!(output.contains("COMPND    models\nMODEL        1\n"));
         assert!(output.contains("ENDMDL\nMODEL        2\n"));
@@ -2012,6 +2278,7 @@ mod tests {
                 flavor: 0,
             },
         )
+        .map(super::fixture_writer_text)
         .expect("select conformer by id");
         assert!(selected.contains("   4.000   5.000   6.000"));
     }
@@ -2042,6 +2309,7 @@ mod tests {
                     flavor,
                 },
             )
+            .map(super::fixture_writer_text)
             .expect("write flavored PDB")
         };
         assert!(write(2).contains("CONECT    1    2    2\n"));
@@ -2067,7 +2335,19 @@ mod tests {
                 flavor: 0,
             },
         )
+        .map(super::fixture_writer_text)
         .expect_err("missing conformer");
         assert_eq!(missing, PdbWriteError::ConformerNotFound { id: 8 });
     }
+}
+
+#[cfg(test)]
+fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes())
+        .expect("original text fixture must retain exact UTF-8 bytes")
+}
+#[cfg(test)]
+fn fixture_writer_text(value: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(value.into_bytes())
+        .expect("original writer fixture must retain exact UTF-8 bytes")
 }

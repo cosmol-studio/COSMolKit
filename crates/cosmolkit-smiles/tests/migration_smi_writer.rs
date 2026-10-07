@@ -8,14 +8,21 @@ use cosmolkit_smiles::{
 
 fn write(input: &str, params: &SmilesWriteParams) -> String {
     let record = parse_smiles(input, &Default::default()).expect("parse pinned case");
-    write_smiles_with_params(&record, params).expect("write pinned case")
+    write_smiles_with_params(&record, params)
+        .map(fixture_writer_text)
+        .expect("write pinned case")
 }
 
 fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
-    match value {
-        Some(PropertyValue::String(value)) => Some(value),
-        _ => None,
-    }
+    value.map(|value| {
+        std::str::from_utf8(
+            value
+                .as_string()
+                .expect("original String fixture kind")
+                .as_bytes(),
+        )
+        .expect("original property fixture UTF-8 bytes")
+    })
 }
 
 fn renumbered_record(
@@ -36,6 +43,12 @@ fn renumbered_record(
     renumbered
 }
 
+// Original source-text fixtures decode only at this observation boundary.
+// Invalid UTF-8 fails; the complete byte payload is never substituted.
+fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
+    String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
 #[test]
 fn writer_kekulization_error_preserves_typed_core_source() {
     let mut record = parse_smiles("C", &Default::default()).expect("parse carbon");
@@ -47,6 +60,7 @@ fn writer_kekulization_error_preserves_typed_core_source() {
             ..Default::default()
         },
     )
+    .map(fixture_writer_text)
     .expect_err("aromatic atom outside a ring cannot be kekulized");
 
     assert!(matches!(
@@ -78,6 +92,7 @@ fn writer_disconnected_kekulization_error_preserves_fragment_local_source_and_in
     };
 
     let error = write_smiles_with_params(&record, &params)
+        .map(fixture_writer_text)
         .expect_err("the non-ring atom in the second component cannot be kekulized");
     assert!(matches!(
         &error,
@@ -120,14 +135,19 @@ fn atom_and_bond_tokens_match_pinned_rdkit() {
     ] {
         let record = parse_smiles(input, &Default::default()).expect("parse pinned case");
         assert_eq!(
-            write_smiles_with_params(&record, &params).unwrap(),
+            write_smiles_with_params(&record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "{input}"
         );
     }
 
     let canonical = parse_smiles("N->B", &Default::default()).unwrap();
-    assert_eq!(write_smiles(&canonical).unwrap(), "B<-N");
+    assert_eq!(
+        write_smiles(&canonical).map(fixture_writer_text).unwrap(),
+        "B<-N"
+    );
 }
 
 #[test]
@@ -156,7 +176,9 @@ fn bond_token_endpoints_and_canonical_slash_reversal_match_pinned_rdkit() {
     }
     let reversed_slash = parse_smiles(r"Br\C=C/F", &Default::default()).unwrap();
     assert_eq!(
-        write_smiles_with_params(&reversed_slash, &source_order).unwrap(),
+        write_smiles_with_params(&reversed_slash, &source_order)
+            .map(fixture_writer_text)
+            .unwrap(),
         r"Br/C=C\F",
         "source-order traversal normalizes the two endpoint directions"
     );
@@ -165,7 +187,9 @@ fn bond_token_endpoints_and_canonical_slash_reversal_match_pinned_rdkit() {
     zero_order.topology.bonds[0].set_order(BondOrder::Zero);
     let before = zero_order.clone();
     assert_eq!(
-        write_smiles_with_params(&zero_order, &source_order).unwrap(),
+        write_smiles_with_params(&zero_order, &source_order)
+            .map(fixture_writer_text)
+            .unwrap(),
         "C~C"
     );
     assert_eq!(zero_order, before, "writer mutated the zero-order input");
@@ -330,12 +354,16 @@ fn aromatic_endpoint_bond_omission_matches_pinned_rdkit() {
         let before = record.clone();
 
         assert_eq!(
-            write_smiles_with_params(&record, &default_params).unwrap(),
+            write_smiles_with_params(&record, &default_params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "{input}, atoms={aromatic_atoms:?}, order={order:?}, bond_aromatic={aromatic_bond}"
         );
         assert_eq!(
-            write_smiles_with_params(&record, &explicit_params).unwrap(),
+            write_smiles_with_params(&record, &explicit_params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected_explicit,
             "allBondsExplicit: {input}, atoms={aromatic_atoms:?}, order={order:?}, bond_aromatic={aromatic_bond}"
         );
@@ -369,7 +397,9 @@ fn atom_hydrogen_charge_and_isotope_fields_match_pinned_rdkit() {
             "implicit-H source count for {input}"
         );
         assert_eq!(
-            write_smiles_with_params(&record, &default_params).unwrap(),
+            write_smiles_with_params(&record, &default_params)
+                .map(fixture_writer_text)
+                .unwrap(),
             "N",
             "default H suppression for {input}"
         );
@@ -381,6 +411,7 @@ fn atom_hydrogen_charge_and_isotope_fields_match_pinned_rdkit() {
                     ..Default::default()
                 }
             )
+            .map(fixture_writer_text)
             .unwrap(),
             "[NH3]",
             "all-H bracket count for {input}"
@@ -404,7 +435,9 @@ fn atom_hydrogen_charge_and_isotope_fields_match_pinned_rdkit() {
                 ..Default::default()
             };
             assert_eq!(
-                write_smiles_with_params(&record, &params).unwrap(),
+                write_smiles_with_params(&record, &params)
+                    .map(fixture_writer_text)
+                    .unwrap(),
                 expected,
                 "charge formatting for {input}, isomeric={do_isomeric_smiles}"
             );
@@ -433,7 +466,9 @@ fn atom_hydrogen_charge_and_isotope_fields_match_pinned_rdkit() {
         ),
     ] {
         assert_eq!(
-            write_smiles_with_params(&isotope, &params).unwrap(),
+            write_smiles_with_params(&isotope, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "isotope/H formatting with {params:?}"
         );
@@ -457,7 +492,9 @@ fn aromatic_custom_symbols_and_bracket_labels_match_pinned_rdkit() {
             ..Default::default()
         };
         assert_eq!(
-            write_smiles_with_params(&aromatic, &params).unwrap(),
+            write_smiles_with_params(&aromatic, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected,
             "do_kekule={do_kekule}"
         );
@@ -468,7 +505,12 @@ fn aromatic_custom_symbols_and_bracket_labels_match_pinned_rdkit() {
     bracketed_label.topology.atoms[0]
         .set_prop("_supplementalSmilesLabel", " ;|{}\\")
         .unwrap();
-    assert_eq!(write_smiles(&bracketed_label).unwrap(), "[13CH4:7] ;|{}\\");
+    assert_eq!(
+        write_smiles(&bracketed_label)
+            .map(fixture_writer_text)
+            .unwrap(),
+        "[13CH4:7] ;|{}\\"
+    );
 
     let mut custom_label = parse_smiles("C", &Default::default()).unwrap();
     custom_label.topology.atoms[0]
@@ -477,7 +519,12 @@ fn aromatic_custom_symbols_and_bracket_labels_match_pinned_rdkit() {
     custom_label.topology.atoms[0]
         .set_prop("_supplementalSmilesLabel", "TAG")
         .unwrap();
-    assert_eq!(write_smiles(&custom_label).unwrap(), "[XH4]TAG");
+    assert_eq!(
+        write_smiles(&custom_label)
+            .map(fixture_writer_text)
+            .unwrap(),
+        "[XH4]TAG"
+    );
 }
 
 #[test]
@@ -486,13 +533,21 @@ fn custom_symbols_and_supplemental_labels_are_appended_without_escaping() {
     custom.topology.atoms[0]
         .set_prop("smilesSymbol", "X]\\")
         .unwrap();
-    assert_eq!(write_smiles(&custom).unwrap(), "[X]\\H4]");
+    assert_eq!(
+        write_smiles(&custom).map(fixture_writer_text).unwrap(),
+        "[X]\\H4]"
+    );
 
     let mut supplemental = parse_smiles("C", &Default::default()).unwrap();
     supplemental.topology.atoms[0]
         .set_prop("_supplementalSmilesLabel", " ;|{}\\")
         .unwrap();
-    assert_eq!(write_smiles(&supplemental).unwrap(), "C ;|{}\\");
+    assert_eq!(
+        write_smiles(&supplemental)
+            .map(fixture_writer_text)
+            .unwrap(),
+        "C ;|{}\\"
+    );
 }
 
 #[test]
@@ -569,7 +624,9 @@ fn writer_ring_label_tokens_match_pinned_rdkit_at_9_10_99_100() {
         assert_eq!(record.topology.atoms.len(), count + 2, "count={count}");
         assert_eq!(record.topology.bonds.len(), 2 * count + 1, "count={count}");
         let before = record.clone();
-        let output = write_smiles_with_params(&record, &params).unwrap();
+        let output = write_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap();
         assert_eq!(output, input, "count={count}");
         assert_eq!(output.len(), output_bytes, "count={count}");
         assert_eq!(record, before, "writer mutated count={count} input");
@@ -598,7 +655,9 @@ fn equal_canonical_fragments_sort_by_source_atom_and_bond_order() {
         ..Default::default()
     };
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "NC(O)F.NC(O)F |$a1;a3;a6;a7;a2;a0;a4;a5$|"
     );
 }
@@ -634,7 +693,9 @@ fn multi_fragment_subset_maps_noncontiguous_atom_and_bond_rows() {
         ..Default::default()
     };
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "B[NH2]C.C.C=CC.CC |$a7;a6;a5;a8;a4;a3;a2;a0;a1$,C:1.0|"
     );
     assert_eq!(
@@ -679,7 +740,9 @@ fn writer_subset_remaps_forward_ring_stereo_references_after_renumbering() {
         ..Default::default()
     };
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "C.C.C.C1=CCCCCCCCC1 |ctu:0|"
     );
     assert_eq!(record, before, "fragment preparation preserves the input");
@@ -710,6 +773,7 @@ fn writer_subset_reports_removed_template_attachment_target() {
             ..Default::default()
         },
     )
+    .map(fixture_writer_text)
     .expect_err("a selected atom cannot retain a template target outside its fragment");
     assert!(matches!(
         &error,
@@ -774,7 +838,7 @@ fn canonical_double_bond_directions_follow_ring_and_isomeric_options() {
     let record = parse_smiles(input, &Default::default()).expect("parse pinned case");
     let before = record.clone();
     assert_eq!(
-        write_smiles(&record).unwrap(),
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
         r"C1=CC/C=C2\C3=C\CC=CC=CC3C2C=C1"
     );
     assert_eq!(
@@ -789,6 +853,7 @@ fn canonical_double_bond_directions_follow_ring_and_isomeric_options() {
                 ..Default::default()
             }
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "C1=CCC=C2C3=CCC=CC=CC3C2C=C1"
     );
@@ -853,7 +918,9 @@ fn rooted_writer_starts_requested_component_at_atom_without_reordering_other_com
             ..Default::default()
         };
         assert_eq!(
-            write_smiles_with_params(&record, &params).unwrap(),
+            write_smiles_with_params(&record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected
         );
     }
@@ -866,7 +933,9 @@ fn rooted_writer_starts_requested_component_at_atom_without_reordering_other_com
             ..Default::default()
         };
         assert_eq!(
-            write_smiles_with_params(&disconnected, &params).unwrap(),
+            write_smiles_with_params(&disconnected, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected
         );
     }
@@ -885,7 +954,9 @@ fn rooted_writer_matches_source_compact_index_for_interleaved_component_rows() {
             ..Default::default()
         };
         assert_eq!(
-            write_smiles_with_params(&record, &params).unwrap(),
+            write_smiles_with_params(&record, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected
         );
     }
@@ -898,6 +969,7 @@ fn rooted_writer_matches_source_compact_index_for_interleaved_component_rows() {
             ..Default::default()
         },
     )
+    .map(fixture_writer_text)
     .expect_err("pinned compact-fragment root index is outside the selected fragment");
     assert!(matches!(
         error,
@@ -923,6 +995,7 @@ fn rooted_writer_preflight_error_precedes_kekulization_failure() {
             ..Default::default()
         },
     )
+    .map(fixture_writer_text)
     .expect_err("source root precondition runs before source kekulization");
     assert!(matches!(
         error,
@@ -944,6 +1017,7 @@ fn rooted_writer_rejects_out_of_range_atom_but_keeps_empty_molecule_behavior() {
             ..Default::default()
         },
     )
+    .map(fixture_writer_text)
     .expect_err("rootedAtAtom must be in range");
     assert!(matches!(
         error,
@@ -962,6 +1036,7 @@ fn rooted_writer_rejects_out_of_range_atom_but_keeps_empty_molecule_behavior() {
                 ..Default::default()
             }
         )
+        .map(fixture_writer_text)
         .unwrap(),
         ""
     );
@@ -976,7 +1051,10 @@ fn ignored_atom_maps_change_canonical_ranking_but_remain_serialized() {
         .iter()
         .map(|atom| atom.atom_map())
         .collect::<Vec<_>>();
-    assert_eq!(write_smiles(&record).unwrap(), "OC([CH3:1])[CH3:99]");
+    assert_eq!(
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
+        "OC([CH3:1])[CH3:99]"
+    );
     assert_eq!(
         record
             .topology
@@ -993,6 +1071,7 @@ fn ignored_atom_maps_change_canonical_ranking_but_remain_serialized() {
             ..Default::default()
         },
     )
+    .map(fixture_writer_text)
     .unwrap();
     assert_eq!(ignored, "[CH3:99]C([CH3:1])O");
     assert!(ignored.contains(":99") && ignored.contains(":1"));
@@ -1014,6 +1093,7 @@ fn ignored_atom_maps_change_canonical_ranking_but_remain_serialized() {
             ..Default::default()
         },
     )
+    .map(fixture_writer_text)
     .unwrap();
     assert_eq!(noncanonical, "C(C)(C)O");
     assert_eq!(
@@ -1035,6 +1115,7 @@ fn ignored_atom_maps_change_canonical_ranking_but_remain_serialized() {
                 ..Default::default()
             }
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "CO"
     );
@@ -1055,10 +1136,14 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_isotope_and_is_renumbering_s
                     ..Default::default()
                 }
             )
+            .map(fixture_writer_text)
             .unwrap(),
             "CCC(C)C"
         );
-        assert_eq!(write_smiles(candidate).unwrap(), "CC(C)C[13CH3]");
+        assert_eq!(
+            write_smiles(candidate).map(fixture_writer_text).unwrap(),
+            "CC(C)C[13CH3]"
+        );
     }
     assert_eq!(
         record, before,
@@ -1087,11 +1172,16 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_tetrahedral_stereo() {
                         ..Default::default()
                     }
                 )
+                .map(fixture_writer_text)
                 .unwrap(),
                 "CC(N)C(C)O",
                 "{input}"
             );
-            assert_eq!(write_smiles(candidate).unwrap(), isomeric, "{input}");
+            assert_eq!(
+                write_smiles(candidate).map(fixture_writer_text).unwrap(),
+                isomeric,
+                "{input}"
+            );
         }
         assert_eq!(
             record, before,
@@ -1118,11 +1208,16 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_double_bond_stereo() {
                         ..Default::default()
                     }
                 )
+                .map(fixture_writer_text)
                 .unwrap(),
                 "CC=CC",
                 "{input}"
             );
-            assert_eq!(write_smiles(candidate).unwrap(), isomeric, "{input}");
+            assert_eq!(
+                write_smiles(candidate).map(fixture_writer_text).unwrap(),
+                isomeric,
+                "{input}"
+            );
         }
         assert_eq!(
             record, before,
@@ -1171,7 +1266,9 @@ fn nonisomeric_canonical_fallback_keeps_pinned_cx_output_maps() {
                 ..Default::default()
             };
             assert_eq!(
-                write_cx_smiles_with_params(&record, &params).unwrap(),
+                write_cx_smiles_with_params(&record, &params)
+                    .map(fixture_writer_text)
+                    .unwrap(),
                 expected,
                 "canonical={canonical}, input={input}"
             );
@@ -1213,12 +1310,16 @@ fn ordinary_writer_removes_modeled_stereo_groups_before_canonical_ranking() {
         };
         for candidate in [&record, &reversed] {
             assert_eq!(
-                write_smiles_with_params(candidate, &params).unwrap(),
+                write_smiles_with_params(candidate, &params)
+                    .map(fixture_writer_text)
+                    .unwrap(),
                 expected
             );
         }
         assert_eq!(
-            write_smiles_with_params(&without_group, &params).unwrap(),
+            write_smiles_with_params(&without_group, &params)
+                .map(fixture_writer_text)
+                .unwrap(),
             expected
         );
     }
@@ -1229,7 +1330,9 @@ fn ordinary_writer_removes_modeled_stereo_groups_before_canonical_ranking() {
         ..Default::default()
     };
     assert_eq!(
-        write_cx_smiles_with_params(&record, &cx).unwrap(),
+        write_cx_smiles_with_params(&record, &cx)
+            .map(fixture_writer_text)
+            .unwrap(),
         "C[C@H](N)C[C@H](C)N |o1:1,4|"
     );
     assert_eq!(
@@ -1244,7 +1347,10 @@ fn clean_stereo_default_cleans_invalid_tetrahedral_tag() {
     record.topology.atoms[1].set_chiral_tag(cosmolkit_types::ChiralTag::TetrahedralCw);
     record.properties.clear_prop("_StereochemDone");
 
-    assert_eq!(write_smiles(&record).unwrap(), "CC(C)(O)F");
+    assert_eq!(
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
+        "CC(C)(O)F"
+    );
 }
 
 #[test]
@@ -1261,6 +1367,7 @@ fn clean_stereo_option_selects_source_cleanup_and_preservation() {
                 ..Default::default()
             }
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "C[C@@](C)(O)F"
     );
@@ -1272,6 +1379,7 @@ fn clean_stereo_option_selects_source_cleanup_and_preservation() {
                 ..Default::default()
             }
         )
+        .map(fixture_writer_text)
         .unwrap(),
         "CC(C)(O)F"
     );
@@ -1280,7 +1388,10 @@ fn clean_stereo_option_selects_source_cleanup_and_preservation() {
         .properties
         .set_computed_prop("_StereochemDone", "1")
         .unwrap();
-    assert_eq!(write_smiles(&record).unwrap(), "C[C@@](C)(O)F");
+    assert_eq!(
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
+        "C[C@@](C)(O)F"
+    );
 }
 
 #[test]
@@ -1330,7 +1441,7 @@ fn current_stereo_wrapper_candidates_match_pinned_writer_text() {
             .set_computed_prop("_StereochemDone", "1")
             .unwrap();
         assert_eq!(
-            write_smiles(&prepared).unwrap(),
+            write_smiles(&prepared).map(fixture_writer_text).unwrap(),
             "F/C=C/CC(F)(F)C(Cl)(Br)[C@H](F)Cl",
             "{name}"
         );
@@ -1361,7 +1472,10 @@ fn current_stereo_wrapper_candidates_preserve_pinned_large_ring_cx_output() {
         ..Default::default()
     };
     let parsed = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).unwrap();
-    assert_eq!(parsed.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        parsed.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
     assert_eq!(parsed.properties.prop("_StereochemDone"), None);
     assert_eq!(
         parsed.topology.bonds[5].stereo(),
@@ -1383,8 +1497,16 @@ fn current_stereo_wrapper_candidates_preserve_pinned_large_ring_cx_output() {
     assert_eq!(finalized.properties.prop("_needsDetectBondStereo"), None);
     // Chirality.cpp::assignStereochemistry writes this computed property after
     // successful perception; the detached wrapper must transport that effect.
-    assert_eq!(finalized.properties.prop("_StereochemDone"), Some("1"));
-    assert!(finalized.properties.is_prop_computed("_StereochemDone"));
+    assert_eq!(
+        finalized.properties.prop("_StereochemDone"),
+        Some(&PropertyValue::Int(1))
+    );
+    assert!(
+        finalized
+            .properties
+            .is_prop_computed("_StereochemDone")
+            .unwrap()
+    );
     assert_eq!(
         finalized.topology.bonds[4].direction(),
         cosmolkit_types::BondDirection::EndUpRight
@@ -1415,6 +1537,7 @@ fn current_stereo_wrapper_candidates_preserve_pinned_large_ring_cx_output() {
                 ..Default::default()
             },
         )
+        .map(fixture_writer_text)
         .unwrap();
         assert_eq!(output, PINNED_LEGACY_CX, "clean_stereo={clean_stereo}");
     }
@@ -1437,8 +1560,14 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
     };
     let parsed = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).unwrap();
     let parsed_snapshot = parsed.clone();
-    assert_eq!(parsed.properties.prop("_CXSMILES_Data"), Some("|c:5|"));
-    assert_eq!(parsed.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        parsed.properties.prop("_CXSMILES_Data"),
+        Some(&PropertyValue::from("|c:5|"))
+    );
+    assert_eq!(
+        parsed.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
     assert_eq!(parsed.properties.prop("_StereochemDone"), None);
     assert!(parsed.coordinates.conformers_2d.is_empty());
     assert!(parsed.coordinates.conformers_3d.is_empty());
@@ -1487,7 +1616,7 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
     );
     assert_eq!(
         post_chemistry.properties.prop("_needsDetectBondStereo"),
-        Some("1")
+        Some(&PropertyValue::Int(1))
     );
     assert_eq!(
         post_chemistry.topology.bonds[4].direction(),
@@ -1505,10 +1634,13 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
         post_chemistry_snapshot
             .properties
             .prop("_needsDetectBondStereo"),
-        Some("1"),
+        Some(&PropertyValue::Int(1)),
         "the pre-finalizer input snapshot retains pending parser work"
     );
-    assert_eq!(finalized.properties.prop("_CXSMILES_Data"), Some("|c:5|"));
+    assert_eq!(
+        finalized.properties.prop("_CXSMILES_Data"),
+        Some(&PropertyValue::from("|c:5|"))
+    );
     assert_eq!(finalized.properties.prop("_needsDetectBondStereo"), None);
     assert_eq!(
         finalized.topology.bonds[4].direction(),
@@ -1542,6 +1674,7 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
             ..Default::default()
         },
     )
+    .map(fixture_writer_text)
     .unwrap();
     assert_eq!(output, "C1=C\\CCCCCCCC/1");
     assert_eq!(
@@ -1556,7 +1689,10 @@ fn pending_cx_stereo_text_is_preserved_when_clean_stereo_is_false() {
     // freezes the clean=false output branch; it does not isolate the missing
     // direction phase, which remains covered by the failing case above.
     let record = parse_smiles("C1CCCCC=CCCC1 |c:5|", &Default::default()).unwrap();
-    assert_eq!(record.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        record.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
     let expected = "C1=C\\CCCCCCCC/1 |c:0|";
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
@@ -1568,7 +1704,9 @@ fn pending_cx_stereo_text_is_preserved_when_clean_stereo_is_false() {
     };
 
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         expected
     );
 }
@@ -1592,9 +1730,15 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
         ..Default::default()
     };
     let record = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).unwrap();
-    assert_eq!(record.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        record.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
     assert_eq!(record.properties.prop("_StereochemDone"), None);
-    assert_eq!(record.properties.prop("_CXSMILES_Data"), Some("|c:5|"));
+    assert_eq!(
+        record.properties.prop("_CXSMILES_Data"),
+        Some(&PropertyValue::from("|c:5|"))
+    );
     assert!(record.coordinates.conformers_2d.is_empty());
     assert!(record.coordinates.conformers_3d.is_empty());
     assert!(
@@ -1641,7 +1785,9 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
         ..Default::default()
     };
     assert_eq!(
-        write_cx_smiles_with_params(&record, &clean_false_params).unwrap(),
+        write_cx_smiles_with_params(&record, &clean_false_params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1=C\\CCCCCCCC/1 |c:0|"
     );
 
@@ -1656,7 +1802,9 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
         ..Default::default()
     };
     assert_eq!(
-        write_cx_smiles_with_params(&record, &params).unwrap(),
+        write_cx_smiles_with_params(&record, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1=CCCCCCCCC1"
     );
     assert_eq!(
@@ -1676,7 +1824,10 @@ fn cx_write_after_sanitize_and_smiles_finalization_uses_finalized_state() {
         ..Default::default()
     };
     let mut record = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).unwrap();
-    assert_eq!(record.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        record.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
 
     // Match Molecule::from_smiles_with_params: requested chemistry completes
     // before the single existing SMILES finalization stage.
@@ -1686,7 +1837,10 @@ fn cx_write_after_sanitize_and_smiles_finalization_uses_finalized_state() {
     )
     .unwrap()
     .topology;
-    assert_eq!(record.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        record.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
     assert_eq!(
         record.topology.bonds[4].direction(),
         cosmolkit_types::BondDirection::None
@@ -1719,7 +1873,9 @@ fn cx_write_after_sanitize_and_smiles_finalization_uses_finalized_state() {
         ..Default::default()
     };
     assert_eq!(
-        write_cx_smiles_with_params(&finalized, &params).unwrap(),
+        write_cx_smiles_with_params(&finalized, &params)
+            .map(fixture_writer_text)
+            .unwrap(),
         "C1=C\\CCCCCCCC/1"
     );
     assert_eq!(
@@ -1736,7 +1892,10 @@ fn both_false_smiles_finalization_retains_pending_marker_and_clears_directions()
         ..Default::default()
     };
     let raw = parse_smiles("C/C=C/C |c:1|", &parser).unwrap();
-    assert_eq!(raw.properties.prop("_needsDetectBondStereo"), Some("1"));
+    assert_eq!(
+        raw.properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
     assert_eq!(
         raw.topology.bonds[0].direction(),
         cosmolkit_types::BondDirection::EndUpRight
@@ -1754,7 +1913,7 @@ fn both_false_smiles_finalization_retains_pending_marker_and_clears_directions()
     let both_false = finalize_smiles_stereo(raw, &parser, &mut None, &mut ring_carrier).unwrap();
     assert_eq!(
         both_false.properties.prop("_needsDetectBondStereo"),
-        Some("1")
+        Some(&PropertyValue::Int(1))
     );
     assert_eq!(
         both_false.topology.bonds[0].direction(),
@@ -1822,8 +1981,8 @@ fn both_false_finalization_clears_unknown_direction_and_records_unknown_stereo()
         cosmolkit_types::BondDirection::None
     );
     assert_eq!(
-        string_property(finalized.topology.bonds[0].prop("_UnknownStereo")),
-        Some("1")
+        finalized.topology.bonds[0].prop("_UnknownStereo"),
+        Some(&PropertyValue::Int(1))
     );
 }
 
@@ -1848,15 +2007,21 @@ fn single_fragment_done_marker_observes_ordinary_and_computed_property_presence(
                     .set_prop("_StereochemDone", value)
                     .unwrap();
             }
-            assert_eq!(record.properties.prop("_StereochemDone"), Some(value));
             assert_eq!(
-                record.properties.is_prop_computed("_StereochemDone"),
+                record.properties.prop("_StereochemDone"),
+                Some(&PropertyValue::from(value))
+            );
+            assert_eq!(
+                record
+                    .properties
+                    .is_prop_computed("_StereochemDone")
+                    .unwrap(),
                 computed
             );
 
             let before = record.clone();
             assert_eq!(
-                write_smiles(&record).unwrap(),
+                write_smiles(&record).map(fixture_writer_text).unwrap(),
                 "C[C@@](C)(O)F",
                 "presence must guard assignment (computed={computed}, value={value:?})"
             );
@@ -1886,7 +2051,7 @@ fn single_component_stereo_transport_keeps_source_identity_and_properties() {
 
     let before = record.clone();
     assert_eq!(
-        write_smiles(&record).unwrap(),
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
         "[NH2:10][C@H:11]([CH3:12])[OH:13]"
     );
     for (index, atom) in record.topology.atoms.iter().enumerate() {
@@ -1900,7 +2065,7 @@ fn single_component_stereo_transport_keeps_source_identity_and_properties() {
             string_property(atom.prop("_sourceAtom")),
             Some(computed_source_atom.as_str())
         );
-        assert!(atom.is_prop_computed("_sourceAtom"));
+        assert!(atom.is_prop_computed("_sourceAtom").unwrap());
     }
     for (index, bond) in record.topology.bonds.iter().enumerate() {
         let source_bond = format!("b{index}");
@@ -1913,7 +2078,7 @@ fn single_component_stereo_transport_keeps_source_identity_and_properties() {
             string_property(bond.prop("_sourceBond")),
             Some(computed_source_bond.as_str())
         );
-        assert!(bond.is_prop_computed("_sourceBond"));
+        assert!(bond.is_prop_computed("_sourceBond").unwrap());
     }
     assert_eq!(
         record, before,
@@ -1936,11 +2101,16 @@ fn multi_fragment_stereo_merge_leaves_unassigned_challenge_component_untouched()
     .unwrap();
     record.properties.clear_prop("_StereochemDone");
     record.properties.set_prop("_StereochemDone", "1").unwrap();
-    assert!(!record.properties.is_prop_computed("_StereochemDone"));
+    assert!(
+        !record
+            .properties
+            .is_prop_computed("_StereochemDone")
+            .unwrap()
+    );
 
     let before = record.clone();
     assert_eq!(
-        write_smiles(&record).unwrap(),
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
         "C.C.C.C.F[C@H]1CC[C@H](F)CC1"
     );
     assert_eq!(
@@ -1966,11 +2136,16 @@ fn multi_fragment_stereo_merge_remaps_signed_ring_ids_after_prefix() {
         .properties
         .set_computed_prop("_StereochemDone", "1")
         .unwrap();
-    assert!(record.properties.is_prop_computed("_StereochemDone"));
+    assert!(
+        record
+            .properties
+            .is_prop_computed("_StereochemDone")
+            .unwrap()
+    );
 
     let before = record.clone();
     assert_eq!(
-        write_smiles(&record).unwrap(),
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
         "C.C.C.CC.F[C@H]1CC[C@H](F)CC1"
     );
     assert_eq!(
@@ -1994,11 +2169,22 @@ fn multi_fragment_challenge_clone_clears_computed_done_marker_on_prune() {
         .properties
         .set_computed_prop("_StereochemDone", "1")
         .unwrap();
-    assert_eq!(record.properties.prop("_StereochemDone"), Some("1"));
-    assert!(record.properties.is_prop_computed("_StereochemDone"));
+    assert_eq!(
+        record.properties.prop("_StereochemDone"),
+        Some(&PropertyValue::from("1"))
+    );
+    assert!(
+        record
+            .properties
+            .is_prop_computed("_StereochemDone")
+            .unwrap()
+    );
 
     let before = record.clone();
-    assert_eq!(write_smiles(&record).unwrap(), "C.C.C.CC.CC(C)(O)F");
+    assert_eq!(
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
+        "C.C.C.CC.CC(C)(O)F"
+    );
     assert_eq!(
         record, before,
         "writer fragment preparation must leave the input marker and invalid source tag unchanged"
@@ -2014,11 +2200,22 @@ fn multi_fragment_challenge_clone_prune_preserves_ordinary_done_marker() {
     record.topology.atoms[1].set_chiral_tag(cosmolkit_types::ChiralTag::TetrahedralCw);
     record.properties.clear_prop("_StereochemDone");
     record.properties.set_prop("_StereochemDone", "1").unwrap();
-    assert_eq!(record.properties.prop("_StereochemDone"), Some("1"));
-    assert!(!record.properties.is_prop_computed("_StereochemDone"));
+    assert_eq!(
+        record.properties.prop("_StereochemDone"),
+        Some(&PropertyValue::from("1"))
+    );
+    assert!(
+        !record
+            .properties
+            .is_prop_computed("_StereochemDone")
+            .unwrap()
+    );
 
     let before = record.clone();
-    assert_eq!(write_smiles(&record).unwrap(), "C.C.C.CC.C[C@@](C)(O)F");
+    assert_eq!(
+        write_smiles(&record).map(fixture_writer_text).unwrap(),
+        "C.C.C.CC.C[C@@](C)(O)F"
+    );
     assert_eq!(
         record, before,
         "writer fragment preparation must preserve the ordinary input marker and source tag"
@@ -2032,10 +2229,20 @@ fn typed_custom_symbol_and_supplemental_label_use_source_string_conversion() {
     record.topology.atoms[0]
         .set_prop("smilesSymbol", 7_i32)
         .unwrap();
-    assert_eq!(cosmolkit_smiles::write_smiles(&record).unwrap(), "[7H4]");
+    assert_eq!(
+        cosmolkit_smiles::write_smiles(&record)
+            .map(fixture_writer_text)
+            .unwrap(),
+        "[7H4]"
+    );
     record.topology.atoms[0].clear_prop("smilesSymbol");
     record.topology.atoms[0]
         .set_prop("_supplementalSmilesLabel", 7_i32)
         .unwrap();
-    assert_eq!(cosmolkit_smiles::write_smiles(&record).unwrap(), "C7");
+    assert_eq!(
+        cosmolkit_smiles::write_smiles(&record)
+            .map(fixture_writer_text)
+            .unwrap(),
+        "C7"
+    );
 }

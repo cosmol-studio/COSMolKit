@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "version": "0.7.5",
+    "source_revision": "5cc1c23c6007e0e6cbd69289c6f7c0bff50e943e"
+  },
+  "cases": [
+    {"case_id": "pdb_full_default", "input": "bio/sample.pdb", "format": "pdb"},
+    {"case_id": "mmcif_full_default", "input": "bio/sample.cif", "format": "mmcif"}
+  ]
+}

@@ -64,7 +64,11 @@ fn sdf_reader_contracts_distinguish_concrete_and_preserving_results() {
             "&crate::QueryGraph",
             Some("crate::SdfError"),
         ),
-        ("SdfRecord.data_fields", "&[(String,String)]", None),
+        (
+            "SdfRecord.data_fields",
+            "&[(crate::PropertyText,crate::PropertyText)]",
+            None,
+        ),
         ("SdfRecord.properties", "&crate::MoleculeProperties", None),
         (
             "SdfRecord.substance_groups",
@@ -643,6 +647,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "SdfRecord.from_sdf_with_params",
             "types.SdfCoordinateMode",
             "types.SdfReadParams",
+            "types.SdfReadError",
             "types.SdfError",
             "Molecule.from_sdf",
             "Molecule.from_sdf_with_params",
@@ -812,6 +817,17 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "Molecule.to_fragment_cx_smiles_with_params",
                 "Molecule.to_random_smiles",
                 "Molecule.to_random_smiles_with_params",
+            ],
+        );
+    }
+    if cfg!(feature = "cap-bio") {
+        let position = expected
+            .iter()
+            .position(|id| *id == "types.BioOperationError")
+            .expect("original BIO declaration anchor");
+        expected.splice(
+            position..position,
+            [
                 "types.BioSelection",
                 "BioSelection.from_cid",
                 "Protein.selected_atom_ids",
@@ -949,6 +965,10 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "search.compile_query",
                 "search.write_smarts",
                 "search.write_cx_smarts",
+                "Molecule.to_smarts",
+                "Molecule.to_smarts_with_params",
+                "Molecule.to_cx_smarts",
+                "Molecule.to_cx_smarts_with_params",
                 "Molecule.substruct_match",
                 "Molecule.substruct_matches",
                 "Molecule.has_substruct_match",
@@ -2005,8 +2025,45 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "BatchFingerprintAdditionalOutput.atoms_per_bit",
                 "BatchFingerprintOutput.fingerprint",
                 "BatchFingerprintOutput.additional_output",
+                "MoleculeBatch.fingerprint_topological_torsion_list",
+                "MoleculeBatch.fingerprint_topological_torsion_list_with_params",
             ]);
         }
+    }
+    if cfg!(feature = "cap-io") {
+        expected.push("module.property_value_to_text");
+    }
+    if cfg!(feature = "cap-stereoisomers") {
+        expected.extend([
+            "types.StereoisomerRandomSource",
+            "StereoisomerRandomSource.from_integer_seed",
+            "StereoisomerRandomSource.from_random_bits",
+            "StereoisomerOptions.new",
+            "StereoisomerOptions.default",
+            "StereoisomerOptions.try_embedding",
+            "StereoisomerOptions.set_try_embedding",
+            "StereoisomerOptions.only_unassigned",
+            "StereoisomerOptions.set_only_unassigned",
+            "StereoisomerOptions.max_isomers",
+            "StereoisomerOptions.set_max_isomers",
+            "StereoisomerOptions.random_source",
+            "StereoisomerOptions.set_random_source",
+            "StereoisomerOptions.unique",
+            "StereoisomerOptions.set_unique",
+            "StereoisomerOptions.only_stereo_groups",
+            "StereoisomerOptions.set_only_stereo_groups",
+            "StereoisomerIterator.next",
+            "types.StereoisomerOptions",
+            "types.StereoisomerIterator",
+            "types.EnumerationError",
+            "types.EnumerationRunError",
+            "Molecule.stereoisomer_count",
+            "Molecule.stereoisomer_count_with_options",
+            "Molecule.enumerate_stereoisomers",
+            "Molecule.enumerate_stereoisomers_with_options",
+            "Molecule.enumerate_stereoisomers_with_random_bits",
+            "StereoisomerIterator.yielded_count",
+        ]);
     }
     assert_eq!(
         BINDING_CONTRACT
@@ -2675,7 +2732,6 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
         let native_batch = matches!(
             contract.semantic_id,
             "BatchExportReport.write_report"
-                | "types.MoleculeBatch"
                 | "types.BatchRecord"
                 | "types.BatchError"
                 | "types.BatchErrorMode"
@@ -2751,6 +2807,8 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "BatchFingerprintAdditionalOutput.atoms_per_bit"
                 | "BatchFingerprintOutput.fingerprint"
                 | "BatchFingerprintOutput.additional_output"
+                | "MoleculeBatch.fingerprint_topological_torsion_list"
+                | "MoleculeBatch.fingerprint_topological_torsion_list_with_params"
         );
         let expected = if native_coordinates || native_batch {
             FunctionStatus::Native

@@ -52,8 +52,14 @@ fn pending_some_and_required_results_commit_detached_blocks_and_preserve_cow() {
         .unwrap();
     assert_eq!(result.label, "metadata");
     let finished = result.molecule.unwrap();
-    assert_eq!(finished.properties().name(), Some("candidate"));
-    assert_eq!(source.properties().name(), Some("source"));
+    assert_eq!(
+        finished.properties().name().map(|value| value.as_bytes()),
+        Some(b"candidate".as_slice())
+    );
+    assert_eq!(
+        source.properties().name().map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
+    );
     assert!(std::ptr::eq(finished.topology(), source.topology()));
     assert!(std::ptr::eq(
         finished.coordinate_block_runtime(),
@@ -131,7 +137,10 @@ fn pending_duplicate_seal_dropped_candidate_and_foreign_transaction_are_rejected
             ..
         }
     ));
-    assert_eq!(source.properties().name(), Some("source"));
+    assert_eq!(
+        source.properties().name().map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
+    );
 }
 
 #[test]
@@ -335,7 +344,10 @@ fn constructors_are_lazy_and_reject_multiple_output_before_exposure() {
             topology_ptr
         );
     }
-    assert_eq!(target.properties().name(), Some("source"));
+    assert_eq!(
+        target.properties().name().map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
+    );
     assert_eq!(
         construction_error(OpParts::<TestAccess>::new_in_place(&mut target, multiple,)),
         OperationError::OutputMismatch {
@@ -529,8 +541,12 @@ fn property_permissions_and_lifecycle_are_exact() {
     );
     let mut parts = OpParts::<TestAccess>::new(&source, read).unwrap();
     assert_eq!(
-        parts.read_properties_runtime().unwrap().name(),
-        Some("source")
+        parts
+            .read_properties_runtime()
+            .unwrap()
+            .name()
+            .map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
     );
     assert_eq!(
         parts.checkout_properties_runtime().unwrap_err(),
@@ -544,8 +560,12 @@ fn property_permissions_and_lifecycle_are_exact() {
     );
     let mut parts = OpParts::<TestAccess>::new(&source, write).unwrap();
     assert_eq!(
-        parts.read_properties_runtime().unwrap().name(),
-        Some("source")
+        parts
+            .read_properties_runtime()
+            .unwrap()
+            .name()
+            .map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
     );
     assert_eq!(
         parts
@@ -564,8 +584,12 @@ fn property_permissions_and_lifecycle_are_exact() {
     );
     parts.install_properties_runtime(detached).unwrap();
     assert_eq!(
-        parts.read_properties_runtime().unwrap().name(),
-        Some("source")
+        parts
+            .read_properties_runtime()
+            .unwrap()
+            .name()
+            .map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
     );
     assert_eq!(
         parts
@@ -659,8 +683,12 @@ fn checkout_bookkeeping_is_independent_and_sources_stay_unchanged() {
     let topology = parts.checkout_topology_runtime().unwrap();
     let coordinates = parts.checkout_coordinates_runtime().unwrap();
     assert_eq!(
-        parts.read_properties_runtime().unwrap().name(),
-        Some("source")
+        parts
+            .read_properties_runtime()
+            .unwrap()
+            .name()
+            .map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
     );
     parts.install_topology_runtime(topology).unwrap();
     assert_eq!(parts.read_topology_runtime().unwrap().atoms.len(), 1);
@@ -670,7 +698,10 @@ fn checkout_bookkeeping_is_independent_and_sources_stay_unchanged() {
     );
     parts.install_coordinates_runtime(coordinates).unwrap();
     assert_eq!(source.num_atoms(), 1);
-    assert_eq!(source.properties().name(), Some("source"));
+    assert_eq!(
+        source.properties().name().map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
+    );
 
     let mut target = molecule();
     {
@@ -680,11 +711,18 @@ fn checkout_bookkeeping_is_independent_and_sources_stay_unchanged() {
             .install_properties_runtime(properties.with_name("working"))
             .unwrap();
         assert_eq!(
-            parts.read_properties_runtime().unwrap().name(),
-            Some("working")
+            parts
+                .read_properties_runtime()
+                .unwrap()
+                .name()
+                .map(|value| value.as_bytes()),
+            Some(b"working".as_slice())
         );
     }
-    assert_eq!(target.properties().name(), Some("source"));
+    assert_eq!(
+        target.properties().name().map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
+    );
 }
 
 #[test]
@@ -749,4 +787,108 @@ fn invalid_replacements_are_rejected_without_replacing_working_or_live_state() {
         checked_out("invalid-coordinates", "coordinates")
     );
     assert_eq!(source.coordinate_block_runtime().conformers_2d.len(), 1);
+}
+
+#[cfg(all(feature = "cap-stereo", feature = "op-contracts-strict"))]
+fn cip_metadata_preservation_source(with_existing_computed: bool) -> Molecule {
+    let mut builder = crate::MoleculeBuilder::new();
+    let mut first = AtomSpec::new(Element::C).with_prop("user", 7_i32).unwrap();
+    if with_existing_computed {
+        first = first.with_computed_prop("existing", "kept").unwrap();
+    }
+    let a = builder.add_atom(first);
+    let b = builder.add_atom(AtomSpec::new(Element::C));
+    let mut bond = crate::BondSpec::new(a, b, crate::BondOrder::Single)
+        .with_prop("user", 9_i32)
+        .unwrap();
+    if with_existing_computed {
+        bond = bond.with_computed_prop("existing", "kept").unwrap();
+    }
+    builder.add_bond(bond).unwrap();
+    builder.build().unwrap()
+}
+#[cfg(all(feature = "cap-stereo", feature = "op-contracts-strict"))]
+fn cip_metadata_preservation_check(
+    source: &Molecule,
+    candidate: TopologyBlock,
+) -> Result<(), OperationError> {
+    let declaration = &crate::ops::runtime::registry::WITH_CIP_LABELS_SPEC;
+    let mut parts = OpParts::<TestAccess>::new(source, declaration)?;
+    let _old = parts.checkout_topology_runtime()?;
+    parts.install_topology_runtime(candidate)?;
+    parts.prove_preserved_runtime(DerivedState::RINGS, PreservationProof::CipLabelAssignment)
+}
+#[cfg(all(feature = "cap-stereo", feature = "op-contracts-strict"))]
+#[test]
+fn cip_metadata_preservation_allows_only_owned_computed_lifecycle() {
+    for existing in [false, true] {
+        let source = cip_metadata_preservation_source(existing);
+        let before = source.clone();
+        let mut candidate = source.topology().clone();
+        candidate.atoms[0].set_prop("_CIPCode", "R").unwrap();
+        candidate.atoms[0]
+            .set_computed_prop("_CIPNeighborOrder", "[1]")
+            .unwrap();
+        candidate.bonds[0].set_prop("_CIPCode", "E").unwrap();
+        candidate.bonds[0]
+            .set_computed_prop("_CIPNeighborOrder", "[0,1]")
+            .unwrap();
+        assert_eq!(cip_metadata_preservation_check(&source, candidate), Ok(()));
+        assert_eq!(source, before);
+        assert!(std::ptr::eq(source.topology(), before.topology()));
+    }
+}
+#[cfg(all(feature = "cap-stereo", feature = "op-contracts-strict"))]
+#[test]
+fn cip_metadata_preservation_rejects_unowned_values_and_membership() {
+    let source = cip_metadata_preservation_source(true);
+    let before = source.clone();
+    for change in 0..5 {
+        let mut candidate = source.topology().clone();
+        candidate.atoms[0]
+            .set_computed_prop("_CIPNeighborOrder", "[1]")
+            .unwrap();
+        match change {
+            0 => candidate.atoms[0].set_prop("user", 8_i32).unwrap(),
+            1 => candidate.bonds[0].set_prop("user", 8_i32).unwrap(),
+            2 => candidate.atoms[0].clear_prop("existing").unwrap(),
+            3 => candidate.bonds[0].clear_prop("existing").unwrap(),
+            4 => candidate.atoms[0].set_prop("_CIPRank", 3_i32).unwrap(),
+            _ => unreachable!(),
+        }
+        assert!(
+            matches!(
+                cip_metadata_preservation_check(&source, candidate),
+                Err(OperationError::DerivedEffectContract { .. })
+            ),
+            "unowned change {change}"
+        );
+        assert_eq!(source, before);
+    }
+}
+#[cfg(all(feature = "cap-stereo", feature = "op-contracts-strict"))]
+#[test]
+fn cip_metadata_preservation_rejects_invented_or_malformed_metadata() {
+    let source = cip_metadata_preservation_source(false);
+    let mut invented = source.topology().clone();
+    invented.atoms[0]
+        .set_prop(
+            "__computedProps",
+            crate::PropertyValue::StringVector(vec![]),
+        )
+        .unwrap();
+    assert!(matches!(
+        cip_metadata_preservation_check(&source, invented),
+        Err(OperationError::DerivedEffectContract { .. })
+    ));
+    let mut malformed = source.topology().clone();
+    malformed.atoms[0]
+        .set_prop("__computedProps", "wrong-tag")
+        .unwrap();
+    let error = cip_metadata_preservation_check(&source, malformed).unwrap_err();
+    assert!(matches!(
+        error,
+        OperationError::AtomProperty(cosmolkit_model::AtomPropertyError::ComputedListKind(_))
+    ));
+    assert!(std::error::Error::source(&error).is_some());
 }

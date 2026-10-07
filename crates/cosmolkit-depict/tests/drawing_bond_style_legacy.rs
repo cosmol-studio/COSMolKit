@@ -91,7 +91,7 @@ fn drawing_bond_style_legacy_product() {
                 conformers_2d: vec![Conformer2D::new(0, vec![[0.0, 0.0], [1.5, 0.0]])],
                 conformers_3d: vec![],
                 source_coordinate_dim: Some(CoordinateDimension::TwoD),
-                source_conformer_order: None,
+                source_conformer_order: Some(vec![cosmolkit_model::CoordinateDimension::TwoD]),
             };
             let properties = MoleculeProperties::default();
             let valence = ValenceAssignment {
@@ -144,13 +144,27 @@ fn drawing_bond_style_legacy_product() {
             assert!(topology.stereo_groups.is_empty());
             for atom in &topology.atoms {
                 assert!(atom.props().is_empty());
-                assert!(atom.computed_prop_names().is_empty());
+                assert!(
+                    atom.computed_prop_names()
+                        .unwrap()
+                        .is_none_or(|names| names.is_empty())
+                );
             }
             assert!(topology.bonds[0].props().is_empty());
-            assert!(topology.bonds[0].computed_prop_names().is_empty());
+            assert!(
+                topology.bonds[0]
+                    .computed_prop_names()
+                    .unwrap()
+                    .is_none_or(|names| names.is_empty())
+            );
             assert_eq!(properties, MoleculeProperties::default());
             assert!(properties.props().is_empty());
-            assert!(properties.computed_prop_names().is_empty());
+            assert!(
+                properties
+                    .computed_prop_names()
+                    .unwrap()
+                    .is_none_or(|names| names.is_empty())
+            );
             assert!(properties.name().is_none());
             assert!(properties.sdf_data_fields().is_empty());
             assert!(properties.sdf_property_lists().is_empty());
@@ -233,7 +247,7 @@ fn drawing_bond_style_legacy_product() {
     for (label, repeat, result, expected) in outcomes {
         match result {
             Ok(svg) => {
-                let actual = svg.as_bytes();
+                let actual = svg.as_slice();
                 let equal = actual == expected.as_slice();
                 eprintln!(
                     "bond_style outcome label={label} repeat={repeat} expected_bytes={} actual_bytes={} exact={equal}",

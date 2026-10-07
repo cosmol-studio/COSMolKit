@@ -331,13 +331,28 @@ _binding_profile: builtins.str
         "__all__ = [\n",
         "__all__ = [\n    \"AtomCodeExplanationError\",\n",
     );
+    // create_exception! has no stub metadata; kind() is installed by the shared error converter.
+    text.push_str("\nclass PropertyStringError(builtins.ValueError):\n    error_kind: builtins.str\n    value_kind: PropertyValueKind\n    def kind(self) -> PropertyValueKind: ...\n");
+    text = text.replace(
+        "__all__ = [\n",
+        "__all__ = [\n    \"PropertyStringError\",\n",
+    );
+    // This IntEnum is created dynamically by canonical_batch::register.
+    text.push_str("\nclass BatchErrorMode(enum.IntEnum):\n    RAISE = 1\n    KEEP = 2\n");
+    text = text.replace("__all__ = [\n", "__all__ = [\n    \"BatchErrorMode\",\n");
+    // The dynamic exception in canonical_batch has no derive metadata.
+    text.push_str("\nclass BatchValidationError(builtins.ValueError):\n    error_count: builtins.int\n    reason: typing.Optional[builtins.str]\n    def __init__(self, message: builtins.str, error_count: builtins.int = 0, reason: typing.Optional[builtins.str] = None, record_errors: typing.Optional[typing.Sequence[BatchError]] = None) -> None: ...\n    def errors(self) -> list[BatchError]: ...\n");
+    text = text.replace(
+        "__all__ = [\n",
+        "__all__ = [\n    \"BatchValidationError\",\n",
+    );
     check_registered_python_callables(&text)?;
     std::fs::write(path, text)?;
     Ok(())
 }
 
 fn check_registered_python_callables(text: &str) -> pyo3_stub_gen::Result<()> {
-    use ::cosmolkit::{BINDING_CONTRACT, BindingItem, BindingOwner};
+    use ::cosmolkit::{BINDING_CONTRACT, BindingItem, BindingOwner, BindingPropertyAccess};
     use pyo3::{prelude::*, types::PyModule};
 
     // The linked registry already applies the facade's actual cfg gates.
@@ -348,6 +363,11 @@ fn check_registered_python_callables(text: &str) -> pyo3_stub_gen::Result<()> {
             serde_json::json!({
                 "semantic_id": entry.semantic_id,
                 "python_name": entry.python_name,
+                "python_property": match entry.python_property {
+                    None => None,
+                    Some(BindingPropertyAccess::Getter) => Some("getter"),
+                    Some(BindingPropertyAccess::Setter) => Some("setter"),
+                },
                 "feature": entry.feature,
                 "item": match entry.item {
                     BindingItem::Callable => "callable",

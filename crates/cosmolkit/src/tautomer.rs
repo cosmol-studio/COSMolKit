@@ -105,7 +105,7 @@ impl<'a> TautomerMoleculeView<'a> {
     pub fn properties(&self) -> &MoleculeProperties {
         self.record().properties
     }
-    pub fn to_smiles(&self) -> Result<String, TautomerRunError> {
+    pub fn to_smiles(&self) -> Result<cosmolkit_model::PropertyText, TautomerRunError> {
         let view = self.record();
         Ok(cosmolkit_smiles::write_smiles(
             cosmolkit_smiles::SmilesRecordView {
@@ -129,7 +129,7 @@ enum TautomerProgressStorage<'a> {
         coordinates: &'a CoordinateBlock,
     },
     Owned {
-        entries: Vec<(String, TautomerMoleculeView<'static>)>,
+        entries: Vec<(cosmolkit_model::PropertyText, TautomerMoleculeView<'static>)>,
         status: TautomerEnumerationStatus,
         num_transforms: u32,
         modified_atoms: BTreeSet<AtomId>,
@@ -187,18 +187,19 @@ impl TautomerProgress<'_> {
     }
     pub fn entries(
         &self,
-    ) -> Box<dyn ExactSizeIterator<Item = (&str, TautomerMoleculeView<'_>)> + '_> {
+    ) -> Box<
+        dyn ExactSizeIterator<Item = (&cosmolkit_model::PropertyText, TautomerMoleculeView<'_>)>
+            + '_,
+    > {
         match &self.storage {
             TautomerProgressStorage::Borrowed { inner, coordinates } => {
                 Box::new(inner.entries().map(|(key, value)| {
                     (key, TautomerMoleculeView::borrowed(value.view(coordinates)))
                 }))
             }
-            TautomerProgressStorage::Owned { entries, .. } => Box::new(
-                entries
-                    .iter()
-                    .map(|(key, value)| (key.as_str(), value.clone())),
-            ),
+            TautomerProgressStorage::Owned { entries, .. } => {
+                Box::new(entries.iter().map(|(key, value)| (key, value.clone())))
+            }
         }
     }
 }
@@ -406,7 +407,7 @@ impl cosmolkit_tautomer::TautomerEnumerationCallback for CallbackAdapter<'_> {
 /// Rich result containing only runtime-validated molecule values.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TautomerEnumeration {
-    entries: Vec<(String, Molecule)>,
+    entries: Vec<(cosmolkit_model::PropertyText, Molecule)>,
     status: TautomerEnumerationStatus,
     modified_atoms: BTreeSet<AtomId>,
     modified_bonds: BTreeSet<BondId>,
@@ -422,7 +423,7 @@ impl TautomerEnumeration {
         let index = cosmolkit_tautomer::select_canonical_index_with(
             self.entries
                 .iter()
-                .map(|(key, molecule)| (key.as_str(), record_view(molecule))),
+                .map(|(key, molecule)| (key, record_view(molecule))),
             |view| params.score_view(view),
         )
         .map_err(OperationError::Tautomer)?;
@@ -450,33 +451,33 @@ impl TautomerEnumeration {
     pub fn get(&self, index: usize) -> Option<&Molecule> {
         self.entries.get(index).map(|(_, m)| m)
     }
-    pub fn canonical_smiles(&self) -> Vec<&str> {
-        self.entries.iter().map(|(k, _)| k.as_str()).collect()
+    pub fn canonical_smiles(&self) -> Vec<&cosmolkit_model::PropertyText> {
+        self.entries.iter().map(|(k, _)| k).collect()
     }
     pub fn iter(
         &self,
     ) -> std::iter::Map<
-        std::slice::Iter<'_, (String, Molecule)>,
-        fn(&(String, Molecule)) -> &Molecule,
+        std::slice::Iter<'_, (cosmolkit_model::PropertyText, Molecule)>,
+        fn(&(cosmolkit_model::PropertyText, Molecule)) -> &Molecule,
     > {
         self.entries.iter().map(|(_, molecule)| molecule)
     }
     pub fn entries(
         &self,
     ) -> std::iter::Map<
-        std::slice::Iter<'_, (String, Molecule)>,
-        fn(&(String, Molecule)) -> (&str, &Molecule),
+        std::slice::Iter<'_, (cosmolkit_model::PropertyText, Molecule)>,
+        fn(
+            &(cosmolkit_model::PropertyText, Molecule),
+        ) -> (&cosmolkit_model::PropertyText, &Molecule),
     > {
-        self.entries
-            .iter()
-            .map(|(key, molecule)| (key.as_str(), molecule))
+        self.entries.iter().map(|(key, molecule)| (key, molecule))
     }
 }
 impl<'a> IntoIterator for &'a TautomerEnumeration {
     type Item = &'a Molecule;
     type IntoIter = std::iter::Map<
-        std::slice::Iter<'a, (String, Molecule)>,
-        for<'b> fn(&'b (String, Molecule)) -> &'b Molecule,
+        std::slice::Iter<'a, (cosmolkit_model::PropertyText, Molecule)>,
+        for<'b> fn(&'b (cosmolkit_model::PropertyText, Molecule)) -> &'b Molecule,
     >;
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
@@ -508,7 +509,7 @@ pub fn canonical_tautomer_from_molecules_with_params(
     molecules[index].canonical_tautomer_with_params(&invocation)
 }
 pub(crate) struct EnumerationMetadata {
-    pub(crate) keys: Vec<String>,
+    pub(crate) keys: Vec<cosmolkit_model::PropertyText>,
     pub(crate) status: TautomerEnumerationStatus,
     pub(crate) modified_atoms: BTreeSet<AtomId>,
     pub(crate) modified_bonds: BTreeSet<BondId>,
@@ -565,6 +566,10 @@ impl Molecule {
 
 #[cfg(all(test, feature = "cap-smiles"))]
 mod tests {
+    fn fixed_key_text(key: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(key.as_bytes()).expect("original fixed ASCII test observation")
+    }
+
     use super::*;
     #[test]
     fn tautomer_outputs_share_the_unchanged_source_coordinate_block() {
@@ -596,6 +601,10 @@ fn record_view(molecule: &Molecule) -> cosmolkit_tautomer::TautomerRecordView<'_
 
 #[cfg(all(test, feature = "cap-smiles"))]
 mod canonical_selection_tests {
+    fn fixed_key_text(key: &cosmolkit_model::PropertyText) -> &str {
+        std::str::from_utf8(key.as_bytes()).expect("original fixed ASCII test observation")
+    }
+
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     struct ScoreFn<F>(F);
@@ -616,10 +625,7 @@ mod canonical_selection_tests {
     }
     fn fixture(entries: Vec<(&str, Molecule)>) -> TautomerEnumeration {
         TautomerEnumeration {
-            entries: entries
-                .into_iter()
-                .map(|(k, m)| (k.to_owned(), m))
-                .collect(),
+            entries: entries.into_iter().map(|(k, m)| (k.into(), m)).collect(),
             ..Default::default()
         }
     }
@@ -665,15 +671,26 @@ mod canonical_selection_tests {
         assert_eq!(calls.load(Ordering::SeqCst), 0);
         assert_eq!(source, before);
         assert_eq!(source.property("_StereochemDone"), None);
-        assert_eq!(selected.property("_StereochemDone"), Some("1"));
-        assert!(selected.properties().is_prop_computed("_StereochemDone"));
+        assert_eq!(
+            selected.property("_StereochemDone"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
+        assert!(
+            selected
+                .properties()
+                .is_prop_computed("_StereochemDone")
+                .unwrap()
+        );
         let selected = selected
             .to_builder()
             .with_property("selected-only".into(), "yes".into())
             .unwrap()
             .build()
             .unwrap();
-        assert_eq!(selected.property("selected-only"), Some("yes"));
+        assert_eq!(
+            selected.property("selected-only"),
+            Some(&cosmolkit_model::PropertyValue::String("yes".into()))
+        );
         assert_eq!(source.property("selected-only"), None);
     }
     #[test]
@@ -692,17 +709,21 @@ mod canonical_selection_tests {
                 })
             }))
             .unwrap();
-        assert_eq!(negative.to_smiles().unwrap(), "CC");
+        assert_eq!(negative.to_smiles().unwrap().as_bytes(), b"CC");
         let positive = result
             .canonical_tautomer_with_params(&configured(|m| Ok(m.num_atoms() as i32)))
             .unwrap();
-        assert_eq!(positive.to_smiles().unwrap(), "CCC");
+        assert_eq!(positive.to_smiles().unwrap().as_bytes(), b"CCC");
         let tied = result
             .canonical_tautomer_with_params(&configured(|_| Ok(4)))
             .unwrap();
-        assert_eq!(tied.to_smiles().unwrap(), "CC");
+        assert_eq!(tied.to_smiles().unwrap().as_bytes(), b"CC");
         assert_eq!(
-            result.canonical_smiles(),
+            result
+                .canonical_smiles()
+                .into_iter()
+                .map(fixed_key_text)
+                .collect::<Vec<_>>(),
             ["z-retained", "a-retained", "m-retained"]
         );
     }
@@ -716,8 +737,11 @@ mod canonical_selection_tests {
             .canonical_tautomer_with_params(&configured(|m| Ok(m.tautomer_score()?.total())))
             .unwrap();
         assert_eq!(a, b);
-        assert_eq!(a.property("_StereochemDone"), Some("1"));
-        assert!(a.properties().is_prop_computed("_StereochemDone"));
+        assert_eq!(
+            a.property("_StereochemDone"),
+            Some(&cosmolkit_model::PropertyValue::Int(1))
+        );
+        assert!(a.properties().is_prop_computed("_StereochemDone").unwrap());
         assert_eq!(source, before);
     }
     #[test]
@@ -741,8 +765,9 @@ mod canonical_selection_tests {
                 .canonical_tautomer_with_params(&params)
                 .unwrap()
                 .to_smiles()
-                .unwrap(),
-            "CC(C)=O"
+                .unwrap()
+                .as_bytes(),
+            b"CC(C)=O"
         );
     }
     #[test]
@@ -770,7 +795,7 @@ mod canonical_selection_tests {
         drop(source);
         let captured = capture.0.lock().unwrap();
         let (m, p) = captured.as_ref().unwrap();
-        assert_eq!(m.to_smiles().unwrap(), "CC(C)=O");
+        assert_eq!(m.to_smiles().unwrap().as_bytes(), b"CC(C)=O");
         assert_eq!(m.tautomer_score().unwrap().total(), 5);
         assert_eq!(p.len(), 1);
         assert_eq!(p.status(), TautomerEnumerationStatus::Completed);

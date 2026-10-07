@@ -47,6 +47,8 @@ fn expand_molecule_operation(
     let name = &operation.name;
     let fields = &operation.fields;
     let method = &fields.method;
+    let visibility = &fields.method_visibility;
+    let error_type = &fields.error_type;
     let params = &operation.params;
     let call_args = call_arguments(operation)?;
     let impl_fn = &fields.impl_fn;
@@ -72,7 +74,7 @@ fn expand_molecule_operation(
         quote! {
             #(#cfg)*
             #docs
-            pub fn #method(&self, #(#params),*) -> Result<#return_type, crate::ops::OperationError> {
+            #visibility fn #method(&self, #(#params),*) -> Result<#return_type, #error_type> {
                 let mut parts = crate::OpParts::new(self, &#spec)?;
                 let result: #result = #impl_fn(&mut parts, #(#call_args),*)?;
                 let molecule = parts.finish()?;
@@ -88,11 +90,11 @@ fn expand_molecule_operation(
             (MoleculeOutput::Single, None, None) => quote! {
                 #(#cfg)*
                 #docs
-                pub fn #method(&self, #(#params),*) -> Result<crate::Molecule, crate::ops::OperationError> {
+                #visibility fn #method(&self, #(#params),*) -> Result<crate::Molecule, #error_type> {
 
                     let mut parts = crate::OpParts::new(self, &#spec)?;
                     #impl_fn(&mut parts, #(#call_args),*)?;
-                    parts.finish()
+                    parts.finish().map_err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from)
                 }
             },
             (MoleculeOutput::Single, Some(result), None) => {
@@ -100,33 +102,42 @@ fn expand_molecule_operation(
                 quote! {
                     #(#cfg)*
                     #docs
-                    pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
+                    #visibility fn #method(&self, #(#params),*) -> Result<#result, #error_type> {
 
                         let mut parts = crate::OpParts::new(self, &#spec)?;
                         let pending: #result<crate::PendingMolecule<#marker>> = #impl_fn(&mut parts, #(#call_args),*)?;
-                        parts.finish_result(pending)
+                        parts.finish_result(pending).map_err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from)
                     }
                 }
             }
+            (MoleculeOutput::LazyMultiple, None, None) => quote! {
+                #(#cfg)*
+                #docs
+                #visibility fn #method(&self, #(#params),*) -> Result<crate::StereoisomerIterator, #error_type> {
+                    let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
+                    #impl_fn(&mut parts, #(#call_args),*)?;
+                    parts.finish_lazy().map_err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from)
+                }
+            },
             (MoleculeOutput::Multiple, None, None) => quote! {
                 #(#cfg)*
                 #docs
-                pub fn #method(&self, #(#params),*) -> Result<Vec<crate::Molecule>, crate::ops::OperationError> {
+                #visibility fn #method(&self, #(#params),*) -> Result<Vec<crate::Molecule>, #error_type> {
 
                     let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
                     #impl_fn(&mut parts, #(#call_args),*)?;
-                    parts.finish()
+                    parts.finish().map_err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from)
                 }
             },
             (MoleculeOutput::Multiple, Some(result), Some(assemble)) => quote! {
                 #(#cfg)*
                 #docs
-                pub fn #method(&self, #(#params),*) -> Result<#result, crate::ops::OperationError> {
+                #visibility fn #method(&self, #(#params),*) -> Result<#result, #error_type> {
 
                     let mut parts = crate::MultiOutputOpParts::new(self, &#spec)?;
                     let metadata = #impl_fn(&mut parts, #(#call_args),*)?;
                     let molecules = parts.finish()?;
-                    #assemble(molecules, metadata)
+                    #assemble(molecules, metadata).map_err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from)
                 }
             },
             _ => {
@@ -147,8 +158,21 @@ fn expand_molecule_operation(
             .as_ref()
             .map(|text| quote!(#[doc = #text]));
         if let Some(result) = detached_result {
-            let return_type = fields.report_result_type.as_ref().unwrap_or(result);
-            let committed_return = if let Some(public_result) = fields.report_result_type.as_ref() {
+            let return_type = fields
+                .inplace_result_type
+                .as_ref()
+                .or(fields.report_result_type.as_ref())
+                .unwrap_or(result);
+            let committed_return = if let Some(inplace_result) = fields.inplace_result_type.as_ref()
+            {
+                // D2: named value report and scalar in-place report share the
+                // same body and checked finish. No snapshot is required for
+                // this projection; From is checked by the Rust type system.
+                quote! {
+                    parts.finish_in_place()?;
+                    Ok(<#inplace_result as ::core::convert::From<#result>>::from(result))
+                }
+            } else if let Some(public_result) = fields.report_result_type.as_ref() {
                 // Borrowing the transaction ends at finish_in_place. Snapshot only
                 // the finalized live value, whose blocks remain Arc-shared.
                 quote! {
@@ -164,14 +188,14 @@ fn expand_molecule_operation(
             quote! {
                 #(#cfg)*
                 #inplace_docs
-                pub fn #inplace_method(&mut self, #(#params),*) -> Result<#return_type, crate::ops::OperationError> {
+                #visibility fn #inplace_method(&mut self, #(#params),*) -> Result<#return_type, #error_type> {
 
                     let mut parts = crate::OpParts::new_in_place(self, &#spec)?;
                     let result = match #impl_fn(&mut parts, #(#call_args),*) {
                         Ok(result) => result,
                         Err(error) => {
                             parts.abort_in_place();
-                            return Err(error);
+                            return Err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from(error));
                         }
                     };
                     #committed_return
@@ -181,14 +205,14 @@ fn expand_molecule_operation(
             quote! {
                 #(#cfg)*
                 #inplace_docs
-                pub fn #inplace_method(&mut self, #(#params),*) -> Result<(), crate::ops::OperationError> {
+                #visibility fn #inplace_method(&mut self, #(#params),*) -> Result<(), #error_type> {
 
                     let mut parts = crate::OpParts::new_in_place(self, &#spec)?;
                     if let Err(error) = #impl_fn(&mut parts, #(#call_args),*) {
                         parts.abort_in_place();
-                        return Err(error);
+                        return Err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from(error));
                     }
-                    parts.finish_in_place()
+                    parts.finish_in_place().map_err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from)
                 }
             }
         }
@@ -209,7 +233,7 @@ fn expand_molecule_operation(
         let return_type = molecule_value_return_type(fields);
         quote! {
             #(#cfg)*
-            pub fn #default_method(&self #forwarded_signature) -> Result<#return_type, crate::ops::OperationError> {
+            #visibility fn #default_method(&self #forwarded_signature) -> Result<#return_type, #error_type> {
                 self.#method(#(#forwarded_args,)* #(#default_args),*)
             }
         }
@@ -232,13 +256,14 @@ fn expand_molecule_operation(
                 quote!(, #(#forwarded_params),*)
             };
             let return_type = fields
-                .report_result_type
+                .inplace_result_type
                 .as_ref()
+                .or(fields.report_result_type.as_ref())
                 .or(detached_result)
                 .map_or_else(|| quote!(()), |result| quote!(#result));
             quote! {
                 #(#cfg)*
-                pub fn #default_method(&mut self #forwarded_signature) -> Result<#return_type, crate::ops::OperationError> {
+                #visibility fn #default_method(&mut self #forwarded_signature) -> Result<#return_type, #error_type> {
                     self.#inplace_method(#(#forwarded_args,)* #(#default_args),*)
                 }
             }
@@ -283,6 +308,9 @@ fn molecule_value_return_type(
         return quote!(#result);
     }
     if let Some(report) = fields.report_type.as_ref() {
+        if let Some(result) = &fields.report_result_type {
+            return quote!(#result);
+        }
         return quote!((crate::Molecule, #report));
     }
     match (
@@ -293,6 +321,7 @@ fn molecule_value_return_type(
         (MoleculeOutput::Single, None, None) => quote!(crate::Molecule),
         (MoleculeOutput::Single, Some(result), None) => quote!(#result),
         (MoleculeOutput::Multiple, None, None) => quote!(Vec<crate::Molecule>),
+        (MoleculeOutput::LazyMultiple, None, None) => quote!(crate::StereoisomerIterator),
         (MoleculeOutput::Multiple, Some(result), Some(_)) => quote!(#result),
         _ => unreachable!("molecule result/assembler shape was validated before wrapper expansion"),
     }

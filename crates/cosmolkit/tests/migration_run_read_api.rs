@@ -63,7 +63,8 @@ fn all_eleven_canonical_read_signatures_compile_from_the_public_crate() {
     let _: for<'a> fn(&'a Molecule) -> Option<&'a [[f64; 2]]> = Molecule::coordinates_2d;
     let _: for<'a> fn(&'a Molecule) -> &'a [Conformer3D] = Molecule::conformers_3d;
     let _: for<'a> fn(&'a Molecule) -> &'a MoleculeProperties = Molecule::properties;
-    let _: for<'a, 'b> fn(&'a Molecule, &'b str) -> Option<&'a str> = Molecule::property;
+    let _: for<'a, 'b> fn(&'a Molecule, &'b str) -> Option<&'a cosmolkit::PropertyValue> =
+        Molecule::property;
 }
 
 #[test]
@@ -111,7 +112,12 @@ fn binding_rows_exactly_match_names_signatures_and_read_only_semantics() {
             "properties",
             "&crate::MoleculeProperties",
         ),
-        ("Molecule.property", "property", "property", "Option<&str>"),
+        (
+            "Molecule.property",
+            "property",
+            "property",
+            "Option<&crate::PropertyValue>",
+        ),
     ];
     let entries = BINDING_CONTRACT
         .iter()
@@ -207,9 +213,18 @@ fn public_views_preserve_canonical_rows_typed_state_and_absence() {
     assert_eq!(two_d, &[[0.0, 1.0], [2.0, 3.0]]);
     assert_eq!(molecule.to_builder().coordinates().conformers_2d[0].id(), 4);
     assert_eq!(three_d[0].id(), 8);
-    assert_eq!(molecule.properties().name(), Some("read-public"));
-    assert_eq!(molecule.property("empty"), Some(""));
-    assert_eq!(molecule.property("replace"), Some("new"));
+    assert_eq!(
+        molecule.properties().name(),
+        Some(&cosmolkit::PropertyText::from("read-public"))
+    );
+    assert_eq!(
+        molecule.property("empty"),
+        Some(&cosmolkit::PropertyValue::from(""))
+    );
+    assert_eq!(
+        molecule.property("replace"),
+        Some(&cosmolkit::PropertyValue::from("new"))
+    );
     assert_eq!(molecule.property("missing"), None);
 }
 

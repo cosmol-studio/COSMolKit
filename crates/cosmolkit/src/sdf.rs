@@ -6,7 +6,8 @@ use std::fmt;
 use cosmolkit_model::query_substance_groups;
 
 use crate::{
-    CoordinateDimension, Molecule, MoleculeProperties, OperationError, QueryGraph, SubstanceGroup,
+    CoordinateDimension, Molecule, MoleculeProperties, OperationError, PropertyText, QueryGraph,
+    SubstanceGroup,
 };
 
 pub use cosmolkit_io::SdfCoordinateMode;
@@ -107,6 +108,7 @@ impl From<cosmolkit_io::SdfReadError> for SdfError {
     fn from(error: cosmolkit_io::SdfReadError) -> Self {
         match error {
             cosmolkit_io::SdfReadError::QueryRecord => Self::QueryRecord,
+            cosmolkit_io::SdfReadError::MolPost(error) => Self::Post(error),
             other => Self::Read(other),
         }
     }
@@ -132,18 +134,33 @@ impl From<OperationError> for SdfError {
 pub struct SdfRecord {
     graph: SdfGraph,
     index: usize,
-    data_fields: Vec<(String, String)>,
+    data_fields: Vec<(PropertyText, PropertyText)>,
     properties: MoleculeProperties,
     source_coordinate_dim: Option<CoordinateDimension>,
     query_rings: Option<cosmolkit_core::RingInfo>,
 }
 
 impl SdfRecord {
-    /// Form a validated detached query record without converting it to Molecule.
+    /// Validate the canonical query graph and retain every ordered source field.
     pub fn from_query_graph(
         query: QueryGraph,
         properties: MoleculeProperties,
     ) -> Result<Self, SdfError> {
+        // COSMolKit❗✔️:     pub fn from_query_graph(
+        // COSMolKit❗✔️:         query: QueryGraph,
+        // COSMolKit❗✔️:         properties: MoleculeProperties,
+        // COSMolKit❗✔️:     ) -> Result<Self, SdfError> {
+        // COSMolKit❗✔️:         query.validate().map_err(SdfError::QueryGraph)?;
+        // COSMolKit❗✔️:         let fields = properties.sdf_data_fields().to_vec();
+        // COSMolKit❗✔️:         Ok(Self::from_finalized_graph(
+        // COSMolKit❗✔️:             SdfGraph::Query(query),
+        // COSMolKit❗✔️:             fields,
+        // COSMolKit❗✔️:             properties,
+        // COSMolKit❗✔️:             None,
+        // COSMolKit❗✔️:         ))
+        // COSMolKit❗✔️:     }
+        // Same structural validation, ordered field clone and ownership moves
+        // as the existing source; PropertyText keeps counted non-UTF-8 bytes.
         query.validate().map_err(SdfError::QueryGraph)?;
         let fields = properties.sdf_data_fields().to_vec();
         Ok(Self::from_finalized_graph(
@@ -163,16 +180,19 @@ impl SdfRecord {
     ) -> Result<String, crate::MolecularIoError> {
         match &self.graph {
             SdfGraph::Molecule(molecule) => molecule.to_mol_with_params(params),
-            SdfGraph::Query(query) => cosmolkit_io::write_query_mol_block_with_params(
-                cosmolkit_io::QueryMolWriteInput {
-                    query,
-                    properties: &self.properties,
-                    source_coordinate_dim: self.source_coordinate_dim,
-                    rings: self.query_rings.as_ref(),
-                },
-                params,
-            )
-            .map_err(crate::MolecularIoError::MolWrite),
+            SdfGraph::Query(query) => crate::molecular_io::output_string(
+                cosmolkit_io::write_query_mol_block_with_params(
+                    cosmolkit_io::QueryMolWriteInput {
+                        query,
+                        properties: &self.properties,
+                        source_coordinate_dim: self.source_coordinate_dim,
+                        rings: self.query_rings.as_ref(),
+                    },
+                    params,
+                )
+                .map_err(crate::MolecularIoError::MolWrite)?,
+                "MOL",
+            ),
         }
     }
     pub fn to_sdf(&self) -> Result<String, crate::MolecularIoError> {
@@ -184,16 +204,19 @@ impl SdfRecord {
     ) -> Result<String, crate::MolecularIoError> {
         match &self.graph {
             SdfGraph::Molecule(molecule) => molecule.to_sdf_with_params(params),
-            SdfGraph::Query(query) => cosmolkit_io::write_query_sdf_with_params(
-                cosmolkit_io::QueryMolWriteInput {
-                    query,
-                    properties: &self.properties,
-                    source_coordinate_dim: self.source_coordinate_dim,
-                    rings: self.query_rings.as_ref(),
-                },
-                params,
-            )
-            .map_err(crate::MolecularIoError::MolWrite),
+            SdfGraph::Query(query) => crate::molecular_io::output_string(
+                cosmolkit_io::write_query_sdf_with_params(
+                    cosmolkit_io::QueryMolWriteInput {
+                        query,
+                        properties: &self.properties,
+                        source_coordinate_dim: self.source_coordinate_dim,
+                        rings: self.query_rings.as_ref(),
+                    },
+                    params,
+                )
+                .map_err(crate::MolecularIoError::MolWrite)?,
+                "SDF",
+            ),
         }
     }
 
@@ -204,31 +227,29 @@ impl SdfRecord {
 
     /// Read and finalize the first SDF record without lowering query graphs.
     pub fn from_sdf_with_params(text: &str, params: &SdfReadParams) -> Result<Self, SdfError> {
-        // One-record framing, parsing and property lists stay in the IO owner;
-        // finalization uses that owner's parser-retained chirality bit.
+        // The IO owner finishes the MolBlock before reading each SDF field.
         let parsed = cosmolkit_io::read_sdf_graph_record_detached_with_params(
             text,
-            cosmolkit_io::SdfDataReadParams {
-                strict_parsing: params.strict_parsing,
-                process_property_lists: params.process_property_lists,
-                coordinate_mode: params.coordinate_mode,
-            },
+            crate::sdf_supplier::data_params(params),
         )?;
-        Self::from_parsed(parsed, params, 0)
+        Self::from_parsed(parsed, 0)
     }
 
     pub(crate) fn from_parsed(
-        parsed: cosmolkit_io::SdfGraphRecord,
-        params: &SdfReadParams,
+        mut finalized: cosmolkit_io::SdfGraphRecord,
         index: usize,
     ) -> Result<Self, SdfError> {
-        let mut finalized = parsed.finish_mol_post(cosmolkit_io::MolPostParams {
-            sanitize: params.sanitize,
-            remove_hs: params.remove_hydrogens,
-            expand_attachment_points: params.expand_attachment_points,
-        })?;
+        // Every public reader selected its full detached policy before fields.
+        // Preserve that single finalized result; repeating postprocessing here
+        // would overwrite source fields and change list targets a second time.
         let state = finalized.take_post_state();
-        let data_fields = finalized.data_fields;
+        // Move counted field buffers from the UTF-8 input framer into the
+        // canonical byte carrier; no metadata decoding or additional clone.
+        let data_fields = finalized
+            .data_fields
+            .into_iter()
+            .map(|(name, value)| (name.into(), value.into()))
+            .collect();
         let mol_block = finalized.mol_block;
         let mut record = match mol_block {
             cosmolkit_io::MolBlockRecord::Concrete {
@@ -269,20 +290,31 @@ impl SdfRecord {
     pub const fn index(&self) -> usize {
         self.index
     }
-    pub fn title(&self) -> Option<&str> {
+
+    pub fn title(&self) -> Option<&PropertyText> {
+        // COSMolKit❗✔️:     pub fn title(&self) -> Option<&str> {
+        // COSMolKit❗✔️:         self.properties.name()
+        // COSMolKit❗✔️:     }
         self.properties.name()
     }
-    pub fn data_field(&self, name: &str) -> Option<&str> {
+    pub fn data_field(&self, name: &str) -> Option<&PropertyText> {
+        // COSMolKit❗✔️:     pub fn data_field(&self, name: &str) -> Option<&str> {
+        // COSMolKit❗✔️:         self.data_fields
+        // COSMolKit❗✔️:             .iter()
+        // COSMolKit❗✔️:             .find_map(|(key, value)| (key == name).then_some(value.as_str()))
+        // COSMolKit❗✔️:     }
+        // Source returns the first matching ordered field, including duplicate
+        // names; compare counted bytes without decoding stored source text.
         self.data_fields
             .iter()
-            .find_map(|(key, value)| (key == name).then_some(value.as_str()))
+            .find_map(|(key, value)| (key.as_bytes() == name.as_bytes()).then_some(value))
     }
 
     /// Receives a graph only after detached finalization and, for a concrete
     /// payload, private runtime construction validation have succeeded.
     pub(crate) fn from_finalized_graph(
         graph: SdfGraph,
-        data_fields: Vec<(String, String)>,
+        data_fields: Vec<(PropertyText, PropertyText)>,
         properties: MoleculeProperties,
         source_coordinate_dim: Option<CoordinateDimension>,
     ) -> Self {
@@ -322,7 +354,7 @@ impl SdfRecord {
     }
 
     #[must_use]
-    pub fn data_fields(&self) -> &[(String, String)] {
+    pub fn data_fields(&self) -> &[(PropertyText, PropertyText)] {
         &self.data_fields
     }
 
@@ -415,19 +447,28 @@ mod tests {
         assert_eq!(record.substance_groups()[0].external_id(), Some(42));
         assert_eq!(record.substance_groups()[0].rdkit_sequence_id(), Some(7));
         assert_eq!(
-            record.substance_groups()[0].label(),
-            Some("finalized data group")
+            record.substance_groups()[0]
+                .label()
+                .map(|value| value.as_bytes()),
+            Some(b"finalized data group".as_slice())
         );
         assert_eq!(
             record.substance_groups()[0]
                 .data()
                 .expect("typed DAT data")
-                .values,
-            ["first", "second"]
+                .values
+                .iter()
+                .map(|value| value.as_bytes())
+                .collect::<Vec<_>>(),
+            [b"first".as_slice(), b"second".as_slice()]
         );
         assert_eq!(
-            record.substance_groups()[0].data_fields(),
-            &["raw data row"]
+            record.substance_groups()[0]
+                .data_fields()
+                .iter()
+                .map(|value| value.as_bytes())
+                .collect::<Vec<_>>(),
+            [b"raw data row".as_slice()]
         );
     }
 
@@ -457,19 +498,28 @@ mod tests {
         assert_eq!(record.substance_groups()[0].external_id(), Some(42));
         assert_eq!(record.substance_groups()[0].rdkit_sequence_id(), Some(7));
         assert_eq!(
-            record.substance_groups()[0].label(),
-            Some("finalized data group")
+            record.substance_groups()[0]
+                .label()
+                .map(|value| value.as_bytes()),
+            Some(b"finalized data group".as_slice())
         );
         assert_eq!(
             record.substance_groups()[0]
                 .data()
                 .expect("typed DAT data")
-                .values,
-            ["first", "second"]
+                .values
+                .iter()
+                .map(|value| value.as_bytes())
+                .collect::<Vec<_>>(),
+            [b"first".as_slice(), b"second".as_slice()]
         );
         assert_eq!(
-            record.substance_groups()[0].data_fields(),
-            &["raw data row"]
+            record.substance_groups()[0]
+                .data_fields()
+                .iter()
+                .map(|value| value.as_bytes())
+                .collect::<Vec<_>>(),
+            [b"raw data row".as_slice()]
         );
     }
 

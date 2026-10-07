@@ -124,7 +124,10 @@ fn value_body_error_preserves_the_complete_source_and_exact_error() {
     assert_eq!(error, algorithm_error("value-body-error"));
     drop(parts);
     assert_eq!(source, before);
-    assert_eq!(source.properties().name(), Some("source"));
+    assert_eq!(
+        source.properties().name().map(|value| value.as_bytes()),
+        Some(b"source".as_slice())
+    );
 }
 
 #[test]
@@ -393,8 +396,8 @@ fn wrapper_and_owner_source_guards_preserve_failure_ordering_and_boundaries() {
     let model_manifest = include_str!("../../../cosmolkit-model/Cargo.toml");
 
     assert_eq!(wrappers.matches("parts.abort_in_place();").count(), 2);
-    assert!(wrappers.contains("Err(error) => {\n                            parts.abort_in_place();\n                            return Err(error);"));
-    assert!(wrappers.contains("if let Err(error) = #impl_fn(&mut parts, #(#call_args),*) {\n                        parts.abort_in_place();\n                        return Err(error);"));
+    assert!(wrappers.contains("Err(error) => {\n                            parts.abort_in_place();\n                            return Err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from(error));"));
+    assert!(wrappers.contains("if let Err(error) = #impl_fn(&mut parts, #(#call_args),*) {\n                        parts.abort_in_place();\n                        return Err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from(error));"));
     assert!(wrappers.contains("parts.finish_in_place()?;\n                    Ok(result)"));
     assert!(wrappers.contains("parts.finish_in_place()"));
     assert!(!wrappers.contains("catch_unwind"));

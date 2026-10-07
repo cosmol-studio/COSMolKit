@@ -521,12 +521,12 @@ fn detached_subset_coalesces_ids_remaps_state_and_clears_computed_props() {
     assert_eq!(subset.bonds.len(), 1);
     assert_eq!(
         subset.atoms[0].prop("kept"),
-        Some(&PropertyValue::String("atom".to_owned()))
+        Some(&PropertyValue::String("atom".to_owned().into()))
     );
     assert_eq!(subset.atoms[0].prop("computed"), None);
     assert_eq!(
         subset.bonds[0].prop("kept"),
-        Some(&PropertyValue::String("bond".to_owned()))
+        Some(&PropertyValue::String("bond".to_owned().into()))
     );
     assert_eq!(subset.bonds[0].prop("computed"), None);
     assert_eq!(subset.bonds[0].stereo(), BondStereo::None);

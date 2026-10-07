@@ -1,0 +1,235 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "version": "2026.3.1",
+    "source_revision": "351f8f378f8ad6bbd517980c38896e66bf907af8"
+  },
+  "cases": [
+    {
+      "row": 0,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "testTautomer-keto-enol",
+      "smiles": "CC(C)=O",
+      "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:80"
+    },
+    {
+      "row": 1,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "testTautomer-aromatic-shift",
+      "smiles": "O=c1cccc[nH]1",
+      "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:116"
+    },
+    {
+      "row": 2,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "testTautomer-isocyanide",
+      "smiles": "C#N",
+      "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:305"
+    },
+    {
+      "row": 3,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "testTautomer-phosphonic-acid",
+      "smiles": "[PH](=O)(O)(O)",
+      "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:311"
+    },
+    {
+      "row": 4,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "testTautomer-double-bond-stereo",
+      "smiles": "c1(ccccc1)/C=C(/O)\\C",
+      "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:317"
+    },
+    {
+      "row": 5,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "testTautomer-large-limit",
+      "smiles": "C(CO)(NC(=O)C1=C(O)C(O)=CC=C1)C(O)=O",
+      "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:390"
+    },
+    {
+      "row": 6,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "testTautomer-sp3-stereo",
+      "smiles": "C[C@H](N)C(=O)O",
+      "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:417"
+    },
+    {
+      "row": 7,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "testTautomer-isotopic-h",
+      "smiles": "C/C=C(O)/[2H]",
+      "source": "Code/GraphMol/MolStandardize/testTautomer.cpp:766"
+    },
+    {
+      "row": 8,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "catch-custom-keto-enol",
+      "smiles": "CCC=O",
+      "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:831"
+    },
+    {
+      "row": 9,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "catch-phosphorus-nontransform",
+      "smiles": "NP(=O)(O)N(CCCl)CCCl",
+      "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:959"
+    },
+    {
+      "row": 10,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "catch-asymmetric-imine",
+      "smiles": "C-C=N",
+      "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:1002"
+    },
+    {
+      "row": 11,
+      "sanitize": false,
+      "remove_hs": false,
+      "case_id": "catch-unsanitized",
+      "smiles": "Cc1[nH]ncc1.[Cl]",
+      "source": "Code/GraphMol/MolStandardize/catch_tests.cpp:1067"
+    },
+    {
+      "row": 12,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "pcs-100k-row-1427-fused-conjugated-limit",
+      "smiles": "Cc1nc2c(nc1C)C(=O)C1=C(C2=O)C2C=CC1CC2",
+      "source": "testdata/tautomer/corpus/rdkit/100kPCS_tautomer.csv.gz:1428"
+    },
+    {
+      "row": 13,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "chembl37-CHEMBL4435612",
+      "smiles": "O=C(c1ccnc2ccc(OC3CCC3)cc12)[C@@H]1C[C@@H]2CC[N@@]1C/C2=C\\CO",
+      "source": "ChEMBL 37:CHEMBL4435612"
+    },
+    {
+      "row": 14,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "chembl37-CHEMBL4639179",
+      "smiles": "CC[C@H]1C[C@H]2C[C@@]3(C(=O)OC)c4[nH]c5cc(OC)ccc5c4CC[N@@](C2CC(C)=O)[C@@H]13",
+      "source": "ChEMBL 37:CHEMBL4639179"
+    },
+    {
+      "row": 15,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "chembl37-CHEMBL4645050",
+      "smiles": "CC[C@H]1C[C@H]2C[C@@]3(C(=O)OC)c4[nH]c5ccccc5c4CC[N@@](C2CC(C)=O)[C@@H]13",
+      "source": "ChEMBL 37:CHEMBL4645050"
+    },
+    {
+      "row": 16,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "chembl37-CHEMBL27220",
+      "smiles": "COc1ccc([C@]2(C#N)CC[C@H](C(=O)O)CC2)cc1OC1CCCC1",
+      "source": "ChEMBL 37:CHEMBL27220"
+    },
+    {
+      "row": 17,
+      "sanitize": true,
+      "remove_hs": true,
+      "case_id": "wrapper-invalid-input",
+      "smiles": "not-a-smiles",
+      "source": "Code/GraphMol/MolStandardize/Wrap/Tautomer.cpp"
+    }
+  ],
+  "branches": [
+    {
+      "name": "default",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "v1",
+      "catalog": "v1",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "max_tautomers_1",
+      "catalog": "current",
+      "max_tautomers": 1,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "max_transforms_1",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "retain_sp3_stereo",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": false,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "retain_bond_stereo",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": false,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": true
+    },
+    {
+      "name": "retain_isotopic_hydrogens",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": false,
+      "reassign_stereo": true
+    },
+    {
+      "name": "no_reassign_stereo",
+      "catalog": "current",
+      "max_tautomers": 1000,
+      "max_transforms": 1000,
+      "remove_sp3_stereo": true,
+      "remove_bond_stereo": true,
+      "remove_isotopic_hydrogens": true,
+      "reassign_stereo": false
+    }
+  ]
+}
