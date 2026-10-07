@@ -112,6 +112,7 @@ cosmolkit-tautomer = { version = "0.5.0-rc.11", path = "../cosmolkit-tautomer", 
 serde_json = { version = "1", features = ["float_roundtrip"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.11"
+toml = "1.1"
 
 # Registered examples use the same capability gates as their public API calls.
 # confseq_decode_backends and read_xyz remain unregistered until their APIs compile.

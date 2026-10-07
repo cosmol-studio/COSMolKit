@@ -5,7 +5,6 @@ mod draw_reference;
 pub mod execute;
 pub mod molecular;
 mod native_draw_reference;
-pub mod reference_parity;
 pub mod registry;
 pub mod search;
 pub mod special_regression;

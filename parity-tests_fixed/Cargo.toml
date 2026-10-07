@@ -1,0 +1,31 @@
+[package]
+name = "cosmolkit-parity-tests-fixed"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+autotests = false
+
+[dependencies]
+cosmolkit = { path = "../crates/cosmolkit", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3"
+
+[dev-dependencies]
+cosmolkit-core = { path = "../crates/cosmolkit-core" }
+cosmolkit-model = { path = "../crates/cosmolkit-model" }
+cosmolkit-types = { path = "../crates/cosmolkit-types" }
+cosmolkit-tautomer = { path = "../crates/cosmolkit-tautomer" }
+cosmolkit-smiles = { path = "../crates/cosmolkit-smiles" }
+
+[build-dependencies]
+serde_json = "1"
+
+[[test]]
+name = "corpus"
+path = "tests/corpus.rs"
+
+[[test]]
+name = "special_regression"
+path = "tests/special_regression.rs"

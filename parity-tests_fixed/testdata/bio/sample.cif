@@ -1,0 +1,196 @@
+data_demo
+_entry.id 9XYZ
+_struct.title 'TOP LEVEL TITLE'
+_cell.length_a 10.0
+_cell.length_b 20.0
+_cell.length_c 30.0
+_cell.angle_alpha 90.0
+_cell.angle_beta 90.0
+_cell.angle_gamma 90.0
+_symmetry.space_group_name_H-M 'P 1'
+loop_
+_audit_author.name
+'DOE, J.'
+'SMITH, A.'
+loop_
+_entity.id
+_entity.type
+1 polymer
+loop_
+_entity_poly.entity_id
+_entity_poly.type
+1 polypeptide(L)
+loop_
+_entity_poly_seq.entity_id
+_entity_poly_seq.num
+_entity_poly_seq.mon_id
+1 1 CYS
+1 2 CYS
+loop_
+_struct_ref.id
+_struct_ref.entity_id
+_struct_ref.db_name
+_struct_ref.pdbx_db_accession
+_struct_ref.db_code
+1 1 UNP P12345 SAMPLE_ID
+loop_
+_struct_ref_seq.ref_id
+_struct_ref_seq.seq_align_beg
+_struct_ref_seq.seq_align_end
+_struct_ref_seq.db_align_beg
+_struct_ref_seq.db_align_end
+_struct_ref_seq.pdbx_auth_seq_align_beg
+_struct_ref_seq.pdbx_seq_align_beg_ins_code
+_struct_ref_seq.pdbx_auth_seq_align_end
+_struct_ref_seq.pdbx_seq_align_end_ins_code
+1 1 2 15 16 101 ? 102 ?
+loop_
+_struct_asym.id
+_struct_asym.entity_id
+A 1
+loop_
+_atom_sites.fract_transf_matrix[1][1]
+_atom_sites.fract_transf_matrix[1][2]
+_atom_sites.fract_transf_matrix[1][3]
+_atom_sites.fract_transf_vector[1]
+_atom_sites.fract_transf_matrix[2][1]
+_atom_sites.fract_transf_matrix[2][2]
+_atom_sites.fract_transf_matrix[2][3]
+_atom_sites.fract_transf_vector[2]
+_atom_sites.fract_transf_matrix[3][1]
+_atom_sites.fract_transf_matrix[3][2]
+_atom_sites.fract_transf_matrix[3][3]
+_atom_sites.fract_transf_vector[3]
+0.1 0.0 0.0 1.0 0.0 0.05 0.0 2.0 0.0 0.0 0.033333333 3.0
+loop_
+_database_PDB_matrix.origx[1][1]
+_database_PDB_matrix.origx[1][2]
+_database_PDB_matrix.origx[1][3]
+_database_PDB_matrix.origx_vector[1]
+_database_PDB_matrix.origx[2][1]
+_database_PDB_matrix.origx[2][2]
+_database_PDB_matrix.origx[2][3]
+_database_PDB_matrix.origx_vector[2]
+_database_PDB_matrix.origx[3][1]
+_database_PDB_matrix.origx[3][2]
+_database_PDB_matrix.origx[3][3]
+_database_PDB_matrix.origx_vector[3]
+1.0 0.0 0.0 4.0 0.0 1.0 0.0 5.0 0.0 0.0 1.0 6.0
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_alt_id
+_atom_site.label_comp_id
+_atom_site.label_asym_id
+_atom_site.label_entity_id
+_atom_site.label_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.auth_seq_id
+_atom_site.auth_comp_id
+_atom_site.auth_asym_id
+ATOM 1 S SG . CYS A 1 1 0.0 0.0 0.0 101 CYS X
+ATOM 2 S SG . CYS A 1 2 1.0 0.0 0.0 102 CYS X
+loop_
+_struct_conn.id
+_struct_conn.conn_type_id
+_struct_conn.ptnr1_label_asym_id
+_struct_conn.ptnr2_label_asym_id
+_struct_conn.ptnr1_label_comp_id
+_struct_conn.ptnr2_label_comp_id
+_struct_conn.ptnr1_label_atom_id
+_struct_conn.ptnr2_label_atom_id
+_struct_conn.ptnr1_label_seq_id
+_struct_conn.ptnr2_label_seq_id
+conn1 disulf A A CYS CYS SG SG 1 2
+loop_
+_struct_mon_prot_cis.pdbx_PDB_model_num
+_struct_mon_prot_cis.auth_asym_id
+_struct_mon_prot_cis.auth_seq_id
+_struct_mon_prot_cis.pdbx_PDB_ins_code
+_struct_mon_prot_cis.label_comp_id
+_struct_mon_prot_cis.auth_comp_id
+_struct_mon_prot_cis.pdbx_auth_asym_id_2
+_struct_mon_prot_cis.pdbx_auth_seq_id_2
+_struct_mon_prot_cis.pdbx_PDB_ins_code_2
+_struct_mon_prot_cis.pdbx_label_comp_id_2
+_struct_mon_prot_cis.pdbx_auth_comp_id_2
+_struct_mon_prot_cis.label_alt_id
+_struct_mon_prot_cis.pdbx_omega_angle
+1 X 101 ? CYS CYS X 102 ? CYS CYS B -12.5
+loop_
+_pdbx_struct_mod_residue.auth_asym_id
+_pdbx_struct_mod_residue.auth_seq_id
+_pdbx_struct_mod_residue.PDB_ins_code
+_pdbx_struct_mod_residue.auth_comp_id
+_pdbx_struct_mod_residue.label_comp_id
+_pdbx_struct_mod_residue.parent_comp_id
+_pdbx_struct_mod_residue.details
+_pdbx_struct_mod_residue.ccp4_mod_id
+X 101 ? MSE MSE MET 'SELENOMETHIONINE' MOD1
+loop_
+_pdbx_struct_oper_list.id
+_pdbx_struct_oper_list.type
+_pdbx_struct_oper_list.matrix[1][1]
+_pdbx_struct_oper_list.matrix[1][2]
+_pdbx_struct_oper_list.matrix[1][3]
+_pdbx_struct_oper_list.vector[1]
+_pdbx_struct_oper_list.matrix[2][1]
+_pdbx_struct_oper_list.matrix[2][2]
+_pdbx_struct_oper_list.matrix[2][3]
+_pdbx_struct_oper_list.vector[2]
+_pdbx_struct_oper_list.matrix[3][1]
+_pdbx_struct_oper_list.matrix[3][2]
+_pdbx_struct_oper_list.matrix[3][3]
+_pdbx_struct_oper_list.vector[3]
+1 identity 1 0 0 0 0 1 0 0 0 0 1 0
+2 identity 1 0 0 10 0 1 0 0 0 0 1 0
+loop_
+_pdbx_struct_assembly.id
+_pdbx_struct_assembly.details
+_pdbx_struct_assembly.method_details
+_pdbx_struct_assembly.oligomeric_details
+_pdbx_struct_assembly.oligomeric_count
+1 software_defined_assembly program dimeric 2
+loop_
+_pdbx_struct_assembly_gen.assembly_id
+_pdbx_struct_assembly_gen.oper_expression
+_pdbx_struct_assembly_gen.asym_id_list
+1 (1-2) A
+loop_
+_pdbx_struct_assembly_prop.biol_id
+_pdbx_struct_assembly_prop.type
+_pdbx_struct_assembly_prop.value
+1 'ABSA (A^2)' 12.5
+1 'SSA (A^2)' 8.0
+loop_
+_pdbx_sifts_xref_db.entity_id
+_pdbx_sifts_xref_db.asym_id
+_pdbx_sifts_xref_db.seq_id_ordinal
+_pdbx_sifts_xref_db.seq_id
+_pdbx_sifts_xref_db.observed
+_pdbx_sifts_xref_db.unp_res
+_pdbx_sifts_xref_db.unp_num
+_pdbx_sifts_xref_db.unp_acc
+1 A 1 1 y C 15 P12345
+1 A 1 2 y C 16 P12345
+loop_
+_struct_ncs_oper.matrix[1][1]
+_struct_ncs_oper.matrix[1][2]
+_struct_ncs_oper.matrix[1][3]
+_struct_ncs_oper.vector[1]
+_struct_ncs_oper.matrix[2][1]
+_struct_ncs_oper.matrix[2][2]
+_struct_ncs_oper.matrix[2][3]
+_struct_ncs_oper.vector[2]
+_struct_ncs_oper.matrix[3][1]
+_struct_ncs_oper.matrix[3][2]
+_struct_ncs_oper.matrix[3][3]
+_struct_ncs_oper.vector[3]
+_struct_ncs_oper.id
+_struct_ncs_oper.code
+1 0 0 0 0 1 0 0 0 0 1 0 I given
+1 0 0 1 0 1 0 2 0 0 1 3 N generated

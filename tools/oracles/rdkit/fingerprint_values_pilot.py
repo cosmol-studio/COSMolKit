@@ -2,7 +2,7 @@
 import json
 import sys
 import struct
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from functools import partial
 from rdkit import Chem, DataStructs, rdBase
 from rdkit.Chem import Descriptors, rdMolDescriptors, rdDepictor, rdFingerprintGenerator, AllChem
@@ -246,7 +246,7 @@ def molecular(row):
 common_geometry = {}
 common_conformer_geometry = {}
 
-def uff(row, first_case_id=None):
+def prepare_forcefield_geometry(row, first_case_id=None, label="UFF"):
     name, options = next(iter(row["profile"].items()))
     stage = "Parse"
     if name in ("Optimization", "ConformerOptimization") and row["preparation"] is None:
@@ -258,7 +258,7 @@ def uff(row, first_case_id=None):
             try:
                 seed_mol = Chem.MolFromSmiles(key[0])
                 if seed_mol is None:
-                    raise ValueError(f"UFF common geometry parse failed: {preparation_case_id}")
+                    raise ValueError(f"{label} common geometry parse failed: {preparation_case_id}")
                 stage = "Preparation"
                 if key[1]:
                     seed_mol = Chem.AddHs(seed_mol)
@@ -267,7 +267,7 @@ def uff(row, first_case_id=None):
                 params.useRandomCoords = True
                 params.numThreads = 1
                 if AllChem.EmbedMolecule(seed_mol, params) != 0:
-                    raise ValueError(f"UFF common geometry embedding failed: {preparation_case_id}")
+                    raise ValueError(f"{label} common geometry embedding failed: {preparation_case_id}")
                 # Use the source writer's default Kekule representation.
                 # The non-Kekule MolBlock loses pyrrolic [nH] on source reread;
                 # this prepares a valid common input, never fits an FF output.
@@ -297,7 +297,7 @@ def uff(row, first_case_id=None):
                         if (quantized is None
                                 or quantized.GetNumAtoms() != base_geometry["atom_count"]
                                 or quantized.GetNumConformers() != 1):
-                            raise ValueError("invalid quantized UFF base geometry")
+                            raise ValueError(f"invalid quantized {label} base geometry")
                         base_conformer = quantized.GetConformer()
                         coordinate_rows = []
                         for conformer_id, factor in zip(
@@ -324,6 +324,13 @@ def uff(row, first_case_id=None):
                             "detail": f"{type(error).__name__}: {error}",
                         }}
             row["preparation"] = common_conformer_geometry[conformer_key]
+    return row["preparation"]
+
+
+def uff(row, first_case_id=None):
+    name, options = next(iter(row["profile"].items()))
+    stage = "Parse"
+    prepare_forcefield_geometry(row, first_case_id=first_case_id)
     if name in ("Optimization", "ConformerOptimization") and "Rejected" in row["preparation"]:
         return {"Error": row["preparation"]["Rejected"]}
     try:
@@ -460,12 +467,26 @@ def _uff_case(case, parameters, first_case_ids):
     return rows
 
 
-def _generate(corpus, parameters, threads, worker):
+def _generate(corpus, parameters, threads, worker, progress=None):
     if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
         raise ValueError("threads must be a positive integer")
     if not corpus or not parameters:
         raise ValueError("empty corpus or parameter matrix")
     work = partial(worker, parameters=parameters)
+    if progress is not None:
+        progress(0, len(corpus))
+        batches = [None] * len(corpus)
+        if threads == 1:
+            for index, case in enumerate(corpus):
+                batches[index] = work(case)
+                progress(index + 1, len(corpus))
+        else:
+            with ProcessPoolExecutor(max_workers=min(threads, len(corpus))) as pool:
+                pending = {pool.submit(work, case): index for index, case in enumerate(corpus)}
+                for done, future in enumerate(as_completed(pending), 1):
+                    batches[pending[future]] = future.result()
+                    progress(done, len(corpus))
+        return [row for batch in batches for row in batch]
     if threads == 1:
         batches = map(work, corpus)
         return [row for batch in batches for row in batch]
@@ -476,170 +497,170 @@ def _generate(corpus, parameters, threads, worker):
         return [row for batch in batches for row in batch]
 
 
-def generate_fuzzy_and(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _fingerprint_case)
+def generate_fuzzy_and(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _fingerprint_case, progress=progress)
 
 
-def generate_fuzzy_or(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _fingerprint_case)
+def generate_fuzzy_or(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _fingerprint_case, progress=progress)
 
 
-def generate_smiles_read(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_smiles_read(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_sanitize(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_sanitize(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_kekulize(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_kekulize(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_molecular_weight(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_molecular_weight(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_exact_molecular_weight(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_exact_molecular_weight(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_molecular_formula(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_molecular_formula(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_heavy_atoms(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_heavy_atoms(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_total_atom_count(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_total_atom_count(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_lipinski_hba(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_lipinski_hba(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_lipinski_hbd(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_lipinski_hbd(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_fraction_csp3(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_fraction_csp3(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_heteroatoms(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_heteroatoms(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_hba(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_hba(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_hbd(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_hbd(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_rings(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_rings(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_heterocycles(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_heterocycles(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_aromatic_rings(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_aromatic_rings(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_saturated_rings(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_saturated_rings(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_aliphatic_rings(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_aliphatic_rings(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_aromatic_heterocycles(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_aromatic_heterocycles(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_aromatic_carbocycles(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_aromatic_carbocycles(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_aliphatic_heterocycles(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_aliphatic_heterocycles(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_aliphatic_carbocycles(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_aliphatic_carbocycles(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_saturated_heterocycles(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_saturated_heterocycles(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_num_saturated_carbocycles(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_num_saturated_carbocycles(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_add_hydrogens(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_add_hydrogens(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_remove_hydrogens(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_remove_hydrogens(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_coordinates_2d(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_coordinates_2d(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_svg(corpus, parameters, threads):
+def generate_svg(corpus, parameters, threads, progress=None):
     if parameters != ["SvgDefault"]:
         raise ValueError("SVG requires exactly the frozen SvgDefault 300x300 profile")
-    return _generate(corpus, parameters, threads, _molecular_case)
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_distance_matrix(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_distance_matrix(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def _generate_uff(corpus, parameters, threads):
+def _generate_uff(corpus, parameters, threads, progress=None):
     common_geometry.clear()
     common_conformer_geometry.clear()
     first_case_ids = {}
     for case in corpus:
         first_case_ids.setdefault(case["smiles"], case["id"])
     worker = partial(_uff_case, first_case_ids=first_case_ids)
-    return _generate(corpus, parameters, threads, worker)
+    return _generate(corpus, parameters, threads, worker, progress=progress)
 
 
-def generate_uff_has_all_molecule_params(corpus, parameters, threads):
-    return _generate_uff(corpus, parameters, threads)
+def generate_uff_has_all_molecule_params(corpus, parameters, threads, progress=None):
+    return _generate_uff(corpus, parameters, threads, progress=progress)
 
 
-def generate_uff_optimize(corpus, parameters, threads):
-    return _generate_uff(corpus, parameters, threads)
+def generate_uff_optimize(corpus, parameters, threads, progress=None):
+    return _generate_uff(corpus, parameters, threads, progress=progress)
 
 
-def generate_uff_optimize_conformers(corpus, parameters, threads):
-    return _generate_uff(corpus, parameters, threads)
-def generate_morgan_fingerprint(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_uff_optimize_conformers(corpus, parameters, threads, progress=None):
+    return _generate_uff(corpus, parameters, threads, progress=progress)
+def generate_morgan_fingerprint(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_morgan_sparse_fingerprint(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_morgan_sparse_fingerprint(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_morgan_count_fingerprint(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_morgan_count_fingerprint(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
-def generate_morgan_sparse_count_fingerprint(corpus, parameters, threads):
-    return _generate(corpus, parameters, threads, _molecular_case)
+def generate_morgan_sparse_count_fingerprint(corpus, parameters, threads, progress=None):
+    return _generate(corpus, parameters, threads, _molecular_case, progress=progress)
 
 
 
@@ -685,8 +706,8 @@ def _search_case(case, parameters):
     return rows
 
 
-def generate_substructure_match(corpus,parameters,threads):
-    return _generate(corpus,parameters,threads,_search_case)
+def generate_substructure_match(corpus,parameters,threads,progress=None):
+    return _generate(corpus,parameters,threads,_search_case, progress=progress)
 
 GENERATORS = {
     "generate_substructure_match":generate_substructure_match,

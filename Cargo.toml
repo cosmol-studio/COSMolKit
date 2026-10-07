@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "parity-tests",
+    "parity-tests_fixed",
     "crates/cosmolkit-core",
     "crates/cosmolkit-cx",
     "crates/cosmolkit-smiles",

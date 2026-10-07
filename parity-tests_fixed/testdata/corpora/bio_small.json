@@ -1,0 +1,1 @@
+{"format":"bio","inputs":[{"id":"pdb_sample","format":"pdb","input":"../bio/sample.pdb"},{"id":"cif_sample","format":"cif","input":"../bio/sample.cif"}],"records":2}

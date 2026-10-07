@@ -2,8 +2,6 @@
 mod coordinate_views;
 
 use std::error::Error as _;
-use std::path::PathBuf;
-use std::process::{Command, Output};
 
 use cosmolkit::{
     Atom, AtomId, AtomSpec, BINDING_CONTRACT, BindingDefault, BindingItem, BindingKind,
@@ -430,81 +428,6 @@ fn sanitize_failure_is_structured_and_atomic() {
     assert!(std::ptr::eq(source.topology(), observer.topology()));
     coordinate_views::assert_shared_coordinates(&source, &observer);
     assert!(std::ptr::eq(source.properties(), observer.properties()));
-}
-
-fn privacy_cargo_check(case: &str, strict: bool) -> Output {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace = manifest_dir
-        .parent()
-        .and_then(|path| path.parent())
-        .expect("cosmolkit crate must be nested under the workspace crates directory");
-    let target = workspace.join("target/sanitize-privacy-compile");
-    let inherited = std::env::var("RUSTFLAGS").unwrap_or_default();
-    let rustflags = format!(
-        "{inherited} --cfg cosmolkit_runtime_privacy_probe \
-         --cfg=cosmolkit_runtime_privacy_case=\"{case}\""
-    );
-    let features = if strict {
-        "cap-sanitize,op-contracts-strict"
-    } else {
-        "cap-sanitize"
-    };
-    Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
-        .current_dir(workspace)
-        .env("CARGO_TARGET_DIR", target)
-        .env("CARGO_INCREMENTAL", "0")
-        .env("RUSTFLAGS", rustflags)
-        .args([
-            "check",
-            "--quiet",
-            "-p",
-            "cosmolkit",
-            "--lib",
-            "--features",
-            features,
-        ])
-        .output()
-        .expect("run the real sanitize operation-body compile-privacy probe")
-}
-
-#[test]
-fn sanitize_operation_body_sees_only_its_generated_capabilities() {
-    for strict in [false, true] {
-        let mode = if strict { "strict" } else { "default" };
-        let allowed = privacy_cargo_check("sanitize_allowed", strict);
-        assert!(
-            allowed.status.success(),
-            "authorized sanitize capabilities did not compile in {mode} mode:\n{}",
-            String::from_utf8_lossy(&allowed.stderr)
-        );
-
-        let forbidden = privacy_cargo_check("sanitize_forbidden", strict);
-        assert!(
-            !forbidden.status.success(),
-            "unauthorized sanitize capabilities unexpectedly compiled in {mode} mode"
-        );
-        let stderr = String::from_utf8_lossy(&forbidden.stderr);
-        for rejected_surface in [
-            "coordinates",
-            "read_topology_runtime",
-            "read_properties_runtime",
-            "checkout_topology_runtime",
-            "install_topology_runtime",
-            "spec",
-            "source",
-            "derived_cache",
-            "in_place_target",
-            "new_in_place",
-            "finish",
-            "abort_in_place",
-            "finish_in_place",
-        ] {
-            assert!(
-                stderr.contains(rejected_surface),
-                "{mode} compile failure did not prove `{rejected_surface}` is hidden:\n{stderr}"
-            );
-        }
-    }
 }
 
 #[test]

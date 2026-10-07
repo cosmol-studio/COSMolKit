@@ -12,6 +12,10 @@
 //! implicit. Features compose additively and do not change operation behavior.
 //! See the crate README for bundle membership and advanced selection examples.
 
+#[cfg(doctest)]
+#[path = "../tests/support/feature_gate_docs.rs"]
+mod feature_gate_docs;
+
 #[doc(hidden)]
 pub mod binding_contract;
 #[cfg(feature = "cap-forcefields")]

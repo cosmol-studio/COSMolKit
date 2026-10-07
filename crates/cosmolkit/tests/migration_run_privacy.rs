@@ -1,91 +1,38 @@
+//! Real-module privacy probes share compilations, not just dependencies.
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
-fn cargo_check(case: &str, strict: bool) -> Output {
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace = manifest_dir
-        .parent()
-        .and_then(|path| path.parent())
-        .expect("cosmolkit crate must be nested under the workspace crates directory");
-    let target = workspace.join("target/runtime-privacy-compile");
-    let inherited = std::env::var("RUSTFLAGS").unwrap_or_default();
-    let rustflags = format!(
-        "{inherited} --cfg cosmolkit_runtime_privacy_probe \
-         --cfg=cosmolkit_runtime_privacy_case=\"{case}\""
-    );
-    let features = if strict {
-        "cap-hydrogens,cap-stereo,op-contracts-strict"
-    } else {
-        "cap-hydrogens,cap-stereo"
-    };
+type Case = (&'static str, &'static [&'static str]);
 
-    Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
-        .current_dir(workspace)
-        .env("CARGO_TARGET_DIR", target)
-        .env("CARGO_INCREMENTAL", "0")
-        .env("RUSTFLAGS", rustflags)
-        .args([
-            "check",
-            "--quiet",
-            "-p",
-            "cosmolkit",
-            "--lib",
-            "--features",
-            features,
-        ])
-        .output()
-        .expect("run the real cosmolkit compile-privacy probe")
-}
+const ALLOWED: &[&str] = &[
+    "allowed",
+    "cip_cow_allowed",
+    "atom_code_cow_allowed",
+    "pending_allowed",
+    "preserve_allowed",
+    "sanitize_allowed",
+];
 
-#[test]
-fn cip_cow_staging_preserves_marker_authority_and_scoped_borrows() {
-    for strict in [false, true] {
-        let allowed = cargo_check("cip_cow_allowed", strict);
-        assert!(
-            allowed.status.success(),
-            "{}",
-            String::from_utf8_lossy(&allowed.stderr)
-        );
-
-        let missing_writes = cargo_check("cip_cow_missing_writes", strict);
-        assert!(!missing_writes.status.success());
-        let errors = String::from_utf8_lossy(&missing_writes.stderr);
-        assert!(
-            errors.contains("E0599") && errors.contains("stage_topology_properties_cow"),
-            "{errors}"
-        );
-
-        let private = cargo_check("cip_cow_runtime_private", strict);
-        assert!(!private.status.success());
-        let errors = String::from_utf8_lossy(&private.stderr);
-        assert!(
-            errors.contains("private") && errors.contains("stage_topology_properties_cow_runtime"),
-            "{errors}"
-        );
-
-        let escaped = cargo_check("cip_cow_borrow_escape", strict);
-        assert!(!escaped.status.success());
-        let errors = String::from_utf8_lossy(&escaped.stderr);
-        assert!(
-            errors.contains("lifetime may not live long enough"),
-            "{errors}"
-        );
-    }
-}
-
-#[test]
-fn preserve_only_capabilities_separate_borrows_proofs_and_mutation() {
-    for strict in [false, true] {
-        let allowed = cargo_check("preserve_allowed", strict);
-        assert!(
-            allowed.status.success(),
-            "{}",
-            String::from_utf8_lossy(&allowed.stderr)
-        );
-        let forbidden = cargo_check("preserve_forbidden", strict);
-        assert!(!forbidden.status.success());
-        let errors = String::from_utf8_lossy(&forbidden.stderr);
-        for surface in [
+const ACCESS: &[Case] = &[
+    (
+        "cip_cow_missing_writes",
+        &["E0599", "stage_topology_properties_cow"],
+    ),
+    (
+        "cip_cow_runtime_private",
+        &["private", "stage_topology_properties_cow_runtime"],
+    ),
+    (
+        "atom_code_cow_missing_writes",
+        &["E0599", "stage_topology_properties"],
+    ),
+    (
+        "atom_code_cow_runtime_private",
+        &["private", "stage_topology_properties"],
+    ),
+    (
+        "preserve_forbidden",
+        &[
             "checkout_derived_cache",
             "install_derived_cache",
             "clear_cache",
@@ -93,43 +40,13 @@ fn preserve_only_capabilities_separate_borrows_proofs_and_mutation() {
             "read_derived_cache_runtime",
             "checkout_derived_cache_runtime",
             "prove_preserved_runtime",
-        ] {
-            assert!(
-                errors.contains(surface),
-                "missing rejection of {surface}: {errors}"
-            );
-        }
-        assert!(errors.contains("private"), "{errors}");
-        let no_read = cargo_check("preserve_no_read", strict);
-        assert!(!no_read.status.success());
-        let errors = String::from_utf8_lossy(&no_read.stderr);
-        assert!(
-            errors.contains("E0599") && errors.contains("derived_cache"),
-            "{errors}"
-        );
-        let immutable = cargo_check("preserve_immutable", strict);
-        assert!(!immutable.status.success());
-        let errors = String::from_utf8_lossy(&immutable.stderr);
-        assert!(
-            errors.contains("E0596") && errors.contains("mutable"),
-            "{errors}"
-        );
-    }
-}
-
-#[test]
-fn pending_results_are_registry_scoped_and_finalization_is_wrapper_private() {
-    for strict in [false, true] {
-        let allowed = cargo_check("pending_allowed", strict);
-        assert!(
-            allowed.status.success(),
-            "{}",
-            String::from_utf8_lossy(&allowed.stderr)
-        );
-        let forbidden = cargo_check("pending_forbidden", strict);
-        assert!(!forbidden.status.success());
-        let errors = String::from_utf8_lossy(&forbidden.stderr);
-        for surface in [
+            "private",
+        ],
+    ),
+    ("preserve_no_read", &["E0599", "derived_cache"]),
+    (
+        "pending_forbidden",
+        &[
             "pending_molecule",
             "pending_molecule_runtime",
             "ensure_unsealed_runtime",
@@ -143,55 +60,33 @@ fn pending_results_are_registry_scoped_and_finalization_is_wrapper_private() {
             "num_atoms",
             "Molecule",
             "private",
-        ] {
-            assert!(
-                errors.contains(surface),
-                "missing rejection of {surface}: {errors}"
-            );
-        }
-        let wrong_marker = cargo_check("pending_wrong_marker", strict);
-        assert!(!wrong_marker.status.success());
-        let errors = String::from_utf8_lossy(&wrong_marker.stderr);
-        assert!(
-            errors.contains("mismatched types") && errors.contains("WithHydrogensAccess"),
-            "{errors}"
-        );
-        let finalizer = cargo_check("pending_finalizer", strict);
-        assert!(!finalizer.status.success());
-        let errors = String::from_utf8_lossy(&finalizer.stderr);
-        assert!(
-            errors.contains("private") && errors.contains("parts") && errors.contains("operation"),
-            "{errors}"
-        );
-        let reuse = cargo_check("pending_reuse", strict);
-        assert!(!reuse.status.success());
-        let errors = String::from_utf8_lossy(&reuse.stderr);
-        assert!(
-            errors.contains("use of moved value") && errors.contains("pending"),
-            "{errors}"
-        );
-    }
-}
-
-#[test]
-fn real_operation_body_module_only_sees_generated_capabilities() {
-    for strict in [false, true] {
-        let mode = if strict { "strict" } else { "default" };
-
-        let allowed = cargo_check("allowed", strict);
-        assert!(
-            allowed.status.success(),
-            "authorized generated methods did not compile in {mode} mode:\n{}",
-            String::from_utf8_lossy(&allowed.stderr)
-        );
-
-        let forbidden = cargo_check("forbidden", strict);
-        assert!(
-            !forbidden.status.success(),
-            "runtime internals unexpectedly compiled in {mode} mode"
-        );
-        let stderr = String::from_utf8_lossy(&forbidden.stderr);
-        for rejected_surface in [
+        ],
+    ),
+    (
+        "pending_wrong_marker",
+        &["mismatched types", "WithHydrogensAccess"],
+    ),
+    (
+        "sanitize_forbidden",
+        &[
+            "coordinates",
+            "read_topology_runtime",
+            "read_properties_runtime",
+            "checkout_topology_runtime",
+            "install_topology_runtime",
+            "spec",
+            "source",
+            "derived_cache",
+            "in_place_target",
+            "new_in_place",
+            "finish",
+            "abort_in_place",
+            "finish_in_place",
+        ],
+    ),
+    (
+        "forbidden",
+        &[
             "properties",
             "read_properties_runtime",
             "checkout_topology_runtime",
@@ -217,11 +112,153 @@ fn real_operation_body_module_only_sees_generated_capabilities() {
             "finish",
             "abort_in_place",
             "finish_in_place",
-        ] {
+        ],
+    ),
+];
+
+// Type/access errors stop rustc before borrow checking. Keep these in a
+// separate compilation so the lifetime, mutability and move probes run too.
+const BORROWS: &[Case] = &[
+    (
+        "cip_cow_borrow_escape",
+        &["lifetime may not live long enough"],
+    ),
+    ("atom_code_cow_borrow_escape", &["lifetime"]),
+    ("preserve_immutable", &["E0596", "mutable"]),
+    ("pending_reuse", &["use of moved value", "pending"]),
+];
+
+// Struct-field privacy is checked after type/borrow checking succeeds.
+const FINALIZER: &[Case] = &[("pending_finalizer", &["private", "parts", "operation"])];
+
+#[test]
+fn real_operation_module_capability_boundaries_default_and_strict() {
+    for strict in [false, true] {
+        let allowed = compile_probe(ALLOWED, strict);
+        assert!(allowed.status.success(), "{}", output_text(&allowed));
+        for cases in [ACCESS, BORROWS, FINALIZER] {
+            let selected: Vec<_> = cases.iter().map(|(case, _)| *case).collect();
+            let output = compile_probe(&selected, strict);
             assert!(
-                stderr.contains(rejected_surface),
-                "{mode} compile failure did not prove `{rejected_surface}` is hidden:\n{stderr}"
+                !output.status.success(),
+                "{selected:?} unexpectedly compiled"
             );
+            let messages: Vec<serde_json::Value> = String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .map(|line| serde_json::from_str(line).expect("Cargo JSON diagnostic"))
+                .filter(|event: &serde_json::Value| {
+                    event["reason"] == "compiler-message" && event["message"]["level"] == "error"
+                })
+                .map(|event| event["message"].clone())
+                .collect();
+            for &(case, expected) in cases {
+                // Attribute every error to its own probe's primary source span.
+                // An unrelated failure must not satisfy another probe.
+                let errors = messages
+                    .iter()
+                    .filter(|message| error_belongs_to(message, case))
+                    .map(|message| message["rendered"].as_str().expect("rendered error"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert!(
+                    !errors.is_empty(),
+                    "strict={strict} case={case}: no probe error\n{}",
+                    output_text(&output)
+                );
+                for diagnostic in expected {
+                    assert!(
+                        errors.contains(diagnostic),
+                        "strict={strict} case={case}: missing {diagnostic:?}\n{errors}"
+                    );
+                }
+            }
         }
     }
+    println!(
+        "8 compiler invocations; 15 rejected probe groups verified in both default and strict modes"
+    );
+}
+
+fn error_belongs_to(message: &serde_json::Value, case: &str) -> bool {
+    let source = include_str!("../src/ops/runtime_privacy_probe.rs");
+    message["spans"]
+        .as_array()
+        .expect("diagnostic spans")
+        .iter()
+        .any(|span| {
+            span["is_primary"] == true
+                && span["file_name"]
+                    .as_str()
+                    .is_some_and(|path| path.ends_with("/runtime_privacy_probe.rs"))
+                && span["line_start"].as_u64().is_some_and(|line| {
+                    source
+                        .lines()
+                        .take(line as usize)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .find_map(|line| {
+                            line.strip_prefix("#[cfg(cosmolkit_runtime_privacy_case = \"")
+                                .and_then(|line| line.strip_suffix("\")]"))
+                        })
+                        == Some(case)
+                })
+        })
+}
+
+fn output_text(output: &Output) -> String {
+    let errors = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|event| {
+            event["reason"] == "compiler-message" && event["message"]["level"] == "error"
+        })
+        .filter_map(|event| event["message"]["rendered"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("{errors}\n{}", String::from_utf8_lossy(&output.stderr))
+}
+
+fn compile_probe(cases: &[&str], strict: bool) -> Output {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace = manifest_dir
+        .parent()
+        .and_then(|path| path.parent())
+        .unwrap();
+    let features = if strict {
+        "cap-hydrogens,cap-stereo,cap-fingerprints,cap-sanitize,op-contracts-strict"
+    } else {
+        "cap-hydrogens,cap-stereo,cap-fingerprints,cap-sanitize"
+    };
+    let mut command = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()));
+    command
+        .current_dir(workspace)
+        .env(
+            "CARGO_TARGET_DIR",
+            workspace.join("target/runtime-privacy-compile"),
+        )
+        .env("CARGO_INCREMENTAL", "0")
+        .args([
+            "rustc",
+            "--quiet",
+            "--locked",
+            "--message-format=json",
+            "-p",
+            "cosmolkit",
+            "--lib",
+            "--no-default-features",
+            "--features",
+            features,
+            "--",
+            "--emit=metadata",
+            "--cfg",
+            "cosmolkit_runtime_privacy_probe",
+        ]);
+    for case in cases {
+        command.args([
+            "--cfg",
+            &format!("cosmolkit_runtime_privacy_case=\"{case}\""),
+        ]);
+    }
+    command.output().expect("run real-module privacy probes")
 }

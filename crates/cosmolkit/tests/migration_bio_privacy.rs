@@ -17,18 +17,21 @@ fn bio_real_operation_modules_expose_only_declared_fields_in_default_and_strict(
             "replacement_undeclared",
             "replacement_required",
         ] {
-            let flags = format!(
-                "{} --cfg cosmolkit_bio_privacy_probe --cfg=cosmolkit_bio_privacy_case=\"{case}\"",
-                std::env::var("RUSTFLAGS").unwrap_or_default()
-            );
+            // Probe cfgs belong to this facade only. Dependencies do not need
+            // to be rebuilt for each deliberately invalid operation body.
+            let case_cfg = format!("cosmolkit_bio_privacy_case=\"{case}\"");
             let output = Command::new(std::env::var("CARGO").unwrap_or_else(|_| "cargo".into()))
                 .current_dir(root)
-                .env("CARGO_TARGET_DIR", root.join("target/bio-privacy-compile"))
+                .env(
+                    "CARGO_TARGET_DIR",
+                    root.join("target/runtime-privacy-compile"),
+                )
                 .env("CARGO_BUILD_JOBS", "4")
-                .env("RUSTFLAGS", flags)
+                .env("CARGO_INCREMENTAL", "0")
                 .args([
-                    "check",
+                    "rustc",
                     "--quiet",
+                    "--locked",
                     "-p",
                     "cosmolkit",
                     "--lib",
@@ -37,8 +40,14 @@ fn bio_real_operation_modules_expose_only_declared_fields_in_default_and_strict(
                     if strict {
                         "cap-bio,op-contracts-strict"
                     } else {
-                        "bio"
+                        "cap-bio"
                     },
+                    "--",
+                    "--emit=metadata",
+                    "--cfg",
+                    "cosmolkit_bio_privacy_probe",
+                    "--cfg",
+                    &case_cfg,
                 ])
                 .output()
                 .unwrap();

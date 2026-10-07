@@ -6,6 +6,73 @@ fn pdb_text() -> &'static str {
     "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nTER       2      ALA A   1                                                      \nEND"
 }
 
+fn mmcif_text() -> &'static str {
+    r#"data_test
+_entry.id test
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.label_atom_id
+_atom_site.label_comp_id
+_atom_site.auth_asym_id
+_atom_site.auth_seq_id
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+_atom_site.occupancy
+_atom_site.B_iso_or_equiv
+ATOM 1 C CA ALA A 1 1.000 2.000 3.000 1.00 20.00
+"#
+}
+
+fn all_pdb_controls() -> BioPdbWriteParams {
+    BioPdbWriteParams {
+        ter_records: true,
+        numbered_ter: true,
+        ter_ignores_type: true,
+        preserve_serial: true,
+        end_record: true,
+    }
+}
+
+#[test]
+fn bio_pdb_output_pdb_all_controls_smoke() {
+    let structure = BioStructure::from_pdb(pdb_text()).expect("parses PDB");
+    let text = structure
+        .to_pdb_with_params(&all_pdb_controls())
+        .expect("writes PDB with all controls enabled");
+    assert!(!text.is_empty(), "PDB output is nonempty");
+    assert!(text.contains("ATOM"), "contains ATOM");
+    assert!(text.contains("TER"), "contains TER");
+}
+
+#[test]
+fn bio_pdb_output_mmcif_all_controls_smoke() {
+    let structure = BioStructure::from_mmcif(mmcif_text()).expect("parses mmCIF");
+    let text = structure
+        .to_pdb_with_params(&all_pdb_controls())
+        .expect("writes PDB from mmCIF with all controls enabled");
+    assert!(!text.is_empty(), "mmCIF-to-PDB output is nonempty");
+}
+
+#[test]
+fn bio_pdb_output_pdb_explicit_ter_controls_smoke() {
+    let structure = BioStructure::from_pdb(pdb_text()).expect("parses PDB");
+    let text = structure
+        .to_pdb_with_params(&BioPdbWriteParams {
+            ter_records: true,
+            numbered_ter: true,
+            ter_ignores_type: false,
+            preserve_serial: false,
+            end_record: true,
+        })
+        .expect("writes PDB with explicit TER controls");
+    assert!(!text.is_empty(), "PDB output is nonempty");
+    assert!(text.contains("ATOM"), "contains ATOM");
+    assert!(text.contains("TER"), "contains TER");
+}
+
 #[test]
 fn bio_pdb_output_to_pdb_default() {
     let structure = BioStructure::from_pdb(pdb_text()).expect("parses");

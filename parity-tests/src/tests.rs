@@ -697,9 +697,7 @@ fn bio_corpus() -> Corpus {
 
 #[cfg(test)]
 mod bio_pdb_output_tests {
-    use crate::registry::{
-        self, BioPdbCase, BioPdbOutputProfile, CorpusType, Input, Operation, Task,
-    };
+    use crate::registry::{self, BioPdbCase, BioPdbOutputProfile, CorpusType, Input, Operation};
 
     /// bio_pdb_output_pdb: task is registered with the correct key,
     /// corpus type, and generator name.
@@ -725,35 +723,6 @@ mod bio_pdb_output_tests {
         assert_eq!(task.corpus_type, CorpusType::Cif);
         assert_eq!(task.generator, "generate_bio_pdb_output_cif");
         assert_eq!(task.key(), "bio_pdb_output_cif");
-    }
-
-    /// Executor: a simple PDB case produces nonempty output text via the
-    /// public BioStructure facade.
-    #[test]
-    fn bio_pdb_output_executor_produces_text() {
-        let input = Input::BioPdbOutput {
-            case: BioPdbCase {
-                id: "c02".to_string(),
-                text: "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nTER       2      ALA A   1                                                      \nEND".to_string(),
-                format: crate::registry::BioPdbCorpusFormat::Pdb,
-            },
-            profile: BioPdbOutputProfile {
-                ter_records: true,
-                numbered_ter: true,
-                ter_ignores_type: false,
-                preserve_serial: false,
-                end_record: true,
-            },
-        };
-        let record = crate::execute::run(&input).expect("executor produces output");
-        match record.output {
-            crate::registry::Value::BioPdbOutput(value) => {
-                assert!(!value.text.is_empty(), "output text is nonempty");
-                assert!(value.text.contains("ATOM"), "contains ATOM");
-                assert!(value.text.contains("TER"), "contains TER");
-            }
-            other => panic!("unexpected Value variant: {other:?}"),
-        }
     }
 
     /// Validate: task.validate_reference accepts nonempty output.
