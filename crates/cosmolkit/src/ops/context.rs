@@ -2500,7 +2500,7 @@ mod mmff_proof_tests;
 /// acquiring constructor or unrestricted block authority.
 #[cfg(feature = "cap-serialization")]
 impl Molecule {
-    /// Serializes the complete canonical molecule as a COS-native1.2 archive.
+    /// Serializes the complete molecule as a CK-native archive 2.0.
     pub fn to_binary(&self) -> Result<Vec<u8>, crate::PickleError> {
         let topology = self.topology_arc_runtime();
         let cache = self.derived_cache_runtime();
@@ -2520,7 +2520,7 @@ impl Molecule {
         })
     }
 
-    /// Restores native1.2, historical sectioned1.0/1.1, or raw versions1..3.
+    /// Restores archive 2.0, legacy archives 1.0..1.2, or raw versions 1..3.
     /// No sanitation, perception, or reconstruction of historically absent
     /// typed/PDB/coordinate state runs at this constructor boundary.
     pub fn from_binary(data: &[u8]) -> Result<Self, crate::PickleError> {

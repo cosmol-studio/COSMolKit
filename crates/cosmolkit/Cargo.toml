@@ -355,3 +355,7 @@ required-features = ["cap-fingerprints", "cap-smiles", "cap-search"]
 [[test]]
 name = "uff_numerical_parity"
 required-features = ["cap-forcefields", "cap-smiles", "cap-valence"]
+
+[[test]]
+name = "native_archive_v2"
+required-features = ["cap-serialization"]

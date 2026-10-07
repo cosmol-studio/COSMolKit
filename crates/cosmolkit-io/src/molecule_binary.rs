@@ -1,7 +1,7 @@
 //! COSMolKit native molecule archive, adapted from the complete original
 //! properties/mol_pickler.rs, SHA256 a72f13b9b36c6d691b23e2f5eecabb6bff71d166e66ab6f638972e36abcdc6fb.
-//! Raw versions1..3 and sectioned1.0/1.1 retain their wire definitions. Required
-//! section4/v1 in archive1.2 preserves canonical state absent from that format.
+//! Writers emit archive 2.0 with one complete Müsli molecule block and one
+//! derived-state block. Raw1..3 and archive1.0..1.2 remain legacy read formats.
 //! This is COS-native serialization, not the RDKit binary wire protocol.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,10 +21,13 @@ use cosmolkit_model::{
 
 use cosmolkit_core::{RingFindType, RingInfo, ValenceAssignment, property_value_to_string};
 
+mod archive_v2;
+
 // ──────────────────────────────────────────────
 // Format version
 // ──────────────────────────────────────────────
 const PICKLE_VERSION: u8 = 3;
+// Archive 1.x only; archive 2 has its own magic and decoder.
 const ARCHIVE_MAGIC: &[u8; 8] = b"CSMOLPKL";
 const ARCHIVE_MAJOR: u16 = 1;
 const ARCHIVE_MINOR: u16 = 2;
@@ -599,6 +602,7 @@ fn read_ring_info(
     .map_err(|message| PickleError::InvalidArchive(message.to_string()))
 }
 
+#[cfg(test)]
 fn encode_derived_state(mol: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
     let cache = &mol.derived;
     let mut w = PickleWriter::new();
@@ -714,6 +718,7 @@ fn decode_derived_state(
     })
 }
 
+#[cfg(test)]
 fn archive_manifest() -> ArchiveManifestV1 {
     ArchiveManifestV1 {
         crate_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -722,11 +727,13 @@ fn archive_manifest() -> ArchiveManifestV1 {
     }
 }
 
+#[cfg(test)]
 fn encode_manifest() -> Result<Vec<u8>, PickleError> {
     postcard::to_allocvec(&archive_manifest())
         .map_err(|err| PickleError::InvalidArchive(format!("manifest encode failed: {err}")))
 }
 
+#[cfg(test)]
 fn encode_molecule_state(payload: Vec<u8>) -> Result<Vec<u8>, PickleError> {
     let state = MoleculeStateV1 {
         encoding: SECTION_CODEC_RAW,
@@ -760,6 +767,7 @@ fn write_archive_section(
     Ok(())
 }
 
+#[cfg(test)]
 fn encode_sectioned_archive(
     molecule_state: Vec<u8>,
     derived_state: Vec<u8>,
@@ -819,16 +827,24 @@ fn encode_sectioned_archive(
 fn read_archive_sections<'a>(
     data: &'a [u8],
 ) -> Result<(u16, Vec<ArchiveSection<'a>>), PickleError> {
+    let (major, minor, sections) = read_archive_envelope(data, ARCHIVE_MAGIC)?;
+    if major != ARCHIVE_MAJOR || minor > ARCHIVE_MINOR {
+        return Err(PickleError::UnsupportedArchiveVersion { major, minor });
+    }
+    Ok((minor, sections))
+}
+
+fn read_archive_envelope<'a>(
+    data: &'a [u8],
+    expected_magic: &[u8; 8],
+) -> Result<(u16, u16, Vec<ArchiveSection<'a>>), PickleError> {
     let mut r = PickleReader::new(data);
-    let magic = r.read_exact_slice(ARCHIVE_MAGIC.len())?;
-    if magic != ARCHIVE_MAGIC {
+    let magic = r.read_exact_slice(expected_magic.len())?;
+    if magic != expected_magic {
         return Err(PickleError::InvalidArchive("magic mismatch".to_string()));
     }
     let major = read_u16_le(&mut r)?;
     let minor = read_u16_le(&mut r)?;
-    if major != ARCHIVE_MAJOR || minor > ARCHIVE_MINOR {
-        return Err(PickleError::UnsupportedArchiveVersion { major, minor });
-    }
     let section_count = read_u16_le(&mut r)? as usize;
     if section_count > 1024 {
         return Err(PickleError::InvalidArchive(format!(
@@ -860,7 +876,7 @@ fn read_archive_sections<'a>(
             r.remaining()
         )));
     }
-    Ok((minor, sections))
+    Ok((major, minor, sections))
 }
 
 fn decode_sectioned_archive(data: &[u8]) -> Result<BinaryRecord, PickleError> {
@@ -1013,7 +1029,7 @@ fn decode_sectioned_archive(data: &[u8]) -> Result<BinaryRecord, PickleError> {
             properties: &molecule.properties,
             derived: BinaryDerivedView::default(),
         };
-        if mol_to_legacy_binary(&input)? != state.payload {
+        if mol_to_legacy_binary_version(&input, state.encoding_version)? != state.payload {
             return Err(PickleError::InvalidArchive(
                 "canonical state disagrees with legacy companion".into(),
             ));
@@ -1821,22 +1837,19 @@ fn write_stereo_group(w: &mut PickleWriter, sg: &StereoGroup) {
 /// - Molecule state: atoms, bonds, coordinates, groups, and properties
 /// - Derived chemistry state: rings, valence, aromaticity, and stereo validity
 ///
-/// Current archives retain the materialized chemistry state needed for
-/// behavior-preserving roundtrips. Direct legacy payloads and archive v1.0
-/// remain readable.
+/// Archive 2.0 stores the complete molecule once, using Müsli storage, with a
+/// separate derived-state block. Legacy raw 1..3 and archives 1.0..1.2 remain
+/// readable through `decode_molecule_binary`.
 ///
 /// # Errors
 ///
 /// Returns `PickleError` if serialization encounters an internal issue.
 pub fn encode_molecule_binary(mol: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
     mol.validate()?;
-    encode_sectioned_archive(
-        mol_to_legacy_binary(mol)?,
-        encode_derived_state(mol)?,
-        encode_canonical_state(mol)?,
-    )
+    archive_v2::encode(mol)
 }
 
+#[cfg(test)]
 fn mol_to_legacy_binary(mol: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
     mol_to_legacy_binary_version(mol, PICKLE_VERSION)
 }
@@ -1976,7 +1989,9 @@ fn mol_to_legacy_binary_version(
 /// Returns `PickleError` if the data is corrupt, has an unsupported version,
 /// or produces an invalid molecule state.
 pub fn decode_molecule_binary(data: &[u8]) -> Result<BinaryRecord, PickleError> {
-    if data.starts_with(ARCHIVE_MAGIC) {
+    if data.starts_with(archive_v2::MAGIC) {
+        archive_v2::decode(data)
+    } else if data.starts_with(ARCHIVE_MAGIC) {
         decode_sectioned_archive(data)
     } else {
         mol_from_legacy_binary(data)
@@ -2763,6 +2778,7 @@ fn read_native_id(r: &mut PickleReader<'_>) -> Result<usize, PickleError> {
     usize::try_from(r.read_u64()?).map_err(invalid)
 }
 
+#[cfg(test)]
 fn encode_canonical_state(mol: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
     let mut w = PickleWriter::new();
     w.buf
@@ -3244,6 +3260,113 @@ mod tests {
     fn fixture_encode(record: &BinaryRecord) -> Result<Vec<u8>, PickleError> {
         encode_molecule_binary(&fixture_input(record))
     }
+    fn fixture_encode_legacy12(record: &BinaryRecord) -> Result<Vec<u8>, PickleError> {
+        let input = fixture_input(record);
+        encode_sectioned_archive(
+            mol_to_legacy_binary(&input)?,
+            encode_derived_state(&input)?,
+            encode_canonical_state(&input)?,
+        )
+    }
+
+    #[test]
+    fn frozen_legacy_raw_and_archive_layouts_remain_readable_without_writers() {
+        // Fixed empty-molecule bytes transcribed from the legacy wire layout:
+        // raw1/2/3; archive1.0/1.1; archive1.2 canonical1 and canonical2.
+        // Producer is the fixed text "legacy", not the current package version.
+        let fixtures = [
+            "010000000000000000000000000000000000000000000000000000000000000000000000",
+            "02000000000000000000000000000001000000000000000000000000000000000000000000",
+            "0300000000000000000000000000000100000000000000000000000000000000000000000000000000",
+            "43534d4f4c504b4c01000000020001000100000109000000066c656761637901010200010001012c0000000003290300000000000000000000000000000100000000000000000000000000000000000000000000000000",
+            "43534d4f4c504b4c01000100030001000100000109000000066c656761637901010200010001012c0000000003290300000000000000000000000000000100000000000000000000000000000000000000000000000000030001000100050000000000000000",
+            "43534d4f4c504b4c01000200040001000100000109000000066c656761637901010200010001012c00000000032903000000000000000000000000000001000000000000000000000000000000000000000000000000000300010001000500000000000000000400010001001e000000000000000000000000000000000000000000000000000000000000000000",
+            "43534d4f4c504b4c01000200040001000100000109000000066c656761637901010200010001012c00000000032903000000000000000000000000000001000000000000000000000000000000000000000000000000000300010001000500000000000000000400020001001f00000000000000000000000000000000000000000000000000000000000000000000",
+        ];
+        for (i, hex) in fixtures.into_iter().enumerate() {
+            let bytes = (0..hex.len())
+                .step_by(2)
+                .map(|j| u8::from_str_radix(&hex[j..j + 2], 16).unwrap())
+                .collect::<Vec<_>>();
+            let record = decode_molecule_binary(&bytes)
+                .unwrap_or_else(|e| panic!("legacy fixture {i}: {e}"));
+            assert_record_equal(&BinaryRecord::new(), &record, "fixed legacy wire");
+            let upgraded = fixture_encode(&record).unwrap();
+            assert_eq!(&upgraded[8..12], &[2, 0, 0, 0]);
+            assert_record_equal(
+                &record,
+                &decode_molecule_binary(&upgraded).unwrap(),
+                "legacy to archive 2",
+            );
+        }
+    }
+
+    #[test]
+    fn legacy12_companions_use_their_actual_raw_version() {
+        let record = BinaryRecord::new();
+        let input = fixture_input(&record);
+        for version in 1..=3 {
+            let raw = mol_to_legacy_binary_version(&input, version).unwrap();
+            let state = postcard::to_allocvec(&MoleculeStateV1 {
+                encoding: 0,
+                encoding_version: version,
+                payload: raw,
+            })
+            .unwrap();
+            let manifest = encode_manifest().unwrap();
+            let derived = encode_derived_state(&input).unwrap();
+            let canonical = encode_canonical_state(&input).unwrap();
+            let mut archive = ARCHIVE_MAGIC.to_vec();
+            write_u16_le(&mut archive, 1);
+            write_u16_le(&mut archive, 2);
+            write_u16_le(&mut archive, 4);
+            for (id, v, flags, codec, payload) in [
+                (1, 1, 0, 1, manifest),
+                (2, 1, 1, 1, state),
+                (3, 1, 1, 0, derived),
+                (4, 2, 1, 0, canonical),
+            ] {
+                write_archive_section(&mut archive, id, v, flags, codec, &payload).unwrap();
+            }
+            assert_record_equal(
+                &record,
+                &decode_molecule_binary(&archive).unwrap(),
+                "version-specific legacy companion",
+            );
+        }
+    }
+
+    #[test]
+    fn valid_legacy_computed_collision_and_complete_native_state_upgrade_losslessly() {
+        let mut original = build_simple_methane();
+        original.properties = original
+            .properties
+            .with_prop("__computedProps", "opaque")
+            .unwrap()
+            .with_computed_prop("mass", "16.043")
+            .unwrap();
+        original.topology.atoms[0]
+            .set_prop("__computedProps", "opaque")
+            .unwrap();
+        original.topology.atoms[0]
+            .set_computed_prop("rank", 7)
+            .unwrap();
+        original.topology.atoms[0].set_pdb_residue_info(Some(AtomPdbResidueInfo::new(
+            "CA", 12, "ALA", 4, "A", false,
+        )));
+        original
+            .coordinates
+            .conformers_2d
+            .push(Conformer2D::new(9, vec![[-0.0, 2.5]; 5]));
+        let bytes = fixture_encode_legacy12(&original).unwrap();
+        let imported = decode_molecule_binary(&bytes).unwrap();
+        assert_record_equal(&original, &imported, "legacy collision import");
+        let current = fixture_encode(&imported).unwrap();
+        let restored = decode_molecule_binary(&current).unwrap();
+        assert_record_equal(&original, &restored, "legacy collision upgrade");
+        assert_eq!(restored.properties.prop("__computedProps"), Some("opaque"));
+        assert!(restored.properties.is_prop_computed("mass"));
+    }
     fn assert_record_equal(a: &BinaryRecord, b: &BinaryRecord, message: &str) {
         assert_eq!(a.topology, b.topology, "{message}: whole topology");
         assert_eq!(
@@ -3529,7 +3652,7 @@ mod tests {
     fn test_empty_molecule_roundtrip() {
         let mol = BinaryRecord::new();
         let data = fixture_encode(&mol).unwrap();
-        assert!(data.starts_with(ARCHIVE_MAGIC));
+        assert!(data.starts_with(archive_v2::MAGIC));
         let mol2 = decode_molecule_binary(&data).unwrap();
         assert_record_equal(&mol, &mol2, "empty molecule roundtrip failed");
     }
@@ -4207,7 +4330,7 @@ mod tests {
             );
             assert_eq!(restored.derived.valid_bits, None);
         }
-        let bytes = fixture_encode(&mol).unwrap();
+        let bytes = fixture_encode_legacy12(&mol).unwrap();
         let (_, sections) = read_archive_sections(&bytes).unwrap();
         let mut historical = ARCHIVE_MAGIC.to_vec();
         write_u16_le(&mut historical, 1);
@@ -4234,7 +4357,7 @@ mod tests {
 
     #[test]
     fn canonical_native_required_section_missing_duplicate_invalid_flags_and_versions() {
-        let data = fixture_encode(&build_simple_methane()).unwrap();
+        let data = fixture_encode_legacy12(&build_simple_methane()).unwrap();
         let (_, sections) = read_archive_sections(&data).unwrap();
         for (id, version, flags, codec, expected) in [
             (

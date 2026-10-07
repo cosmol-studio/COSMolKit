@@ -348,6 +348,12 @@ impl SubstanceGroup {
         &self.parent_atoms
     }
 
+    /// Explicit role entries without materializing implicit Crossing defaults.
+    #[doc(hidden)]
+    pub fn stored_bond_roles(&self) -> &BTreeMap<BondId, SGroupBondRole> {
+        &self.bond_roles
+    }
+
     #[must_use]
     pub const fn parent(&self) -> Option<SubstanceGroupId> {
         self.parent
