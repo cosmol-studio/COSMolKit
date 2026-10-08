@@ -1,6 +1,6 @@
 //! Canonical reaction values and operations, without reaction algorithms.
 use crate::alignment_values::operation_error;
-use crate::query_construction::QueryGraph;
+use crate::query_values::QueryGraph;
 use crate::reaction_errors::*;
 use crate::reaction_parameters::*;
 use crate::search::SubstructMatchParams;

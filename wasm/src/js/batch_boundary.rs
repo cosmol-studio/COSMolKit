@@ -486,6 +486,7 @@ impl MoleculeBatch {
             .map(|inner| Self { inner })
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
+    #[cfg(feature = "cap-depict")]
     #[wasm_bindgen(js_name = with2dCoordinates)]
     pub fn with_2d_coordinates(&self) -> Result<Self, JsValue> {
         self.inner
@@ -493,6 +494,7 @@ impl MoleculeBatch {
             .map(|inner| Self { inner })
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
+    #[cfg(feature = "cap-depict")]
     #[wasm_bindgen(js_name = with2dCoordinatesWithParams)]
     pub fn with_2d_coordinates_with_params(
         &self,

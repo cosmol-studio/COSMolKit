@@ -478,34 +478,32 @@ combined, and Cargo adds their selections together. `full` is the default.
 
 | Bundle | Direct feature membership (prerequisites are transitive) |
 |---|---|
-| `core` | `cap-smiles`, `cap-hydrogens`, `cap-valence`, `cap-radicals`, `cap-rings`, `cap-matrices`, `cap-transforms`, `cap-stereo`, `cap-kekulize`, `cap-aromaticity`, `cap-sanitize`, `cap-io`, `depict` |
+| `core` | `cap-smiles`, `cap-hydrogens`, `cap-valence`, `cap-radicals`, `cap-rings`, `cap-matrices`, `cap-transforms`, `cap-stereo`, `cap-kekulize`, `cap-aromaticity`, `cap-sanitize`, `cap-io`, `cap-serialization`, `cap-batch` |
 | `bio` | `cap-bio` |
-| `descriptors` | `cap-descriptors`, `search` |
+| `descriptors` | `cap-descriptors`, `core` |
 | `tautomer` | `cap-tautomer`, `search` |
-| `conformer` | `cap-conformer`, `cap-confseq`, `cap-alignment`, `forcefields`, `depict` |
-| `forcefields` | `cap-forcefields`, `search` |
-| `fingerprints` | `cap-fingerprints`, `cap-hashing`, `depict` |
-| `search` | `cap-search` |
+| `conformer` | `cap-conformer`, `cap-confseq`, `cap-alignment`, `cap-forcefields`, `core` |
+| `fingerprints` | `cap-fingerprints`, `cap-hashing`, `core` |
+| `search` | `cap-search`, `core` |
 | `reaction` | `cap-reaction`, `search` |
-| `serialization` | `cap-serialization`, `depict` |
-| `stereoisomers` | `cap-stereoisomers`, `forcefields`, `depict` |
-| `depict` | `cap-depict`, `search` |
-| `inchi` | `cap-inchi` |
-| `batch` | `cap-batch`, `depict` |
+| `stereoisomers` | `cap-stereoisomers`, `core` |
+| `depict` | `cap-depict`, `core` |
+| `inchi` | `cap-inchi`, `core` |
 | `full` | All bundles above |
 
 Molecular format parsing and writing, whether from strings or files, belong to
 the `core` bundle; there is no top-level `io` bundle. The internal IO crate
-remains the unique implementation owner. Binary archives can be selected
-independently with `serialization`; they are not included in `core`.
+remains the unique implementation owner. Native binary archives and batch
+processing are included in `core`, without separate plain-name selectors.
+WASM excludes binary archive APIs, implementation and binary-only dependencies.
 
 SMIRKS parsing, reaction templates and the public `Reaction` API use
 `cap-reaction`, selected by the `reaction` bundle and included in `full`.
-`reaction` includes `search`, which includes SMILES: callers do not need to
+`reaction` includes `search`, which includes `core`: callers do not need to
 select those prerequisites separately to use their public APIs.
 
 `core` means foundational molecule chemistry and SMILES, not all inexpensive
-or historical APIs. Descriptors, binary archives, tautomer capability and
+or historical APIs. Descriptors, search, depiction, tautomer capability and
 stereoisomer enumeration require explicit selection outside `core`. Basic
 stereo assignment is part of `core`; `stereoisomers` selects enumeration
 separately and remains included in `full`. Feature membership does not claim
@@ -528,16 +526,23 @@ Public cfg gates and both registry feature fields use the owning `cap-*`
 selector. Always-present declarations use `runtime` or `metadata` labels;
 those labels are not Cargo capability selectors. Bundle membership is defined
 in `crates/cosmolkit/Cargo.toml`, not duplicated in a production registry.
+The sole platform-gate exception is native binary serialization:
+`all(feature = "cap-serialization", not(target_arch = "wasm32"))`.
+It excludes native archives under WASM `full` without introducing another
+public selector. Other compound registry gates remain forbidden.
 
-A selector enables its implementation dependencies and the public capabilities
-of its domain prerequisites. This applies to plain bundles and `cap-*`
-selectors alike: reaction, descriptors, depict, forcefields, alignment and
-tautomer include search; search includes SMILES. Molecular IO includes search
-and depiction; serialization and batch include molecular IO. Conformers include
-forcefields, alignment and molecular IO. Fingerprints include molecular IO,
-search and stereo; hashing includes search and stereo. Stereoisomer enumeration
-includes stereo and conformers. The feature dependency tree belongs at the top
-of `crates/cosmolkit/README.md` and must match the Cargo manifest.
+A public bundle exposes its declared prerequisites: reaction and tautomer
+include search; every molecular bundle includes core. BIO remains independent.
+The public conformer bundle combines generation, alignment and forcefields,
+without changing their internal owners. Private search, stereo, forcefield or
+depiction helpers do not by themselves expose another public domain.
+Query IO requires search; automatic coordinate generation requires depict.
+Dedicated APIs are gated and shared entrypoints return explicit capability
+errors when the requested behavior is unavailable. Do not silently discard
+query semantics or stereochemistry to avoid a dependency.
+The dependency tree belongs at the top of `crates/cosmolkit/README.md` and must
+match the Cargo manifest. WASM's feature table is generated from that manifest,
+with only documented platform exclusions, not a second hand-maintained tree.
 
 Sharing a foundational implementation crate does not select all algorithms in
 that crate. For example, `cap-smiles` uses `cosmolkit-core` but does not select
@@ -547,7 +552,9 @@ algorithm ownership or operation authority.
 IO's internal `molecule` feature gates molecular formats; `bio` independently
 gates BIO formats/CID. The facade disables IO defaults: `cap-bio` selects only
 the structural BIO branch, not `Molecule::from_sdf` or molecular search. The
-domain IO crate retains `molecule` as its default for direct owner builds.
+domain IO crate defaults to all molecular format subfeatures for direct owner
+builds. Its internal `search`, `depict` and native `binary` features can be
+selected separately from ordinary `molecule` IO.
 An isolated external consuming build selecting only `bio` and/or `core` must
 not resolve descriptors or tautomer. Additional additive selections may
 legitimately enable other capabilities. Check active resolved dependency edges

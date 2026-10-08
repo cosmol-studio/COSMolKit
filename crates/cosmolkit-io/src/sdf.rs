@@ -20,6 +20,7 @@ use cosmolkit_types::{BondDirection, BondOrder, BondStereo, Element};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SdfReadError {
+    MissingCapability(&'static str),
     MolPost(crate::MolPostError),
     QueryRecord,
     Empty,
@@ -58,6 +59,7 @@ pub enum SdfReadError {
 impl std::fmt::Display for SdfReadError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::MissingCapability(capability) => write!(formatter, "MOL/SDF reading requires the disabled {capability} capability"),
             Self::MolPost(error) => write!(formatter, "MolBlock finalization before SDF properties failed: {error}"),
             Self::QueryRecord => formatter.write_str("query-bearing SDF record cannot be represented as a concrete molecule; use a query-preserving record reader"),
             Self::Empty => formatter.write_str("empty molfile block"),
@@ -91,7 +93,8 @@ impl std::error::Error for SdfReadError {
             // Expose the concrete cause rather than Box's Error implementation,
             // whose source() would skip that cause and hide a leaf's category.
             Self::Record { source, .. } => Some(source.as_ref()),
-            Self::QueryRecord
+            Self::MissingCapability(_)
+            | Self::QueryRecord
             | Self::Empty
             | Self::Counts
             | Self::Field { .. }
@@ -4885,26 +4888,31 @@ fn parse_v2000_marvin_smarts_line(
     // SMARTS. Preserve that observable error ordering without holding a
     // mutable borrow across the canonical SMARTS parser call.
     let _ = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
-    let smarts = line.get(15..).unwrap_or_default();
-    let query_graph =
-        cosmolkit_search::parse_smarts(smarts, &cosmolkit_search::SmartsParseParams::default())
-            .map_err(|_| {
-                SdfReadError::Parse(format!(
-                    "Cannot parse smarts: '{smarts}' on line {line_number}"
-                ))
-            })?;
-    let recursive = RecursiveStructureQuery::from_query_graph(query_graph, 0)
-        .with_source_smarts(smarts.to_owned());
-    let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
-    update_v2000_atom_spec(atom, |spec| {
-        spec.with_prop("MRV SMA", smarts)?
-            .with_prop("_MolFileAtomQuery", "1")
-    })?;
-    atom.query = Some(merge_v2000_atom_query(
-        atom,
-        QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive)),
-    ));
-    Ok(())
+    #[cfg(not(feature = "search"))]
+    return Err(SdfReadError::MissingCapability("search"));
+    #[cfg(feature = "search")]
+    {
+        let smarts = line.get(15..).unwrap_or_default();
+        let query_graph =
+            cosmolkit_search::parse_smarts(smarts, &cosmolkit_search::SmartsParseParams::default())
+                .map_err(|_| {
+                    SdfReadError::Parse(format!(
+                        "Cannot parse smarts: '{smarts}' on line {line_number}"
+                    ))
+                })?;
+        let recursive = RecursiveStructureQuery::from_query_graph(query_graph, 0)
+            .with_source_smarts(smarts.to_owned());
+        let atom = v2000_atom_mut(atoms, atom_id as i32, line_number)?;
+        update_v2000_atom_spec(atom, |spec| {
+            spec.with_prop("MRV SMA", smarts)?
+                .with_prop("_MolFileAtomQuery", "1")
+        })?;
+        atom.query = Some(merge_v2000_atom_query(
+            atom,
+            QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(recursive)),
+        ));
+        Ok(())
+    }
 }
 
 fn parse_v2000_apo_line(
@@ -5827,6 +5835,9 @@ fn read_v2000_record_detached_with_progress(
         query.set_source_conformer_order(coordinates.source_conformer_order.clone())?;
         replace_query_substance_groups(&mut query, substance_groups)?;
         // END RDKIT CPP FUNCTION
+        if !cfg!(feature = "search") {
+            return Err(SdfReadError::MissingCapability("search"));
+        }
         return Ok(MolBlockRecord::Query(QueryMolBlockRecord {
             query,
             properties,
@@ -8664,6 +8675,9 @@ fn read_v3000_record_detached_with_progress(
         )?;
         query.set_source_conformer_order(coordinates.source_conformer_order.clone())?;
         replace_query_substance_groups(&mut query, substance_groups)?;
+        if !cfg!(feature = "search") {
+            return Err(SdfReadError::MissingCapability("search"));
+        }
         return Ok(MolBlockRecord::Query(QueryMolBlockRecord {
             query,
             properties,

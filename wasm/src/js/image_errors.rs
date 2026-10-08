@@ -3,14 +3,14 @@ use crate::alignment_values::{set, source_error};
 use cosmolkit_wasm::rust as ck;
 use std::error::Error as RustError;
 use wasm_bindgen::prelude::*;
-#[cfg(feature = "batch")]
+#[cfg(feature = "cap-batch")]
 #[wasm_bindgen]
 pub struct BatchImageError {
     kind: String,
     message: String,
     cause: JsValue,
 }
-#[cfg(feature = "batch")]
+#[cfg(feature = "cap-batch")]
 #[wasm_bindgen]
 impl BatchImageError {
     #[wasm_bindgen(getter)]
@@ -30,7 +30,7 @@ impl BatchImageError {
         self.cause.clone()
     }
 }
-#[cfg(feature = "batch")]
+#[cfg(feature = "cap-batch")]
 pub(crate) fn batch_image_error(source: &ck::BatchImageError) -> Result<JsValue, JsValue> {
     let kind = match source {
         ck::BatchImageError::InvalidFormat(..) => "InvalidFormat",
@@ -124,24 +124,5 @@ pub(crate) fn drawing_write_error(source: &ck::DrawingWriteError) -> Result<JsVa
     Ok(error)
 }
 pub(crate) fn io_error(source: &std::io::Error) -> Result<JsValue, JsValue> {
-    let error = js_sys::Error::new(&source.to_string());
-    error.set_name("IoError");
-    let error: JsValue = error.into();
-    set(&error, "domain", "io".into())?;
-    set(
-        &error,
-        "kind",
-        JsValue::from_str(&format!("{:?}", source.kind())),
-    )?;
-    set(
-        &error,
-        "errno",
-        source
-            .raw_os_error()
-            .map_or(JsValue::NULL, |v| JsValue::from_f64(v as f64)),
-    )?;
-    if let Some(cause) = source.source() {
-        set(&error, "cause", source_error(cause)?)?;
-    }
-    Ok(error)
+    crate::io_errors::filesystem_error(source)
 }

@@ -15,6 +15,8 @@ const CORE: &[&str] = &[
     "cap-aromaticity",
     "cap-sanitize",
     "cap-io",
+    "cap-serialization",
+    "cap-batch",
 ];
 const BUNDLES: &[(&str, &[&str])] = &[
     ("core", CORE),
@@ -23,38 +25,33 @@ const BUNDLES: &[(&str, &[&str])] = &[
     ("tautomer", &["cap-tautomer"]),
     (
         "conformer",
-        &["cap-conformer", "cap-confseq", "cap-alignment"],
+        &[
+            "cap-conformer",
+            "cap-confseq",
+            "cap-alignment",
+            "cap-forcefields",
+        ],
     ),
-    ("forcefields", &["cap-forcefields"]),
     ("fingerprints", &["cap-fingerprints", "cap-hashing"]),
     ("search", &["cap-search"]),
     ("reaction", &["cap-reaction"]),
-    ("serialization", &["cap-serialization"]),
     ("stereoisomers", &["cap-stereoisomers"]),
     ("depict", &["cap-depict"]),
     ("inchi", &["cap-inchi"]),
-    ("batch", &["cap-batch"]),
 ];
 const FOUR_CAPS: &[&str] = &["cap-io", "cap-kekulize", "cap-sanitize", "cap-hydrogens"];
 
 // Independent expectations for public functionality included by prerequisites.
 const PREREQUISITES: &[(&str, &[&str])] = &[
-    ("cap-alignment", &["cap-search"]),
     ("cap-batch", &["cap-io"]),
     (
         "cap-conformer",
         &["cap-forcefields", "cap-alignment", "cap-io"],
     ),
     ("cap-confseq", &["cap-conformer"]),
-    ("cap-depict", &["cap-search"]),
-    ("cap-descriptors", &["cap-search"]),
-    ("cap-fingerprints", &["cap-io", "cap-search", "cap-stereo"]),
-    ("cap-forcefields", &["cap-search"]),
-    ("cap-hashing", &["cap-search", "cap-stereo"]),
-    ("cap-io", &["cap-search", "cap-depict"]),
     ("cap-search", &["cap-smiles"]),
     ("cap-serialization", &["cap-io"]),
-    ("cap-stereoisomers", &["cap-stereo", "cap-conformer"]),
+    ("cap-stereoisomers", &["cap-stereo"]),
     ("cap-tautomer", &["cap-search"]),
     ("cap-reaction", &["cap-search"]),
 ];
@@ -136,7 +133,12 @@ fn bundle_and_capability_declarations_have_exact_membership() {
         ),
     ];
     for &(bundle, caps) in BUNDLES {
-        cases.push((false, vec![bundle], expected_caps(caps.iter().copied())));
+        let core = if bundle == "bio" { &[][..] } else { CORE };
+        cases.push((
+            false,
+            vec![bundle],
+            expected_caps(caps.iter().chain(core).copied()),
+        ));
     }
     for &cap in &all {
         cases.push((false, vec![cap], expected_caps([cap])));
@@ -158,10 +160,33 @@ fn bundle_and_capability_declarations_have_exact_membership() {
         vec!["core", "bio"],
         expected_caps(CORE.iter().copied().chain(["cap-bio"])),
     ));
-    assert_eq!(cases.len(), 57);
+    assert_eq!(cases.len(), 54);
     assert!(!manifest["features"].as_table().unwrap().contains_key("io"));
-    assert!(!declared_caps(&manifest, false, &["core"]).contains("cap-serialization"));
-    assert!(declared_caps(&manifest, false, &["core"]).contains("cap-search"));
+    assert!(declared_caps(&manifest, false, &["core"]).contains("cap-serialization"));
+    assert!(declared_caps(&manifest, false, &["core"]).contains("cap-batch"));
+    for bundle in [
+        "core",
+        "depict",
+        "descriptors",
+        "fingerprints",
+        "conformer",
+        "stereoisomers",
+        "inchi",
+    ] {
+        let caps = declared_caps(&manifest, false, &[bundle]);
+        assert!(!caps.contains("cap-search"), "{bundle}");
+        if bundle != "depict" {
+            assert!(!caps.contains("cap-depict"), "{bundle}");
+        }
+    }
+    for removed in ["forcefields", "serialization", "batch", "io"] {
+        assert!(
+            !manifest["features"]
+                .as_table()
+                .unwrap()
+                .contains_key(removed)
+        );
+    }
     assert!(declared_caps(&manifest, false, &["reaction"]).contains("cap-search"));
     for strict in [false, true] {
         for (defaults, selected, expected) in &cases {
@@ -207,20 +232,12 @@ fn optional_dependencies_and_io_branches_stay_independent() {
                 "dep:cosmolkit-io",
                 "cosmolkit-io/molecule",
                 "dep:cosmolkit-core",
-                "cap-search",
-                "cap-depict",
             ][..],
         ),
-        ("cap-serialization", &["cap-io"][..]),
+        ("cap-serialization", &["cap-io", "cosmolkit-io/binary"][..]),
         (
             "cap-fingerprints",
-            &[
-                "dep:cosmolkit-fingerprints",
-                "dep:cosmolkit-core",
-                "cap-io",
-                "cap-search",
-                "cap-stereo",
-            ][..],
+            &["dep:cosmolkit-fingerprints", "dep:cosmolkit-core"][..],
         ),
     ] {
         let actual: BTreeSet<_> = manifest["features"][feature]
@@ -236,7 +253,7 @@ fn optional_dependencies_and_io_branches_stay_independent() {
         io["features"]["default"].as_array().unwrap()[0].as_str(),
         Some("molecule")
     );
-    assert_eq!(io["features"]["default"].as_array().unwrap().len(), 1);
+    assert_eq!(io["features"]["default"].as_array().unwrap().len(), 4);
     assert_eq!(
         io["features"]["bio"]
             .as_array()
@@ -252,11 +269,19 @@ fn optional_dependencies_and_io_branches_stay_independent() {
         .iter()
         .map(|v| v.as_str().unwrap())
         .collect();
-    for dependency in ["dep:cosmolkit-core", "dep:cosmolkit-search"] {
+    for dependency in ["dep:cosmolkit-core"] {
         assert!(molecule.contains(dependency));
     }
     assert!(!molecule.contains("bio"));
     assert!(!molecule.contains("dep:cosmolkit-bio"));
+    for dependency in [
+        "dep:cosmolkit-search",
+        "dep:cosmolkit-depict",
+        "dep:musli",
+        "dep:postcard",
+    ] {
+        assert!(!molecule.contains(dependency));
+    }
 }
 
 #[test]
@@ -433,6 +458,78 @@ fn core_parses_sdf_text_with_explicit_coordinate_policy() {
     .unwrap();
     assert_eq!(record.molecule().unwrap().num_atoms(), 1);
     assert_eq!(record.molecule().unwrap().conformers_3d().len(), 1);
+}
+
+#[cfg(all(feature = "core", not(target_arch = "wasm32")))]
+#[test]
+fn core_includes_native_archives_and_ordered_batch_without_optional_domains() {
+    let molecule = cosmolkit::Molecule::from_smiles("CCO").unwrap();
+    let bytes = molecule.to_binary().unwrap();
+    let restored = cosmolkit::Molecule::from_binary(&bytes).unwrap();
+    assert_eq!(restored.to_binary().unwrap(), bytes);
+    assert_eq!(restored.to_smiles().unwrap(), molecule.to_smiles().unwrap());
+    let batch = cosmolkit::MoleculeBatch::from_smiles_list(&["CCO".into(), "N".into()]).unwrap();
+    assert_eq!(
+        batch.to_smiles_list().unwrap(),
+        vec![Some("CCO".into()), Some("N".into())]
+    );
+}
+
+#[cfg(all(feature = "core", not(target_arch = "wasm32")))]
+#[test]
+fn io_coordinate_generation_requires_depict_without_silent_stereo_loss() {
+    let molecule = cosmolkit::Molecule::from_smiles("N[C@@H](C)C(=O)O").unwrap();
+    let before = molecule.to_binary().unwrap();
+    let result = molecule.to_mol();
+    if cfg!(feature = "cap-depict") {
+        let restored = cosmolkit::Molecule::from_mol(&result.unwrap()).unwrap();
+        assert_eq!(restored.to_smiles().unwrap(), molecule.to_smiles().unwrap());
+    } else {
+        assert!(matches!(
+            result,
+            Err(cosmolkit::MolecularIoError::MolWrite(
+                cosmolkit::MolWriteError::MissingCapability("depict")
+            ))
+        ));
+        let params = cosmolkit::MolBlockWriteParams {
+            include_stereo: false,
+            ..Default::default()
+        };
+        assert!(
+            molecule
+                .to_mol_with_params(&params)
+                .unwrap()
+                .contains("M  END")
+        );
+    }
+    assert_eq!(molecule.to_binary().unwrap(), before);
+}
+
+#[cfg(feature = "core")]
+#[test]
+fn io_query_records_require_search_instead_of_lowering_to_concrete_atoms() {
+    let mol = "query\n  COSMolKit\n\n  0  0  0  0  0  0            999 V3000\nM  V30 BEGIN CTAB\nM  V30 COUNTS 1 0 0 0 0\nM  V30 BEGIN ATOM\nM  V30 1 [C,N] 0 0 0 0\nM  V30 END ATOM\nM  V30 END CTAB\nM  END\n$$$$\n";
+    let result = cosmolkit::SdfRecord::from_sdf_with_params(
+        mol,
+        &cosmolkit::SdfReadParams {
+            sanitize: false,
+            remove_hydrogens: false,
+            ..Default::default()
+        },
+    );
+    if cfg!(feature = "cap-search") {
+        assert!(matches!(
+            result.unwrap().graph(),
+            cosmolkit::SdfGraph::Query(_)
+        ));
+    } else {
+        assert!(matches!(
+            result,
+            Err(cosmolkit::SdfError::Read(
+                cosmolkit::SdfReadError::MissingCapability("search")
+            ))
+        ));
+    }
 }
 
 #[cfg(feature = "cap-bio")]

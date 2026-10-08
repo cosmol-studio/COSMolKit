@@ -132,7 +132,6 @@ test('Supported invalid embedding inputs remain typed failures with atomic recei
 });
 test('Distance-geometry matrix query preserves nested numeric shape and leaves conformers unchanged',()=>{const m=b.Molecule.fromSmiles('CC'),matrix=m.dgBoundsMatrix();assert.equal(matrix.length,2);assert.equal(matrix[0].length,2);assert.equal(matrix[0][0],0);assert.equal(matrix[1][1],0);assert.ok(matrix[0][1]>matrix[1][0]);const old=matrix[0][1];matrix[0][1]=99;assert.equal(m.dgBoundsMatrix()[0][1],old);assert.equal(m.num3dConformers(),0);});
 function snapshot(molecule) {
- if (process.env.COSMOLKIT_WASM_PRESET === 'full') return molecule.toBinary();
  return {smiles: molecule.toSmiles(), atoms: [...molecule.atomicNumbers()],
   coordinates2d: [...molecule.coordinates2d()],
   conformers: Array.from({length: molecule.num3dConformers()}, (_, id) => [...molecule.coordinates3d(id)])};

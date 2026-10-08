@@ -2821,8 +2821,14 @@ fn registry_source_has_one_declaration_and_no_legacy_schema_or_cfg_products() {
 
     assert_eq!(registry.matches("binding_contract!").count(), 1);
     assert_eq!(registry.matches("pub static BINDING_CONTRACT").count(), 1);
-    assert!(!registry.contains("cfg(all"));
-    assert!(!registry.contains("cfg(not"));
+    // The approved wasm32 platform exclusion is the only compound gate:
+    // native archive APIs must not be emitted even when `full` is selected.
+    let native_archive =
+        "#[cfg(all(feature = \"cap-serialization\", not(target_arch = \"wasm32\")))]";
+    assert_eq!(registry.matches(native_archive).count(), 3);
+    let remaining = registry.replace(native_archive, "");
+    assert!(!remaining.contains("cfg(all"));
+    assert!(!remaining.contains("cfg(not"));
     assert!(!registry.contains("ReturnKind"));
     assert!(!types.contains("ReturnKind"));
     assert!(!types.contains("type Binding"));

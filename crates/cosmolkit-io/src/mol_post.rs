@@ -99,6 +99,8 @@ pub enum MolProcessingError {
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MolPostError {
+    #[error("MOL/SDF finalization requires the disabled {0} capability")]
+    MissingCapability(&'static str),
     #[error(
         "atom {atom} property {property} unsigned value {value} causes positive_overflow converting UInt to signed int"
     )]
@@ -1537,6 +1539,9 @@ fn process_smarts_groups(record: &mut MolBlockRecord) -> Result<(), MolPostError
         else {
             continue;
         };
+        #[cfg(not(feature = "search"))]
+        return Err(MolPostError::MissingCapability("search"));
+        #[cfg(feature = "search")]
         for atom_id in group.atoms() {
             // Source getAtomWithIdx precedes parsing; invalid members fail here.
             if query_record.query.atom(atom_id.index()).is_none() {
@@ -1827,6 +1832,9 @@ pub fn finish_mol_block_record(
     }
     calculate_record_explicit_valence(&mut record)?;
     promote_record_to_query(&mut record)?;
+    if !cfg!(feature = "search") && matches!(record, MolBlockRecord::Query(_)) {
+        return Err(MolPostError::MissingCapability("search"));
+    }
     match record {
         MolBlockRecord::Concrete {
             mut topology,
@@ -1995,6 +2003,9 @@ pub fn finish_mol_block_record(
                     .query
                     .clear_prop("_NeedsQueryScan")
                     .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+                #[cfg(not(feature = "search"))]
+                return Err(MolPostError::MissingCapability("search"));
+                #[cfg(feature = "search")]
                 cosmolkit_search::complete_mol_queries(
                     &mut query_record.query,
                     cosmolkit_search::QUERY_SCAN_MAGIC_VALUE,

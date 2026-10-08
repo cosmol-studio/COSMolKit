@@ -668,10 +668,12 @@ pub(crate) fn kekulize_error(source: &ck::KekulizeError) -> Result<JsValue, JsVa
     }
     Ok(error)
 }
+#[cfg(feature = "cap-depict")]
 #[wasm_bindgen]
 pub struct Coordinate2DError {
     inner: ck::Coordinate2DError,
 }
+#[cfg(feature = "cap-depict")]
 #[wasm_bindgen]
 impl Coordinate2DError {
     #[wasm_bindgen(getter)]
@@ -691,6 +693,7 @@ impl Coordinate2DError {
         self.inner.source().map_or(Ok(JsValue::NULL), source_error)
     }
 }
+#[cfg(feature = "cap-depict")]
 fn coordinate_2d_error_kind(source: &ck::Coordinate2DError) -> &'static str {
     use ck::Coordinate2DError as E;
     match source {
@@ -705,6 +708,7 @@ fn coordinate_2d_error_kind(source: &ck::Coordinate2DError) -> &'static str {
         E::CoordGenUnavailable => "CoordGenUnavailable",
     }
 }
+#[cfg(feature = "cap-depict")]
 pub(crate) fn coordinate_2d_error(source: &ck::Coordinate2DError) -> Result<JsValue, JsValue> {
     use ck::Coordinate2DError as E;
     let error = js_sys::Error::new(&source.to_string());

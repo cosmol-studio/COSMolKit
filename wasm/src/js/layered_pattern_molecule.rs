@@ -5,7 +5,7 @@ use crate::layered_pattern_errors::{layered_error, pattern_error};
 use crate::layered_pattern_values::{
     LayeredFingerprintParams, LayeredFingerprintResult, PatternFingerprintParams,
 };
-use crate::query_construction::QueryGraph;
+use crate::query_values::QueryGraph;
 use cosmolkit_wasm::rust as ck;
 use wasm_bindgen::prelude::*;
 #[wasm_bindgen]

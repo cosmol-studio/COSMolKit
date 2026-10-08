@@ -59,7 +59,7 @@ npm pack --dry-run --json ./target/npm/cosmolkit
 
 The default is `--preset full`. Select a fixed smaller distribution with, for
 example, `--preset core-bio --out-dir target/npm/core-bio`. Available presets
-are `core`, `core-fingerprints`, `core-analysis`, `core-reaction`, `core-3d`,
+are `core`, `core-search`, `core-fingerprints`, `core-analysis`, `core-reaction`, `core-depict`, `core-3d`,
 `core-bio`, `core-inchi`, and `full`. Each compiles without dependency defaults,
 selects only its binding modules and applicable tests, and exports its own
 version and npm tag. Domain-specific tests retain their assertions; mixed-domain
@@ -67,6 +67,12 @@ suites run when all their prerequisites are selected.
 
 Export happens only after runtime and TypeScript checks pass. The package
 includes its JavaScript snippets, WASM binary, declarations, README and license.
+
+The Rust facade manifest is the only feature dependency tree. After changing
+it, run `python3 wasm/tools/wasm_binding/features.py --write` to regenerate
+`wasm/Cargo.toml`; the runner and unit tests reject a stale projection.
+Binary serialization is excluded on WASM. Presets select feature names only;
+they do not maintain a second set of prerequisite edges.
 Generated files are build output, not committed source.
 
 ## Release Build Shape

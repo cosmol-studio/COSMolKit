@@ -6,21 +6,21 @@
 //! from this small, stable surface without exposing operation internals or
 //! platform-specific Rust types.
 
-#[cfg(feature = "alignment")]
+#[cfg(feature = "cap-alignment")]
 mod alignment;
-#[cfg(feature = "aromaticity")]
+#[cfg(feature = "cap-aromaticity")]
 mod aromaticity;
-#[cfg(feature = "batch")]
+#[cfg(feature = "cap-batch")]
 mod batch;
-#[cfg(feature = "batch")]
+#[cfg(feature = "cap-batch")]
 pub use batch::{BatchRecord, MoleculeBatch};
-#[cfg(feature = "inchi")]
+#[cfg(feature = "cap-inchi")]
 mod inchi;
-#[cfg(feature = "reaction")]
+#[cfg(feature = "cap-reaction")]
 mod reaction;
-#[cfg(feature = "smiles")]
+#[cfg(feature = "cap-smiles")]
 mod smiles;
-#[cfg(feature = "reaction")]
+#[cfg(feature = "cap-reaction")]
 pub use reaction::{ReactionApplyResult, reaction_run};
 
 pub use cosmolkit as rust;
@@ -117,7 +117,7 @@ impl ElementInfo {
 }
 
 /// Looks up table metadata through the public facade with source defaults.
-#[cfg(feature = "valence")]
+#[cfg(feature = "cap-valence")]
 pub fn element_info(element: &Element) -> ElementInfo {
     ElementInfo {
         inner: cosmolkit::element_info(element.inner),
@@ -140,7 +140,7 @@ impl Molecule {
     /// Parses SMILES while explicitly selecting the source sanitization path.
     ///
     /// All other parser options keep their pinned source defaults.
-    #[cfg(feature = "smiles")]
+    #[cfg(feature = "cap-smiles")]
     pub fn from_smiles_with_sanitize(
         smiles: &str,
         sanitize: bool,
@@ -310,7 +310,7 @@ impl Molecule {
     }
 
     /// Returns a molecule with the default valence cache assigned.
-    #[cfg(feature = "valence")]
+    #[cfg(feature = "cap-valence")]
     pub fn with_assigned_valence(&self) -> Result<Self, cosmolkit::OperationError> {
         self.inner
             .borrow()
@@ -321,7 +321,7 @@ impl Molecule {
     }
 
     /// Returns an independent value prepared with explicit valence policies.
-    #[cfg(feature = "valence")]
+    #[cfg(feature = "cap-valence")]
     pub fn with_assigned_valence_with_params(
         &self,
         params: &cosmolkit::ValenceParams,
@@ -335,13 +335,13 @@ impl Molecule {
     }
 
     /// Prepares this value through the canonical in-place operation.
-    #[cfg(feature = "valence")]
+    #[cfg(feature = "cap-valence")]
     pub fn assign_valence_(&self) -> Result<(), cosmolkit::OperationError> {
         self.inner.borrow_mut().assign_valence_()
     }
 
     /// Prepares this value through the canonical explicit-policy operation.
-    #[cfg(feature = "valence")]
+    #[cfg(feature = "cap-valence")]
     pub fn assign_valence_with_params_(
         &self,
         params: &cosmolkit::ValenceParams,
@@ -607,122 +607,119 @@ mod bio_writers_tests;
 #[cfg(all(test, feature = "full"))]
 mod bio_protein_tests;
 
-#[cfg(feature = "conformer")]
+#[cfg(feature = "cap-conformer")]
 mod conformer;
-#[cfg(feature = "conformer")]
+#[cfg(feature = "cap-conformer")]
 pub use conformer::{EmbedMoleculeResult, EmbedMultipleConfsResult};
 
-#[cfg(all(test, feature = "conformer"))]
+#[cfg(all(test, feature = "cap-conformer"))]
 mod conformer_tests;
 
-#[cfg(feature = "depict")]
+#[cfg(feature = "cap-depict")]
 mod depict;
 
-#[cfg(feature = "descriptors")]
+#[cfg(feature = "cap-descriptors")]
 mod descriptors;
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 mod path_codes;
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 pub use path_codes::AtomPairAtomCodeResult;
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 mod atom_pair;
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 mod morgan;
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 pub use morgan::{
     morgan_generator_counts, morgan_generator_fingerprints, morgan_generator_sparse_counts,
     morgan_generator_sparse_fingerprints,
 };
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 mod topological_torsion;
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 pub use topological_torsion::{
     topological_torsion_generator_counts, topological_torsion_generator_fingerprints,
     topological_torsion_generator_sparse_counts, topological_torsion_generator_sparse_fingerprints,
 };
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 mod maccs;
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 mod layered_pattern;
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 mod topological;
 
-#[cfg(feature = "forcefields")]
+#[cfg(feature = "cap-forcefields")]
 mod forcefield_properties;
 
-#[cfg(feature = "forcefields")]
+#[cfg(feature = "cap-forcefields")]
 mod uff;
-#[cfg(feature = "forcefields")]
+#[cfg(feature = "cap-forcefields")]
 pub use uff::{UffConformerOptimizationResult, UffOptimizationResult};
 
-#[cfg(feature = "forcefields")]
+#[cfg(feature = "cap-forcefields")]
 mod mmff;
-#[cfg(feature = "forcefields")]
+#[cfg(feature = "cap-forcefields")]
 pub use mmff::{MmffOptimizeMoleculeConfsResult, MmffOptimizeMoleculeResult};
 
-#[cfg(feature = "hashing")]
+#[cfg(feature = "cap-hashing")]
 mod hashing;
 
-#[cfg(feature = "hydrogens")]
+#[cfg(feature = "cap-hydrogens")]
 mod hydrogens;
 
-#[cfg(all(feature = "bio", feature = "io"))]
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
 mod bio_conversion;
-#[cfg(all(feature = "bio", feature = "io"))]
+#[cfg(all(feature = "cap-bio", feature = "cap-io"))]
 pub use bio_conversion::{
     bio_structure_to_molecule, bio_structure_to_molecule_with_params, protein_to_molecule,
     protein_to_molecule_with_params,
 };
 
-#[cfg(feature = "io")]
+#[cfg(feature = "cap-io")]
 mod sdf_reading;
-#[cfg(feature = "io")]
+#[cfg(feature = "cap-io")]
 pub use sdf_reading::{SdfGraph, SdfRecord};
 
-#[cfg(feature = "io")]
+#[cfg(feature = "cap-io")]
 mod property_strings;
 
-#[cfg(feature = "io")]
+#[cfg(feature = "cap-io")]
 mod xyz_mol2;
 
-#[cfg(feature = "io")]
+#[cfg(feature = "cap-io")]
 mod mol_sdf_writing;
 
-#[cfg(feature = "io")]
+#[cfg(feature = "cap-io")]
 mod sdf_datasets;
-#[cfg(feature = "io")]
+#[cfg(feature = "cap-io")]
 pub use sdf_datasets::{SdfDataset, SdfDatasetIterator, SdfReader, SdfRecordStream};
 
-#[cfg(all(feature = "io", feature = "batch"))]
+#[cfg(all(feature = "cap-io", feature = "cap-batch"))]
 mod sdf_batches;
-#[cfg(all(feature = "io", feature = "batch"))]
+#[cfg(all(feature = "cap-io", feature = "cap-batch"))]
 pub use sdf_batches::{SdfBatchIterator, SdfReaderBatchIterator};
 
-#[cfg(feature = "kekulize")]
+#[cfg(feature = "cap-kekulize")]
 mod kekulize;
 
-#[cfg(feature = "matrices")]
+#[cfg(feature = "cap-matrices")]
 mod matrices;
 
-#[cfg(feature = "radicals")]
+#[cfg(feature = "cap-radicals")]
 mod radicals;
 
-#[cfg(feature = "rings")]
+#[cfg(feature = "cap-rings")]
 mod rings;
 
-#[cfg(feature = "sanitize")]
+#[cfg(feature = "cap-sanitize")]
 mod sanitize;
 
-#[cfg(feature = "search")]
+#[cfg(feature = "cap-search")]
 #[path = "search.rs"]
 mod search_projection;
-
-#[cfg(feature = "serialization")]
-mod serialization;

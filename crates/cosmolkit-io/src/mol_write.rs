@@ -18,6 +18,8 @@ pub struct MolWriteInput<'a> {
     pub coordinates: &'a CoordinateBlock,
     pub properties: &'a MoleculeProperties,
     pub rings: Option<&'a RingInfo>,
+    /// Caller-selected capability, independent of Cargo dependency unification.
+    pub allow_coordinate_generation: bool,
 }
 
 #[derive(Clone)]
@@ -28,6 +30,7 @@ struct MolWriteContext<'a> {
     valence: Option<Cow<'a, ValenceAssignment>>,
     rings: Option<&'a RingInfo>,
     query: Option<&'a cosmolkit_model::QueryGraph>,
+    allow_coordinate_generation: bool,
 }
 impl MolWriteContext<'_> {
     fn query_atom(&self, atom: AtomId) -> Option<&cosmolkit_model::QueryAtom> {
@@ -89,6 +92,7 @@ pub fn write_mol_block_with_params(
         coordinates,
         properties,
         rings,
+        allow_coordinate_generation,
     } = data;
     topology.validate()?;
     coordinates.validate_for_atom_count(topology.atoms.len())?;
@@ -99,6 +103,7 @@ pub fn write_mol_block_with_params(
         valence: None,
         rings,
         query: None,
+        allow_coordinate_generation,
     };
     mol_to_mol_block_with_params(&input, params)
 }
@@ -111,6 +116,7 @@ pub fn write_sdf_with_params(
         coordinates,
         properties,
         rings,
+        allow_coordinate_generation,
     } = data;
     topology.validate()?;
     coordinates.validate_for_atom_count(topology.atoms.len())?;
@@ -121,6 +127,7 @@ pub fn write_sdf_with_params(
         valence: None,
         rings,
         query: None,
+        allow_coordinate_generation,
     };
     mol_to_sdf_record_with_params(&input, params)
 }
@@ -133,6 +140,7 @@ pub fn write_sdf_3d_with_params(
         coordinates,
         properties,
         rings,
+        allow_coordinate_generation,
     } = data;
     topology.validate()?;
     coordinates.validate_for_atom_count(topology.atoms.len())?;
@@ -143,6 +151,7 @@ pub fn write_sdf_3d_with_params(
         valence: None,
         rings,
         query: None,
+        allow_coordinate_generation,
     };
     let selection = export_selection(params, Some(CoordinateDimension::ThreeD))?;
     let block = match params.format {
@@ -159,9 +168,14 @@ pub struct QueryMolWriteInput<'a> {
     pub properties: &'a MoleculeProperties,
     pub source_coordinate_dim: Option<CoordinateDimension>,
     pub rings: Option<&'a RingInfo>,
+    /// Caller-selected capability, independent of Cargo dependency unification.
+    pub allow_coordinate_generation: bool,
 }
 
 fn query_write_context(data: QueryMolWriteInput<'_>) -> Result<MolWriteContext<'_>, MolWriteError> {
+    if !cfg!(feature = "search") {
+        return Err(MolWriteError::MissingCapability("search"));
+    }
     // RDKit❗❌:   RWMol trwmol(mol);
     // The source writer uses one mutable scratch copy. Here the existing
     // detached carrier conversion retains the separately borrowed query AST;
@@ -196,6 +210,7 @@ fn query_write_context(data: QueryMolWriteInput<'_>) -> Result<MolWriteContext<'
         valence: None,
         rings: data.rings,
         query: Some(data.query),
+        allow_coordinate_generation: data.allow_coordinate_generation,
     })
 }
 
@@ -220,6 +235,8 @@ const MAX_V2000_COORD: f64 = 100_000.0;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MolWriteError {
+    #[error("MOL/SDF writing requires the disabled {0} capability")]
+    MissingCapability(&'static str),
     #[error("MolBlock writing subset is not supported: {0}")]
     UnsupportedSubset(&'static str),
     #[error("MolBlock writing failed: {0}")]
@@ -241,6 +258,7 @@ pub enum MolWriteError {
     QueryAtom(#[from] cosmolkit_model::QueryAtomConversionError),
     #[error(transparent)]
     QueryState(#[from] cosmolkit_model::QueryStateError),
+    #[cfg(feature = "search")]
     #[error(transparent)]
     QuerySmarts(#[from] cosmolkit_search::SmartsWriteError),
     #[error("MolBlock valence assignment failed: {0}")]
@@ -251,6 +269,7 @@ pub enum MolWriteError {
     Atropisomer(#[from] cosmolkit_core::AtropisomerError),
     #[error(transparent)]
     Wedge(#[from] cosmolkit_core::WedgeError),
+    #[cfg(feature = "depict")]
     #[error(transparent)]
     Depict(#[from] cosmolkit_depict::DepictError),
     #[error(transparent)]
@@ -721,14 +740,22 @@ fn prepare_mol_for_writing<'a>(
             CoordinateSelection::Auto | CoordinateSelection::TwoD(None)
         )
     {
-        let conformer = cosmolkit_depict::compute_2d_coordinates(
-            &mol.topology,
-            mol.properties,
-            &Default::default(),
-        )?;
-        let coordinates = mol.coordinates.to_mut();
-        coordinates.record_source_conformer_append(CoordinateDimension::TwoD)?;
-        coordinates.conformers_2d.push(conformer);
+        if !mol.allow_coordinate_generation {
+            return Err(MolWriteError::MissingCapability("depict"));
+        }
+        #[cfg(not(feature = "depict"))]
+        return Err(MolWriteError::MissingCapability("depict"));
+        #[cfg(feature = "depict")]
+        {
+            let conformer = cosmolkit_depict::compute_2d_coordinates(
+                &mol.topology,
+                mol.properties,
+                &Default::default(),
+            )?;
+            let coordinates = mol.coordinates.to_mut();
+            coordinates.record_source_conformer_append(CoordinateDimension::TwoD)?;
+            coordinates.conformers_2d.push(conformer);
+        }
     }
     let selected = select_coordinates(&mol, selection)?;
     let conformer = writer_conformer(&mol, &selected);
@@ -3119,13 +3146,18 @@ fn append_v2000_value_lines(
                 && has_complex_atom_query(row)
         });
         if complex {
-            let sma = cosmolkit_search::query_atom_to_smarts(
-                query.expect("checked query"),
-                &Default::default(),
-            )?;
-            out.extend_bytes(format!("V  {:>3} ", atom.id().index() + 1).as_bytes());
-            out.extend_bytes(sma.as_bytes());
-            out.push_byte(b'\n');
+            #[cfg(not(feature = "search"))]
+            return Err(MolWriteError::MissingCapability("search"));
+            #[cfg(feature = "search")]
+            {
+                let sma = cosmolkit_search::query_atom_to_smarts(
+                    query.expect("checked query"),
+                    &Default::default(),
+                )?;
+                out.extend_bytes(format!("V  {:>3} ", atom.id().index() + 1).as_bytes());
+                out.extend_bytes(sma.as_bytes());
+                out.push_byte(b'\n');
+            }
         } else if let Some(value) = atom.prop("molFileValue") {
             let value = crate::sdf::model_string_property(value)?;
             out.extend_bytes(format!("V  {:>3} ", atom.id().index() + 1).as_bytes());
@@ -4276,6 +4308,7 @@ pub fn write_sdf_2d_with_params(
         coordinates,
         properties,
         rings,
+        allow_coordinate_generation,
     } = data;
     let mut params = *params;
     params.force_2d = true;
@@ -4293,6 +4326,7 @@ pub fn write_sdf_2d_with_params(
             valence: None,
             rings,
             query: None,
+            allow_coordinate_generation,
         };
         let block = match params.format {
             SdfFormat::V2000 => mol_to_v2000_block_with_params(&input, selection, &params)?,
@@ -4300,20 +4334,29 @@ pub fn write_sdf_2d_with_params(
         };
         return Ok(append_sdf_record_fields(block, &input));
     }
-    let conformer =
-        cosmolkit_depict::compute_2d_coordinates(topology, properties, &Default::default())?;
-    let mut prepared = coordinates.clone();
-    prepared.record_source_conformer_append(CoordinateDimension::TwoD)?;
-    prepared.conformers_2d.push(conformer);
-    write_sdf_2d_with_params(
-        MolWriteInput {
-            topology,
-            coordinates: &prepared,
-            properties,
-            rings,
-        },
-        &params,
-    )
+    if !allow_coordinate_generation {
+        return Err(MolWriteError::MissingCapability("depict"));
+    }
+    #[cfg(not(feature = "depict"))]
+    return Err(MolWriteError::MissingCapability("depict"));
+    #[cfg(feature = "depict")]
+    {
+        let conformer =
+            cosmolkit_depict::compute_2d_coordinates(topology, properties, &Default::default())?;
+        let mut prepared = coordinates.clone();
+        prepared.record_source_conformer_append(CoordinateDimension::TwoD)?;
+        prepared.conformers_2d.push(conformer);
+        write_sdf_2d_with_params(
+            MolWriteInput {
+                topology,
+                coordinates: &prepared,
+                properties,
+                rings,
+                allow_coordinate_generation,
+            },
+            &params,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -4342,6 +4385,7 @@ mod original_private_writer_conditions {
             valence: None,
             rings: None,
             query: None,
+            allow_coordinate_generation: true,
         };
         let atom = &molecule.atoms()[atom_id.index()];
         assert!(!atom.no_implicit());
@@ -4390,6 +4434,7 @@ mod original_private_writer_conditions {
             valence: None,
             rings: None,
             query: None,
+            allow_coordinate_generation: true,
         };
         let molecule = &context;
         let atom = &molecule.atoms()[0];

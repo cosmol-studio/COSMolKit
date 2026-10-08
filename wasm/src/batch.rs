@@ -136,11 +136,11 @@ impl MoleculeBatch {
         )
         .map(|inner| Self { inner })
     }
-    #[cfg(feature = "smiles")]
+    #[cfg(feature = "cap-smiles")]
     pub fn from_smiles_list(smiles: &[String]) -> Result<Self, ck::BatchValidationError> {
         ck::MoleculeBatch::from_smiles_list(smiles).map(|inner| Self { inner })
     }
-    #[cfg(feature = "smiles")]
+    #[cfg(feature = "cap-smiles")]
     pub fn from_smiles_list_with_params(
         smiles: &[String],
         parse: &ck::SmilesParseParams,
@@ -209,11 +209,11 @@ impl MoleculeBatch {
 }
 
 impl MoleculeBatch {
-    #[cfg(feature = "sanitize")]
+    #[cfg(feature = "cap-sanitize")]
     pub fn sanitize(&self) -> Result<Self, ck::BatchValidationError> {
         self.inner.sanitize().map(|inner| Self { inner })
     }
-    #[cfg(feature = "sanitize")]
+    #[cfg(feature = "cap-sanitize")]
     pub fn sanitize_with_params(
         &self,
         options: &ck::SanitizeParams,
@@ -223,11 +223,11 @@ impl MoleculeBatch {
             .sanitize_with_params(options, params)
             .map(|inner| Self { inner })
     }
-    #[cfg(feature = "hydrogens")]
+    #[cfg(feature = "cap-hydrogens")]
     pub fn with_hydrogens(&self) -> Result<Self, ck::BatchValidationError> {
         self.inner.with_hydrogens().map(|inner| Self { inner })
     }
-    #[cfg(feature = "hydrogens")]
+    #[cfg(feature = "cap-hydrogens")]
     pub fn with_hydrogens_with_params(
         &self,
         options: &ck::AddHsParams,
@@ -237,11 +237,11 @@ impl MoleculeBatch {
             .with_hydrogens_with_params(options, params)
             .map(|inner| Self { inner })
     }
-    #[cfg(feature = "hydrogens")]
+    #[cfg(feature = "cap-hydrogens")]
     pub fn without_hydrogens(&self) -> Result<Self, ck::BatchValidationError> {
         self.inner.without_hydrogens().map(|inner| Self { inner })
     }
-    #[cfg(feature = "hydrogens")]
+    #[cfg(feature = "cap-hydrogens")]
     pub fn without_hydrogens_with_params(
         &self,
         options: &ck::RemoveHsParams,
@@ -251,13 +251,13 @@ impl MoleculeBatch {
             .without_hydrogens_with_params(options, params)
             .map(|inner| Self { inner })
     }
-    #[cfg(feature = "kekulize")]
+    #[cfg(feature = "cap-kekulize")]
     pub fn with_kekulized_bonds(&self) -> Result<Self, ck::BatchValidationError> {
         self.inner
             .with_kekulized_bonds()
             .map(|inner| Self { inner })
     }
-    #[cfg(feature = "kekulize")]
+    #[cfg(feature = "cap-kekulize")]
     pub fn with_kekulized_bonds_with_params(
         &self,
         options: &ck::KekulizeParams,
@@ -267,11 +267,11 @@ impl MoleculeBatch {
             .with_kekulized_bonds_with_params(options, params)
             .map(|inner| Self { inner })
     }
-    #[cfg(feature = "depict")]
+    #[cfg(feature = "cap-depict")]
     pub fn with_2d_coordinates(&self) -> Result<Self, ck::BatchValidationError> {
         self.inner.with_2d_coordinates().map(|inner| Self { inner })
     }
-    #[cfg(feature = "depict")]
+    #[cfg(feature = "cap-depict")]
     pub fn with_2d_coordinates_with_params(
         &self,
         options: &ck::Coordinate2DParams,
@@ -411,13 +411,13 @@ mod transform_tests {
 }
 
 impl MoleculeBatch {
-    #[cfg(feature = "smiles")]
+    #[cfg(feature = "cap-smiles")]
     pub fn to_smiles_list(
         &self,
     ) -> Result<Vec<Option<ck::PropertyText>>, ck::BatchValidationError> {
         self.inner.to_smiles_list()
     }
-    #[cfg(feature = "smiles")]
+    #[cfg(feature = "cap-smiles")]
     pub fn to_smiles_list_with_params(
         &self,
         options: &ck::SmilesWriteParams,
@@ -425,20 +425,20 @@ impl MoleculeBatch {
     ) -> Result<Vec<Option<ck::PropertyText>>, ck::BatchValidationError> {
         self.inner.to_smiles_list_with_params(options, params)
     }
-    #[cfg(feature = "conformer")]
+    #[cfg(feature = "cap-conformer")]
     pub fn dg_bounds_matrix_list(
         &self,
     ) -> Result<Vec<Option<Vec<Vec<f64>>>>, ck::BatchValidationError> {
         self.inner.dg_bounds_matrix_list()
     }
-    #[cfg(feature = "conformer")]
+    #[cfg(feature = "cap-conformer")]
     pub fn dg_bounds_matrix_list_with_params(
         &self,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<Vec<Vec<f64>>>>, ck::BatchValidationError> {
         self.inner.dg_bounds_matrix_list_with_params(params)
     }
-    #[cfg(feature = "depict")]
+    #[cfg(feature = "cap-depict")]
     pub fn to_svg_list(
         &self,
         width: u32,
@@ -446,7 +446,7 @@ impl MoleculeBatch {
     ) -> Result<Vec<Option<String>>, ck::BatchValidationError> {
         self.inner.to_svg_list(width, height)
     }
-    #[cfg(feature = "depict")]
+    #[cfg(feature = "cap-depict")]
     pub fn to_svg_list_with_params(
         &self,
         width: u32,
@@ -543,7 +543,7 @@ mod query_tests {
     }
 }
 
-#[cfg(feature = "depict")]
+#[cfg(feature = "cap-depict")]
 impl MoleculeBatch {
     pub fn to_images(
         &self,
@@ -691,7 +691,7 @@ mod image_tests {
     }
 }
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 impl MoleculeBatch {
     pub fn fingerprint_atom_pair_list(
         &self,
@@ -765,7 +765,7 @@ impl MoleculeBatch {
     }
 }
 
-#[cfg(all(test, feature = "fingerprints"))]
+#[cfg(all(test, feature = "cap-fingerprints"))]
 mod atom_pair_tests {
     use super::*;
     use std::sync::{
@@ -862,7 +862,7 @@ mod atom_pair_tests {
     }
 }
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 impl MoleculeBatch {
     pub fn fingerprint_layered_list(
         &self,
@@ -905,7 +905,7 @@ impl MoleculeBatch {
     }
 }
 
-#[cfg(all(test, feature = "fingerprints"))]
+#[cfg(all(test, feature = "cap-fingerprints"))]
 mod layered_pattern_tests {
     use super::*;
     #[test]
@@ -984,7 +984,7 @@ mod layered_pattern_tests {
     }
 }
 
-#[cfg(feature = "fingerprints")]
+#[cfg(feature = "cap-fingerprints")]
 impl MoleculeBatch {
     pub fn fingerprint_morgan_list(
         &self,
@@ -1053,7 +1053,7 @@ impl MoleculeBatch {
     }
 }
 
-#[cfg(all(test, feature = "fingerprints"))]
+#[cfg(all(test, feature = "cap-fingerprints"))]
 mod morgan_tests {
     use super::*;
     #[test]

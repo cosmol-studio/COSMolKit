@@ -1,7 +1,8 @@
 //! File-format IO over detached `cosmolkit-model` values.
 //!
-//! Internal `molecule` enables molecular formats and their chemistry/query
-//! dependencies. `bio` independently enables structural-biology formats and
+//! Internal `molecule` enables ordinary molecular formats. `search` enables
+//! query records, `depict` enables automatic coordinate generation, and `binary`
+//! enables native archives (excluded on wasm32). `bio` independently enables structural-biology formats and
 //! CID selection; it does not activate molecular IO or the search owner.
 
 #[cfg(all(feature = "bio", feature = "molecule"))]
@@ -118,9 +119,9 @@ pub use bio_pdb_write::{
     BioPdbWriteError, BioPdbWriteParams, bio_structure_to_pdb_text, write_bio_structure_pdb_file,
 };
 
-#[cfg(feature = "molecule")]
+#[cfg(all(feature = "binary", not(target_arch = "wasm32")))]
 mod molecule_binary;
-#[cfg(feature = "molecule")]
+#[cfg(all(feature = "binary", not(target_arch = "wasm32")))]
 #[doc(hidden)]
 pub use molecule_binary::{
     BinaryDerivedState, BinaryDerivedView, BinaryInput, BinaryRecord, PickleError,

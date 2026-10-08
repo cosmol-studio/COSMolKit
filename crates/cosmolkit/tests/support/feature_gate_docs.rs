@@ -30,6 +30,8 @@ macro_rules! absent_types {
 
 absent_methods!("cap-smiles"; from_smiles);
 absent_methods!("cap-io"; from_sdf);
+absent_methods!("cap-search"; substruct_matches, substruct_matches_with_params);
+absent_types!("cap-search"; SmartsParseParams, SubstructMatchParams);
 absent_methods!("cap-hydrogens"; with_hydrogens, add_hydrogens_);
 absent_methods!("cap-kekulize"; with_kekulized_bonds);
 absent_methods!("cap-sanitize"; sanitize);

@@ -4,7 +4,7 @@ use crate::alignment_values::{set, source_error};
 use crate::atom_pair_parameters::{optional_array, optional_u32_array};
 use crate::fingerprint_values::Fingerprint;
 use crate::host_values::{bool_value, type_error, u32_value};
-use crate::query_construction::QueryGraph;
+use crate::query_values::QueryGraph;
 use cosmolkit_wasm::rust as ck;
 use js_sys::{Array, Map};
 use std::collections::BTreeMap;

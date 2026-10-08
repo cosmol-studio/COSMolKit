@@ -12,7 +12,8 @@
 //! disabled, `core` is not implicit. Features compose additively and do not
 //! change operation behavior.
 //! `core` includes molecular format parsing/writing for text and files;
-//! binary archives remain independently selectable with `serialization`.
+//! native binary archives and ordered batch processing are included in `core`.
+//! Binary archives are not compiled on wasm32.
 //! See the dependency tree at the top of the crate README.
 
 #[cfg(doctest)]
@@ -379,7 +380,7 @@ pub use bio::BioMoleculeError;
 pub use cosmolkit_fingerprints::{
     AtomCodeExplanation, AtomCodeExplanationError, AtomPairsParameters,
 };
-#[cfg(feature = "cap-serialization")]
+#[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
 pub use cosmolkit_io::PickleError;
 #[cfg(all(feature = "cap-bio", feature = "cap-io"))]
 pub use cosmolkit_io::{BioMoleculeConversionError, BioMoleculeParams};

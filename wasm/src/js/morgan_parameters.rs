@@ -3,7 +3,7 @@ use crate::atom_pair_parameters::{
     AtomPairAtomInvariantsGenerator, optional_array, optional_u32_array,
 };
 use crate::host_values::{bool_value, i32_value, sequence, type_error, u32_value};
-use crate::query_construction::QueryGraph;
+use crate::query_values::QueryGraph;
 use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;

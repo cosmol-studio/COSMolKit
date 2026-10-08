@@ -13,6 +13,7 @@ import tomllib
 from pathlib import Path
 
 from presets import PRESETS, MODULE_GROUPS, TEST_GROUPS, active_features, npm_release, selected_names, source_modules
+from features import sync_manifest
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -138,6 +139,7 @@ def selected_tests(suffix: str, active: set[str]) -> list[Path]:
 
 
 def main() -> None:
+    sync_manifest()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, help="Export the tested npm package to a new directory")
     parser.add_argument("--preset", choices=PRESETS, default="full", help="Fixed distribution preset (default: full)")

@@ -29,7 +29,8 @@ test('default MOL/SDF writing preserves stereo without source coordinates', () =
     ]) {
         const molecule = ck.Molecule.fromSmiles(smiles);
         try {
-            const before = molecule.toBinary();
+            const snapshot = () => ({smiles: molecule.toSmiles(), atoms: [...molecule.atomicNumbers()], coordinates2d: [...molecule.coordinates2d()], conformers: Array.from({length: molecule.num3dConformers()}, (_, id) => [...molecule.coordinates3d(id)])});
+            const before = snapshot();
             for (const [write, read] of [['toMol', 'fromMol'], ['toSdf', 'fromSdf']]) {
                 const restored = ck.Molecule[read](molecule[write]());
                 try {
@@ -37,7 +38,7 @@ test('default MOL/SDF writing preserves stereo without source coordinates', () =
                 } finally {
                     restored.free();
                 }
-                assert.deepEqual(molecule.toBinary(), before, 'writer must preserve source');
+                assert.deepEqual(snapshot(), before, 'writer must preserve source');
             }
         } finally {
             molecule.free();

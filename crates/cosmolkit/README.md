@@ -4,51 +4,56 @@
 
 ## Feature dependency tree
 
-Enabling a feature also exposes its prerequisite functionality. For example,
-`features = ["reaction"]` includes SMARTS/search and SMILES APIs; no additional
-`search` selection is needed. Default: `full`.
+Public feature relationships.
+Each edge means that enabling the parent also exposes the child's public APIs.
+Default: `full`.
 
 ```text
 full
 ├── core
-│   └── depict
-│       └── search
+├── search
+│   └── core
 ├── reaction
 │   └── search
-├── search
+│       └── core
+├── depict
+│   └── core
+├── fingerprints
+│   └── core
 ├── descriptors
-│   └── search
+│   └── core
+├── conformer
+│   └── core
+├── stereoisomers
+│   └── core
 ├── tautomer
 │   └── search
-├── forcefields
-│   └── search
-├── depict
-│   └── search
-├── conformer
-│   ├── forcefields
-│   │   └── search
-│   └── depict
-│       └── search
-├── fingerprints
-│   └── depict
-│       └── search
-├── batch
-│   └── depict
-│       └── search
-├── bio
+│       └── core
 ├── inchi
-├── serialization
-│   └── depict
-│       └── search
-└── stereoisomers
-    ├── forcefields
-    │   └── search
-    └── depict
-        └── search
+│   └── core
+└── bio
 ```
 
-Every node is an actual public Cargo feature name; edges follow Cargo.toml.
-Internal capability gates are omitted. Included functionality is described below.
+Top-level nodes are public feature bundles. `core` includes ordinary molecular
+IO, serialization and batch processing; `serialization` and `batch` are included
+capabilities, not separate user selections. There is no public `io` feature.
+Batch operations for optional domains still require those domains to be enabled.
+
+`conformer` includes 3D conformer generation, coordinate alignment, and UFF/MMFF
+parameterization, energy, gradients, optimization and persistent force-field
+objects. There is no separate public `forcefields` selection;
+the internal conformer, force-field and alignment crates retain their
+existing ownership boundaries.
+
+The WASM distribution excludes the binary serialization path: its APIs and
+implementation are not compiled, and binary-only dependencies are not included.
+Other `core` capabilities, including batch processing, remain available in WASM.
+
+Internal reuse of search or depiction helpers
+does not expose those domains. IO functionality requiring query/search support
+needs `search`; requesting coordinate generation needs `depict`. Dedicated APIs
+are feature-gated; shared entrypoints return an explicit capability error when
+the selected input or option requires a disabled domain.
 
 For a concise Rust-native cheminformatics overview, see <https://tools.cosmol.org/rust-cheminformatics>.
 
@@ -59,31 +64,28 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.0-rc.16", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
 | Bundle | Area |
 |---|---|
-| `core` | Molecular format parsing/writing (text or files), SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms |
+| `core` | Molecular text/file IO, native binary archives, batch processing, SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms |
 | `bio` | Structural biology readers, values, selection and operations |
-| `descriptors` | Molecular descriptors, including prerequisite search APIs |
+| `descriptors` | Molecular descriptors |
 | `tautomer` | Tautomer capability |
-| `conformer` | 3D conformers, ConfSeq and coordinate alignment |
-| `forcefields` | Energy, gradients and optimization |
+| `conformer` | 3D conformers, ConfSeq, alignment, UFF/MMFF energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
 | `search` | SMARTS and substructure search |
 | `reaction` | SMIRKS, reaction templates and execution, including search and SMILES |
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
-| `batch` | Ordered batch processing |
-| `serialization` | Binary molecule archives |
 | `stereoisomers` | Stereoisomer enumeration |
 | `full` | All features above |
 
 `core` includes molecular text/file parsing and writing; there is no separate
-`io` bundle. It does **not** include descriptors, binary archives, tautomers or
-stereoisomer enumeration. Select `descriptors`, `serialization`, `tautomer`, or
+`io` bundle. It does **not** include descriptors, search, depiction, tautomers or
+stereoisomer enumeration. Select `descriptors`, `search`, `depict`, `tautomer`, or
 `stereoisomers` explicitly when needed. Basic stereo assignment remains in
 `core`; enumeration is a separate capability. Bundle names select features,
 not a promise that every planned API in that area is already implemented.
@@ -91,9 +93,8 @@ not a promise that every planned API in that area is already implemented.
 With defaults disabled, `features = ["bio", "core"]` does not pull in
 `cosmolkit-descriptors` or `cosmolkit-tautomer` through these selections.
 BIO alone activates only the structural-biology branch of IO.
-The molecular IO branch includes depiction and search for source-defined query
-records; enabling `core` or `descriptors` also exposes its search
-prerequisites. Another dependency's additive features
+Query IO requires `search`; automatic coordinate generation requires `depict`.
+Ordinary molecular IO does not expose either domain. Another dependency's additive features
 can still enable these packages; inspect the resolved build graph, not just
 package entries in `Cargo.lock`.
 

@@ -17,10 +17,12 @@ smaller distributions use npm dist-tags on the same package:
 
 | Install suffix | Included public features |
 |---|---|
-| `@core` | `core` (including search and depiction) |
+| `@core` | `core`, including molecular IO and batch processing |
+| `@core-search` | `core + search` |
 | `@core-fingerprints` | `core + fingerprints` |
-| `@core-analysis` | `core + fingerprints + descriptors` |
+| `@core-analysis` | `core + search + fingerprints + descriptors` |
 | `@core-reaction` | `core + reaction` (including search) |
+| `@core-depict` | `core + depict` |
 | `@core-3d` | `core + conformer` (including forcefields and alignment) |
 | `@core-bio` | `core + bio` |
 | `@core-inchi` | `core + inchi` |
@@ -29,6 +31,12 @@ smaller distributions use npm dist-tags on the same package:
 For example: `npm install @cosmol-studio/cosmolkit@core-bio`. Imports keep the
 same package name. Omitted domains are absent from both exports and TypeScript
 declarations; they are not runtime placeholders.
+
+WASM uses the Rust facade's feature tree, generated from its Cargo manifest.
+The platform exception is binary archives: `toBinary`/`fromBinary` and the
+binary-only encoding dependencies are not compiled, even in `full`.
+Query IO needs `search`; automatic 2D coordinate generation needs `depict`.
+Without these capabilities, shared IO entrypoints report an explicit error.
 
 Preset artifacts have distinct npm versions, such as `0.5.0-core-bio.0` or
 `0.5.0-rc.15.core-bio.0`, because npm cannot replace an existing name/version
@@ -105,7 +113,6 @@ More focused examples are in [`examples/vanilla`](./examples/vanilla/):
   coordinate arrays.
 - [`fingerprints.js`](./examples/vanilla/fingerprints.js): typed fingerprint
   bit vectors.
-- [`binary.js`](./examples/vanilla/binary.js): binary serialization roundtrip.
 - [`substructure.js`](./examples/vanilla/substructure.js): SMARTS matching and
   disconnected fragments.
 - [`stereo.js`](./examples/vanilla/stereo.js): stereochemistry and conformers.
@@ -214,8 +221,8 @@ such as `withHydrogens()`, `with2dCoordinates()`, and
 `with3dConformer()` return new values and leave the source value unchanged.
 
 Fingerprint methods return `Uint32Array` set-bit lists. Coordinate methods
-return flattened `Float64Array` values. Binary serialization returns a
-`Uint8Array`, which can be stored or transferred through a worker.
+return flattened `Float64Array` values. Native binary archives are intentionally
+not part of the WASM API.
 
 ## Examples
 
@@ -225,7 +232,6 @@ The examples are intentionally small and use only the published package:
 - [`examples/vanilla/cdn.html`](./examples/vanilla/cdn.html)
 - [`examples/vanilla/descriptors.js`](./examples/vanilla/descriptors.js)
 - [`examples/vanilla/fingerprints.js`](./examples/vanilla/fingerprints.js)
-- [`examples/vanilla/binary.js`](./examples/vanilla/binary.js)
 - [`examples/vanilla/substructure.js`](./examples/vanilla/substructure.js)
 - [`examples/vanilla/stereo.js`](./examples/vanilla/stereo.js)
 - [`examples/react/MoleculePanel.jsx`](./examples/react/MoleculePanel.jsx)

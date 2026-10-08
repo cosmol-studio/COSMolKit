@@ -8,5 +8,7 @@ test('Both radical methods preserve molecule value semantics and canonical unsan
   const second=out.withAssignedRadicals();assert.equal(second.toSmiles(),out.toSmiles());
   const detached=m.withAssignedRadicals();m.free();assert.equal(detached.toSmiles(),out.toSmiles());
  }
- const carbon=b.Molecule.fromSmilesWithParams('[CH3]',p);assert.match(carbon.withAssignedRadicals().toMol(),/M  RAD/);assert.doesNotMatch(carbon.toMolWithParams(new b.MolBlockWriteParams(undefined,undefined,undefined,false)),/M  RAD/);
+ // This regression tests radical records, not automatic coordinate generation.
+ // Explicitly disable stereo writing so it also runs without depiction.
+ const carbon=b.Molecule.fromSmilesWithParams('[CH3]',p);assert.match(carbon.withAssignedRadicals().toMolWithParams(new b.MolBlockWriteParams(undefined,undefined,false)),/M  RAD/);assert.doesNotMatch(carbon.toMolWithParams(new b.MolBlockWriteParams(undefined,undefined,false,false)),/M  RAD/);
 });

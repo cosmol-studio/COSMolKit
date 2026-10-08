@@ -9527,18 +9527,18 @@ binding_contract! {
         { semantic_id: "AtomCodeExplanation.pi_electrons", item: callable, owner: type_, rust: crate::AtomCodeExplanation::pi_electrons, python: "pi_electrons", javascript: "piElectrons", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: u32, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->u32, },
         #[cfg(feature = "cap-fingerprints")]
         { semantic_id: "AtomCodeExplanation.chirality", item: callable, owner: type_, rust: crate::AtomCodeExplanation::chirality, python: "chirality", javascript: "chirality", feature: "cap-fingerprints", status: experimental, kind: instance, receiver: shared, parameters: [], output: Option<&'static str>, error: none, state: read_only, operation: none, signature: fn(&crate::AtomCodeExplanation)->Option<&'static str>, },
-        #[cfg(feature = "cap-serialization")]
+        #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
         { semantic_id:"types.PickleError", item:type, owner:type_,
           rust:crate::PickleError, python:"PickleError", javascript:"PickleError",
           feature:"cap-serialization", status:experimental, role:error, },
-        #[cfg(feature = "cap-serialization")]
+        #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
         { semantic_id:"Molecule.to_binary", item:callable, owner:molecule,
           rust:crate::Molecule::to_binary, python:"to_binary", javascript:"toBinary",
           feature:"cap-serialization", status:experimental, kind:instance,
           parameters:[], output:Vec<u8>, error:crate::PickleError,
           state:read_only, operation:none,
           signature:fn(&crate::Molecule)->Result<Vec<u8>,crate::PickleError>, },
-        #[cfg(feature = "cap-serialization")]
+        #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
         { semantic_id:"Molecule.from_binary", item:callable, owner:molecule,
           rust:crate::Molecule::from_binary, python:"from_binary", javascript:"fromBinary",
           feature:"cap-serialization", status:experimental, kind:static_,

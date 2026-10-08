@@ -141,6 +141,7 @@ impl MoleculeBatch {
             .execute(|p| self.inner.to_smiles_list_with_params(&options.inner, p))
             .and_then(strings)
     }
+    #[cfg(feature = "cap-conformer")]
     #[wasm_bindgen(js_name=dgBoundsMatrixList,unchecked_return_type="(number[][] | null)[]")]
     pub fn dg_bounds_matrix_list(&self) -> Result<Array, JsValue> {
         self.inner
@@ -148,6 +149,7 @@ impl MoleculeBatch {
             .map(matrices)
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
+    #[cfg(feature = "cap-conformer")]
     #[wasm_bindgen(js_name=dgBoundsMatrixListWithParams,unchecked_return_type="(number[][] | null)[]")]
     pub fn dg_bounds_matrix_list_with_params(
         &self,
@@ -157,6 +159,7 @@ impl MoleculeBatch {
             .execute(|p| self.inner.dg_bounds_matrix_list_with_params(p))
             .map(matrices)
     }
+    #[cfg(feature = "cap-depict")]
     #[wasm_bindgen(js_name=toSvgList,unchecked_return_type="(string | null)[]")]
     pub fn to_svg_list(
         &self,
@@ -173,6 +176,7 @@ impl MoleculeBatch {
             })
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
+    #[cfg(feature = "cap-depict")]
     #[wasm_bindgen(js_name=toSvgListWithParams,unchecked_return_type="(string | null)[]")]
     pub fn to_svg_list_with_params(
         &self,

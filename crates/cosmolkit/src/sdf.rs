@@ -161,6 +161,11 @@ impl SdfRecord {
         // COSMolKit❗✔️:     }
         // Same structural validation, ordered field clone and ownership moves
         // as the existing source; PropertyText keeps counted non-UTF-8 bytes.
+        if !cfg!(feature = "cap-search") {
+            return Err(SdfError::Read(
+                cosmolkit_io::SdfReadError::MissingCapability("search"),
+            ));
+        }
         query.validate().map_err(SdfError::QueryGraph)?;
         let fields = properties.sdf_data_fields().to_vec();
         Ok(Self::from_finalized_graph(
@@ -187,6 +192,7 @@ impl SdfRecord {
                         properties: &self.properties,
                         source_coordinate_dim: self.source_coordinate_dim,
                         rings: self.query_rings.as_ref(),
+                        allow_coordinate_generation: cfg!(feature = "cap-depict"),
                     },
                     params,
                 )
@@ -211,6 +217,7 @@ impl SdfRecord {
                         properties: &self.properties,
                         source_coordinate_dim: self.source_coordinate_dim,
                         rings: self.query_rings.as_ref(),
+                        allow_coordinate_generation: cfg!(feature = "cap-depict"),
                     },
                     params,
                 )
@@ -273,6 +280,11 @@ impl SdfRecord {
                 ))
             }
             cosmolkit_io::MolBlockRecord::Query(record) => {
+                if !cfg!(feature = "cap-search") {
+                    return Err(SdfError::Read(
+                        cosmolkit_io::SdfReadError::MissingCapability("search"),
+                    ));
+                }
                 let mut finalized = Self::from_finalized_graph(
                     SdfGraph::Query(record.query),
                     data_fields,

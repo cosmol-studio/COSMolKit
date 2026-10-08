@@ -52,6 +52,10 @@ impl MolWriteError {
     pub fn field_5(&self) -> JsValue {
         js_sys::Reflect::get(&self.fields, &"id".into()).unwrap_or(JsValue::NULL)
     }
+    #[wasm_bindgen(getter, unchecked_return_type = "string | null")]
+    pub fn capability(&self) -> JsValue {
+        js_sys::Reflect::get(&self.fields, &"capability".into()).unwrap_or(JsValue::NULL)
+    }
 }
 pub(crate) fn mol_write_error(source: &ck::MolWriteError) -> Result<JsValue, JsValue> {
     let fields = js_sys::Object::new();
@@ -93,12 +97,18 @@ pub(crate) fn mol_write_error(source: &ck::MolWriteError) -> Result<JsValue, JsV
         E::QueryGraph(_) => "QueryGraph",
         E::QueryAtom(_) => "QueryAtom",
         E::QueryState(_) => "QueryState",
+        #[cfg(feature = "cap-search")]
         E::QuerySmarts(_) => "QuerySmarts",
         E::Valence(_) => "Valence",
         E::Kekulize(_) => "Kekulize",
         E::Atropisomer(_) => "Atropisomer",
         E::Wedge(_) => "Wedge",
+        #[cfg(feature = "cap-depict")]
         E::Depict(_) => "Depict",
+        E::MissingCapability(capability) => {
+            set(&fields, "capability", (*capability).into())?;
+            "MissingCapability"
+        }
         E::Topology(_) => "Topology",
         E::Coordinates(_) => "Coordinates",
         E::Property(_) => "Property",

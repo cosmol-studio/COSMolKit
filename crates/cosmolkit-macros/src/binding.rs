@@ -1159,6 +1159,16 @@ fn validate_cfg(attrs: &[Attribute], feature: &LitStr) -> syn::Result<()> {
     let Some(attribute) = attrs.first() else {
         return Ok(());
     };
+    // Native archives are deliberately absent from wasm32, including under
+    // `full`. This one platform boundary is not a second capability selector.
+    let native_archive: Attribute = syn::parse_quote!(
+        #[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
+    );
+    if feature.value() == "cap-serialization"
+        && attribute.to_token_stream().to_string() == native_archive.to_token_stream().to_string()
+    {
+        return Ok(());
+    }
     if !attribute.path().is_ident("cfg") {
         return Err(syn::Error::new_spanned(
             attribute,
@@ -1230,7 +1240,9 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             entry.cfg_attrs.clone()
         } else {
             let owner = &entry.feature;
-            vec![syn::parse_quote!(#[cfg(all(feature = #owner, #(feature = #requires),*))])]
+            let mut attrs = entry.cfg_attrs.clone();
+            attrs.push(syn::parse_quote!(#[cfg(all(feature = #owner, #(feature = #requires),*))]));
+            attrs
         };
         let semantic_id = &entry.semantic_id;
         for adapter in &entry.python_adapters {

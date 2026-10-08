@@ -5,6 +5,7 @@ import tomllib
 import unittest
 from presets import PRESETS, MODULE_GROUPS, active_features, npm_release, selected_names
 from run import CONFIG, TEST_DIR, prepare_package, selected_tests
+from features import facade_features, projected_features, resolve, sync_manifest
 
 
 class PresetTests(unittest.TestCase):
@@ -17,13 +18,26 @@ class PresetTests(unittest.TestCase):
     def test_prerequisites_and_absent_domains(self):
         for preset in PRESETS:
             active = active_features(preset)
-            self.assertTrue({"core", "search", "smiles", "depict"} <= active)
-            if preset != "full":
-                self.assertFalse({"full", "batch", "serialization"} & active)
-        self.assertTrue({"forcefields", "alignment"} <= active_features("core-3d"))
+            self.assertTrue({"core", "cap-smiles", "cap-batch"} <= active)
+            self.assertNotIn("cap-serialization", active)
+            self.assertEqual("cap-search" in active, preset in {"core-search", "core-analysis", "core-reaction", "full"})
+            self.assertEqual("cap-depict" in active, preset in {"core-depict", "full"})
+        self.assertTrue({"cap-forcefields", "cap-alignment"} <= active_features("core-3d"))
         self.assertIn("inchi", active_features("core-inchi"))
         self.assertNotIn("inchi", active_features("core"))
         self.assertNotIn("bio_readers", selected_names(MODULE_GROUPS, active_features("core")))
+
+    def test_rust_is_the_only_feature_tree(self):
+        sync_manifest()
+        self.assertEqual(len(PRESETS), 10)
+        actual = tomllib.loads((TEST_DIR.parent / "Cargo.toml").read_text())["features"]
+        self.assertEqual(actual, projected_features())
+        source = facade_features()
+        for name, edges in source.items():
+            if name == "cap-serialization":
+                continue
+            self.assertEqual(set(actual[name]) - {f"cosmolkit/{name}"}, {e for e in edges if e in source and e != "cap-serialization"})
+        self.assertEqual(resolve(["reaction"]), active_features("core-reaction"))
 
     def test_versions_and_default_tag(self):
         for release in ("0.5.0", "0.5.0-rc.15"):

@@ -55,7 +55,7 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                preset: [core, core-fingerprints, core-analysis, core-reaction, core-3d, core-bio, core-inchi, full]
+                preset: [core, core-search, core-fingerprints, core-analysis, core-reaction, core-depict, core-3d, core-bio, core-inchi, full]
         steps:
             - uses: actions/checkout@v4
             - uses: dtolnay/rust-toolchain@stable
@@ -311,7 +311,7 @@ jobs:
             - name: Publish npm presets, then default full package
               run: |
                   set -euo pipefail
-                  for preset in core core-fingerprints core-analysis core-reaction core-3d core-bio core-inchi full; do
+                  for preset in core core-search core-fingerprints core-analysis core-reaction core-depict core-3d core-bio core-inchi full; do
                       (
                           cd "npm-packages/npm-package-$preset"
                           npm_tag="$(node -p "require('./package.json').publishConfig.tag")"

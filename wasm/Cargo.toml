@@ -7,7 +7,7 @@ repository = "https://github.com/cosmol-studio/COSMolKit"
 homepage = "https://tools.cosmol.org/"
 documentation = "https://docs.rs/cosmolkit-wasm"
 license.workspace = true
-version = "0.5.0-rc.15"
+version = "0.5.0-rc.16"
 edition.workspace = true
 publish = false
 
@@ -17,59 +17,53 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [features]
+# Generated from crates/cosmolkit/Cargo.toml by tools/wasm_binding/features.py.
 default = ["full"]
-full = [
-    "cosmolkit/full",
-    "alignment",
-    "batch",
-    "bio",
-    "conformer",
-    "fingerprints",
-    "forcefields",
-    "hashing",
-    "aromaticity",
-    "depict",
-    "descriptors",
-    "hydrogens",
-    "io",
-    "kekulize",
-    "matrices",
-    "radicals",
-    "reaction",
-    "rings",
-    "sanitize",
-    "search",
-    "serialization",
-    "smiles",
-    "valence",
-    "core",
-    "inchi",
-]
-core = ["cosmolkit/core", "smiles", "hydrogens", "valence", "radicals", "rings", "matrices", "stereo", "kekulize", "aromaticity", "sanitize", "io", "depict"]
-alignment = ["cosmolkit/cap-alignment", "search"]
-batch = ["cosmolkit/batch", "io"]
-bio = ["cosmolkit/cap-bio"]
-conformer = ["cosmolkit/conformer", "forcefields", "alignment", "io"]
-fingerprints = ["cosmolkit/fingerprints", "hashing", "io", "search", "stereo"]
-forcefields = ["cosmolkit/forcefields", "search"]
-hashing = ["cosmolkit/cap-hashing", "search", "stereo"]
-aromaticity = ["cosmolkit/cap-aromaticity"]
-depict = ["cosmolkit/depict", "search"]
-descriptors = ["cosmolkit/descriptors", "search"]
-hydrogens = ["cosmolkit/cap-hydrogens"]
-io = ["cosmolkit/cap-io", "search", "depict"]
-inchi = ["cosmolkit/inchi"]
-kekulize = ["cosmolkit/cap-kekulize"]
-matrices = ["cosmolkit/cap-matrices"]
-radicals = ["cosmolkit/cap-radicals"]
-reaction = ["cosmolkit/reaction", "search"]
-rings = ["cosmolkit/cap-rings"]
-sanitize = ["cosmolkit/cap-sanitize"]
-search = ["cosmolkit/search", "smiles"]
-serialization = ["cosmolkit/serialization", "io"]
-smiles = ["cosmolkit/cap-smiles"]
-stereo = ["cosmolkit/cap-stereo"]
-valence = ["cosmolkit/cap-valence"]
+runtime-invariants = ["cosmolkit/runtime-invariants"]
+op-contracts = ["cosmolkit/op-contracts"]
+op-contracts-strict = ["cosmolkit/op-contracts-strict", "runtime-invariants", "op-contracts"]
+full = ["cosmolkit/full", "core", "bio", "conformer", "depict", "descriptors", "fingerprints", "inchi", "search", "tautomer", "stereoisomers", "reaction"]
+core = ["cosmolkit/core", "cap-smiles", "cap-hydrogens", "cap-valence", "cap-radicals", "cap-rings", "cap-matrices", "cap-transforms", "cap-stereo", "cap-kekulize", "cap-aromaticity", "cap-sanitize", "cap-io", "cap-batch"]
+bio = ["cosmolkit/bio", "cap-bio"]
+descriptors = ["cosmolkit/descriptors", "cap-descriptors", "core"]
+tautomer = ["cosmolkit/tautomer", "cap-tautomer", "search"]
+conformer = ["cosmolkit/conformer", "cap-conformer", "cap-confseq", "cap-alignment", "cap-forcefields", "core"]
+fingerprints = ["cosmolkit/fingerprints", "cap-fingerprints", "cap-hashing", "core"]
+search = ["cosmolkit/search", "cap-search", "core"]
+reaction = ["cosmolkit/reaction", "cap-reaction", "search"]
+stereoisomers = ["cosmolkit/stereoisomers", "cap-stereoisomers", "core"]
+depict = ["cosmolkit/depict", "cap-depict", "core"]
+inchi = ["cosmolkit/inchi", "cap-inchi", "core"]
+cap-alignment = ["cosmolkit/cap-alignment"]
+cap-batch = ["cosmolkit/cap-batch", "cap-io"]
+cap-bio = ["cosmolkit/cap-bio"]
+cap-conformer = ["cosmolkit/cap-conformer", "cap-forcefields", "cap-alignment", "cap-io"]
+cap-hydrogens = ["cosmolkit/cap-hydrogens"]
+cap-confseq = ["cosmolkit/cap-confseq", "cap-conformer"]
+cap-depict = ["cosmolkit/cap-depict"]
+cap-descriptors = ["cosmolkit/cap-descriptors"]
+cap-fingerprints = ["cosmolkit/cap-fingerprints"]
+cap-forcefields = ["cosmolkit/cap-forcefields"]
+cap-hashing = ["cosmolkit/cap-hashing"]
+cap-inchi = ["cosmolkit/cap-inchi"]
+cap-io = ["cosmolkit/cap-io"]
+cap-matrices = ["cosmolkit/cap-matrices"]
+cap-transforms = ["cosmolkit/cap-transforms"]
+cap-search = ["cosmolkit/cap-search", "cap-smiles"]
+cap-smiles = ["cosmolkit/cap-smiles"]
+cap-stereo = ["cosmolkit/cap-stereo"]
+cap-stereoisomers = ["cosmolkit/cap-stereoisomers", "cap-stereo"]
+cap-tautomer = ["cosmolkit/cap-tautomer", "cap-search"]
+cap-valence = ["cosmolkit/cap-valence"]
+cap-radicals = ["cosmolkit/cap-radicals"]
+cap-reaction = ["cosmolkit/cap-reaction", "cap-search"]
+cap-rings = ["cosmolkit/cap-rings"]
+cap-kekulize = ["cosmolkit/cap-kekulize"]
+cap-aromaticity = ["cosmolkit/cap-aromaticity"]
+cap-sanitize = ["cosmolkit/cap-sanitize"]
 
 [dependencies]
-cosmolkit = { version = "0.5.0-rc.15", path = "../crates/cosmolkit", default-features = false }
+cosmolkit = { version = "0.5.0-rc.16", path = "../crates/cosmolkit", default-features = false }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tempfile = "3"

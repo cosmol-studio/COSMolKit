@@ -12,10 +12,13 @@ readme = "../cosmolkit/README.md"
 documentation = "https://docs.rs/cosmolkit"
 
 [features]
-default = ["molecule"]
+default = ["molecule", "search", "depict", "binary"]
 # Internal format branches, not facade public capabilities. BIO-only facade
 # builds disable these defaults and activate only `bio`.
-molecule = ["dep:cosmolkit-core", "dep:cosmolkit-search", "dep:serde", "dep:postcard", "dep:musli", "dep:cosmolkit-depict"]
+molecule = ["dep:cosmolkit-core"]
+search = ["molecule", "dep:cosmolkit-search"]
+depict = ["molecule", "dep:cosmolkit-depict"]
+binary = ["molecule", "dep:serde", "dep:postcard", "dep:musli"]
 bio = ["dep:cosmolkit-bio"]
 # Forwarding feature (BIO-ROWS-PROBE): enables only the existing optional
 # BIO dependency's test-probes feature; no new dependency edge, no
@@ -23,13 +26,16 @@ bio = ["dep:cosmolkit-bio"]
 test-probes = ["bio", "cosmolkit-bio/test-probes"]
 
 [dependencies]
-cosmolkit-depict = { version = "0.5.0-rc.15", path = "../cosmolkit-depict", optional = true }
-cosmolkit-bio = { version = "0.5.0-rc.15", path = "../cosmolkit-bio", optional = true }
-cosmolkit-core = { version = "0.5.0-rc.15", path = "../cosmolkit-core", optional = true }
-cosmolkit-model = { version = "0.5.0-rc.15", path = "../cosmolkit-model" }
-cosmolkit-search = { version = "0.5.0-rc.15", path = "../cosmolkit-search", optional = true, default-features = false }
-cosmolkit-types = { version = "0.5.0-rc.15", path = "../cosmolkit-types" }
+cosmolkit-depict = { version = "0.5.0-rc.16", path = "../cosmolkit-depict", optional = true }
+cosmolkit-bio = { version = "0.5.0-rc.16", path = "../cosmolkit-bio", optional = true }
+cosmolkit-core = { version = "0.5.0-rc.16", path = "../cosmolkit-core", optional = true }
+cosmolkit-model = { version = "0.5.0-rc.16", path = "../cosmolkit-model" }
+cosmolkit-search = { version = "0.5.0-rc.16", path = "../cosmolkit-search", optional = true, default-features = false }
+cosmolkit-types = { version = "0.5.0-rc.16", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
+
+# Native archives are not compiled or linked into WASM, even under `full`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 serde = { version = "1", features = ["derive"], optional = true }
 postcard = { version = "1.1.3", features = ["alloc"], optional = true }
 # Archive codec 2 is pinned independently of package/schema versions.

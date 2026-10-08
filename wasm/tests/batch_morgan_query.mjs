@@ -1,0 +1,8 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
+const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
+test('Morgan provider alternatives retain copied query patterns and borrowed provider lifetime',()=>{
+ const value=b.MoleculeBatch.fromSmilesList(['CCO']),options=new b.MorganParams(0),call=new b.MorganCallParams(),query=new b.BatchQueryParams(),pattern=b.QueryGraph.fromSmarts('[#8]'),patterns=[pattern],provider=b.MorganAtomInvariantsGenerator.features(patterns);patterns.length=0;pattern.free();
+ const bond=b.MorganBondInvariantsGenerator.new(false,true);assert.equal(bond.useBondTypes(),false);assert.equal(bond.includeChirality(),true);assert.equal(new b.MorganBondInvariantsGenerator().useBondTypes(),true);
+ for(const atom of [provider,b.MorganAtomInvariantsGenerator.features(),b.MorganAtomInvariantsGenerator.features([]),b.MorganAtomInvariantsGenerator.connectivity(),b.MorganAtomInvariantsGenerator.atomPair(new b.AtomPairAtomInvariantsGenerator())]){const first=value.fingerprintMorganListWithGeneratorParams(options,atom,bond,call,query)[0];assert.ok(first instanceof b.Fingerprint);assert.deepEqual(value.fingerprintMorganListWithGeneratorParams(options,atom,bond,call,query)[0].onBits(),first.onBits());}
+ assert.deepEqual(value.fingerprintMorganListWithGeneratorParams(options,null,null,new b.MorganCallParams([]),query)[0].onBits(),[]);assert.throws(()=>b.MorganAtomInvariantsGenerator.features([{}]),TypeError);assert.throws(()=>value.fingerprintMorganListWithGeneratorParams(options,{},null,call,query),TypeError);
+});

@@ -30,6 +30,7 @@ jobs:
               run: |
                   python3 -m unittest discover -s dev/tools -p 'test_bump_rust_version.py' -v
                   python3 -m unittest discover -s dev/tools -p 'test_ci_coverage.py' -v
+                  python3 -m unittest discover -s wasm/tools/wasm_binding -p 'test_presets.py' -v
 
             - name: Check minimal facade
               run: cargo check -p cosmolkit --no-default-features
@@ -45,10 +46,9 @@ jobs:
                       core \
                       bio \
                       conformer \
-                      forcefields \
+                      cap-forcefields \
                       search \
                       reaction \
-                      serialization \
                       stereoisomers \
                       cap-io \
                       inchi \
@@ -60,7 +60,7 @@ jobs:
                       fingerprints \
                       depict \
                       cap-hashing \
-                      batch
+                      cap-batch
                   do
                       cargo check -p cosmolkit \
                           --no-default-features \
@@ -75,3 +75,6 @@ jobs:
 
             - name: Test reaction dependency public surface
               run: cargo test -p cosmolkit --no-default-features --profile dev-test --features reaction,op-contracts-strict --test feature_selection
+
+            - name: Test core with unified private IO dependencies
+              run: cargo test -p cosmolkit --no-default-features --profile dev-test --features core,op-contracts-strict,cosmolkit-io/depict,cosmolkit-io/search --test feature_selection

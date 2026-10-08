@@ -716,6 +716,27 @@ fn cfg_features_and_invalid_function_statuses_fail_closed() {
 }
 
 #[test]
+fn native_archive_gate_is_retained_without_allowing_arbitrary_platform_cfgs() {
+    let archive = callable_entry().replace("cap-descriptors", "cap-serialization");
+    let native = archive.replace(
+        "cfg(feature = \"cap-serialization\")",
+        "cfg(all(feature = \"cap-serialization\", not(target_arch = \"wasm32\")))",
+    );
+    let expanded = expand_binding_contract(registry_with(&native))
+        .unwrap()
+        .to_string();
+    assert!(expanded.contains("target_arch"));
+    assert!(expanded.contains("wasm32"));
+    for forbidden in [
+        native.replace("not(target_arch = \"wasm32\")", "target_arch = \"wasm32\""),
+        native.replace("cap-serialization", "cap-descriptors"),
+        native.replace("wasm32", "x86_64"),
+    ] {
+        assert!(error_for(registry_with(&forbidden)).contains("compound or non-feature"));
+    }
+}
+
+#[test]
 fn generated_contract_contains_no_runtime_registry_wrapper_or_domain_implementation() {
     let generated = compact(expand_binding_contract(registry_with(callable_entry())).unwrap());
     for forbidden in [

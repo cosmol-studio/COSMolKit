@@ -350,8 +350,8 @@ crate-level ownership boundaries.
 Feature selection follows two distinct layers:
 
 - User bundles have plain names: `core`, `bio`, `descriptors`, `tautomer`,
-  `conformer`, `forcefields`, `fingerprints`, `search`, `reaction`, `depict`, `inchi`,
-  `batch`, `serialization`, `stereoisomers`, and `full`. User documentation
+  `conformer`, `fingerprints`, `search`, `reaction`, `depict`, `inchi`,
+  `stereoisomers`, and `full`. User documentation
   presents these names and included functionality, not internal capability gates.
 - Advanced capability selectors always start with `cap-`, such as
   `cap-smiles`, `cap-kekulize`, or `cap-conformer`. Each gates its own public
@@ -371,16 +371,18 @@ dependencies do not select all of their algorithms: `cap-kekulize` activates
 
 `core` contains foundational chemistry, SMILES, basic stereo and molecular
 format parsing/writing (`cap-io`), including in-memory text. There is no
-top-level `io` bundle. Binary archives remain independently selectable with
-`serialization`. Descriptors, tautomers and stereoisomer enumeration remain
-separate selections; `full` includes all user bundles. The IO owner separates molecular and BIO compilation
-branches without changing format/algorithm ownership. The facade disables IO
-defaults: `cap-bio` requests only `bio`, whereas molecular IO/serialization
-request `molecule`. Search is a molecule-only IO dependency. BIO-only IO must
-not drag in the molecular query parser/matcher. `core` includes public search,
-SMILES and depiction through molecular IO, but does not resolve descriptors or
-tautomer in an isolated consuming build. Descriptors reuse the existing search
-owner and include its public capability. No duplicated matcher is permitted.
+top-level `io` bundle. Native archives and batch processing are included in
+`core`. The public `conformer` bundle combines conformer generation, alignment
+and forcefields, without merging their implementation owners. Other domains
+remain separate; reaction and tautomer include public search, and all molecular
+bundles include core. BIO remains independent. The IO owner separates ordinary
+molecular formats, query support, coordinate generation, native archives and
+BIO through internal features. The facade disables IO defaults. Query IO needs
+public search; coordinate generation needs public depict. Private algorithm
+dependencies must not expose unrelated public domains. Shared IO entrypoints
+report an explicit capability error instead of dropping requested behavior.
+WASM projects this same feature tree, excluding binary archive APIs, code and
+binary-only dependencies on wasm32. No duplicated matcher is permitted.
 
 Features select APIs and optional dependency edges, not individual functions
 inside a dependency crate. Strict runtime checks are orthogonal to capability

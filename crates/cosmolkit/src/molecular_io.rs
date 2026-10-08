@@ -303,6 +303,7 @@ impl Molecule {
             coordinates: self.coordinate_block_runtime(),
             properties: self.properties(),
             rings: self.derived_cache_runtime().valid_ring_info(),
+            allow_coordinate_generation: cfg!(feature = "cap-depict"),
         }
     }
     pub fn to_mol(&self) -> Result<String, MolecularIoError> {

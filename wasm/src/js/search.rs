@@ -1,7 +1,7 @@
 //! Full search policies and detached query/result projection.
 use crate::Molecule;
 use crate::host_values::*;
-use crate::query_construction::QueryGraph;
+use crate::query_values::QueryGraph;
 use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;

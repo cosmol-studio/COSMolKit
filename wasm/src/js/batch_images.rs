@@ -4,10 +4,12 @@ use crate::host_values::{sequence, type_error, u32_value};
 use cosmolkit_wasm::rust as ck;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
+#[cfg(feature = "cap-depict")]
 #[wasm_bindgen]
 pub struct BatchImageParams {
     inner: ck::BatchImageParams,
 }
+#[cfg(feature = "cap-depict")]
 #[wasm_bindgen]
 impl BatchImageParams {
     #[wasm_bindgen(constructor)]
@@ -122,6 +124,7 @@ impl BatchImageParams {
 }
 // The callback only copies BatchParams. Borrowing failures become argument
 // TypeError values while retaining wasm-bindgen's original error as cause.
+#[cfg(feature = "cap-depict")]
 #[wasm_bindgen(
     inline_js = "export function visit_execution(value, visit) { try { visit(value); } catch (cause) { throw new TypeError('invalid BatchParams', { cause }); } }"
 )]
@@ -168,6 +171,7 @@ impl BatchExportReport {
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
 }
+#[cfg(feature = "cap-depict")]
 #[wasm_bindgen]
 impl MoleculeBatch {
     #[wasm_bindgen(js_name=toImages)]

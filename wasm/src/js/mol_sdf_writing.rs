@@ -3,7 +3,7 @@ use crate::Molecule;
 use crate::host_values::{bool_value, type_error, u32_value, usize_value};
 use crate::io_errors::{io_error, sdf_error};
 use crate::property_values::MoleculeProperties;
-use crate::query_construction::QueryGraph;
+use crate::query_values::QueryGraph;
 use crate::sdf_reading::SdfRecord;
 use cosmolkit_wasm::rust as ck;
 use wasm_bindgen::prelude::*;

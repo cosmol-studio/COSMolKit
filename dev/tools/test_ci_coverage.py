@@ -51,7 +51,8 @@ class CoverageWorkflowTests(unittest.TestCase):
         features = tomllib.loads((ROOT / "crates/cosmolkit/Cargo.toml").read_text())["features"]
         self.assertEqual(len(selected), len(set(selected)))
         self.assertTrue(set(selected) <= features.keys(), set(selected) - features.keys())
-        self.assertTrue({"core", "bio", "conformer", "forcefields", "search", "inchi", "fingerprints", "depict", "batch"} <= set(selected))
+        self.assertTrue({"core", "bio", "conformer", "cap-forcefields", "search", "inchi", "fingerprints", "depict", "cap-batch"} <= set(selected))
+        self.assertFalse({"forcefields", "serialization", "batch"} & set(selected))
         self.assertTrue({"cap-io", "cap-serialization", "cap-descriptors", "cap-stereoisomers", "cap-confseq", "cap-hashing"} <= set(selected))
 
     def test_instrumented_build_and_profile_directories_agree_before_show_env(self):

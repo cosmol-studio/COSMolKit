@@ -1,5 +1,6 @@
 //! Frozen parser parameters, copied into the canonical facade without parser logic.
 use crate::host_values::{bool_value, type_error};
+use crate::query_values::QueryGraph;
 use cosmolkit_wasm::rust as ck;
 use js_sys::{Map, Object, Reflect};
 use std::collections::BTreeMap;
@@ -120,10 +121,6 @@ impl SmartsParseParams {
 }
 
 #[wasm_bindgen]
-pub struct QueryGraph {
-    pub(crate) inner: ck::QueryGraph,
-}
-#[wasm_bindgen]
 impl QueryGraph {
     #[wasm_bindgen(js_name=fromSmarts)]
     pub fn from_smarts(text: &str) -> Result<Self, JsValue> {
@@ -142,27 +139,6 @@ impl QueryGraph {
         ck::search::from_smarts_with_params(text, &params.inner)
             .map(|inner| Self { inner })
             .map_err(|e| parse_error(&e).unwrap_or_else(|e| e))
-    }
-    #[wasm_bindgen(js_name=numAtoms)]
-    pub fn num_atoms(&self) -> usize {
-        self.inner.num_atoms()
-    }
-    #[wasm_bindgen(js_name=numBonds)]
-    pub fn num_bonds(&self) -> usize {
-        self.inner.num_bonds()
-    }
-    #[wasm_bindgen(unchecked_return_type = "string | null")]
-    pub fn name(&self) -> Result<JsValue, JsValue> {
-        self.inner
-            .prop("_Name")
-            .map(|value| {
-                value
-                    .as_string()
-                    .map_err(|e| crate::property_values::property_error(&e).unwrap_or_else(|e| e))
-                    .and_then(crate::host_values::text)
-            })
-            .transpose()
-            .map(|value| value.map_or(JsValue::NULL, JsValue::from))
     }
 }
 #[wasm_bindgen(js_name=parseSmarts)]

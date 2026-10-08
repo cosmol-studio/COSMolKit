@@ -323,10 +323,12 @@ impl AddHsParams {
             })
     }
 }
+#[cfg(feature = "cap-depict")]
 #[wasm_bindgen]
 pub struct Coordinate2DParams {
     pub(crate) inner: ck::Coordinate2DParams,
 }
+#[cfg(feature = "cap-depict")]
 #[wasm_bindgen]
 impl Coordinate2DParams {
     #[wasm_bindgen(constructor)]

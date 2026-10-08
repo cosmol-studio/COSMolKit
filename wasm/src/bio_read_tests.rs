@@ -40,10 +40,12 @@ fn all_seven_structural_reader_routes_preserve_counts_formats_and_file_values() 
     assert_eq!(values[0], values[1]);
     assert_eq!(values[0].input_format(), BioCoordinateFormat::Pdb);
     assert_eq!(values[2].input_format(), BioCoordinateFormat::Mmcif);
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/bio-reader-fixtures-v1");
-    std::fs::create_dir_all(&directory).unwrap();
-    let path = directory.join("fixture.pdb");
+    let executable = std::env::current_exe().unwrap();
+    let directory = tempfile::Builder::new()
+        .prefix("bio-reader-fixtures-")
+        .tempdir_in(executable.parent().unwrap())
+        .unwrap();
+    let path = directory.path().join("fixture.pdb");
     std::fs::write(&path, PDB).unwrap();
     for v in [
         BioStructure::read(&path).unwrap(),

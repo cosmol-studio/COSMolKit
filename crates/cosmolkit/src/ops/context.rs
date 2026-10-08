@@ -2915,7 +2915,7 @@ mod mmff_proof_tests;
 /// semantic boundary. IO receives only detached borrowed canonical blocks;
 /// construction restores validated detached values once, without operations
 /// acquiring constructor or unrestricted block authority.
-#[cfg(feature = "cap-serialization")]
+#[cfg(all(feature = "cap-serialization", not(target_arch = "wasm32")))]
 impl Molecule {
     /// Serializes the complete molecule as a CK-native archive 2.0.
     pub fn to_binary(&self) -> Result<Vec<u8>, crate::PickleError> {
