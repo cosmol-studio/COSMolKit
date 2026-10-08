@@ -1,6 +1,6 @@
 use crate::ReactionInitializationError;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ReactionRunError {
     #[error("product set {set}, product template {template}: {source}")]
     Product {

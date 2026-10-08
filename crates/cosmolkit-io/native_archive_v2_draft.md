@@ -4,6 +4,11 @@ Status: implemented by `src/molecule_binary/archive_v2.rs`. The filename is
 retained from the approved draft. Archive 2.0 is a CK-native format, not RDKit
 pickle compatibility; its version is independent of the CK package version.
 
+This is the first V2 definition, using Müsli 0.1.9. There are no earlier
+supported V2 schemas or codecs: no V2-to-V2 compatibility branch, migration,
+codec ID, or schema version is introduced for this update.
+Legacy raw and archive 1.x inputs still use their existing reader branches.
+
 ## 1. Goals and public API
 
 Keep `Molecule::to_binary()` and `Molecule::from_binary()` unchanged. The writer
@@ -53,10 +58,21 @@ The new magic selects the archive 2 reader. The old `CSMOLPKL` magic selects
 only the legacy archive 1.x reader; legacy raw inputs retain their own branch.
 Neither archive reader falls back to the other after an error.
 
-Codec 2 is pinned to `musli = "=0.1.8"`, `storage`, default Binary options
-(`default-features = false`, features `std`, `alloc`, `storage`). Metadata
-records the codec contract and molecule/derived schema versions and must agree
-with the block headers. The producer package version is informational.
+Codec 2 is CK's `ck-storage-v1`: Müsli storage-compatible encoding, numeric
+field/variant IDs and default Binary-mode options. Its current implementation
+is pinned to `musli = "=0.1.9"` (`default-features = false`, features `std`,
+`alloc`, `storage`); the lockfile resolves `musli`, `musli-core`, and
+`musli-macros` to 0.1.9 together. The library version is an implementation
+dependency, not a permanent on-disk identity. Metadata records
+`codec_contract = "ck-storage-v1"` and molecule/derived schema versions, which
+must agree with their respective block headers. The producer package version
+is informational.
+
+Metadata, molecule and derived blocks have independent schema constants and
+dispatch on `(block ID, block schema)`. All three start at 1; equality of these
+initial values does not couple their future evolution. For example, a future
+`metadata = 1, molecule = 2, derived = 1` requires a molecule-schema-2 reader,
+not new readers for the other two blocks. No schema-2 reader is introduced now.
 
 | Version or identifier | Controls | Does not control |
 |---|---|---|
@@ -71,10 +87,14 @@ schema version does not automatically require an archive-version bump.
 Changing envelope layout, required-block rules, or an incompatible block
 combination does require an archive-version decision.
 
-The same codec identifier must never silently switch to an incompatible
-Müsli configuration. Freeze the concrete library version and encoding options;
-verify compatibility before upgrading either. A package-version change or a
-different producer string alone does not imply a new archive schema.
+After this initial V2 definition is finalized, verify the frozen codec bytes
+and decoding behavior before upgrading the library or its configuration.
+An implementation upgrade that preserves the CK encoding contract retains
+codec 2 and `ck-storage-v1`. An incompatible encoding requires a distinct
+codec ID/contract, for example codec 3 / `ck-storage-v2`, and explicit decoder
+dispatch; it is not represented by changing a third-party version string in
+the existing protocol. A package-version change or different producer string
+alone does not imply a new archive schema.
 
 ## 3. Complete state, without duplicate payloads
 
@@ -166,6 +186,9 @@ their lengths are known independently of the payload codec.
 
 ## 5. Changes requiring explicit versioned decoding/migration
 
+These rules govern future changes after the initial V2 definition is finalized;
+they do not introduce older V2 schema readers into the current implementation.
+
 | Change | Required handling |
 |---|---|
 | Field type changes, e.g. `String` to `Vec<String>` | New block schema version; decode the old schema using its old type, then explicitly convert |
@@ -218,7 +241,7 @@ validation; use the actual legacy version when checking a legacy companion.
 from_binary(bytes)
     -> recognize standalone legacy raw or archive header
     -> legacy: old block decoding + explicit conversion
-    -> archive 2.0: versioned Müsli block decoding + explicit conversion
+    -> archive 2.0: Müsli 0.1.9 block decoding + explicit model conversion
     -> validated detached values
     -> checked Molecule construction
 ```
@@ -254,8 +277,10 @@ field; format dispatch and normalization stay in the legacy decoder.
 
 Archive-2 input is limited to 256 MiB and at most 1,024 envelope blocks.
 Atom/bond counts and ring-cache tables have a 1,000,000-row boundary, checked
-on both writing and reading. Other sequences and strings are framed and decoded
-by Müsli, within the archive byte limit. Müsli owns allocation and sequence framing;
+on both writing and reading. On reads these row checks run after Müsli has
+decoded the DTO, not before its vectors allocate. Other sequences and strings
+are framed and decoded by Müsli. The archive byte limit bounds encoded input,
+not total decoded heap allocation. Müsli owns allocation and sequence framing;
 there are no CK sequence decoders or a second generic validation framework.
 These are archive-2 limits, not new limits imposed on legacy readers.
 
@@ -265,6 +290,16 @@ existing runtime constructor validates cache validity/payload relationships.
 No sanitation or cache recalculation runs merely because an archive is read.
 Errors are returned through the existing `PickleError` API.
 
+#### Tracked hardening: decode-time allocation budgets
+
+Status: follow-up, not implemented and not a 0.5.0 release gate. Investigate
+Müsli's allocator/context/decoder controls for per-sequence admission before
+allocation and an aggregate allocation budget for nested data. Keep derive-based
+decoding rather than adding a CK sequence decoder. Cover the exact limit,
+limit-plus-one, and truncated payloads claiming huge sequence lengths. Until
+then, do not claim that the post-decode row limit bounds allocations when
+reading untrusted uploads or internet data. This does not change legacy readers.
+
 ## 7. Validation required before delivery
 
 - Decode fixed valid legacy examples for every supported raw/archive/section
@@ -273,8 +308,8 @@ Errors are returned through the existing `PickleError` API.
 - Round-trip archive 2.0 complete state, including ordered raw-byte properties,
   every supported value/enum variant, computed records, sparse SGroup roles,
   conformer IDs/order, floating-point bits, cache payloads/extents/validity.
-- Exercise added defaultable fields with old records missing those fields;
-  separately exercise type/meaning migrations with both schema versions.
+- Exercise defaultable fields absent from schema-1 payloads. Add type/meaning
+  migration comparisons when a future schema is actually introduced.
 - Reject malformed/truncated payloads, duplicate blocks,
   unknown required blocks, invalid cross-block references and resource-limit
   violations; check trailing-byte handling explicitly.
@@ -296,8 +331,10 @@ Errors are returned through the existing `PickleError` API.
   inventory, not the schema or wire format of this CK-native archive.
 
 No performance improvement or cross-release byte stability is claimed. The
-codec regression freezes a molecule-schema-1 byte example; upgrading Müsli or
-its configuration requires a compatibility decision, not regenerated goldens.
+codec regression freezes a `ck-storage-v1` molecule-schema-1 byte example,
+currently verified with Müsli 0.1.9. Future implementation upgrades must verify
+that contract; a library version change alone does not change the protocol or
+authorize regenerating goldens.
 
 Owner validation commands:
 

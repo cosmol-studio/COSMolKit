@@ -1061,11 +1061,7 @@ fn apply_stereo_and_sanitize(
         let assignment =
             detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(conformer)))
                 .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-        for update in assignment.bond_updates {
-            topology.bonds[update.bond.index()]
-                .set_stereo(update.stereo)
-                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-        }
+        apply_atropisomer_assignment(&mut topology, assignment)?;
     } else if let Some(conformer) = coordinates.conformers_2d.first() {
         if chirality_possible {
             let pseudo = Conformer3D::new(
@@ -1083,11 +1079,7 @@ fn apply_stereo_and_sanitize(
         let assignment =
             detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::TwoD(conformer)))
                 .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-        for update in assignment.bond_updates {
-            topology.bonds[update.bond.index()]
-                .set_stereo(update.stereo)
-                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-        }
+        apply_atropisomer_assignment(&mut topology, assignment)?;
     }
     topology = clear_single_bond_directions(topology, false)
         .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
@@ -1177,6 +1169,39 @@ fn apply_stereo_and_sanitize(
         query_rows,
         final_state,
     ))
+}
+
+fn apply_atropisomer_assignment(
+    topology: &mut TopologyBlock,
+    assignment: cosmolkit_core::AtropisomerAssignment,
+) -> Result<(), MolPostError> {
+    // RDKit✔️✔️:       bondToTry->getBeginAtom()->updatePropertyCache(false);
+    // RDKit✔️✔️:       bondToTry->getEndAtom()->updatePropertyCache(false);
+    // RDKit✔️✔️:     mol.updatePropertyCache(false);
+    // RDKit✔️✔️:     MolOps::setConjugation(mol);
+    // RDKit✔️✔️:     MolOps::setHybridization(mol);
+    // The core owner returns the source's ordered writes instead of mutating
+    // the borrowed topology. Apply every effect, not only the final stereo.
+    // Linear assignment over returned rows; no recomputation or graph copy.
+    for (id, facts) in assignment.atom_valence_updates {
+        topology.atoms[id.index()].set_source_valence_facts(facts);
+    }
+    if let Some(conjugated) = assignment.conjugated_bonds {
+        for (bond, value) in topology.bonds.iter_mut().zip(conjugated) {
+            bond.set_conjugated(value);
+        }
+    }
+    if let Some(hybridization) = assignment.hybridization {
+        for (atom, value) in topology.atoms.iter_mut().zip(hybridization.values) {
+            atom.set_hybridization(value);
+        }
+    }
+    for update in assignment.bond_updates {
+        topology.bonds[update.bond.index()]
+            .set_stereo(update.stereo)
+            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+    }
+    Ok(())
 }
 
 pub(super) fn detect_double_bond_stereochemistry(
@@ -1712,20 +1737,25 @@ fn expand_record_attachment_points(record: MolBlockRecord) -> Result<MolBlockRec
     }
 }
 
-fn calculate_record_explicit_valence(record: &MolBlockRecord) -> Result<(), MolPostError> {
+fn calculate_record_explicit_valence(record: &mut MolBlockRecord) -> Result<(), MolPostError> {
     // BEGIN RDKIT CPP FUNCTION finishMolProcessing explicit-valence prepass
-    // RDKit❗❌:   // calculate explicit valence on each atom:
-    // RDKit❗❌:   for (auto atom : res->atoms()) {
-    // RDKit❗❌:     atom->calcExplicitValence(false);
-    // RDKit❗❌:   }
+    // RDKit✔️❌:   // calculate explicit valence on each atom:
+    // RDKit✔️❌:   for (auto atom : res->atoms()) {
+    // RDKit✔️❌:     atom->calcExplicitValence(false);
+    // RDKit✔️❌:   }
     // END RDKIT CPP FUNCTION
     // Behavior review: the core valence owner checks each current carrier row
-    // in source order with strict=false. RDKit also caches the result on each
-    // atom; detached consumers instead recompute it from the same topology.
+    // in source order with strict=false and writes the signed-byte result
+    // back, preserving the independently stored implicit valence.
+    // RDKit✔️✔️: int Atom::calcExplicitValence(bool strict) {
+    // RDKit✔️✔️:   bool checkIt = false;
+    // RDKit✔️✔️:   d_explicitValence = calculateExplicitValence(*this, strict, checkIt);
+    // RDKit✔️✔️:   return d_explicitValence;
+    // RDKit✔️✔️: }
     // Complexity review: Concrete borrows its topology, while Query must
     // materialize a validated topology from its carrier rows. The latter adds
     // a full O(V+E) clone/allocation not present in RWMol's in-place pass.
-    let query_topology = match record {
+    let mut query_topology = match record {
         MolBlockRecord::Concrete { .. } => None,
         MolBlockRecord::Query(query) => Some(
             TopologyBlock::try_from_parts(
@@ -1750,12 +1780,29 @@ fn calculate_record_explicit_valence(record: &MolBlockRecord) -> Result<(), MolP
     let topology = match record {
         MolBlockRecord::Concrete { topology, .. } => topology,
         MolBlockRecord::Query(_) => query_topology
-            .as_ref()
+            .as_mut()
             .expect("query topology was materialized"),
     };
-    for atom in &topology.atoms {
-        calculate_explicit_valence_for_topology(topology, atom.id(), false, false)
-            .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+    for index in 0..topology.atoms.len() {
+        let explicit = calculate_explicit_valence_for_topology(
+            topology,
+            topology.atoms[index].id(),
+            false,
+            false,
+        )
+        .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+        let mut facts = topology.atoms[index].source_valence_facts();
+        facts.explicit_valence = explicit as i8;
+        topology.atoms[index].set_source_valence_facts(facts);
+    }
+    if let MolBlockRecord::Query(query) = record {
+        for (atom, carrier) in query.query.atoms_mut().iter_mut().zip(
+            &query_topology
+                .expect("query topology was materialized")
+                .atoms,
+        ) {
+            atom.set_source_valence_facts(carrier.source_valence_facts());
+        }
     }
     Ok(())
 }
@@ -1778,7 +1825,7 @@ pub fn finish_mol_block_record(
     if params.expand_attachment_points {
         record = expand_record_attachment_points(record)?;
     }
-    calculate_record_explicit_valence(&record)?;
+    calculate_record_explicit_valence(&mut record)?;
     promote_record_to_query(&mut record)?;
     match record {
         MolBlockRecord::Concrete {
@@ -1867,13 +1914,12 @@ pub fn finish_mol_block_record(
             let coordinates = query_record
                 .query
                 .coordinate_block(query_record.source_coordinate_dim);
-            let old_query = query_record.query;
+            let mut old_query = query_record.query;
             let query_props = old_query.props().clone();
-            let old_atoms = old_query.atoms().to_vec();
-            let old_bonds = old_query.bonds().to_vec();
-            let query_state = QueryStateRef::try_for_topology(&old_atoms, &old_bonds, &topology)
-                .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
-            let (topology, coordinates, properties, _, query_rows, state) =
+            let query_state =
+                QueryStateRef::try_for_topology(old_query.atoms(), old_query.bonds(), &topology)
+                    .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
+            let (topology, coordinates, properties, mapping, query_rows, state) =
                 apply_stereo_and_sanitize(
                     topology,
                     coordinates,
@@ -1882,9 +1928,37 @@ pub fn finish_mol_block_record(
                     params,
                     Some(query_state),
                 )?;
-            let (query_atoms, query_bonds) = query_rows.ok_or(MolPostError::Representation(
-                "query state missing after mol-post finalization",
-            ))?;
+            let (mut query_atoms, mut query_bonds) = query_rows.ok_or(
+                MolPostError::Representation("query state missing after mol-post finalization"),
+            )?;
+            // RDKit✔️✔️:   ProcessMolProps(res);
+            // RDKit✔️✔️:       MolOps::removeHs(*res);
+            // finishMolProcessing mutates the owned RWMol; it does not copy
+            // surviving QueryAtom queries. RecursiveStructureQuery::copy is
+            // observably different: quickCopy clears its nested properties
+            // and conformers. Move the original predicates onto the mapped
+            // carriers, retaining the authoritative row mapping and origins.
+            // O(V+E) pointer/vector swaps; no recursive predicate allocation.
+            for (query, old) in query_atoms.iter_mut().zip(mapping.atoms().new_to_old()) {
+                if let Some(old) = old
+                    && is_source_query_atom(query)
+                {
+                    std::mem::swap(
+                        query.predicate_mut(),
+                        old_query.atoms_mut()[old.index()].predicate_mut(),
+                    );
+                }
+            }
+            for (query, old) in query_bonds.iter_mut().zip(mapping.bonds().new_to_old()) {
+                if let Some(old) = old
+                    && is_source_query_bond(query)
+                {
+                    std::mem::swap(
+                        query.predicate_mut(),
+                        old_query.bonds_mut()[old.index()].predicate_mut(),
+                    );
+                }
+            }
             let query_atoms = query_atoms
                 .into_iter()
                 .zip(&topology.atoms)

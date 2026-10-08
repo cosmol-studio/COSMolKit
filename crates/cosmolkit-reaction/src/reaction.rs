@@ -2,8 +2,8 @@ use crate::{ReactionModelError, ReactionRole};
 use cosmolkit_model::{PropertyStore, QueryGraph};
 use cosmolkit_search::SubstructMatchParams;
 
-/// Immutable detached reaction value. Construction does not chemically
-/// validate or initialize its templates. Preparation returns a new value.
+/// Detached reaction value. Construction does not chemically validate or
+/// initialize templates; execution initializes this same value as in RDKit.
 #[derive(Debug)]
 pub struct Reaction {
     pub(crate) reactants: Vec<QueryGraph>,

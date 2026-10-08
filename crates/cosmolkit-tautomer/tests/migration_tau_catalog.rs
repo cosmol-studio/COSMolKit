@@ -404,7 +404,9 @@ fn assert_builtin_catalog(
             name,
             "name at source row {index}"
         );
-        let expected_query = query(smarts);
+        // transforms().to_vec() invokes native TautomerTransform copy, whose
+        // ROMol copy quick-copies recursive query molecules (QueryOps.h).
+        let expected_query = query(smarts).clone();
         let plan = CompiledQuery::compile(transform.query().clone())
             .expect("each of73 real compiled plans");
         assert_eq!(plan.num_atoms(), expected_query.num_atoms());

@@ -114,6 +114,117 @@ pub(crate) fn ring_live_cow_checkout_conflict_for_test_impl() -> Result<(), Oper
     parts.clear_cache(DerivedState::RING_FAMILIES)
 }
 
+#[mol_op_body(reaction_apply_report_for_test, parts)]
+pub(crate) fn reaction_apply_report_for_test_impl(
+    changed: bool,
+    failure: u8,
+) -> Result<bool, OperationError> {
+    // Test only the real runtime result boundary. No reaction algorithm or
+    // graph-equality inference is supplied by this coordinate-only fixture.
+    if failure != 0 {
+        let mut coordinates = parts.checkout_coordinates()?;
+        coordinates.conformers_2d[0].coordinates_mut()[0] = [7.0, 6.0];
+        if failure == 1 {
+            return Err(OperationError::Algorithm {
+                operation: "reaction_apply_report_for_test",
+                detail: "body failure after coordinate detachment".into(),
+            });
+        }
+        // Locally consistent frame shape passes installation; the runtime's
+        // final topology/coordinate invariant rejects its wrong atom count.
+        coordinates.conformers_2d = vec![Conformer2D::new(12, vec![])];
+        parts.install_coordinates(coordinates)?;
+    }
+    parts.apply_cip_policy()?;
+    Ok(changed)
+}
+
+fn assert_reaction_report_shares_all_blocks(left: &Molecule, right: &Molecule) {
+    assert!(std::ptr::eq(left.topology(), right.topology()));
+    assert!(std::ptr::eq(
+        left.coordinate_block_runtime(),
+        right.coordinate_block_runtime()
+    ));
+    assert!(std::ptr::eq(left.properties(), right.properties()));
+    assert!(Arc::ptr_eq(
+        &left.derived_cache_arc_runtime(),
+        &right.derived_cache_arc_runtime()
+    ));
+}
+
+#[test]
+fn reaction_apply_report_value_keeps_both_source_bools_and_shared_unchanged_blocks() {
+    for changed in [false, true] {
+        let source = molecule();
+        let observer = source.clone();
+        let result = source.reaction_apply_report_for_test(changed, 0).unwrap();
+        assert_eq!(result.changed, changed);
+        assert_eq!(result.molecule, source);
+        assert_reaction_report_shares_all_blocks(&source, &result.molecule);
+        assert_reaction_report_shares_all_blocks(&source, &observer);
+    }
+}
+
+#[test]
+fn reaction_apply_report_in_place_returns_the_same_source_bool_without_snapshot() {
+    for changed in [false, true] {
+        let mut target = molecule();
+        let observer = target.clone();
+        let result: bool = target.reaction_apply_report_for_test_(changed, 0).unwrap();
+        assert_eq!(result, changed);
+        assert_eq!(target, observer);
+        assert_reaction_report_shares_all_blocks(&target, &observer);
+    }
+}
+
+#[test]
+fn reaction_apply_report_body_error_returns_no_result_and_preserves_every_source_block() {
+    for inplace in [false, true] {
+        let mut target = molecule();
+        let observer = target.clone();
+        let error = if inplace {
+            target.reaction_apply_report_for_test_(true, 1).unwrap_err()
+        } else {
+            target.reaction_apply_report_for_test(true, 1).unwrap_err()
+        };
+        assert_eq!(
+            error,
+            OperationError::Algorithm {
+                operation: "reaction_apply_report_for_test",
+                detail: "body failure after coordinate detachment".into()
+            }
+        );
+        assert_eq!(target, observer);
+        assert_reaction_report_shares_all_blocks(&target, &observer);
+    }
+}
+
+#[test]
+fn reaction_apply_report_finish_error_returns_no_result_and_preserves_every_source_block() {
+    for inplace in [false, true] {
+        let mut target = molecule();
+        let observer = target.clone();
+        let error = if inplace {
+            target.reaction_apply_report_for_test_(true, 2).unwrap_err()
+        } else {
+            target.reaction_apply_report_for_test(true, 2).unwrap_err()
+        };
+        assert_eq!(
+            error,
+            OperationError::InvalidCoordinates(
+                cosmolkit_model::CoordinateValidationError::RowCount {
+                    dimension: "2D",
+                    conformer: 12,
+                    rows: 0,
+                    atom_count: 1
+                }
+            )
+        );
+        assert_eq!(target, observer);
+        assert_reaction_report_shares_all_blocks(&target, &observer);
+    }
+}
+
 #[mol_op_body(cow_coordinates_for_test, parts)]
 pub(crate) fn cow_coordinates_for_test_impl() -> Result<(), OperationError> {
     let mut coordinates = parts.checkout_coordinates()?;

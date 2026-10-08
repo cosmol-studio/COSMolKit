@@ -487,7 +487,7 @@ fn metadata_projection_has_no_transaction_or_parallel_registry_escape() {
         "OPERATION_INVARIANT_MATRIX",
         "PARITY_MATRIX",
     ] {
-        assert!(generator_source.contains(&format!("pub const {table}:")));
+        assert!(generator_source.contains(&format!("pub static {table}:")));
         assert!(!metadata_source.contains(&format!("pub const {table}:")));
         assert!(metadata_source.contains(&format!("super::runtime::registry::{table}")));
         assert!(!metadata_source.contains(&format!("super::registry::{table}")));

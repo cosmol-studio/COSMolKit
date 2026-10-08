@@ -1,5 +1,5 @@
 mod angle;
-mod api;
+pub(crate) mod api;
 mod atom_typer;
 pub(super) mod bond;
 pub(crate) mod builder;

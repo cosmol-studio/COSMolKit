@@ -63,6 +63,8 @@ pub enum Operation {
     MmffCoverage,
     MmffOptimization,
     MmffConformerOptimization,
+    PersistentMmff,
+    PersistentUff,
     MolAlign,
 }
 
@@ -81,6 +83,8 @@ impl Operation {
             Self::MmffCoverage => "mmff_has_all_molecule_params",
             Self::MmffOptimization => "mmff_optimize",
             Self::MmffConformerOptimization => "mmff_optimize_conformers",
+            Self::PersistentMmff => "mmff_force_field",
+            Self::PersistentUff => "uff_force_field",
         }
     }
 }
@@ -153,6 +157,8 @@ macro_rules! corpus_tasks {
             (num_saturated_carbocycles_smiles, Operation::Molecular(molecule_plan::TaskId::NumSaturatedCarbocycles), CorpusType::Smiles, "generate_num_saturated_carbocycles"),
             (uff_has_all_molecule_params_smiles, Operation::UffCoverage, CorpusType::Smiles, "generate_uff_has_all_molecule_params"),
             (uff_optimize_smiles, Operation::UffOptimization, CorpusType::Smiles, "generate_uff_optimize"),
+            (mmff_force_field_smiles, Operation::PersistentMmff, CorpusType::Smiles, "generate_persistent_force_field"),
+            (uff_force_field_smiles, Operation::PersistentUff, CorpusType::Smiles, "generate_persistent_force_field"),
             (uff_optimize_conformers_smiles, Operation::UffConformerOptimization, CorpusType::Smiles, "generate_uff_optimize_conformers"),
             (mmff_has_all_molecule_params_smiles, Operation::MmffCoverage, CorpusType::Smiles, "generate_mmff_has_all_molecule_params"),
             (mmff_optimize_smiles, Operation::MmffOptimization, CorpusType::Smiles, "generate_mmff_optimize"),
@@ -262,6 +268,7 @@ pub enum Input {
     Search(crate::search::SearchInput),
     Uff(crate::uff::UffInput),
     Mmff(crate::mmff::MmffInput),
+    PersistentForceField(crate::persistent_forcefields::Input),
     Molecular {
         case: SmilesCase,
         profile: molecule_plan::Profile,
@@ -361,6 +368,7 @@ impl Input {
             Self::Fingerprint(row) => row.task_name(),
             Self::SmilesWrite(_) => "smiles_write",
             Self::Mmff(row) => row.profile.task_name(),
+            Self::PersistentForceField(row) => row.kind.name(),
             Self::Search(_) => "substructure_match",
             Self::Uff(row) => match row.profile {
                 crate::uff::Profile::Coverage { .. } => "uff_has_all_molecule_params",
@@ -494,6 +502,7 @@ pub enum Value {
     Search(crate::search::Outcome),
     Uff(crate::uff::Observation),
     Mmff(crate::mmff::Observation),
+    PersistentForceField(crate::persistent_forcefields::Observation),
     Molecular(crate::molecular::Outcome),
     BioPdbOutput(BioPdbOutputValue),
 }
@@ -555,8 +564,10 @@ impl Task {
         prepared: &Input,
         output: &Value,
     ) -> Result<(), String> {
-        if !matches!(recipe, Input::Uff(_) | Input::Mmff(_) | Input::MolAlign(_))
-            && recipe != prepared
+        if !matches!(
+            recipe,
+            Input::Uff(_) | Input::Mmff(_) | Input::MolAlign(_) | Input::PersistentForceField(_)
+        ) && recipe != prepared
         {
             return Err("reference case/parameter mismatch".into());
         }
@@ -566,6 +577,11 @@ impl Task {
             return Err("reference task/input mismatch".into());
         }
         match (recipe, prepared, output) {
+            (
+                Input::PersistentForceField(recipe),
+                Input::PersistentForceField(prepared),
+                Value::PersistentForceField(output),
+            ) => crate::persistent_forcefields::validate_reference(recipe, prepared, output),
             (Input::MolAlign(recipe), Input::MolAlign(prepared), Value::MolAlign(output)) => {
                 crate::molalign::validate_reference(recipe, prepared, output)
             }
@@ -611,7 +627,9 @@ impl Task {
     }
     pub fn count(&self, cases: &Corpus) -> usize {
         match self.operation {
-            Operation::MolAlign => cases.molecules.len(),
+            Operation::MolAlign | Operation::PersistentMmff | Operation::PersistentUff => {
+                cases.molecules.len()
+            }
             Operation::Fingerprint(_) => cases.molecules.len(),
             Operation::SmilesWrite => cases.molecules.len() * crate::smiles_write::profiles().len(),
             Operation::SubstructureMatch => cases.molecules.len() * crate::search::profiles().len(),
@@ -667,6 +685,18 @@ pub fn validate(corpus: &Corpus, tasks: &[&Task]) -> Result<(), String> {
 }
 
 pub fn expand(cases: &Corpus, task: &Task) -> Vec<Input> {
+    if let Some(kind) = crate::persistent_forcefields::Kind::from_operation(task.operation) {
+        return cases
+            .molecules
+            .iter()
+            .map(|case| {
+                Input::PersistentForceField(crate::persistent_forcefields::Input::new(
+                    case.clone(),
+                    kind,
+                ))
+            })
+            .collect();
+    }
     if task.operation == Operation::MolAlign {
         return cases
             .molecules

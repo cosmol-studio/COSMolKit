@@ -32,6 +32,13 @@ MMFF covers both MMFF94 and MMFF94s; multi-conformer inputs contain two conforme
 Both libraries receive the same prepared coordinates. MMFF energy/coordinate
 comparison uses the existing public MMFF suite's absolute tolerance of `1e-6`;
 UFF retains its exact-bit comparison. Parameter-availability queries are included.
+`mmff_force_field_smiles` and `uff_force_field_smiles` test the owned persistent
+evaluators separately: fixed-seed arbitrary initial coordinates, at most two
+minimization iterations, and bitexact initial/final energy, gradient and positions.
+Their common coordinate bits are saved in prepared inputs; no embedding or
+tolerance comparison is used. Filter preparation and Cargo by either task name.
+MMFF parameter unavailability and UFF's source-defined missing TBP center
+parameter error are compared separately, not counted as successful minimizations.
 Tautomer enumeration and canonicalization are ordinary registered corpus tasks;
 the long-conjugated tautomer case is a special regression below.
 

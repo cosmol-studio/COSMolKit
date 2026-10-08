@@ -5,6 +5,38 @@ use cosmolkit::{
     BindingOwner, BindingParameterContract, BindingTypeRole, FunctionStatus, StateModel,
 };
 
+// Fixed public inventory of the owned force-field API, independent of generated metadata.
+const PERSISTENT_FORCEFIELD_IDS: &[&str] = &[
+    "types.MolecularForceFieldErrorKind",
+    "types.MmffForceFieldParams",
+    "MmffForceFieldParams.new",
+    "types.UffForceFieldParams",
+    "UffForceFieldParams.new",
+    "types.ForceFieldMinimizeParams",
+    "ForceFieldMinimizeParams.new",
+    "types.ForceFieldEnergyGradient",
+    "types.ForceFieldMinimizeOutcome",
+    "types.ForceFieldError",
+    "types.MmffForceFieldError",
+    "types.UffForceFieldError",
+    "types.MolecularForceField",
+    "Molecule.mmff_force_field",
+    "Molecule.mmff_force_field_with_params",
+    "Molecule.uff_force_field",
+    "Molecule.uff_force_field_with_params",
+    "MolecularForceField.position",
+    "MolecularForceField.set_position_",
+    "MolecularForceField.positions",
+    "MolecularForceField.set_positions_",
+    "MolecularForceField.fixed_atoms",
+    "MolecularForceField.set_fixed_atoms_",
+    "MolecularForceField.energy",
+    "MolecularForceField.gradient",
+    "MolecularForceField.energy_gradient",
+    "MolecularForceField.minimize_",
+    "MolecularForceField.minimize_with_params_",
+];
+
 fn entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
     BINDING_CONTRACT
         .iter()
@@ -2065,6 +2097,9 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "StereoisomerIterator.yielded_count",
         ]);
     }
+    if cfg!(feature = "cap-forcefields") {
+        expected.extend_from_slice(PERSISTENT_FORCEFIELD_IDS);
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()
@@ -2226,7 +2261,10 @@ fn uff_param_p10_registry_has_exact_read_only_query_contract() {
             "Molecule.with_uff_optimized_with_params",
             "Molecule.with_uff_optimized_confs",
             "Molecule.with_uff_optimized_confs_with_params",
-        ],
+        ]
+        .into_iter()
+        .chain(PERSISTENT_FORCEFIELD_IDS.iter().copied())
+        .collect::<Vec<_>>(),
         "complete forcefields exposes the exact UFF and MMFF identities"
     );
 

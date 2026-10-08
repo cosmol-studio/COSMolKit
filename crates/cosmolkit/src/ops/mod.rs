@@ -30,6 +30,12 @@ mod metadata;
 mod potential_stereo;
 #[cfg(feature = "cap-radicals")]
 mod radicals;
+#[cfg(feature = "cap-reaction")]
+mod reaction;
+#[cfg(feature = "cap-reaction")]
+pub(crate) use runtime::registry::{
+    ApplyReactionAccess, ReactionProductsAccess, ReactionProductsFromInputsAccess,
+};
 #[cfg(feature = "cap-rings")]
 mod rings;
 mod runtime;
@@ -102,7 +108,7 @@ pub(crate) use runtime::registry::WithKekulizedBondsAccess;
 #[cfg(test)]
 pub(crate) use runtime::registry::{
     CowCoordinatesFailureForTestAccess, CowCoordinatesForTestAccess,
-    RingLiveCowCheckoutConflictForTestAccess,
+    ReactionApplyReportForTestAccess, RingLiveCowCheckoutConflictForTestAccess,
 };
 #[cfg(feature = "cap-rings")]
 pub(crate) use runtime::registry::{WithAssignedRingFamiliesAccess, WithAssignedRingsAccess};

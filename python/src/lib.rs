@@ -58,3 +58,5 @@ mod canonical_molecular_io;
 mod canonical_sdf_supplier;
 
 mod canonical_stereoisomers;
+
+mod persistent_forcefields;

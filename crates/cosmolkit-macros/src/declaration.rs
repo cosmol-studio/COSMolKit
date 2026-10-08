@@ -89,6 +89,7 @@ pub(crate) enum CipStatePolicy {
     Recompute,
     TautomerSourceTransition,
     StereoisomerSourceTransition,
+    ReactionSourceTransition,
 }
 
 #[derive(Clone, Debug)]
@@ -530,6 +531,7 @@ fn validate_molecule_relationships(
         topology_edit,
         requires_mapping,
         may_mutate,
+        auto_remap,
     )?;
 
     let changes_indices = matches!(
@@ -834,7 +836,51 @@ fn validate_cip_transition(
     topology_edit: TopologyEditKind,
     mapping: MappingRequirement,
     may_mutate: &[MoleculeBlock],
+    auto_remap: &[MoleculeBlock],
 ) -> syn::Result<()> {
+    if cip_state == CipStatePolicy::ReactionSourceTransition {
+        let product = matches!(
+            (operation.to_string().as_str(), method.to_string().as_str()),
+            ("reaction_products", "reaction_products_with_params")
+                | (
+                    "reaction_products_from_inputs",
+                    "reaction_products_from_inputs"
+                )
+        ) && output == MoleculeOutput::Multiple
+            && topology_edit == TopologyEditKind::Reconstruction
+            && mapping == MappingRequirement::Reconstruction
+            && auto_remap.is_empty();
+        let apply = operation == "apply_reaction"
+            && method == "apply_reaction_with_params"
+            && output == MoleculeOutput::Single
+            && topology_edit == TopologyEditKind::Compacting
+            && mapping == MappingRequirement::Required
+            && auto_remap.len() == 2
+            && auto_remap.contains(&MoleculeBlock::Coordinates)
+            && auto_remap.contains(&MoleculeBlock::Properties);
+        let blocks = [
+            MoleculeBlock::Topology,
+            MoleculeBlock::Coordinates,
+            MoleculeBlock::Properties,
+            MoleculeBlock::DerivedCache,
+        ];
+        let valid = (product || apply)
+            && kind == OperationKind::Strong
+            && access.read.is_empty()
+            && access.write.len() == blocks.len()
+            && may_mutate.len() == blocks.len()
+            && blocks
+                .iter()
+                .all(|block| access.write.contains(block) && may_mutate.contains(block));
+        return if valid {
+            Ok(())
+        } else {
+            Err(syn::Error::new(
+                operation.span(),
+                "reaction source transition requires an exact reaction operation with strong reconstruction or compacting mapping and four write-owned blocks",
+            ))
+        };
+    }
     if cip_state == CipStatePolicy::StereoisomerSourceTransition {
         let valid = matches!(
             (operation.to_string().as_str(), method.to_string().as_str()),
@@ -1648,6 +1694,7 @@ fn parse_cip_state(value: &Ident) -> syn::Result<CipStatePolicy> {
         "recompute" => Ok(CipStatePolicy::Recompute),
         "tautomer_source_transition" => Ok(CipStatePolicy::TautomerSourceTransition),
         "stereoisomer_source_transition" => Ok(CipStatePolicy::StereoisomerSourceTransition),
+        "reaction_source_transition" => Ok(CipStatePolicy::ReactionSourceTransition),
         other => Err(syn::Error::new_spanned(
             value,
             format!("unknown CIP state policy '{other}'"),

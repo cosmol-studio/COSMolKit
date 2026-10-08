@@ -1866,9 +1866,47 @@ pub(crate) fn propagate_coordinates(
     if input.coordinates.conformers_2d.is_empty() && input.coordinates.conformers_3d.is_empty() {
         return Ok(());
     }
-    let Some(source) =
-        cosmolkit_smiles::select_cx_coordinates(input.coordinates, selection.into())?
-    else {
+    // RDKit❗✔️: const Conformer &ROMol::getConformer(int id) const {
+    // RDKit❗✔️:   // make sure we have more than one conformation
+    // RDKit❗✔️:   if (d_confs.size() == 0) {
+    // RDKit❗✔️:     throw ConformerException("No conformations available on the molecule");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (id < 0) {
+    // RDKit❗✔️:     return *(d_confs.front());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   auto cid = (unsigned int)id;
+    // RDKit❗✔️:   for (auto conf : d_confs) {
+    // RDKit❗✔️:     if (conf->getId() == cid) {
+    // RDKit❗✔️:       return *conf;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   // we did not find a conformation with the specified ID
+    // RDKit❗✔️:   std::string mesg = "Can't find conformation with ID: ";
+    // RDKit❗✔️:   mesg += id;
+    // RDKit❗✔️:   throw ConformerException(mesg);
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // Reaction Auto is this source getter, not the independently approved
+    // ambiguity policy of the public CX writer selector. Borrow the canonical
+    // MODEL insertion fact in O(1), without sorting IDs or preferring a dimension.
+    let selected = match selection {
+        ReactionCoordinateSelection::Auto => {
+            input
+                .coordinates
+                .first_source_conformer()?
+                .map(|source| match source {
+                    cosmolkit_model::CoordinateSourceConformer::TwoD(conf) => {
+                        cosmolkit_smiles::CoordinateSource::TwoD(conf)
+                    }
+                    cosmolkit_model::CoordinateSourceConformer::ThreeD(conf) => {
+                        cosmolkit_smiles::CoordinateSource::ThreeD(conf)
+                    }
+                })
+        }
+        _ => cosmolkit_smiles::select_cx_coordinates(input.coordinates, selection.into())?,
+    };
+    let Some(source) = selected else {
         return Ok(());
     };
     if let cosmolkit_smiles::CoordinateSource::ThreeD(conf) = source {

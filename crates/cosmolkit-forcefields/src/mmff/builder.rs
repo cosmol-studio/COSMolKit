@@ -28,7 +28,7 @@ const RELATION_1_4: u8 = 2;
 const RELATION_1_X: u8 = 3;
 
 #[derive(Debug, thiserror::Error)]
-pub(super) enum MmffBuilderError {
+pub(crate) enum MmffBuilderError {
     #[error(transparent)]
     MolProperties(#[from] MmffMolPropertiesError),
     #[error(transparent)]
@@ -50,21 +50,21 @@ pub(super) enum MmffBuilderError {
 /// Borrowed original conformer metadata. Selected coordinates come from the
 /// field's existing position handles, so fragment preparation creates no copy
 /// of the coordinate block or selected conformer rows.
-pub(super) struct MmffConformerContext<'a> {
-    pub(super) two_d: &'a [Conformer2D],
-    pub(super) before: &'a [Conformer3D],
-    pub(super) selected_id: usize,
-    pub(super) selected_is_3d: bool,
-    pub(super) selected_props: &'a std::collections::BTreeMap<
+pub(crate) struct MmffConformerContext<'a> {
+    pub(crate) two_d: &'a [Conformer2D],
+    pub(crate) before: &'a [Conformer3D],
+    pub(crate) selected_id: usize,
+    pub(crate) selected_is_3d: bool,
+    pub(crate) selected_props: &'a std::collections::BTreeMap<
         cosmolkit_model::PropertyText,
         cosmolkit_model::PropertyText,
     >,
-    pub(super) after: &'a [Conformer3D],
-    pub(super) source_dimension: Option<CoordinateDimension>,
-    pub(super) source_order: Option<&'a [CoordinateDimension]>,
+    pub(crate) after: &'a [Conformer3D],
+    pub(crate) source_dimension: Option<CoordinateDimension>,
+    pub(crate) source_order: Option<&'a [CoordinateDimension]>,
 }
 
-pub(super) fn construct_force_field_with_props<'a>(
+pub(crate) fn construct_force_field_with_props<'a>(
     mol: &TopologyBlock,
     mmff_mol_properties: &MmffMolProperties,
     positions: Vec<&'a mut [f64]>,

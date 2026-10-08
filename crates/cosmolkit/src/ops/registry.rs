@@ -5,129 +5,136 @@ use cosmolkit_macros::molecule_ops;
 use super::FeatureSpec;
 
 #[cfg(feature = "cap-fingerprints")]
-pub(crate) const FINGERPRINTS_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static FINGERPRINTS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-fingerprints",
     category: "fingerprints",
     docs: "Fingerprint values and source-defined atom-code CIP transformation.",
 };
 
 #[cfg(feature = "cap-forcefields")]
-pub(crate) const FORCEFIELDS_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static FORCEFIELDS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-forcefields",
     category: "forcefields",
     docs: "Prepared UFF parameter queries and coordinate-only optimization.",
 };
 #[allow(unexpected_cfgs)]
 #[cfg(cosmolkit_runtime_privacy_probe)]
-pub(crate) const PRESERVE_PROBE_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static PRESERVE_PROBE_FEATURE: FeatureSpec = FeatureSpec {
     name: "preserve-privacy-probe",
     category: "internal-test",
     docs: "Compile-only proof that preservation grants no cache access.",
 };
 
 #[cfg(test)]
-pub(crate) const COW_TEST_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static COW_TEST_FEATURE: FeatureSpec = FeatureSpec {
     name: "cow-runtime-test",
     category: "internal-test",
     docs: "Internal registered-operation coverage for block-level COW.",
 };
 
 #[cfg(feature = "cap-hydrogens")]
-pub(crate) const HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static HYDROGENS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-hydrogens",
     category: "chemistry",
     docs: "Explicit-hydrogen topology transformations.",
 };
 
 #[cfg(feature = "cap-kekulize")]
-pub(crate) const KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static KEKULIZE_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-kekulize",
     category: "chemistry",
     docs: "RDKit-compatible Kekule bond assignment over molecule topology.",
 };
 
 #[cfg(feature = "cap-aromaticity")]
-pub(crate) const AROMATICITY_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static AROMATICITY_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-aromaticity",
     category: "chemistry",
     docs: "RDKit-compatible aromatic atom and bond assignment over molecule topology.",
 };
 
 #[cfg(feature = "cap-valence")]
-pub(crate) const VALENCE_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static VALENCE_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-valence",
     category: "chemistry",
     docs: "Explicit- and implicit-valence assignment over molecule topology.",
 };
 
 #[cfg(feature = "cap-radicals")]
-pub(crate) const RADICALS_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static RADICALS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-radicals",
     category: "chemistry",
     docs: "Automatic radical-electron assignment over molecule topology.",
 };
 
 #[cfg(feature = "cap-rings")]
-pub(crate) const RINGS_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static RINGS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-rings",
     category: "chemistry",
     docs: "RDKit-compatible ring and ring-family assignment over molecule topology.",
 };
 
 #[cfg(feature = "cap-stereo")]
-pub(crate) const STEREO_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static STEREO_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-stereo",
     category: "chemistry",
     docs: "RDKit-compatible chiral-tag assignment, potential-stereochemistry perception, and modern CIP labeling.",
 };
 
 #[cfg(feature = "cap-transforms")]
-pub(crate) const TRANSFORMS_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static TRANSFORMS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-transforms",
     category: "coordinates",
     docs: "RDKit-compatible detached coordinate transforms and atom-position replacement.",
 };
 
 #[cfg(feature = "cap-depict")]
-pub(crate) const DEPICT_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static DEPICT_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-depict",
     category: "coordinates",
     docs: "Source-backed 2D coordinate generation without changing existing 3D conformers; full parity remains open for an upstream-undefined partial-fragment sampling path.",
 };
 
 #[cfg(feature = "cap-sanitize")]
-pub(crate) const SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static SANITIZE_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-sanitize",
     category: "chemistry",
     docs: "RDKit-compatible molecule sanitization and chemistry-problem detection.",
 };
 
 #[cfg(feature = "cap-tautomer")]
-pub(crate) const TAUTOMER_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static TAUTOMER_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-tautomer",
     category: "chemistry",
     docs: "Source-backed ordered tautomer enumeration and canonical selection.",
 };
 
 #[cfg(feature = "cap-alignment")]
-pub(crate) const ALIGNMENT_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static ALIGNMENT_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-alignment",
     category: "coordinates",
     docs: "Source-backed molecular and conformer alignment over detached values.",
 };
 
 #[cfg(feature = "cap-conformer")]
-pub(crate) const CONFORMER_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static CONFORMER_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-conformer",
     category: "coordinates",
     docs: "Source-backed distance geometry and independent 3D conformer storage.",
 };
 
 #[cfg(feature = "cap-stereoisomers")]
-pub(crate) const STEREOISOMERS_FEATURE: FeatureSpec = FeatureSpec {
+pub(crate) static STEREOISOMERS_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-stereoisomers",
     category: "chemistry",
     docs: "Source-ordered lazy stereoisomer enumeration and upper-bound counts.",
+};
+
+#[cfg(feature = "cap-reaction")]
+pub(crate) static REACTION_FEATURE: FeatureSpec = FeatureSpec {
+    name: "cap-reaction",
+    category: "chemistry",
+    docs: "Private reaction pipeline pending canonical public registration and review.",
 };
 
 molecule_ops! {
@@ -162,9 +169,9 @@ molecule_ops! {
     }
 
     #[cfg(feature = "cap-reaction")]
-    op reaction_products(reaction: &crate::Reaction, reactant_template: usize, params: &crate::ReactionSingleRunParams) {
+    op reaction_products(reaction: &mut crate::Reaction, reactant_template: usize, params: &crate::ReactionSingleRunParams) {
         method: reaction_products_with_params,
-        error_type: crate::ReactionRunError,
+        method_visibility: pub(crate),
         impl_fn: crate::ops::reaction::reaction_products_impl,
         output: multiple,
         result_type: Vec<Vec<crate::Molecule>>,
@@ -173,7 +180,7 @@ molecule_ops! {
         access: { read: [], write: [topology, coordinates, properties, derived_cache] },
         may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
         derived_effects: { recompute: [valence, rings], preserve: [], invalidate: [ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
-        cip_state: preserve, requires_mapping: reconstruction,
+        cip_state: reaction_source_transition, requires_mapping: reconstruction,
         feature: crate::ops::runtime::registry::REACTION_FEATURE,
         parity: required_now, parity_profile: "reaction_runner_rdkit_single_input",
         io_roundtrip: false, invariant_profile: "reaction_reconstruction_checked_row_origins_ordered_product_sets",
@@ -181,9 +188,8 @@ molecule_ops! {
     }
 
     #[cfg(feature = "cap-reaction")]
-    op reaction_products_from_inputs(reaction: &crate::Reaction, reactants: &[&crate::Molecule], params: &crate::ReactionRunParams) {
+    op reaction_products_from_inputs(reaction: &mut crate::Reaction, reactants: &[&crate::Molecule], params: &crate::ReactionRunParams) {
         method: reaction_products_from_inputs,
-        error_type: crate::ReactionRunError,
         method_visibility: pub(crate),
         impl_fn: crate::ops::reaction::reaction_products_from_inputs_impl,
         output: multiple,
@@ -193,16 +199,16 @@ molecule_ops! {
         access: { read: [], write: [topology, coordinates, properties, derived_cache] },
         may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
         derived_effects: { recompute: [valence, rings], preserve: [], invalidate: [ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
-        cip_state: preserve, requires_mapping: reconstruction,
+        cip_state: reaction_source_transition, requires_mapping: reconstruction,
         feature: crate::ops::runtime::registry::REACTION_FEATURE,
         parity: required_now, parity_profile: "reaction_runner_rdkit_multiple_inputs",
         io_roundtrip: false, invariant_profile: "reaction_multi_input_checked_origins_ordered_product_sets",
     }
 
     #[cfg(feature = "cap-reaction")]
-    op apply_reaction(reaction: &crate::Reaction, params: &crate::ReactionApplyParams) {
+    op apply_reaction(reaction: &mut crate::Reaction, params: &crate::ReactionApplyParams) {
         method: apply_reaction_with_params,
-        error_type: crate::ReactionApplyError,
+        method_visibility: pub(crate),
         impl_fn: crate::ops::reaction::apply_reaction_impl,
         report_type: bool,
         report_result_type: crate::ReactionApplyResult,
@@ -212,7 +218,7 @@ molecule_ops! {
         may_mutate: [topology, coordinates, properties, derived_cache],
         auto_remap: [coordinates, properties],
         derived_effects: { recompute: [], preserve: [], invalidate: [valence, rings, ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
-        cip_state: preserve, requires_mapping: required,
+        cip_state: reaction_source_transition, requires_mapping: required,
         feature: crate::ops::runtime::registry::REACTION_FEATURE,
         parity: required_now, parity_profile: "reaction_runner_rdkit_restricted_apply",
         io_roundtrip: false, invariant_profile: "reaction_apply_source_bool_compact_mapping_all_coordinate_sets",
@@ -1105,6 +1111,25 @@ molecule_ops! {
         inplace: true,
         inplace_method: compute_2d_coordinates_with_params_,
         default_inplace_method: compute_2d_coordinates_,
+    }
+
+    #[cfg(test)]
+    op reaction_apply_report_for_test(changed: bool, failure: u8) {
+        method: reaction_apply_report_for_test,
+        method_visibility: pub(crate),
+        impl_fn: crate::ops::cow_tests::reaction_apply_report_for_test_impl,
+        report_type: bool,
+        report_result_type: crate::ReactionApplyResult,
+        inplace_result_type: bool,
+        domain: coordinate, kind: weak, topology_edit: none,
+        access: { read: [], write: [coordinates] },
+        may_mutate: [coordinates], auto_remap: [],
+        derived_effects: { recompute: [], preserve: [], invalidate: [], operation_defined: [] },
+        cip_state: preserve, requires_mapping: none,
+        feature: crate::ops::runtime::registry::COW_TEST_FEATURE,
+        parity: not_applicable,
+        invariant_profile: "reaction-source-bool-result-runtime-test",
+        inplace: true, inplace_method: reaction_apply_report_for_test_,
     }
 
     #[cfg(test)]

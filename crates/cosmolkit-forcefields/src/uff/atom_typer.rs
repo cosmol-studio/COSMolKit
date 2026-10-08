@@ -72,7 +72,7 @@ impl std::error::Error for UffTypingError {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(super) enum UffAtomStateRef<'a> {
+pub(crate) enum UffAtomStateRef<'a> {
     Cached {
         topology: &'a TopologyBlock,
         assignment: &'a ValenceAssignment,
@@ -199,13 +199,13 @@ impl<'a> UffAtomStateRef<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum UffTypingDiagnosticKind {
+pub(crate) enum UffTypingDiagnosticKind {
     Warning,
     Error,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct UffTypingDiagnostic {
+pub(crate) struct UffTypingDiagnostic {
     pub(super) atom_id: Option<AtomId>,
     pub(super) kind: UffTypingDiagnosticKind,
     pub(super) message_prefix: &'static str,

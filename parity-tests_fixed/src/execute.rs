@@ -8,6 +8,7 @@ pub fn run(input: &Input) -> Result<Record, String> {
         Input::Search(row) => crate::search::run(row),
         Input::Uff(_) => crate::uff::run(input),
         Input::Mmff(row) => crate::mmff::run(row),
+        Input::PersistentForceField(row) => crate::persistent_forcefields::run(row),
         Input::Molecular { .. } => crate::molecular::run(input),
         Input::BioPdbOutput { case, profile } => {
             let structure = match case.format {

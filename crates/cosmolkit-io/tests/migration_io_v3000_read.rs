@@ -6143,7 +6143,8 @@ fn v3k_atom_int_props_literal_zero_skips_each_distinct_property() {
         ("VAL", Some("molTotValence")),
         ("STBOX", Some("molStereoCare")),
         ("SUBST", Some("molSubstCount")),
-        ("EXACHG", Some("molRxnExactChange")),
+        // RDKit RDGeneral/types.h: molRxnExactChange = "molRxnExachg".
+        ("EXACHG", Some("molRxnExachg")),
         ("INVRET", None),
         ("SEQID", Some("molAtomSeqId")),
     ];
@@ -6174,7 +6175,7 @@ fn v3k_atom_int_props_share_source_conversion_without_aliasing_keys() {
         ("VAL", Some("molTotValence")),
         ("STBOX", Some("molStereoCare")),
         ("SUBST", Some("molSubstCount")),
-        ("EXACHG", Some("molRxnExactChange")),
+        ("EXACHG", Some("molRxnExachg")),
         ("INVRET", None),
         ("SEQID", Some("molAtomSeqId")),
     ];
@@ -6205,7 +6206,8 @@ fn v3k_atom_int_props_share_source_conversion_without_aliasing_keys() {
                     "molTotValence",
                     "molStereoCare",
                     "molSubstCount",
-                    "molRxnExactChange",
+                    "molRxnExachg",
+                    "molRxnExactChange", // The C++ constant name is not an alias.
                     "molAtomSeqId",
                 ] {
                     if other_key != key {
@@ -6223,6 +6225,7 @@ fn v3k_atom_int_props_share_source_conversion_without_aliasing_keys() {
                     "molTotValence",
                     "molStereoCare",
                     "molSubstCount",
+                    "molRxnExachg",
                     "molRxnExactChange",
                     "molAtomSeqId",
                 ] {
@@ -6245,11 +6248,7 @@ fn v3k_atom_int_props_repeated_values_replace_and_invalid_text_is_structured() {
         ("VAL", Some("molTotValence"), "V3000 total valence"),
         ("STBOX", Some("molStereoCare"), "V3000 stereo care"),
         ("SUBST", Some("molSubstCount"), "V3000 substitution count"),
-        (
-            "EXACHG",
-            Some("molRxnExactChange"),
-            "V3000 exact-change flag",
-        ),
+        ("EXACHG", Some("molRxnExachg"), "V3000 exact-change flag"),
         ("INVRET", None, "V3000 inversion flag"),
         ("SEQID", Some("molAtomSeqId"), "V3000 sequence id"),
     ];

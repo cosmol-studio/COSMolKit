@@ -404,6 +404,93 @@ fn molecule_missing_unknown_and_removed_fields_have_focused_diagnostics() {
 }
 
 #[test]
+fn reaction_source_transition_requires_exact_identity_mapping_and_authority() {
+    for (operation, method, output, edit, mapping, remap) in [
+        (
+            "reaction_products",
+            "reaction_products_with_params",
+            "multiple",
+            "reconstruction",
+            "reconstruction",
+            "[]",
+        ),
+        (
+            "reaction_products_from_inputs",
+            "reaction_products_from_inputs",
+            "multiple",
+            "reconstruction",
+            "reconstruction",
+            "[]",
+        ),
+        (
+            "apply_reaction",
+            "apply_reaction_with_params",
+            "single",
+            "compacting",
+            "required",
+            "[coordinates,properties]",
+        ),
+    ] {
+        let source = format!(
+            r#"op {operation} {{
+            method:{method},impl_fn:crate::reaction_impl,
+            output:{output},kind:strong,topology_edit:{edit},
+            access:{{read:[],write:[topology,coordinates,properties,derived_cache]}},
+            may_mutate:[topology,coordinates,properties,derived_cache],auto_remap:{remap},
+            derived_effects:{{recompute:[],preserve:[],invalidate:[],operation_defined:[]}},
+            cip_state:reaction_source_transition,requires_mapping:{mapping},
+            feature:crate::REACTION_FEATURE,parity:not_applicable,invariant_profile:"reaction"
+        }}"#
+        );
+        assert_eq!(
+            parse_molecule(&source).operations[0].fields.cip_state,
+            CipStatePolicy::ReactionSourceTransition
+        );
+        for (from, to) in [
+            (
+                format!("op {operation} {{"),
+                "op other_operation {".to_owned(),
+            ),
+            (
+                format!("method:{method}"),
+                "method:other_operation".to_owned(),
+            ),
+            (
+                format!("output:{output}"),
+                "output:lazy_multiple".to_owned(),
+            ),
+            ("kind:strong".to_owned(), "kind:weak".to_owned()),
+            (
+                format!("topology_edit:{edit}"),
+                "topology_edit:local".to_owned(),
+            ),
+            (
+                format!("requires_mapping:{mapping}"),
+                "requires_mapping:none".to_owned(),
+            ),
+            (
+                format!("auto_remap:{remap}"),
+                "auto_remap:[coordinates]".to_owned(),
+            ),
+            ("read:[]".to_owned(), "read:[topology]".to_owned()),
+            (
+                "write:[topology,coordinates,properties,derived_cache]".to_owned(),
+                "write:[topology,properties,derived_cache]".to_owned(),
+            ),
+            (
+                "may_mutate:[topology,coordinates,properties,derived_cache]".to_owned(),
+                "may_mutate:[topology,coordinates,derived_cache]".to_owned(),
+            ),
+        ] {
+            assert!(
+                syn::parse_str::<MoleculeRegistry>(&source.replace(&from, &to)).is_err(),
+                "{operation} accepted {from} -> {to}"
+            );
+        }
+    }
+}
+
+#[test]
 fn molecule_rejects_duplicate_fields_list_members_and_access_overlap() {
     let duplicate_field = replace(
         &molecule_source(),

@@ -87,7 +87,7 @@ fn molecule() -> Molecule {
 fn molecule_with_valid(states: DerivedState) -> Molecule {
     let source = molecule();
     let mut cache = DerivedCacheBlock::default();
-    #[cfg(feature = "cap-rings")]
+    #[cfg(any(feature = "cap-rings", feature = "cap-reaction"))]
     if states.intersects(DerivedState::RINGS) {
         cache.install_ring_info(cosmolkit_core::RingInfo::new(
             cosmolkit_core::RingFindType::SymmSssr,
@@ -1007,6 +1007,77 @@ fn tautomer_transition_guard_is_exact_and_single_output_cannot_apply_it() {
             OpParts::<EffectsAccess>::validate_effect_contract(invalid),
             Err(OperationError::CipStateContract { .. })
         ));
+    }
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reaction_source_transition_rejects_other_runtime_shapes() {
+    let blocks = BlockSet::TOPOLOGY
+        .union(BlockSet::COORDINATES)
+        .union(BlockSet::PROPERTIES)
+        .union(BlockSet::DERIVED_CACHE);
+    for method in [
+        "reaction_products_with_params",
+        "reaction_products_from_inputs",
+        "apply_reaction_with_params",
+    ] {
+        let good = crate::ops::MOLECULE_OPS
+            .iter()
+            .copied()
+            .find(|spec| spec.method == method)
+            .unwrap();
+        assert_eq!(good.cip_state, CipStatePolicy::ReactionSourceTransition);
+        assert!(OpParts::<EffectsAccess>::validate_effect_contract(good).is_ok());
+        for case in 0..15 {
+            let mut bad = *good;
+            match case {
+                0 => bad.method = "other_operation",
+                1 => bad.output = MoleculeOpOutput::LazyMultiple,
+                2 => bad.kind = MoleculeOpKind::Weak,
+                3 => bad.topology_edit = TopologyEditKind::Local,
+                4 => bad.requires_mapping = MappingRequirement::None,
+                5 => bad.auto_remap = BlockSet::COORDINATES,
+                6 => bad.access = BlockAccess::new(BlockSet::TOPOLOGY, blocks),
+                7 => {
+                    bad.access =
+                        BlockAccess::new(BlockSet::NONE, blocks.difference(BlockSet::TOPOLOGY))
+                }
+                8 => {
+                    bad.access =
+                        BlockAccess::new(BlockSet::NONE, blocks.difference(BlockSet::COORDINATES))
+                }
+                9 => {
+                    bad.access =
+                        BlockAccess::new(BlockSet::NONE, blocks.difference(BlockSet::PROPERTIES))
+                }
+                10 => {
+                    bad.access =
+                        BlockAccess::new(BlockSet::NONE, blocks.difference(BlockSet::DERIVED_CACHE))
+                }
+                11 => bad.may_mutate = blocks.difference(BlockSet::TOPOLOGY),
+                12 => bad.may_mutate = blocks.difference(BlockSet::COORDINATES),
+                13 => bad.may_mutate = blocks.difference(BlockSet::PROPERTIES),
+                14 => bad.may_mutate = blocks.difference(BlockSet::DERIVED_CACHE),
+                _ => unreachable!(),
+            }
+            let error =
+                OpParts::<EffectsAccess>::validate_effect_contract(Box::leak(Box::new(bad)))
+                    .expect_err("illegal reaction policy must be rejected");
+            if matches!(case, 10 | 14) {
+                // Declared cache effects require write authority and are
+                // checked before the independent CIP policy allow-list.
+                assert!(
+                    matches!(error, OperationError::DerivedEffectContract { .. }),
+                    "{method}: {error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(error, OperationError::CipStateContract { .. }),
+                    "{method}: case {case}: {error:?}"
+                );
+            }
+        }
     }
 }
 

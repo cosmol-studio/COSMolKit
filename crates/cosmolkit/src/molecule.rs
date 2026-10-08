@@ -32,6 +32,7 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-descriptors",
         feature = "cap-forcefields",
         feature = "cap-tautomer",
+        feature = "cap-reaction",
         feature = "cap-hashing",
         feature = "cap-serialization",
         feature = "cap-io"
@@ -51,6 +52,7 @@ pub(crate) struct DerivedCacheBlock {
         feature = "cap-forcefields",
         feature = "cap-fingerprints",
         feature = "cap-tautomer",
+        feature = "cap-reaction",
         feature = "cap-hashing",
         feature = "cap-serialization",
         feature = "cap-io"
@@ -83,6 +85,7 @@ impl DerivedCacheBlock {
                     feature = "cap-descriptors",
                     feature = "cap-forcefields",
                     feature = "cap-tautomer",
+                    feature = "cap-reaction",
                     feature = "cap-hashing",
                     feature = "cap-serialization",
                     feature = "cap-io"
@@ -103,6 +106,7 @@ impl DerivedCacheBlock {
                     feature = "cap-descriptors",
                     feature = "cap-forcefields",
                     feature = "cap-tautomer",
+                    feature = "cap-reaction",
                     feature = "cap-hashing",
                     feature = "cap-serialization",
                     feature = "cap-io"
@@ -126,6 +130,7 @@ impl DerivedCacheBlock {
                     feature = "cap-forcefields",
                     feature = "cap-fingerprints",
                     feature = "cap-tautomer",
+                    feature = "cap-reaction",
                     feature = "cap-hashing",
                     feature = "cap-serialization",
                     feature = "cap-io"
@@ -166,6 +171,7 @@ impl DerivedCacheBlock {
                     feature = "cap-forcefields",
                     feature = "cap-fingerprints",
                     feature = "cap-tautomer",
+                    feature = "cap-reaction",
                     feature = "cap-hashing",
                     feature = "cap-serialization",
                     feature = "cap-io"
@@ -199,6 +205,7 @@ impl DerivedCacheBlock {
             feature = "cap-descriptors",
             feature = "cap-forcefields",
             feature = "cap-tautomer",
+            feature = "cap-reaction",
             feature = "cap-hashing",
             feature = "cap-serialization",
             feature = "cap-io"
@@ -220,6 +227,7 @@ impl DerivedCacheBlock {
             feature = "cap-forcefields",
             feature = "cap-fingerprints",
             feature = "cap-tautomer",
+            feature = "cap-reaction",
             feature = "cap-hashing",
             feature = "cap-serialization",
             feature = "cap-io"
@@ -252,6 +260,7 @@ impl DerivedCacheBlock {
         feature = "cap-descriptors",
         feature = "cap-forcefields",
         feature = "cap-tautomer",
+        feature = "cap-reaction",
         feature = "cap-hashing",
         feature = "cap-serialization",
         feature = "cap-io"
@@ -276,6 +285,7 @@ impl DerivedCacheBlock {
         feature = "cap-descriptors",
         feature = "cap-forcefields",
         feature = "cap-tautomer",
+        feature = "cap-reaction",
         feature = "cap-hashing",
         feature = "cap-serialization",
         feature = "cap-io",
@@ -303,6 +313,7 @@ impl DerivedCacheBlock {
         feature = "cap-forcefields",
         feature = "cap-fingerprints",
         feature = "cap-tautomer",
+        feature = "cap-reaction",
         feature = "cap-hashing",
         feature = "cap-serialization",
         feature = "cap-io"
@@ -325,6 +336,7 @@ impl DerivedCacheBlock {
         feature = "cap-forcefields",
         feature = "cap-fingerprints",
         feature = "cap-tautomer",
+        feature = "cap-reaction",
         feature = "cap-hashing",
         feature = "cap-serialization",
         feature = "cap-io"
@@ -350,6 +362,7 @@ impl DerivedCacheBlock {
         feature = "cap-forcefields",
         feature = "cap-fingerprints",
         feature = "cap-tautomer",
+        feature = "cap-reaction",
         feature = "cap-hashing",
         feature = "cap-serialization",
         feature = "cap-io",
@@ -399,6 +412,7 @@ impl DerivedCacheBlock {
             feature = "cap-descriptors",
             feature = "cap-forcefields",
             feature = "cap-tautomer",
+            feature = "cap-reaction",
             feature = "cap-hashing",
             feature = "cap-serialization",
             feature = "cap-io"
@@ -463,6 +477,7 @@ impl DerivedCacheBlock {
             feature = "cap-forcefields",
             feature = "cap-fingerprints",
             feature = "cap-tautomer",
+            feature = "cap-reaction",
             feature = "cap-hashing",
             feature = "cap-serialization",
             feature = "cap-io"

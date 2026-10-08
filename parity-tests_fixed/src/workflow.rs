@@ -489,7 +489,7 @@ mod tests {
     use super::*;
     #[test]
     fn registry_keys_and_cargo_declarations_share_one_census() {
-        assert_eq!(registry::TASKS.len(), 109);
+        assert_eq!(registry::TASKS.len(), 111);
         let mut unique = BTreeSet::new();
         for task in registry::TASKS {
             assert_eq!(
@@ -508,7 +508,7 @@ mod tests {
         assert!(plan(&Selection::Corpus("fingerprint_5000".into())).is_err());
         let smoke = plan(&Selection::Corpus("smiles_smoke".into())).unwrap();
         assert_eq!(smoke.cases.molecules.len(), 3);
-        assert_eq!(smoke.specs.len(), 108);
+        assert_eq!(smoke.specs.len(), 110);
         let bio = plan(&Selection::Corpus("bio_small".into())).unwrap();
         assert_eq!(bio.cases.bio_cases.len(), 2);
         assert_eq!(bio.specs.len(), 2);
@@ -523,7 +523,21 @@ mod tests {
     #[test]
     fn special_regressions_have_separate_fixed_inputs() {
         let special = plan(&Selection::Special("all".into())).unwrap();
-        assert_eq!(special.specs.len(), 4);
+        assert_eq!(special.specs.len(), 5);
+        assert_eq!(
+            special
+                .specs
+                .iter()
+                .map(|s| s.key())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "bio_mmcif_switches",
+                "molalign_focused",
+                "structure_tags",
+                "tautomer_long_conjugated",
+                "tautomer_focused"
+            ])
+        );
         let structure = special
             .specs
             .iter()
@@ -634,8 +648,13 @@ mod tests {
     #[test]
     fn task_selection_is_exact_and_must_apply_to_the_corpus() {
         let selection = Selection::Corpus("smiles_smoke".into());
-        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 108);
-        for key in ["num_heavy_atoms_smiles", "batch_smiles"] {
+        assert_eq!(plan_task(&selection, None).unwrap().specs.len(), 110);
+        for key in [
+            "num_heavy_atoms_smiles",
+            "batch_smiles",
+            "mmff_force_field_smiles",
+            "uff_force_field_smiles",
+        ] {
             let selected = plan_task(&selection, Some(key)).unwrap();
             assert_eq!(selected.specs.len(), 1);
             assert_eq!(selected.specs[0].key(), key);

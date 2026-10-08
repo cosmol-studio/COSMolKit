@@ -129,7 +129,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
     #[cfg(feature = "cap-reaction")]
     pub(super) fn reconstruction_inputs_runtime<'b>(
         &mut self,
-        inputs: &'b [&'b Molecule],
+        inputs: &[&'b Molecule],
     ) -> Result<Vec<cosmolkit_reaction::ReactionInput<'b>>, OperationError> {
         if self.spec.requires_mapping != super::MappingRequirement::Reconstruction
             || self.reconstruction_inputs_read
@@ -144,21 +144,38 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
         self.ensure_read_access(BlockSet::PROPERTIES, "properties")?;
         self.ensure_read_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
-        self.reconstruction_inputs = inputs
-            .iter()
-            .map(|input| (input.topology().atoms.len(), input.topology().bonds.len()))
-            .collect();
+        let mut counts = Vec::with_capacity(inputs.len());
+        let mut detached = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            let topology = input.topology();
+            let coordinates = input.coordinate_block_runtime();
+            let properties = input.properties();
+            let cache = input.derived_cache_runtime();
+            validate_reconstruction_input(topology, coordinates, properties, cache)?;
+            counts.push((topology.atoms.len(), topology.bonds.len()));
+            detached.push(cosmolkit_reaction::ReactionInput {
+                topology,
+                coordinates,
+                properties,
+                rings: cache.valid_ring_info(),
+                valence: cache.valence_assignment(),
+            });
+        }
+        // Publish input evidence only after every actual input is valid.
+        // Iterating the caller's slice retains repeated molecules and order;
+        // no input graph or valid cache facts are cloned or recomputed.
+        self.reconstruction_inputs = counts;
         self.reconstruction_inputs_read = true;
-        Ok(inputs
-            .iter()
-            .map(|input| cosmolkit_reaction::ReactionInput {
-                topology: input.topology(),
-                coordinates: input.coordinate_block_runtime(),
-                properties: input.properties(),
-                rings: input.derived_cache_runtime().valid_ring_info(),
-                valence: input.derived_cache_runtime().valence_assignment(),
-            })
-            .collect())
+        Ok(detached)
+    }
+
+    #[cfg(feature = "cap-reaction")]
+    pub(super) fn reconstruction_source_runtime(
+        &mut self,
+    ) -> Result<cosmolkit_reaction::ReactionInput<'a>, OperationError> {
+        let source = self.source;
+        let mut inputs = self.reconstruction_inputs_runtime(&[source])?;
+        Ok(inputs.remove(0))
     }
 
     #[cfg(feature = "cap-reaction")]
@@ -507,36 +524,69 @@ impl Iterator for StereoisomerIterator {
 }
 impl std::iter::FusedIterator for StereoisomerIterator {}
 
+#[cfg(any(feature = "cap-reaction", test))]
+fn validate_reconstruction_input(
+    topology: &TopologyBlock,
+    coordinates: &CoordinateBlock,
+    properties: &MoleculeProperties,
+    cache: &crate::molecule::DerivedCacheBlock,
+) -> Result<(), OperationError> {
+    OpParts::<()>::validate_detached_candidate_invariants(topology, coordinates, properties)?;
+    cache.validate_for_topology(topology)
+}
+
 #[cfg(feature = "cap-reaction")]
 fn validate_reconstruction_origins(
     spec: &'static MoleculeOpSpec,
     inputs: &[(usize, usize)],
     product: &cosmolkit_reaction::ReactionProduct,
 ) -> Result<(), OperationError> {
+    validate_reconstruction_rows(
+        spec,
+        inputs,
+        &product.topology,
+        &product.coordinates,
+        product
+            .atom_origins
+            .iter()
+            .map(|origin| origin.as_ref().map(|o| (o.input, o.row.index()))),
+        product
+            .bond_origins
+            .iter()
+            .map(|origin| origin.as_ref().map(|o| (o.input, o.row.index()))),
+        (
+            product.valence.explicit_valence.len(),
+            product.valence.implicit_hydrogens.len(),
+        ),
+        product
+            .rings
+            .as_ref()
+            .map(|rings| (rings.atom_row_count(), rings.bond_row_count())),
+    )
+}
+
+#[cfg(any(feature = "cap-reaction", test))]
+fn validate_reconstruction_rows(
+    spec: &'static MoleculeOpSpec,
+    inputs: &[(usize, usize)],
+    topology: &TopologyBlock,
+    coordinates: &CoordinateBlock,
+    mut atom_origins: impl ExactSizeIterator<Item = Option<(usize, usize)>>,
+    mut bond_origins: impl ExactSizeIterator<Item = Option<(usize, usize)>>,
+    valence_rows: (usize, usize),
+    ring_rows: Option<(usize, usize)>,
+) -> Result<(), OperationError> {
     // This is runtime evidence validation, not a chemistry algorithm.
     // Each destination is a vector row; repeated source origins are legal,
     // None means a newly constructed row, and no inverse map is fabricated.
+    // The typed product adapter borrows the original origin vectors and reads
+    // actual fact row counts. Iteration allocates no replacement mapping or
+    // graph and leaves every source and detached candidate unchanged.
     for (actual, expected, field) in [
-        (
-            product.atom_origins.len(),
-            product.topology.atoms.len(),
-            "atom origins",
-        ),
-        (
-            product.bond_origins.len(),
-            product.topology.bonds.len(),
-            "bond origins",
-        ),
-        (
-            product.valence.explicit_valence.len(),
-            product.topology.atoms.len(),
-            "explicit valence",
-        ),
-        (
-            product.valence.implicit_hydrogens.len(),
-            product.topology.atoms.len(),
-            "implicit hydrogens",
-        ),
+        (atom_origins.len(), topology.atoms.len(), "atom origins"),
+        (bond_origins.len(), topology.bonds.len(), "bond origins"),
+        (valence_rows.0, topology.atoms.len(), "explicit valence"),
+        (valence_rows.1, topology.atoms.len(), "implicit hydrogens"),
     ] {
         if actual != expected {
             return Err(OperationError::InvalidAlgorithmResult {
@@ -569,32 +619,12 @@ fn validate_reconstruction_origins(
         }
         Ok(())
     };
-    check(
-        "atom",
-        &mut product
-            .atom_origins
-            .iter()
-            .map(|origin| origin.as_ref().map(|o| (o.input, o.row.index()))),
-    )?;
-    check(
-        "bond",
-        &mut product
-            .bond_origins
-            .iter()
-            .map(|origin| origin.as_ref().map(|o| (o.input, o.row.index()))),
-    )?;
-    if let Some(rings) = &product.rings {
+    check("atom", &mut atom_origins)?;
+    check("bond", &mut bond_origins)?;
+    if let Some((atom_rows, bond_rows)) = ring_rows {
         for (actual, expected, field) in [
-            (
-                rings.atom_row_count(),
-                product.topology.atoms.len(),
-                "ring atom membership",
-            ),
-            (
-                rings.bond_row_count(),
-                product.topology.bonds.len(),
-                "ring bond membership",
-            ),
+            (atom_rows, topology.atoms.len(), "ring atom membership"),
+            (bond_rows, topology.bonds.len(), "ring bond membership"),
         ] {
             if actual != expected {
                 return Err(OperationError::InvalidAlgorithmResult {
@@ -606,13 +636,11 @@ fn validate_reconstruction_origins(
             }
         }
     }
-    product
-        .topology
+    topology
         .validate()
         .map_err(OperationError::InvalidTopology)?;
-    product
-        .coordinates
-        .validate_for_atom_count(product.topology.atoms.len())
+    coordinates
+        .validate_for_atom_count(topology.atoms.len())
         .map_err(OperationError::InvalidCoordinates)?;
     Ok(())
 }

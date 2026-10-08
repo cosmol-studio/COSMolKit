@@ -283,6 +283,27 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
     let write = molecule_block_mask(&operation.fields.access.write);
     let mut methods = Vec::new();
 
+    if operation.name == "apply_reaction"
+        && [
+            MoleculeBlock::Topology,
+            MoleculeBlock::Coordinates,
+            MoleculeBlock::Properties,
+            MoleculeBlock::DerivedCache,
+        ]
+        .iter()
+        .all(|block| {
+            operation.fields.access.read.contains(block)
+                || operation.fields.access.write.contains(block)
+        })
+    {
+        methods.push(quote! {
+            #[cfg(feature = "cap-reaction")]
+            pub(crate) fn reaction_input(&self) -> Result<cosmolkit_reaction::ReactionInput<'_>, crate::OperationError> {
+                self.reaction_input_runtime()
+            }
+        });
+    }
+
     if operation.fields.output == MoleculeOutput::Single
         && operation
             .fields
@@ -590,9 +611,12 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
             } else if operation.fields.requires_mapping == MappingRequirement::Reconstruction {
                 quote! {
                     pub(crate) fn reconstruction_inputs<'b>(
-                        &mut self, inputs: &'b [&'b crate::Molecule],
+                        &mut self, inputs: &[&'b crate::Molecule],
                     ) -> Result<Vec<cosmolkit_reaction::ReactionInput<'b>>, crate::OperationError> {
                         self.reconstruction_inputs_runtime(inputs)
+                    }
+                    pub(crate) fn reconstruction_source(&mut self) -> Result<cosmolkit_reaction::ReactionInput<'a>, crate::OperationError> {
+                        self.reconstruction_source_runtime()
                     }
                     pub(crate) fn emit_reconstructed(
                         &mut self, products: Vec<cosmolkit_reaction::ReactionProduct>,

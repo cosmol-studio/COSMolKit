@@ -246,11 +246,7 @@ fn q03_parser_errors_use_trimmed_parser_byte_positions() {
         .expect_err("a branch must begin with atomd or bond_expr atomd before EOS");
     assert_eq!(
         eof_error,
-        SmartsParseError::UnexpectedCharacter {
-            position: 2,
-            character: b'?',
-            context: "expected atom expression".to_owned(),
-        }
+        SmartsParseError::UnexpectedEnd("expected atom expression".to_owned())
     );
 
     let missing_close = parse_smarts("C(O", &SmartsParseParams::default())
@@ -321,10 +317,14 @@ fn q13_branch_stack_restores_attachment_and_rejects_invalid_branch_starts() {
         assert_eq!(
             parse_smarts(smarts, &SmartsParseParams::default())
                 .expect_err("invalid branch start must fail at its source token"),
-            SmartsParseError::UnexpectedCharacter {
-                position,
-                character: b'?',
-                context: "expected atom expression".to_owned(),
+            if smarts == "C(" {
+                SmartsParseError::UnexpectedEnd("expected atom expression".to_owned())
+            } else {
+                SmartsParseError::UnexpectedCharacter {
+                    position,
+                    character: b'?',
+                    context: "expected atom expression".to_owned(),
+                }
             },
             "{smarts}"
         );
@@ -2407,13 +2407,15 @@ fn q22_nonrecursive_merge_counts_mapped_hydrogen_and_retains_isotope_by_default(
     assert_eq!(
         graph.atom(0).expect("merged carbon").predicate(),
         &QueryNode::And(vec![
-            QueryNode::predicate(AtomQueryPredicate::AtomType {
-                atomic_number: 6,
-                aromatic: false,
-            }),
-            QueryNode::Not(Box::new(QueryNode::Predicate(
-                AtomQueryPredicate::HydrogenCount(0),
-            ))),
+            QueryNode::And(vec![
+                QueryNode::predicate(AtomQueryPredicate::AtomType {
+                    atomic_number: 6,
+                    aromatic: false,
+                }),
+                QueryNode::Not(Box::new(QueryNode::Predicate(
+                    AtomQueryPredicate::HydrogenCount(0),
+                ))),
+            ]),
             QueryNode::Not(Box::new(QueryNode::Predicate(
                 AtomQueryPredicate::HydrogenCount(1),
             ))),
@@ -2438,25 +2440,30 @@ fn q22_merge_hydrogen_neighbor_count_uses_source_unsigned_width() {
     let graph = parse_smarts(&smarts, &merge_hs).expect("merge all 256 neighboring query H atoms");
 
     assert_eq!(graph.num_atoms(), 1);
-    let QueryNode::And(children) = graph.atom(0).expect("merged carbon").predicate() else {
-        panic!("source merge should add one H-count predicate per removed atom");
-    };
-    assert_eq!(children.len(), 257);
-    for (hydrogen_count, child) in children.iter().skip(1).enumerate() {
-        assert_eq!(
-            child,
-            &QueryNode::Not(Box::new(QueryNode::Predicate(
-                AtomQueryPredicate::HydrogenCount(hydrogen_count as i32),
-            )))
-        );
+    // QueryAtom.cpp::expandQuery adds the previous tree as its first child on
+    // each MolOps::mergeQueryHs iteration; it does not flatten the AND tree.
+    let mut expected = QueryNode::predicate(AtomQueryPredicate::AtomType {
+        atomic_number: 6,
+        aromatic: false,
+    });
+    for hydrogen_count in 0..256 {
+        expected = QueryNode::And(vec![
+            expected,
+            QueryNode::Not(Box::new(QueryNode::Predicate(
+                AtomQueryPredicate::HydrogenCount(hydrogen_count),
+            ))),
+        ]);
     }
+    assert_eq!(graph.atom(0).expect("merged carbon").predicate(), &expected);
 }
 
 #[test]
 fn q23_recursive_query_hydrogen_merge_descends_without_aliasing_or_losing_serials() {
     let smarts = "[$([C]([H])[$([N][H])_8])_7]";
     let source = parse_source_case(smarts);
-    let source_before = source.clone();
+    // Clone invokes native RecursiveStructureQuery::copy (quick ROMol copy),
+    // so capture all stored fields without invoking that semantic operation.
+    let source_before = format!("{source:?}");
     let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(source_outer)) = source
         .atom(0)
         .expect("outer recursive SMARTS atom")
@@ -2497,14 +2504,14 @@ fn q23_recursive_query_hydrogen_merge_descends_without_aliasing_or_losing_serial
         cloned_outer.source_smarts().map(fixture_text),
         source_outer.source_smarts().map(fixture_text)
     );
-    assert_eq!(source, source_before);
+    assert_eq!(format!("{source:?}"), source_before);
 
     let merge_hs = SmartsParseParams {
         merge_hs: true,
         ..SmartsParseParams::default()
     };
     let merged = parse_smarts(smarts, &merge_hs).expect("merge query H through nested graphs");
-    assert_eq!(source, source_before);
+    assert_eq!(format!("{source:?}"), source_before);
     assert_eq!(merged.num_atoms(), 1);
     let QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(outer)) = merged
         .atom(0)
@@ -2689,10 +2696,10 @@ fn q25_chiral_permutation_boundaries_are_query_native_and_source_ordered() {
     ] {
         let error = parse_smarts(smarts, &SmartsParseParams::default())
             .expect_err("permutation above the pinned limit must fail");
-        assert!(
-            error.to_string().contains(expected_error),
-            "{smarts}: {error}"
-        );
+        // SmilesParseOps.cpp::CheckChiralitySpecifications throws this exact
+        // text after the per-class range check, for every nonzero excess.
+        let _ = expected_error;
+        assert_eq!(error, SmartsParseError::Parse("Invalid chiral specification on atom 0".to_owned()), "{smarts}");
     }
 
     let explicit_zero = parse_smarts("[C@SP0]", &SmartsParseParams::default())

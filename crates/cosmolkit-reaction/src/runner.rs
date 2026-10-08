@@ -16,19 +16,24 @@ use cosmolkit_model::{
     TopologyBlock,
 };
 use cosmolkit_types::{BondDirection, BondOrder};
-use std::borrow::Cow;
-
-fn initialized(reaction: &Reaction) -> Result<Cow<'_, Reaction>, ReactionRunError> {
-    // ROOT-approved D1: run initializes a private temporary only when needed.
-    // Immutable caller state and warning/error reporting remain intact.
-    if reaction.is_initialized() {
-        Ok(Cow::Borrowed(reaction))
-    } else {
-        Ok(Cow::Owned(crate::initialize_reaction(
+pub(crate) fn initialize_for_run(reaction: &mut Reaction) -> Result<(), ReactionRunError> {
+    // RDKit❗✔️:   if (!self->isInitialized()) {
+    // RDKit❗✔️:     NOGIL gil;
+    // RDKit❗✔️:     self->initReactantMatchers();
+    // RDKit❗✔️:   }
+    // Same-instance source initialization preserves validation mutation/error
+    // prefixes. The source's false validation result returns normally; the
+    // reached runner retains its own initialization precondition and order.
+    // Cost: reuse the unique initializer, with no Reaction/template copy.
+    if !reaction.is_initialized() {
+        crate::validation::init_reactant_matchers_source(
             reaction,
             &ReactionValidationParams::default(),
-        )?))
+            &mut crate::ReactionValidationReport::default(),
+        )
+        .map_err(|source| crate::ReactionInitializationError::Validation { source })?;
     }
+    Ok(())
 }
 
 fn add_reactant(
@@ -515,14 +520,12 @@ fn one_product_set(
 
 #[doc(hidden)]
 pub fn run_reactants(
-    reaction: &Reaction,
+    reaction: &mut Reaction,
     inputs: &[ReactionInput<'_>],
     params: &ReactionRunParams,
 ) -> Result<Vec<Vec<ReactionProduct>>, ReactionRunError> {
-    // ROOT-approved D1 immutable projection prepares a private temporary.
-    // The sole source runner below still rejects uninitialized reactions.
-    let prepared = initialized(reaction)?;
-    run_reactants_source(&prepared, inputs, params)
+    initialize_for_run(reaction)?;
+    run_reactants_source(reaction, inputs, params)
 }
 
 fn run_reactants_source(
@@ -638,14 +641,13 @@ fn run_reactants_source(
 
 #[doc(hidden)]
 pub fn run_reactant(
-    reaction: &Reaction,
+    reaction: &mut Reaction,
     input: ReactionInput<'_>,
     reactant_template: usize,
     params: &ReactionSingleRunParams,
 ) -> Result<Vec<Vec<ReactionProduct>>, ReactionRunError> {
-    // ROOT-approved D1 immutable initialization is outside the source runner.
-    let prepared = initialized(reaction)?;
-    let mut result = run_reactant_source(&prepared, input, reactant_template, params)?;
+    initialize_for_run(reaction)?;
+    let mut result = run_reactant_source(reaction, input, reactant_template, params)?;
     // Detached output addresses the sole actual input. Keep source react_idx
     // atom properties unchanged; only private runtime origins are projected.
     for (set, products) in result.iter_mut().enumerate() {
@@ -1765,7 +1767,7 @@ mod complete_run_reactants_source_tests {
         let c = CoordinateBlock::default();
         let p = MoleculeProperties::default();
         let result = run_reactants(
-            &r,
+            &mut r,
             &[input(&t, &c, &p)],
             &ReactionRunParams {
                 max_products: 0,
@@ -1774,7 +1776,7 @@ mod complete_run_reactants_source_tests {
         )
         .unwrap();
         assert_eq!(result.len(), 2);
-        assert!(!r.is_initialized());
+        assert!(r.is_initialized());
         assert_eq!(r.reactants, before_r);
         assert_eq!(r.products, before_p);
         assert_eq!(t, before);
@@ -1932,7 +1934,7 @@ mod complete_run_reactant_source_tests {
     #[test]
     fn detached_origin_projection_changes_atom_and_bond_input_slots_but_preserves_source_properties()
      {
-        let r = reaction(
+        let mut r = reaction(
             vec![graph(&[Some(11)]), graph(&[Some(12)])],
             vec![graph(&[Some(12)])],
         );
@@ -1947,7 +1949,7 @@ mod complete_run_reactant_source_tests {
         )
         .unwrap();
         let projected = run_reactant(
-            &r,
+            &mut r,
             input(&t, &c, &p),
             1,
             &ReactionSingleRunParams::default(),
@@ -2096,7 +2098,7 @@ mod complete_run_reactant_source_tests {
         let t = topology(1, &[]);
         let before = t.clone();
         let result = run_reactant(
-            &r,
+            &mut r,
             input(
                 &t,
                 &CoordinateBlock::default(),
@@ -2107,7 +2109,7 @@ mod complete_run_reactant_source_tests {
         )
         .unwrap();
         assert_eq!(result.len(), 1);
-        assert!(!r.is_initialized());
+        assert!(r.is_initialized());
         assert_eq!(r.reactants, reactants);
         assert_eq!(r.products, products);
         assert_eq!(t, before);

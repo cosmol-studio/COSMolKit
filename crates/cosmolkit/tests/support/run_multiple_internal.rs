@@ -1154,3 +1154,636 @@ fn source_stereoisomer_callback_failure_is_deferred_structured_atomic_and_fused(
         &source.coordinates_arc_runtime()
     ));
 }
+
+#[test]
+fn reconstruction_input_accepts_valid_blocks_without_manufacturing_cache_facts() {
+    let source = molecule();
+    let before = source.derived_cache_runtime().clone();
+    assert_eq!(validate_reconstruction_input(source.topology(), source.coordinate_block_runtime(), source.properties(), source.derived_cache_runtime()), Ok(()));
+    assert_eq!(source.derived_cache_runtime(), &before);
+}
+
+#[test]
+fn reconstruction_input_rejects_topology_before_coordinates_or_property_lists() {
+    let mut graph = topology();
+    graph.atoms[0] = atom(7, Element::C);
+    assert!(matches!(validate_reconstruction_input(&graph, &CoordinateBlock { conformers_2d: vec![Conformer2D::new(3, vec![])], ..Default::default() }, &properties("bad"), &DerivedCacheBlock::default()), Err(OperationError::InvalidTopology(_))));
+}
+
+#[test]
+fn reconstruction_input_checks_every_coordinate_frame() {
+    let mut frames = coordinates();
+    frames.conformers_2d.push(Conformer2D::new(12, vec![[0.0, 0.0]]));
+    assert_eq!(validate_reconstruction_input(&topology(), &frames, &properties("valid"), &DerivedCacheBlock::default()), Err(OperationError::InvalidCoordinates(cosmolkit_model::CoordinateValidationError::RowCount { dimension: "2D", conformer: 12, rows: 1, atom_count: 2 })));
+}
+
+#[test]
+fn reconstruction_input_rejects_both_property_list_target_length_errors() {
+    for (target, label, expected) in [(SdfPropertyListTarget::Atom, "atom", 2), (SdfPropertyListTarget::Bond, "bond", 1)] {
+        let props = MoleculeProperties::default().with_sdf_property_list(SdfPropertyList::new(target, "bad_rows", vec![]));
+        assert_eq!(validate_reconstruction_input(&topology(), &coordinates(), &props, &DerivedCacheBlock::default()), Err(OperationError::InvalidPropertyList { target: label, name: "bad_rows".into(), values: 0, expected }));
+    }
+}
+
+#[cfg(feature = "cap-valence")]
+#[test]
+fn reconstruction_input_rejects_cache_validity_without_assignment() {
+    let mut cache = DerivedCacheBlock::default();
+    cache.mark_valid(DerivedState::VALENCE);
+    assert_eq!(validate_reconstruction_input(&topology(), &coordinates(), &properties("valid"), &cache), Err(OperationError::InvalidDerivedCache { state: "valence", field: "assignment", actual: 0, expected: 1 }));
+}
+
+#[cfg(feature = "cap-valence")]
+#[test]
+fn reconstruction_input_rejects_assignment_without_cache_validity() {
+    let mut cache = DerivedCacheBlock::default();
+    cache.install_valence_assignment(cosmolkit_core::ValenceAssignment { explicit_valence: vec![1, 1], implicit_hydrogens: vec![3, 2] });
+    assert_eq!(validate_reconstruction_input(&topology(), &coordinates(), &properties("valid"), &cache), Err(OperationError::InvalidDerivedCache { state: "valence", field: "validity_bit", actual: 0, expected: 1 }));
+}
+
+#[cfg(feature = "cap-valence")]
+#[test]
+fn reconstruction_input_checks_both_source_valence_row_counts() {
+    for (explicit_valence, implicit_hydrogens, field) in [(vec![1], vec![3, 2], "explicit_valence"), (vec![1, 1], vec![3], "implicit_hydrogens")] {
+        let mut cache = DerivedCacheBlock::default();
+        cache.install_valence_assignment(cosmolkit_core::ValenceAssignment { explicit_valence, implicit_hydrogens });
+        cache.mark_valid(DerivedState::VALENCE);
+        assert_eq!(validate_reconstruction_input(&topology(), &coordinates(), &properties("valid"), &cache), Err(OperationError::InvalidDerivedCache { state: "valence", field, actual: 1, expected: 2 }));
+    }
+}
+
+#[cfg(feature = "cap-rings")]
+#[test]
+fn reconstruction_input_rejects_missing_ring_storage() {
+    let mut cache = DerivedCacheBlock::default();
+    cache.mark_valid(DerivedState::RINGS);
+    assert_eq!(validate_reconstruction_input(&topology(), &coordinates(), &properties("valid"), &cache), Err(OperationError::InvalidDerivedCache { state: "rings", field: "assignment", actual: 0, expected: 1 }));
+}
+
+#[cfg(feature = "cap-valence")]
+#[test]
+fn reconstruction_input_preserves_actual_valid_source_facts() {
+    let mut cache = DerivedCacheBlock::default();
+    cache.install_valence_assignment(cosmolkit_core::ValenceAssignment { explicit_valence: vec![1, 1], implicit_hydrogens: vec![3, 2] });
+    cache.mark_valid(DerivedState::VALENCE);
+    let before = cache.clone();
+    assert_eq!(validate_reconstruction_input(&topology(), &coordinates(), &properties("valid"), &cache), Ok(()));
+    assert_eq!(cache, before);
+}
+
+#[cfg(feature = "cap-reaction")]
+fn typed_reconstruction_parts(source: &Molecule) -> MultiOutputOpParts<'_, crate::ReactionProductsFromInputsAccess> {
+    MultiOutputOpParts::new(source, &super::super::registry::REACTION_PRODUCTS_FROM_INPUTS_SPEC).unwrap()
+}
+
+#[cfg(feature = "cap-reaction")]
+fn typed_reconstruction_product() -> cosmolkit_reaction::ReactionProduct {
+    use cosmolkit_reaction::{ReactionProduct, ReactionRowOrigin};
+    ReactionProduct {
+        topology: topology(), coordinates: coordinates(), properties: properties("product"),
+        atom_origins: vec![Some(ReactionRowOrigin { input: 0, row: AtomId::new(0) }), Some(ReactionRowOrigin { input: 0, row: AtomId::new(1) })],
+        bond_origins: vec![Some(ReactionRowOrigin { input: 0, row: BondId::new(0) })],
+        valence: cosmolkit_core::ValenceAssignment { explicit_valence: vec![1, 1], implicit_hydrogens: vec![3, 2] },
+        rings: None,
+    }
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_inputs_retain_actual_order_duplicates_counts_and_borrows() {
+    let source = molecule();
+    let other = Molecule::from_parts(TopologyBlock::try_from_parts(vec![atom(0, Element::O)], vec![], vec![], vec![]).unwrap(), CoordinateBlock::default(), MoleculeProperties::default()).unwrap();
+    let mut parts = typed_reconstruction_parts(&source);
+    let inputs = parts.reconstruction_inputs_runtime(&[&source, &other, &source]).unwrap();
+    assert_eq!(parts.reconstruction_inputs, [(2, 1), (1, 0), (2, 1)]);
+    assert_eq!(inputs.len(), 3);
+    assert!(std::ptr::eq(inputs[0].topology, source.topology()));
+    assert!(std::ptr::eq(inputs[1].topology, other.topology()));
+    assert!(std::ptr::eq(inputs[2].topology, source.topology()));
+    assert!(std::ptr::eq(inputs[0].coordinates, source.coordinate_block_runtime()));
+    assert!(std::ptr::eq(inputs[2].properties, source.properties()));
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_inputs_reject_second_declaration_without_replacing_evidence() {
+    let source = molecule();
+    let mut parts = typed_reconstruction_parts(&source);
+    parts.reconstruction_inputs_runtime(&[&source, &source]).unwrap();
+    assert!(matches!(parts.reconstruction_inputs_runtime(&[]), Err(OperationError::MappingContract { issue: "reconstruction input set must be declared exactly once", .. })));
+    assert_eq!(parts.reconstruction_inputs, [(2, 1), (2, 1)]);
+    assert!(parts.reconstruction_inputs_read);
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_source_uses_same_checked_single_input_boundary() {
+    let source = molecule();
+    let mut parts = MultiOutputOpParts::<crate::ReactionProductsAccess>::new(&source, &super::super::registry::REACTION_PRODUCTS_SPEC).unwrap();
+    let input = parts.reconstruction_source_runtime().unwrap();
+    assert!(std::ptr::eq(input.topology, source.topology()));
+    assert!(std::ptr::eq(input.coordinates, source.coordinate_block_runtime()));
+    assert_eq!(parts.reconstruction_inputs, [(2, 1)]);
+    assert!(parts.reconstruction_inputs_read);
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_candidate_accepts_repeated_origins_and_none_rows() {
+    let source = molecule();
+    let mut product = typed_reconstruction_product();
+    product.atom_origins[1] = product.atom_origins[0];
+    product.bond_origins[0] = None;
+    let mut parts = typed_reconstruction_parts(&source);
+    parts.reconstruction_inputs_runtime(&[&source]).unwrap();
+    parts.emit_reconstructed_runtime(vec![product]).unwrap();
+    let outputs = parts.finish().unwrap();
+    assert_eq!(outputs.len(), 1);
+    assert_eq!(outputs[0].topology(), &topology());
+    assert_eq!(outputs[0].coordinate_block_runtime(), &coordinates());
+    assert_eq!(outputs[0].properties(), &properties("product"));
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_candidate_checks_later_product_before_returning_any_molecule() {
+    let source = molecule();
+    let observer = source.clone();
+    let good = typed_reconstruction_product();
+    let mut bad = typed_reconstruction_product();
+    bad.atom_origins[0].as_mut().unwrap().input = 999;
+    let mut parts = typed_reconstruction_parts(&source);
+    parts.reconstruction_inputs_runtime(&[&source]).unwrap();
+    parts.emit_reconstructed_runtime(vec![good, bad]).unwrap();
+    assert!(matches!(parts.finish(), Err(OperationError::InvalidReconstructionOrigin { entity: "atom", destination: 0, input: 999, input_count: 1, row_count: None, .. })));
+    assert_eq!(source, observer);
+    assert!(std::ptr::eq(source.topology(), observer.topology()));
+    assert!(std::ptr::eq(source.coordinate_block_runtime(), observer.coordinate_block_runtime()));
+    assert!(std::ptr::eq(source.properties(), observer.properties()));
+    assert!(Arc::ptr_eq(&source.derived_cache_arc_runtime(), &observer.derived_cache_arc_runtime()));
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_candidate_checks_actual_derived_fact_lengths() {
+    let source = molecule();
+    let mut bad = typed_reconstruction_product();
+    bad.valence.implicit_hydrogens.pop();
+    let mut parts = typed_reconstruction_parts(&source);
+    parts.emit_reconstructed_runtime(vec![bad]).unwrap();
+    assert!(matches!(parts.finish(), Err(OperationError::InvalidAlgorithmResult { field: "implicit hydrogens", actual: 1, expected: 2, .. })));
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_candidate_checks_actual_property_rows() {
+    let source = molecule();
+    let mut bad = typed_reconstruction_product();
+    bad.properties = MoleculeProperties::default().with_sdf_property_list(SdfPropertyList::new(SdfPropertyListTarget::Bond, "bad_rows", vec![]));
+    let mut parts = typed_reconstruction_parts(&source);
+    parts.emit_reconstructed_runtime(vec![bad]).unwrap();
+    assert!(matches!(parts.finish(), Err(OperationError::InvalidPropertyList { target: "bond", values: 0, expected: 1, .. })));
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_grouping_preserves_empty_sets_duplicate_values_and_order() {
+    let source = molecule();
+    let mut first = typed_reconstruction_product();
+    first.properties = properties("first");
+    let mut second = typed_reconstruction_product();
+    second.properties = properties("second");
+    let mut parts = typed_reconstruction_parts(&source);
+    parts.emit_reconstructed_runtime(vec![first, second.clone(), second]).unwrap();
+    let groups = crate::reaction::assemble_product_sets(parts.finish().unwrap(), vec![1, 0, 2]).unwrap();
+    assert_eq!(groups.iter().map(Vec::len).collect::<Vec<_>>(), [1, 0, 2]);
+    assert_eq!(groups[0][0].properties(), &properties("first"));
+    assert_eq!(groups[2][0].properties(), &properties("second"));
+    assert_eq!(groups[2][0], groups[2][1]);
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reconstruction_typed_grouping_rejects_incomplete_or_oversized_metadata() {
+    for lengths in [vec![], vec![0], vec![2]] {
+        assert!(matches!(crate::reaction::assemble_product_sets(vec![molecule()], lengths), Err(OperationError::InvalidAlgorithmResult { .. })));
+    }
+}
+
+fn reconstruction_check(
+    inputs: &[(usize, usize)],
+    topology: &TopologyBlock,
+    coordinates: &CoordinateBlock,
+    atom_origins: &[Option<(usize, usize)>],
+    bond_origins: &[Option<(usize, usize)>],
+    valence_rows: (usize, usize),
+    ring_rows: Option<(usize, usize)>,
+) -> Result<(), OperationError> {
+    let mut fields = base_fields();
+    fields.mapping = MappingRequirement::Reconstruction;
+    fields.edit = TopologyEditKind::Reconstruction;
+    validate_reconstruction_rows(
+        spec("reconstruction", fields),
+        inputs,
+        topology,
+        coordinates,
+        atom_origins.iter().copied(),
+        bond_origins.iter().copied(),
+        valence_rows,
+        ring_rows,
+    )
+}
+
+#[test]
+fn reconstruction_origins_accept_one_to_many_and_independent_source_inputs() {
+    assert_eq!(
+        reconstruction_check(
+            &[(2, 1), (1, 0)],
+            &topology(),
+            &coordinates(),
+            &[Some((1, 0)), Some((1, 0))],
+            &[Some((0, 0))],
+            (2, 2),
+            Some((2, 1)),
+        ),
+        Ok(()),
+    );
+}
+
+#[test]
+fn reconstruction_origins_accept_new_atom_and_bond_rows_without_sources() {
+    assert_eq!(
+        reconstruction_check(
+            &[],
+            &topology(),
+            &coordinates(),
+            &[None, None],
+            &[None],
+            (2, 2),
+            None
+        ),
+        Ok(()),
+    );
+}
+
+#[test]
+fn reconstruction_origins_accept_empty_product_and_actual_zero_row_facts() {
+    assert_eq!(
+        reconstruction_check(
+            &[],
+            &TopologyBlock::default(),
+            &CoordinateBlock::default(),
+            &[],
+            &[],
+            (0, 0),
+            Some((0, 0))
+        ),
+        Ok(()),
+    );
+}
+
+#[test]
+fn reconstruction_origins_reject_atom_input_index_with_destination_and_no_row_count() {
+    assert_eq!(
+        reconstruction_check(
+            &[(2, 1)],
+            &topology(),
+            &coordinates(),
+            &[None, Some((1, 0))],
+            &[None],
+            (2, 2),
+            None
+        ),
+        Err(OperationError::InvalidReconstructionOrigin {
+            operation: "reconstruction",
+            entity: "atom",
+            destination: 1,
+            input: 1,
+            row: 0,
+            input_count: 1,
+            row_count: None,
+        }),
+    );
+}
+
+#[test]
+fn reconstruction_origins_reject_atom_row_at_exact_source_length() {
+    assert_eq!(
+        reconstruction_check(
+            &[(2, 1)],
+            &topology(),
+            &coordinates(),
+            &[None, Some((0, 2))],
+            &[None],
+            (2, 2),
+            None
+        ),
+        Err(OperationError::InvalidReconstructionOrigin {
+            operation: "reconstruction",
+            entity: "atom",
+            destination: 1,
+            input: 0,
+            row: 2,
+            input_count: 1,
+            row_count: Some(2),
+        }),
+    );
+}
+
+#[test]
+fn reconstruction_origins_reject_bond_input_index_with_actual_input_count() {
+    assert_eq!(
+        reconstruction_check(
+            &[(2, 1)],
+            &topology(),
+            &coordinates(),
+            &[None, None],
+            &[Some((3, 0))],
+            (2, 2),
+            None
+        ),
+        Err(OperationError::InvalidReconstructionOrigin {
+            operation: "reconstruction",
+            entity: "bond",
+            destination: 0,
+            input: 3,
+            row: 0,
+            input_count: 1,
+            row_count: None,
+        }),
+    );
+}
+
+#[test]
+fn reconstruction_origins_reject_bond_row_at_exact_source_length() {
+    assert_eq!(
+        reconstruction_check(
+            &[(2, 1)],
+            &topology(),
+            &coordinates(),
+            &[None, None],
+            &[Some((0, 1))],
+            (2, 2),
+            None
+        ),
+        Err(OperationError::InvalidReconstructionOrigin {
+            operation: "reconstruction",
+            entity: "bond",
+            destination: 0,
+            input: 0,
+            row: 1,
+            input_count: 1,
+            row_count: Some(1),
+        }),
+    );
+}
+
+#[test]
+fn reconstruction_origins_check_source_bond_counts_independently_of_atom_counts() {
+    assert_eq!(
+        reconstruction_check(
+            &[(2, 0)],
+            &topology(),
+            &coordinates(),
+            &[Some((0, 0)), Some((0, 1))],
+            &[Some((0, 0))],
+            (2, 2),
+            None
+        ),
+        Err(OperationError::InvalidReconstructionOrigin {
+            operation: "reconstruction",
+            entity: "bond",
+            destination: 0,
+            input: 0,
+            row: 0,
+            input_count: 1,
+            row_count: Some(0),
+        }),
+    );
+}
+
+#[test]
+fn reconstruction_origins_reject_all_four_destination_and_valence_length_mismatches() {
+    for (atoms, bonds, valence, field, actual, expected) in [
+        (vec![None], vec![None], (2, 2), "atom origins", 1, 2),
+        (vec![None, None], vec![], (2, 2), "bond origins", 0, 1),
+        (
+            vec![None, None],
+            vec![None],
+            (1, 2),
+            "explicit valence",
+            1,
+            2,
+        ),
+        (
+            vec![None, None],
+            vec![None],
+            (2, 1),
+            "implicit hydrogens",
+            1,
+            2,
+        ),
+    ] {
+        assert_eq!(
+            reconstruction_check(
+                &[],
+                &topology(),
+                &coordinates(),
+                &atoms,
+                &bonds,
+                valence,
+                None
+            ),
+            Err(OperationError::InvalidAlgorithmResult {
+                operation: "reconstruction",
+                field,
+                actual,
+                expected
+            }),
+        );
+    }
+}
+
+#[test]
+fn reconstruction_origins_length_error_precedes_invalid_source_origin() {
+    assert_eq!(
+        reconstruction_check(
+            &[],
+            &topology(),
+            &coordinates(),
+            &[Some((usize::MAX, usize::MAX))],
+            &[None],
+            (2, 2),
+            None
+        ),
+        Err(OperationError::InvalidAlgorithmResult {
+            operation: "reconstruction",
+            field: "atom origins",
+            actual: 1,
+            expected: 2
+        }),
+    );
+}
+
+#[test]
+fn reconstruction_origins_first_atom_error_precedes_bond_error_and_ring_rows() {
+    assert_eq!(
+        reconstruction_check(
+            &[],
+            &topology(),
+            &coordinates(),
+            &[Some((4, 0)), Some((5, 0))],
+            &[Some((6, 0))],
+            (2, 2),
+            Some((0, 0))
+        ),
+        Err(OperationError::InvalidReconstructionOrigin {
+            operation: "reconstruction",
+            entity: "atom",
+            destination: 0,
+            input: 4,
+            row: 0,
+            input_count: 0,
+            row_count: None,
+        }),
+    );
+}
+
+#[test]
+fn reconstruction_origins_reject_both_optional_ring_membership_row_mismatches() {
+    for (rings, field, actual, expected) in [
+        ((1, 1), "ring atom membership", 1, 2),
+        ((2, 0), "ring bond membership", 0, 1),
+    ] {
+        assert_eq!(
+            reconstruction_check(
+                &[],
+                &topology(),
+                &coordinates(),
+                &[None, None],
+                &[None],
+                (2, 2),
+                Some(rings)
+            ),
+            Err(OperationError::InvalidAlgorithmResult {
+                operation: "reconstruction",
+                field,
+                actual,
+                expected
+            }),
+        );
+    }
+}
+
+#[test]
+fn reconstruction_origins_reject_invalid_physical_topology_before_coordinate_rows() {
+    let mut broken = topology();
+    broken.atoms[0] = atom(7, Element::C);
+    let bad_coordinates = CoordinateBlock {
+        conformers_2d: vec![Conformer2D::new(9, vec![[0.0, 0.0]])],
+        ..Default::default()
+    };
+    assert_eq!(
+        reconstruction_check(
+            &[],
+            &broken,
+            &bad_coordinates,
+            &[None, None],
+            &[None],
+            (2, 2),
+            None
+        ),
+        Err(OperationError::InvalidTopology(
+            cosmolkit_model::TopologyValidationError::AtomIdMismatch {
+                position: 0,
+                id: AtomId::new(7)
+            }
+        )),
+    );
+}
+
+#[test]
+fn reconstruction_origins_validate_later_physical_coordinate_frames() {
+    let coordinates = CoordinateBlock {
+        conformers_2d: vec![
+            Conformer2D::new(9, vec![[0.0, 0.0], [1.0, 0.0]]),
+            Conformer2D::new(12, vec![[0.0, 0.0]]),
+        ],
+        ..Default::default()
+    };
+    assert_eq!(
+        reconstruction_check(
+            &[],
+            &topology(),
+            &coordinates,
+            &[None, None],
+            &[None],
+            (2, 2),
+            None
+        ),
+        Err(OperationError::InvalidCoordinates(
+            cosmolkit_model::CoordinateValidationError::RowCount {
+                dimension: "2D",
+                conformer: 12,
+                rows: 1,
+                atom_count: 2
+            }
+        )),
+    );
+}
+
+#[test]
+fn reconstruction_origins_allow_absent_rings_and_exact_present_rows() {
+    for rings in [None, Some((2, 1))] {
+        assert_eq!(
+            reconstruction_check(
+                &[(2, 1)],
+                &topology(),
+                &coordinates(),
+                &[Some((0, 1)), Some((0, 0))],
+                &[Some((0, 0))],
+                (2, 2),
+                rings
+            ),
+            Ok(()),
+        );
+    }
+}
+
+#[test]
+fn reconstruction_origins_leave_all_borrowed_values_unchanged_after_success_and_failure() {
+    let topology = topology();
+    let coordinates = coordinates();
+    let original = (topology.clone(), coordinates.clone());
+    let inputs = [(2, 1)];
+    let atoms = [Some((0, 0)), Some((0, 0))];
+    let bonds = [Some((0, 0))];
+    assert!(
+        reconstruction_check(
+            &inputs,
+            &topology,
+            &coordinates,
+            &atoms,
+            &bonds,
+            (2, 2),
+            None
+        )
+        .is_ok()
+    );
+    assert!(
+        reconstruction_check(
+            &inputs,
+            &topology,
+            &coordinates,
+            &atoms,
+            &bonds,
+            (2, 1),
+            None
+        )
+        .is_err()
+    );
+    assert_eq!((topology, coordinates), original);
+    assert_eq!(inputs, [(2, 1)]);
+    assert_eq!(atoms, [Some((0, 0)), Some((0, 0))]);
+    assert_eq!(bonds, [Some((0, 0))]);
+}

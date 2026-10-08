@@ -47,3 +47,9 @@ pub use uff::{MissingExplicitHydrogensError, needs_explicit_hydrogens};
 pub use crystalff::{
     CrystalTorsionEvaluationError, CrystalTorsionPairEvaluation, evaluate_crystal_torsion_pair,
 };
+
+mod persistent;
+pub use persistent::{
+    ForceFieldError, MolecularForceFieldErrorKind, PreparedForceField, prepare_mmff_force_field,
+    prepare_uff_force_field,
+};

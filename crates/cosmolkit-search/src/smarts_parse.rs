@@ -3956,8 +3956,8 @@ fn setup_smarts_input(input: impl AsRef<[u8]>) -> SmartsScannerInputWindow {
         end -= 1;
     }
 
-    // In the all-trimmed case, source copies only that terminal NUL. The
-    // equivalent Rust scanner window is empty; otherwise end identifies the
+    // In the all-trimmed case, source copies only that terminal NUL;
+    // SmartsScanner::new supplies that c_str() byte explicitly. Otherwise end identifies the
     // last copied input byte and is inclusive in RDKit's length expression.
     let byte_end = end + 1;
     SmartsScannerInputWindow {
@@ -3983,8 +3983,14 @@ impl SmartsScanner {
         // RDKit❗✔️:                          start_tok, current_token_position);
         // Every scanner position is a byte offset into the same counted input.
         // One O(n) byte copy matches Flex buffer ownership; no Unicode map.
+        let mut bytes = Vec::with_capacity(input.len() + 1);
+        bytes.extend_from_slice(input);
+        // RDKit✔️✔️:   yyconst char * yybytes = text.c_str();
+        // setup_smarts_string includes this byte for an all-trimmed input.
+        // This is scanner data, not an inferred EOS or a shortened window.
+        bytes.push(0);
         Self {
-            bytes: input.to_vec(),
+            bytes,
             parser_byte_base: window.byte_start,
             start,
             states: vec![ScannerState::Initial],

@@ -29,16 +29,18 @@ pub(crate) fn expand_molecule_matrices(
     Ok(quote! {
         #(#specs)*
 
-        pub const MOLECULE_OPS: &[&crate::ops::MoleculeOpSpec] = &[
+        // Stable storage is required: const promotion may duplicate specs or
+        // tables across codegen units and invalidate cross-matrix identity.
+        pub static MOLECULE_OPS: &[&crate::ops::MoleculeOpSpec] = &[
             #(#operation_rows,)*
         ];
-        pub const SUPPORT_MATRIX: &[crate::ops::SupportMatrixEntry] = &[
+        pub static SUPPORT_MATRIX: &[crate::ops::SupportMatrixEntry] = &[
             #(#support_rows,)*
         ];
-        pub const OPERATION_INVARIANT_MATRIX: &[crate::ops::OperationInvariantEntry] = &[
+        pub static OPERATION_INVARIANT_MATRIX: &[crate::ops::OperationInvariantEntry] = &[
             #(#invariant_rows,)*
         ];
-        pub const PARITY_MATRIX: &[crate::ops::ParityMatrixEntry] = &[
+        pub static PARITY_MATRIX: &[crate::ops::ParityMatrixEntry] = &[
             #(#parity_rows,)*
         ];
     })
@@ -59,16 +61,16 @@ pub(crate) fn expand_bio_matrices(registry: &BioRegistry) -> syn::Result<proc_ma
     Ok(quote! {
         #(#specs)*
 
-        pub const BIO_STRUCTURE_OPS: &[&crate::bio_ops::BioStructureOpSpec] = &[
+        pub static BIO_STRUCTURE_OPS: &[&crate::bio_ops::BioStructureOpSpec] = &[
             #(#operation_rows,)*
         ];
-        pub const BIO_SUPPORT_MATRIX: &[crate::bio_ops::BioSupportMatrixEntry] = &[
+        pub static BIO_SUPPORT_MATRIX: &[crate::bio_ops::BioSupportMatrixEntry] = &[
             #(#support_rows,)*
         ];
-        pub const BIO_OPERATION_INVARIANT_MATRIX: &[crate::bio_ops::BioOperationInvariantEntry] = &[
+        pub static BIO_OPERATION_INVARIANT_MATRIX: &[crate::bio_ops::BioOperationInvariantEntry] = &[
             #(#invariant_rows,)*
         ];
-        pub const BIO_PARITY_MATRIX: &[crate::bio_ops::BioParityMatrixEntry] = &[
+        pub static BIO_PARITY_MATRIX: &[crate::bio_ops::BioParityMatrixEntry] = &[
             #(#parity_rows,)*
         ];
     })
@@ -112,7 +114,7 @@ fn expand_molecule_operation(operation: &MoleculeOperation) -> syn::Result<Matri
 
     let spec = quote! {
         #(#cfg)*
-        pub const #spec_ident: crate::ops::MoleculeOpSpec = crate::ops::MoleculeOpSpec {
+        pub static #spec_ident: crate::ops::MoleculeOpSpec = crate::ops::MoleculeOpSpec {
             method: #method,
             impl_fn: #impl_fn,
             output: #output,
@@ -198,7 +200,7 @@ fn expand_bio_operation(operation: &BioOperation) -> syn::Result<MatrixRows> {
 
     let spec = quote! {
         #(#cfg)*
-        pub const #spec_ident: crate::bio_ops::BioStructureOpSpec = crate::bio_ops::BioStructureOpSpec {
+        pub static #spec_ident: crate::bio_ops::BioStructureOpSpec = crate::bio_ops::BioStructureOpSpec {
             method: #method,
             impl_fn: #impl_fn,
             domain: #domain,
@@ -369,6 +371,9 @@ fn cip_state(value: CipStatePolicy) -> proc_macro2::TokenStream {
         }
         CipStatePolicy::TautomerSourceTransition => {
             quote!(crate::ops::CipStatePolicy::TautomerSourceTransition)
+        }
+        CipStatePolicy::ReactionSourceTransition => {
+            quote!(crate::ops::CipStatePolicy::ReactionSourceTransition)
         }
     }
 }

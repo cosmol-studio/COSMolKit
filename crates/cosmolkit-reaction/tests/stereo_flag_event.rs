@@ -31,7 +31,8 @@ fn actual_reaction_product_retains_executed_source_stereo_flag() {
         let current =
             Reaction::from_templates(reaction.reactant_templates().to_vec(), products, vec![])
                 .unwrap();
-        let current = initialize_reaction(&current, &ReactionValidationParams::default()).unwrap();
+        let mut current =
+            initialize_reaction(&current, &ReactionValidationParams::default()).unwrap();
         let topology = TopologyBlock::try_from_parts(
             (0..4)
                 .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
@@ -62,7 +63,7 @@ fn actual_reaction_product_retains_executed_source_stereo_flag() {
         let coordinates = CoordinateBlock::default();
         let properties = MoleculeProperties::default();
         let outputs = run_reactants(
-            &current,
+            &mut current,
             &[ReactionInput {
                 topology: &topology,
                 coordinates: &coordinates,

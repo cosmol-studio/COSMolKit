@@ -6,6 +6,7 @@ pub mod fingerprints;
 pub mod mmff;
 pub mod molalign;
 pub mod molecular;
+pub mod persistent_forcefields;
 mod reference;
 pub mod registry;
 pub mod search;

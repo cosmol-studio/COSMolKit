@@ -508,13 +508,13 @@ fn finish_rejects_each_missing_effect_category_and_cip_then_accepts_full_trace()
     );
     let mut complete = OpParts::<CommitAccess>::new(&source, spec("full", full_fields)).unwrap();
     let mut cache = complete.checkout_derived_cache_runtime().unwrap();
-    #[cfg(feature = "cap-hydrogens")]
+    #[cfg(any(feature = "cap-hydrogens", feature = "cap-reaction"))]
     cache.install_valence_assignment(
         cosmolkit_core::assign_valence(source.topology(), &Default::default()).unwrap(),
     );
     // Standalone capability-free targets model derived state as metadata only.
     // The live cache path above must install and validate the actual payload.
-    #[cfg(not(feature = "cap-hydrogens"))]
+    #[cfg(not(any(feature = "cap-hydrogens", feature = "cap-reaction")))]
     cache.mark_valid(DerivedState::VALENCE);
     complete.install_derived_cache_runtime(cache).unwrap();
     complete

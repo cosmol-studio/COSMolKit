@@ -1430,7 +1430,9 @@ mod tests {
             let bits: Vec<u32> = serde_json::from_value(case["on_bits"].clone()).unwrap();
             if case["notation"] == "smarts" {
                 let query = cosmolkit_search::parse_smarts(input, &Default::default()).unwrap();
-                let original = query.clone();
+                // RecursiveStructureQuery::copy quick-copies nested molecules,
+                // so Clone is not a lossless storage snapshot (ROMol.cpp).
+                let original = format!("{query:?}");
                 let prepared = prepare_layered_fingerprint(
                     LayeredGraphInput::Query(&query),
                     None,
@@ -1450,7 +1452,7 @@ mod tests {
                     bits,
                     "{id}"
                 );
-                assert_eq!(query, original);
+                assert_eq!(format!("{query:?}"), original);
             } else {
                 let topology = cosmolkit_smiles::parse_smiles(input, &Default::default())
                     .unwrap()

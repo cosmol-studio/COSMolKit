@@ -1084,6 +1084,21 @@ impl<'a> ForceField<'a> {
         self.minimize_with_snapshots(0, None, max_its, force_tol, energy_tol)
     }
 
+    /// Returns the source optimizer's actual iteration counter as well as status.
+    pub(super) fn minimize_with_iterations(
+        &mut self,
+        max_its: u32,
+        force_tol: f64,
+        energy_tol: f64,
+    ) -> Result<(i32, u32), ForceFieldKernelError> {
+        // RDKit✔️✔️:   unsigned int numIters = 0;
+        // RDKit✔️✔️:       BFGSOpt::minimize(dim, points.data(), forceTol, numIters, finalForce, eCalc,
+        // RDKit✔️✔️:                         gCalc, snapshotFreq, snapshotVect, energyTol, maxIts);
+        // Native result projection retains the existing source counter. Same
+        // optimizer/history, O(1) extra result, no independent energy criterion.
+        self.minimize_with_snapshots_and_iterations(0, None, max_its, force_tol, energy_tol)
+    }
+
     fn minimize_with_snapshots(
         &mut self,
         snapshot_freq: u32,
@@ -1092,6 +1107,24 @@ impl<'a> ForceField<'a> {
         force_tol: f64,
         energy_tol: f64,
     ) -> Result<i32, ForceFieldKernelError> {
+        self.minimize_with_snapshots_and_iterations(
+            snapshot_freq,
+            snapshots,
+            max_its,
+            force_tol,
+            energy_tol,
+        )
+        .map(|(status, _)| status)
+    }
+
+    fn minimize_with_snapshots_and_iterations(
+        &mut self,
+        snapshot_freq: u32,
+        snapshots: Option<&mut Vec<crate::optimizer::OptimizerSnapshot>>,
+        max_its: u32,
+        force_tol: f64,
+        energy_tol: f64,
+    ) -> Result<(i32, u32), ForceFieldKernelError> {
         use crate::optimizer::{OptimizerError, minimize};
 
         // BEGIN RDKIT CPP FUNCTION ForceFields::ForceField::minimize (ForceField.cpp:257-282)
@@ -1132,7 +1165,7 @@ impl<'a> ForceField<'a> {
             });
         }
         if self.contributions.is_empty() {
-            return Ok(0);
+            return Ok((0, 0));
         }
 
         let dimension = self.num_points.wrapping_mul(self.dimension) as usize;
@@ -1251,7 +1284,7 @@ impl<'a> ForceField<'a> {
         // RDKit gathers after either normal optimizer status (0 or 1), but
         // never after a callback or invariant error.
         self.gather(&points)?;
-        Ok(status)
+        Ok((status, num_iters))
     }
 
     pub(super) fn calc_energy_current(
@@ -1499,7 +1532,7 @@ impl<'a> ForceField<'a> {
         Ok(())
     }
 
-    fn fixed_points(&self) -> &[i32] {
+    pub(super) fn fixed_points(&self) -> &[i32] {
         // RDKit✔️✔️: const INT_VECT &fixedPoints() const { return d_fixedPoints; }
         &self.fixed_points
     }
@@ -1654,7 +1687,7 @@ impl<'a> ForceField<'a> {
         Ok(())
     }
 
-    fn init_distance_matrix(&mut self) -> Result<(), ForceFieldKernelError> {
+    pub(super) fn init_distance_matrix(&mut self) -> Result<(), ForceFieldKernelError> {
         // BEGIN RDKIT CPP FUNCTION ForceFields::ForceField::initDistanceMatrix (ForceField.cpp:404-415)
         // RDKit✔️✔️: void ForceField::initDistanceMatrix() {
         // RDKit✔️✔️:   PRECONDITION(d_numPoints, "no points");
@@ -2607,6 +2640,44 @@ mod tests {
         fn copy(&self) -> Box<dyn ForceFieldContribution> {
             Box::new(Self)
         }
+    }
+
+    #[test]
+    fn persistent_iteration_counts_preserve_source_trajectory_and_status() {
+        for (limit, expected_status, expected_iterations) in [(0, 1, 0), (1, 1, 1), (20, 0, 2)] {
+            let mut first = [0.0];
+            let mut second = [2.0];
+            let mut field = ForceField::new(1);
+            field
+                .positions_mut()
+                .extend([first.as_mut_slice(), second.as_mut_slice()]);
+            field.initialize().unwrap();
+            field
+                .contributions
+                .push(Box::new(SquaredDistanceContribution {
+                    first: 0,
+                    second: 1,
+                    scale: 1.0,
+                }));
+            let (status, iterations) = field
+                .minimize_with_iterations(limit, 1.0e-4, 1.0e-6)
+                .unwrap();
+            assert_eq!((status, iterations), (expected_status, expected_iterations));
+            drop(field);
+            match limit {
+                0 => assert_eq!((first, second), ([0.0], [2.0])),
+                1 => assert_eq!((first, second), ([0.4], [1.6])),
+                _ => assert!((first[0] - second[0]).abs() < 1.0e-12),
+            }
+        }
+        let mut point = [0.0];
+        let mut empty = ForceField::new(1);
+        empty.positions_mut().push(&mut point);
+        empty.initialize().unwrap();
+        assert_eq!(
+            empty.minimize_with_iterations(20, 1.0e-4, 1.0e-6),
+            Ok((0, 0))
+        );
     }
 
     #[test]

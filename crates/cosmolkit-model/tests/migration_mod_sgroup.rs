@@ -394,8 +394,10 @@ fn membership_predicates_include_every_reference_category() {
     assert!(!group.includes_atom(atom(0)));
     assert!(group.includes_bond(bond(3)));
     assert!(group.includes_bond(bond(6)));
-    assert!(group.includes_bond(bond(7)));
-    assert!(group.includes_bond(bond(8)));
+    // SubstanceGroup.cpp::includesBond reads d_bonds and d_cstates only.
+    // XBHEAD/XBCORR properties are not membership rows in RDKit.
+    assert!(!group.includes_bond(bond(7)));
+    assert!(!group.includes_bond(bond(8)));
     assert!(!group.includes_bond(bond(0)));
 }
 

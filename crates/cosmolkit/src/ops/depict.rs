@@ -194,7 +194,15 @@ mod prepared_property_tests {
                             assert_eq!(output_ids[0], ids[0]);
                             assert_eq!(output_ids[2], ids[2]);
                             assert_ne!(output_ids[1], ids[1]);
-                            assert_ne!(output_ids[3], ids[3]);
+                            let allowed_invalidations =
+                                DerivedState::STEREO.union(DerivedState::DRAWING);
+                            // clear_cache_runtime leaves an absent-state clear shared:
+                            // no cache payload changed. Existing valid rows must detach.
+                            if cache.valid_states().intersection(allowed_invalidations).is_empty() {
+                                assert_eq!(output_ids[3], ids[3]);
+                            } else {
+                                assert_ne!(output_ids[3], ids[3]);
+                            }
                             assert_eq!(output.topology(), &topology);
                             assert_eq!(output.properties(), &properties);
                             let stored = output.coordinate_block_runtime();
@@ -209,8 +217,6 @@ mod prepared_property_tests {
                                 output.derived_cache_runtime().valence_assignment(),
                                 Some(&valence)
                             );
-                            let allowed_invalidations =
-                                DerivedState::STEREO.union(DerivedState::DRAWING);
                             assert_eq!(
                                 output.derived_cache_runtime().valid_states(),
                                 cache.valid_states().difference(allowed_invalidations)

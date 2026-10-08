@@ -344,7 +344,11 @@ fn recursive_query_keeps_its_owned_graph_default_and_explicit_serials() {
         let copied = graph.clone();
         let copied_recursive = recursive_query(&copied);
         assert_eq!(copied_recursive.serial_number(), expected_serial);
-        assert_eq!(copied_recursive.query_graph(), Some(inner));
+        // RecursiveStructureQuery::copy constructs ROMol(*query, true), whose
+        // property dictionary is only the empty computed-property list.
+        let mut expected_inner = inner.clone();
+        expected_inner.set_prop("__computedProps", cosmolkit_model::PropertyValue::StringVector(vec![])).unwrap();
+        assert_eq!(copied_recursive.query_graph(), Some(&expected_inner));
         assert_eq!(
             copied_recursive.source_smarts().map(|text| text.as_bytes()),
             Some(b"$(C=O)".as_slice())

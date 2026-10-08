@@ -19,11 +19,11 @@ default = ["smiles-integration"]
 smiles-integration = ["dep:cosmolkit-smiles"]
 
 [dependencies]
-cosmolkit-smiles = { version = "0.5.0-rc.12", path = "../cosmolkit-smiles", optional = true }
-cosmolkit-cx = { version = "0.5.0-rc.12", path = "../cosmolkit-cx" }
-cosmolkit-core = { version = "0.5.0-rc.12", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.0-rc.12", path = "../cosmolkit-model" }
-cosmolkit-types = { version = "0.5.0-rc.12", path = "../cosmolkit-types" }
+cosmolkit-smiles = { version = "0.5.0-rc.13", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-cx = { version = "0.5.0-rc.13", path = "../cosmolkit-cx" }
+cosmolkit-core = { version = "0.5.0-rc.13", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.13", path = "../cosmolkit-model" }
+cosmolkit-types = { version = "0.5.0-rc.13", path = "../cosmolkit-types" }
 serde_json = "1"
 thiserror = "2"
 

@@ -345,7 +345,9 @@ fn mass_charge_hcount_and_optional_atom_fields_preserve_order_and_ranges() {
     assert_eq!(string_property(atom.prop("molTotValence")), Some("4"));
     assert_eq!(string_property(atom.prop("molRxnRole")), Some("2"));
     assert_eq!(string_property(atom.prop("molRxnComponent")), Some("3"));
-    assert_eq!(string_property(atom.prop("molRxnExactChange")), Some("5"));
+    // RDKit RDGeneral/types.h: the constant molRxnExactChange names this key.
+    assert_eq!(string_property(atom.prop("molRxnExachg")), Some("5"));
+    assert_eq!(atom.prop("molRxnExactChange"), None);
     assert!(atom.no_implicit());
     assert!(atom_query_contains(
         atom.predicate(),

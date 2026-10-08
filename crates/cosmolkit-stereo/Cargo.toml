@@ -16,10 +16,10 @@ default = ["enumeration"]
 enumeration = ["dep:cosmolkit-smiles", "dep:cosmolkit-conformer", "dep:num-bigint"]
 
 [dependencies]
-cosmolkit-core = { version = "0.5.0-rc.12", path = "../cosmolkit-core" }
-cosmolkit-model = { version = "0.5.0-rc.12", path = "../cosmolkit-model" }
-cosmolkit-types = { version = "0.5.0-rc.12", path = "../cosmolkit-types" }
+cosmolkit-core = { version = "0.5.0-rc.13", path = "../cosmolkit-core" }
+cosmolkit-model = { version = "0.5.0-rc.13", path = "../cosmolkit-model" }
+cosmolkit-types = { version = "0.5.0-rc.13", path = "../cosmolkit-types" }
 thiserror = "2.0.18"
-cosmolkit-smiles = { version = "0.5.0-rc.12", path = "../cosmolkit-smiles", optional = true }
-cosmolkit-conformer = { version = "0.5.0-rc.12", path = "../cosmolkit-conformer", optional = true }
+cosmolkit-smiles = { version = "0.5.0-rc.13", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-conformer = { version = "0.5.0-rc.13", path = "../cosmolkit-conformer", optional = true }
 num-bigint = { version = "0.4.8", optional = true }

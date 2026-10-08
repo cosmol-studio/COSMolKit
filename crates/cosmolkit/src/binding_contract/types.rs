@@ -104,3 +104,20 @@ pub struct BindingContractEntry {
     pub callable: Option<BindingCallableContract>,
     pub type_role: Option<BindingTypeRole>,
 }
+
+/// Read-only Python properties generated from the canonical type declaration.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BindingPropertyContract {
+    pub type_semantic_id: &'static str,
+    pub name: &'static str,
+    pub rust_path: &'static str,
+    pub output_type: &'static str,
+}
+/// Keyword convenience calls construct this registered immutable parameter
+/// value, then invoke the registered explicit Rust target.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BindingKeywordContract {
+    pub semantic_id: &'static str,
+    pub parameters_semantic_id: &'static str,
+    pub target_semantic_id: &'static str,
+}

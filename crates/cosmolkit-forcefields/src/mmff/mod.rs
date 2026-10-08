@@ -16,7 +16,7 @@ pub(crate) mod properties_api;
 
 mod nonbonded_contrib;
 
-mod builder;
+pub(crate) mod builder;
 
 pub(crate) mod optimization;
 

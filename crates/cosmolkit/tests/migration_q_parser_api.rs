@@ -465,9 +465,13 @@ mod enabled {
         assert_eq!((graph.num_atoms(), graph.num_bonds()), (2, 1));
         assert_eq!(
             graph.atom(0).unwrap().predicate(),
+            // QueryAtom::expandQuery creates a binary AND on each call;
+            // MolOps::mergeQueryHs does not flatten the preceding query.
             &Q::And(vec![
-                atom_type(6, false),
-                Q::Not(Box::new(Q::Predicate(A::HydrogenCount(0)))),
+                Q::And(vec![
+                    atom_type(6, false),
+                    Q::Not(Box::new(Q::Predicate(A::HydrogenCount(0)))),
+                ]),
                 Q::Not(Box::new(Q::Predicate(A::HydrogenCount(1))))
             ])
         );
@@ -496,8 +500,13 @@ mod enabled {
             assert_eq!(bond.stereo(), stereo);
             assert_eq!(bond.stereo_atoms(), Some([AtomId::new(0), AtomId::new(3)]));
         }
-        assert!(
-            matches!(parse_smarts("[C@SP4]", &Default::default()), Err(SmartsParseError::Parse(message)) if message.contains("invalid chiral permutation 4"))
+        // SmilesParseOps::CheckChiralitySpecifications throws this exact
+        // message; the pinned native parser reports the same atom index.
+        assert_eq!(
+            parse_smarts("[C@SP4]", &Default::default()),
+            Err(SmartsParseError::Parse(
+                "Invalid chiral specification on atom 0".into()
+            ))
         );
         assert!(
             matches!(parse_smarts("[C@SP0]", &Default::default()), Err(SmartsParseError::InvalidAtomPrimitive { detail, .. }) if detail == "chiral permutation cannot be zero")
@@ -660,9 +669,11 @@ mod enabled {
             parse_smarts("[$()]", &Default::default()),
             Err(SmartsParseError::InvalidAtomPrimitive { .. })
         ));
-        assert!(matches!(
+        assert_eq!(
             parse_smarts("C(", &Default::default()),
-            Err(SmartsParseError::UnexpectedCharacter { .. })
-        ));
+            Err(SmartsParseError::UnexpectedEnd(
+                "expected atom expression".into()
+            ))
+        );
     }
 }

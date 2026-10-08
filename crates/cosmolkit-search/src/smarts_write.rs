@@ -320,18 +320,29 @@ pub fn topology_to_smarts(
             return Err(SmartsWriteError::RootedAtomOutOfRange { atom });
         }
     }
-    let prepared = cosmolkit_smiles::prepare_smarts_serialization_topology(
-        topology.clone(),
-        properties,
-        params.rooted_at_atom,
-        params.do_isomeric_smiles,
-    )?;
+    // RDKit✔️✔️:   ROMol mol(inmol);
+    // molToSmarts owns the sole Canon traversal. Running the old preparation
+    // traversal here as well inverts tetrahedral tags twice and carries its
+    // _TraversalRingClosureBond scratch into the real emission traversal.
+    // Move the detached carrier into the existing writer without that pass.
+    let prepared = topology.clone();
     let mut effective = *params;
     if include_cx {
         effective.include_dative_bonds = false;
     }
     let prepared_graph = concrete_smarts_graph(prepared, None, properties)?;
-    let output = query_graph_to_smarts_output(&prepared_graph, &effective)?;
+    let output = query_graph_to_smarts_output(&prepared_graph, &effective).map_err(|error| {
+        // Preserve the public concrete-writer property-error contract while
+        // retaining the exact checked signed-int conversion and its payload.
+        match error {
+            SmartsWriteError::AtomMapInt { atom, source } => SmartsWriteError::CxAtomPropertyInt {
+                atom,
+                property: "molAtomMapNumber",
+                source,
+            },
+            error => error,
+        }
+    })?;
     let mut text = output.text;
     if include_cx && !text.is_empty() {
         // RDKit✔️✔️:   auto res = MolToSmarts(mol, ps);

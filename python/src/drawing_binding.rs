@@ -1679,6 +1679,64 @@ impl Molecule {
             .map_err(|error| crate::canonical_atom_bond::property_pyerr(py, error))
     }
 
+    #[pyo3(signature=(*,conformer_id=crate::persistent_forcefields::default_conformer(),mmff_variant=crate::persistent_forcefields::default_variant(),non_bonded_threshold=crate::persistent_forcefields::default_non_bonded(),ignore_interfragment_interactions=crate::persistent_forcefields::default_mmff_ignore()))]
+    fn mmff_force_field(
+        &self,
+        py: Python<'_>,
+        conformer_id: Option<usize>,
+        mmff_variant: String,
+        non_bonded_threshold: f64,
+        ignore_interfragment_interactions: bool,
+    ) -> PyResult<crate::persistent_forcefields::MolecularForceField> {
+        let params = ::cosmolkit::MmffForceFieldParams::new(
+            conformer_id,
+            mmff_variant,
+            non_bonded_threshold,
+            ignore_interfragment_interactions,
+        );
+        self.inner
+            .mmff_force_field_with_params(&params)
+            .map(|inner| crate::persistent_forcefields::MolecularForceField { inner })
+            .map_err(|e| crate::persistent_forcefields::mmff_pyerr(py, e))
+    }
+    fn mmff_force_field_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::persistent_forcefields::MmffForceFieldParams,
+    ) -> PyResult<crate::persistent_forcefields::MolecularForceField> {
+        self.inner
+            .mmff_force_field_with_params(&params.inner)
+            .map(|inner| crate::persistent_forcefields::MolecularForceField { inner })
+            .map_err(|e| crate::persistent_forcefields::mmff_pyerr(py, e))
+    }
+    #[pyo3(signature=(*,conformer_id=crate::persistent_forcefields::default_uff_conformer(),vdw_threshold=crate::persistent_forcefields::default_vdw(),ignore_interfragment_interactions=crate::persistent_forcefields::default_uff_ignore()))]
+    fn uff_force_field(
+        &self,
+        py: Python<'_>,
+        conformer_id: Option<usize>,
+        vdw_threshold: f64,
+        ignore_interfragment_interactions: bool,
+    ) -> PyResult<crate::persistent_forcefields::MolecularForceField> {
+        let params = ::cosmolkit::UffForceFieldParams::new(
+            conformer_id,
+            vdw_threshold,
+            ignore_interfragment_interactions,
+        );
+        self.inner
+            .uff_force_field_with_params(&params)
+            .map(|inner| crate::persistent_forcefields::MolecularForceField { inner })
+            .map_err(|e| crate::persistent_forcefields::uff_pyerr(py, e))
+    }
+    fn uff_force_field_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::persistent_forcefields::UffForceFieldParams,
+    ) -> PyResult<crate::persistent_forcefields::MolecularForceField> {
+        self.inner
+            .uff_force_field_with_params(&params.inner)
+            .map(|inner| crate::persistent_forcefields::MolecularForceField { inner })
+            .map_err(|e| crate::persistent_forcefields::uff_pyerr(py, e))
+    }
     fn uff_energy_gradient(
         &self,
         py: Python<'_>,
@@ -4033,6 +4091,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_operation_metadata::register(module)?;
     crate::mmff_binding::register(module)?;
     crate::uff_binding::register(module)?;
+    crate::persistent_forcefields::register(module)?;
     crate::alignment_binding::register(module)?;
     crate::canonical_search::register(module)?;
     crate::canonical_sdf::register(module)?;

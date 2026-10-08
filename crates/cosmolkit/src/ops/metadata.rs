@@ -209,6 +209,9 @@ pub enum CipStatePolicy {
     Assign,
     TautomerSourceTransition,
     StereoisomerSourceTransition,
+    /// The reaction owner performs the pinned source's property transitions.
+    /// This grants no mapping, cache, block-access, or commit authority.
+    ReactionSourceTransition,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

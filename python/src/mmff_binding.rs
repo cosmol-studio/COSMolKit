@@ -16,7 +16,7 @@ pyo3::create_exception!(cosmolkit, MmffMolPropertiesError, PyValueError);
 pub(crate) fn properties_pyerr(py: Python<'_>, source: ck::MmffMolPropertiesError) -> PyErr {
     properties_pyerr_ref(py, &source)
 }
-fn properties_pyerr_ref(py: Python<'_>, source: &ck::MmffMolPropertiesError) -> PyErr {
+pub(crate) fn properties_pyerr_ref(py: Python<'_>, source: &ck::MmffMolPropertiesError) -> PyErr {
     let kind = match source {
         ck::MmffMolPropertiesError::Params(_) => "Params",
         ck::MmffMolPropertiesError::Kekulize(_) => "Kekulize",

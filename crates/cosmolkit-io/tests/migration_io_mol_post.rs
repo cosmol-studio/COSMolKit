@@ -1094,64 +1094,98 @@ fn mol_post_false_flag_xyz_stereo_preserves_wedge_dash_orientation_before_cleari
 
 #[test]
 fn mol_post_false_flag_xyz_stereo_feeds_atropisomer_owner_before_direction_clearing() {
-    let atoms = (0..4)
-        .map(|index| {
-            let hybridization = if index == 1 || index == 2 {
-                Hybridization::Sp2
+    // RDKit Atropisomers.cpp:549-580 checks total degree after cache update.
+    // Native 2026.03.1: the original implicit-H input has degree 4/NONE;
+    // noImplicit=true has degree 2/ATROPCCW, including the whole-molecule
+    // hybridization prelude. Retain all three exact native branches.
+    for (no_implicit, recalculate, expected) in [
+        (false, false, BondStereo::None),
+        (true, false, BondStereo::AtropCcw),
+        (true, true, BondStereo::AtropCcw),
+    ] {
+        let atoms = (0..4)
+            .map(|index| {
+                let hybridization = if recalculate {
+                    Hybridization::Unspecified
+                } else if index == 1 || index == 2 {
+                    Hybridization::Sp2
+                } else {
+                    Hybridization::Sp3
+                };
+                Atom::from_spec(
+                    AtomId::new(index),
+                    AtomSpec::new(Element::C)
+                        .with_hybridization(hybridization)
+                        .with_no_implicit(no_implicit),
+                )
+            })
+            .collect();
+        let bonds = vec![
+            Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(1), AtomId::new(0), BondOrder::Single)
+                    .with_conjugated(recalculate)
+                    .with_direction(BondDirection::BeginWedge),
+            ),
+            Bond::from_spec(
+                BondId::new(1),
+                BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single)
+                    .with_conjugated(recalculate),
+            ),
+            Bond::from_spec(
+                BondId::new(2),
+                BondSpec::new(AtomId::new(2), AtomId::new(3), BondOrder::Single)
+                    .with_conjugated(recalculate),
+            ),
+        ];
+        let coordinates = CoordinateBlock {
+            conformers_3d: vec![Conformer3D::new(
+                7,
+                vec![
+                    [0.0, 1.0, -0.0],
+                    [0.0, 0.0, 0.0005],
+                    [1.0, 0.0, 0.0],
+                    [1.0, 1.0, 0.0],
+                ],
+                false,
+            )],
+            source_coordinate_dim: Some(CoordinateDimension::TwoD),
+            ..CoordinateBlock::default()
+        };
+        let record = MolBlockRecord::Concrete {
+            topology: topology(atoms, bonds, vec![]),
+            coordinates: coordinates.clone(),
+            properties: MoleculeProperties::default(),
+        };
+        let MolBlockRecord::Concrete {
+            topology,
+            coordinates: output_coordinates,
+            ..
+        } = finish_mol_block_record(record, false, unsanitized(), None).unwrap()
+        else {
+            panic!("concrete record expected")
+        };
+        assert_eq!(
+            topology.bonds[1].stereo(),
+            expected,
+            "no_implicit={no_implicit}, recalculate={recalculate}"
+        );
+        assert_eq!(topology.bonds[0].direction(), BondDirection::None);
+        assert_eq!(output_coordinates, coordinates);
+        assert_eq!(topology.atoms[1].source_valence_facts().explicit_valence, 2);
+        assert_eq!(
+            topology.atoms[1].source_valence_facts().implicit_valence,
+            if recalculate {
+                0
+            } else if no_implicit {
+                -1
             } else {
-                Hybridization::Sp3
-            };
-            Atom::from_spec(
-                AtomId::new(index),
-                AtomSpec::new(Element::C).with_hybridization(hybridization),
-            )
-        })
-        .collect();
-    let bonds = vec![
-        Bond::from_spec(
-            BondId::new(0),
-            BondSpec::new(AtomId::new(1), AtomId::new(0), BondOrder::Single)
-                .with_direction(BondDirection::BeginWedge),
-        ),
-        Bond::from_spec(
-            BondId::new(1),
-            BondSpec::new(AtomId::new(1), AtomId::new(2), BondOrder::Single),
-        ),
-        Bond::from_spec(
-            BondId::new(2),
-            BondSpec::new(AtomId::new(2), AtomId::new(3), BondOrder::Single),
-        ),
-    ];
-    let coordinates = CoordinateBlock {
-        conformers_3d: vec![Conformer3D::new(
-            7,
-            vec![
-                [0.0, 1.0, -0.0],
-                [0.0, 0.0, 0.0005],
-                [1.0, 0.0, 0.0],
-                [1.0, 1.0, 0.0],
-            ],
-            false,
-        )],
-        source_coordinate_dim: Some(CoordinateDimension::TwoD),
-        ..CoordinateBlock::default()
-    };
-    let record = MolBlockRecord::Concrete {
-        topology: topology(atoms, bonds, vec![]),
-        coordinates: coordinates.clone(),
-        properties: MoleculeProperties::default(),
-    };
-    let MolBlockRecord::Concrete {
-        topology,
-        coordinates: output_coordinates,
-        ..
-    } = finish_mol_block_record(record, false, unsanitized(), None).unwrap()
-    else {
-        panic!("concrete record expected")
-    };
-    assert_eq!(topology.bonds[1].stereo(), BondStereo::AtropCcw);
-    assert_eq!(topology.bonds[0].direction(), BondDirection::None);
-    assert_eq!(output_coordinates, coordinates);
+                2
+            },
+        );
+        assert_eq!(topology.atoms[1].hybridization(), Hybridization::Sp2);
+        assert!(topology.bonds.iter().all(|bond| !bond.is_conjugated()));
+    }
 }
 
 #[test]
@@ -2052,40 +2086,45 @@ fn explicit_query_record(atoms: Vec<QueryAtom>, bonds: Vec<QueryBond>) -> MolBlo
 
 #[test]
 fn mol_post_explicit_query_provenance_preserves_unmarked_atom_predicates_and_matching() {
-    let predicates = [
-        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
-        QueryNode::and(vec![
+    let predicates = || {
+        [
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
-            QueryNode::predicate(AtomQueryPredicate::FormalCharge(1)),
-        ]),
-        QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(
-            RecursiveStructureQuery::from_query_graph(
-                QueryGraph::from_parts(
-                    vec![QueryAtom::from_parts(
-                        atom(0, Element::N),
-                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
-                    )],
-                    vec![],
-                    Vec::<(cosmolkit_model::PropertyText, PropertyValue)>::new(),
-                    vec![],
-                    vec![],
-                    vec![],
+            QueryNode::and(vec![
+                QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
+                QueryNode::predicate(AtomQueryPredicate::FormalCharge(1)),
+            ]),
+            QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(
+                RecursiveStructureQuery::from_query_graph(
+                    QueryGraph::from_parts(
+                        vec![QueryAtom::from_parts(
+                            atom(0, Element::N),
+                            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7)),
+                        )],
+                        vec![],
+                        Vec::<(cosmolkit_model::PropertyText, PropertyValue)>::new(),
+                        vec![],
+                        vec![Conformer3D::new(4, vec![[1.0, -0.0, 2.0]], true)],
+                        vec![],
+                    )
+                    .unwrap()
+                    .with_name(cosmolkit_model::PropertyText::from_bytes(
+                        b"inner\xff\0\x80",
+                    )),
+                    17,
                 )
-                .unwrap(),
-                17,
-            )
-            .with_source_smarts("[$([#7])]"),
-        )),
-    ];
+                .with_source_smarts("[$([#7])]"),
+            )),
+        ]
+    };
 
-    for predicate in predicates {
-        for sanitize in [false, true] {
-            for remove_hs in [false, true] {
+    for sanitize in [false, true] {
+        for remove_hs in [false, true] {
+            // Construct equal input/expected values independently: source
+            // RecursiveStructureQuery::copy intentionally quick-copies its
+            // inner ROMol, so Clone is not a metadata-preserving snapshot.
+            for (predicate, expected) in predicates().into_iter().zip(predicates()) {
                 let record = explicit_query_record(
-                    vec![QueryAtom::from_parts(
-                        atom(0, Element::C),
-                        predicate.clone(),
-                    )],
+                    vec![QueryAtom::from_parts(atom(0, Element::C), predicate)],
                     vec![],
                 );
                 let MolBlockRecord::Query(finished) = finish_mol_block_record(
@@ -2103,7 +2142,7 @@ fn mol_post_explicit_query_provenance_preserves_unmarked_atom_predicates_and_mat
                 };
                 assert_eq!(
                     finished.query.atoms()[0].predicate(),
-                    &predicate,
+                    &expected,
                     "sanitize={sanitize}, remove_hs={remove_hs}"
                 );
             }

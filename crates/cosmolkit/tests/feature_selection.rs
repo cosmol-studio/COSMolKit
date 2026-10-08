@@ -85,7 +85,9 @@ fn bundle_and_capability_declarations_have_exact_membership() {
         .filter(|name| name.starts_with("cap-"))
         .map(String::as_str)
         .collect();
-    assert_eq!(declared, all);
+    // Reaction is currently an explicit, private integration capability;
+    // it is deliberately not part of the public full bundle yet.
+    assert_eq!(declared, all.iter().copied().chain(["cap-reaction"]).collect());
     let mut cases = vec![
         (true, vec![], all.clone()),
         (false, vec!["full"], all.clone()),
@@ -102,6 +104,7 @@ fn bundle_and_capability_declarations_have_exact_membership() {
     for &cap in &all {
         cases.push((false, vec![cap], [cap].into_iter().collect()));
     }
+    cases.push((false, vec!["cap-reaction"], ["cap-reaction"].into_iter().collect()));
     for mask in 0_u8..16 {
         if !matches!(mask.count_ones(), 2 | 3) {
             continue;
@@ -119,7 +122,7 @@ fn bundle_and_capability_declarations_have_exact_membership() {
         vec!["core", "bio"],
         CORE.iter().copied().chain(["cap-bio"]).collect(),
     ));
-    assert_eq!(cases.len(), 54);
+    assert_eq!(cases.len(), 55);
     for strict in [false, true] {
         for (defaults, selected, expected) in &cases {
             let mut selected = selected.clone();

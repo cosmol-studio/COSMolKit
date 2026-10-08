@@ -19,6 +19,40 @@ def twice(value):
 
 
 class ProgressTests(unittest.TestCase):
+    def test_persistent_forcefield_coordinates_and_results_are_reproducible(self):
+        import struct
+        tolerance = struct.unpack("<Q", struct.pack("<d", 1e-4))[0]
+        recipes = [{"PersistentForceField": {
+            "case": {"id": "owned:ethanol", "smiles": "CCO"}, "kind": kind,
+            "seed": 0x434b464620261008, "max_iterations": 2,
+            "force_tolerance_bits": tolerance,
+            "energy_tolerance_bits": struct.unpack("<Q", struct.pack("<d", 1e-6))[0],
+            "preparation": None,
+        }} for kind in ("Mmff", "Uff")]
+        expected = [reference.persistent_forcefield_case(row) for row in recipes]
+        self.assertEqual(expected[0]["input"]["PersistentForceField"]["preparation"],
+                         expected[1]["input"]["PersistentForceField"]["preparation"])
+        for threads in (1, 2):
+            actual = reference.parallel(reference.persistent_forcefield_case,
+                                        recipes, threads, lambda *_: None)
+            self.assertEqual(actual, expected)
+        for row in expected:
+            states = row["output"]["PersistentForceField"]["Evaluated"]
+            self.assertNotEqual(states["initial"]["positions_bits"], states["final_state"]["positions_bits"])
+
+    def test_persistent_uff_retains_specific_native_missing_center_error(self):
+        import struct
+        recipe = {"PersistentForceField": {
+            "case": {"id": "missing-center", "smiles": "CS1(=O)(O)CCC(=O)O1"},
+            "kind": "Uff", "seed": 0x434b464620261008, "max_iterations": 2,
+            "force_tolerance_bits": struct.unpack("<Q", struct.pack("<d", 1e-4))[0],
+            "energy_tolerance_bits": struct.unpack("<Q", struct.pack("<d", 1e-6))[0],
+            "preparation": None,
+        }}
+        row = reference.persistent_forcefield_case(recipe)
+        self.assertEqual(row["output"]["PersistentForceField"],
+                         {"SourceTbpCenterParamsMissing": {"center_atom_index": 1}})
+
     def test_mmcif_reference_retains_shared_bio_input_filename(self):
         import gemmi
         for name, format in (("sample.pdb", "pdb"), ("sample.cif", "mmcif")):

@@ -139,6 +139,9 @@ pub(crate) fn generate(
         Spec::Corpus(task) => {
             let parameters = match task.operation {
                 registry::Operation::MolAlign => Ok(Value::Null),
+                registry::Operation::PersistentMmff | registry::Operation::PersistentUff => {
+                    Ok(Value::Null)
+                }
                 registry::Operation::Fingerprint(_) => Ok(Value::Null),
                 registry::Operation::SmilesWrite => {
                     serde_json::to_value(crate::smiles_write::profiles())

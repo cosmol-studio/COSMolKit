@@ -230,6 +230,50 @@ pub(crate) fn special_snapshot(key: &str) -> Result<&'static Snapshot> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn persistent_force_field_comparison_rejects_one_ulp_in_every_float_field() {
+        use crate::persistent_forcefields::{Input as FieldInput, Kind, Observation, Snapshot};
+        let state = Snapshot {
+            energy_bits: 1.0_f64.to_bits(),
+            gradient_bits: vec![[1.0_f64.to_bits(); 3]],
+            positions_bits: vec![[1.0_f64.to_bits(); 3]],
+        };
+        let expected = Record {
+            input: Input::PersistentForceField(FieldInput::new(
+                registry::SmilesCase {
+                    id: "comparison".into(),
+                    smiles: "C".into(),
+                },
+                Kind::Mmff,
+            )),
+            output: registry::Value::PersistentForceField(Observation::Evaluated {
+                initial: state.clone(),
+                final_state: state,
+                converged: false,
+            }),
+        };
+        assert!(equal(&expected, &expected));
+        for phase in 0..2 {
+            for field in 0..3 {
+                let mut actual = expected.clone();
+                let registry::Value::PersistentForceField(Observation::Evaluated {
+                    initial,
+                    final_state,
+                    ..
+                }) = &mut actual.output
+                else {
+                    unreachable!()
+                };
+                let state = if phase == 0 { initial } else { final_state };
+                match field {
+                    0 => state.energy_bits += 1,
+                    1 => state.gradient_bits[0][0] += 1,
+                    _ => state.positions_bits[0][0] += 1,
+                }
+                assert!(!equal(&expected, &actual), "phase {phase}, field {field}");
+            }
+        }
+    }
     fn filter(args: &[&str]) -> TestFilter {
         TestFilter::parse(args.iter().map(|s| (*s).to_owned())).unwrap()
     }

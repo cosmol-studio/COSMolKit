@@ -294,13 +294,13 @@ impl std::error::Error for NonbondedAssemblyError {
 }
 
 #[derive(Debug)]
-pub(super) enum ForceFieldConstructionError {
+pub(crate) enum ForceFieldConstructionError {
     Builder(UffBuilderError),
     Nonbonded(NonbondedAssemblyError),
 }
 
 #[derive(Debug)]
-pub(super) enum AutomaticForceFieldConstructionError {
+pub(crate) enum AutomaticForceFieldConstructionError {
     ParameterTable(UffParamError),
     Typing(UffTypingError),
     Construction(ForceFieldConstructionError),
@@ -3225,16 +3225,16 @@ fn construct_force_field_with_params<'a>(
     )
 }
 
-pub(super) struct UffConformerContext<'a> {
-    pub(super) two_d: &'a [Conformer2D],
-    pub(super) before: &'a [Conformer3D],
-    pub(super) selected_id: usize,
-    pub(super) selected_is_3d: bool,
-    pub(super) selected_props:
+pub(crate) struct UffConformerContext<'a> {
+    pub(crate) two_d: &'a [Conformer2D],
+    pub(crate) before: &'a [Conformer3D],
+    pub(crate) selected_id: usize,
+    pub(crate) selected_is_3d: bool,
+    pub(crate) selected_props:
         &'a BTreeMap<cosmolkit_model::PropertyText, cosmolkit_model::PropertyText>,
-    pub(super) after: &'a [Conformer3D],
-    pub(super) source_dimension: Option<CoordinateDimension>,
-    pub(super) source_order: Option<&'a [CoordinateDimension]>,
+    pub(crate) after: &'a [Conformer3D],
+    pub(crate) source_dimension: Option<CoordinateDimension>,
+    pub(crate) source_order: Option<&'a [CoordinateDimension]>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3446,7 +3446,7 @@ fn with_automatic_atom_types<'a>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(super) fn construct_force_field_with_automatic_typing_from_selected<'a>(
+pub(crate) fn construct_force_field_with_automatic_typing_from_selected<'a>(
     topology: &TopologyBlock,
     selected: &'a mut Conformer3D,
     context: &UffConformerContext<'_>,

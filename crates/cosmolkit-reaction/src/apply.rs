@@ -1,8 +1,5 @@
 use crate::materialize::{invariant, inversion_flag, update_from_template};
-use crate::{
-    Reaction, ReactionApplyError, ReactionApplyParams, ReactionInput, ReactionRole,
-    ReactionValidationParams,
-};
+use crate::{Reaction, ReactionApplyError, ReactionApplyParams, ReactionInput, ReactionRole};
 use cosmolkit_model::{
     AtomId, BondSpec, QueryGraph, TopologyBatchEdit, TopologyBlock, TopologyMapping,
 };
@@ -999,27 +996,19 @@ fn update_bonds_source(
 
 #[doc(hidden)]
 pub fn apply_reaction(
-    reaction: &Reaction,
+    reaction: &mut Reaction,
     input: ReactionInput<'_>,
     params: &ReactionApplyParams,
 ) -> Result<ReactionApplyChanges, ReactionApplyError> {
-    // ROOT-approved D1 immutable initialization projection. Source arity gates
-    // precede preparation; the source function keeps its own Native init gate.
-    if reaction.num_reactant_templates() != 1 || reaction.num_product_templates() != 1 {
-        return Err(ReactionApplyError::ApplicabilityArity {
-            reactants: reaction.num_reactant_templates(),
-            products: reaction.num_product_templates(),
-        });
-    }
-    let reaction = if reaction.is_initialized() {
-        Cow::Borrowed(reaction)
-    } else {
-        Cow::Owned(crate::initialize_reaction(
-            reaction,
-            &ReactionValidationParams::default(),
-        )?)
-    };
-    apply_reaction_source(&reaction, input, params)
+    // RDKit❗✔️:     if (!self->isInitialized()) {
+    // RDKit❗✔️:       self->initReactantMatchers();
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     res = self->runReactant(*react, removeUnmatchedAtoms);
+    // Initialization mutates the actual Reaction before the native arity/init
+    // gates. The detached source body owns every chemical step and source bool.
+    // Cost: no private initialized template copy or extra graph scan.
+    crate::runner::initialize_for_run(reaction)?;
+    apply_reaction_source(reaction, input, params)
 }
 
 fn apply_reaction_source(
@@ -2807,7 +2796,7 @@ mod complete_apply_reaction_source_tests {
         let t = topology(&[Element::C], &[]);
         assert!(run(&r, &t, true).is_err());
         let out = apply_reaction(
-            &r,
+            &mut r,
             input(
                 &t,
                 &CoordinateBlock::default(),
@@ -2818,7 +2807,7 @@ mod complete_apply_reaction_source_tests {
         .unwrap();
         assert!(out.changed);
         assert_eq!(out.change.unwrap().0.atoms[0].element(), Element::N);
-        assert!(!r.is_initialized());
+        assert!(r.is_initialized());
         assert_eq!(t.atoms[0].element(), Element::C);
     }
     #[test]

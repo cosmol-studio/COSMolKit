@@ -84,6 +84,7 @@ cap-stereoisomers = ["dep:cosmolkit-core", "dep:cosmolkit-stereo", "cosmolkit-st
 cap-tautomer = ["dep:cosmolkit-tautomer", "dep:cosmolkit-core", "dep:cosmolkit-smiles"]
 cap-valence = ["dep:cosmolkit-core"]
 cap-radicals = ["dep:cosmolkit-core"]
+cap-reaction = ["dep:cosmolkit-reaction", "dep:cosmolkit-core"]
 cap-rings = ["dep:cosmolkit-core"]
 cap-kekulize = ["dep:cosmolkit-core"]
 cap-aromaticity = ["dep:cosmolkit-core"]
@@ -91,23 +92,24 @@ cap-sanitize = ["dep:cosmolkit-core"]
 
 [dependencies]
 num-bigint = { version = "0.4.8", optional = true }
-cosmolkit-model = { version = "0.5.0-rc.12", path = "../cosmolkit-model" }
-cosmolkit-macros = { version = "0.5.0-rc.12", path = "../cosmolkit-macros" }
-cosmolkit-core = { version = "0.5.0-rc.12", path = "../cosmolkit-core", optional = true }
-cosmolkit-descriptors = { version = "0.5.0-rc.12", path = "../cosmolkit-descriptors", optional = true }
-cosmolkit-alignment = { version = "0.5.0-rc.12", path = "../cosmolkit-alignment", optional = true }
-cosmolkit-batch = { version = "0.5.0-rc.12", path = "../cosmolkit-batch", optional = true }
-cosmolkit-bio = { version = "0.5.0-rc.12", path = "../cosmolkit-bio", optional = true }
-cosmolkit-conformer = { version = "0.5.0-rc.12", path = "../cosmolkit-conformer", optional = true }
-cosmolkit-depict = { version = "0.5.0-rc.12", path = "../cosmolkit-depict", optional = true }
-cosmolkit-fingerprints = { version = "0.5.0-rc.12", path = "../cosmolkit-fingerprints", optional = true }
-cosmolkit-forcefields = { version = "0.5.0-rc.12", path = "../cosmolkit-forcefields", optional = true }
-cosmolkit-inchi = { version = "0.5.0-rc.12", path = "../cosmolkit-inchi", optional = true }
-cosmolkit-io = { version = "0.5.0-rc.12", path = "../cosmolkit-io", optional = true, default-features = false }
-cosmolkit-search = { version = "0.5.0-rc.12", path = "../cosmolkit-search", optional = true, default-features = false }
-cosmolkit-smiles = { version = "0.5.0-rc.12", path = "../cosmolkit-smiles", optional = true }
-cosmolkit-stereo = { version = "0.5.0-rc.12", path = "../cosmolkit-stereo", optional = true, default-features = false }
-cosmolkit-tautomer = { version = "0.5.0-rc.12", path = "../cosmolkit-tautomer", optional = true }
+cosmolkit-model = { version = "0.5.0-rc.13", path = "../cosmolkit-model" }
+cosmolkit-macros = { version = "0.5.0-rc.13", path = "../cosmolkit-macros" }
+cosmolkit-core = { version = "0.5.0-rc.13", path = "../cosmolkit-core", optional = true }
+cosmolkit-reaction = { version = "0.5.0-rc.13", path = "../cosmolkit-reaction", optional = true }
+cosmolkit-descriptors = { version = "0.5.0-rc.13", path = "../cosmolkit-descriptors", optional = true }
+cosmolkit-alignment = { version = "0.5.0-rc.13", path = "../cosmolkit-alignment", optional = true }
+cosmolkit-batch = { version = "0.5.0-rc.13", path = "../cosmolkit-batch", optional = true }
+cosmolkit-bio = { version = "0.5.0-rc.13", path = "../cosmolkit-bio", optional = true }
+cosmolkit-conformer = { version = "0.5.0-rc.13", path = "../cosmolkit-conformer", optional = true }
+cosmolkit-depict = { version = "0.5.0-rc.13", path = "../cosmolkit-depict", optional = true }
+cosmolkit-fingerprints = { version = "0.5.0-rc.13", path = "../cosmolkit-fingerprints", optional = true }
+cosmolkit-forcefields = { version = "0.5.0-rc.13", path = "../cosmolkit-forcefields", optional = true }
+cosmolkit-inchi = { version = "0.5.0-rc.13", path = "../cosmolkit-inchi", optional = true }
+cosmolkit-io = { version = "0.5.0-rc.13", path = "../cosmolkit-io", optional = true, default-features = false }
+cosmolkit-search = { version = "0.5.0-rc.13", path = "../cosmolkit-search", optional = true, default-features = false }
+cosmolkit-smiles = { version = "0.5.0-rc.13", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-stereo = { version = "0.5.0-rc.13", path = "../cosmolkit-stereo", optional = true, default-features = false }
+cosmolkit-tautomer = { version = "0.5.0-rc.13", path = "../cosmolkit-tautomer", optional = true }
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["float_roundtrip"] }
@@ -360,3 +362,7 @@ required-features = ["cap-forcefields", "cap-smiles", "cap-valence"]
 [[test]]
 name = "native_archive_v2"
 required-features = ["cap-serialization"]
+
+[[test]]
+name = "persistent_forcefields_api"
+required-features = ["cap-forcefields", "cap-smiles", "cap-valence"]

@@ -15,6 +15,10 @@ use super::{
 /// Structured failure used while a capability is not yet implemented.
 #[derive(Clone, Debug, PartialEq)]
 pub enum OperationError {
+    #[cfg(feature = "cap-reaction")]
+    ReactionRun(cosmolkit_reaction::ReactionRunError),
+    #[cfg(feature = "cap-reaction")]
+    ReactionApply(cosmolkit_reaction::ReactionApplyError),
     #[cfg(feature = "cap-stereoisomers")]
     Enumeration(crate::EnumerationRunError),
     #[cfg(feature = "cap-alignment")]
@@ -178,6 +182,10 @@ pub enum OperationError {
 impl fmt::Display for OperationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            #[cfg(feature = "cap-reaction")]
+            Self::ReactionRun(error) => error.fmt(formatter),
+            #[cfg(feature = "cap-reaction")]
+            Self::ReactionApply(error) => error.fmt(formatter),
             #[cfg(feature = "cap-stereoisomers")]
             Self::Enumeration(error) => error.fmt(formatter),
             #[cfg(feature = "cap-alignment")]
@@ -383,6 +391,10 @@ impl fmt::Display for OperationError {
 impl std::error::Error for OperationError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            #[cfg(feature = "cap-reaction")]
+            Self::ReactionRun(error) => Some(error),
+            #[cfg(feature = "cap-reaction")]
+            Self::ReactionApply(error) => Some(error),
             #[cfg(feature = "cap-stereoisomers")]
             Self::Enumeration(error) => Some(error),
             Self::InvalidCoordinates(error) => Some(error),

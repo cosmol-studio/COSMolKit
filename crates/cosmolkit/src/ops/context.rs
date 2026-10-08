@@ -517,6 +517,33 @@ impl<'a, Access> OpParts<'a, Access> {
     }
 
     /// Restore every write-owned slot before returning an error or unwinding.
+    #[cfg(feature = "cap-reaction")]
+    pub(super) fn reaction_input_runtime(
+        &self,
+    ) -> Result<cosmolkit_reaction::ReactionInput<'_>, OperationError> {
+        for (block, name) in [
+            (BlockSet::TOPOLOGY, "topology"),
+            (BlockSet::COORDINATES, "coordinates"),
+            (BlockSet::PROPERTIES, "properties"),
+            (BlockSet::DERIVED_CACHE, "derived_cache"),
+        ] {
+            self.ensure_read_access(block, name)?;
+        }
+        let topology = self.current_topology_candidate()?;
+        let coordinates = self.current_coordinates_candidate()?;
+        let properties = self.current_properties_candidate()?;
+        let cache = self.current_cache_candidate()?;
+        Self::validate_detached_candidate_invariants(topology, coordinates, properties)?;
+        cache.validate_for_topology(topology)?;
+        Ok(cosmolkit_reaction::ReactionInput {
+            topology,
+            coordinates,
+            properties,
+            rings: cache.valid_ring_info(),
+            valence: cache.valence_assignment(),
+        })
+    }
+
     pub(super) fn with_candidate_blocks_runtime<R>(
         &mut self,
         body: impl FnOnce(
@@ -855,6 +882,34 @@ impl<'a, Access> OpParts<'a, Access> {
         let new_atom_count = candidate_topology.atoms.len();
         let new_bond_count = candidate_topology.bonds.len();
 
+        // Identity projection leaves both dependent source blocks intact.
+        // The actual mapping, topology, coordinates and property-list rows
+        // were validated above. Retain the shared allocations, and still
+        // reject repeated remap or missing authority before recording effects.
+        if mapping.is_some_and(|value| {
+            *value == TopologyMapping::identity(new_atom_count, new_bond_count)
+        }) && matches!(self.coordinates, WorkingBlock::Shared)
+            && matches!(self.properties, WorkingBlock::Shared)
+        {
+            for (block, name) in [
+                (BlockSet::COORDINATES, "coordinates"),
+                (BlockSet::PROPERTIES, "properties"),
+            ] {
+                if self.spec.auto_remap.contains(block) {
+                    self.ensure_write_access(block, name)?;
+                    if self.remapped_blocks.contains(block) {
+                        return Err(OperationError::AutoRemapContract {
+                            operation: self.spec.method,
+                            block: name,
+                            issue: "remap was already applied",
+                        });
+                    }
+                }
+            }
+            self.remapped_blocks = self.remapped_blocks.union(self.spec.auto_remap);
+            return Ok(());
+        }
+
         let coordinate_candidate = if self.spec.auto_remap.contains(BlockSet::COORDINATES) {
             self.ensure_write_access(BlockSet::COORDINATES, "coordinates")?;
             if self.remapped_blocks.contains(BlockSet::COORDINATES) {
@@ -1068,6 +1123,36 @@ impl<'a, Access> OpParts<'a, Access> {
             && spec.may_mutate.contains(BlockSet::PROPERTIES);
         match spec.cip_state {
             CipStatePolicy::Preserve => {}
+            CipStatePolicy::ReactionSourceTransition => {
+                let blocks = BlockSet::TOPOLOGY
+                    .union(BlockSet::COORDINATES)
+                    .union(BlockSet::PROPERTIES)
+                    .union(BlockSet::DERIVED_CACHE);
+                let product = matches!(
+                    spec.method,
+                    "reaction_products_with_params" | "reaction_products_from_inputs"
+                ) && spec.output == MoleculeOpOutput::Multiple
+                    && spec.topology_edit == TopologyEditKind::Reconstruction
+                    && spec.requires_mapping == MappingRequirement::Reconstruction
+                    && spec.auto_remap.is_empty();
+                let apply = spec.method == "apply_reaction_with_params"
+                    && spec.output == MoleculeOpOutput::Single
+                    && spec.topology_edit == TopologyEditKind::Compacting
+                    && spec.requires_mapping == MappingRequirement::Required
+                    && spec.auto_remap == BlockSet::COORDINATES.union(BlockSet::PROPERTIES);
+                if !(product || apply)
+                    || spec.kind != crate::MoleculeOpKind::Strong
+                    || !spec.access.read().is_empty()
+                    || spec.access.write() != blocks
+                    || spec.may_mutate != blocks
+                {
+                    return Err(OperationError::CipStateContract {
+                        operation: spec.method,
+                        policy: spec.cip_state,
+                        issue: "reaction source transition requires an exact reaction operation with strong reconstruction or compacting mapping and four write-owned blocks",
+                    });
+                }
+            }
             CipStatePolicy::ClearComputed if !writes_cip_blocks => {
                 return Err(OperationError::CipStateContract {
                     operation: spec.method,
@@ -1242,6 +1327,20 @@ impl<'a, Access> OpParts<'a, Access> {
                 operation: self.spec.method,
                 block: "derived_cache",
             });
+        }
+        // A live source cache has already passed validity/storage validation.
+        // Clearing only absent states changes no stored fact; record the
+        // declared clear without detaching its unchanged shared allocation.
+        if matches!(self.derived_cache, WorkingBlock::Shared)
+            && self
+                .source
+                .derived_cache_runtime()
+                .valid_states()
+                .intersection(states)
+                .is_empty()
+        {
+            self.effect_trace.cleared = self.effect_trace.cleared.union(states);
+            return Ok(());
         }
         if matches!(self.derived_cache, WorkingBlock::Shared) {
             let candidate = self.source.derived_cache_runtime().clone();
@@ -2282,6 +2381,17 @@ impl<'a, Access> OpParts<'a, Access> {
                 // declaration allow-list above and validates the resulting
                 // detached candidate before construction.
             }
+            CipStatePolicy::ReactionSourceTransition => {
+                // Product construction copies/adjusts properties in the reaction
+                // owner. Restricted apply uses the source batch-edit kernel:
+                // actual removals clear computed properties; no-removal commit
+                // does not clear them or assign CIP. These distinct source
+                // branches cannot promise generic Preserve/ClearComputed/Assign.
+                // The allow-list above restricts this policy to the three exact
+                // reaction shapes. Mapping, effects, COW, candidate invariants
+                // and atomic publication still use the same runtime validators.
+                // No additional chemical algorithm or commit authority lives here.
+            }
         }
         self.effect_trace.cip_applied = true;
         Ok(())
@@ -2441,7 +2551,7 @@ impl<'a, Access> OpParts<'a, Access> {
         Ok(())
     }
 
-    fn validate_detached_candidate_invariants(
+    pub(super) fn validate_detached_candidate_invariants(
         topology: &TopologyBlock,
         coordinates: &CoordinateBlock,
         properties: &MoleculeProperties,

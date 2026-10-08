@@ -63,6 +63,16 @@ mod alignment;
 mod matrices;
 mod molecule;
 mod molecule_builder;
+mod reaction;
+#[cfg(feature = "cap-reaction")]
+pub(crate) use cosmolkit_reaction::{
+    Reaction, ReactionApplyParams, ReactionRunParams, ReactionSingleRunParams,
+};
+#[cfg(feature = "cap-reaction")]
+pub(crate) use ops::{
+    ApplyReactionAccess, ReactionProductsAccess, ReactionProductsFromInputsAccess,
+};
+pub(crate) use reaction::ReactionApplyResult;
 #[cfg(feature = "cap-fingerprints")]
 mod morgan;
 #[cfg(feature = "cap-fingerprints")]
@@ -110,9 +120,11 @@ pub use cosmolkit_search::{
 
 #[doc(hidden)]
 pub use binding_contract::{
-    BINDING_CONTRACT, BindingCallableContract, BindingContractEntry, BindingDefault, BindingItem,
-    BindingKind, BindingOwner, BindingParameterContract, BindingPropertyAccess, BindingReceiver,
-    BindingTypeRole, FunctionStatus, StateModel,
+    BINDING_CONTRACT, BINDING_CONTRACT_KEYWORDS, BINDING_CONTRACT_PROPERTIES,
+    BindingCallableContract, BindingContractEntry, BindingDefault, BindingItem,
+    BindingKeywordContract, BindingKind, BindingOwner, BindingParameterContract,
+    BindingPropertyAccess, BindingPropertyContract, BindingReceiver, BindingTypeRole,
+    FunctionStatus, StateModel,
 };
 #[cfg(feature = "cap-bio")]
 mod bio;
@@ -242,7 +254,7 @@ pub use ops::{
 #[cfg(test)]
 pub(crate) use ops::{
     CowCoordinatesFailureForTestAccess, CowCoordinatesForTestAccess,
-    RingLiveCowCheckoutConflictForTestAccess,
+    ReactionApplyReportForTestAccess, RingLiveCowCheckoutConflictForTestAccess,
 };
 pub(crate) use ops::{MultiOutputOpParts, OpParts, PreservationProof};
 #[doc(inline)]
@@ -477,4 +489,13 @@ pub(crate) use ops::{EnumerateStereoisomersAccess, EnumerateStereoisomersWithRan
 #[cfg(feature = "cap-stereoisomers")]
 pub use stereoisomers::{
     EnumerationError, EnumerationRunError, StereoisomerOptions, StereoisomerRandomSource,
+};
+
+#[cfg(feature = "cap-forcefields")]
+mod persistent_forcefields;
+#[cfg(feature = "cap-forcefields")]
+pub use persistent_forcefields::{
+    ForceFieldEnergyGradient, ForceFieldError, ForceFieldMinimizeOutcome, ForceFieldMinimizeParams,
+    MmffForceFieldError, MmffForceFieldParams, MolecularForceField, MolecularForceFieldErrorKind,
+    UffForceFieldError, UffForceFieldParams,
 };

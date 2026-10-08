@@ -933,3 +933,107 @@ fn value_and_inplace_same_verb_keep_distinct_canonical_javascript_names() {
         error_for(registry_with(&wrong)).contains("JavaScript callable name must be `sanitize_`")
     );
 }
+
+fn persistent_property_entry(properties: proc_macro2::TokenStream) -> proc_macro2::TokenStream {
+    quote! {
+        static PROPERTIES = [ {
+            semantic_id: "types.Params", item: type, owner: type_,
+            rust: crate::Params, python: "Params", javascript: "Params",
+            feature: "runtime", role: parameter, properties: [#properties],
+        } ];
+    }
+}
+#[test]
+fn persistent_properties_preserve_shared_receiver_and_reject_duplicate_or_wrong_type() {
+    let good =
+        quote! { {name: count, rust: crate::Params::count, signature: fn(&crate::Params)->u32} };
+    let expanded = expand_binding_contract(persistent_property_entry(good.clone()))
+        .unwrap()
+        .to_string();
+    assert!(expanded.contains("PROPERTIES_PROPERTIES"));
+    assert!(expanded.contains("BindingPropertyContract"));
+    assert!(expanded.contains("let _ : fn (& crate :: Params) -> u32"));
+    assert!(
+        expand_binding_contract(persistent_property_entry(quote! {#good, #good}))
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate read-only property")
+    );
+    assert!(
+        expand_binding_contract(persistent_property_entry(
+            quote! {{name: count,rust: crate::Params::count,signature: fn(&mut crate::Params)->u32}}
+        ))
+        .unwrap_err()
+        .to_string()
+        .contains("receiver")
+    );
+    assert!(
+        expand_binding_contract(persistent_property_entry(
+            quote! {{name: count,rust: crate::Params::count,signature: fn(&crate::Other)->u32}}
+        ))
+        .unwrap_err()
+        .to_string()
+        .contains("receiver")
+    );
+}
+fn persistent_keyword_entries(
+    target_type: proc_macro2::TokenStream,
+    constructor_default: proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    quote! {
+        static KEYWORDS = [
+            { semantic_id:"Params.new",item:callable,owner:type_,rust:crate::Params::new,python:"__new__",javascript:"new",feature:"runtime",kind:constructor,parameters:[{name:count,type:u32,default:#constructor_default}],output:crate::Params,error:none,state:value_returning,operation:none,signature:fn(u32)->crate::Params },
+            { semantic_id:"Molecule.construct",item:callable,owner:molecule,rust:crate::Molecule::construct,python:"construct",javascript:"construct",feature:"runtime",kind:instance,parameters:[],output:crate::Result,error:none,state:read_only,operation:none,signature:fn(&crate::Molecule)->crate::Result,python_keywords:{parameters:"Params.new",target:"Molecule.construct_with_params"} },
+            { semantic_id:"Molecule.construct_with_params",item:callable,owner:molecule,rust:crate::Molecule::construct_with_params,python:"construct_with_params",javascript:"constructWithParams",feature:"runtime",kind:instance,parameters:[{name:params,type:#target_type,default:required}],output:crate::Result,error:none,state:read_only,operation:none,signature:fn(&crate::Molecule,#target_type)->crate::Result }
+        ];
+    }
+}
+#[test]
+fn persistent_keyword_projection_uses_registered_defaults_and_immutable_target() {
+    let expanded = expand_binding_contract(persistent_keyword_entries(
+        quote! {&crate::Params},
+        quote! {200},
+    ))
+    .unwrap()
+    .to_string();
+    assert!(expanded.contains("KEYWORDS_KEYWORDS"));
+    assert!(expanded.contains("parameters_semantic_id : \"Params.new\""));
+    assert!(
+        expand_binding_contract(persistent_keyword_entries(
+            quote! {&mut crate::Params},
+            quote! {200}
+        ))
+        .unwrap_err()
+        .to_string()
+        .contains("constructor output")
+    );
+    assert!(
+        expand_binding_contract(persistent_keyword_entries(
+            quote! {&crate::Other},
+            quote! {200}
+        ))
+        .unwrap_err()
+        .to_string()
+        .contains("constructor output")
+    );
+    assert!(
+        expand_binding_contract(persistent_keyword_entries(
+            quote! {&crate::Params},
+            quote! {required}
+        ))
+        .unwrap_err()
+        .to_string()
+        .contains("explicit defaults")
+    );
+}
+#[test]
+fn persistent_keyword_projection_rejects_unregistered_parameter_constructor() {
+    let tokens = persistent_keyword_entries(quote! {&crate::Params}, quote! {200})
+        .to_string()
+        .replace(
+            "parameters : \"Params.new\"",
+            "parameters : \"Missing.new\"",
+        );
+    let error = expand_binding_contract(tokens.parse().unwrap()).unwrap_err();
+    assert!(error.to_string().contains("constructor is not registered"));
+}

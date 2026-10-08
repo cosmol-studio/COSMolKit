@@ -748,7 +748,7 @@ pub fn validate_reaction(
     Ok(report)
 }
 
-fn init_reactant_matchers_source(
+pub(crate) fn init_reactant_matchers_source(
     reaction: &mut Reaction,
     params: &ReactionValidationParams,
     report: &mut ReactionValidationReport,

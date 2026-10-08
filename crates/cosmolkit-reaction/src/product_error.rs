@@ -1,5 +1,5 @@
 use cosmolkit_model::{AtomId, BondId};
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ReactionProductError {
     #[error(transparent)]
     Coordinate(#[from] cosmolkit_model::CoordinateValidationError),

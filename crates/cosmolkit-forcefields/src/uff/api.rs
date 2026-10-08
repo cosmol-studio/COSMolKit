@@ -70,11 +70,11 @@ impl Error for UffParameterError {
     }
 }
 
-pub(super) struct PreparedParameterQuery<'a> {
-    pub(super) typing_state: UffAtomStateRef<'a>,
+pub(crate) struct PreparedParameterQuery<'a> {
+    pub(crate) typing_state: UffAtomStateRef<'a>,
 }
 
-pub(super) fn prepare_parameter_query<'a>(
+pub(crate) fn prepare_parameter_query<'a>(
     topology: &'a cosmolkit_model::TopologyBlock,
     assignment: &'a cosmolkit_core::ValenceAssignment,
 ) -> Result<PreparedParameterQuery<'a>, UffParameterError> {

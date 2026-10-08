@@ -1,7 +1,7 @@
 use crate::{ReactionRole, ReactionValidationReport};
 use cosmolkit_model::AtomId;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ReactionValidationError {
     #[error("{role:?} template {template} atom {atom} property {property}: {source}")]
     Property {
@@ -47,7 +47,7 @@ pub enum ReactionValidationError {
     },
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ReactionInitializationError {
     #[error("reaction validation execution failed: {source}")]
     Validation {

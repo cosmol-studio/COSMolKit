@@ -33,6 +33,7 @@ enum CallableKind {
     Instance,
     Static,
     Module,
+    Constructor,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Receiver {
@@ -130,6 +131,63 @@ struct BindingRegistry {
     entries: Vec<BindingEntry>,
 }
 
+struct BindingProperty {
+    name: Ident,
+    rust: Path,
+    signature: TypeFnPtr,
+}
+impl Parse for BindingProperty {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let content;
+        braced!(content in input);
+        let mut name = None;
+        let mut rust = None;
+        let mut signature = None;
+        while !content.is_empty() {
+            let key = content.call(Ident::parse_any)?;
+            content.parse::<Token![:]>()?;
+            match key.to_string().as_str() {
+                "name" => set_once(&mut name, content.parse()?, &key)?,
+                "rust" => set_once(&mut rust, content.parse()?, &key)?,
+                "signature" => set_once(&mut signature, content.parse()?, &key)?,
+                other => return Err(unknown_field(&key, "read-only property", other)),
+            }
+            consume_comma(&content)?;
+        }
+        Ok(Self {
+            name: required(name, "property.name")?,
+            rust: required(rust, "property.rust")?,
+            signature: required(signature, "property.signature")?,
+        })
+    }
+}
+struct BindingKeywordProjection {
+    parameters: LitStr,
+    target: LitStr,
+}
+impl Parse for BindingKeywordProjection {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let content;
+        braced!(content in input);
+        let mut parameters = None;
+        let mut target = None;
+        while !content.is_empty() {
+            let key = content.call(Ident::parse_any)?;
+            content.parse::<Token![:]>()?;
+            match key.to_string().as_str() {
+                "parameters" => set_once(&mut parameters, content.parse()?, &key)?,
+                "target" => set_once(&mut target, content.parse()?, &key)?,
+                other => return Err(unknown_field(&key, "Python keyword projection", other)),
+            }
+            consume_comma(&content)?;
+        }
+        Ok(Self {
+            parameters: required(parameters, "python_keywords.parameters")?,
+            target: required(target, "python_keywords.target")?,
+        })
+    }
+}
+
 struct BindingEntry {
     cfg_attrs: Vec<Attribute>,
     semantic_id: LitStr,
@@ -144,6 +202,8 @@ struct BindingEntry {
     status: Option<FunctionStatus>,
     callable: Option<CallablePayload>,
     type_role: Option<TypeRole>,
+    properties: Vec<BindingProperty>,
+    python_keywords: Option<BindingKeywordProjection>,
 }
 
 struct CallablePayload {
@@ -178,6 +238,8 @@ struct BindingEntryDraft {
     operation: Option<OperationLink>,
     signature: Option<TypeFnPtr>,
     role: Option<Ident>,
+    properties: Option<Vec<BindingProperty>>,
+    python_keywords: Option<BindingKeywordProjection>,
 }
 
 impl Parse for BindingRegistry {
@@ -260,6 +322,18 @@ fn parse_binding_entry(
             }
             "signature" => set_once(&mut draft.signature, input.parse()?, &key)?,
             "role" => set_once(&mut draft.role, input.parse()?, &key)?,
+            "properties" => {
+                let values;
+                bracketed!(values in input);
+                set_once(
+                    &mut draft.properties,
+                    Punctuated::<BindingProperty, Token![,]>::parse_terminated(&values)?
+                        .into_iter()
+                        .collect(),
+                    &key,
+                )?;
+            }
+            "python_keywords" => set_once(&mut draft.python_keywords, input.parse()?, &key)?,
             other => return Err(unknown_field(&key, "binding entry", other)),
         }
         consume_comma(input)?;
@@ -383,10 +457,124 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         status: draft.status,
         callable,
         type_role,
+        properties: draft.properties.unwrap_or_default(),
+        python_keywords: draft.python_keywords,
     })
 }
 
 fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
+    for entry in entries {
+        if !entry.properties.is_empty() && entry.item != ItemClass::Type {
+            return Err(syn::Error::new_spanned(
+                &entry.semantic_id,
+                "properties require a type declaration",
+            ));
+        }
+        let mut property_names = HashSet::new();
+        for property in &entry.properties {
+            if !property_names.insert(property.name.to_string()) {
+                return Err(syn::Error::new_spanned(
+                    &property.name,
+                    "duplicate read-only property",
+                ));
+            }
+            if property.signature.inputs.len() != 1
+                || property.signature.unsafety.is_some()
+                || property.signature.variadic.is_some()
+            {
+                return Err(syn::Error::new_spanned(
+                    &property.signature,
+                    "property requires a safe unary getter signature",
+                ));
+            }
+            let syn::Type::Reference(receiver) = &property.signature.inputs[0].ty else {
+                return Err(syn::Error::new_spanned(
+                    &property.signature,
+                    "property requires a shared receiver",
+                ));
+            };
+            let expected = &entry.rust;
+            let element = &receiver.elem;
+            if receiver.mutability.is_some()
+                || quote!(#expected).to_string() != quote!(#element).to_string()
+            {
+                return Err(syn::Error::new_spanned(
+                    &property.signature,
+                    "property receiver must match its declared type",
+                ));
+            }
+        }
+        if let Some(projection) = &entry.python_keywords {
+            if entry.item != ItemClass::Callable {
+                return Err(syn::Error::new_spanned(
+                    &entry.semantic_id,
+                    "python_keywords require a callable",
+                ));
+            }
+            let constructor = entries
+                .iter()
+                .find(|candidate| candidate.semantic_id.value() == projection.parameters.value())
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        &projection.parameters,
+                        "keyword parameter constructor is not registered",
+                    )
+                })?;
+            let Some(constructor) = &constructor.callable else {
+                return Err(syn::Error::new_spanned(
+                    &projection.parameters,
+                    "keyword parameters must reference a callable constructor",
+                ));
+            };
+            if !matches!(
+                constructor.kind,
+                CallableKind::Static | CallableKind::Constructor
+            ) || constructor
+                .parameters
+                .iter()
+                .any(|parameter| matches!(parameter.default, ParameterDefault::Required))
+            {
+                return Err(syn::Error::new_spanned(
+                    &projection.parameters,
+                    "keyword constructor must be static with explicit defaults",
+                ));
+            }
+            let target = entries
+                .iter()
+                .find(|candidate| candidate.semantic_id.value() == projection.target.value())
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(&projection.target, "keyword target is not registered")
+                })?;
+            let Some(target) = &target.callable else {
+                return Err(syn::Error::new_spanned(
+                    &projection.target,
+                    "keyword target must be callable",
+                ));
+            };
+            if target.parameters.len() != 1 {
+                return Err(syn::Error::new_spanned(
+                    &projection.target,
+                    "keyword target must take one immutable parameter object",
+                ));
+            }
+            let syn::Type::Reference(reference) = &target.parameters[0].ty else {
+                return Err(syn::Error::new_spanned(
+                    &projection.target,
+                    "keyword target must borrow parameters",
+                ));
+            };
+            let element = &reference.elem;
+            let output = &constructor.output;
+            if reference.mutability.is_some()
+                || quote!(#element).to_string() != quote!(#output).to_string()
+            {
+                return Err(syn::Error::new_spanned(
+                    &projection.target,
+                    "keyword constructor output must match borrowed target parameter",
+                ));
+            }
+        }
+    }
     let mut ids = HashSet::new();
     let mut rust = HashSet::new();
     for entry in entries {
@@ -501,7 +689,10 @@ fn validate_callable(
     }
     match (owner, payload.kind) {
         (Owner::Molecule, CallableKind::Instance | CallableKind::Static)
-        | (Owner::Type, CallableKind::Instance | CallableKind::Static)
+        | (
+            Owner::Type,
+            CallableKind::Instance | CallableKind::Static | CallableKind::Constructor,
+        )
         | (Owner::Module, CallableKind::Module) => {}
         _ => {
             return Err(syn::Error::new_spanned(
@@ -531,6 +722,16 @@ fn validate_callable(
                 format!("non-canonical public prefix `{forbidden}` is forbidden"),
             ));
         }
+    }
+    if payload.kind == CallableKind::Constructor
+        && (rust_name != "new"
+            || python.value() != "__new__"
+            || payload.state != StateModel::ValueReturning)
+    {
+        return Err(syn::Error::new_spanned(
+            python,
+            "constructor projection requires canonical Rust new, Python __new__, and value_returning",
+        ));
     }
     let expected_python = match python_property {
         Some(PythonProperty::Getter) => {
@@ -563,7 +764,10 @@ fn validate_callable(
             })?
         }
         None if owner == Owner::Type
-            && payload.kind == CallableKind::Static
+            && matches!(
+                payload.kind,
+                CallableKind::Static | CallableKind::Constructor
+            )
             && rust_name == "new"
             && python.value() == "__new__" =>
         {
@@ -577,11 +781,12 @@ fn validate_callable(
             "Python callable name must equal the canonical Rust name",
         ));
     }
-    let structural_object =
-        owner == Owner::Type
-            && rust.segments.iter().rev().nth(1).is_some_and(|segment| {
-                segment.ident == "BioStructure" || segment.ident == "Protein"
-            });
+    let structural_object = owner == Owner::Type
+        && rust.segments.iter().rev().nth(1).is_some_and(|segment| {
+            segment.ident == "BioStructure"
+                || segment.ident == "Protein"
+                || segment.ident == "MolecularForceField"
+        });
     let requires_trailing_underscore =
         (owner == Owner::Molecule || structural_object) && payload.state == StateModel::InPlace;
     if rust_name.ends_with('_') != requires_trailing_underscore {
@@ -911,6 +1116,8 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
     } = registry;
     let mut values = Vec::with_capacity(entries.len());
     let mut assertions = Vec::new();
+    let mut property_values = Vec::new();
+    let mut keyword_values = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
         // The effective gate is generated once from the owning declaration;
         // registry rows and every signature/type assertion use the same value.
@@ -922,6 +1129,27 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             vec![syn::parse_quote!(#[cfg(all(feature = #owner, #(feature = #requires),*))])]
         };
         let semantic_id = &entry.semantic_id;
+        for property in &entry.properties {
+            let property_name = property.name.to_string();
+            let getter = &property.rust;
+            let signature = &property.signature;
+            let output = match &signature.output {
+                ReturnType::Type(_, ty) => quote!(#ty),
+                ReturnType::Default => quote!(()),
+            };
+            property_values.push(quote! { #(#cfg)* crate::BindingPropertyContract {
+                type_semantic_id: #semantic_id, name: #property_name, rust_path: stringify!(#getter), output_type: stringify!(#output),
+            }});
+            assertions
+                .push(quote! { #(#cfg)* const _: fn() = || { let _: #signature = #getter; }; });
+        }
+        if let Some(projection) = &entry.python_keywords {
+            let parameters = &projection.parameters;
+            let target = &projection.target;
+            keyword_values.push(quote! { #(#cfg)* crate::BindingKeywordContract {
+                semantic_id: #semantic_id, parameters_semantic_id: #parameters, target_semantic_id: #target,
+            }});
+        }
         let item = item_tokens(entry.item);
         let owner = owner_tokens(entry.owner);
         let rust = &entry.rust;
@@ -1037,7 +1265,21 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             }
         }
     }
+    let properties_name = format_ident!("{}_PROPERTIES", name);
+    let keywords_name = format_ident!("{}_KEYWORDS", name);
+    let properties = if property_values.is_empty() {
+        quote! {}
+    } else {
+        quote! { #visibility static #properties_name: &[crate::BindingPropertyContract] = &[#(#property_values),*]; }
+    };
+    let keywords = if keyword_values.is_empty() {
+        quote! {}
+    } else {
+        quote! { #visibility static #keywords_name: &[crate::BindingKeywordContract] = &[#(#keyword_values),*]; }
+    };
     Ok(quote! {
+        #properties
+        #keywords
         #visibility static #name: &[crate::BindingContractEntry] = &[#(#values),*];
         #(#assertions)*
     })
@@ -1097,10 +1339,11 @@ fn parse_owner(v: &Ident) -> syn::Result<Owner> {
 fn parse_kind(v: &Ident) -> syn::Result<CallableKind> {
     parse_enum(
         v,
-        &["instance", "static_", "module"],
+        &["instance", "static_", "module", "constructor"],
         |n| match n {
             "instance" => CallableKind::Instance,
             "static_" => CallableKind::Static,
+            "constructor" => CallableKind::Constructor,
             _ => CallableKind::Module,
         },
         "kind must be `instance`, `static_`, or `module`",
@@ -1163,7 +1406,7 @@ fn owner_tokens(v: Owner) -> proc_macro2::TokenStream {
 fn kind_tokens(v: CallableKind) -> proc_macro2::TokenStream {
     match v {
         CallableKind::Instance => quote!(crate::BindingKind::Instance),
-        CallableKind::Static => quote!(crate::BindingKind::Static),
+        CallableKind::Static | CallableKind::Constructor => quote!(crate::BindingKind::Static),
         CallableKind::Module => quote!(crate::BindingKind::Module),
     }
 }

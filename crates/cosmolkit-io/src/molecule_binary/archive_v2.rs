@@ -1,8 +1,10 @@
 //! CK-owned archive 2.0 wire schema, independent of runtime/model layout.
 //!
-//! Codec 2: musli 0.1.8 storage, default Binary options. All field and
-//! variant identities below are permanent; retired identities must not be reused.
+//! Codec 2: CK storage v1, implemented with musli 0.1.9 storage in Binary mode.
+//! The implementation version is not part of the persistent codec identity.
+//! Field and variant identities below are permanent; retired identities must not be reused.
 //! No legacy raw or canonical companion is emitted by this writer.
+//! This is the initial V2 definition, not a migration from an earlier V2 codec.
 
 use super::*;
 use musli::mode::Binary;
@@ -12,7 +14,10 @@ const MAJOR: u16 = 2;
 pub(super) const MAGIC: &[u8; 8] = b"COSMOL\0\0";
 const MINOR: u16 = 0;
 const CODEC: u8 = 2;
-const SCHEMA: u16 = 1;
+const CODEC_CONTRACT: &str = "ck-storage-v1";
+const METADATA_SCHEMA: u16 = 1;
+const MOLECULE_SCHEMA: u16 = 1;
+const DERIVED_SCHEMA: u16 = 1;
 const MAX_ARCHIVE_BYTES: usize = 256 * 1024 * 1024;
 const MAX_ROWS: usize = 1_000_000;
 
@@ -1833,25 +1838,33 @@ pub(super) fn encode(input: &BinaryInput<'_>) -> Result<Vec<u8>, PickleError> {
     }
     let metadata = Metadata {
         producer: env!("CARGO_PKG_VERSION").into(),
-        codec_contract: "musli-0.1.8/storage/default-binary".into(),
-        molecule_schema: SCHEMA,
-        derived_schema: SCHEMA,
+        codec_contract: CODEC_CONTRACT.into(),
+        molecule_schema: MOLECULE_SCHEMA,
+        derived_schema: DERIVED_SCHEMA,
     };
     let mut output = MAGIC.to_vec();
     write_u16_le(&mut output, MAJOR);
     write_u16_le(&mut output, MINOR);
     write_u16_le(&mut output, 3);
-    for (id, payload) in [
-        (SECTION_MANIFEST, musli::storage::to_vec(&metadata)),
-        (SECTION_MOLECULE_STATE, musli::storage::to_vec(&molecule)),
-        (SECTION_DERIVED_STATE, derived_payload),
+    for (id, schema, payload) in [
+        (
+            SECTION_MANIFEST,
+            METADATA_SCHEMA,
+            musli::storage::to_vec(&metadata),
+        ),
+        (
+            SECTION_MOLECULE_STATE,
+            MOLECULE_SCHEMA,
+            musli::storage::to_vec(&molecule),
+        ),
+        (SECTION_DERIVED_STATE, DERIVED_SCHEMA, derived_payload),
     ] {
         let payload =
             payload.map_err(|e| PickleError::InvalidArchive(format!("archive 2 encode: {e}")))?;
         write_archive_section(
             &mut output,
             id,
-            SCHEMA,
+            schema,
             SECTION_FLAG_REQUIRED,
             CODEC,
             &payload,
@@ -1900,32 +1913,30 @@ pub(super) fn decode(data: &[u8]) -> Result<BinaryRecord, PickleError> {
                 "archive 2 required block flag absent".into(),
             ));
         }
-        if section.version != SCHEMA {
-            return Err(PickleError::UnsupportedSectionVersion {
-                section: section.id,
-                version: section.version,
-            });
-        }
         if section.codec != CODEC {
             return Err(PickleError::InvalidArchive(
                 "archive 2 block codec mismatch".into(),
             ));
         }
-        match section.id {
-            SECTION_MANIFEST => metadata = Some(decode_payload::<Metadata>(section.payload)?),
-            SECTION_MOLECULE_STATE => {
+        match (section.id, section.version) {
+            (SECTION_MANIFEST, METADATA_SCHEMA) => {
+                metadata = Some(decode_payload::<Metadata>(section.payload)?)
+            }
+            (SECTION_MOLECULE_STATE, MOLECULE_SCHEMA) => {
                 molecule = Some(decode_payload::<MoleculeState>(section.payload)?)
             }
-            SECTION_DERIVED_STATE => {
+            (SECTION_DERIVED_STATE, DERIVED_SCHEMA) => {
                 derived = Some(decode_payload::<DerivedState>(section.payload)?)
             }
-            _ => unreachable!(),
+            (section, version) => {
+                return Err(PickleError::UnsupportedSectionVersion { section, version });
+            }
         }
     }
     let metadata = metadata.ok_or(PickleError::MissingRequiredSection(SECTION_MANIFEST))?;
-    if metadata.codec_contract != "musli-0.1.8/storage/default-binary"
-        || metadata.molecule_schema != SCHEMA
-        || metadata.derived_schema != SCHEMA
+    if metadata.codec_contract != CODEC_CONTRACT
+        || metadata.molecule_schema != MOLECULE_SCHEMA
+        || metadata.derived_schema != DERIVED_SCHEMA
     {
         return Err(PickleError::InvalidArchive(
             "archive 2 metadata disagrees with block contract".into(),
@@ -1968,7 +1979,7 @@ mod tests {
         }
         let record = fixture();
         let bytes = encode_molecule_binary(&input(&record)).unwrap();
-        // Absent tag 11 exercises the defaulted reader used for previous V2.
+        // Absent tag 11 exercises this schema's declared default.
         let restored = decode_molecule_binary(&bytes).unwrap();
         assert!(
             restored.topology.bonds[0]
@@ -1980,17 +1991,14 @@ mod tests {
     }
 
     #[test]
-    fn archive20_pdb_text_preserves_bytes_and_reads_previous_utf8_encoding() {
-        // The former V2 String fields used this same storage sequence encoding.
-        // Check the actual library codec rather than assuming wire equivalence.
+    fn archive20_pdb_text_preserves_bytes_and_utf8_sequence_encoding() {
+        // Check the library's UTF-8/byte sequence equivalence independently of
+        // the arbitrary-byte PDB round trip; no earlier V2 schema is involved.
         for value in ["", " CA ", "é\0链"] {
-            let previous = musli::storage::to_vec(&value.to_owned()).unwrap();
-            let current = musli::storage::to_vec(&value.as_bytes().to_vec()).unwrap();
-            assert_eq!(previous, current);
-            assert_eq!(
-                decode_payload::<Vec<u8>>(&previous).unwrap(),
-                value.as_bytes()
-            );
+            let text = musli::storage::to_vec(&value.to_owned()).unwrap();
+            let bytes = musli::storage::to_vec(&value.as_bytes().to_vec()).unwrap();
+            assert_eq!(text, bytes);
+            assert_eq!(decode_payload::<Vec<u8>>(&text).unwrap(), value.as_bytes());
         }
         let mut record = fixture();
         let info = AtomPdbResidueInfo::new(
@@ -2079,6 +2087,9 @@ mod tests {
                 .iter()
                 .all(|s| s.version == 1 && s.codec == 2 && s.is_required())
         );
+        let metadata: Metadata = decode_payload(sections[0].payload).unwrap();
+        assert_eq!(metadata.codec_contract, "ck-storage-v1");
+        assert_eq!((metadata.molecule_schema, metadata.derived_schema), (1, 1));
         let restored = decode_molecule_binary(&data).unwrap();
         assert_eq!(restored.topology, r.topology);
         assert_eq!(encode_molecule_binary(&input(&restored)).unwrap(), data);
@@ -2099,6 +2110,50 @@ mod tests {
             decode_molecule_binary(&legacy_version).unwrap_err(),
             PickleError::UnsupportedArchiveVersion { major: 1, minor: 0 }
         );
+    }
+
+    #[test]
+    fn archive20_schema_dispatch_and_metadata_are_checked_per_block() {
+        let data = encode_molecule_binary(&input(&fixture())).unwrap();
+        let (_, _, sections) = read_archive_envelope(&data, MAGIC).unwrap();
+        for id in [
+            SECTION_MANIFEST,
+            SECTION_MOLECULE_STATE,
+            SECTION_DERIVED_STATE,
+        ] {
+            let mut unsupported = sections.clone();
+            let block = unsupported.iter_mut().find(|s| s.id == id).unwrap();
+            block.version = 2;
+            block.payload = b"\xff";
+            // An unsupported schema is identified before decoding its payload;
+            // the other two block schemas remain at their own current versions.
+            assert_eq!(
+                decode(&pack(&unsupported)).unwrap_err(),
+                PickleError::UnsupportedSectionVersion {
+                    section: id,
+                    version: 2
+                }
+            );
+        }
+        for which in 0..3 {
+            let mut metadata: Metadata = decode_payload(sections[0].payload).unwrap();
+            match which {
+                0 => metadata.molecule_schema = 2,
+                1 => metadata.derived_schema = 2,
+                _ => metadata.codec_contract = "unknown-ck-codec".into(),
+            }
+            assert_eq!(
+                decode(&replace(
+                    &data,
+                    SECTION_MANIFEST,
+                    &musli::storage::to_vec(&metadata).unwrap()
+                ))
+                .unwrap_err(),
+                PickleError::InvalidArchive(
+                    "archive 2 metadata disagrees with block contract".into()
+                )
+            );
+        }
     }
 
     #[test]
@@ -2216,7 +2271,7 @@ mod tests {
             derived: BinaryDerivedState::default(),
         };
         let state = MoleculeState::from_input(&input(&r)).unwrap();
-        // Frozen musli 0.1.8/default Binary molecule-schema-1 empty record.
+        // Frozen ck-storage-v1/molecule-schema-1 empty record, verified with musli 0.1.9.
         let golden = [
             12, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 10, 0, 11, 0,
         ];
@@ -2227,11 +2282,11 @@ mod tests {
         }
         assert!(decode_payload::<MoleculeState>(&reordered).is_ok());
         // A missing optional field uses the declared schema default.
-        let mut old = golden.to_vec();
-        old[0] = 11;
-        old.drain(11..13);
+        let mut without_source_order = golden.to_vec();
+        without_source_order[0] = 11;
+        without_source_order.drain(11..13);
         assert!(
-            decode_payload::<MoleculeState>(&old)
+            decode_payload::<MoleculeState>(&without_source_order)
                 .unwrap()
                 .source_order
                 .is_none()

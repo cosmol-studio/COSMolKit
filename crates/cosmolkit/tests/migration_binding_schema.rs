@@ -3,6 +3,38 @@ use cosmolkit::{
     FunctionStatus, StateModel,
 };
 
+// Fixed public inventory of the owned force-field API, independent of generated metadata.
+const PERSISTENT_FORCEFIELD_IDS: &[&str] = &[
+    "types.MolecularForceFieldErrorKind",
+    "types.MmffForceFieldParams",
+    "MmffForceFieldParams.new",
+    "types.UffForceFieldParams",
+    "UffForceFieldParams.new",
+    "types.ForceFieldMinimizeParams",
+    "ForceFieldMinimizeParams.new",
+    "types.ForceFieldEnergyGradient",
+    "types.ForceFieldMinimizeOutcome",
+    "types.ForceFieldError",
+    "types.MmffForceFieldError",
+    "types.UffForceFieldError",
+    "types.MolecularForceField",
+    "Molecule.mmff_force_field",
+    "Molecule.mmff_force_field_with_params",
+    "Molecule.uff_force_field",
+    "Molecule.uff_force_field_with_params",
+    "MolecularForceField.position",
+    "MolecularForceField.set_position_",
+    "MolecularForceField.positions",
+    "MolecularForceField.set_positions_",
+    "MolecularForceField.fixed_atoms",
+    "MolecularForceField.set_fixed_atoms_",
+    "MolecularForceField.energy",
+    "MolecularForceField.gradient",
+    "MolecularForceField.energy_gradient",
+    "MolecularForceField.minimize_",
+    "MolecularForceField.minimize_with_params_",
+];
+
 fn entry(semantic_id: &str) -> &'static cosmolkit::BindingContractEntry {
     BINDING_CONTRACT
         .iter()
@@ -102,6 +134,9 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
             "Molecule.with_uff_optimized_confs",
             "Molecule.with_uff_optimized_confs_with_params",
         ]
+        .into_iter()
+        .chain(PERSISTENT_FORCEFIELD_IDS.iter().copied())
+        .collect::<Vec<_>>()
     );
 
     for (semantic_id, rust_name, role) in [

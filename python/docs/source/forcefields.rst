@@ -229,7 +229,9 @@ Reusable configuration remains available through immutable parameter objects:
    )
    ff = mol.mmff_force_field_with_params(params)
    outcome = ff.minimize_with_params(
-       ck.ForceFieldMinimizeParams(max_iterations=20)
+       ck.ForceFieldMinimizeParams(
+           max_iterations=20, force_tolerance=1e-4, energy_tolerance=1e-6
+       )
    )
 
 Rust retains default factories and explicit ``*_with_params`` methods with
@@ -255,7 +257,8 @@ Proposed handle and result API
        def gradient(self) -> np.ndarray: ...
        def energy_gradient(self) -> ForceFieldEnergyGradient: ...
        def minimize(self, *, max_iterations: int = 200,
-                    force_tolerance: float = 1e-4) -> ForceFieldMinimizeOutcome: ...
+                    force_tolerance: float = 1e-4,
+                    energy_tolerance: float = 1e-6) -> ForceFieldMinimizeOutcome: ...
        def minimize_with_params(self, params) -> ForceFieldMinimizeOutcome: ...
 
    class ForceFieldEnergyGradient:
@@ -274,10 +277,23 @@ atom order, not IDs transferable between unrelated molecules. Rust uses
 ``AtomId`` and borrowed coordinate slices; Python never receives a mutable
 view into the handle's live storage.
 
-The minimization target intentionally does not advertise an independently
-effective energy-tolerance option: the current source-backed BFGS owner does
-not use its function-tolerance argument as a stopping criterion. Any future
-change to this criterion needs a separately defined behavior contract.
+Both keyword minimization and immutable ``ForceFieldMinimizeParams`` expose
+``energy_tolerance=1e-6``, alongside ``max_iterations=200`` and
+``force_tolerance=1e-4``. Rust constructs these parameters with
+``ForceFieldMinimizeParams::new(max_iterations, force_tolerance, energy_tolerance)``.
+All three arguments reach the same source-backed optimizer. The pinned RDKit
+``BFGSOpt.h`` explicitly ignores ``funcTol`` via ``RDUNUSED_PARAM(funcTol)``:
+changing energy tolerance alone therefore does not currently change convergence.
+CK preserves that behavior rather than inventing an energy stopping criterion.
+
+Persistent factory and evaluator errors expose a typed
+``MolecularForceFieldErrorKind`` through Rust ``kind()`` and Python ``kind``.
+For example, compare ``error.kind == ck.MolecularForceFieldErrorKind.MissingConformer``,
+not a string. Context remains available through ``requested``, ``atom_index``,
+``expected``, ``actual`` and ``component`` where applicable; Rust ``source()``
+and Python ``__cause__`` preserve the concrete lower-level cause.
+``InvalidTolerance`` identifies the source optimizer's rejected force tolerance
+(``component == 0``); energy tolerance is forwarded without a new CK-only constraint.
 
 Ownership, updates, and numerical semantics
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

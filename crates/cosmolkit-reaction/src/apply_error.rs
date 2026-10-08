@@ -1,4 +1,4 @@
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ReactionApplyError {
     #[error(transparent)]
     SourceText(#[from] cosmolkit_core::PropertyStringError),

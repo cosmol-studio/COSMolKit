@@ -45,7 +45,7 @@ absent_methods!("cap-forcefields";
     uff_has_all_molecule_params,
 );
 absent_types!("cap-forcefields";
-    UffParameterError, UffParameterErrorKind, UffParameterQueryError,
+    UffParameterError, UffParameterErrorKind, UffParameterQueryError, ForceFieldError,
 );
 absent_methods!("cap-descriptors";
     molecular_weight, num_heavy_atoms, total_atom_count, lipinski_hba,
@@ -76,7 +76,6 @@ macro_rules! removed_items {
 }
 mod removed {
     removed_items!(
-        ForceFieldError,
         ForceFieldOptions,
         mmff_has_all_molecule_params,
         mmff_optimize,

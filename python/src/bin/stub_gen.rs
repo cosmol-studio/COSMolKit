@@ -15,6 +15,8 @@ fn main() -> pyo3_stub_gen::Result<()> {
         "TautomerEnumerationStatus",
         "CoordinateZPolicy",
         "PropertyValueKind",
+        "SdfFormat",
+        "Mol2Type",
         "SdfPropertyListTarget",
         "ValenceModel",
         "AromaticityModel",
@@ -30,6 +32,7 @@ fn main() -> pyo3_stub_gen::Result<()> {
         "BioPdbReadStage",
         "BioMmcifReadStage",
         "UffParameterErrorKind",
+        "MolecularForceFieldErrorKind",
     ] {
         let prefix = format!("class {name}(enum.Enum):\n");
         assert_eq!(
@@ -111,6 +114,7 @@ _binding_profile: builtins.str
         "PropertyValueError",
         "ValenceError",
         "CipDescriptorError",
+        "MolecularIoError",
         "MmffMolPropertiesError",
         "MmffOptimizationError",
         "UffOptimizationError",
@@ -331,6 +335,7 @@ _binding_profile: builtins.str
         "__all__ = [\n",
         "__all__ = [\n    \"AtomCodeExplanationError\",\n",
     );
+    text = expose_registered_property_exceptions(text)?;
     // create_exception! has no stub metadata; kind() is installed by the shared error converter.
     text.push_str("\nclass PropertyStringError(builtins.ValueError):\n    error_kind: builtins.str\n    value_kind: PropertyValueKind\n    def kind(self) -> PropertyValueKind: ...\n");
     text = text.replace(
@@ -492,4 +497,64 @@ fn expose_bio_types(mut text: String) -> String {
     }
     text.push_str(&definitions);
     text
+}
+
+// Native exceptions do not carry pyclass inventory. Render only their declared
+// properties from the linked compiler-checked registry, not a parallel list.
+fn expose_registered_property_exceptions(mut text: String) -> pyo3_stub_gen::Result<String> {
+    use ::cosmolkit::{
+        BINDING_CONTRACT, BINDING_CONTRACT_PROPERTIES, BindingItem, BindingTypeRole,
+    };
+    for entry in BINDING_CONTRACT
+        .iter()
+        .filter(|entry| entry.type_role == Some(BindingTypeRole::Error))
+    {
+        let fields = BINDING_CONTRACT_PROPERTIES
+            .iter()
+            .filter(|field| field.type_semantic_id == entry.semantic_id)
+            .collect::<Vec<_>>();
+        if fields.is_empty() {
+            continue;
+        }
+        let name = entry.python_name;
+        if text.contains(&format!("class {name}")) {
+            return Err(std::io::Error::other(format!("duplicate exception stub {name}")).into());
+        }
+        text.push_str(&format!(
+            "\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n"
+        ));
+        for field in fields {
+            let rust_type = field.output_type.split_whitespace().collect::<String>();
+            let python_type = match rust_type.as_str() {
+                "Option<usize>" => "typing.Optional[builtins.int]",
+                "&'staticstr" => "builtins.str",
+                other => {
+                    // Resolve named payload values through the same registry.
+                    // The enum's actual stub must exist; do not invent a projection.
+                    BINDING_CONTRACT
+                        .iter()
+                        .find(|row| {
+                            row.item == BindingItem::Type
+                                && row.rust_path.split_whitespace().collect::<String>() == other
+                        })
+                        .map(|row| row.python_name)
+                        .filter(|name| {
+                            text.contains(&format!("class {name}("))
+                                || text.contains(&format!("class {name}:"))
+                        })
+                        .ok_or_else(|| {
+                            std::io::Error::other(format!(
+                                "unprojected exception property type {other}"
+                            ))
+                        })?
+                }
+            };
+            text.push_str(&format!(
+                "    @property\n    def {}(self) -> {python_type}: ...\n",
+                field.name
+            ));
+        }
+        text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
+    }
+    Ok(text)
 }

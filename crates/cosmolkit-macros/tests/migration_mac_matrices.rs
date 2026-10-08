@@ -89,6 +89,7 @@ fn empty_registries_emit_exactly_the_eight_typed_tables() {
         "PARITY_MATRIX",
     ] {
         assert_eq!(molecule.matches(table).count(), 1, "{table}: {molecule}");
+        assert!(molecule.contains(&format!("pubstatic{table}:")));
     }
 
     let bio = bio("");
@@ -99,6 +100,7 @@ fn empty_registries_emit_exactly_the_eight_typed_tables() {
         "BIO_PARITY_MATRIX",
     ] {
         assert_eq!(bio.matches(table).count(), 1, "{table}: {bio}");
+        assert!(bio.contains(&format!("pubstatic{table}:")));
     }
 }
 
@@ -138,7 +140,7 @@ fn molecule_rows_preserve_every_block_effect_precondition_and_profile() {
     );
 
     for expected in [
-        "pubconstINSPECT_SPEC:crate::ops::MoleculeOpSpec",
+        "pubstaticINSPECT_SPEC:crate::ops::MoleculeOpSpec",
         "method:\"inspect\"",
         "impl_fn:\"crate::inspect_impl\"",
         "output:crate::ops::MoleculeOpOutput::Single",
@@ -169,10 +171,10 @@ fn molecule_rows_preserve_every_block_effect_precondition_and_profile() {
         assert!(output.contains(expected), "missing {expected} in {output}");
     }
     let invariant_start = output
-        .find("pubconstOPERATION_INVARIANT_MATRIX")
+        .find("pubstaticOPERATION_INVARIANT_MATRIX")
         .expect("Molecule invariant matrix must be generated");
     let parity_start = output
-        .find("pubconstPARITY_MATRIX")
+        .find("pubstaticPARITY_MATRIX")
         .expect("Molecule parity matrix must be generated");
     let invariant_matrix = &output[invariant_start..parity_start];
     assert_eq!(
@@ -296,6 +298,29 @@ fn molecule_tautomer_transition_and_operation_defined_valence_are_not_rewritten(
 }
 
 #[test]
+fn molecule_reaction_transition_is_generated_without_rewriting_its_policy() {
+    let generated = molecule(
+        r#"
+        op apply_reaction {
+            method: apply_reaction_with_params,
+            impl_fn: crate::apply_reaction_impl,
+            output: single, kind: strong, topology_edit: compacting,
+            access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+            may_mutate: [topology, coordinates, properties, derived_cache],
+            auto_remap: [coordinates, properties],
+            derived_effects: { recompute: [], preserve: [], invalidate: [], operation_defined: [] },
+            cip_state: reaction_source_transition, requires_mapping: required,
+            feature: crate::REACTION_FEATURE, parity: not_applicable, invariant_profile: "reaction"
+        }
+    "#,
+    );
+    assert!(generated.contains("CipStatePolicy::ReactionSourceTransition"));
+    assert!(!generated.contains("CipStatePolicy::Preserve"));
+    assert!(!generated.contains("CipStatePolicy::ClearComputed"));
+    assert!(!generated.contains("CipStatePolicy::Assign"));
+}
+
+#[test]
 fn molecule_parity_rows_follow_policy_without_fabricating_profiles() {
     let none = molecule(&molecule_operation("native", ""));
     assert_eq!(none.matches("ParityMatrixEntry{").count(), 0);
@@ -357,7 +382,7 @@ fn bio_rows_preserve_all_blocks_states_derived_states_and_required_parity() {
         "#);
 
     for expected in [
-        "pubconstBIO_REMOVE_WATERS_SPEC:crate::bio_ops::BioStructureOpSpec",
+        "pubstaticBIO_REMOVE_WATERS_SPEC:crate::bio_ops::BioStructureOpSpec",
         "method:\"without_waters\"",
         "impl_fn:\"crate::remove_waters_impl\"",
         "domain:crate::bio_ops::BioOpDomain::Selection",

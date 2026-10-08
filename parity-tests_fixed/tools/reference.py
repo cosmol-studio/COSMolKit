@@ -73,6 +73,104 @@ def molalign_focused_call(payload):
     return record_for_call(*payload)
 
 
+def persistent_forcefield_case(wrapped):
+    """One owned evaluator, common exact arbitrary positions, at most two steps."""
+    import hashlib
+    import random
+    import struct
+    from rdkit import Chem
+    from rdkit.Chem import AllChem
+
+    def bits(value):
+        return struct.unpack("<Q", struct.pack("<d", value))[0]
+
+    recipe = wrapped["PersistentForceField"]
+    case = recipe["case"]
+    seed = hashlib.sha256(
+        f"{recipe['seed']}:{case['id']}:{case['smiles']}".encode()).digest()
+    rng = random.Random(int.from_bytes(seed, "little"))
+    molecule = Chem.MolFromSmiles(case["smiles"])
+    if molecule is None:
+        raise ValueError(f"{case['id']}: cannot prepare force-field molecule")
+    molecule = Chem.AddHs(molecule)
+    count = molecule.GetNumAtoms()
+    if not count:
+        raise ValueError(f"{case['id']}: empty force-field molecule")
+    xyz = [[rng.uniform(-3.0, 3.0) for _ in range(3)] for _ in range(count)]
+    conformer = Chem.Conformer(count)
+    conformer.Set3D(True)
+    for index, position in enumerate(xyz):
+        conformer.SetAtomPosition(index, position)
+    molecule.AddConformer(conformer, assignId=True)
+    molblock = Chem.MolToMolBlock(molecule)
+    # Use the same transported chemistry on both sides, but never its rounded
+    # MolBlock coordinates: reinstall the original binary64 positions.
+    molecule = Chem.MolFromMolBlock(molblock, sanitize=True, removeHs=False)
+    if molecule is None or molecule.GetNumAtoms() != count:
+        raise ValueError(f"{case['id']}: force-field MolBlock transport failed")
+    for index, position in enumerate(xyz):
+        molecule.GetConformer(0).SetAtomPosition(index, position)
+    prepared = dict(recipe, preparation={
+        "molblock": molblock, "atom_count": count,
+        "coordinate_rows": [{"conformer_id": 0, "xyz_bits": [[bits(v) for v in p] for p in xyz]}],
+    })
+    if recipe["kind"] == "Mmff":
+        properties = AllChem.MMFFGetMoleculeProperties(molecule, mmffVariant="MMFF94")
+        field = None if properties is None else AllChem.MMFFGetMoleculeForceField(
+            molecule, properties, nonBondedThresh=100.0, confId=0,
+            ignoreInterfragInteractions=True)
+    elif recipe["kind"] == "Uff":
+        try:
+            field = AllChem.UFFGetMoleculeForceField(
+                molecule, vdwThresh=10.0, confId=0, ignoreInterfragInteractions=True)
+        except RuntimeError as error:
+            # Pinned Builder.cpp:422 selects SP3D/degree-five centers; :324-327
+            # passes their unchecked params to AngleBend.cpp:79. The native
+            # parameter query identifies the missing center without a case-ID
+            # whitelist or treating every RuntimeError as an expected rejection.
+            lines = [line.strip() for line in str(error).splitlines() if line.strip()]
+            if lines != ["Pre-condition Violation", "bad params pointer",
+                         "Violation occurred on line 79 in file Code/ForceField/UFF/AngleBend.cpp",
+                         "Failed Expression: at2Params", "RDKIT: 2026.03.1", "BOOST: 1_85"]:
+                raise
+            centers = [atom.GetIdx() for atom in molecule.GetAtoms()
+                       if atom.GetHybridization() == Chem.HybridizationType.SP3D
+                       and atom.GetDegree() == 5
+                       and AllChem.GetUFFVdWParams(molecule, atom.GetIdx(), atom.GetIdx()) is None]
+            if len(centers) != 1:
+                raise
+            return {"input": {"PersistentForceField": prepared}, "output": {
+                "PersistentForceField": {"SourceTbpCenterParamsMissing": {"center_atom_index": centers[0]}}}}
+    else:
+        raise ValueError(f"unknown owned force-field kind {recipe['kind']}")
+    if field is None:
+        if recipe["kind"] != "Mmff":
+            raise ValueError(f"{case['id']}: UFF factory unexpectedly returned None")
+        output = "Unavailable"
+    else:
+        field.Initialize()
+
+        def snapshot():
+            positions = [list(molecule.GetConformer(0).GetAtomPosition(i)) for i in range(count)]
+            flat = [v for p in positions for v in p]
+            # Explicit current coordinates reset RDKit's distance matrix,
+            # matching CK's freshly evaluated post-minimize energy/gradient.
+            energy = field.CalcEnergy(flat)
+            gradient = field.CalcGrad(flat)
+            return {"energy_bits": bits(energy),
+                    "gradient_bits": [[bits(v) for v in gradient[i:i + 3]] for i in range(0, len(gradient), 3)],
+                    "positions_bits": [[bits(v) for v in p] for p in positions]}
+
+        initial = snapshot()
+        tolerance = struct.unpack("<d", struct.pack("<Q", recipe["force_tolerance_bits"]))[0]
+        energy_tolerance = struct.unpack("<d", struct.pack("<Q", recipe["energy_tolerance_bits"]))[0]
+        status = field.Minimize(maxIts=recipe["max_iterations"], forceTol=tolerance, energyTol=energy_tolerance)
+        if status not in (0, 1):
+            raise ValueError(f"{case['id']}: unexpected minimize status {status}")
+        output = {"Evaluated": {"initial": initial, "final_state": snapshot(), "converged": status == 0}}
+    return {"input": {"PersistentForceField": prepared}, "output": {"PersistentForceField": output}}
+
+
 def tautomer_special_case(payload):
     from _tautomer_oracle import build_record
     case, branches = payload
@@ -307,6 +405,8 @@ def generate(request):
     if kind != "corpus":
         raise ValueError(f"unknown recipe {kind}")
     generator = request["generator"]
+    if generator == "generate_persistent_force_field":
+        return parallel(persistent_forcefield_case, request["input"], threads, progress)
     if generator == "generate_molalign":
         return parallel(molalign_corpus_case, request["input"], threads, progress)
     if generator == "generate_fingerprint":
