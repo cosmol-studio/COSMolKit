@@ -21,6 +21,8 @@ directly.
    quickstart
    confseq
    molecule
+   reaction
+   forcefields
    batch
    fingerprints
    descriptors

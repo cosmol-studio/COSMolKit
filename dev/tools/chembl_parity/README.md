@@ -6,6 +6,10 @@ under ignored `tmp/parity-audit/` without committing the externally
 distributed corpus or
 multi-gigabyte run output.
 
+Complete 0.5.0 validation is pending. Published completed-audit results are
+0.3.0 evidence; running the commands here must produce new receipts before
+the same claims can be made for 0.5.0.
+
 The audit compares the installed COSMolKit Python extension with pinned RDKit
 `2026.03.1`. It is release evidence, not an ordinary per-commit test. The
 committed 152- and 5,000-record suites remain the fast and maintained gates.
@@ -68,11 +72,11 @@ Run the command from the repository root. Worker processes are launched as
 `dev.tools.chembl_parity` modules so their shared comparison helpers use
 normal package imports rather than depending on the current script directory.
 
-`profiles/complete.json` is the default 35-phase profile. It retains the 22
+The current `profiles/complete.json` is the default 34-phase profile. It retains the 22
 phases from the original completed audit, the later full-corpus modern
 CIPLabeler phase, the RDKFingerprint/Avalon, AtomPair, Pattern, Topological
-Torsion, and Layered fingerprint phases, and the ordinary MolAlign and tautomer
-enumeration phases. Four additional phases cover topology operations,
+Torsion, and Layered fingerprint phases, and the ordinary MolAlign phase.
+Four additional phases cover topology operations,
 connected fragments, direct 2D coordinate generation, and COSMolKit binary
 roundtrips. A dedicated stereo phase compares all four
 `clean`/`flag_possible` potential-stereo branches and four source-defined
@@ -80,8 +84,15 @@ enumeration profiles for every ChEMBL row. It always compares the exact
 theoretical count; exhaustive output is compared when that count is at most
 eight, while the fixed-seed branch uses the source `max_isomers=3` sampler.
 This bounds output growth without filtering molecules or chemistry branches.
-The complete profile therefore contains 4,480 ordered shard tasks over the
+The complete profile therefore contains 4,352 ordered shard tasks over the
 128-shard corpus.
+
+The legacy ChEMBL tautomer Rust exporter, Python audit, and phase were removed
+at the user's request. Current tautomer migration and acceptance use the
+canonical public APIs and the maintained regression/5000 parity pipeline;
+they do not depend on this historical audit. Historical run evidence is not
+rewritten. Profiles containing the removed script are rejected, and cannot
+be resumed as the current profile.
 The existing batch phase also compares scalar and batch sanitize, both
 kekulize branches, and direct 2D coordinates. The profile records phase order,
 selection boundaries, branch modes, fixed repeat phases, reference version,

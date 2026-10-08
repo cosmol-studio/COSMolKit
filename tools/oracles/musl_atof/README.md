@@ -15,7 +15,7 @@ identify the selected source files; licensing is retained in the submodule's
 Behavior acceptance uses the pinned RDKit environment, not musl equivalence:
 
 ```sh
-cargo test -p cosmolkit-io --release --features cosmolkit-core/op-contracts-strict --lib v3k_atom_numbers_coordinate_contract -- --include-ignored --nocapture
+cargo test -p cosmolkit-io --profile dev-test --lib v3k_atom_numbers_coordinate_contract -- --include-ignored --nocapture
 ```
 
 The ordinary-coordinate contract and exclusions remain documented on

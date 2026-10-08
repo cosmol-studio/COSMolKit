@@ -10,9 +10,9 @@ the work in scope. This index does not define a second architecture or queue.
   direction, and transaction/capability shape.
 - [Public API design](./public_api_design.md): canonical names, receivers,
   value/in-place forms, and language projections.
-- [Split-crate plan](./plans/crate_architecture_completion_plan.md): the sole
-  execution queue and progress ledger. Reports and historical plans are
-  evidence, not competing queues.
+- [Task plans](./plans/README.md): execute only the current user-authorized
+  task and its explicitly assigned plan. Dated receipts are evidence, not
+  blanket validation of the current checkout or an automatic work queue.
 - [Agent plan standard](./agent_plan_standard.md): numbered Read/action steps,
   immediate validation, and evidence requirements.
 - [Architecture rationale](./architecture_rationale.md): non-normative design
@@ -54,6 +54,7 @@ cargo test --workspace --locked --profile dev-test --no-fail-fast \
     --features cosmolkit/op-contracts-strict
 cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
 .venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml
+python3 wasm/tools/wasm_binding/run.py
 .venv/bin/pytest python/tests
 ```
 
@@ -85,7 +86,7 @@ operations.
 
 Design documents describe their declared boundaries, not blanket implementation
 or validation status. Source inventories and actual test results belong in unit
-reports; acceptance belongs in the sole plan. Historical validation claims in
+reports; acceptance belongs in the authorized task's plan. Historical validation claims in
 domain documents must be read in their original scope, not transferred to a
 new implementation.
 
@@ -102,7 +103,7 @@ Neither proposal authorizes implementation or reorders the active plan.
 | Path | Role |
 |---|---|
 | `dev/*.md` | Canonical standards, domain designs, and clearly labeled rationale/proposals |
-| [plans/](./plans/) | The sole split-crate queue and subordinate source-reference plans |
+| [plans/](./plans/) | Task-specific plans and dated source-port records; not an automatic execution queue |
 | [gap_reports/](./gap_reports/) | Audits, source inventories, validation and blocker evidence |
 | [tools/](./tools/) | Development-only checking and preparation tools |
 | [archive/](./archive/) | Historical snapshots and superseded records; never normative |

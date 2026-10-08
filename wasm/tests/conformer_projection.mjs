@@ -48,7 +48,7 @@ test('All sixteen embedding entrypoints generate conformers with value/in-place 
  const original=params.toJson();
  try {
   for(const call of calls){
-   const m=b.Molecule.fromSmiles('CCO'),before=m.toBinary();
+   const m=b.Molecule.fromSmiles('CCO'),before=snapshot(m);
    const count=call.multiple?2:1;
    const args=call.multiple?[count]:[];
    if(call.params)args.push(params);
@@ -63,7 +63,7 @@ test('All sixteen embedding entrypoints generate conformers with value/in-place 
     }
     assert.equal(out.toSmiles(),'CCO');
     if(call.inplace)assert.equal(m.num3dConformers(),count,call.name);
-    else {assert.equal(m.num3dConformers(),0,call.name);assert.deepEqual(m.toBinary(),before,call.name);}
+    else {assert.equal(m.num3dConformers(),0,call.name);assert.deepEqual(snapshot(m),before,call.name);}
     if(call.report){
      if(call.multiple){assert.deepEqual([...result.confIds()],[0,1]);assert.equal(result.generatedCount(),count);assert.equal(result.requestedNumConfs(),count);}
      else {assert.equal(result.confId(),0);assert.equal(result.ok(),true);}
@@ -79,7 +79,7 @@ test('All sixteen embedding entrypoints generate conformers with value/in-place 
 });
 test('Seeded ethanol remains repeatable; zero-matrix implicit numerical seeds use the host clock',()=>{
  const params=b.EmbedParams.dg().withJson('{"randomSeed":42}');
- const source=b.Molecule.fromSmiles('CCO'),before=source.toBinary(),now=Date.now;
+ const source=b.Molecule.fromSmiles('CCO'),before=snapshot(source),now=Date.now;
  let reads=0;
  Date.now=()=>{reads++;return 1700000000000;};
  try {
@@ -93,21 +93,21 @@ test('Seeded ethanol remains repeatable; zero-matrix implicit numerical seeds us
   finally {first.free();second.free();}
   // For one atom, powerEigenSolver receives int(sumSqD2*N)==0 and therefore
   // takes its own clock-seed branch, independently of the outer EmbedParams.
-  const atom=b.Molecule.fromSmiles('C'),atomBefore=atom.toBinary();
+  const atom=b.Molecule.fromSmiles('C'),atomBefore=snapshot(atom);
   try {
    for(const seed of [-1,42]){
     const options=params.withJson(JSON.stringify({randomSeed:seed}));
     const previous=reads,implicit=atom.with3dConformerWithParams(options);
-    try {assert.equal(implicit.num3dConformers(),1);assert.ok(reads>previous);assert.deepEqual([...implicit.coordinates3d(0)],[0,0,0]);assert.deepEqual(atom.toBinary(),atomBefore);}
+    try {assert.equal(implicit.num3dConformers(),1);assert.ok(reads>previous);assert.deepEqual([...implicit.coordinates3d(0)],[0,0,0]);assert.deepEqual(snapshot(atom),atomBefore);}
     finally {implicit.free();options.free();}
    }
   } finally {atom.free();}
-  assert.deepEqual(source.toBinary(),before);
+  assert.deepEqual(snapshot(source),before);
  } finally {Date.now=now;params.free();source.free();}
 });
 test('WASM deadlines use the host monotonic clock and preserve timeout reports and receivers',()=>{
  const params=b.EmbedParams.dg().withJson('{"randomSeed":42,"timeout":1,"trackFailures":true}');
- const source=b.Molecule.fromSmiles('CCO'),before=source.toBinary(),original=params.toJson();
+ const source=b.Molecule.fromSmiles('CCO'),before=snapshot(source),original=params.toJson();
  const descriptor=Object.getOwnPropertyDescriptor(performance,'now');
  let reads=0;
  Object.defineProperty(performance,'now',{configurable:true,value:()=>2000*reads++});
@@ -119,7 +119,7 @@ test('WASM deadlines use the host monotonic clock and preserve timeout reports a
    assert.equal(report.confId(),-1);
    assert.equal(out.num3dConformers(),0);
    assert.equal(returned.failures()[11],1); // pinned EmbedFailureCauses::EXCEEDED_TIMEOUT
-   assert.deepEqual(source.toBinary(),before);
+   assert.deepEqual(snapshot(source),before);
    assert.equal(params.toJson(),original);
   } finally {out.free();returned.free();report.free();}
  } finally {
@@ -131,3 +131,9 @@ test('Supported invalid embedding inputs remain typed failures with atomic recei
  const p=b.EmbedParams.dg().withJson('{"randomSeed":42}'),m=b.Molecule.fromSmiles('C');for(const n of [-1,4294967296,1.5,NaN])assert.throws(()=>m.with3dConformersWithParams(n,p),RangeError);assert.throws(()=>m.with3dConformersWithParams('1',p),TypeError);assert.equal(m.num3dConformers(),0);const bad=p.withJson('{"ETversion":3}');assert.throws(()=>m.embed3dConformerWithParams(bad),e=>e.kind==='Conformer'&&e.message.includes('Only version 1 and 2'));assert.equal(m.num3dConformers(),0);assert.equal(bad.etVersion(),3);const empty=b.Molecule.new();assert.throws(()=>empty.embed3dConformerWithParams(p),e=>e.kind==='Conformer'&&e.message.includes('molecule has no atoms'));assert.equal(empty.num3dConformers(),0);
 });
 test('Distance-geometry matrix query preserves nested numeric shape and leaves conformers unchanged',()=>{const m=b.Molecule.fromSmiles('CC'),matrix=m.dgBoundsMatrix();assert.equal(matrix.length,2);assert.equal(matrix[0].length,2);assert.equal(matrix[0][0],0);assert.equal(matrix[1][1],0);assert.ok(matrix[0][1]>matrix[1][0]);const old=matrix[0][1];matrix[0][1]=99;assert.equal(m.dgBoundsMatrix()[0][1],old);assert.equal(m.num3dConformers(),0);});
+function snapshot(molecule) {
+ if (process.env.COSMOLKIT_WASM_PRESET === 'full') return molecule.toBinary();
+ return {smiles: molecule.toSmiles(), atoms: [...molecule.atomicNumbers()],
+  coordinates2d: [...molecule.coordinates2d()],
+  conformers: Array.from({length: molecule.num3dConformers()}, (_, id) => [...molecule.coordinates3d(id)])};
+}

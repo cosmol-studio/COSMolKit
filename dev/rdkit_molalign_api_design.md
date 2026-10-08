@@ -153,9 +153,10 @@ present in the audited ordinary MolAlign boundary.
 
 ## Validation Status
 
-The design is implemented through one pure-Rust numerical core and one public
-Rust/Python API path. Focused, 152-row, 5,000-row, and complete ChEMBL 37 gates
-pass. The complete audit processes 2,854,362 eligible molecules and compares
+The 0.5.0 API uses one pure-Rust numerical core and public facade projections.
+Complete 0.5.0 validation is pending. The following results belong to 0.3.0:
+focused, 152-row, 5,000-row, and complete ChEMBL 37 gates passed.
+That complete audit processed 2,854,362 eligible molecules and compared
 11,417,207 RMSD, transform, map, coordinate, order, and immutability fields
 with zero mismatch. The source and architecture closure is recorded in
 `dev/gap_reports/rdkit_molalign_full_port_validation.md`.

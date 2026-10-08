@@ -48,6 +48,46 @@ remains a non-indexable placeholder until real content is added. Python and
 JavaScript are API bindings, not translations; no cross-language canonical or
 `hreflang` is generated.
 
+## Documentation versions
+
+`versions.json` is the manually maintained version catalog. `latest` always
+points to `https://kit.cosmol.org/`; the initial archive is `0.3.0` at
+`https://c6862989.cosmolkit-docs-web.pages.dev/`. Add an entry only after its
+archive is published, keeping `latest` first. No Cargo/package version bump or
+automatic GitHub release lookup is involved.
+
+The navbar uses native `<details>`/links and a small standalone module, not
+Dioxus hydration. The current site defaults to `latest`; recognized archive
+origins show their own version without redirecting. Selecting a version opens
+its overview, since older releases may not contain the same topic paths.
+
+Each build embeds its catalog as a no-JavaScript/offline fallback. The module
+also fetches **only** `https://kit.cosmol.org/versions.json` with no cache or
+credentials, so archives can see newer manually added versions without being
+rebuilt. Deployment preparation publishes that JSON and its narrowly scoped
+Cloudflare CORS/no-store headers. Failed or pending requests and invalid JSON
+leave the embedded menu usable. Catalog labels are text, never injected HTML.
+
+Normal documentation navigation, stylesheets, search assets and the footer's
+Documentation link use same-origin relative URLs (`/python/...`, `/assets/...`,
+`/`), not latest-domain URLs. The archive therefore keeps serving its own pages
+and resources after a new release. Absolute links in the version menu are
+intentional; canonical/social metadata is separate from navigation.
+
+Existing immutable deployments do not acquire the selector retroactively.
+To give a pre-selector archive the live catalog, backport the selector and
+publish that archive, then update its manually maintained snapshot URL. Merely
+listing the existing 0.3.0 snapshot makes it selectable from the new site; it
+does not modify that already published snapshot.
+
+Validation uses the existing deployment-script suite, including real module
+execution through Node's DOM/fetch test boundary when Node is installed:
+
+```sh
+.venv/bin/python -m unittest discover -s docs-web/scripts -p 'test_*.py' -v
+cargo test --manifest-path docs-web/Cargo.toml --bin cosmolkit-docs-web version_switch
+```
+
 ## Local development
 
 Build the Python docs first when the local Sphinx output is absent:
@@ -73,7 +113,8 @@ binary. The `wasm32-unknown-unknown` Rust target must also be installed.
 
 The production deployment uses Dioxus SSG and Cloudflare Pages. Pushes to
 `main` build and deploy through `.github/workflows/docs-web.yml`, using the
-published `cosmolkit==0.3.0` wheel for autodoc. URLs omit `.html` and trailing
+checkout's Python extension for the 0.5.0 autodoc surface rather than an older
+published wheel. URLs omit `.html` and trailing
 slashes; legacy addresses redirect to the canonical pages.
 
 Before rebuilding, the workflow moves any cached `public` directory into the

@@ -1,6 +1,6 @@
 # Python Dev Commands
 
-This document lists the canonical commands for Python binding development in this repository.
+This document lists the canonical commands for COSMolKit 0.5.0 Python binding development.
 
 ## Environment
 
@@ -17,6 +17,14 @@ From repo root:
 ```bash
 cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
 ```
+
+This command checks every callable in the linked `cosmolkit::BINDING_CONTRACT`
+against the generated stub's Python AST, including module functions, class
+factories and `Molecule` in-place methods. The compiled registry determines
+the enabled capabilities; there is no separate allowlist or Experimental-status
+exemption. Missing declarations are reported with their semantic IDs, Python
+paths and features, and the command fails without replacing the existing stub.
+This is an export-coverage check, not proof of signature or chemical parity.
 
 Generated file:
 

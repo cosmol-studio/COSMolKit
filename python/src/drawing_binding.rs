@@ -368,6 +368,78 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    #[staticmethod]
+    #[pyo3(signature=(text, params=None, *, sanitize=None, remove_hydrogens=None))]
+    fn from_inchi(
+        py: Python<'_>,
+        text: &str,
+        params: Option<&crate::canonical_inchi::InchiReadParams>,
+        sanitize: Option<bool>,
+        remove_hydrogens: Option<bool>,
+    ) -> PyResult<Self> {
+        if params.is_some() && (sanitize.is_some() || remove_hydrogens.is_some()) {
+            return Err(pyo3::exceptions::PyTypeError::new_err(
+                "params and keyword options are mutually exclusive",
+            ));
+        }
+        let params = params.map(|p| p.inner).unwrap_or(ck::InchiReadParams {
+            sanitize: sanitize.unwrap_or(true),
+            remove_hydrogens: remove_hydrogens.unwrap_or(true),
+        });
+        ck::Molecule::from_inchi_with_params(text, &params)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_inchi::error(py, e))
+    }
+    #[staticmethod]
+    fn from_inchi_with_params(
+        py: Python<'_>,
+        text: &str,
+        params: &crate::canonical_inchi::InchiReadParams,
+    ) -> PyResult<Self> {
+        ck::Molecule::from_inchi_with_params(text, &params.inner)
+            .map(Self::from_inner)
+            .map_err(|e| crate::canonical_inchi::error(py, e))
+    }
+    #[pyo3(signature=(params=None, *, options=None))]
+    fn to_inchi(
+        &self,
+        py: Python<'_>,
+        params: Option<&crate::canonical_inchi::InchiWriteParams>,
+        options: Option<String>,
+    ) -> PyResult<String> {
+        self.inner
+            .to_inchi_with_params(&crate::canonical_inchi::write_params(params, options)?)
+            .map_err(|e| crate::canonical_inchi::error(py, e))
+    }
+    fn to_inchi_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_inchi::InchiWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_inchi_with_params(&params.inner)
+            .map_err(|e| crate::canonical_inchi::error(py, e))
+    }
+    #[pyo3(signature=(params=None, *, options=None))]
+    fn to_inchi_key(
+        &self,
+        py: Python<'_>,
+        params: Option<&crate::canonical_inchi::InchiWriteParams>,
+        options: Option<String>,
+    ) -> PyResult<String> {
+        self.inner
+            .to_inchi_key_with_params(&crate::canonical_inchi::write_params(params, options)?)
+            .map_err(|e| crate::canonical_inchi::error(py, e))
+    }
+    fn to_inchi_key_with_params(
+        &self,
+        py: Python<'_>,
+        params: &crate::canonical_inchi::InchiWriteParams,
+    ) -> PyResult<String> {
+        self.inner
+            .to_inchi_key_with_params(&params.inner)
+            .map_err(|e| crate::canonical_inchi::error(py, e))
+    }
     fn reaction_products(
         &self,
         py: Python<'_>,
@@ -4197,6 +4269,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::canonical_potential_stereo::register(module)?;
     crate::canonical_binary::register(module)?;
     crate::canonical_molecular_io::register(module)?;
+    crate::canonical_inchi::register(module)?;
     crate::canonical_group_values::register(module)?;
     crate::canonical_sdf::register(module)?;
     crate::canonical_batch::register(module)?;

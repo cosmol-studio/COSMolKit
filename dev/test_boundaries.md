@@ -1,86 +1,88 @@
-# Regression Tests and Corpus Parity
+# Regression Tests and Corpus Parity — 0.5.0
 
-COSMolKit uses two kinds of tests:
+There are two test categories:
 
-- **Regression tests** verify the correctness of a local function or behavior
-  using focused cases covering its results, boundaries and errors, including
-  previously fixed bugs. They live in the crate that owns the behavior.
-- **Corpus parity tests** run registered operations on a selected corpus and
-  compare results against a pinned reference implementation. They live in the
-  top-level `parity-tests/` crate.
+- Ordinary regressions verify local behavior, boundaries and errors in the
+  owning crate's unit modules or `tests/`. Python and JavaScript tests focus
+  on their language boundary rather than repeating complete chemistry corpora.
+- Corpus tests and explicitly designated special regressions use the current
+  `parity-tests_fixed/` workflow. The old `parity-tests/` package is legacy;
+  its CLI and task table do not define another current workflow.
 
-Choose by the purpose and scope of the test: verifying a local function's
-specific behavior is regression testing; checking agreement with a reference
-across a selected corpus is parity testing. Committing data or storing fixed
-expectations does not turn a corpus parity test into a regression test.
-A feature may need both. The sections below explain how to write each kind.
+Complete 0.5.0 validation is pending. Results in
+[VALIDATION.md](../VALIDATION.md) are historical 0.3.0 evidence.
 
-## Regression tests: local correctness
+## Ordinary regressions
 
-Keep these in the owning crate's unit tests or `tests/` directory.
+Use small fixed inputs and source-backed expected values directly in tests.
+Larger shared fixed fixtures may remain under repository `testdata/` with
+provenance, licenses and checksums. Pinned `third_party/` fixtures may be read
+at runtime under the repository policy, but production/package builds must
+not require them. Do not embed external checkout paths at compile time.
 
-- Check a specific behavior, boundary, error, or previously fixed bug. Specify
-  fixed inputs, options and expected values or errors, based on the public
-  contract, pinned source or a recorded bug.
-- Put small inputs and expected values directly in the test. Store larger fixed
-  fixtures under repository-level `testdata/`, with source/version, license and
-  checksum information when derived from upstream.
-- Read or embed fixtures directly. No shared test-support crate is required.
-- Upstream fixtures may be read directly from pinned `third_party/` at test
-  runtime under the repository policy's provenance rules; do not copy
-  them into the repository or embed external paths at compile time. This also
-  applies to `cargo test --release`. Production/package builds cannot require
-  the upstream checkout. Test purpose, not fixture location, determines whether
-  the test belongs here or in `parity-tests`.
-- Do not generate reference data, invoke upstream implementations, parse
-  third-party source code, or implement a corpus runner inside these tests.
-- Change fixtures explicitly and review their diffs; tests never refresh them.
-- For tables, compare required fields, order and row count, not just sample
-  names. Compare floating-point bits when exact bits are required.
-- For I/O fixtures, assert the fields that must survive a roundtrip and identify
-  allowed losses; parsing successfully is not enough.
-- For batch or binding edge cases, assert results, error categories, indices
-  and ordering. Keep a bug's input and correct expected result after fixing it.
+Ordinary tests do not generate references, invoke or compile reference
+implementations, parse upstream source into expectations, or require prepared
+corpus caches. Missing required fixtures are errors, not skips. A fixed table
+is not a corpus merely because it has many rows.
 
-Examples:
+Check complete results and required preservation: exact atom/bond state,
+coordinate bits where required, typed errors, ordering, mappings, COW sharing
+and failure atomicity. Successful parsing alone does not establish a roundtrip.
+Keep discovered counterexamples at the smallest owning behavior boundary.
 
-- `fuzzy_and({1:5, 3:-2, 8:4}, {1:3, 3:-4, 9:7})` must return `{1:3, 3:-4}`.
-- A residue lookup function must return the expected fields for a known residue
-  and its documented result for an unknown name.
-- A fixed invalid input must return the documented error category.
+Compiler-level private-module isolation retains its real-layout compile-pass
+and compile-fail checks as required by the operation standard; runtime
+rejection or textual matching cannot replace that boundary. Other ordinary
+regressions use Cargo's normal test scheduling without nested builds.
 
-A fixture is input or expected data used by a test, not a test category.
-Include only data needed to verify the local behavior being tested.
+## Corpus tests
 
-## `parity-tests`: selected corpora compared against a reference
+The current runner's executable registry defines tasks and comparisons.
+Corpus inputs belong in `parity-tests_fixed/testdata/`, generated references
+in `expected/`, and reports in `reports/` under the same package.
 
-The top-level `parity-tests/` crate owns this workflow. Its chemistry dependency
-is public `cosmolkit` with `full`, not individual domain crates.
+From the repository root:
 
-- A Rust registry defines tasks, operations, widths/options and typed comparison
-  fields. Apply those declarations to the selected corpus.
-- No task selection means all registered tasks. The corpus is selected separately.
-- `run` reuses valid reference data or prepares missing/invalid data using a
-  pinned reference implementation, then preflights **all selected tasks**.
-- Rust operations start only after the complete selection is ready. Preparation
-  failure stops the run before any selected operation executes.
-- Compare every selected case, including reference errors where error parity
-  is required. Declare normalization or numeric tolerance explicitly; never
-  omit mismatching fields or accept extra answers to make a test pass.
-- Report case identity, options, expected and actual results on mismatch.
-  Known failures still execute; report unexpected passes and changed failures.
-  An expected failure does not establish parity.
-- Never regenerate expectations to fit a mismatch. Keep generated corpora,
-  reference caches and reports outside Git.
-- Domain crates contain no corpus preparation or parity-runner logic.
+```bash
+cargo run -p cosmolkit-parity-tests-fixed --profile dev-test -- prepare --corpus smiles_5000 --threads 112
+cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolkit/op-contracts-strict --test corpus
+```
 
-Example: run `fuzzy_and` and `fuzzy_or` on 5,000 fingerprint pairs across both
-registered index widths, comparing all 20,000 results against pinned RDKit.
+Use `--task NAME` when preparing a subset; use Cargo's test-name filter when
+comparing it. Do not invent a Cargo `--task` flag. Without a task filter,
+preparation selects all registered tasks for the chosen corpus.
 
-Rust is the primary corpus execution path. Python/JS binding checks may use the
-full set or a declared subset, with focused coverage for binding, FFI and WASM
-differences. This does not claim those adapters or million-row execution are
-already implemented.
+Preparation runs pinned reference adapters, supports configurable worker
+counts, and saves ordered inputs, parameters, reference outputs and identities.
+Tests read validated snapshots and never generate or overwrite expectations.
+Validate every reference in the prepared selection before the first CK call;
+preflight is read-only and cannot start reference generation.
+Missing, corrupt or stale references fail with the preparation command.
+Cargo schedules independent test functions concurrently. Declare numeric
+comparison rules explicitly; do not relax them or remove cases to hide errors.
+Matching source-defined errors is checked under each task's explicit error
+contract, not silently counted as a successful numerical calculation.
 
-Do not add a third ad-hoc corpus or timing harness. Performance evidence needs
-an explicit baseline; repetition counts and elapsed time alone prove nothing.
+## Special regressions
+
+Special regressions use fixed, explicitly selected reference matrices rather
+than expansion over a SMILES corpus. They have the same two-stage shape:
+
+```bash
+cargo run -p cosmolkit-parity-tests-fixed --profile dev-test -- prepare --special all --threads 112
+cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolkit/op-contracts-strict --test special_regression
+```
+
+The runner documents the supported selectors, including the 77-case
+`structure_tags` matrix, `tautomer_long_conjugated`, `tautomer_focused`,
+`molalign_focused` and `bio_mmcif_switches`. Preserve their fixed case census,
+source error branches and complete comparison fields. Test-only detached
+algorithm dependencies may preserve these designated source boundaries;
+this does not authorize exposing runtime internals or a second chemistry API.
+
+Preparation and comparison instructions live only in the
+[runner README](../parity-tests_fixed/README.md). Domain fixture READMEs record
+provenance and purpose, not separate preparation pipelines. A missing reference
+never authorizes refreshing expectations from CK results. Known failures
+remain executable and are not passing evidence. Registration, zero matches,
+ignored tests and historical receipts do not establish current validation.

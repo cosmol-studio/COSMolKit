@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 const batch=()=>b.MoleculeBatch.fromSmilesListWithParams(['CCO','[','O'],new b.SmilesParseParams(),new b.BatchParams(b.BatchErrorMode.KeepErrors));
+test('Layered and Pattern batch outputs equal scalar outputs', () => {
+ for (const text of ['CCO', 'c1ccncc1', 'CC(=O)N']) {
+  const molecule = b.Molecule.fromSmiles(text), values = b.MoleculeBatch.fromSmilesList([text]);
+  assert.deepEqual(molecule.layeredFingerprint().onBits(), values.fingerprintLayeredList()[0].onBits());
+  assert.deepEqual(molecule.patternFingerprint().onBits(), values.patternFingerprintList()[0].onBits());
+  molecule.free(); values.free();
+ }
+});
 test('Layered/Pattern parameters retain every default, unknown flags, borrowed masks and nullable roots',()=>{
  const p=new b.LayeredFingerprintParams();assert.deepEqual([p.layers,p.minPath,p.maxPath,p.fpSize,p.atomCounts,p.setOnlyBits,p.branchedPaths,p.fromAtoms],[4294967295,1,7,2048,null,null,true,null]);
  assert.equal(b.LayeredFingerprintLayers.fromBitsRetain(4294967295).bits(),4294967295);assert.equal(b.LayeredFingerprintLayers.fromBitsRetain(2147483648).bits(),2147483648);

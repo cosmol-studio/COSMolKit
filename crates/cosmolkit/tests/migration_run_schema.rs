@@ -2182,6 +2182,29 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.apply_reaction_with_params_",
         ]);
     }
+    if cfg!(feature = "cap-inchi") {
+        expected.extend([
+            "InchiReadParams.new",
+            "InchiWriteParams.new",
+            "InchiReadParams.sanitize",
+            "InchiReadParams.set_sanitize",
+            "InchiReadParams.remove_hydrogens",
+            "InchiReadParams.set_remove_hydrogens",
+            "InchiWriteParams.options",
+            "InchiWriteParams.set_options",
+            "types.InchiError",
+            "types.InchiErrorKind",
+            "types.InchiReadParams",
+            "types.InchiWriteParams",
+            "Molecule.from_inchi",
+            "Molecule.from_inchi_with_params",
+            "Molecule.to_inchi",
+            "Molecule.to_inchi_with_params",
+            "Molecule.to_inchi_key",
+            "Molecule.to_inchi_key_with_params",
+            "module.inchi_to_inchi_key",
+        ]);
+    }
     assert_eq!(
         BINDING_CONTRACT
             .iter()

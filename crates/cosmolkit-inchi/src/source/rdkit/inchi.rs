@@ -897,6 +897,28 @@ impl AdapterMol {
         &self.atoms
     }
 
+    /// Constant-time degree lookup on the already validated adjacency table.
+    pub fn atom_degree(&self, index: u32) -> Option<usize> {
+        self.adjacency.get(index as usize).map(Vec::len)
+    }
+
+    /// Moves graph rows to a toolkit without cloning atom/bond/conformer tables.
+    pub fn into_graph_parts(self) -> (Vec<AdapterAtom>, Vec<AdapterBond>, Vec<Vec<[f64; 3]>>) {
+        (self.atoms, self.bonds, self.conformers)
+    }
+
+    /// Replaces validated graph rows while retaining existing coordinate storage.
+    pub fn replace_topology(
+        &mut self,
+        atoms: Vec<AdapterAtom>,
+        bonds: Vec<AdapterBond>,
+    ) -> Result<(), AdapterGraphError> {
+        let mut graph = Self::try_from_graph(atoms, bonds, Vec::new())?;
+        graph.conformers = std::mem::take(&mut self.conformers);
+        *self = graph;
+        Ok(())
+    }
+
     pub fn atom_properties_mut(&mut self) -> &mut [AdapterAtom] {
         &mut self.atoms
     }

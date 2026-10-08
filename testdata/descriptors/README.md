@@ -6,19 +6,10 @@ comments identify the covered behavior and the pinned RDKit regression source.
 The explicit `<EMPTY>` row denotes the empty SMILES string; blank lines remain
 formatting and comments remain provenance only.
 
-Expected JSONL is generated through the repository-wide entrypoint:
-
-```bash
-.venv/bin/python tools/testdata/rdkit/generate_all.py \
-  --python .venv/bin/python \
-  --profile descriptors_focused \
-  --suite descriptors
-```
-
-The generated `expected/rdkit/descriptors_focused/manifest.json` records the
-pinned RDKit version, source revision, generator and input checksums, runtime,
-schema, output checksum, and record count. Generated expected data remain
-uncommitted under the repository-wide expected-data ignore rule.
+This directory records fixture provenance. COSMolKit 0.5.0 corpus preparation
+and comparison use the [standard test runner](../../parity-tests_fixed/README.md),
+not an owner-local generator. Generated references remain outside Git and
+record the reference version, inputs, parameters, schema, counts and checksums.
 
 The upstream anchors are RDKit 2026.03.1 revision
 `351f8f378f8ad6bbd517980c38896e66bf907af8`:

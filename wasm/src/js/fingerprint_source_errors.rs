@@ -78,12 +78,14 @@ impl FingerprintJsonError {
         self.cause.clone()
     }
 }
+#[cfg(feature = "batch")]
 #[wasm_bindgen]
 pub struct BatchFingerprintOutputError {
     kind: String,
     message: String,
     cause: JsValue,
 }
+#[cfg(feature = "batch")]
 #[wasm_bindgen]
 impl BatchFingerprintOutputError {
     #[wasm_bindgen(getter)]
@@ -192,6 +194,7 @@ pub(crate) fn json_error(source: &ck::FingerprintJsonError) -> Result<JsValue, J
     }
     Ok(error)
 }
+#[cfg(feature = "batch")]
 pub(crate) fn output_error(source: &ck::BatchFingerprintOutputError) -> Result<JsValue, JsValue> {
     let kind = match source {
         ck::BatchFingerprintOutputError::MissingAdditionalOutput { .. } => {

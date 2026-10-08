@@ -21,6 +21,7 @@ mod canonical_error_accessors;
 mod canonical_error_values;
 mod canonical_fingerprint_values;
 mod canonical_group_values;
+mod canonical_inchi;
 mod canonical_molecular_hash;
 mod canonical_operation_metadata;
 mod canonical_potential_stereo;

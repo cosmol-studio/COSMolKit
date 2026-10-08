@@ -14,6 +14,8 @@ mod aromaticity;
 mod batch;
 #[cfg(feature = "batch")]
 pub use batch::{BatchRecord, MoleculeBatch};
+#[cfg(feature = "inchi")]
+mod inchi;
 #[cfg(feature = "reaction")]
 mod reaction;
 #[cfg(feature = "smiles")]

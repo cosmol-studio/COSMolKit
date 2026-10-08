@@ -16,8 +16,8 @@
   <a href="https://pypi.org/project/cosmolkit/">
     <img src="https://img.shields.io/pypi/v/cosmolkit.svg" alt="pypi badge"/>
   </a>
-  <a href="https://deepwiki.com/cosmol-studio/COSMolKit">
-    <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"/>
+  <a href="https://www.npmjs.com/package/@cosmol-studio/cosmolkit">
+    <img src="https://img.shields.io/npm/v/@cosmol-studio/cosmolkit.svg" alt="npm badge"/>
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license badge"/>
@@ -31,12 +31,12 @@ For supported cheminformatics operations, RDKit-compatible behavior is treated a
 
 COSMolKit combines a native Rust API with Python interfaces designed for array-oriented scientific and machine-learning workflows. Molecular graphs, coordinates, fingerprints, bounds matrices, and structural data are exposed in forms suitable for NumPy, PyTorch, dataset processing, and model-building pipelines.
 
-## Upcoming 0.5.0
+## COSMolKit 0.5.0
 
 - **Modular Rust architecture:** separate crates own model values and domain
   algorithms; `cosmolkit` remains the public entry point and molecule runtime.
-- **Two-level Cargo features:** use bundles such as `core`, `bio`, and
-  `fingerprints`, or `cap-*` selectors for precise control. Default is `full`;
+- **Cargo features:** select functionality such as `core`, `bio`,
+  `fingerprints`, or `reaction`; prerequisites are included. Default is `full`;
   see the [Rust feature guide](crates/cosmolkit/README.md#cargo-features).
 - **WebAssembly support:** run the same Rust chemistry engine in the browser
   through JavaScript bindings, without a separate algorithm implementation.
@@ -71,13 +71,11 @@ COSMolKit treats parity as **source-backed semantic equivalence within explicitl
 
 The comparison boundary therefore extends well beyond final strings. Covered surfaces compare exact bytes, bits, return status, complete atom and bond state, stereochemistry, derived state and invariants, **RNG state, seed handling, and random draw sequences where stochastic behavior is part of the contract**, every matrix entry, coordinates, energies, and every gradient component where applicable. Discrete results must match exactly; declared numerical tolerances reach `1e-8` for matrix entries and `1e-6` for coordinates, energies, and gradients. **99% or 99.9% agreement remains unfinished when any covered mismatch exists.**
 
-This boundary is stress-tested against a complete ChEMBL 37 profile: 2,897,819 source records, 2,897,804 of them mutually parseable, across 34 repository-defined sharded phases against pinned RDKit `2026.03.1`. The profile performs billions of comparisons, expands parameter spaces into matrices of up to 768 branches, repeats complete matrices to expose instability, permutes operation order, and checks scalar, one-thread, multi-thread, batch, and shared-object concurrent paths.
-
-Every discovered mismatch is traced back to the corresponding upstream logic, corrected at the source-port level, and permanently retained as a focused regression rather than hidden by corpus-specific adjustments. This discipline limits **semantic debt** by preventing convenient local fixes from accumulating into undocumented chemistry behavior.
-
-The parity suite uses three complementary validation layers. The complete ChEMBL 37 profile provides large-scale stress coverage; the maintained 5,000-record corpus runs exhaustive parameter matrices not yet practical across the full ChEMBL profile; and the 152-record project corpus keeps focused regressions fast enough for daily testing.
-
-See [`VALIDATION.md`](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md) for exact corpus eligibility, comparison counts, tolerances, per-feature boundaries, source-traced regression evidence, and upstream surfaces outside the current claim.
+**0.5.0 validation is pending.** The published ChEMBL 37, 5,000-record and
+152-record results in [`VALIDATION.md`](VALIDATION.md) come from **0.3.0**.
+They are retained as historical evidence, not a claim that 0.5.0 has passed
+the same comparisons. Current validation must record the tested implementation,
+reference versions, options, counts and actual outcomes.
 
 ## Installation
 
@@ -130,47 +128,39 @@ print(mol_2d.to_smiles())
 print(mol_2d.coordinates_2d())
 
 mol_3d = mol.with_hydrogens().with_3d_conformer()
-print(mol_3d.coordinates_3d().shape)
+print(mol_3d.coordinates_3d())
 
 svg = mol_2d.to_svg(width=400, height=300)
 mol_2d.write_png("phenol.png", width=400, height=300)
 
-fp = mol.fingerprint_morgan(radius=2, n_bits=2048)
+fp = mol.morgan_fingerprint()
 print(fp.on_bits())
 
-atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
+atom_pair = mol.atom_pair_fingerprint()
 print(atom_pair.on_bits())
 
-layered = mol.fingerprint_layered(layers=0x3F, fp_size=2048)
+layered = mol.layered_fingerprint()
 print(layered.on_bits())
 
-pattern = mol.pattern_fingerprint(n_bits=2048, tautomeric=False)
+pattern = mol.pattern_fingerprint()
 print(pattern.on_bits())
 
-stereoisomers = list(ck.Molecule.from_smiles("FC(Cl)Br").stereoisomers())
+stereoisomers = list(ck.Molecule.from_smiles("FC(Cl)Br").enumerate_stereoisomers())
 print([isomer.to_smiles() for isomer in stereoisomers])
 
 batch = (
     ck.MoleculeBatch.from_smiles_list(
         ["CCO", "c1ccccc1", "CC(=O)O"],
-        sanitize=True,
-        errors="keep",
     )
     .with_parallel_jobs(8)
     .with_progress_bar(False)
 )
 
-prepared = batch.with_hydrogens(errors="keep").with_2d_coordinates(errors="keep")
+prepared = batch.with_hydrogens().with_2d_coordinates()
 print(prepared.valid_mask())
 print(prepared.to_smiles_list())
 
-prepared.to_images(
-    "molecule_images",
-    format="png",
-    size=(300, 300),
-    errors="keep",
-    filenames=["ethanol", "benzene", "acetate"],
-)
+prepared.to_images("molecule_images")
 ```
 
 ## Protein Structures
@@ -181,18 +171,15 @@ proteins, nucleic acids, ligands, waters, entities, models, and metadata. Use
 
 ```python
 import cosmolkit as ck
+from pathlib import Path
 
-structure = ck.BioStructure.from_pdb("complex.pdb")
+structure = ck.BioStructure.from_pdb(Path("complex.pdb").read_text())
 print(structure.num_models(), structure.num_chains(), structure.num_atoms())
 
 # Structural format conversion remains on the complete structural value.
 mmcif_text = structure.to_mmcif()
-roundtrip = ck.BioStructure.from_mmcif_str(mmcif_text, path="complex.cif")
-
-for model in structure.models():
-    for chain in model.chains():
-        for residue in chain.residues():
-            print(residue.name(), residue.kind())
+roundtrip = ck.BioStructure.from_mmcif(mmcif_text)
+print(roundtrip.num_atoms())
 ```
 
 The protein projection is explicit and leaves the full structure available:
@@ -204,10 +191,6 @@ print(protein.num_chains())
 print(protein.num_residues())
 print(protein.num_atoms())
 
-for chain in protein.chains():
-    print(chain.index(), chain.kind(), len(chain))
-    for residue in chain.residues():
-        print(residue.name(), residue.kind(), len(residue))
 ```
 
 ## SDF and Dataset Workflows
@@ -238,30 +221,28 @@ import cosmolkit as ck
 
 mol = ck.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
 
-params = ck.EmbedParameters.etkdg_v3()
-params.random_seed = 0xF00D
-params.num_threads = 1
-params.track_failures = True
+params = ck.EmbedParams(random_seed=0xF00D, num_threads=1)
 
 embedded = mol.with_3d_conformer(params)
-print(embedded.num_conformers())
-print(embedded.coordinates_3d().shape)
-print(params.failures)
+print(len(embedded.conformers_3d()))
+print(embedded.coordinates_3d())
 
 multi = mol.with_3d_conformers(5, params)
-print(multi.num_conformers())
+print(len(multi.conformers_3d()))
 
-if embedded.has_uff_params():
-    uff = embedded.with_uff_optimized(max_iters=200)
-    print(uff.energy())
+uff = embedded.uff_force_field()
+print(uff.energy())
+outcome = uff.minimize_(max_iterations=200)
+print(uff.energy())
 
-if embedded.has_mmff_params():
-    mmff = embedded.with_mmff_optimized(max_iters=200)
-    print(mmff.needs_more())
+mmff = embedded.mmff_force_field()
+print(mmff.energy())
+outcome = mmff.minimize_(max_iterations=200)
+print(mmff.energy())
 ```
 
-`with_3d_conformer()` follows RDKit's ETKDG behavior for trusted molecular
-graphs: molecules without explicit hydrogens are embedded as heavy-atom-only
+`with_3d_conformer()` uses source-backed distance-geometry embedding for trusted
+molecular graphs: molecules without explicit hydrogens are embedded as heavy-atom-only
 conformers instead of failing or automatically adding hydrogens. Calling
 `with_hydrogens()` first is recommended for all-atom geometry, force-field
 optimization, and hydrogen-bond-sensitive workflows. Coordinate-only inputs
@@ -276,7 +257,7 @@ inputs until a trusted graph has been constructed.
 - MOL2 reading with RDKit-style `Mol2ParserParams`
 - XYZ block reading
 - Four scalar InChI APIs with exact source-defined official-C/RDKit parity and structured errors
-- Stable 3D atom-chiral-tag assignment with exact pinned-RDKit full-state parity
+- Source-backed 3D atom-chiral-tag assignment
 - Typed potential-stereo analysis and lazy, source-ordered stereoisomer
   enumeration with exhaustive, bounded random, uniqueness, enhanced-group,
   and optional embedding controls
@@ -334,17 +315,19 @@ Small focused Rust test filters may use the default debug profile while
 iterating:
 
 ```bash
-cargo test -p cosmolkit-core --features op-contracts-strict <test-filter>
+cargo test -p cosmolkit-core <test-filter>
 ```
 
 Large local runs, parity suites, and CI tests should use release mode with the
-same strict feature set:
+runtime strict checks enabled on `cosmolkit`:
 
 ```bash
-cargo test -p cosmolkit-core --release --features op-contracts-strict
+cargo test -p cosmolkit-core --release
+cargo test -p cosmolkit --release --features op-contracts-strict
 ```
 
-Release-mode testing keeps operation contracts and runtime invariants enabled
+Detached core algorithms have no runtime-check features. Release-mode testing
+keeps operation contracts and runtime invariants enabled on `cosmolkit`
 through `op-contracts-strict`; optimized release builds for distribution use
 default features unless explicit runtime checks are requested.
 

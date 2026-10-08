@@ -1,14 +1,19 @@
 # Crate Architecture
 
-This document defines the current target architecture for the COSMolKit
-workspace. It is a normative design document for new crate boundaries and for
-future migrations of existing implementation code. Historical plans in
-`dev/plans/` and `dev/archive/` are not rewritten by this document.
-
-The concrete final crate decomposition and the complete layer diagram are
-defined in [`final_target_architecture.md`](./final_target_architecture.md).
+This document defines the COSMolKit 0.5.0 workspace architecture and the
+ownership rules for changes to it. Historical plans and reports preserve
+their original scope; they do not define the current architecture or queue.
+The crate directory is documented in
+[`crates/cosmolkit/README.md`](../crates/cosmolkit/README.md#rust-crates).
 
 ## 1. Ownership Model
+
+The public `Reaction` object belongs to `cosmolkit`, behind `cap-reaction`.
+Its detached template data and chemistry remain in `cosmolkit-reaction`.
+`Reaction::run` borrows the complete reactant list and returns validated live
+products through the existing multiple-output operation runtime. It requires
+neither a live molecule receiver nor an extension-trait import. Language
+bindings project this facade API; domain crates never depend on it.
 
 The public `BioStructure` and `Protein` objects also belong to `cosmolkit`.
 Their detached data, row types, validation and algorithms belong to
@@ -131,7 +136,7 @@ proves that moving it cannot widen mutation or read authority.
 
 ## 4. Algorithm Boundary
 
-Domain algorithms in `cosmolkit-core` and future sibling crates must expose
+Domain algorithms in `cosmolkit-core` and sibling domain crates must expose
 the narrowest input that matches the source behavior and the operation access
 declaration:
 
@@ -163,14 +168,12 @@ for semantic correctness. The parent runtime still enforces registry access,
 mapping obligations, derived effects, preconditions, source-preservation rules,
 unsupported errors, and final invariants.
 
-Search follows the same boundary while its implementation remains in the
-current core package. Predicate evaluation is generic over a read-only
+Search follows the same boundary in `cosmolkit-search`.
+Predicate evaluation is generic over a read-only
 `SearchTargetAccess` view whose data comes from model blocks and explicit ring
-or valence assignments. The current `Molecule` implementation of that trait is
-only a migration adapter; it is not an algorithm-owned dependency and must be
-removed when search moves to its own crate. New search code must use the
-detached view or the block-level constructor, never add another `Molecule`
-parameter.
+or valence assignments. Public `Molecule` methods adapt runtime-authorized
+data to this detached boundary. Search code must use the detached view or
+the block-level constructor, never accept a live `Molecule` parameter.
 
 ### Value and behaviour facades
 
@@ -199,8 +202,14 @@ adapters. Construction that returns an owned value remains an explicit domain
 entrypoint, while interpretation operations are methods on the operator
 facade. For example, SMARTS construction is `search::parse_smarts(...) ->
 QueryGraph`; it must not be an associated function on `QueryGraphOperator`
-because no existing `inner` value participates in parsing. Existing top-level
-facade APIs may remain as thin forwarders to preserve source compatibility.
+because no existing `inner` value participates in parsing.
+Python exposes this domain entrypoint directly as `cosmolkit.parse_smarts`,
+without a `cosmolkit.search` submodule. The approved
+`cosmolkit.QueryGraph.from_smarts` factory delegates through the same top-level
+facade owner; it is a binding-level convenience, not a parser dependency on
+the model crate or a second query representation. Explicit parameter factories
+follow the same rule. Existing top-level facade APIs may remain as thin
+forwarders to preserve source compatibility.
 For example, `QueryGraph::to_smarts()` may delegate to
 `self.operator().to_smarts()` without making the model crate depend on the
 SMARTS writer. Such forwarders belong to the top-level or domain facade, never
@@ -311,9 +320,19 @@ then constructs each public output molecule. It intentionally has no generic
 branch-id or source-derivation abstraction: candidate enumeration belongs to
 the algorithm, while authoritative installation belongs to the runtime.
 
-## 6. Migration Constraints
+Source-required lazy enumeration uses declaration-generated `lazy_multiple`
+wrappers within the same private `ops::runtime::multiple` boundary. The
+runtime owns a source snapshot and validates each detached candidate before
+constructing and yielding a public molecule. The domain owner retains only
+detached enumeration state; callbacks and candidate generation execute when
+the next output is requested. No eager materialization, domain-side live
+molecule constructor, additional commit authority or parallel registry is
+introduced. Existing eager multiple-output operations retain their lifecycle.
 
-This is a staged architecture migration, not a directory move.
+## 6. Architecture Changes and Feature Selection
+
+The split-crate layout is the 0.5.0 architecture.
+When changing an ownership boundary, preserve complete vertical behavior:
 
 1. Extract model values and the query AST without changing chemistry behavior.
 2. Move one low-coupling algorithm family behind a value-based API.
@@ -322,20 +341,18 @@ This is a staged architecture migration, not a directory move.
 4. Add source markers and parity tests at the new algorithm boundary.
 5. Only after the vertical slice is stable, migrate additional domains.
 
-The query AST must be lowered before moving `Atom` and `Bond`, because those
-types currently reference query types. Search parser/matcher code may then
-depend on the model crate without creating a model-to-search cycle.
-
-Conformer generation, distance geometry, force fields, alignment, and tautomer
-enumeration have coupled dependencies and should be migrated after the model
-and one simpler algorithm family establish the boundary. Feature flags remain
-useful for selecting optional algorithms and dependencies, but they are not a
-substitute for the crate-level ownership boundary.
+Query AST values belong to the model; parser/matcher behavior belongs to search,
+without a model-to-search dependency. Conformer generation, force fields,
+alignment and tautomer algorithms use their domain owners and detached inputs.
+Feature flags select optional algorithms and dependencies, but do not replace
+crate-level ownership boundaries.
 
 Feature selection follows two distinct layers:
 
-- User bundles have plain names: `core`, `bio`, `conformer`, `forcefields`,
-  `fingerprints`, `search`, `depict`, `inchi`, `batch`, and `full`.
+- User bundles have plain names: `core`, `bio`, `descriptors`, `tautomer`,
+  `conformer`, `forcefields`, `fingerprints`, `search`, `reaction`, `depict`, `inchi`,
+  `batch`, `serialization`, `stereoisomers`, and `full`. User documentation
+  presents these names and included functionality, not internal capability gates.
 - Advanced capability selectors always start with `cap-`, such as
   `cap-smiles`, `cap-kekulize`, or `cap-conformer`. Each gates its own public
   APIs and required implementation dependencies.
@@ -347,9 +364,23 @@ or both. Always-present model values and the live runtime remain available.
 Cargo.toml defines bundle composition; bundles introduce no separate registry,
 algorithm or operation permissions. Public cfg gates and registry feature
 fields use `cap-*`, not bundle names. A capability activates implementation
-dependencies directly and must not enable an unrelated public capability merely
-because algorithms reuse the same crate. For example, `cap-kekulize` activates
-the optional `cosmolkit-core` dependency without exposing hydrogen APIs.
+dependencies and its public domain prerequisites. For example, `reaction`
+includes public search and SMILES APIs. Shared foundational implementation
+dependencies do not select all of their algorithms: `cap-kekulize` activates
+`cosmolkit-core` without selecting every capability in the `core` bundle.
+
+`core` contains foundational chemistry, SMILES, basic stereo and molecular
+format parsing/writing (`cap-io`), including in-memory text. There is no
+top-level `io` bundle. Binary archives remain independently selectable with
+`serialization`. Descriptors, tautomers and stereoisomer enumeration remain
+separate selections; `full` includes all user bundles. The IO owner separates molecular and BIO compilation
+branches without changing format/algorithm ownership. The facade disables IO
+defaults: `cap-bio` requests only `bio`, whereas molecular IO/serialization
+request `molecule`. Search is a molecule-only IO dependency. BIO-only IO must
+not drag in the molecular query parser/matcher. `core` includes public search,
+SMILES and depiction through molecular IO, but does not resolve descriptors or
+tautomer in an isolated consuming build. Descriptors reuse the existing search
+owner and include its public capability. No duplicated matcher is permitted.
 
 Features select APIs and optional dependency edges, not individual functions
 inside a dependency crate. Strict runtime checks are orthogonal to capability

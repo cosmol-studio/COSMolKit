@@ -1,8 +1,10 @@
 # Tautomer Test Data
 
-`fixtures/rdkit/` contains focused source-branch inputs. Generated pinned-RDKit
-observations are prepared under the ignored `expected/rdkit/<profile>/`
-directories by `tools/testdata/rdkit/generate_all.py`.
+`fixtures/rdkit/` contains focused source-branch inputs and historical
+provenance. COSMolKit 0.5.0 corpus and designated special-regression preparation
+use the [standard test runner](../../parity-tests_fixed/README.md), which owns
+inputs in `testdata/` and generated observations in `expected/` within that
+package. This directory does not define another preparation workflow.
 
 `corpus/rdkit/1kPCS_tautomer.csv.gz` and
 `corpus/rdkit/100kPCS_tautomer.csv.gz` are exact copies of the corresponding
@@ -21,24 +23,8 @@ and its expected canonical tautomer SMILES in column two.
 | 100k record count | 99,991 |
 | 100k SHA-256 | `873790d2e3ab7d555c879d3dad2a71a11d62fbda9f25f1d66c03fa4a95166425` |
 
-Prepare the complete reference observations with:
-
-```bash
-.venv/bin/python tools/testdata/rdkit/generate_all.py \
-  --python .venv/bin/python \
-  --profile tautomer_pcs_1k \
-  --suite tautomer \
-  --jobs 4
-
-.venv/bin/python tools/testdata/rdkit/generate_all.py \
-  --python .venv/bin/python \
-  --profile tautomer_pcs_100k \
-  --suite tautomer \
-  --jobs 4
-```
-
-The manifest binds each generated family to the corpus checksum, pinned RDKit
-identity, generator sources, options, record count, and output checksum.
+The table records the original corpus identity, not a claim that those
+historical corpora are current runner selections or 0.5.0 passing evidence.
 
 ## Fixed long-conjugated special regression
 
@@ -54,15 +40,7 @@ RDKit oracle source is pinned to `351f8f378f8ad6bbd517980c38896e66bf907af8c`
 under its BSD 3-Clause license; this is a repository regression selection,
 not an upstream RDKit test-file selection.
 
-Prepare it through `parity-tests`, not the ordinary owning-crate suite:
-
-```bash
-cargo run -p cosmolkit-parity-tests --release -- prepare \
-  --special-regression tautomer_long_conjugated --python .venv/bin/python
-```
-
-Input, reference and manifest are published under the ignored
-`target/parity-tests/special-regression-tautomer_long_conjugated/` directory
-(or `--data DIR`), with fixture, profile, oracle and generator checksums.
-Comparison and read-only preflight commands are documented in
-[`parity-tests/README.md`](../../parity-tests/README.md).
+Its current selector is `tautomer_long_conjugated` in the standard test runner.
+Preparation and Cargo comparison commands are documented only in the
+[runner README](../../parity-tests_fixed/README.md). It is not repeated as an
+ordinary owning-crate reference-dependent test.

@@ -47,6 +47,9 @@ jobs:
                       conformer \
                       forcefields \
                       search \
+                      reaction \
+                      serialization \
+                      stereoisomers \
                       cap-io \
                       inchi \
                       cap-serialization \
@@ -69,3 +72,6 @@ jobs:
 
             - name: Test core bundle public surface
               run: cargo test -p cosmolkit --no-default-features --profile dev-test --features core,op-contracts-strict --test feature_selection
+
+            - name: Test reaction dependency public surface
+              run: cargo test -p cosmolkit --no-default-features --profile dev-test --features reaction,op-contracts-strict --test feature_selection

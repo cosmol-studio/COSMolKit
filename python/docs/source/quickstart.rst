@@ -195,36 +195,6 @@ Generate multiple conformers with RMS pruning:
    conformers = mol.with_3d_conformers(5, params)
    print(conformers.num_conformers())
 
-Decode a ConfSeq record with the reference distance-geometry backend and the
-opt-in FastGeometry backend:
-
-.. code-block:: python
-
-   import cosmolkit as ck
-
-   # Tokenized corpus record: dude_aa2ar__L021087 candidate 0.
-   # Spaces are ConfSeq token boundaries and must be preserved.
-   confseq = (
-       "N C <112> | ( = O ) <84> C <111> | <-45> n 1 c c ( <21> N <123> | "
-       "<173> C <116> | ( = O ) <120> c 2 c c c c c 2 <112> C <112> | <-66> "
-       "N 2 <-172> C ( = O ) <-2> C <0> N <3> C <174> 2 = O ) c n 1"
-   )
-
-   reference = ck.confseq.decode(
-       confseq,
-       optimize_with_uff=False,
-       template_backend="distance_geometry",
-   )
-
-   fast = ck.confseq.decode(
-       confseq,
-       optimize_with_uff=False,
-       template_backend="fast_geometry",
-   )
-
-   print(reference.num_conformers())
-   print(fast.num_conformers())
-
 Optimize an existing 3D conformer with UFF:
 
 .. code-block:: python
@@ -292,8 +262,13 @@ Parse SMARTS metadata:
    print(query.num_atoms())
    print(query.num_bonds())
 
-``parse_smarts()`` returns an ordinary ``Molecule`` carrying the compiled query
-graph, ready for the substructure matching APIs.
+``parse_smarts()`` returns a detached ``QueryGraph``, not a ``Molecule``.
+``ck.QueryGraph.from_smarts(text)`` is the equivalent class factory. Both
+delegate to the same parser and preserve its defaults and typed errors.
+Pass the query to ``mol.substruct_matches(query)`` or
+``mol.has_substruct_match(query)``. Explicit options use
+``ck.parse_smarts_with_params(text, params)`` or
+``ck.QueryGraph.from_smarts_with_params(text, params)``.
 
 Batch Processing
 ----------------

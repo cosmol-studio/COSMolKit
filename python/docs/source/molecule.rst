@@ -32,6 +32,31 @@ Common transformations include:
 - ``with_2d_coordinates()``
 - ``with_chiral_tags_from_structure()``
 
+Importing an RDKit Molecule
+--------------------------
+
+``Molecule.from_rdkit()`` copies the graph fields and 3D conformers supported
+by COSMolKit 0.3.0. It constructs independent storage without a SMILES
+round trip and does not modify the RDKit object:
+
+.. code-block:: python
+
+   from rdkit import Chem
+   import cosmolkit as ck
+
+   source = Chem.MolFromSmiles("[13CH3:7][C@H](F)Cl")
+   molecule = ck.Molecule.from_rdkit(source)
+   raw = ck.Molecule.from_rdkit(source, sanitize=False)
+   sanitized = ck.Molecule.from_rdkit(source, sanitize=True)
+
+The default ``sanitize=None`` prepares valence only, preserving the copied
+aromaticity, hybridization and stereochemical fields. ``True`` runs full
+sanitization; ``False`` leaves the valence cache unprepared. To inspect that
+cache without recalculating it, use ``raw.atom_metadata(recalculate=False)``.
+Only 3D conformers are imported, in iteration order with new contiguous IDs;
+2D conformers are skipped. This adapter does not import arbitrary RDKit
+properties, query trees, SGroups or enhanced stereo groups.
+
 Elements and Periodic-Table Metadata
 ------------------------------------
 
@@ -538,21 +563,24 @@ source molecule.
 Substructure And SMARTS
 -----------------------
 
-Substructure matching functions accept ordinary molecules or query-bearing
-``Molecule`` values compiled by the canonical SMARTS parser:
+Substructure matching methods accept a detached ``QueryGraph`` constructed by
+the canonical SMARTS parser:
 
 .. code-block:: python
 
    import cosmolkit as ck
 
    mol = ck.Molecule.from_smiles("CCO")
-   query = ck.Molecule.from_smiles("CO")
+   query = ck.QueryGraph.from_smarts("CO")
 
-   print(ck.has_substruct_match(mol, query))
-   print(ck.get_substruct_match(mol, query).atom_mapping())
+   print(mol.has_substruct_match(query))
+   print(mol.substruct_match(query).atom_mapping())
 
-``parse_smarts()`` returns an ordinary ``Molecule`` carrying the compiled query
-graph. The same value can be passed directly to the substructure functions.
+``ck.parse_smarts()`` and ``ck.QueryGraph.from_smarts()`` return the same
+canonical query value. Both preserve the parser's defaults and typed errors.
+There is no ``ck.search`` submodule. Explicit options use
+``ck.parse_smarts_with_params(text, params)`` or
+``ck.QueryGraph.from_smarts_with_params(text, params)``.
 
 .. code-block:: python
 
@@ -560,15 +588,14 @@ graph. The same value can be passed directly to the substructure functions.
 
    print(smarts.num_atoms())
    print(smarts.num_bonds())
-   print(smarts.to_smarts())
-   print(ck.has_substruct_match(mol, smarts))
+   print(ck.write_smarts(smarts, ck.SmartsWriteParams()))
+   print(mol.has_substruct_match(smarts))
 
-Query-bearing molecules can be written as ordinary SMARTS or CXSMARTS without
-converting them to a separate query type:
+The query value can be written as SMARTS or CXSMARTS through the same owner:
 
 .. code-block:: python
 
    labeled = ck.parse_smarts("[#6] |$site$|")
 
-   print(labeled.to_smarts())
-   print(labeled.to_cx_smarts())
+   print(ck.write_smarts(labeled, ck.SmartsWriteParams()))
+   print(ck.write_cx_smarts(labeled, ck.SmartsWriteParams()))

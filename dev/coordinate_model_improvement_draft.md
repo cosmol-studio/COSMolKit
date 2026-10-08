@@ -9,8 +9,8 @@ Date: 2026-09-16.
 Revisit this document at the final review of the current migration work. Do
 not interrupt, reorder, or expand the active migration based on this draft.
 `dev/crate_architecture.md` remains the architectural authority and
-`dev/plans/crate_architecture_completion_plan.md` remains the sole execution
-queue. Any eventual semantic changes require explicit approval and integration
+the current user-authorized task plan defines the execution scope.
+Any eventual semantic changes require explicit approval and integration
 into the authoritative documents before implementation.
 
 ## 1. Assessment

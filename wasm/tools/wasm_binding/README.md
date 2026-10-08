@@ -44,14 +44,30 @@ When Alef and wasm-bindgen are already on `PATH`, the short form is:
 python3 -B wasm/tools/wasm_binding/run.py
 ```
 
-Set `BUN_BIN` or `NODE_BIN` to select a specific runtime. TypeScript is taken
-from `PATH`, or the runner uses the pinned `typescript@5.8.3` package through
-`npx`.
+Set `BUN_BIN` or `NODE_BIN` to select a specific runtime. The runner uses
+the pinned `typescript@5.8.3` package through `npx`; set `TSC_BIN` only
+to explicitly test another compiler.
 
 All generated crates, WASM binaries, JavaScript glue, declarations, and
 TypeScript configuration are created below a temporary directory and removed
-on exit. Nothing from the binding check is a source artifact or should be
-committed.
+on exit. To retain the tested npm package, supply a new output directory:
+
+```bash
+python3 -B wasm/tools/wasm_binding/run.py --out-dir target/npm/cosmolkit
+npm pack --dry-run --json ./target/npm/cosmolkit
+```
+
+The default is `--preset full`. Select a fixed smaller distribution with, for
+example, `--preset core-bio --out-dir target/npm/core-bio`. Available presets
+are `core`, `core-fingerprints`, `core-analysis`, `core-reaction`, `core-3d`,
+`core-bio`, `core-inchi`, and `full`. Each compiles without dependency defaults,
+selects only its binding modules and applicable tests, and exports its own
+version and npm tag. Domain-specific tests retain their assertions; mixed-domain
+suites run when all their prerequisites are selected.
+
+Export happens only after runtime and TypeScript checks pass. The package
+includes its JavaScript snippets, WASM binary, declarations, README and license.
+Generated files are build output, not committed source.
 
 ## Release Build Shape
 
@@ -61,7 +77,12 @@ The release package follows the same isolated sequence:
 2. Cargo builds that crate for `wasm32-unknown-unknown` in release mode.
 3. `wasm-bindgen --target web` emits the JavaScript module, declarations, and
    background `.wasm` file.
-4. The generated package is published as `@cosmol-studio/cosmolkit`.
+4. Runtime and TypeScript checks validate the generated package before export.
+5. [publish.yml](../../../.github/workflows/publish.yml) publishes that artifact
+   as `@cosmol-studio/cosmolkit`, using npm Trusted Publisher (OIDC). Each preset
+   uses its preset name as dist-tag and a distinct artifact version; full RCs
+   use `rc` and full stable releases use `latest`. Manual publishing is RC-only; stable releases
+   require a matching version tag.
 
 The committed Rust surface is the source of truth. Generated package files are
 build output and must stay outside the repository tree or under `tmp/`.

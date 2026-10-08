@@ -126,6 +126,7 @@ pub enum OperationError {
     #[cfg(feature = "cap-radicals")]
     Radical(cosmolkit_core::RadicalError),
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-aromaticity",
@@ -318,6 +319,7 @@ impl fmt::Display for OperationError {
             #[cfg(feature = "cap-radicals")]
             Self::Radical(error) => write!(formatter, "radical assignment failed: {error}"),
             #[cfg(any(
+                feature = "cap-inchi",
                 feature = "cap-rings",
                 feature = "cap-stereo",
                 feature = "cap-aromaticity",
@@ -416,6 +418,7 @@ impl std::error::Error for OperationError {
             #[cfg(feature = "cap-radicals")]
             Self::Radical(error) => Some(error),
             #[cfg(any(
+                feature = "cap-inchi",
                 feature = "cap-rings",
                 feature = "cap-stereo",
                 feature = "cap-aromaticity",

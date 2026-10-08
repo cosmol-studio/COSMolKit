@@ -1,6 +1,54 @@
 # COSMolKit
 
-`cosmolkit` is the public Rust API and runtime owner for COSMolKit, a Rust-native cheminformatics and structural biology toolkit. It is the sole supported Rust entrypoint for `Molecule`, operation contracts, and the feature APIs being migrated from the legacy implementation. Detached model values and source-backed algorithms are being moved into dedicated workspace crates behind this facade.
+`cosmolkit` is the public Rust API and runtime owner for COSMolKit 0.5.0, a Rust-native cheminformatics and structural biology toolkit. It is the sole supported Rust entrypoint for `Molecule`, operation contracts, and domain APIs. Dedicated workspace crates own detached model values and source-backed algorithms behind this facade.
+
+## Feature dependency tree
+
+Enabling a feature also exposes its prerequisite functionality. For example,
+`features = ["reaction"]` includes SMARTS/search and SMILES APIs; no additional
+`search` selection is needed. Default: `full`.
+
+```text
+full
+├── core
+│   └── depict
+│       └── search
+├── reaction
+│   └── search
+├── search
+├── descriptors
+│   └── search
+├── tautomer
+│   └── search
+├── forcefields
+│   └── search
+├── depict
+│   └── search
+├── conformer
+│   ├── forcefields
+│   │   └── search
+│   └── depict
+│       └── search
+├── fingerprints
+│   └── depict
+│       └── search
+├── batch
+│   └── depict
+│       └── search
+├── bio
+├── inchi
+├── serialization
+│   └── depict
+│       └── search
+└── stereoisomers
+    ├── forcefields
+    │   └── search
+    └── depict
+        └── search
+```
+
+Every node is an actual public Cargo feature name; edges follow Cargo.toml.
+Internal capability gates are omitted. Included functionality is described below.
 
 For a concise Rust-native cheminformatics overview, see <https://tools.cosmol.org/rust-cheminformatics>.
 
@@ -11,7 +59,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0-rc.15", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.0", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
@@ -19,51 +67,48 @@ cosmolkit = { version = "0.5.0-rc.15", default-features = false, features = ["co
 |---|---|
 | `core` | Molecular format parsing/writing (text or files), SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms |
 | `bio` | Structural biology readers, values, selection and operations |
-| `descriptors` | Molecular descriptors (internally reuses SMARTS/search; does not enable public search APIs) |
+| `descriptors` | Molecular descriptors, including prerequisite search APIs |
 | `tautomer` | Tautomer capability |
 | `conformer` | 3D conformers, ConfSeq and coordinate alignment |
 | `forcefields` | Energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
 | `search` | SMARTS and substructure search |
-| `reaction` | SMIRKS parsing, reaction templates and execution |
+| `reaction` | SMIRKS, reaction templates and execution, including search and SMILES |
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
 | `batch` | Ordered batch processing |
-| `full` | All bundles above, plus `cap-stereoisomers` and `cap-serialization` |
-
-`reaction` is reserved for the new RDKit source port. Its Cargo selector and
-inclusion in `full` will be wired with the complete implementation.
+| `serialization` | Binary molecule archives |
+| `stereoisomers` | Stereoisomer enumeration |
+| `full` | All features above |
 
 `core` includes molecular text/file parsing and writing; there is no separate
 `io` bundle. It does **not** include descriptors, binary archives, tautomers or
-stereoisomer enumeration. Select `descriptors`, `cap-serialization`, `tautomer`, or
-`cap-stereoisomers` explicitly when needed. Basic stereo assignment remains in
+stereoisomer enumeration. Select `descriptors`, `serialization`, `tautomer`, or
+`stereoisomers` explicitly when needed. Basic stereo assignment remains in
 `core`; enumeration is a separate capability. Bundle names select features,
 not a promise that every planned API in that area is already implemented.
 
 With defaults disabled, `features = ["bio", "core"]` does not pull in
 `cosmolkit-descriptors` or `cosmolkit-tautomer` through these selections.
 BIO alone activates only the structural-biology branch of IO.
-The molecular IO branch uses search internally for source-defined query
-records; enabling `core`, `cap-io` or `descriptors` therefore compiles search but does not
-enable the facade's `cap-search` API. Another dependency's additive features
+The molecular IO branch includes depiction and search for source-defined query
+records; enabling `core` or `descriptors` also exposes its search
+prerequisites. Another dependency's additive features
 can still enable these packages; inspect the resolved build graph, not just
 package entries in `Cargo.lock`.
 
-Advanced selectors always start with `cap-`. For example, to select only
-molecular IO, kekulization, sanitization and hydrogen operations:
+For example, to enable reaction processing and its prerequisites:
 
 ```sh
-cargo add cosmolkit --no-default-features --features cap-io,cap-kekulize,cap-sanitize,cap-hydrogens
+cargo add cosmolkit --no-default-features --features reaction
 ```
 
-With defaults disabled, neither `full` nor `core` is implicit. Bundles and
-individual selectors can be combined; adding features without disabling
+With defaults disabled, neither `full` nor `core` is implicit. Features can be
+combined; adding features without disabling
 defaults keeps `full` enabled. Cargo features are additive across dependencies.
 
-Each capability gates its own public APIs and required dependencies. Sharing
-an implementation crate does not expose its other capabilities, nor does a
-selector promise to compile only individual functions inside that crate.
+Each feature enables its APIs and their prerequisites. Sharing an implementation
+crate does not expose unrelated functionality or promise per-function compilation.
 Feature selection does not change an enabled operation's behavior or status.
 `op-contracts-strict` separately enables runtime and operation-contract checks.
 
@@ -111,6 +156,13 @@ Consult the package API and support status for the selected version.
 | [cosmolkit-bio](https://crates.io/crates/cosmolkit-bio) | Structural-biology values and hierarchy operations |
 
 ## Validation Status
+
+**0.5.0 validation is pending.** The results summarized below are from
+**0.3.0**, not a validation pass for 0.5.0. See
+[VALIDATION.md](https://github.com/cosmol-studio/COSMolKit/blob/main/VALIDATION.md)
+for the historical boundary and the current pending status.
+
+### Historical 0.3.0 evidence
 
 COSMolKit treats parity as **source-backed semantic equivalence within explicitly documented boundaries**, not as statistical agreement of final outputs. Compatibility-critical chemistry is implemented as a line-by-line, source-backed port with explicit operation contracts and traceable correspondence to pinned upstream code. Validation corpora verify that port; they are not used to iteratively tune heuristic reimplementations until outputs happen to agree.
 
@@ -219,27 +271,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## InChI
 
-The Rust facade exposes the four audited scalar InChI APIs directly:
+Enable `inchi` alongside `core` (or use `full`) for molecule conversion and
+direct InChIKey generation:
 
 ```rust
-use cosmolkit::{Molecule, inchi_to_inchi_key, mol_from_inchi, mol_to_inchi};
+use cosmolkit::{Molecule, inchi_to_inchi_key};
 
 let molecule = Molecule::from_smiles("C")?;
-let generated = mol_to_inchi(&molecule, None)?;
-assert_eq!(generated.inchi, b"InChI=1S/CH4/h1H4");
+let identifier = molecule.to_inchi()?;
+assert_eq!(identifier, "InChI=1S/CH4/h1H4");
 
-let key = inchi_to_inchi_key(&generated.inchi)?;
-assert_eq!(key.key, b"VNWKTOKETHGBQD-UHFFFAOYSA-N");
+let key = inchi_to_inchi_key(&identifier)?;
+assert_eq!(key, "VNWKTOKETHGBQD-UHFFFAOYSA-N");
 
-let parsed = mol_from_inchi(&generated.inchi, false, false)?;
-assert!(parsed.molecule.is_some());
+let parsed = Molecule::from_inchi(&identifier)?;
+assert_eq!(parsed.to_inchi()?, identifier);
 ```
 
-Pinned official InChI v1.07.5 and RDKit 2026.03.1 establish exact parity for
-source-defined behavior in this boundary. Official-C undefined behavior on the
-audited `NormalizeAndCompare` initial-allocation path is mapped to a
-deterministic structured allocation error. MolBlock, SDF/V3000, IXA, AuxInfo,
-INCHIGEN, version-query, and extended-polymer InChI APIs are not exposed.
+`InchiReadParams` controls sanitization and hydrogen removal (both default to
+true). `InchiWriteParams` carries the engine option string. The corresponding
+`*_with_params` methods accept these values. Queries leave the molecule
+unchanged; failures return typed `InchiError` values. The implementation uses
+the existing official InChI v1.07.5 / RDKit 2026.03.1 source port. IXA, AuxInfo
+reconstruction, INCHIGEN, version-query, and extended-polymer entry points are
+not exposed by this facade.
 
 ## Molecular Descriptors
 
@@ -269,7 +324,7 @@ an explicit descriptor error.
 ### Descriptor count queries
 
 Five read-only `Molecule` queries return RDKit-compatible count values and
-are gated by `cap-descriptors`:
+are available with the `descriptors` feature:
 
 ```rust
 let mol = Molecule::from_smiles("CCO")?;
@@ -515,19 +570,23 @@ cargo run -p cosmolkit --example forcefield_optimization
 
 ## Contributor Validation
 
-Core validation should use operation-contract checks:
+Detached core regressions and facade operation contracts are separate checks:
 
 ```bash
 cargo check -p cosmolkit-core
 cargo test -p cosmolkit-core --release
+cargo check -p cosmolkit --features op-contracts-strict
+cargo test -p cosmolkit --profile dev-test --features op-contracts-strict
 cargo check -p cosmolkit-py
 cargo fmt --all
 ```
 
-Use debug-profile test filters for small local iterations. Use release mode with
-`op-contracts-strict` for large local runs, parity suites, and CI; release-mode
-testing keeps operation contracts and runtime invariants enabled through the
-strict feature set.
+Use debug-profile test filters for small local iterations. Use the optimized
+`dev-test` profile for daily suites and `release` for distribution builds.
+Enable `cosmolkit/op-contracts-strict` explicitly for operation-contract checks;
+optimization profiles do not enable strict checks themselves. Core has no
+runtime-check features. See the repository development manual for the full
+pre-commit checklist.
 
 Python binding validation:
 
@@ -537,13 +596,8 @@ uv sync --group dev
 .venv/bin/pytest
 ```
 
-The planned crate split is a staged internal architecture migration, not the
-current workspace layout. Its target is for `cosmolkit` to own the public
-`Molecule` API and operation runtime while shared model values and source-backed
-algorithms move behind explicit crate boundaries. It is not intended to break
-the existing supported external API: users should continue importing from
-`cosmolkit`, without changing normal molecule workflows merely because an
-implementation moves between crates. Internal implementation crates will not
-become competing public `Molecule` entry points. Any unavoidable public change
-will be handled separately through the normal versioning and deprecation
-policy.
+COSMolKit 0.5.0 uses the split-crate architecture: `cosmolkit` owns the public
+`Molecule` API and operation runtime; model and domain crates own detached
+values and algorithms. Users import the public chemistry API from `cosmolkit`,
+not implementation crates. See the repository architecture and public API
+design documents for ownership, contracts and feature selection.

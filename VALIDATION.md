@@ -1,9 +1,20 @@
 # COSMolKit Validation
 
-This page records the exact corpus and comparison boundary behind COSMolKit's
-RDKit parity claims. RDKit `2026.03.1` is the current chemistry reference. A
-feature is parity-covered only at the boundary listed here. Separate upstream
-APIs outside that boundary are not claimed as implemented.
+## 0.5.0: validation pending
+
+COSMolKit 0.5.0 is pending complete validation. The results, pass claims,
+comparison counts and coverage descriptions below are historical evidence
+from COSMolKit 0.3.0, not validation results for 0.5.0. They must not be
+transferred to the new architecture or APIs without rerunning the applicable
+tests against 0.5.0 and recording the actual results.
+
+## Historical evidence: 0.3.0
+
+The remainder of this page preserves the corpus and comparison boundaries
+reported for 0.3.0. RDKit `2026.03.1` is its chemistry reference. Historical
+profiles and counts need not match the current preparation profile. A feature
+was parity-covered only at the boundary listed here. Separate upstream
+APIs outside that boundary were not claimed as implemented.
 This scope distinction never permits a mismatching row inside a covered
 boundary to be reclassified as unsupported.
 

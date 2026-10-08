@@ -48,10 +48,14 @@ jobs:
                   if-no-files-found: error
 
     build-wasm:
-        name: build and test npm package
+        name: build and test npm ${{ matrix.preset }}
         runs-on: ubuntu-latest
         needs:
             - generate-stubs
+        strategy:
+            fail-fast: false
+            matrix:
+                preset: [core, core-fingerprints, core-analysis, core-reaction, core-3d, core-bio, core-inchi, full]
         steps:
             - uses: actions/checkout@v4
             - uses: dtolnay/rust-toolchain@stable
@@ -72,12 +76,12 @@ jobs:
                   CARGO_TARGET_DIR: ${{ github.workspace }}/target
               run: |
                   python -m unittest discover -s wasm/tools/wasm_binding -p 'test_*.py' -v
-                  python -B wasm/tools/wasm_binding/run.py --out-dir target/npm/cosmolkit
+                  python -B wasm/tools/wasm_binding/run.py --preset ${{ matrix.preset }} --out-dir target/npm/cosmolkit
                   npm pack --dry-run --json ./target/npm/cosmolkit
             - name: Upload npm package
               uses: actions/upload-artifact@v4
               with:
-                  name: npm-package
+                  name: npm-package-${{ matrix.preset }}
                   path: target/npm/cosmolkit
                   if-no-files-found: error
 
@@ -298,14 +302,19 @@ jobs:
                   node-version: "24"
                   registry-url: "https://registry.npmjs.org"
 
-            - name: Download npm package
+            - name: Download npm presets
               uses: actions/download-artifact@v4
               with:
-                  name: npm-package
-                  path: npm-package
+                  pattern: npm-package-*
+                  path: npm-packages
 
-            - name: Publish to npm
-              working-directory: npm-package
+            - name: Publish npm presets, then default full package
               run: |
-                  npm_tag="$(node -p "require('./package.json').version.includes('-') ? 'rc' : 'latest'")"
-                  npm publish --access public --tag "$npm_tag"
+                  set -euo pipefail
+                  for preset in core core-fingerprints core-analysis core-reaction core-3d core-bio core-inchi full; do
+                      (
+                          cd "npm-packages/npm-package-$preset"
+                          npm_tag="$(node -p "require('./package.json').publishConfig.tag")"
+                          npm publish --access public --tag "$npm_tag"
+                      )
+                  done

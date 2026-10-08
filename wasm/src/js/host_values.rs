@@ -44,3 +44,18 @@ pub(crate) fn sequence(value: &JsValue, name: &str) -> Result<Array, JsValue> {
     }
     Ok(Array::from(value))
 }
+/// Shared JavaScript three-number tuple conversion, independent of domains.
+pub(crate) fn point(value: &JsValue) -> Result<[f64; 3], JsValue> {
+    let a = sequence(value, "offset")?;
+    if a.length() != 3 {
+        return Err(js_sys::RangeError::new("offset must contain exactly three numbers").into());
+    }
+    let mut out = [0.; 3];
+    for (i, v) in out.iter_mut().enumerate() {
+        *v = a
+            .get(i as u32)
+            .as_f64()
+            .ok_or_else(|| type_error("offset component"))?;
+    }
+    Ok(out)
+}

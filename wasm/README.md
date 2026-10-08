@@ -12,6 +12,43 @@ exceptions; successful methods return strings, numbers, typed arrays, or new
 npm install @cosmol-studio/cosmolkit
 ```
 
+The default package is **full**; there is no need for an `@full` tag. Fixed
+smaller distributions use npm dist-tags on the same package:
+
+| Install suffix | Included public features |
+|---|---|
+| `@core` | `core` (including search and depiction) |
+| `@core-fingerprints` | `core + fingerprints` |
+| `@core-analysis` | `core + fingerprints + descriptors` |
+| `@core-reaction` | `core + reaction` (including search) |
+| `@core-3d` | `core + conformer` (including forcefields and alignment) |
+| `@core-bio` | `core + bio` |
+| `@core-inchi` | `core + inchi` |
+| no suffix | `full` |
+
+For example: `npm install @cosmol-studio/cosmolkit@core-bio`. Imports keep the
+same package name. Omitted domains are absent from both exports and TypeScript
+declarations; they are not runtime placeholders.
+
+Preset artifacts have distinct npm versions, such as `0.5.0-core-bio.0` or
+`0.5.0-rc.15.core-bio.0`, because npm cannot replace an existing name/version
+with different contents. The default full artifact keeps the Rust release
+version. Stable full releases update `latest`; full RC releases update `rc`,
+not `latest`. Preset tags track the most recently published corresponding
+artifact, including manually published RCs. Pin the resolved version or use a
+lockfile for reproducible installs.
+
+InChI is available in `core-inchi` and the default full package:
+
+```js
+const molecule = Molecule.fromSmiles("CCO");
+console.log(molecule.toInchi());
+console.log(molecule.toInchiKey());
+const restored = Molecule.fromInchi(molecule.toInchi());
+restored.free();
+molecule.free();
+```
+
 The package is browser/bundler-oriented. It can be used from Vite, webpack,
 Rollup, and other tools that support the web `WebAssembly` target.
 
@@ -43,10 +80,10 @@ background `.wasm` file on the same CDN host:
 <div id="molecule"></div>
 <script type="module">
   import init, { Molecule } from
-    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.3.0/wasm_wasm.js";
+    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.5.0/wasm_wasm.js";
 
   await init(
-    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.3.0/wasm_wasm_bg.wasm",
+    "https://cdn.jsdelivr.net/npm/@cosmol-studio/cosmolkit@0.5.0/wasm_wasm_bg.wasm",
   );
   const molecule = Molecule.fromSmiles("c1ccccc1O");
   document.querySelector("#molecule").textContent = molecule.toSmiles();

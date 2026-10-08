@@ -3,12 +3,14 @@ use crate::alignment_values::{set, source_error};
 use cosmolkit_wasm::rust as ck;
 use std::error::Error as RustError;
 use wasm_bindgen::prelude::*;
+#[cfg(feature = "batch")]
 #[wasm_bindgen]
 pub struct BatchImageError {
     kind: String,
     message: String,
     cause: JsValue,
 }
+#[cfg(feature = "batch")]
 #[wasm_bindgen]
 impl BatchImageError {
     #[wasm_bindgen(getter)]
@@ -28,6 +30,7 @@ impl BatchImageError {
         self.cause.clone()
     }
 }
+#[cfg(feature = "batch")]
 pub(crate) fn batch_image_error(source: &ck::BatchImageError) -> Result<JsValue, JsValue> {
     let kind = match source {
         ck::BatchImageError::InvalidFormat(..) => "InvalidFormat",

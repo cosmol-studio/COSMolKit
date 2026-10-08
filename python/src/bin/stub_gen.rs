@@ -379,6 +379,10 @@ _binding_profile: builtins.str
         "__all__ = [\n    \"AtomCodeExplanationError\",\n",
     );
     text = expose_registered_property_exceptions(text)?;
+    // create_exception! has no derive metadata; this is the real public
+    // InChI exception raised by canonical_inchi, including its typed category.
+    text.push_str("\nclass InchiError(builtins.ValueError):\n    domain: builtins.str\n    kind: InchiErrorKind\n    operation: builtins.str\n    detail: builtins.str\n");
+    text = text.replace("__all__ = [\n", "__all__ = [\n    \"InchiError\",\n");
     // create_exception! has no stub metadata; kind() is installed by the shared error converter.
     text.push_str("\nclass PropertyStringError(builtins.ValueError):\n    error_kind: builtins.str\n    value_kind: PropertyValueKind\n    def kind(self) -> PropertyValueKind: ...\n");
     text = text.replace(

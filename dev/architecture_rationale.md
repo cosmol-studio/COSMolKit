@@ -683,6 +683,6 @@ This essay explains why the design fits together. Exact requirements remain in
 [public API design](./public_api_design.md),
 [source reproduction](./source_reproduction_protocol.md), and
 [test boundaries](./test_boundaries.md).
-The [sole split-crate plan](./plans/crate_architecture_completion_plan.md)
-records execution and acceptance; this rationale grants no implementation
+The current user-authorized task plan records execution and acceptance;
+task-specific inventories record completion scope. This rationale grants no implementation
 permission and makes no completion claim.

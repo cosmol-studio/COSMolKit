@@ -26,6 +26,31 @@ empty.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-08
+
+### Changed
+
+- Split model values and domain algorithms into workspace crates, with
+  `cosmolkit` owning the public molecule API and operation runtime.
+- Added plain-name feature bundles and fine-grained `cap-*` selection;
+  `core` includes molecular text/file IO and `full` is the default.
+- Unified registered Rust, Python and JavaScript API projections, with
+  explicit value-style and in-place operations.
+- Added WebAssembly bindings and the `@cosmol-studio/cosmolkit` npm package.
+- Added the public `Reaction` facade and multi-reactant execution under
+  `cap-reaction`.
+- Added owned persistent UFF/MMFF evaluators for positions, fixed atoms,
+  energy, gradients and repeated minimization.
+- Added CK-native archive 2.0 using Müsli, with legacy readers retained.
+- Standardized corpus and special-regression preparation and Cargo comparison
+  in `parity-tests_fixed`; ordinary regressions remain in owning crates.
+
+### Validation
+
+- Complete 0.5.0 validation is pending. The published results in
+  [VALIDATION.md](VALIDATION.md) come from 0.3.0 and do not establish a 0.5.0
+  parity pass.
+
 ## [0.3.0] - 2026-08-28
 
 This release adds the public modern RDKit CIPLabeler, ordinary molecular

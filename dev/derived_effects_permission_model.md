@@ -21,16 +21,24 @@ Neither declaration implicitly grants authority belonging to the other.
 ```text
 access: {
     read:  [topology, derived_cache],
-    write: [properties],
+    write: [coordinates],
 }
 
 derived_effects: {
-    recompute:         [aromaticity],
-    preserve:          [],
-    invalidate:        [drawing, fingerprint],
-    operation_defined: [valence],
+    recompute:         [],
+    preserve:          [valence, rings],
+    invalidate:        [],
+    operation_defined: [],
 }
 ```
+
+Preserve-only effects require neither derived-cache write access nor
+`derived_cache` in `may_mutate`. An operation may prove preservation without reading
+the cache itself; any body-level read still requires explicit block access.
+`recompute`, `invalidate` and `operation_defined` require derived-cache write
+access and `derived_cache` in `may_mutate`, including when mixed with preservation.
+Their effect labels constrain the permitted handling actions; they do not
+generate block access.
 
 ## Block-Level Read Access
 
@@ -64,8 +72,8 @@ The only valid `derived_effects` categories are:
 | Category | Required meaning | Permitted framework action |
 |---|---|---|
 | `recompute` | Produce a fresh framework-visible value, or explicitly clear it when the operation's source behavior leaves it unavailable | `set_*_cache`, validity-marker update, or `clear_cache` |
-| `preserve` | Prove that the old value remains valid across the edit | An approved `prove_preserved` proof; no cache mutation authority |
-| `invalidate` | Declare that the old value is stale | `clear_cache`; no cache write authority |
+| `preserve` | Prove that the existing cached value and validity can be retained across the edit | An approved `prove_preserved` proof; no cache mutation authority |
+| `invalidate` | Declare that the old value is stale | `clear_cache` with explicit block write access; no replacement-value installation |
 | `operation_defined` | Reproduce a source-required state transition that cannot be expressed truthfully as preserve, recompute, or invalidate | `set_*_cache`, validity-marker update, or `clear_cache`, as required by the source-port implementation |
 
 The four categories must be pairwise disjoint. Strict `finish()` rejects an
@@ -73,9 +81,9 @@ overlapping declaration.
 
 ### `recompute`
 
-`recompute` grants strict cache-write permission for the named state. It also
-permits clearing that state when the reproduced source behavior does not leave
-a materialized replacement.
+With explicit block write access, `recompute` permits updating the named state
+or clearing it when the reproduced source behavior does not leave a
+materialized replacement. It grants no block access by itself.
 
 After an operation has touched a block, strict finalization requires every
 declared recompute state to have been updated or cleared through `OpParts`.
@@ -83,8 +91,15 @@ Writing a cache state not declared in `recompute` is a programming error.
 
 ### `preserve`
 
-`preserve` states that an existing derived value remains valid after the
-operation. It does not authorize reading or writing the cache.
+`preserve` retains the existing derived value and validity after the operation;
+it does not make an invalid cache valid. It does not authorize reading or
+writing the cache.
+
+The runtime inspects preservation candidates through borrowed cache state;
+proof inspection alone must not check out, clone or replace the shared cache
+block. An unchanged shared cache remains shared after commit. Proofs that
+normalize a local comparison value may explicitly clone that comparison value;
+this is not a grant of cache mutation authority to the body.
 
 After an operation has touched a block, strict finalization requires an
 approved structural proof for every declared preserved state. For example,

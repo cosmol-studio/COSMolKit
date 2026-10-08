@@ -37,54 +37,58 @@ full = [
     "inchi",
     "search",
     "tautomer",
-    "cap-stereoisomers",
-    "cap-reaction",
-    "cap-serialization",
+    "stereoisomers",
+    "reaction",
+    "serialization",
 ]
 
-# User bundles: explicit API composition, not implementation dependencies.
+# User bundles include the public functionality of their domain dependencies.
 core = [
     "cap-smiles",
     "cap-hydrogens", "cap-valence", "cap-radicals", "cap-rings",
     "cap-matrices", "cap-transforms", "cap-stereo", "cap-kekulize",
-    "cap-aromaticity", "cap-sanitize", "cap-io",
+    "cap-aromaticity", "cap-sanitize", "cap-io", "depict",
 ]
 bio = ["cap-bio"]
-descriptors = ["cap-descriptors"]
-tautomer = ["cap-tautomer"]
-conformer = ["cap-conformer", "cap-confseq", "cap-alignment"]
-forcefields = ["cap-forcefields"]
-fingerprints = ["cap-fingerprints", "cap-hashing"]
+descriptors = ["cap-descriptors", "search"]
+tautomer = ["cap-tautomer", "search"]
+conformer = ["cap-conformer", "cap-confseq", "cap-alignment", "forcefields", "depict"]
+forcefields = ["cap-forcefields", "search"]
+fingerprints = ["cap-fingerprints", "cap-hashing", "depict"]
 search = ["cap-search"]
-depict = ["cap-depict"]
+reaction = ["cap-reaction", "search"]
+serialization = ["cap-serialization", "depict"]
+stereoisomers = ["cap-stereoisomers", "forcefields", "depict"]
+depict = ["cap-depict", "search"]
 inchi = ["cap-inchi"]
-batch = ["cap-batch"]
+batch = ["cap-batch", "depict"]
 
-# Advanced capabilities: gate only their own API and direct dependency edges.
-cap-alignment = ["dep:cosmolkit-alignment"]
-cap-batch = ["dep:cosmolkit-batch"]
+# Advanced capabilities retain API gates and enable their public prerequisites.
+# Shared model/core implementation dependencies do not select all core algorithms.
+cap-alignment = ["dep:cosmolkit-alignment", "cap-search"]
+cap-batch = ["dep:cosmolkit-batch", "cap-io"]
 cap-bio = ["dep:cosmolkit-bio", "dep:cosmolkit-io", "cosmolkit-io/bio"]
-cap-conformer = ["dep:cosmolkit-conformer"]
+cap-conformer = ["dep:cosmolkit-conformer", "cap-forcefields", "cap-alignment", "cap-io"]
 cap-hydrogens = ["dep:cosmolkit-core"]
-cap-confseq = ["dep:cosmolkit-conformer"]
-cap-depict = ["dep:cosmolkit-depict"]
-cap-descriptors = ["dep:cosmolkit-descriptors", "dep:cosmolkit-core"]
-cap-fingerprints = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core", "dep:cosmolkit-io", "cosmolkit-io/molecule"]
-cap-forcefields = ["dep:cosmolkit-forcefields", "dep:cosmolkit-core"]
-cap-hashing = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core"]
-cap-inchi = ["dep:cosmolkit-inchi"]
-cap-io = ["dep:cosmolkit-io", "cosmolkit-io/molecule", "dep:cosmolkit-core"]
+cap-confseq = ["dep:cosmolkit-conformer", "cap-conformer"]
+cap-depict = ["dep:cosmolkit-depict", "cap-search"]
+cap-descriptors = ["dep:cosmolkit-descriptors", "dep:cosmolkit-core", "cap-search"]
+cap-fingerprints = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core", "cap-io", "cap-search", "cap-stereo"]
+cap-forcefields = ["dep:cosmolkit-forcefields", "dep:cosmolkit-core", "cap-search"]
+cap-hashing = ["dep:cosmolkit-fingerprints", "dep:cosmolkit-core", "cap-search", "cap-stereo"]
+cap-inchi = ["dep:cosmolkit-inchi", "dep:cosmolkit-core"]
+cap-io = ["dep:cosmolkit-io", "cosmolkit-io/molecule", "dep:cosmolkit-core", "cap-search", "cap-depict"]
 cap-matrices = ["dep:cosmolkit-core"]
 cap-transforms = ["dep:cosmolkit-core"]
-cap-search = ["dep:cosmolkit-search", "cosmolkit-search/smiles-integration"]
-cap-serialization = ["dep:cosmolkit-io", "cosmolkit-io/molecule", "dep:cosmolkit-core"]
+cap-search = ["dep:cosmolkit-search", "cosmolkit-search/smiles-integration", "cap-smiles"]
+cap-serialization = ["cap-io"]
 cap-smiles = ["dep:cosmolkit-smiles", "dep:cosmolkit-core"]
 cap-stereo = ["dep:cosmolkit-core", "dep:cosmolkit-stereo"]
-cap-stereoisomers = ["dep:cosmolkit-core", "dep:cosmolkit-stereo", "cosmolkit-stereo/enumeration", "dep:cosmolkit-smiles", "dep:num-bigint"]
-cap-tautomer = ["dep:cosmolkit-tautomer", "dep:cosmolkit-core", "dep:cosmolkit-smiles"]
+cap-stereoisomers = ["dep:cosmolkit-core", "dep:cosmolkit-stereo", "cosmolkit-stereo/enumeration", "dep:num-bigint", "cap-stereo", "cap-conformer"]
+cap-tautomer = ["dep:cosmolkit-tautomer", "dep:cosmolkit-core", "cap-search"]
 cap-valence = ["dep:cosmolkit-core"]
 cap-radicals = ["dep:cosmolkit-core"]
-cap-reaction = ["dep:cosmolkit-reaction", "dep:cosmolkit-core"]
+cap-reaction = ["dep:cosmolkit-reaction", "dep:cosmolkit-core", "cap-search"]
 cap-rings = ["dep:cosmolkit-core"]
 cap-kekulize = ["dep:cosmolkit-core"]
 cap-aromaticity = ["dep:cosmolkit-core"]

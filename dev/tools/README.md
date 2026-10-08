@@ -8,23 +8,30 @@ runtime dependencies.
 From the repository root, using Python 3.11 or newer:
 
 ```sh
-python3 dev/tools/bump_rust_version.py 0.5.0-rc.8 --dry-run
-python3 dev/tools/bump_rust_version.py 0.5.0-rc.8
+python3 dev/tools/bump_rust_version.py 0.5.0 --dry-run
+python3 dev/tools/bump_rust_version.py 0.5.0
 ```
 
 Updates the shared Rust crate version, explicitly listed internal dependencies,
 and the marked installation example in `crates/cosmolkit/README.md`.
-Also updates `python/pyproject.toml` project.version: `0.5.0-rc.8` becomes
-`0.5.0rc8`; stable `0.5.0` stays `0.5.0`.
-Then `cargo update` refreshes the lockfile, including third-party dependencies.
-Python/WASM Cargo package versions, npm/Python release pins and historical
-records remain unchanged.
+Also updates the Python and WASM binding crate package versions and
+`python/pyproject.toml` project.version. Rust prerelease spelling is converted
+to Python's PEP 440 spelling; stable `0.5.0` stays `0.5.0`.
+Then `cargo update --workspace` refreshes local workspace versions without
+upgrading already-locked third-party dependencies. Historical records and
+unmarked version examples remain unchanged.
 
 The script lists each manifest, section and dependency name in `DEPENDENCIES`.
 It does not scan Markdown for version numbers. New replacement locations must
 be added explicitly; missing fields or README markers cause an error.
 `--dry-run` only prints changes. Cargo failure leaves version edits in place and
 returns an error. No build, publish, commit or push is performed.
+
+Validate the updater without modifying release files:
+
+```sh
+python3 -m unittest discover -s dev/tools -p test_bump_rust_version.py -v
+```
 
 ## Other tools
 

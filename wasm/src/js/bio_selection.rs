@@ -3,7 +3,7 @@ use crate::bio_metadata::BioTransform;
 use crate::{
     alignment_values::{set, source_error},
     bio_readers::BioStructure,
-    host_values::{sequence, type_error},
+    host_values::type_error,
 };
 use cosmolkit_wasm::rust as ck;
 use std::{error::Error as RustError, rc::Rc};
@@ -26,20 +26,7 @@ impl BioSelection {
         self.inner.to_cid()
     }
 }
-pub(crate) fn point(value: &JsValue) -> Result<[f64; 3], JsValue> {
-    let a = sequence(value, "offset")?;
-    if a.length() != 3 {
-        return Err(js_sys::RangeError::new("offset must contain exactly three numbers").into());
-    }
-    let mut out = [0.; 3];
-    for (i, v) in out.iter_mut().enumerate() {
-        *v = a
-            .get(i as u32)
-            .as_f64()
-            .ok_or_else(|| type_error("offset component"))?;
-    }
-    Ok(out)
-}
+pub(crate) use crate::host_values::point;
 #[wasm_bindgen]
 impl BioStructure {
     #[wasm_bindgen(js_name=selectedAtomIds)]

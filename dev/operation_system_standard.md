@@ -157,6 +157,16 @@ generates an ordered `Vec<Molecule>` wrapper and cannot be combined with an
 in-place wrapper. Cardinality changes wrapper shape only and grants no block or
 derived-state authority.
 
+`lazy_multiple` declares a source-required lazy iterator. The generated
+wrapper and the sole `ops::runtime::multiple` boundary retain an owned source
+snapshot and a detached candidate stream. On each requested item, the runtime
+applies the same candidate contract, mapping, effect and invariant validation
+before constructing the public molecule. It must not collect the stream in
+advance or invoke deferred callbacks early. Errors and exhaustion terminate
+the iterator; successful-output counts advance only after validation.
+This cardinality has no in-place form and grants no additional permissions.
+The existing eager `multiple` lifecycle remains unchanged.
+
 Multiple-output operations that need status, provenance, or other domain
 metadata may declare `result_type` together with `assemble_fn`. The operation
 body returns metadata separately, all molecule values are finalized by
@@ -328,6 +338,13 @@ molecule constructor. Ordering, duplication, empty-result behavior, and domain
 metadata follow the selected source behavior and its tests. Multiple-output
 operations do not have an in-place form.
 
+For `lazy_multiple`, the same runtime validation applies to each requested
+candidate before it is yielded. Enumeration, ordering, uniqueness, random
+inputs and embedding decisions remain in the detached domain owner. Neither
+the domain stream nor the public iterator exposes runtime construction or
+commit authority. The retained source snapshot preserves the original
+molecule and its shared peers throughout iteration and after failure.
+
 ### In-place execution and failure semantics
 
 Eligible value and in-place entry points share one registered implementation.
@@ -447,7 +464,12 @@ proof requirements, materialized versus invalidation-only state, and the
 narrow `operation_defined` allow-list. Keep that contract in one place.
 
 Every operation declares its affected state through `derived_effects`.
-Cache read authority comes from block access, not from an effect label.
+Block read/write authority comes from `access`, not from an effect label.
+Preserve-only obligations require proofs, not cache write access or
+`derived_cache` in `may_mutate`. Recompute, invalidate and operation-defined handling
+require explicit cache write access and mutation authority. The runtime borrows
+cache candidates for proof inspection without detaching an unchanged shared
+block; bodies receive only their generated access and handling capabilities.
 The runtime records and validates the operation's actual handling; metadata
 alone does not prove preservation or successful recomputation. Unsupported
 capabilities remain structured errors, never effect categories.
@@ -526,8 +548,8 @@ This means:
 Core algorithm work must pass:
 
 ```bash
-cargo check -p cosmolkit-core --features op-contracts-strict
-cargo test -p cosmolkit-core --release --features op-contracts-strict
+cargo check -p cosmolkit-core
+cargo test -p cosmolkit-core --release
 ```
 
 Runtime, operation integration, and macro work also require affected-crate
@@ -542,10 +564,11 @@ cargo test -p cosmolkit --release --test migration_run_privacy
 Final cross-crate validation uses:
 
 ```bash
-cargo test --workspace --release --features cosmolkit/op-contracts-strict,cosmolkit-core/op-contracts-strict
+cargo test --workspace --release --features cosmolkit/op-contracts-strict
 ```
 
-Core strict alone is not runtime validation. Preserve exact commands, exits,
+Detached core algorithms have no runtime-check features. Enable strict
+runtime validation on `cosmolkit`. Preserve exact commands, exits,
 nonzero counts, and failures; only plan-prescribed stage exclusions are allowed.
 A stage pass is not a workspace pass.
 

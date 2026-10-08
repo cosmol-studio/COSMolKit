@@ -19,8 +19,8 @@ IUPAC InChI engine for the four scalar operations used by COSMolKit:
 
 The crate owns neutral atom, bond, coordinate, isotope, charge, hydrogen, and
 stereo representations. It does not depend on `cosmolkit-core`; conversion
-between a COSMolKit `Molecule` and the neutral InChI graph belongs to the core
-crate.
+between a live COSMolKit `Molecule` and the neutral InChI graph belongs to the
+public `cosmolkit` facade; detached chemistry helpers remain in their owners.
 
 ## Examples
 

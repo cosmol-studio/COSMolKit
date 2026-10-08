@@ -1,15 +1,18 @@
 //! Alignment result and error transport, without algorithm implementations.
+#[cfg(feature = "alignment")]
 use crate::alignment_parameters::AlignmentAtomMap;
 use cosmolkit_wasm::rust as ck;
 use js_sys::{Array, Error, Reflect};
 use std::error::Error as RustError;
 use wasm_bindgen::prelude::*;
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 pub struct AlignmentTransform {
     pub(crate) inner: ck::AlignmentTransform,
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 impl AlignmentTransform {
     #[wasm_bindgen(unchecked_return_type = "number[][]")]
@@ -23,11 +26,13 @@ impl AlignmentTransform {
     }
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 pub struct AlignmentResult {
     pub(crate) inner: ck::AlignmentResult,
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 impl AlignmentResult {
     pub fn rmsd(&self) -> f64 {
@@ -48,11 +53,13 @@ impl AlignmentResult {
     }
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 pub struct ConformerRmsd {
     pub(crate) inner: ck::ConformerRmsd,
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 impl ConformerRmsd {
     pub fn rmsd(&self) -> f64 {
@@ -68,11 +75,13 @@ impl ConformerRmsd {
     }
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 pub struct ConformerAlignmentReport {
     pub(crate) inner: ck::ConformerAlignmentReport,
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 impl ConformerAlignmentReport {
     pub fn rmsds(&self) -> Vec<f64> {
@@ -80,11 +89,13 @@ impl ConformerAlignmentReport {
     }
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 pub struct AlignmentError {
     pub(crate) inner: ck::AlignmentError,
 }
 
+#[cfg(feature = "alignment")]
 #[wasm_bindgen]
 impl AlignmentError {
     #[wasm_bindgen(getter)]
@@ -105,6 +116,7 @@ impl AlignmentError {
     }
 }
 
+#[cfg(feature = "alignment")]
 fn alignment_kind(source: &ck::AlignmentError) -> &'static str {
     use ck::AlignmentError as E;
     match source {
@@ -134,6 +146,7 @@ pub(crate) fn set(error: &JsValue, name: &str, value: JsValue) -> Result<(), JsV
     Ok(())
 }
 
+#[cfg(feature = "alignment")]
 pub(crate) fn alignment_error(source: &ck::AlignmentError) -> Result<JsValue, JsValue> {
     use ck::AlignmentError as E;
     let error = Error::new(&source.to_string());
@@ -179,30 +192,39 @@ pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue
     if let Some(e) = source.downcast_ref::<ck::SmartsParseError>() {
         return crate::query_construction::parse_error(e);
     }
+    #[cfg(feature = "reaction")]
     if let Some(e) = source.downcast_ref::<ck::ReactionModelError>() {
         return crate::reaction_errors::model_error(e);
     }
+    #[cfg(feature = "reaction")]
     if let Some(e) = source.downcast_ref::<ck::ReactionParseError>() {
         return crate::reaction_errors::parse_error(e);
     }
+    #[cfg(feature = "reaction")]
     if let Some(e) = source.downcast_ref::<ck::ReactionRunError>() {
         return crate::reaction_errors::run_error(e);
     }
+    #[cfg(feature = "reaction")]
     if let Some(e) = source.downcast_ref::<ck::ReactionApplyError>() {
         return crate::reaction_errors::apply_error(e);
     }
+    #[cfg(feature = "reaction")]
     if let Some(e) = source.downcast_ref::<ck::ReactionProductError>() {
         return crate::reaction_errors::product_error(e);
     }
+    #[cfg(feature = "reaction")]
     if let Some(e) = source.downcast_ref::<ck::ReactionWriteError>() {
         return crate::reaction_errors::write_error(e);
     }
+    #[cfg(feature = "reaction")]
     if let Some(e) = source.downcast_ref::<ck::ReactionValidationError>() {
         return crate::reaction_errors::validation_error(e);
     }
+    #[cfg(feature = "reaction")]
     if let Some(e) = source.downcast_ref::<ck::ReactionInitializationError>() {
         return crate::reaction_errors::initialization_error(e);
     }
+    #[cfg(feature = "serialization")]
     if let Some(e) = source.downcast_ref::<ck::PickleError>() {
         return crate::pickle_errors::pickle_error(e);
     }
@@ -260,140 +282,184 @@ pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue
         return crate::property_values::property_error(source);
     }
 
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioMoleculeError>() {
         return crate::bio_conversion::molecule_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioMoleculeConversionError>() {
         return crate::bio_conversion::conversion_error(source);
     }
 
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::TopologicalTorsionPathScoreError>() {
         return crate::path_codes::score_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::AtomCodeExplanationError>() {
         return crate::path_codes::explanation_error(source);
     }
 
+    #[cfg(feature = "conformer")]
     if let Some(source) = source.downcast_ref::<ck::ConformerError>() {
         return crate::conformer_errors::params_error(source);
     }
+    #[cfg(feature = "conformer")]
     if let Some(source) = source.downcast_ref::<ck::ConformerRunError>() {
         return crate::conformer_errors::run_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::ProteinReadError>() {
         return crate::bio_protein::read_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioPdbWriteError>() {
         return crate::bio_write_errors::pdb_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioMmcifWriteError>() {
         return crate::bio_write_errors::mmcif_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioSelectionParseError>() {
         return crate::bio_selection::parse_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioSelectionMatchError>() {
         return crate::bio_selection::match_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioSelectionCopyError>() {
         return crate::bio_selection::copy_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioSelectionCopyCause>() {
         return crate::bio_selection::copy_cause_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioOperationError>() {
         return crate::bio_selection::operation_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::ProteinProjectionError>() {
         return crate::bio_selection::protein_projection_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioStructureError>() {
         return crate::bio_hierarchy_errors::structure_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioRowModelError>() {
         return crate::bio_hierarchy_errors::row_model_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioRowChainError>() {
         return crate::bio_hierarchy_errors::row_chain_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioRowTraverseError>() {
         return crate::bio_hierarchy_errors::row_traverse_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioReadError>() {
         return crate::bio_read_errors::read_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioPdbReadError>() {
         return crate::bio_read_errors::pdb_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::BioMmcifReadError>() {
         return crate::bio_read_errors::mmcif_error(source);
     }
+    #[cfg(feature = "bio")]
     if let Some(source) = source.downcast_ref::<ck::ResidueSequenceError>() {
         return crate::bio_residue::sequence_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::MorganReadError>() {
         return crate::fingerprint_source_errors::morgan_error(source);
     }
+    #[cfg(feature = "forcefields")]
     if let Some(source) = source.downcast_ref::<ck::UffOptimizationError>() {
         return crate::uff::uff_optimization_error(source);
     }
+    #[cfg(feature = "forcefields")]
     if let Some(source) = source.downcast_ref::<ck::MmffOptimizationError>() {
         return crate::mmff::mmff_optimization_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::MoleculeHashError>() {
         return crate::hashing::hash_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::CipRankError>() {
         return crate::hashing::cip_error(source);
     }
+    #[cfg(feature = "forcefields")]
     if let Some(source) = source.downcast_ref::<ck::UffParameterQueryError>() {
         return crate::forcefield_properties::uff_query_error(source);
     }
+    #[cfg(feature = "forcefields")]
     if let Some(source) = source.downcast_ref::<ck::UffParameterError>() {
         return crate::forcefield_properties::uff_parameter_error(source);
     }
+    #[cfg(feature = "forcefields")]
     if let Some(source) = source.downcast_ref::<ck::MmffMolPropertiesError>() {
         return crate::forcefield_properties::mmff_properties_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::TopologicalFingerprintError>() {
         return crate::topological::topological_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::MaccsFingerprintError>() {
         return crate::maccs::maccs_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::TopologicalTorsionReadError>() {
         return crate::fingerprint_source_errors::topological_torsion_error(source);
     }
     if let Some(error) = source.downcast_ref::<cosmolkit_wasm::rust::SmartsParseError>() {
         return crate::query_construction::parse_error(error);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::PatternFingerprintError>() {
         return crate::layered_pattern_errors::pattern_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::LayeredFingerprintError>() {
         return crate::layered_pattern_errors::layered_error(source);
     }
+    #[cfg(all(feature = "fingerprints", feature = "batch"))]
     if let Some(source) = source.downcast_ref::<ck::BatchFingerprintOutputError>() {
         return crate::fingerprint_source_errors::output_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::FingerprintJsonError>() {
         return crate::fingerprint_source_errors::json_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::FingerprintPreparationError>() {
         return crate::fingerprint_source_errors::preparation_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::AtomPairReadError>() {
         return crate::fingerprint_source_errors::atom_pair_error(source);
     }
+    #[cfg(feature = "fingerprints")]
     if let Some(source) = source.downcast_ref::<ck::FingerprintError>() {
         return crate::fingerprint_errors::fingerprint_error(source);
     }
+    #[cfg(feature = "batch")]
     if let Some(source) = source.downcast_ref::<ck::BatchImageError>() {
         return crate::image_errors::batch_image_error(source);
     }
+    #[cfg(feature = "descriptors")]
     if let Some(source) = source.downcast_ref::<ck::DescriptorReadError>() {
         return crate::descriptor_errors::descriptor_read_error(source);
     }
+    #[cfg(feature = "descriptors")]
     if let Some(source) = source.downcast_ref::<ck::DescriptorError>() {
         return crate::descriptor_errors::descriptor_error(source);
     }
@@ -417,9 +483,11 @@ pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue
     if let Some(source) = source.downcast_ref::<ck::KekulizeError>() {
         return crate::transform_errors::kekulize_error(source);
     }
+    #[cfg(feature = "depict")]
     if let Some(source) = source.downcast_ref::<ck::Coordinate2DTemplateError>() {
         return crate::depict_errors::template_error(source);
     }
+    #[cfg(feature = "depict")]
     if let Some(source) = source.downcast_ref::<ck::Coordinate2DLayoutError>() {
         return crate::depict_errors::layout_error(source);
     }
@@ -429,9 +497,11 @@ pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue
     if let Some(source) = source.downcast_ref::<ck::SmilesError>() {
         return crate::smiles_boundary::smiles_error(source);
     }
+    #[cfg(feature = "batch")]
     if let Some(source) = source.downcast_ref::<ck::BatchValidationError>() {
         return crate::batch_boundary::batch_validation_error(source);
     }
+    #[cfg(feature = "batch")]
     if let Some(source) = source.downcast_ref::<ck::BatchError>() {
         return crate::batch_boundary::batch_record_error(source);
     }
@@ -441,6 +511,7 @@ pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue
     if let Some(source) = source.downcast_ref::<ck::AromaticityError>() {
         return crate::aromaticity_boundary::aromaticity_error(source);
     }
+    #[cfg(feature = "alignment")]
     if let Some(source) = source.downcast_ref::<ck::AlignmentError>() {
         return alignment_error(source);
     }
@@ -459,14 +530,20 @@ pub(crate) fn source_error(source: &(dyn RustError + 'static)) -> Result<JsValue
 pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, JsValue> {
     use ck::OperationError as E;
     let kind = match source {
+        #[cfg(feature = "reaction")]
         E::ReactionRun(..) => "ReactionRun",
+        #[cfg(feature = "reaction")]
         E::ReactionApply(..) => "ReactionApply",
+        #[cfg(feature = "full")]
         E::Enumeration(..) => "Enumeration",
         E::AtomProperty(..) => "AtomProperty",
         E::BondProperty(..) => "BondProperty",
         E::InvalidReconstructionOrigin { .. } => "InvalidReconstructionOrigin",
+        #[cfg(feature = "alignment")]
         E::Alignment(..) => "Alignment",
+        #[cfg(feature = "conformer")]
         E::Conformer(..) => "Conformer",
+        #[cfg(feature = "full")]
         E::Tautomer(..) => "Tautomer",
         E::UnsupportedFeature { .. } => "UnsupportedFeature",
         E::Unsupported { .. } => "Unsupported",
@@ -485,6 +562,7 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
         E::DerivedEffectContract { .. } => "DerivedEffectContract",
         E::CipStateContract { .. } => "CipStateContract",
         E::InvalidTopology(..) => "InvalidTopology",
+        #[cfg(feature = "fingerprints")]
         E::AtomCode(..) => "AtomCode",
         E::InvalidTopologyEdit(..) => "InvalidTopologyEdit",
         E::InvalidCoordinates(..) => "InvalidCoordinates",
@@ -500,7 +578,9 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
         E::Transform(..) => "Transform",
         E::CoordinateInput(..) => "CoordinateInput",
         E::Coordinate2D(..) => "Coordinate2D",
+        #[cfg(feature = "forcefields")]
         E::UffOptimization(..) => "UffOptimization",
+        #[cfg(feature = "forcefields")]
         E::MmffOptimization(..) => "MmffOptimization",
         E::Kekulize(..) => "Kekulize",
         E::Aromaticity(..) => "Aromaticity",
@@ -515,7 +595,9 @@ pub(crate) fn operation_error(source: &ck::OperationError) -> Result<JsValue, Js
     set(&error, "domain", "operation".into())?;
     set(&error, "kind", kind.into())?;
     match source {
+        #[cfg(feature = "reaction")]
         E::ReactionRun(cause) => set(&error, "cause", crate::reaction_errors::run_error(cause)?)?,
+        #[cfg(feature = "reaction")]
         E::ReactionApply(cause) => {
             set(&error, "cause", crate::reaction_errors::apply_error(cause)?)?
         }

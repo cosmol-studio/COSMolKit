@@ -7,12 +7,13 @@
 //!
 //! # Cargo features
 //! Default features enable `full`. Plain names such as `core`, `bio`, and
-//! `fingerprints` select bundles; `cap-*` names select individual capabilities,
-//! such as `cap-io` or `cap-kekulize`. With defaults disabled, `core` is not
-//! implicit. Features compose additively and do not change operation behavior.
+//! `fingerprints` select functionality and include its public prerequisites.
+//! For example, `reaction` includes search and SMILES APIs. With defaults
+//! disabled, `core` is not implicit. Features compose additively and do not
+//! change operation behavior.
 //! `core` includes molecular format parsing/writing for text and files;
-//! binary archives remain independently selectable with `cap-serialization`.
-//! See the crate README for bundle membership and advanced selection examples.
+//! binary archives remain independently selectable with `serialization`.
+//! See the dependency tree at the top of the crate README.
 
 #[cfg(doctest)]
 #[path = "../tests/support/feature_gate_docs.rs"]
@@ -61,10 +62,16 @@ pub use descriptors::DescriptorReadError;
 pub use drawing::DrawingWriteError;
 #[cfg(feature = "cap-alignment")]
 mod alignment;
+#[cfg(feature = "cap-inchi")]
+mod inchi;
 #[cfg(feature = "cap-matrices")]
 mod matrices;
 mod molecule;
 mod molecule_builder;
+#[cfg(feature = "cap-inchi")]
+pub use cosmolkit_inchi::{InchiError, InchiErrorKind};
+#[cfg(feature = "cap-inchi")]
+pub use inchi::{InchiReadParams, InchiWriteParams, inchi_to_inchi_key};
 #[cfg(feature = "cap-reaction")]
 mod reaction;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-smiles")))]

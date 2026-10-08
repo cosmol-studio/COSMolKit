@@ -179,10 +179,11 @@ Read the applicable rules before acting. Review requests are read-only unless
 changes are requested. Preserve other contributors' work; do not clean up
 unrelated files or revise standards to accommodate an implementation.
 
-For split-crate execution, the
-[completion plan](./plans/crate_architecture_completion_plan.md) is the sole
-queue and progress ledger. Follow its steps and required readings in order.
-Record progress in the plan so it survives context compaction; do not rely on
+For 0.5.0 work, follow the current user-authorized task and its explicitly
+assigned plan. Task-specific inventories record completion scope;
+historical plans are not automatic work queues.
+Follow the assigned steps and required readings in order.
+Record progress in the task plan so it survives context compaction; do not rely on
 conversation memory. Continue authorized work until completion, a genuine
 blocker or interruption, rather than stopping after an arbitrary batch.
 

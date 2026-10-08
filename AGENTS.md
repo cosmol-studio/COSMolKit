@@ -4,7 +4,7 @@
 
 - Follow `dev/crate_architecture.md` for ownership, `dev/README.md` for development rules, and `dev/public_api_design.md` for public APIs.
 - Read applicable rules before working. After every context compaction, reread `dev/source_reproduction_protocol.md`. Execute each plan task's preceding Read Step; prior reading is not a substitute.
-- Use `dev/plans/crate_architecture_completion_plan.md` as the sole split-crate execution plan and ledger. Reports, experiments, and historical code are not alternative architectures or queues.
+- Work on the current user-authorized task and its explicitly assigned plan. Task inventories record scope, not blanket acceptance of the current checkout. Reports and experiments do not authorize new work.
 - Report conflicting rules with concrete evidence and ask for clarification; do not choose weaker rules. Code comments specifying operation constraints or human approval are binding.
 
 ## Agent Authority
@@ -60,7 +60,7 @@
 ## Files and Tooling
 
 - Use Rust 2024, four-space indentation, and standard naming. Keep public APIs in `lib.rs` or narrow modules.
-- Put tests in the owning crate's unit modules or `tests/`, shared fixtures in `testdata/`, and preparation entrypoints in `tools/testdata/`. Follow `dev/repository_organization_policy.md`; do not casually commit generated data or bulk corpora.
+- Put ordinary regressions in the owning crate's unit modules or `tests/`. The current corpus/special-regression runner is `parity-tests_fixed/`: inputs belong in its `testdata/`, generated references in `expected/`, with one prepare command and Cargo comparison. Repository `testdata/` retains shared ordinary-regression fixtures and historical provenance, not a second corpus workflow. Follow `dev/repository_organization_policy.md`; do not casually commit generated data or bulk corpora.
 - Manage Python from the repository root with `uv sync --group dev`. Build and test with `.venv/bin/maturin develop --manifest-path python/Cargo.toml` and `.venv/bin/pytest`.
 - Generate stubs with `cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen`; do not hand-edit `python/cosmolkit.pyi`.
 - Build docs with `.venv/bin/python -m sphinx -b html python/docs/source python/docs/build/html`; type-check with `.venv/bin/basedpyright python/tests python/examples`.

@@ -28,11 +28,49 @@ const BUNDLES: &[(&str, &[&str])] = &[
     ("forcefields", &["cap-forcefields"]),
     ("fingerprints", &["cap-fingerprints", "cap-hashing"]),
     ("search", &["cap-search"]),
+    ("reaction", &["cap-reaction"]),
+    ("serialization", &["cap-serialization"]),
+    ("stereoisomers", &["cap-stereoisomers"]),
     ("depict", &["cap-depict"]),
     ("inchi", &["cap-inchi"]),
     ("batch", &["cap-batch"]),
 ];
 const FOUR_CAPS: &[&str] = &["cap-io", "cap-kekulize", "cap-sanitize", "cap-hydrogens"];
+
+// Independent expectations for public functionality included by prerequisites.
+const PREREQUISITES: &[(&str, &[&str])] = &[
+    ("cap-alignment", &["cap-search"]),
+    ("cap-batch", &["cap-io"]),
+    (
+        "cap-conformer",
+        &["cap-forcefields", "cap-alignment", "cap-io"],
+    ),
+    ("cap-confseq", &["cap-conformer"]),
+    ("cap-depict", &["cap-search"]),
+    ("cap-descriptors", &["cap-search"]),
+    ("cap-fingerprints", &["cap-io", "cap-search", "cap-stereo"]),
+    ("cap-forcefields", &["cap-search"]),
+    ("cap-hashing", &["cap-search", "cap-stereo"]),
+    ("cap-io", &["cap-search", "cap-depict"]),
+    ("cap-search", &["cap-smiles"]),
+    ("cap-serialization", &["cap-io"]),
+    ("cap-stereoisomers", &["cap-stereo", "cap-conformer"]),
+    ("cap-tautomer", &["cap-search"]),
+    ("cap-reaction", &["cap-search"]),
+];
+
+fn expected_caps<'a>(selected: impl IntoIterator<Item = &'a str>) -> BTreeSet<&'a str> {
+    let mut pending: Vec<_> = selected.into_iter().collect();
+    let mut caps = BTreeSet::new();
+    while let Some(cap) = pending.pop() {
+        if caps.insert(cap) {
+            if let Some((_, dependencies)) = PREREQUISITES.iter().find(|(name, _)| *name == cap) {
+                pending.extend(dependencies.iter().copied());
+            }
+        }
+    }
+    caps
+}
 
 fn manifest() -> toml::Value {
     toml::from_str(include_str!("../Cargo.toml")).unwrap()
@@ -94,14 +132,14 @@ fn bundle_and_capability_declarations_have_exact_membership() {
         (
             false,
             FOUR_CAPS.to_vec(),
-            FOUR_CAPS.iter().copied().collect(),
+            expected_caps(FOUR_CAPS.iter().copied()),
         ),
     ];
     for &(bundle, caps) in BUNDLES {
-        cases.push((false, vec![bundle], caps.iter().copied().collect()));
+        cases.push((false, vec![bundle], expected_caps(caps.iter().copied())));
     }
     for &cap in &all {
-        cases.push((false, vec![cap], [cap].into_iter().collect()));
+        cases.push((false, vec![cap], expected_caps([cap])));
     }
     for mask in 0_u8..16 {
         if !matches!(mask.count_ones(), 2 | 3) {
@@ -113,17 +151,18 @@ fn bundle_and_capability_declarations_have_exact_membership() {
             .filter(|(i, _)| mask & (1 << i) != 0)
             .map(|(_, cap)| *cap)
             .collect();
-        cases.push((false, selected.clone(), selected.into_iter().collect()));
+        cases.push((false, selected.clone(), expected_caps(selected)));
     }
     cases.push((
         false,
         vec!["core", "bio"],
-        CORE.iter().copied().chain(["cap-bio"]).collect(),
+        expected_caps(CORE.iter().copied().chain(["cap-bio"])),
     ));
-    assert_eq!(cases.len(), 54);
+    assert_eq!(cases.len(), 57);
     assert!(!manifest["features"].as_table().unwrap().contains_key("io"));
     assert!(!declared_caps(&manifest, false, &["core"]).contains("cap-serialization"));
-    assert!(!declared_caps(&manifest, false, &["core"]).contains("cap-search"));
+    assert!(declared_caps(&manifest, false, &["core"]).contains("cap-search"));
+    assert!(declared_caps(&manifest, false, &["reaction"]).contains("cap-search"));
     for strict in [false, true] {
         for (defaults, selected, expected) in &cases {
             let mut selected = selected.clone();
@@ -168,23 +207,19 @@ fn optional_dependencies_and_io_branches_stay_independent() {
                 "dep:cosmolkit-io",
                 "cosmolkit-io/molecule",
                 "dep:cosmolkit-core",
+                "cap-search",
+                "cap-depict",
             ][..],
         ),
-        (
-            "cap-serialization",
-            &[
-                "dep:cosmolkit-io",
-                "cosmolkit-io/molecule",
-                "dep:cosmolkit-core",
-            ][..],
-        ),
+        ("cap-serialization", &["cap-io"][..]),
         (
             "cap-fingerprints",
             &[
                 "dep:cosmolkit-fingerprints",
                 "dep:cosmolkit-core",
-                "dep:cosmolkit-io",
-                "cosmolkit-io/molecule",
+                "cap-io",
+                "cap-search",
+                "cap-stereo",
             ][..],
         ),
     ] {
@@ -288,6 +323,26 @@ fn reaction_object_and_execution_are_gated_together() {
         cosmolkit::MOLECULE_OPS.iter().any(|op| op.method == "run"),
         cfg!(feature = "cap-reaction")
     );
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
+fn reaction_selection_exposes_search_and_smiles_without_extra_features() {
+    let _reaction = cosmolkit::Reaction::from_smirks("[C:1]>>[C:1]").unwrap();
+    let query = cosmolkit::parse_smarts("[#6]").unwrap();
+    let compiled = cosmolkit::compile_query(&query).unwrap();
+    let molecule = cosmolkit::Molecule::from_smiles("CCO").unwrap();
+    assert_eq!(molecule.num_atoms(), 3);
+    assert_eq!(molecule.substruct_matches(&query).unwrap().len(), 2);
+    let _ = compiled;
+    for id in ["search.parse_smarts", "Molecule.from_smiles"] {
+        assert!(
+            cosmolkit::BINDING_CONTRACT
+                .iter()
+                .any(|entry| entry.semantic_id == id),
+            "{id}"
+        );
+    }
 }
 
 // Method references compile once with this target, without executing chemistry.

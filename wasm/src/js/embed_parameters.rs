@@ -1,8 +1,5 @@
 //! Full frozen embedding configuration; Python-equivalent map and scalar conversion.
-use crate::{
-    bio_selection::point,
-    host_values::{bool_value, i32_value, sequence, type_error, u32_value},
-};
+use crate::host_values::{bool_value, i32_value, point, sequence, type_error, u32_value};
 use cosmolkit_wasm::rust as ck;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;

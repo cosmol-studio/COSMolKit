@@ -51,12 +51,8 @@ jobs:
             - name: Test deployment scripts
               run: .venv/bin/python -m unittest discover -s docs-web/scripts -p 'test_*.py' -v
 
-            # - name: Install package for autodoc
-            #   run: .venv/bin/maturin develop --manifest-path python/Cargo.toml
-
-            - name: Install released package for autodoc
-              run: |
-                  uv pip install --python .venv/bin/python --only-binary=:all: cosmolkit==0.3.0
+            - name: Build checkout package for autodoc
+              run: .venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml
 
             - name: Build Sphinx source
               run: |

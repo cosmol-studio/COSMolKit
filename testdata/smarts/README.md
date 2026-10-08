@@ -13,16 +13,11 @@ The matcher portion contains 62 rows from the foundational `testMatches`,
 extension table in `smarts_catch_tests.cpp`; explicit-H expansion is tested as
 a separate molecule operation.
 
-Generate the ignored RDKit expected data with:
-
-```bash
-.venv/bin/python tools/testdata/rdkit/generate_all.py \
-  --python .venv/bin/python --profile smarts_source --suite smarts
-```
-
-The generated `smarts.jsonl` records parse acceptance, atom/bond counts,
+The original reference `smarts.jsonl` records parse acceptance, atom/bond counts,
 exact RDKit SMARTS output, and exact ordered target-atom mappings. The Rust
 suite also exercises SMARTS/fragment/CXSMARTS write-parse composition, without
 presenting those non-golden composition checks as independent RDKit parity.
-Normal test execution only reads the validated manifest and does not invoke
-RDKit. Coverage CI prepares this dedicated profile before running Rust tests.
+For 0.5.0, corpus preparation and comparison use the
+[standard test runner](../../parity-tests_fixed/README.md). This directory
+documents source selection only, not another preparation command. Ordinary
+SMARTS regressions remain in their owning crates and do not invoke RDKit.

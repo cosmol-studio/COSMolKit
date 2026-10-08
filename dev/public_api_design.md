@@ -54,7 +54,7 @@ Every public item must belong to one of these categories.
 | Explicit in-place transformation | Rust `&mut self` method with trailing `_` | `add_hydrogens_` |
 | Serialization | `&self` method | `to_smiles`, `to_inchi`, `to_sdf` |
 | Multiple-output operation | `&self` method returning a collection/result | `enumerate_tautomers`, `generate_conformers` |
-| Query construction | domain module function | `search::parse_smarts` |
+| Query construction | facade function and thin value factory | `parse_smarts`; Python `QueryGraph.from_smarts` |
 | Cross-molecule operation | domain function or named operator | `maximum_common_substructure`, `align_to` |
 | Global vocabulary/metadata | module function or associated value | `version`, `element_info` |
 | Parameters/options | dedicated public value type | `SmilesWriteParams`, `EmbedParams` |
@@ -92,7 +92,7 @@ An operation may remain a module-level function when it has no natural
 receiver, for example:
 
 ```rust
-search::parse_smarts(text, &params) -> QueryGraph
+parse_smarts(text) -> QueryGraph
 maximum_common_substructure(inputs, &params) -> McsResult
 version() -> &str
 ```
@@ -111,6 +111,29 @@ and TypeScript adapters convert the same identifier to `camelCase` without
 changing its semantic name.
 
 ### 4.1 Constructors
+
+Python business functions are exposed directly under `cosmolkit`, not under
+domain submodules such as `cosmolkit.search` or `cosmolkit.confseq`. Rust domain
+modules remain valid implementation/semantic groupings; their layout does not
+introduce an extra Python namespace. Use a domain-explicit function name when
+flattening would make a generic verb ambiguous, for example `decode_confseq`
+and `decode_confseq_batch`, not top-level `decode` and `decode_batch`.
+
+The user-approved SMARTS construction surface deliberately provides both:
+
+```python
+query = cosmolkit.parse_smarts(text)
+query = cosmolkit.QueryGraph.from_smarts(text)
+```
+
+Explicit configuration uses `parse_smarts_with_params(text, params)` and
+`QueryGraph.from_smarts_with_params(text, params)`. Both forms return the same
+canonical query value and share the same parser, defaults and typed errors.
+The bound class factory is a thin projection of a registered facade callable;
+it does not add a parser dependency or inherent parsing implementation to the
+detached model type. Do not retain the previous `cosmolkit.search.*` layer as
+a compatibility namespace. Other search functions (`compile_query`,
+`write_smarts`, `write_cx_smarts`) are likewise top-level Python functions.
 
 The top-level public `BioStructure` and `Protein` use associated constructors
 `from_pdb`, `from_pdb_with_params` and `from_mmcif`. Their detached data stays
@@ -219,6 +242,38 @@ mol.with_3d_conformer_with_params(&params)
 Do not create language-specific overload families with different defaults.
 Bindings should expose the same explicit parameter fields and default values.
 
+### 4.6 Domain-explicit public type names
+
+A public type name must identify its domain and role at its actual exposure
+location. Top-level facade exports must remain understandable without a nearby
+algorithm call, source-library knowledge, or an implementation-module name.
+Generic names such as `AdditionalOutput`, `Options`, or `Result` are not
+sufficient for domain-specific top-level types. Use a domain qualifier when the
+containing public namespace does not already make the meaning unambiguous;
+do not add redundant prefixes to already self-explanatory vocabulary types.
+
+Counterexample:
+
+```python
+output = ck.AdditionalOutput()  # Additional output for which functionality?
+```
+
+Canonical name:
+
+```python
+output = ck.FingerprintAdditionalOutput()
+fp = mol.morgan_fingerprint_with_params(params, output)
+```
+
+`FingerprintAdditionalOutput` names the optional fingerprint metadata collector
+shared by multiple fingerprint algorithms, not a Morgan-only result and not a
+container that owns the returned fingerprint. Keep this type name consistent
+across Rust, Python, and JavaScript. RDKit's original `AdditionalOutput` spelling
+remains verbatim in pinned-source anchors; upstream names do not override the
+public naming rule. Register and update the canonical type, signatures, bindings,
+documentation, and tests together. Do not retain the ambiguous name as a
+compatibility alias without explicit authorization.
+
 ## 5. Type Classification
 
 Public types must be classified in documentation and in the API manifest.
@@ -242,7 +297,8 @@ it is not subject to the detached model's dependency restriction.
 
 ### 5.2 Inputs
 
-Parameters and options are immutable configuration values:
+Parameters and options are configuration values. Their Rust API is unchanged
+by the language-projection rules below:
 
 ```text
 SmilesParseParams
@@ -254,6 +310,77 @@ SubstructMatchParams
 
 They must have explicit defaults where the source API defines defaults. A
 parameter type must not contain a live `Molecule` or a runtime capability.
+
+#### Python and JavaScript: writable configuration properties
+
+Python and JavaScript parameter/option objects must support both constructor
+configuration and assignment after default construction. Every public input
+field must have a getter and setter, not only selected fields or types:
+
+```python
+params = ck.SubstructMatchParams()
+params.use_chirality = True
+params.max_matches = 100
+# Equivalent configuration:
+params = ck.SubstructMatchParams(use_chirality=True, max_matches=100)
+```
+
+```javascript
+const params = new ck.SubstructMatchParams();
+params.useChirality = true;
+params.maxMatches = 100;
+```
+
+This requirement applies only to Python and JavaScript configuration objects;
+it does not make molecule storage, calculated results, reports, or errors
+writable, and does not change Rust APIs or molecule operation contracts.
+Computed properties are not input fields and may remain read-only.
+
+Constructors and setters must use the same field types and validation rules.
+An invalid assignment raises the language's corresponding error and leaves
+the previous field value unchanged. Changing a configuration object must not
+retroactively change an earlier operation or another independent object.
+Register writable properties consistently with the binding contract, generate
+matching `.pyi` and TypeScript declarations, and test constructor/assignment
+equivalence through an actual operation. A read-only binding for a configurable
+input field is a contract defect, not an alternative configuration style.
+
+Parameterized operations must also expose one idiomatic method name supporting
+default configuration, a parameter instance, or convenient field configuration:
+
+```python
+mol.substruct_matches(query)
+mol.substruct_matches(query, params)
+mol.substruct_matches(query, use_chirality=True, uniquify=False, max_matches=100)
+```
+
+```javascript
+mol.substructMatches(query);
+mol.substructMatches(query, params);
+mol.substructMatches(query, {
+    useChirality: true,
+    uniquify: false,
+    maxMatches: 100,
+});
+```
+
+Python configuration keywords are keyword-only and mutually exclusive with a
+parameter instance; supplying both raises `TypeError`, without implicit
+overrides. JavaScript accepts either a parameter instance or a plain options
+object as the configuration argument; it does not have Python-style keyword
+arguments. Omitted configuration fields use the same registered defaults as
+the parameter constructor. Reject unknown fields and invalid values rather
+than silently ignoring them.
+
+Bindings normalize these forms to the same Rust parameter type and canonical
+operation; they must not duplicate algorithms or change Rust signatures.
+Python `.pyi` files express the call forms using `@overload`; TypeScript
+declarations expose the parameter-instance/options-object forms. TypeScript
+implementations may define default values, but `.d.ts` declarations describe
+optional parameters/properties without default-value initializers. Document
+the defaults and test all call forms for equivalent behavior. A `_with_params`
+suffix must not be required to select explicit configuration in Python or
+JavaScript.
 
 ### 5.3 Results and reports
 
@@ -339,22 +466,50 @@ refer to the same logical operation rather than define duplicate behavior.
 
 ### Cargo feature selection
 
-Domain names without a prefix select user bundles; `cap-*` names select individual capabilities.
-Bundles only compose capabilities. Both forms can be combined, and Cargo adds
-their selections together. `full` is the default.
+Public documentation and examples use plain feature names. Ordinary users must
+not need to understand `cap-*` gates to select functionality. The crate README's
+dependency tree shows user features and included functionality, not internal
+selectors. `cap-*` names remain implementation-level capability gates used by
+cfg conditions and registries; their details belong in development documentation.
 
-| Bundle | Exact capability membership |
+Domain names without a prefix select user bundles; `cap-*` names select individual capabilities.
+Bundles compose capabilities and their public prerequisites. Both forms can be
+combined, and Cargo adds their selections together. `full` is the default.
+
+| Bundle | Direct feature membership (prerequisites are transitive) |
 |---|---|
-| `core` | `cap-smiles`, `cap-io`, `cap-serialization`, `cap-descriptors`, `cap-hydrogens`, `cap-valence`, `cap-radicals`, `cap-rings`, `cap-matrices`, `cap-transforms`, `cap-stereo`, `cap-kekulize`, `cap-aromaticity`, `cap-sanitize`, `cap-stereoisomers`, `cap-tautomer` |
+| `core` | `cap-smiles`, `cap-hydrogens`, `cap-valence`, `cap-radicals`, `cap-rings`, `cap-matrices`, `cap-transforms`, `cap-stereo`, `cap-kekulize`, `cap-aromaticity`, `cap-sanitize`, `cap-io`, `depict` |
 | `bio` | `cap-bio` |
-| `conformer` | `cap-conformer`, `cap-confseq`, `cap-alignment` |
-| `forcefields` | `cap-forcefields` |
-| `fingerprints` | `cap-fingerprints`, `cap-hashing` |
+| `descriptors` | `cap-descriptors`, `search` |
+| `tautomer` | `cap-tautomer`, `search` |
+| `conformer` | `cap-conformer`, `cap-confseq`, `cap-alignment`, `forcefields`, `depict` |
+| `forcefields` | `cap-forcefields`, `search` |
+| `fingerprints` | `cap-fingerprints`, `cap-hashing`, `depict` |
 | `search` | `cap-search` |
-| `depict` | `cap-depict` |
+| `reaction` | `cap-reaction`, `search` |
+| `serialization` | `cap-serialization`, `depict` |
+| `stereoisomers` | `cap-stereoisomers`, `forcefields`, `depict` |
+| `depict` | `cap-depict`, `search` |
 | `inchi` | `cap-inchi` |
-| `batch` | `cap-batch` |
-| `full` | All nine bundles above |
+| `batch` | `cap-batch`, `depict` |
+| `full` | All bundles above |
+
+Molecular format parsing and writing, whether from strings or files, belong to
+the `core` bundle; there is no top-level `io` bundle. The internal IO crate
+remains the unique implementation owner. Binary archives can be selected
+independently with `serialization`; they are not included in `core`.
+
+SMIRKS parsing, reaction templates and the public `Reaction` API use
+`cap-reaction`, selected by the `reaction` bundle and included in `full`.
+`reaction` includes `search`, which includes SMILES: callers do not need to
+select those prerequisites separately to use their public APIs.
+
+`core` means foundational molecule chemistry and SMILES, not all inexpensive
+or historical APIs. Descriptors, binary archives, tautomer capability and
+stereoisomer enumeration require explicit selection outside `core`. Basic
+stereo assignment is part of `core`; `stereoisomers` selects enumeration
+separately and remains included in `full`. Feature membership does not claim
+that every API planned for the domain is implemented.
 
 Most callers use the default or select groups such as `core` and `bio`.
 For precise selection, disable defaults and choose individual capabilities:
@@ -374,12 +529,30 @@ selector. Always-present declarations use `runtime` or `metadata` labels;
 those labels are not Cargo capability selectors. Bundle membership is defined
 in `crates/cosmolkit/Cargo.toml`, not duplicated in a production registry.
 
-A selector enables its required implementation dependencies directly, not
-other domains' public selectors. `cap-smiles` needs `cosmolkit-core` but does
-not expose `with_hydrogens`; `cap-bio` needs BIO-enabled `cosmolkit-io` but
-does not expose `Molecule::from_sdf`. Shared dependencies still compile their
-own required internals. These switches do not promise per-function compilation
-inside `cosmolkit-core` or another implementation crate.
+A selector enables its implementation dependencies and the public capabilities
+of its domain prerequisites. This applies to plain bundles and `cap-*`
+selectors alike: reaction, descriptors, depict, forcefields, alignment and
+tautomer include search; search includes SMILES. Molecular IO includes search
+and depiction; serialization and batch include molecular IO. Conformers include
+forcefields, alignment and molecular IO. Fingerprints include molecular IO,
+search and stereo; hashing includes search and stereo. Stereoisomer enumeration
+includes stereo and conformers. The feature dependency tree belongs at the top
+of `crates/cosmolkit/README.md` and must match the Cargo manifest.
+
+Sharing a foundational implementation crate does not select all algorithms in
+that crate. For example, `cap-smiles` uses `cosmolkit-core` but does not select
+every capability in the `core` bundle. Public prerequisites do not alter
+algorithm ownership or operation authority.
+
+IO's internal `molecule` feature gates molecular formats; `bio` independently
+gates BIO formats/CID. The facade disables IO defaults: `cap-bio` selects only
+the structural BIO branch, not `Molecule::from_sdf` or molecular search. The
+domain IO crate retains `molecule` as its default for direct owner builds.
+An isolated external consuming build selecting only `bio` and/or `core` must
+not resolve descriptors or tautomer. Additional additive selections may
+legitimately enable other capabilities. Check active resolved dependency edges
+rather than lockfile package presence. These switches do not promise
+per-function compilation inside an implementation crate.
 
 `runtime-invariants`, `op-contracts`, and `op-contracts-strict` are separate
 validation switches, not chemistry bundles.
@@ -481,8 +654,10 @@ Before adding or revising a public API, verify:
 - Does the operation have a natural `Molecule` receiver?
 - If yes, is it a `Molecule` method rather than a new free function?
 - Is the name free of `calc_`, `mol_to_`, `mol_from_`, and redundant `get_`?
+- Does each public type name identify its domain and role at its exposure location?
 - Is value-style versus in-place behavior explicit?
 - Are parameters, results, and errors separate public types?
+- Do Python/JavaScript configuration input fields support both construction and assignment?
 - Does the implementation receive detached model blocks rather than `Molecule`?
 - Is the operation registered with the runtime contract when it mutates state?
 - Does the registry entry resolve to a real Rust item with the declared signature?

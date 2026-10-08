@@ -1,6 +1,18 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 const batch=()=>b.MoleculeBatch.fromSmilesListWithParams(['CCO','[','O'],new b.SmilesParseParams(),new b.BatchParams(b.BatchErrorMode.KeepErrors));
+test('All four AtomPair batch outputs equal scalar outputs', () => {
+ for (const text of ['CCO', 'c1ccncc1', 'F[C@](Cl)(Br)I']) {
+  const molecule = b.Molecule.fromSmiles(text), values = b.MoleculeBatch.fromSmilesList([text]);
+  for (const [scalar, batched, read] of [
+   ['atomPairFingerprint', 'fingerprintAtomPairList', 'onBits'],
+   ['atomPairSparseFingerprint', 'fingerprintAtomPairSparseBitsList', 'onBits'],
+   ['atomPairCountFingerprint', 'fingerprintAtomPairCountList', 'nonzeroElements'],
+   ['atomPairSparseCountFingerprint', 'fingerprintAtomPairSparseCountList', 'nonzeroElements'],
+  ]) assert.deepEqual(molecule[scalar]()[read](), values[batched]()[0][read]());
+  molecule.free(); values.free();
+ }
+});
 test('AtomPair complete parameter fields preserve defaults, borrowed objects and nullable arrays',()=>{
  const p=new b.AtomPairParams(),fields=['minDistance','maxDistance','includeChirality','use2d','countSimulation','fpSize','bitsPerFeature'];
  assert.deepEqual(fields.map(n=>p[n]),[1,30,false,true,true,2048,1]);assert.deepEqual(p.countBounds,[1,2,4,8]);

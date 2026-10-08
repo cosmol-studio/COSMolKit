@@ -12,6 +12,8 @@ import tempfile
 import tomllib
 from pathlib import Path
 
+from presets import PRESETS, MODULE_GROUPS, TEST_GROUPS, active_features, npm_release, selected_names, source_modules
+
 
 ROOT = Path(__file__).resolve().parents[3]
 TEST_DIR = ROOT / "wasm" / "tests"
@@ -47,10 +49,10 @@ def molecule_methods(sources) -> set[str]:
     }
 
 
-def check_generated_surface(source: Path) -> None:
+def check_generated_surface(source: Path, active: set[str] | None = None) -> None:
     # Check every current binding-facing Molecule method, including custom
     # modules. Historical names and future APIs are not this projection's ABI.
-    expected = molecule_methods((ROOT / "wasm" / "src").glob("*.rs"))
+    expected = molecule_methods(source_modules(active or active_features("full")))
     if not expected:
         raise SystemExit("No binding-facing Molecule methods found")
     generated_methods = molecule_methods(source.parent.glob("*.rs"))
@@ -62,13 +64,17 @@ def check_generated_surface(source: Path) -> None:
         )
 
 
-def prepare_package(package: Path, library_name: str, metadata: dict) -> None:
+def prepare_package(package: Path, library_name: str, metadata: dict, preset: str = "full") -> None:
     module = f"{library_name}.js"
     declaration = f"{library_name}.d.ts"
+    version, tag = npm_release(metadata["version"], preset)
     (package / "package.json").write_text(
         json.dumps({
             "name": "@cosmol-studio/cosmolkit",
-            "version": metadata["version"],
+            "version": version,
+            "cosmolkitPreset": preset,
+            "cosmolkitVersion": metadata["version"],
+            "publishConfig": {"access": "public", "tag": tag},
             "description": "WebAssembly bindings for COSMolKit",
             "type": "module",
             "main": module,
@@ -88,7 +94,7 @@ def prepare_package(package: Path, library_name: str, metadata: dict) -> None:
     shutil.copy2(ROOT / "LICENSE", package / "LICENSE")
 
 
-def check_typescript(workspace: Path, declaration: Path) -> None:
+def check_typescript(workspace: Path, declaration: Path, active: set[str] | None = None) -> None:
     shim = workspace / "wasm-generated.d.ts"
     # Resolve the generated public declaration without depending on baseUrl.
     shim.write_text(
@@ -107,7 +113,7 @@ def check_typescript(workspace: Path, declaration: Path) -> None:
                 "noEmit": True,
                 "paths": {"cosmolkit-generated": [str(shim)]},
             },
-            "files": list(map(str, sorted(TEST_DIR.glob("*.ts")))),
+            "files": list(map(str, selected_tests(".ts", active or active_features("full")))),
         }),
         encoding="utf-8",
     )
@@ -121,10 +127,23 @@ def check_typescript(workspace: Path, declaration: Path) -> None:
     print("TypeScript declaration checks passed", flush=True)
 
 
+def selected_tests(suffix: str, active: set[str]) -> list[Path]:
+    known = {name for names in TEST_GROUPS.values() for name in names.split()}
+    paths = sorted(TEST_DIR.glob("*" + suffix))
+    unknown = {path.stem for path in paths} - known
+    if unknown:
+        raise SystemExit(f"Assign new WASM tests to a feature group: {sorted(unknown)}")
+    selected = selected_names(TEST_GROUPS, active)
+    return [path for path in paths if path.stem in selected]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, help="Export the tested npm package to a new directory")
+    parser.add_argument("--preset", choices=PRESETS, default="full", help="Fixed distribution preset (default: full)")
     args = parser.parse_args()
+    active = active_features(args.preset)
+    print(f"WASM preset: {args.preset}; features: {', '.join(sorted(active))}", flush=True)
     alef = command("alef", "ALEF_BIN")
     wasm_bindgen = command("wasm-bindgen", "WASM_BINDGEN_BIN")
     bun = os.environ.get("BUN_BIN") or shutil.which("bun")
@@ -151,7 +170,16 @@ def main() -> None:
             + "\n",
             encoding="utf-8",
         )
-        (workspace / "alef.toml").write_text(CONFIG.read_text(encoding="utf-8"), encoding="utf-8")
+        config_text = CONFIG.read_text(encoding="utf-8")
+        custom_modules = tomllib.loads(config_text)["crates"][0]["wasm"].get("custom_rust_modules", [])
+        known = {name for names in MODULE_GROUPS.values() for name in names.split()}
+        if unknown := set(custom_modules) - known:
+            raise SystemExit(f"Assign new custom WASM modules to a feature group: {sorted(unknown)}")
+        selected = selected_names(MODULE_GROUPS, active)
+        custom_modules = [name for name in custom_modules if name in selected]
+        config_text = re.sub(r"^features = .*", "features = " + json.dumps(sorted(active)), config_text, flags=re.MULTILINE)
+        config_text = re.sub(r"^custom_rust_modules = .*", "custom_rust_modules = " + json.dumps(custom_modules), config_text, flags=re.MULTILINE)
+        (workspace / "alef.toml").write_text(config_text, encoding="utf-8")
 
         private_bin = workspace / "private-bin"
         private_bin.mkdir()
@@ -177,15 +205,28 @@ def main() -> None:
             cwd=workspace,
             env=build_env,
         )
-        with CONFIG.open("rb") as config_file:
-            custom_modules = tomllib.load(config_file)["crates"][0]["wasm"].get("custom_rust_modules", [])
         for module_name in custom_modules:
             shutil.copy2(
                 ROOT / "wasm" / "src" / "js" / f"{module_name}.rs",
                 generated / "src" / f"{module_name}.rs",
             )
-        check_generated_surface(generated / "src" / "lib.rs")
+        check_generated_surface(generated / "src" / "lib.rs", active)
         manifest = generated / "Cargo.toml"
+        # cfg in hand-written projections uses the same resolved source features.
+        # Disable dependency defaults so an omitted domain cannot leak in as full.
+        manifest_text = manifest.read_text(encoding="utf-8")
+        dependency = 'cosmolkit-wasm = { path = ' + json.dumps(str(workspace / "wasm")) + ', default-features = false, features = ' + json.dumps(PRESETS[args.preset]) + ' }'
+        manifest_text, replacements = re.subn(r"^cosmolkit-wasm\s*=.*$", lambda _: dependency, manifest_text, flags=re.MULTILINE)
+        if replacements != 1:
+            raise SystemExit("Expected exactly one generated cosmolkit-wasm dependency")
+        feature_table = "[features]\ndefault = " + json.dumps(sorted(active)) + "\n"
+        feature_table += "\n".join(f"{feature} = []" for feature in tomllib.loads((ROOT / "wasm/Cargo.toml").read_text())["features"] if feature != "default") + "\n"
+        manifest_text, tables = re.subn(r"^\[features\]\n.*?(?=^\[|\Z)", lambda _: feature_table + "\n", manifest_text, flags=re.MULTILINE | re.DOTALL)
+        if tables == 0:
+            manifest_text += "\n" + feature_table
+        elif tables != 1:
+            raise SystemExit("Expected at most one generated features table")
+        manifest.write_text(manifest_text, encoding="utf-8")
         run(
             "cargo",
             "build",
@@ -227,31 +268,33 @@ def main() -> None:
         for path in (module, declaration, background_binary):
             if not path.is_file():
                 raise SystemExit(f"wasm-bindgen did not produce expected file: {path}")
-        prepare_package(package, library_name, package_metadata)
+        prepare_package(package, library_name, package_metadata, args.preset)
 
         runtime_env = build_env.copy()
         runtime_env.update(
             {
                 "COSMOLKIT_WASM_MODULE": str(module),
                 "COSMOLKIT_WASM_BINARY": str(background_binary),
+                "COSMOLKIT_WASM_PRESET": args.preset,
             }
         )
         runtime_failure = None
         try:
             if bun:
-                run(bun, "test", *map(str, sorted(TEST_DIR.glob("*.mjs"))), cwd=ROOT, env=runtime_env)
+                run(bun, "test", *map(str, selected_tests(".mjs", active)), cwd=ROOT, env=runtime_env)
             else:
-                run(node, "--test", *map(str, sorted(TEST_DIR.glob("*.mjs"))), cwd=ROOT, env=runtime_env)
+                run(node, "--test", *map(str, selected_tests(".mjs", active)), cwd=ROOT, env=runtime_env)
         except subprocess.CalledProcessError as error:
             # Still check TypeScript when runtime tests fail; retain failure.
             runtime_failure = error
 
-        check_typescript(workspace, declaration)
+        check_typescript(workspace, declaration, active)
         if runtime_failure is not None:
             raise runtime_failure
         if args.out_dir is not None:
             shutil.copytree(package, args.out_dir.resolve())
             print(f"Tested npm package exported to {args.out_dir}", flush=True)
+        print(f"WASM binary bytes ({args.preset}): {background_binary.stat().st_size}", flush=True)
 
     print("WASM JavaScript runtime and TypeScript declaration checks passed")
 

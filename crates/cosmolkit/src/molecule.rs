@@ -20,6 +20,7 @@ use crate::ops::{DerivedState, OperationError};
 pub(crate) struct DerivedCacheBlock {
     valid: DerivedState,
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-valence",
         feature = "cap-kekulize",
         feature = "cap-stereo",
@@ -39,6 +40,7 @@ pub(crate) struct DerivedCacheBlock {
     ))]
     valence: Option<cosmolkit_core::ValenceAssignment>,
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-descriptors",
@@ -59,6 +61,7 @@ pub(crate) struct DerivedCacheBlock {
     ))]
     rings: Option<cosmolkit_core::RingInfo>,
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
@@ -73,6 +76,7 @@ impl DerivedCacheBlock {
         self.valid == DerivedState::NONE
             && {
                 #[cfg(any(
+                    feature = "cap-inchi",
                     feature = "cap-valence",
                     feature = "cap-kekulize",
                     feature = "cap-stereo",
@@ -94,6 +98,7 @@ impl DerivedCacheBlock {
                     self.valence.is_none()
                 }
                 #[cfg(not(any(
+                    feature = "cap-inchi",
                     feature = "cap-valence",
                     feature = "cap-kekulize",
                     feature = "cap-stereo",
@@ -117,6 +122,7 @@ impl DerivedCacheBlock {
             }
             && {
                 #[cfg(any(
+                    feature = "cap-inchi",
                     feature = "cap-rings",
                     feature = "cap-stereo",
                     feature = "cap-descriptors",
@@ -137,6 +143,7 @@ impl DerivedCacheBlock {
                 ))]
                 {
                     #[cfg(any(
+                        feature = "cap-inchi",
                         feature = "cap-rings",
                         feature = "cap-stereo",
                         feature = "cap-fingerprints",
@@ -147,6 +154,7 @@ impl DerivedCacheBlock {
                         self.rings.is_none() && self.ring_families.is_none()
                     }
                     #[cfg(not(any(
+                        feature = "cap-inchi",
                         feature = "cap-rings",
                         feature = "cap-stereo",
                         feature = "cap-fingerprints",
@@ -158,6 +166,7 @@ impl DerivedCacheBlock {
                     }
                 }
                 #[cfg(not(any(
+                    feature = "cap-inchi",
                     feature = "cap-rings",
                     feature = "cap-stereo",
                     feature = "cap-descriptors",
@@ -193,6 +202,7 @@ impl DerivedCacheBlock {
     pub(crate) fn clear(&mut self, states: DerivedState) {
         self.valid = self.valid.difference(states);
         #[cfg(any(
+            feature = "cap-inchi",
             feature = "cap-valence",
             feature = "cap-kekulize",
             feature = "cap-stereo",
@@ -214,6 +224,7 @@ impl DerivedCacheBlock {
             self.valence = None;
         }
         #[cfg(any(
+            feature = "cap-inchi",
             feature = "cap-rings",
             feature = "cap-stereo",
             feature = "cap-descriptors",
@@ -236,6 +247,7 @@ impl DerivedCacheBlock {
             self.rings = None;
         }
         #[cfg(any(
+            feature = "cap-inchi",
             feature = "cap-rings",
             feature = "cap-stereo",
             feature = "cap-fingerprints",
@@ -248,6 +260,7 @@ impl DerivedCacheBlock {
     }
 
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-valence",
         feature = "cap-kekulize",
         feature = "cap-stereo",
@@ -273,6 +286,7 @@ impl DerivedCacheBlock {
     }
 
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-valence",
         feature = "cap-kekulize",
         feature = "cap-stereo",
@@ -300,6 +314,7 @@ impl DerivedCacheBlock {
     }
 
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-descriptors",
@@ -323,6 +338,7 @@ impl DerivedCacheBlock {
     }
 
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-descriptors",
@@ -349,6 +365,7 @@ impl DerivedCacheBlock {
     /// RINGS validity bit is invisible to consumers. Malformed pairs are
     /// rejected by construction/commit validation instead of being served.
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-descriptors",
@@ -377,6 +394,7 @@ impl DerivedCacheBlock {
     }
 
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
@@ -388,6 +406,7 @@ impl DerivedCacheBlock {
     }
 
     #[cfg(any(
+        feature = "cap-inchi",
         feature = "cap-rings",
         feature = "cap-stereo",
         feature = "cap-fingerprints",
@@ -400,6 +419,7 @@ impl DerivedCacheBlock {
 
     pub(crate) fn validate_for_atom_count(&self, atom_count: usize) -> Result<(), OperationError> {
         #[cfg(any(
+            feature = "cap-inchi",
             feature = "cap-valence",
             feature = "cap-kekulize",
             feature = "cap-stereo",
@@ -464,6 +484,7 @@ impl DerivedCacheBlock {
     ) -> Result<(), OperationError> {
         self.validate_for_atom_count(topology.atoms.len())?;
         #[cfg(any(
+            feature = "cap-inchi",
             feature = "cap-rings",
             feature = "cap-stereo",
             feature = "cap-descriptors",
@@ -564,6 +585,7 @@ impl DerivedCacheBlock {
             }
         }
         #[cfg(any(
+            feature = "cap-inchi",
             feature = "cap-rings",
             feature = "cap-stereo",
             feature = "cap-serialization",
@@ -919,7 +941,7 @@ impl Molecule {
 
     /// Constructor-only transport of final detached chemistry state. Cache
     /// authority remains here, not in the parser or algorithm owner.
-    #[cfg(any(feature = "cap-smiles", feature = "cap-io"))]
+    #[cfg(any(feature = "cap-smiles", feature = "cap-io", feature = "cap-inchi"))]
     pub(super) fn from_parsed_parts_with_derived_state(
         topology: TopologyBlock,
         coordinates: CoordinateBlock,
@@ -1145,7 +1167,10 @@ impl Molecule {
 /// never reset. Each entry records BOTH row-buffer addresses of the final
 /// carrier immediately before it is moved into the derived cache. The seam
 /// itself runs NO finder.
-#[cfg(all(test, any(feature = "cap-smiles", feature = "cap-io")))]
+#[cfg(all(
+    test,
+    any(feature = "cap-smiles", feature = "cap-io", feature = "cap-inchi")
+))]
 pub(crate) mod ring_install_probe {
     use std::cell::RefCell;
 
