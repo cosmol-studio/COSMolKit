@@ -112,6 +112,7 @@ impl<'a> TautomerMoleculeView<'a> {
                 topology: view.topology,
                 coordinates: view.coordinates,
                 properties: view.properties,
+                rings: view.rings,
             },
         )?)
     }

@@ -253,6 +253,81 @@ fn ring_rank_and_conformer_rows_fail_before_assignment() {
 }
 
 #[test]
+fn directional_assignment_accepts_source_initialized_empty_smarts_ring_cache() {
+    // SmartsWrite.cpp::FragmentSmartsConstruct resets RingInfo and initializes
+    // SymmSSSR without populating membership rows. RingInfo::numBondRings
+    // returns zero for every bond in this explicitly initialized dummy cache.
+    let rings = RingInfo::new(RingFindType::SymmSssr, 0, 0);
+    for direction in [BondDirection::EndUpRight, BondDirection::EndDownRight] {
+        let source = topology(
+            3,
+            vec![
+                directed_bond(0, 0, 1, BondOrder::Single, direction),
+                bond(1, 1, 2, BondOrder::Double),
+            ],
+        );
+        let result = assign_directional_double_bond_stereo(source.clone(), &[0, 1, 2], &rings)
+            .expect("source dummy ring cache is valid");
+        assert!(!result.has_unassigned);
+        assert!(!result.assigned_any);
+        assert_eq!(result.topology, source);
+    }
+    for (right, expected) in [
+        (BondDirection::EndUpRight, BondStereo::E),
+        (BondDirection::EndDownRight, BondStereo::Z),
+    ] {
+        let source = four_atom_chain(BondDirection::EndUpRight, right, BondStereo::None);
+        let result = assign_directional_double_bond_stereo(source, &[0, 1, 2, 3], &rings)
+            .expect("complete stereo also accepts the dummy ring cache");
+        assert!(!result.has_unassigned);
+        assert!(result.assigned_any);
+        assert_eq!(result.topology.bonds[1].stereo(), expected);
+        assert_eq!(
+            result.topology.bonds[1].stereo_atoms(),
+            Some([AtomId::new(0), AtomId::new(3)])
+        );
+    }
+    assert_eq!((rings.atom_row_count(), rings.bond_row_count()), (0, 0));
+}
+
+#[test]
+fn smarts_dummy_ring_exception_retains_initialization_partial_row_and_rank_errors() {
+    let source = four_atom_chain(
+        BondDirection::EndUpRight,
+        BondDirection::EndUpRight,
+        BondStereo::None,
+    );
+    let ranks = [0, 1, 2, 3];
+    let mut rings = RingInfo::new(RingFindType::SymmSssr, 0, 0);
+    rings.reset();
+    assert_eq!(
+        assign_directional_double_bond_stereo(source.clone(), &ranks, &rings),
+        Err(DoubleBondStereoError::RingInfoNotInitialized)
+    );
+    for (atom_rows, bond_rows, dimension, actual, expected) in
+        [(0, 3, "atom", 0, 4), (4, 0, "bond", 0, 3)]
+    {
+        let rings = RingInfo::new(RingFindType::SymmSssr, atom_rows, bond_rows);
+        assert_eq!(
+            assign_directional_double_bond_stereo(source.clone(), &ranks, &rings),
+            Err(DoubleBondStereoError::RingRowCount {
+                dimension,
+                actual,
+                expected,
+            })
+        );
+    }
+    let rings = RingInfo::new(RingFindType::SymmSssr, 0, 0);
+    assert_eq!(
+        assign_directional_double_bond_stereo(source, &[0, 1], &rings),
+        Err(DoubleBondStereoError::RankCount {
+            actual: 2,
+            atom_count: 4,
+        })
+    );
+}
+
+#[test]
 fn topology_and_lookup_errors_retain_exact_ids() {
     let topology = topology(2, vec![bond(0, 0, 1, BondOrder::Single)]);
     assert_eq!(

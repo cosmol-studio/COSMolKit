@@ -7,6 +7,17 @@ b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 const molecule=text=>b.Molecule.fromSmilesWithSanitize(text,true);
 const reaction=()=>b.Reaction.fromSmirks("[C:1]>>[N:1]");
 
+test("Reaction.run needs no redundant molecule receiver",()=>{
+ const carbon=molecule("C"),oxygen=molecule("O");
+ const rxn=b.Reaction.fromSmirks("[C:1].[O:2]>>[C:1][O:2]");
+ assert.deepEqual(rxn.run([carbon,oxygen],new b.ReactionRunParams()).map(s=>s.map(m=>m.toSmiles())),[["CO"]]);
+ assert.equal(rxn.isInitialized(),true);
+ assert.equal(carbon.toSmiles(),"C");assert.equal(oxygen.toSmiles(),"O");
+ assert.throws(()=>rxn.run([carbon],new b.ReactionRunParams()),e=>e.kind==="ReactionRun"&&e.cause.kind==="ReactantArity");
+ assert.throws(()=>rxn.run([{}],new b.ReactionRunParams()),TypeError);
+ assert.equal(carbon.toSmiles(),"C");assert.equal(oxygen.toSmiles(),"O");
+});
+
 test("Reaction values preserve ordered templates, settings, initialization and text",()=>{
  const rxn=b.Reaction.fromSmirks("[C:1]>O>[N:1]");
  assert.deepEqual([rxn.numReactantTemplates(),rxn.numProductTemplates(),rxn.numAgentTemplates()],[1,1,1]);

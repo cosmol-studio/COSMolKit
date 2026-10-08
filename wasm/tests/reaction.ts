@@ -9,6 +9,9 @@ const selected=new ReactionSingleRunParams(ReactionCoordinateSelection.threeD(42
 const id:number|null=selected.coordinateSelection.id;
 const sets:Molecule[][]=molecule.reactionProductsWithParams(rxn,0,selected);
 const multi:Molecule[][]=molecule.reactionProductsFromInputs(rxn,[molecule,molecule],new ReactionRunParams(3));
+const runProducts:Molecule[][]=rxn.run([molecule],new ReactionRunParams());
+// @ts-expect-error Reactants must be molecule objects.
+rxn.run(["C"],new ReactionRunParams());
 const result:ReactionApplyResult=molecule.applyReaction(rxn);
 const value:Molecule=result.molecule;
 const changed:boolean=molecule.applyReactionWithParams_(rxn,new ReactionApplyParams());
@@ -32,4 +35,4 @@ new ReactionRunParams().maxProducts=1;
 ReactionCoordinateSelection.threeD("42");
 // @ts-expect-error Template indices require numbers.
 rxn.reactantTemplate("0");
-void [parsed,id,sets,multi,value,changed,report,role,templates,text,count,wrong];
+void [parsed,id,sets,multi,runProducts,value,changed,report,role,templates,text,count,wrong];

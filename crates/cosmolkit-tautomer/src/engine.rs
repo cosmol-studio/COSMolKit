@@ -115,6 +115,7 @@ pub(crate) fn canonical_smiles(
             topology: view.topology,
             coordinates: view.coordinates,
             properties: view.properties,
+            rings: view.rings,
         },
     )?)
 }

@@ -7,7 +7,7 @@ repository = "https://github.com/cosmol-studio/COSMolKit"
 homepage = "https://tools.cosmol.org/"
 documentation = "https://docs.rs/cosmolkit-wasm"
 license.workspace = true
-version = "0.5.0-rc.14"
+version = "0.5.0-rc.15"
 edition.workspace = true
 publish = false
 
@@ -67,4 +67,4 @@ smiles = ["cosmolkit/cap-smiles"]
 valence = ["cosmolkit/cap-valence"]
 
 [dependencies]
-cosmolkit = { version = "0.5.0-rc.14", path = "../crates/cosmolkit", default-features = false }
+cosmolkit = { version = "0.5.0-rc.15", path = "../crates/cosmolkit", default-features = false }

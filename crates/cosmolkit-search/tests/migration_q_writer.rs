@@ -5,6 +5,31 @@ fn fixture_written_text(value: cosmolkit_model::PropertyText) -> String {
         .expect("unchanged UTF-8 writer fixture bytes")
         .to_owned()
 }
+
+#[test]
+fn directional_smarts_writer_clears_unpaired_markers_and_preserves_complete_stereo() {
+    // RDKit 2026.03.1: MolToSmarts(FragmentSmartsConstruct -> Canon).
+    // Canon.cpp clears input directions, then rebuilds only valid stereo.
+    for (input, expected) in [
+        ("C/C", "CC"),
+        (r"C\C", "CC"),
+        ("c/c", "cc"),
+        (r"c\c", "cc"),
+        ("N/C", "NC"),
+        ("O/C", "OC"),
+        ("C/C=C", "CC=C"),
+        (r"C\C=C", "CC=C"),
+        ("C/C=C/C", "C/C=C/C"),
+        (r"C/C=C\C", r"C/C=C\C"),
+    ] {
+        let query = cosmolkit_search::parse_smarts(input, &Default::default()).unwrap();
+        let original = query.clone();
+        let written = query_graph_to_smarts(&query, &Default::default())
+            .unwrap_or_else(|error| panic!("{input}: {error}"));
+        assert_eq!(written.as_bytes(), expected.as_bytes(), "{input}");
+        assert_eq!(query, original, "writer changed input {input}");
+    }
+}
 use std::collections::BTreeMap;
 
 use cosmolkit_model::{
@@ -18,6 +43,90 @@ use cosmolkit_search::{
     query_graph_to_smarts,
 };
 use cosmolkit_types::{BondDirection, BondOrder, ChiralTag, Element};
+
+#[test]
+fn stereo_query_writes_accept_the_source_empty_ring_cache() {
+    // RDKit 2026.03.1 MolToSmarts/MolToCXSmarts. These queries reach
+    // Canon's stereo perception with FragmentSmartsConstruct's empty cache.
+    let profiles = [
+        SmartsWriteParams::default(),
+        SmartsWriteParams {
+            do_isomeric_smiles: false,
+            ..Default::default()
+        },
+        SmartsWriteParams {
+            include_atom_maps: false,
+            ..Default::default()
+        },
+        SmartsWriteParams {
+            include_dative_bonds: false,
+            ..Default::default()
+        },
+        SmartsWriteParams {
+            rooted_at_atom: Some(0),
+            ..Default::default()
+        },
+    ];
+    for (input, expected) in [
+        ("[#7;!@SP1]=[C,N]", ["[!*]=[C,N]"; 5]),
+        ("[*;!@TH1]=[C,N]", ["[!*]=[C,N]"; 5]),
+        (
+            "[*;@@:9]=[C,N]",
+            [
+                "[C,N]=[*@@:9]",
+                "[C,N]=[*:9]",
+                "[C,N]=[*@@]",
+                "[C,N]=[*@@:9]",
+                "[*@@:9]=[C,N]",
+            ],
+        ),
+        ("[A&@SP1]=[C,N]", ["A=[C,N]"; 5]),
+        ("[A;@TH1]=[C,N]", ["A=[C,N]"; 5]),
+        (
+            "[H;@@:9]=[C,N]",
+            [
+                "[C,N]=[H1@@:9]",
+                "[C,N]=[H1:9]",
+                "[C,N]=[H1@@]",
+                "[C,N]=[H1@@:9]",
+                "[H1@@:9]=[C,N]",
+            ],
+        ),
+        ("[O;!@TH2]=[C,N]", ["[!*]=[C,N]"; 5]),
+        (
+            "[O;@TH2:9]=[C,N]",
+            [
+                "[O:9]=[C,N]",
+                "[O:9]=[C,N]",
+                "O=[C,N]",
+                "[O:9]=[C,N]",
+                "[O:9]=[C,N]",
+            ],
+        ),
+        ("[c&@OH1]=[C,N]", ["c=[C,N]"; 5]),
+    ] {
+        let query = cosmolkit_search::parse_smarts(input, &Default::default()).unwrap();
+        let before = query.clone();
+        for (profile, expected) in profiles.iter().zip(expected) {
+            assert_eq!(
+                query_graph_to_smarts(&query, profile).unwrap().as_bytes(),
+                expected.as_bytes(),
+                "{input}, {profile:?}"
+            );
+            assert_eq!(query, before);
+        }
+        for (profile, expected) in profiles[..2].iter().zip(expected) {
+            assert_eq!(
+                query_graph_to_cx_smarts(&query, profile)
+                    .unwrap()
+                    .as_bytes(),
+                expected.as_bytes(),
+                "CX {input}, {profile:?}"
+            );
+            assert_eq!(query, before);
+        }
+    }
+}
 
 #[test]
 fn typed_query_properties_keep_source_order_and_string_projection() {

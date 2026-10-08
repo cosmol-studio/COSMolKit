@@ -188,6 +188,24 @@ molecule_ops! {
     }
 
     #[cfg(feature = "cap-reaction")]
+    op run(reactants: &[&crate::Molecule], params: &crate::ReactionRunParams) {
+        receiver_type: crate::Reaction,
+        method: run,
+        impl_fn: crate::ops::reaction::run_impl,
+        output: multiple,
+        result_type: Vec<Vec<crate::Molecule>>,
+        assemble_fn: crate::reaction::assemble_product_sets,
+        domain: topology, kind: strong, topology_edit: reconstruction,
+        access: { read: [], write: [topology, coordinates, properties, derived_cache] },
+        may_mutate: [topology, coordinates, properties, derived_cache], auto_remap: [],
+        derived_effects: { recompute: [valence, rings], preserve: [], invalidate: [ring_families, aromaticity, stereo, coordinates, drawing, fingerprint], operation_defined: [] },
+        cip_state: reaction_source_transition, requires_mapping: reconstruction,
+        feature: crate::ops::runtime::registry::REACTION_FEATURE,
+        parity: required_now, parity_profile: "reaction_runner_rdkit_multiple_inputs",
+        io_roundtrip: false, invariant_profile: "reaction_multi_input_checked_origins_ordered_product_sets",
+    }
+
+    #[cfg(feature = "cap-reaction")]
     op reaction_products_from_inputs(reaction: &mut crate::Reaction, reactants: &[&crate::Molecule], params: &crate::ReactionRunParams) {
         method: reaction_products_from_inputs,
         method_visibility: pub,
@@ -1119,7 +1137,7 @@ molecule_ops! {
         method_visibility: pub(crate),
         impl_fn: crate::ops::cow_tests::reaction_apply_report_for_test_impl,
         report_type: bool,
-        report_result_type: crate::ReactionApplyResult,
+        report_result_type: crate::ops::cow_tests::MoleculeBoolReport,
         inplace_result_type: bool,
         domain: coordinate, kind: weak, topology_edit: none,
         access: { read: [], write: [coordinates] },

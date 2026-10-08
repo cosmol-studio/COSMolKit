@@ -120,12 +120,26 @@ pub(crate) fn rdkit_clock_seed() -> Result<i32, ConformerError> {
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn rdkit_clock_seed() -> Result<i32, ConformerError> {
     // BEGIN RDKIT CPP CLOCK SEED SOURCE Vector.h:279 and EigenSolvers/PowerEigenSolver.cpp:47
-    // RDKit❌❌:       generator.seed(clock() + 1);
-    // RDKit❌❌:     seed = clock();
+    // RDKit❗✔️:       generator.seed(clock() + 1);
+    // RDKit❗✔️:     seed = clock();
     // END RDKIT CPP CLOCK SEED SOURCE
-    // wasm32 has no modeled C process clock; the independent implicit-seed
-    // capability remains a structured unsupported error, with no substitute.
-    Err(ConformerError::WasmImplicitClockSeedUnsupported)
+    // Approved Web adaptation: the host wall clock supplies an implicit seed,
+    // not process CPU time. This branch promises neither clock() equivalence
+    // nor reproducible implicit-seed coordinates. Each numerical helper's
+    // explicit positive seed branch, source RNG and algorithms are unchanged.
+    let elapsed = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .map_err(|error| {
+            ConformerError::GenerationFailed(format!("implicit seed host clock failed: {error}"))
+        })?;
+    Ok(host_time_seed(elapsed.as_micros()))
+}
+
+#[cfg(any(test, target_arch = "wasm32"))]
+fn host_time_seed(microseconds: u128) -> i32 {
+    // Keep the seed positive and leave room for Vector::setToRandom's +1,
+    // avoiding a second implicit-clock lookup or signed overflow at rollover.
+    (microseconds % (i32::MAX as u128 - 1)) as i32 + 1
 }
 
 impl RdkitDoubleRng for RdkitRandomEngine {
@@ -1079,6 +1093,19 @@ mod tests {
                 .expect("original checked source seed"),
             1_410_365_413
         );
+    }
+
+    #[test]
+    fn web_host_seed_is_positive_and_leaves_room_for_source_increment() {
+        let period = i32::MAX as u128 - 1;
+        for (ticks, expected) in [(0, 1), (1, 2), (period - 1, i32::MAX - 1), (period, 1)] {
+            assert_eq!(host_time_seed(ticks), expected);
+        }
+        for ticks in [0, period - 1, period, u64::MAX as u128, u128::MAX] {
+            let seed = host_time_seed(ticks);
+            assert!((1..i32::MAX).contains(&seed));
+            assert!(seed.checked_add(1).is_some());
+        }
     }
 
     #[test]

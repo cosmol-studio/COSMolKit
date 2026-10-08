@@ -371,10 +371,31 @@ fn qed_properties(original: &DescriptorInput<'_>) -> DescriptorResult<QedPropert
         .final_valence
         .as_ref()
         .ok_or(DescriptorError::MissingFinalHydrogenState { field: "valence" })?;
-    let rings = removed
-        .final_rings
-        .as_ref()
-        .ok_or(DescriptorError::MissingFinalHydrogenState { field: "rings" })?;
+    // RDKit✔️✔️:   mol = Chem.RemoveHs(mol)
+    // AddHs.cpp intentionally leaves RingInfo uninitialized for an empty
+    // input: atomsToRemove.empty() tests the original bitset size.
+    // RDKit✔️✔️:     AROM=len(Chem.GetSSSR(Chem.DeleteSubstructs(Chem.Mol(mol), AliphaticRings))),
+    // MolOps.cpp GetSSSR wrapper:
+    // RDKit✔️✔️:   MolOps::findSSSR(mol, rings, includeDativeBonds, includeHydrogenBonds);
+    // The detached matcher requires prepared ring rows, whereas RDKit can
+    // carry uninitialized RingInfo until a consumer needs it. Prepare absent
+    // rows through the existing SSSR owner, not by rejecting valid input or
+    // inventing an empty/QED result. Existing initialized rows stay borrowed.
+    let prepared_rings;
+    let rings = if let Some(rings) = removed.final_rings.as_ref() {
+        rings
+    } else {
+        prepared_rings = cosmolkit_core::find_sssr_from_parts(
+            removed.topology.atoms.len(),
+            &removed.topology.bonds,
+            &removed.topology.adjacency,
+        )
+        .map_err(|source| DescriptorError::Ring {
+            function: "qed",
+            source,
+        })?;
+        &prepared_rings
+    };
     let input = DescriptorInput::new(
         &removed.topology,
         &removed.coordinates,
@@ -717,6 +738,27 @@ fn qed_delete_substructs<'a>(
 mod original_qed_source_conditions {
     use super::*;
     use crate::original_condition_fixture::Fixture;
+
+    #[test]
+    fn empty_molecule_qed_runs_the_source_property_pipeline() {
+        // RDKit 2026.03.1 QED.properties / QED.qed(Chem.MolFromSmiles('')).
+        let molecule = Fixture::from_smiles("");
+        let before = (
+            molecule.topology.clone(),
+            molecule.coordinates.clone(),
+            molecule.properties.clone(),
+        );
+        let properties = qed_properties(&molecule.input()).unwrap();
+        assert_eq!(properties.values_in_rdkit_order(), [0.0; 8]);
+        assert_eq!(
+            qed(&molecule.input()).unwrap().to_bits(),
+            0x3fd5b91db87826fc
+        );
+        assert_eq!(
+            (molecule.topology, molecule.coordinates, molecule.properties),
+            before
+        );
+    }
     #[test]
     fn qed_aromatic_ring_count_uses_rdkit_sssr_not_symmetrized_sssr() {
         let cases = [
@@ -827,6 +869,7 @@ mod original_qed_source_conditions {
                         topology: &topology,
                         coordinates: &coordinates,
                         properties: &properties,
+                        rings: None,
                     };
                     let actual = cosmolkit_smiles::write_smiles_with_params(
                         output,

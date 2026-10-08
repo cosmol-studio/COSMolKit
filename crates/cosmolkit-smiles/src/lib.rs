@@ -56,6 +56,8 @@ pub struct SmilesRecordView<'a> {
     pub topology: &'a TopologyBlock,
     pub coordinates: &'a CoordinateBlock,
     pub properties: &'a MoleculeProperties,
+    /// Existing source ring state; absence requests the source fallback.
+    pub rings: Option<&'a cosmolkit_core::RingInfo>,
 }
 
 impl<'a> From<&'a SmilesRecord> for SmilesRecordView<'a> {
@@ -64,6 +66,7 @@ impl<'a> From<&'a SmilesRecord> for SmilesRecordView<'a> {
             topology: &record.topology,
             coordinates: &record.coordinates,
             properties: &record.properties,
+            rings: None,
         }
     }
 }
@@ -1454,6 +1457,7 @@ fn parse_smiles_stages(
     let mut ring_closures_by_atom = Vec::<Vec<RingClosureRecord>>::new();
     let mut smiles_start_atoms = Vec::<bool>::new();
     let mut branches = Vec::<AtomId>::new();
+    let mut branch_needs_atom = false;
     let mut current = None::<AtomId>;
     let mut pending = None;
     let mut pending_query = None;
@@ -1461,6 +1465,38 @@ fn parse_smiles_stages(
     let mut next_cx_bond_index = 0_u32;
     let mut index = 0;
     while index < bytes.len() {
+        // RDKit✔️✔️: mol: atomd {
+        // RDKit✔️✔️: | mol BOND_TOKEN atomd  {
+        // RDKit✔️✔️: | mol MINUS_TOKEN atomd {
+        // RDKit✔️✔️: | mol SEPARATOR_TOKEN atomd {
+        // RDKit✔️✔️: | mol BOND_TOKEN ring_number {
+        // RDKit✔️✔️: | mol branch_open_token BOND_TOKEN atomd  {
+        // RDKit✔️✔️: | mol branch_open_token MINUS_TOKEN atomd {
+        // These smiles.yy productions consume a bond exactly once, followed
+        // by an atom or (outside a new branch) a ring number. A separator and
+        // a branch opening require an atom, not another separator or branch.
+        // Constant-time grammar state; no rescans or token allocations.
+        let token = bytes[index] as char;
+        let atom_token = token.is_ascii_alphabetic() || matches!(token, '[' | '*');
+        let ring_token = token.is_ascii_digit() || token == '%';
+        let bond_token = matches!(token, '-' | '=' | '#' | ':' | '$' | '~' | '/' | '\\')
+            || graph_text[index..].starts_with("<-");
+        let has_pending_bond = pending.is_some() || pending_direction != BondDirection::None;
+        let missing_operand = if has_pending_bond {
+            !atom_token && !(ring_token && !branch_needs_atom)
+        } else if current.is_none() {
+            !atom_token
+        } else if branch_needs_atom {
+            !atom_token && !bond_token
+        } else {
+            false
+        };
+        if missing_operand {
+            return Err(SmilesParseError::Syntax {
+                offset: index,
+                message: "expected atom or ring operand".into(),
+            });
+        }
         // BEGIN RDKIT CPP LEXER RULES smiles.ll dative bonds
         // RDKit✔️✔️: \-\>  { yylval->bond = new Bond(Bond::DATIVER);
         // RDKit✔️✔️:       return BOND_TOKEN; }
@@ -1500,14 +1536,25 @@ fn parse_smiles_stages(
                 index += 1;
             }
             '\\' => {
+                // RDKit✔️✔️: [\\]{1,2}    { yylval->bond = new Bond(Bond::UNSPECIFIED);
+                // RDKit✔️✔️: 	yylval->bond->setProp(RDKit::common_properties::_unspecifiedOrder,1);
+                // RDKit✔️✔️: 	yylval->bond->setBondDir(Bond::ENDDOWNRIGHT);
+                // RDKit✔️✔️: 	return BOND_TOKEN;  }
+                // Flex consumes one or two backslashes as ONE token, not two
+                // consecutive bonds. A third backslash remains invalid.
                 pending_direction = BondDirection::EndDownRight;
-                index += 1;
+                index += if bytes.get(index + 1) == Some(&b'\\') {
+                    2
+                } else {
+                    1
+                };
             }
             '(' => {
                 branches.push(current.ok_or_else(|| SmilesParseError::Syntax {
                     offset: index,
                     message: "branch has no preceding atom".into(),
                 })?);
+                branch_needs_atom = true;
                 index += 1;
             }
             ')' => {
@@ -1583,6 +1630,7 @@ fn parse_smiles_stages(
                     degrees[atom.index()] += 1;
                 }
                 current = Some(atom);
+                branch_needs_atom = false;
                 pending = None;
                 pending_query = None;
                 pending_direction = BondDirection::None;
@@ -1615,6 +1663,7 @@ fn parse_smiles_stages(
                     degrees[atom.index()] += 1;
                 }
                 current = Some(atom);
+                branch_needs_atom = false;
                 pending = None;
                 pending_query = None;
                 pending_direction = BondDirection::None;
@@ -1626,6 +1675,20 @@ fn parse_smiles_stages(
                 });
             }
         }
+    }
+    // RDKit✔️✔️: | meta_start error EOS_TOKEN{
+    // RDKit✔️✔️:   yyerrok;
+    // RDKit✔️✔️:   yyErrorCleanup(molList);
+    // RDKit✔️✔️:   YYABORT;
+    // A dangling bond or separator cannot reduce to the grammar's mol.
+    if pending.is_some()
+        || pending_direction != BondDirection::None
+        || (!bytes.is_empty() && current.is_none())
+    {
+        return Err(SmilesParseError::Syntax {
+            offset: graph_text.len(),
+            message: "missing final atom or ring operand".into(),
+        });
     }
     if let Some((&index, _)) = rings.iter().next() {
         return Err(SmilesParseError::UnclosedRing { index });
@@ -2017,6 +2080,42 @@ fn apply_parser_atrop_stereo(record: &mut SmilesRecord) -> Result<(), SmilesPars
 mod tests {
     use super::*;
     use cosmolkit_model::{BondStereo, PropertyValue, StereoGroupKind, SubstanceGroupKind};
+
+    #[test]
+    fn bond_and_separator_tokens_require_the_source_grammar_operands() {
+        // Pinned smiles.yy: mol BOND_TOKEN atomd / mol BOND_TOKEN ring_number /
+        // mol SEPARATOR_TOKEN atomd. Neither repeated nor dangling tokens form mol.
+        for smiles in [
+            "C==C", "C#", "C..C", "C--C", "C/#C", "C=", "C/", "C~", "C->", "C.", ".C", "=CC",
+            "C()", "C(.C)", "C=(O)", "C(1)CC1", "C(=)O", "C\\\\\\C", "C//C", "C/\\C",
+        ] {
+            assert!(
+                matches!(
+                    parse_smiles(smiles, &Default::default()),
+                    Err(SmilesParseError::Syntax { .. })
+                ),
+                "must reject {smiles:?}"
+            );
+        }
+        for smiles in [
+            "",
+            "C=C",
+            "C#N",
+            "C.C",
+            "C(=O)O",
+            "C-1CCCCC1",
+            "C1.C1",
+            "C(Cl)(F)Br",
+            "C/C=C\\C",
+            "C/C=C\\\\C",
+            "C\\\\1CCCCC1",
+            "N->[Cu]",
+            "C~N",
+        ] {
+            parse_smiles(smiles, &Default::default())
+                .unwrap_or_else(|error| panic!("must accept {smiles:?}: {error}"));
+        }
+    }
 
     fn string_property(value: Option<&PropertyValue>) -> Option<&str> {
         match value {

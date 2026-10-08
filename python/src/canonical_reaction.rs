@@ -377,6 +377,18 @@ pub(crate) struct Reaction {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Reaction {
+    fn run(
+        &mut self,
+        py: Python<'_>,
+        reactants: Vec<PyRef<'_, Molecule>>,
+        params: &ReactionRunParams,
+    ) -> PyResult<Vec<Vec<Molecule>>> {
+        let inputs: Vec<_> = reactants.iter().map(|value| &value.inner).collect();
+        self.inner
+            .run(&inputs, &params.inner)
+            .map(product_sets)
+            .map_err(|error| crate::drawing_binding::operation_pyerr(py, &error))
+    }
     #[new]
     fn new() -> Self {
         Self {

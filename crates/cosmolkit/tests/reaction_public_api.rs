@@ -2,6 +2,83 @@
 use cosmolkit::*;
 
 #[test]
+#[cfg(feature = "cap-sanitize")]
+fn sanitized_reaction_products_retain_source_ring_state_for_nitrogen_stereo() {
+    // RDKit 2026.03.1, ReactionFromSmarts -> RunReactants -> SanitizeMol
+    // -> MolToSmiles. Raw and sanitized products retain the same atom tag;
+    // the existing SymmSSSR cache controls nitrogen's legacy stereo legality.
+    let source = Molecule::from_smiles("C1C[C@H]2CC[C@H]2C1").unwrap();
+    let before = source.clone();
+    let mut reaction = Reaction::from_smirks("[C;H1:1]>>[N:1]").unwrap();
+    let products = source
+        .reaction_products_from_inputs(&mut reaction, &[&source], &ReactionRunParams::default())
+        .unwrap();
+    assert_eq!(products.len(), 2);
+    for (group, expected) in products.iter().zip(["C1C[C@@H]2CCN2C1", "C1C[C@H]2CCN2C1"]) {
+        assert_eq!(group.len(), 1);
+        let raw = &group[0];
+        assert_eq!(raw.to_smiles().unwrap().as_bytes(), expected.as_bytes());
+        let raw_before = raw.clone();
+        let sanitized = raw.sanitize().unwrap();
+        let sanitized_before = sanitized.clone();
+        assert_eq!(
+            sanitized.to_smiles().unwrap().as_bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(
+            sanitized
+                .without_hydrogens()
+                .unwrap()
+                .to_smiles()
+                .unwrap()
+                .as_bytes(),
+            expected.as_bytes()
+        );
+        assert_eq!(raw.topology(), raw_before.topology());
+        assert_eq!(raw.properties(), raw_before.properties());
+        assert_eq!(sanitized.topology(), sanitized_before.topology());
+        assert_eq!(sanitized.properties(), sanitized_before.properties());
+    }
+    assert_eq!(source.topology(), before.topology());
+    assert_eq!(source.properties(), before.properties());
+}
+
+#[test]
+fn reaction_writer_clears_unpaired_template_bond_directions() {
+    // Pinned RDKit ReactionToSmarts delegates each role to MolToSmarts.
+    for (input, expected) in [
+        ("[C:1]>>[C:1]/C=C", "[C:1]>>[C:1]C=C"),
+        (r"[C:1]>>[C:1]\C=C", "[C:1]>>[C:1]C=C"),
+        (
+            "[C:1]/[C:2]=[C:3]>>[C:1]/[C:2]=[C:3]",
+            "[C:1][C:2]=[C:3]>>[C:1][C:2]=[C:3]",
+        ),
+        (
+            "[C:1]/[C:2]=[C:3]>>[C:1][C:2]=[C:3]",
+            "[C:1][C:2]=[C:3]>>[C:1][C:2]=[C:3]",
+        ),
+    ] {
+        let reaction = Reaction::from_smirks(input).unwrap();
+        let reactant_before = reaction.reactant_template(0).unwrap().clone();
+        let product_before = reaction.product_template(0).unwrap().clone();
+        let nonisomeric = ReactionWriteParams {
+            do_isomeric_smiles: false,
+            ..Default::default()
+        };
+        for output in [
+            reaction.to_smirks(),
+            reaction.to_smirks_with_params(&nonisomeric),
+            reaction.to_cx_smirks(),
+            reaction.to_cx_smirks_with_params(&nonisomeric),
+        ] {
+            assert_eq!(output.unwrap().as_bytes(), expected.as_bytes(), "{input}");
+        }
+        assert_eq!(reaction.reactant_template(0).unwrap(), &reactant_before);
+        assert_eq!(reaction.product_template(0).unwrap(), &product_before);
+    }
+}
+
+#[test]
 fn reaction_values_preserve_templates_settings_and_initialization() {
     let rxn = Reaction::from_smirks("[C:1]>O>[N:1]").unwrap();
     assert_eq!(
@@ -113,6 +190,7 @@ fn reaction_parameter_properties_and_contracts_are_registered() {
         "Molecule.reaction_products",
         "Molecule.reaction_products_with_params",
         "Molecule.reaction_products_from_inputs",
+        "Reaction.run",
         "Molecule.apply_reaction",
         "Molecule.apply_reaction_",
         "Molecule.apply_reaction_with_params",

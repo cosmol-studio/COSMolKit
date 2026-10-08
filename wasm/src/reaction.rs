@@ -1,6 +1,16 @@
 //! Reaction operation projection; canonical runtime owns COW and atomic commits.
 use crate::Molecule;
 use cosmolkit as ck;
+/// Borrow language-boundary molecules for the canonical reaction operation.
+pub fn reaction_run(
+    reaction: &mut ck::Reaction,
+    reactants: &[&Molecule],
+    params: &ck::ReactionRunParams,
+) -> Result<Vec<Vec<Molecule>>, ck::OperationError> {
+    let borrowed: Vec<_> = reactants.iter().map(|m| m.inner.borrow()).collect();
+    let inputs: Vec<_> = borrowed.iter().map(|m| &**m).collect();
+    reaction.run(&inputs, params).map(sets)
+}
 #[derive(Clone)]
 pub struct ReactionApplyResult {
     molecule: Molecule,

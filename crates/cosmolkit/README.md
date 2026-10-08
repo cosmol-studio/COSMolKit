@@ -11,17 +11,16 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0-rc.14", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.0-rc.15", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
 | Bundle | Area |
 |---|---|
-| `core` | SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms |
+| `core` | Molecular format parsing/writing (text or files), SMILES, valence, hydrogens, aromaticity, kekulization, sanitization, rings, basic stereo, matrices and transforms |
 | `bio` | Structural biology readers, values, selection and operations |
 | `descriptors` | Molecular descriptors (internally reuses SMARTS/search; does not enable public search APIs) |
 | `tautomer` | Tautomer capability |
-| `io` | Molecular file IO and serialization, separate from BIO readers |
 | `conformer` | 3D conformers, ConfSeq and coordinate alignment |
 | `forcefields` | Energy, gradients and optimization |
 | `fingerprints` | Fingerprints and molecular hashing |
@@ -30,22 +29,23 @@ cosmolkit = { version = "0.5.0-rc.14", default-features = false, features = ["co
 | `depict` | 2D layout and depiction |
 | `inchi` | InChI and InChIKey conversion |
 | `batch` | Ordered batch processing |
-| `full` | All bundles above, plus the advanced `cap-stereoisomers` capability |
+| `full` | All bundles above, plus `cap-stereoisomers` and `cap-serialization` |
 
 `reaction` is reserved for the new RDKit source port. Its Cargo selector and
 inclusion in `full` will be wired with the complete implementation.
 
-`core` does **not** include descriptors, molecular file IO, tautomers or
-stereoisomer enumeration. Select `descriptors`, `io`, `tautomer`, or
+`core` includes molecular text/file parsing and writing; there is no separate
+`io` bundle. It does **not** include descriptors, binary archives, tautomers or
+stereoisomer enumeration. Select `descriptors`, `cap-serialization`, `tautomer`, or
 `cap-stereoisomers` explicitly when needed. Basic stereo assignment remains in
 `core`; enumeration is a separate capability. Bundle names select features,
 not a promise that every planned API in that area is already implemented.
 
 With defaults disabled, `features = ["bio", "core"]` does not pull in
-`cosmolkit-descriptors`, `cosmolkit-tautomer` or `cosmolkit-search` through
-these selections. BIO activates only the structural-biology branch of IO.
+`cosmolkit-descriptors` or `cosmolkit-tautomer` through these selections.
+BIO alone activates only the structural-biology branch of IO.
 The molecular IO branch uses search internally for source-defined query
-records; enabling `io` or `descriptors` therefore compiles search but does not
+records; enabling `core`, `cap-io` or `descriptors` therefore compiles search but does not
 enable the facade's `cap-search` API. Another dependency's additive features
 can still enable these packages; inspect the resolved build graph, not just
 package entries in `Cargo.lock`.

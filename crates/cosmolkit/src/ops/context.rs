@@ -1130,7 +1130,7 @@ impl<'a, Access> OpParts<'a, Access> {
                     .union(BlockSet::DERIVED_CACHE);
                 let product = matches!(
                     spec.method,
-                    "reaction_products_with_params" | "reaction_products_from_inputs"
+                    "reaction_products_with_params" | "reaction_products_from_inputs" | "run"
                 ) && spec.output == MoleculeOpOutput::Multiple
                     && spec.topology_edit == TopologyEditKind::Reconstruction
                     && spec.requires_mapping == MappingRequirement::Reconstruction

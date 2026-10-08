@@ -66,3 +66,6 @@ jobs:
 
             - name: Check default full facade
               run: cargo check -p cosmolkit
+
+            - name: Test core bundle public surface
+              run: cargo test -p cosmolkit --no-default-features --profile dev-test --features core,op-contracts-strict --test feature_selection

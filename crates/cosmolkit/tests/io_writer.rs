@@ -1225,24 +1225,18 @@ fn mol_to_v2000_block_infers_wedge_from_chiral_tag_without_coordinates() {
     )
     .unwrap();
 
-    println!("exact_zero_layout_wedge_block={block:?}\n{block}");
-    assert!(block.starts_with("no-coords-wedge\n  COSMolKit          \n\n"));
-    // Pinned WedgeBonds.cpp107..120: res=bond->getBondDir(); if (!conf) return res.
-    // These original bonds have no directions. Chirality.cpp2754..2787 forwards
-    // that direction; canonical Auto selects no conformer and no generation.
+    assert!(block.starts_with("no-coords-wedge\n  COSMolKit          2D\n\n"));
+    // Pinned RDKit 2026.03.1 prepareMol generates a temporary 2D conformer.
+    // Same ordered C(C)(N)(O)F RWMol, central CHI_TETRAHEDRAL_CW,
+    // MolToMolBlock(kekulize=False): exact atom rows and wedge code below.
     let lines: Vec<_> = block.lines().collect();
     assert_eq!(lines.len(), 14);
     assert_eq!(lines[3], "  5  4  0  0  0  0  0  0  0  0999 V2000");
-    for row in &lines[4..9] {
-        assert_eq!(
-            row[..30].split_whitespace().collect::<Vec<_>>(),
-            ["0.0000", "0.0000", "0.0000"]
-        );
-    }
+    assert_source_generated_tetrahedral_atom_rows(&lines);
     assert_eq!(
         &lines[9..13],
         &[
-            "  1  2  1  0",
+            "  1  2  1  1",
             "  1  3  1  0",
             "  1  4  1  0",
             "  1  5  1  0"
@@ -1289,24 +1283,17 @@ fn mol_to_v2000_block_infers_dash_from_chiral_tag_ccw_without_coordinates() {
     )
     .unwrap();
 
-    println!("exact_zero_layout_dash_block={block:?}\n{block}");
-    assert!(block.starts_with("no-coords-dash\n  COSMolKit          \n\n"));
-    // Pinned WedgeBonds.cpp107..120: res=bond->getBondDir(); if (!conf) return res.
-    // These original bonds have no directions. Chirality.cpp2754..2787 forwards
-    // that direction; canonical Auto selects no conformer and no generation.
+    assert!(block.starts_with("no-coords-dash\n  COSMolKit          2D\n\n"));
+    // Same pinned native construction as CW, but CHI_TETRAHEDRAL_CCW:
+    // exact same generated atom rows, first bond stereo code 6, not 0.
     let lines: Vec<_> = block.lines().collect();
     assert_eq!(lines.len(), 14);
     assert_eq!(lines[3], "  5  4  0  0  0  0  0  0  0  0999 V2000");
-    for row in &lines[4..9] {
-        assert_eq!(
-            row[..30].split_whitespace().collect::<Vec<_>>(),
-            ["0.0000", "0.0000", "0.0000"]
-        );
-    }
+    assert_source_generated_tetrahedral_atom_rows(&lines);
     assert_eq!(
         &lines[9..13],
         &[
-            "  1  2  1  0",
+            "  1  2  1  6",
             "  1  3  1  0",
             "  1  4  1  0",
             "  1  5  1  0"
@@ -1316,6 +1303,19 @@ fn mol_to_v2000_block_infers_dash_from_chiral_tag_ccw_without_coordinates() {
     assert!(molecule.coordinates_2d().is_none());
     assert!(molecule.conformers_3d().is_empty());
 }
+fn assert_source_generated_tetrahedral_atom_rows(lines: &[&str]) {
+    assert_eq!(
+        &lines[4..9],
+        &[
+            "    1.2990    0.7500    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+            "    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0",
+            "    2.5981    1.5000    0.0000 N   0  0  0  0  0  0  0  0  0  0  0  0",
+            "    2.0490   -0.5490    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0",
+            "    0.5490    2.0490    0.0000 F   0  0  0  0  0  0  0  0  0  0  0  0",
+        ]
+    );
+}
+
 fn canonical_mol(m: &Molecule, p: &MolBlockWriteParams) -> Result<String, MolecularIoError> {
     m.to_mol_with_params(p)
 }

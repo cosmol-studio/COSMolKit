@@ -163,6 +163,7 @@ jobs:
                   working-directory: python
                   target: ${{ matrix.target }}
                   manylinux: ${{ matrix.manylinux }}
+                  sccache: true
                   args: >-
                       --release
                       --manifest-path Cargo.toml
@@ -179,6 +180,7 @@ jobs:
                   command: build
                   working-directory: python
                   target: ${{ matrix.target }}
+                  sccache: true
                   args: >-
                       --release
                       --manifest-path Cargo.toml
@@ -194,6 +196,7 @@ jobs:
                   command: build
                   working-directory: python
                   target: ${{ matrix.target }}
+                  sccache: true
                   args: >-
                       --release
                       --manifest-path Cargo.toml
@@ -209,6 +212,7 @@ jobs:
                   command: build
                   working-directory: python
                   target: ${{ matrix.target }}
+                  sccache: true
                   args: >-
                       --release
                       --manifest-path Cargo.toml

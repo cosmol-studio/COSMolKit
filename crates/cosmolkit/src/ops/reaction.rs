@@ -15,8 +15,9 @@ pub(crate) fn reaction_products_impl(
     params: &ReactionSingleRunParams,
 ) -> Result<Vec<usize>, OperationError> {
     let input = parts.reconstruction_source()?;
-    let sets = cosmolkit_reaction::run_reactant(reaction, input, reactant_template, params)
-        .map_err(OperationError::ReactionRun)?;
+    let sets =
+        cosmolkit_reaction::run_reactant(reaction.detached_mut(), input, reactant_template, params)
+            .map_err(OperationError::ReactionRun)?;
     let lengths = sets.iter().map(Vec::len).collect();
     parts.emit_reconstructed(sets.into_iter().flatten().collect())?;
     Ok(lengths)
@@ -29,7 +30,21 @@ pub(crate) fn reaction_products_from_inputs_impl(
     params: &ReactionRunParams,
 ) -> Result<Vec<usize>, OperationError> {
     let inputs = parts.reconstruction_inputs(reactants)?;
-    let sets = cosmolkit_reaction::run_reactants(reaction, &inputs, params)
+    let sets = cosmolkit_reaction::run_reactants(reaction.detached_mut(), &inputs, params)
+        .map_err(OperationError::ReactionRun)?;
+    let lengths = sets.iter().map(Vec::len).collect();
+    parts.emit_reconstructed(sets.into_iter().flatten().collect())?;
+    Ok(lengths)
+}
+
+#[mol_multi_op_body(run, parts)]
+pub(crate) fn run_impl(
+    reaction: &mut Reaction,
+    reactants: &[&Molecule],
+    params: &ReactionRunParams,
+) -> Result<Vec<usize>, OperationError> {
+    let inputs = parts.reconstruction_inputs(reactants)?;
+    let sets = cosmolkit_reaction::run_reactants(reaction.detached_mut(), &inputs, params)
         .map_err(OperationError::ReactionRun)?;
     let lengths = sets.iter().map(Vec::len).collect();
     parts.emit_reconstructed(sets.into_iter().flatten().collect())?;
@@ -45,7 +60,7 @@ pub(crate) fn apply_reaction_impl(
         let input = parts.reaction_input()?;
         let rows = (input.topology.atoms.len(), input.topology.bonds.len());
         (
-            cosmolkit_reaction::apply_reaction(reaction, input, params)
+            cosmolkit_reaction::apply_reaction(reaction.detached_mut(), input, params)
                 .map_err(OperationError::ReactionApply)?,
             rows,
         )
@@ -138,7 +153,7 @@ mod tests {
     fn reaction_private_pipeline_single_run_initializes_actual_reaction_and_keeps_source() {
         let source = molecule(&[Element::C], &[]);
         let observer = source.clone();
-        let mut reaction = cosmolkit_reaction::parse_smirks("[C:1]>>[N:1]").unwrap();
+        let mut reaction = crate::parse_smirks("[C:1]>>[N:1]").unwrap();
         assert!(!reaction.is_initialized());
         let sets = source.reaction_products(&mut reaction, 0).unwrap();
         assert!(reaction.is_initialized());
@@ -152,7 +167,7 @@ mod tests {
     fn reaction_private_pipeline_source_product_growth_accepts_new_rows() {
         let source = molecule(&[Element::C], &[]);
         let observer = source.clone();
-        let mut reaction = cosmolkit_reaction::parse_smirks("[C:1]>>[C:1]C").unwrap();
+        let mut reaction = crate::parse_smirks("[C:1]>>[C:1]C").unwrap();
         let sets = source.reaction_products(&mut reaction, 0).unwrap();
         assert_eq!(sets.len(), 1);
         assert_eq!(sets[0].len(), 1);
@@ -165,7 +180,7 @@ mod tests {
     fn reaction_private_pipeline_actual_duplicate_inputs_keep_both_product_slots() {
         let source = molecule(&[Element::C], &[]);
         let observer = source.clone();
-        let mut reaction = cosmolkit_reaction::parse_smirks("[C:1].[C:2]>>[C:1].[C:2]").unwrap();
+        let mut reaction = crate::parse_smirks("[C:1].[C:2]>>[C:1].[C:2]").unwrap();
         let sets = source
             .reaction_products_from_inputs(
                 &mut reaction,
@@ -178,6 +193,56 @@ mod tests {
         assert_eq!(sets[0][0].topology().atoms.len(), 1);
         assert_eq!(sets[0][1].topology().atoms.len(), 1);
         assert_shared(&source, &observer);
+    }
+
+    #[test]
+    fn reaction_run_owns_receiver_and_preserves_all_actual_inputs() {
+        let carbon = molecule(&[Element::C], &[]);
+        let oxygen = molecule(&[Element::O], &[]);
+        let carbon_peer = carbon.clone();
+        let oxygen_peer = oxygen.clone();
+        let mut rxn = Reaction::from_smirks("[C:1].[O:2]>>[C:1][O:2]").unwrap();
+        let products = rxn
+            .run(&[&carbon, &oxygen], &ReactionRunParams::default())
+            .unwrap();
+        assert!(rxn.is_initialized());
+        assert_eq!(products.len(), 1);
+        assert_eq!(products[0].len(), 1);
+        assert_eq!(products[0][0].topology().atoms.len(), 2);
+        assert_eq!(products[0][0].topology().bonds.len(), 1);
+        assert!(
+            products[0][0]
+                .derived_cache_runtime()
+                .valence_assignment()
+                .is_some()
+        );
+        assert_shared(&carbon, &carbon_peer);
+        assert_shared(&oxygen, &oxygen_peer);
+        assert!(rxn.run(&[&carbon], &ReactionRunParams::default()).is_err());
+        assert_shared(&carbon, &carbon_peer);
+        assert_shared(&oxygen, &oxygen_peer);
+    }
+
+    #[test]
+    fn reaction_run_duplicate_inputs_no_match_and_error_keep_inputs_shared() {
+        let carbon = molecule(&[Element::C], &[]);
+        let peer = carbon.clone();
+        let mut rxn = Reaction::from_smirks("[C:1].[C:2]>>[C:1].[C:2]").unwrap();
+        let products = rxn
+            .run(&[&carbon, &carbon], &ReactionRunParams::default())
+            .unwrap();
+        assert_eq!(products.len(), 1);
+        assert_eq!(products[0].len(), 2);
+        assert_shared(&carbon, &peer);
+        let mut no_match = Reaction::from_smirks("[O:1]>>[N:1]").unwrap();
+        assert!(
+            no_match
+                .run(&[&carbon], &ReactionRunParams::default())
+                .unwrap()
+                .is_empty()
+        );
+        assert!(no_match.run(&[], &ReactionRunParams::default()).is_err());
+        assert_shared(&carbon, &peer);
     }
 
     #[test]
@@ -197,7 +262,7 @@ mod tests {
         )
         .unwrap();
         let observer = source.clone();
-        let mut reaction = cosmolkit_reaction::parse_smirks("[C:1]>>[N:1]").unwrap();
+        let mut reaction = crate::parse_smirks("[C:1]>>[N:1]").unwrap();
         let result = source.apply_reaction(&mut reaction).unwrap();
         assert!(!result.changed);
         assert_shared(&result.molecule, &observer);
@@ -233,7 +298,7 @@ mod tests {
         )
         .unwrap();
         let observer = source.clone();
-        let mut reaction = cosmolkit_reaction::parse_smirks("[C:1][N:2]>>[C:1]").unwrap();
+        let mut reaction = crate::parse_smirks("[C:1][N:2]>>[C:1]").unwrap();
         let result = source.apply_reaction(&mut reaction).unwrap();
         assert!(result.changed);
         assert_eq!(result.molecule.topology().atoms.len(), 1);
@@ -258,7 +323,7 @@ mod tests {
     fn reaction_private_pipeline_failure_preserves_molecule_and_source_initialization_prefix() {
         let source = molecule(&[Element::C], &[]);
         let observer = source.clone();
-        let mut reaction = cosmolkit_reaction::parse_smirks("[C:1]>>[N:1]").unwrap();
+        let mut reaction = crate::parse_smirks("[C:1]>>[N:1]").unwrap();
         assert!(matches!(
             source.reaction_products(&mut reaction, 99),
             Err(OperationError::ReactionRun(
@@ -307,7 +372,7 @@ mod tests {
             let mut source =
                 Molecule::from_parts(topology, CoordinateBlock::default(), properties).unwrap();
             let observer = source.clone();
-            let mut reaction = cosmolkit_reaction::parse_smirks(smirks).unwrap();
+            let mut reaction = crate::parse_smirks(smirks).unwrap();
             let result = source.apply_reaction(&mut reaction).unwrap();
             let product = &result.molecule;
             assert_eq!(product.topology().atoms.len(), atom_count, "{smirks}");
@@ -369,7 +434,7 @@ mod tests {
         )
         .unwrap();
         let observer = source.clone();
-        let mut reaction = cosmolkit_reaction::parse_smirks("[C:1]>>[C:1]C").unwrap();
+        let mut reaction = crate::parse_smirks("[C:1]>>[C:1]C").unwrap();
         let sets = source.reaction_products(&mut reaction, 0).unwrap();
         let product = &sets[0][0];
         assert_eq!(product.topology().atoms.len(), 3);

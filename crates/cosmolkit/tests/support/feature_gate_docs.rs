@@ -39,6 +39,7 @@ absent_methods!("cap-rings"; with_assigned_rings);
 absent_methods!("cap-valence"; with_assigned_valence);
 absent_methods!("cap-depict"; with_2d_coordinates, to_svg, to_png);
 absent_types!("cap-depict"; DrawingError);
+absent_types!("cap-reaction"; Reaction, ReactionRunParams, ReactionTemplateRemoval, ReactionApplyResult);
 absent_methods!("cap-forcefields";
     with_uff_optimized, with_uff_optimized_with_params,
     with_uff_optimized_confs, with_uff_optimized_confs_with_params,

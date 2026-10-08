@@ -9,6 +9,19 @@ use cosmolkit_model::{
 use super::OperationError;
 use crate::{DerivedState, Molecule};
 
+// Generic report-wrapper validation must not require any optional domain API.
+#[derive(Debug)]
+pub(crate) struct MoleculeBoolReport {
+    molecule: Molecule,
+    changed: bool,
+}
+
+impl From<(Molecule, bool)> for MoleculeBoolReport {
+    fn from((molecule, changed): (Molecule, bool)) -> Self {
+        Self { molecule, changed }
+    }
+}
+
 /// Actual-site cfg(test) history for ring-cache installs: append-only,
 /// never reset. Each entry records BOTH row-buffer addresses of the
 /// finder-return RingInfo immediately before it is moved into the

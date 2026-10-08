@@ -88,6 +88,39 @@ def prepare_package(package: Path, library_name: str, metadata: dict) -> None:
     shutil.copy2(ROOT / "LICENSE", package / "LICENSE")
 
 
+def check_typescript(workspace: Path, declaration: Path) -> None:
+    shim = workspace / "wasm-generated.d.ts"
+    # Resolve the generated public declaration without depending on baseUrl.
+    shim.write_text(
+        f'export * from {json.dumps(str(declaration.with_suffix("")))};\n',
+        encoding="utf-8",
+    )
+    type_config = workspace / "tsconfig.json"
+    type_config.write_text(
+        json.dumps({
+            "compilerOptions": {
+                "strict": True,
+                "target": "ES2022",
+                "module": "NodeNext",
+                "moduleResolution": "NodeNext",
+                "lib": ["ES2022", "DOM", "ESNext.Disposable"],
+                "noEmit": True,
+                "paths": {"cosmolkit-generated": [str(shim)]},
+            },
+            "files": list(map(str, sorted(TEST_DIR.glob("*.ts")))),
+        }),
+        encoding="utf-8",
+    )
+    # Runner images may ship a different tsc. Use the same pinned compiler
+    # locally and in CI unless the caller explicitly requests another one.
+    tsc = os.environ.get("TSC_BIN")
+    if tsc:
+        run(tsc, "--project", str(type_config), cwd=ROOT)
+    else:
+        run("npx", "--yes", "--package", "typescript@5.8.3", "tsc", "--project", str(type_config), cwd=ROOT)
+    print("TypeScript declaration checks passed", flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, help="Export the tested npm package to a new directory")
@@ -213,38 +246,7 @@ def main() -> None:
             # Still check TypeScript when runtime tests fail; retain failure.
             runtime_failure = error
 
-        shim = workspace / "wasm-generated.d.ts"
-        # Import the generated module without its `.d.ts` suffix so TypeScript
-        # resolves the declaration as the module's public type surface.
-        shim.write_text(
-            f'export * from {json.dumps(str(declaration.with_suffix("")))};\n',
-            encoding="utf-8",
-        )
-        type_config = workspace / "tsconfig.json"
-        type_config.write_text(
-            json.dumps(
-                {
-                    "compilerOptions": {
-                        "strict": True,
-                        "target": "ES2022",
-                        "module": "NodeNext",
-                        "moduleResolution": "NodeNext",
-                        "lib": ["ES2022", "DOM", "ESNext.Disposable"],
-                        "noEmit": True,
-                        "baseUrl": str(TEST_DIR),
-                        "paths": {"cosmolkit-generated": [str(shim)]},
-                    },
-                    "files": list(map(str, sorted(TEST_DIR.glob("*.ts")))),
-                }
-            ),
-            encoding="utf-8",
-        )
-        tsc = os.environ.get("TSC_BIN") or shutil.which("tsc")
-        if tsc:
-            run(tsc, "--project", str(type_config), cwd=ROOT)
-        else:
-            run("npx", "--yes", "--package", "typescript@5.8.3", "tsc", "--project", str(type_config), cwd=ROOT)
-        print("TypeScript declaration checks passed", flush=True)
+        check_typescript(workspace, declaration)
         if runtime_failure is not None:
             raise runtime_failure
         if args.out_dir is not None:

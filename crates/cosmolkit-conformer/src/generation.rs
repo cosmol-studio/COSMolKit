@@ -12,7 +12,8 @@ use cosmolkit_forcefields::{
     CrystalFFDetails, DistanceBoundsRead, DistanceGeometryForceFieldParams,
     calc_chiral_volume_rows,
 };
-use std::{collections::BTreeMap, time::Instant};
+use std::collections::BTreeMap;
+use web_time::Instant;
 const EMBEDDER_ERROR_TOL: f64 = 0.00001;
 const MAX_MINIMIZED_E_PER_ATOM: f64 = 0.05;
 const MIN_TETRAHEDRAL_CHIRAL_VOL: f64 = 0.50;
@@ -1532,9 +1533,18 @@ fn source_reset_interrupt() -> Result<(), GenerationError> {
 }
 #[cfg(target_arch = "wasm32")]
 fn source_reset_interrupt() -> Result<(), GenerationError> {
-    Err(GenerationError::Input(
-        "independent process SIGINT capability is unsupported on wasm32",
-    ))
+    // BEGIN RDKIT CPP FUNCTION source_reset_interrupt (RDGeneral/ControlCHandler.h)
+    // RDKit❗✔️:   static void reset() {
+    // RDKit❗✔️:     d_gotSignal = false;
+    // RDKit❗✔️:     std::signal(SIGINT, signalHandler);
+    // RDKit❗✔️:   }
+    // END RDKIT CPP FUNCTION source_reset_interrupt
+    // Approved Web adaptation: browser/Node WASM has no process SIGINT handler.
+    // Reset the same interruption state without installing an OS handler;
+    // computation and deadline checks remain enabled. Host cancellation (e.g.
+    // terminating a Worker) is separate from synchronous chemistry execution.
+    SOURCE_INTERRUPTED.store(false, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
 }
 fn embedder_double_bond_geometry_checks(
     positions: &[Vec<f64>],

@@ -16,6 +16,13 @@ pub(crate) fn expand_molecule_wrappers(
     let operations = registry
         .operations
         .iter()
+        .filter(|operation| operation.fields.receiver_type.is_none())
+        .map(expand_molecule_operation)
+        .collect::<syn::Result<Vec<_>>>()?;
+    let reconstruction_operations = registry
+        .operations
+        .iter()
+        .filter(|operation| operation.fields.receiver_type.is_some())
         .map(expand_molecule_operation)
         .collect::<syn::Result<Vec<_>>>()?;
 
@@ -23,6 +30,7 @@ pub(crate) fn expand_molecule_wrappers(
         impl crate::Molecule {
             #(#operations)*
         }
+        #(#reconstruction_operations)*
     })
 }
 
@@ -54,6 +62,29 @@ fn expand_molecule_operation(
     let impl_fn = &fields.impl_fn;
     let spec = format_ident!("{}_SPEC", name.to_string().to_ascii_uppercase());
     let docs = fields.docs.as_ref().map(|text| quote!(#[doc = #text]));
+
+    if let Some(receiver_type) = &fields.receiver_type {
+        let result = fields
+            .result_type
+            .as_ref()
+            .expect("validated reconstruction result");
+        let assemble = fields
+            .assemble_fn
+            .as_ref()
+            .expect("validated reconstruction assembler");
+        return Ok(quote! {
+            #(#cfg)*
+            impl #receiver_type {
+                #docs
+                #visibility fn #method(&mut self, #(#params),*) -> Result<#result, #error_type> {
+                    let mut parts = crate::MultiOutputOpParts::new_reconstruction(&#spec)?;
+                    let metadata = #impl_fn(&mut parts, self, #(#call_args),*)?;
+                    let molecules = parts.finish()?;
+                    #assemble(molecules, metadata).map_err(<#error_type as ::core::convert::From<crate::ops::OperationError>>::from)
+                }
+            }
+        });
+    }
 
     let detached_result = fields
         .report_type

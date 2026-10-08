@@ -15,10 +15,6 @@ pub enum ConformerError {
     GenerationFailed(String),
     #[error("invalid embed parameters JSON: {0}")]
     InvalidEmbedParametersJson(String),
-    #[error(
-        "RDKit clock-derived implicit conformer seed is unsupported on wasm32; set EmbedParams.random_seed to a non-negative explicit seed"
-    )]
-    WasmImplicitClockSeedUnsupported,
 }
 
 mod params;

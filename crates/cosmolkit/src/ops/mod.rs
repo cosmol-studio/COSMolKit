@@ -34,7 +34,7 @@ mod radicals;
 mod reaction;
 #[cfg(feature = "cap-reaction")]
 pub(crate) use runtime::registry::{
-    ApplyReactionAccess, ReactionProductsAccess, ReactionProductsFromInputsAccess,
+    ApplyReactionAccess, ReactionProductsAccess, ReactionProductsFromInputsAccess, RunAccess,
 };
 #[cfg(feature = "cap-rings")]
 mod rings;

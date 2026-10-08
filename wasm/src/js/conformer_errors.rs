@@ -41,9 +41,6 @@ pub(crate) fn params_error(source: &ck::ConformerError) -> Result<JsValue, JsVal
         ck::ConformerError::InvalidEmbedParametersJson(v) => {
             ("InvalidEmbedParametersJson", Some(v.clone()))
         }
-        ck::ConformerError::WasmImplicitClockSeedUnsupported => {
-            ("WasmImplicitClockSeedUnsupported", None)
-        }
     };
     let e = js_sys::Error::new(&source.to_string());
     e.set_name("ConformerError");

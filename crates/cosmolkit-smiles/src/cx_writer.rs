@@ -292,7 +292,18 @@ pub fn write_cx_smiles_with_params<'record>(
         .topology;
         writer_params.do_kekule = false;
     }
-    let output = write_smiles_for_cx(&prepared_record, &writer_params)?;
+    // RWMol's private copy above also retains RingInfo. Borrow that source
+    // state alongside the prepared values instead of dropping it at the
+    // owned-record adapter; no additional state copy is needed.
+    let output = write_smiles_for_cx(
+        crate::SmilesRecordView {
+            topology: &prepared_record.topology,
+            coordinates: &prepared_record.coordinates,
+            properties: &prepared_record.properties,
+            rings: record.rings,
+        },
+        &writer_params,
+    )?;
 
     // BEGIN RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles empty SMILES return
     // RDKit❗✔️:   if (res.empty()) {

@@ -705,10 +705,31 @@ fn prepare_mol_for_writing<'a>(
             .topology,
         );
     }
-    // ROOT decision io44-coordinate-selection-approved-contract.json: Auto has
-    // zero/one/ambiguous behavior. Unlike pinned prepareMol, an Auto selection
-    // with no coordinates does not generate geometry. The explicit 2D export
-    // workflow prepares its documented ephemeral layout before this boundary.
+    // RDKit✔️✔️:   if (params.includeStereo && !trwmol.getNumConformers()) {
+    // RDKit✔️✔️:     // generate coordinates so that the stereo we generate makes sense
+    // RDKit✔️✔️:     RDDepict::compute2DCoords(trwmol);
+    // RDKit✔️✔️:   }
+    // Restore source prepareMol behavior on the temporary writer value. This
+    // does not install geometry on the input or change unique/explicit
+    // selection for existing conformers. CK's explicit missing-ID and
+    // coordinate-disabled options retain their declared behavior.
+    if params.include_stereo
+        && mol.coordinates.conformers_2d.is_empty()
+        && mol.coordinates.conformers_3d.is_empty()
+        && matches!(
+            selection,
+            CoordinateSelection::Auto | CoordinateSelection::TwoD(None)
+        )
+    {
+        let conformer = cosmolkit_depict::compute_2d_coordinates(
+            &mol.topology,
+            mol.properties,
+            &Default::default(),
+        )?;
+        let coordinates = mol.coordinates.to_mut();
+        coordinates.record_source_conformer_append(CoordinateDimension::TwoD)?;
+        coordinates.conformers_2d.push(conformer);
+    }
     let selected = select_coordinates(&mol, selection)?;
     let conformer = writer_conformer(&mol, &selected);
     let (wedge_bonds, ring_info) = cosmolkit_core::pick_bonds_to_wedge_with_existing_ring_info(

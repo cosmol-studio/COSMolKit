@@ -45,7 +45,7 @@ fn molecule_state(
         })
         .collect::<Vec<_>>();
     Ok(json!({
-        "isomeric_smiles": fixed_reference_text(&cosmolkit_smiles::write_smiles(cosmolkit_smiles::SmilesRecordView {topology:&molecule.topology,coordinates,properties:&molecule.properties})?),
+        "isomeric_smiles": fixed_reference_text(&cosmolkit_smiles::write_smiles(cosmolkit_smiles::SmilesRecordView {topology:&molecule.topology,coordinates,properties:&molecule.properties,rings:Some(&molecule.rings)})?),
         "atoms": atoms,
         "bonds": bonds,
     }))
@@ -167,7 +167,7 @@ pub fn compare_rows(
                     json!({"ordered_smiles":result.entries.iter().map(|(key,_)|fixed_reference_text(key)).collect::<Vec<_>>(),
                     "status":format!("{:?}",result.status),"modified_atoms":result.modified_atoms.iter().map(|id|id.index()).collect::<Vec<_>>(),
                     "modified_bonds":result.modified_bonds.iter().map(|id|id.index()).collect::<Vec<_>>(),"scores":scores,"molecule_states":states,
-                    "canonical_smiles":fixed_reference_text(&cosmolkit_smiles::write_smiles(cosmolkit_smiles::SmilesRecordView {topology:&canonical.topology,coordinates:&parsed.coordinates,properties:&canonical.properties})?),
+                    "canonical_smiles":fixed_reference_text(&cosmolkit_smiles::write_smiles(cosmolkit_smiles::SmilesRecordView {topology:&canonical.topology,coordinates:&parsed.coordinates,properties:&canonical.properties,rings:Some(&canonical.rings)})?),
                     "canonical_state":molecule_state(&canonical,&parsed.coordinates)?}),
                 )
             })();

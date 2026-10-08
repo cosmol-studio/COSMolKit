@@ -3,6 +3,49 @@ import pytest
 import cosmolkit as ck
 
 
+def test_reaction_run_without_molecule_receiver():
+    carbon = ck.Molecule.from_smiles("C")
+    oxygen = ck.Molecule.from_smiles("O")
+    before = [carbon.to_binary(), oxygen.to_binary()]
+    rxn = ck.Reaction.from_smirks("[C:1].[O:2]>>[C:1][O:2]")
+    groups = rxn.run([carbon, oxygen], ck.ReactionRunParams())
+    assert [[mol.to_smiles() for mol in group] for group in groups] == [["CO"]]
+    assert rxn.is_initialized()
+    assert [carbon.to_binary(), oxygen.to_binary()] == before
+    with pytest.raises(ValueError):
+        rxn.run([carbon], ck.ReactionRunParams())
+    assert [carbon.to_binary(), oxygen.to_binary()] == before
+    duplicate = ck.Reaction.from_smirks("[C:1].[C:2]>>[C:1].[C:2]")
+    assert [[mol.to_smiles() for mol in group] for group in
+            duplicate.run([carbon, carbon], ck.ReactionRunParams())] == [["C", "C"]]
+
+
+def test_sanitized_products_do_not_gain_nitrogen_stereo():
+    # Fixed RDKit 2026.03.1 outputs; no external oracle or corpus dependency.
+    source = ck.Molecule.from_smiles("C1C[C@H]2CC[C@H]2C1")
+    original = source.to_smiles()
+    reaction = ck.Reaction.from_smirks("[C;H1:1]>>[N:1]")
+    groups = source.reaction_products_from_inputs(reaction, [source], ck.ReactionRunParams())
+    assert len(groups) == 2
+    for group, expected in zip(groups, ["C1C[C@@H]2CCN2C1", "C1C[C@H]2CCN2C1"], strict=True):
+        assert len(group) == 1
+        raw = group[0]
+        assert raw.to_smiles() == expected
+        sanitized = raw.sanitize()
+        assert sanitized.to_smiles() == expected
+        assert sanitized.without_hydrogens().to_smiles() == expected
+        assert raw.to_smiles() == expected
+    assert source.to_smiles() == original
+
+
+def test_template_writer_clears_unpaired_directions():
+    reaction = ck.Reaction.from_smirks("[C:1]>>[C:1]/C=C")
+    params = ck.ReactionWriteParams(do_isomeric_smiles=False)
+    for text in [reaction.to_smirks(), reaction.to_smirks_with_params(params),
+                 reaction.to_cx_smirks(), reaction.to_cx_smirks_with_params(params)]:
+        assert text == "[C:1]>>[C:1]C=C"
+
+
 def test_reaction_values_writers_and_initialization():
     rxn = ck.Reaction.from_smirks("[C:1]>O>[N:1]")
     assert (rxn.num_reactant_templates(), rxn.num_product_templates(), rxn.num_agent_templates()) == (1, 1, 1)

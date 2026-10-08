@@ -5,8 +5,37 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from run import prepare_package
+from run import check_typescript, prepare_package
+
+
+class TypeScriptRunnerTests(unittest.TestCase):
+    def test_default_compiler_is_pinned_and_config_has_no_base_url(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            declaration = workspace / "api.d.ts"
+            with patch.dict("os.environ", {}, clear=True), patch("run.run") as invoke:
+                check_typescript(workspace, declaration)
+            config = json.loads((workspace / "tsconfig.json").read_text())
+            self.assertNotIn("baseUrl", config["compilerOptions"])
+            self.assertEqual(config["compilerOptions"]["paths"], {
+                "cosmolkit-generated": [str(workspace / "wasm-generated.d.ts")],
+            })
+            self.assertTrue(config["compilerOptions"]["strict"])
+            self.assertTrue(config["files"])
+            self.assertEqual(invoke.call_args.args[:5], (
+                "npx", "--yes", "--package", "typescript@5.8.3", "tsc",
+            ))
+
+    def test_explicit_compiler_override_is_preserved(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            with patch.dict("os.environ", {"TSC_BIN": "/explicit/tsc"}, clear=True), patch("run.run") as invoke:
+                check_typescript(workspace, workspace / "api.d.ts")
+            self.assertEqual(invoke.call_args.args, (
+                "/explicit/tsc", "--project", str(workspace / "tsconfig.json"),
+            ))
 
 
 class NpmPackageTests(unittest.TestCase):

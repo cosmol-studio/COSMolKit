@@ -1254,6 +1254,47 @@ fn typed_reconstruction_product() -> cosmolkit_reaction::ReactionProduct {
 
 #[cfg(feature = "cap-reaction")]
 #[test]
+fn receiver_reconstruction_validates_inputs_origins_facts_and_complete_output() {
+    let source = molecule();
+    let peer = source.clone();
+    let create = || MultiOutputOpParts::<crate::RunAccess>::new_reconstruction(
+        &super::super::registry::RUN_SPEC).unwrap();
+    let mut missing_inputs = create();
+    missing_inputs.emit_reconstructed_runtime(vec![]).unwrap();
+    assert!(matches!(missing_inputs.finish(), Err(OperationError::IncompleteCommit {
+        block: "reconstruction inputs", ..
+    })));
+    let mut valid = create();
+    assert!(valid.source_topology_runtime().is_err());
+    valid.reconstruction_inputs_runtime(&[&source]).unwrap();
+    valid.emit_reconstructed_runtime(vec![typed_reconstruction_product()]).unwrap();
+    let outputs = valid.finish().unwrap();
+    let mut original = typed_reconstruction_parts(&source);
+    original.reconstruction_inputs_runtime(&[&source]).unwrap();
+    original.emit_reconstructed_runtime(vec![typed_reconstruction_product()]).unwrap();
+    assert_eq!(outputs, original.finish().unwrap());
+    assert!(outputs[0].derived_cache_runtime().valence_assignment().is_some());
+    for failure in 0..3 {
+        let mut invalid = typed_reconstruction_product();
+        match failure {
+            0 => invalid.atom_origins[0].as_mut().unwrap().input = 1,
+            1 => invalid.valence.explicit_valence.clear(),
+            _ => invalid.coordinates.conformers_2d[0] = Conformer2D::new(9, vec![]),
+        }
+        let mut parts = create();
+        parts.reconstruction_inputs_runtime(&[&source]).unwrap();
+        parts.emit_reconstructed_runtime(vec![typed_reconstruction_product(), invalid]).unwrap();
+        assert!(parts.finish().is_err(), "invalid later candidate {failure}");
+        assert_eq!(source, peer);
+        assert!(std::ptr::eq(source.topology(), peer.topology()));
+        assert!(std::ptr::eq(source.coordinate_block_runtime(), peer.coordinate_block_runtime()));
+        assert!(std::ptr::eq(source.properties(), peer.properties()));
+        assert!(std::ptr::eq(source.derived_cache_runtime(), peer.derived_cache_runtime()));
+    }
+}
+
+#[cfg(feature = "cap-reaction")]
+#[test]
 fn reconstruction_typed_inputs_retain_actual_order_duplicates_counts_and_borrows() {
     let source = molecule();
     let other = Molecule::from_parts(TopologyBlock::try_from_parts(vec![atom(0, Element::O)], vec![], vec![], vec![]).unwrap(), CoordinateBlock::default(), MoleculeProperties::default()).unwrap();

@@ -81,6 +81,17 @@ pub struct Reaction {
 }
 #[wasm_bindgen]
 impl Reaction {
+    #[wasm_bindgen(unchecked_return_type = "Molecule[][]")]
+    pub fn run(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Molecule[]")] reactants: JsValue,
+        params: &ReactionRunParams,
+    ) -> Result<Array, JsValue> {
+        let inputs = molecules(&reactants)?;
+        let inputs: Vec<_> = inputs.iter().map(|m| &**m).collect();
+        cosmolkit_wasm::reaction_run(&mut self.inner.borrow_mut(), &inputs, &params.inner)
+            .map(sets).map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
+    }
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {

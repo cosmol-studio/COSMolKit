@@ -2,7 +2,8 @@
 mod stereo;
 
 use cosmolkit_smiles::{
-    SmilesParseError, SmilesWriteParams, parse_smiles, write_smiles, write_smiles_with_params,
+    SmilesParseError, SmilesParseParams, SmilesWriteParams, parse_smiles, write_smiles,
+    write_smiles_with_params,
 };
 use cosmolkit_types::{BondOrder, ChiralTag};
 
@@ -10,6 +11,81 @@ use cosmolkit_types::{BondOrder, ChiralTag};
 // Invalid UTF-8 fails; the complete byte payload is never substituted.
 fn fixture_writer_text(text: cosmolkit_model::PropertyText) -> String {
     String::from_utf8(text.into_bytes()).expect("original writer fixture UTF-8 bytes")
+}
+
+#[test]
+fn writer_preserves_existing_ring_basis_for_bridgehead_nitrogen_legality() {
+    // RDKit 2026.03.1: sanitize establishes SymmSSSR; legacy stereo must
+    // reuse it. FastFindRings is observably different for this fused system.
+    for (input, retained, fallback) in [
+        (
+            "C1C[C@@H]2CC[N@]2C1",
+            "C1C[C@@H]2CCN2C1",
+            "C1C[C@@H]2CC[N@]2C1",
+        ),
+        (
+            "C1C[C@H]2CC[N@@]2C1",
+            "C1C[C@H]2CCN2C1",
+            "C1C[C@H]2CC[N@@]2C1",
+        ),
+        // Splitting a disconnected molecule resets the fragment ring cache.
+        (
+            "C1C[C@@H]2CC[N@]2C1.O",
+            "C1C[C@@H]2CC[N@]2C1.O",
+            "C1C[C@@H]2CC[N@]2C1.O",
+        ),
+        // Genuine three-membered-ring and bridgehead nitrogen stay chiral.
+        ("C[N@]1CC1C", "CC1C[N@@]1C", "CC1C[N@@]1C"),
+        (
+            "C1C[N@]2CC[C@H]1C2",
+            "C1C[N@]2CC[C@H]1C2",
+            "C1C[N@]2CC[C@H]1C2",
+        ),
+    ] {
+        let mut record = parse_smiles(
+            input,
+            &SmilesParseParams {
+                sanitize: false,
+                remove_hydrogens: false,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let assignment =
+            cosmolkit_core::sanitize_topology(&record.topology, &Default::default()).unwrap();
+        record.topology = assignment.topology;
+        let rings = assignment.final_rings.unwrap();
+        let before = record.clone();
+        let ring_before = rings.clone();
+        for (source_rings, expected) in [(Some(&rings), retained), (None, fallback)] {
+            let view = cosmolkit_smiles::SmilesRecordView {
+                topology: &record.topology,
+                coordinates: &record.coordinates,
+                properties: &record.properties,
+                rings: source_rings,
+            };
+            assert_eq!(
+                write_smiles(view).unwrap().as_bytes(),
+                expected.as_bytes(),
+                "{input}"
+            );
+            assert_eq!(
+                cosmolkit_smiles::write_cx_smiles_with_params(
+                    view,
+                    &cosmolkit_smiles::CxSmilesWriteParams {
+                        fields: cosmolkit_smiles::CxSmilesFields::NONE,
+                        ..Default::default()
+                    }
+                )
+                .unwrap()
+                .as_bytes(),
+                expected.as_bytes(),
+                "CX: {input}"
+            );
+            assert_eq!(record, before);
+            assert_eq!(rings, ring_before);
+        }
+    }
 }
 
 #[test]

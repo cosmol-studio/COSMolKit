@@ -108,6 +108,7 @@ pub(crate) struct DerivedEffectFields {
 
 #[derive(Clone)]
 pub(crate) struct MoleculeFields {
+    pub(crate) receiver_type: Option<Type>,
     pub(crate) method: Ident,
     pub(crate) method_visibility: Visibility,
     pub(crate) error_type: Type,
@@ -175,6 +176,7 @@ struct RawDerivedEffectFields {
 
 #[derive(Default)]
 struct RawMoleculeFields {
+    receiver_type: Option<Type>,
     method: Option<Ident>,
     method_visibility: Option<Visibility>,
     error_type: Option<Type>,
@@ -248,6 +250,7 @@ impl Parse for MoleculeOperation {
             content.parse::<Token![:]>()?;
             match key.to_string().as_str() {
                 "method" => raw.method = Some(content.parse()?),
+                "receiver_type" => raw.receiver_type = Some(content.parse()?),
                 "method_visibility" => raw.method_visibility = Some(content.parse()?),
                 "error_type" => raw.error_type = Some(content.parse()?),
                 "docs" => raw.docs = Some(content.parse()?),
@@ -370,6 +373,20 @@ fn finish_molecule_fields(
     let io_roundtrip = raw.io_roundtrip.as_ref().is_some_and(LitBool::value);
     let inplace = raw.inplace.as_ref().is_some_and(LitBool::value);
 
+    if raw.receiver_type.is_some()
+        && (output != MoleculeOutput::Multiple
+            || requires_mapping != MappingRequirement::Reconstruction
+            || inplace
+            || raw.default_method.is_some()
+            || raw.result_type.is_none()
+            || raw.assemble_fn.is_none())
+    {
+        return Err(syn::Error::new_spanned(
+            operation,
+            "a non-Molecule receiver requires eager reconstruction outputs and an assembler; no in-place/default wrapper",
+        ));
+    }
+
     validate_molecule_relationships(
         operation,
         &method,
@@ -414,6 +431,7 @@ fn finish_molecule_fields(
     };
 
     Ok(MoleculeFields {
+        receiver_type: raw.receiver_type,
         method,
         method_visibility: raw
             .method_visibility
@@ -842,6 +860,7 @@ fn validate_cip_transition(
         let product = matches!(
             (operation.to_string().as_str(), method.to_string().as_str()),
             ("reaction_products", "reaction_products_with_params")
+                | ("run", "run")
                 | (
                     "reaction_products_from_inputs",
                     "reaction_products_from_inputs"

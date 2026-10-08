@@ -87,6 +87,7 @@ fn expected_operation_methods() -> Vec<&'static str> {
     if cfg!(feature = "cap-reaction") {
         expected.extend([
             "reaction_products_with_params",
+            "run",
             "reaction_products_from_inputs",
             "apply_reaction_with_params",
         ]);

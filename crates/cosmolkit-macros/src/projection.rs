@@ -544,7 +544,7 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
             }
         },
         MoleculeOutput::Multiple | MoleculeOutput::LazyMultiple => {
-            let read_methods = operation.fields.access.read.iter().chain(&operation.fields.access.write).filter_map(|block| match block {
+            let read_methods = operation.fields.access.read.iter().chain(&operation.fields.access.write).filter(|_| operation.fields.receiver_type.is_none()).filter_map(|block| match block {
                 MoleculeBlock::Topology => Some(quote! {
                     pub(crate) fn topology(&self) -> Result<&cosmolkit_model::TopologyBlock, crate::OperationError> {
                         self.source_topology_runtime()
@@ -609,15 +609,22 @@ fn expand_molecule_marker(operation: &MoleculeOperation) -> syn::Result<proc_mac
                     #lazy_prepared
                 }
             } else if operation.fields.requires_mapping == MappingRequirement::Reconstruction {
+                let source = if operation.fields.receiver_type.is_none() {
+                    quote! {
+                        pub(crate) fn reconstruction_source(&mut self) -> Result<cosmolkit_reaction::ReactionInput<'a>, crate::OperationError> {
+                            self.reconstruction_source_runtime()
+                        }
+                    }
+                } else {
+                    quote! {}
+                };
                 quote! {
                     pub(crate) fn reconstruction_inputs<'b>(
                         &mut self, inputs: &[&'b crate::Molecule],
                     ) -> Result<Vec<cosmolkit_reaction::ReactionInput<'b>>, crate::OperationError> {
                         self.reconstruction_inputs_runtime(inputs)
                     }
-                    pub(crate) fn reconstruction_source(&mut self) -> Result<cosmolkit_reaction::ReactionInput<'a>, crate::OperationError> {
-                        self.reconstruction_source_runtime()
-                    }
+                    #source
                     pub(crate) fn emit_reconstructed(
                         &mut self, products: Vec<cosmolkit_reaction::ReactionProduct>,
                     ) -> Result<(), crate::OperationError> {

@@ -2175,6 +2175,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.reaction_products",
             "Molecule.reaction_products_with_params",
             "Molecule.reaction_products_from_inputs",
+            "Reaction.run",
             "Molecule.apply_reaction",
             "Molecule.apply_reaction_with_params",
             "Molecule.apply_reaction_",
@@ -2965,7 +2966,23 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
         }
     );
     for operation in cosmolkit::operation_specs() {
-        let binding = entry(&format!("Molecule.{}", operation.method));
-        assert_eq!(operation.status, binding.status);
+        // The declaration owns the receiver: reconstruction may belong to
+        // Reaction rather than Molecule. Follow the registered operation link.
+        let bindings: Vec<_> = BINDING_CONTRACT
+            .iter()
+            .filter(|binding| {
+                binding.callable.is_some_and(|callable| {
+                    callable.operation_semantic_id == Some(operation.method)
+                })
+            })
+            .collect();
+        assert!(
+            !bindings.is_empty(),
+            "missing binding for {}",
+            operation.method
+        );
+        for binding in bindings {
+            assert_eq!(operation.status, binding.status, "{}", binding.semantic_id);
+        }
     }
 }

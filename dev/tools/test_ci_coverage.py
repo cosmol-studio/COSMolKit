@@ -45,6 +45,7 @@ class CoverageWorkflowTests(unittest.TestCase):
     def test_feature_matrix_uses_declared_leaf_capabilities_and_user_bundles(self):
         workflow = (ROOT / ".github/workflows/features.yml").read_text()
         self.assertIn("cargo test -p cosmolkit --no-default-features --profile dev-test --features op-contracts-strict", workflow)
+        self.assertIn("cargo test -p cosmolkit --no-default-features --profile dev-test --features core,op-contracts-strict --test feature_selection", workflow)
         loop = workflow.split("for feature in \\\n", 1)[1].split("                  do", 1)[0]
         selected = loop.replace("\\", "").split()
         features = tomllib.loads((ROOT / "crates/cosmolkit/Cargo.toml").read_text())["features"]
@@ -119,6 +120,15 @@ class CoverageWorkflowTests(unittest.TestCase):
         self.assertEqual(workflow.count("--release"), 5)
         self.assertNotIn("--profile dist", workflow)
         self.assertNotIn("--profile dev-test", workflow)
+
+    def test_each_wheel_build_installs_the_inherited_sccache_wrapper(self):
+        workflow = (ROOT / ".github/workflows/publish.yml").read_text()
+        wheel_steps = workflow.split("    build-wheels:\n", 1)[1].split("    build-sdist:\n", 1)[0]
+        builds = wheel_steps.split("uses: PyO3/maturin-action@v1")[1:]
+        self.assertEqual(len(builds), 5)
+        for build in builds:
+            with self.subTest(step=build.split("args:", 1)[0]):
+                self.assertIn("sccache: true", build.split("args:", 1)[0])
 
 
 if __name__ == "__main__":

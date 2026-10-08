@@ -46,7 +46,7 @@ pub(super) struct PreparedCacheValues {
 /// molecule until every tuple has passed the shared runtime validators.
 pub(crate) struct MultiOutputOpParts<'a, Access> {
     spec: &'static MoleculeOpSpec,
-    source: &'a Molecule,
+    source: Option<&'a Molecule>,
     emitted: Option<Vec<DetachedCandidate>>,
     access: PhantomData<Access>,
     lazy_emitted:
@@ -75,7 +75,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
         OpParts::<Access>::validate_semantic_preconditions(spec)?;
         Ok(Self {
             spec,
-            source,
+            source: Some(source),
             emitted: None,
             access: PhantomData,
             lazy_emitted: None,
@@ -86,6 +86,52 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
             )],
             #[cfg(feature = "cap-reaction")]
             reconstruction_inputs_read: false,
+        })
+    }
+
+    #[cfg(feature = "cap-reaction")]
+    pub(super) fn new_reconstruction(
+        spec: &'static MoleculeOpSpec,
+    ) -> Result<Self, OperationError> {
+        OpParts::<Access>::validate_operation_spec(spec)?;
+        OpParts::<Access>::validate_semantic_preconditions(spec)?;
+        OpParts::<Access>::validate_effect_contract(spec)?;
+        let all = BlockSet::TOPOLOGY
+            .union(BlockSet::COORDINATES)
+            .union(BlockSet::PROPERTIES)
+            .union(BlockSet::DERIVED_CACHE);
+        if spec.output != MoleculeOpOutput::Multiple
+            || spec.requires_mapping != super::MappingRequirement::Reconstruction
+            || spec.access.write() != all
+            || spec.may_mutate != all
+            || !spec.auto_remap.is_empty()
+            || !spec.derived_effects.preserve.is_empty()
+            || !spec.derived_effects.operation_defined.is_empty()
+            || spec.derived_effects.recompute
+                != super::DerivedState::VALENCE.union(super::DerivedState::RINGS)
+            || spec.cip_state != super::CipStatePolicy::ReactionSourceTransition
+        {
+            return Err(OperationError::MappingContract {
+                operation: spec.method,
+                issue: "source-less reconstruction requires complete detached output and explicit effects",
+                requirement: spec.requires_mapping,
+            });
+        }
+        Ok(Self {
+            spec,
+            source: None,
+            emitted: None,
+            access: PhantomData,
+            lazy_emitted: None,
+            reconstruction_inputs: Vec::new(),
+            reconstruction_inputs_read: false,
+        })
+    }
+
+    fn source(&self) -> Result<&'a Molecule, OperationError> {
+        self.source.ok_or(OperationError::IncompleteCommit {
+            operation: self.spec.method,
+            block: "single source molecule",
         })
     }
 
@@ -106,24 +152,24 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
 
     pub(super) fn source_topology_runtime(&self) -> Result<&TopologyBlock, OperationError> {
         self.ensure_read_access(BlockSet::TOPOLOGY, "topology")?;
-        Ok(self.source.topology())
+        Ok(self.source()?.topology())
     }
 
     pub(super) fn source_coordinates_runtime(&self) -> Result<&CoordinateBlock, OperationError> {
         self.ensure_read_access(BlockSet::COORDINATES, "coordinates")?;
-        Ok(self.source.coordinate_block_runtime())
+        Ok(self.source()?.coordinate_block_runtime())
     }
 
     pub(super) fn source_properties_runtime(&self) -> Result<&MoleculeProperties, OperationError> {
         self.ensure_read_access(BlockSet::PROPERTIES, "properties")?;
-        Ok(self.source.properties())
+        Ok(self.source()?.properties())
     }
 
     pub(super) fn source_derived_cache_runtime(
         &self,
     ) -> Result<&crate::molecule::DerivedCacheBlock, OperationError> {
         self.ensure_read_access(BlockSet::DERIVED_CACHE, "derived_cache")?;
-        Ok(self.source.derived_cache_runtime())
+        Ok(self.source()?.derived_cache_runtime())
     }
 
     #[cfg(feature = "cap-reaction")]
@@ -173,7 +219,7 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
     pub(super) fn reconstruction_source_runtime(
         &mut self,
     ) -> Result<cosmolkit_reaction::ReactionInput<'a>, OperationError> {
-        let source = self.source;
+        let source = self.source()?;
         let mut inputs = self.reconstruction_inputs_runtime(&[source])?;
         Ok(inputs.remove(0))
     }
@@ -306,12 +352,13 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
 
     pub(super) fn finish_lazy(self) -> Result<StereoisomerIterator, OperationError> {
         self.require_output(MoleculeOpOutput::LazyMultiple)?;
+        let source = self.source()?;
         let stream = self.lazy_emitted.ok_or(OperationError::IncompleteCommit {
             operation: self.spec.method,
             block: "outputs",
         })?;
         Ok(StereoisomerIterator {
-            source: self.source.clone(),
+            source: source.clone(),
             spec: self.spec,
             stream: Some(stream),
             yielded: 0,
@@ -386,6 +433,13 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
 
     fn finish_runtime(self) -> Result<Vec<Molecule>, OperationError> {
         self.require_output(MoleculeOpOutput::Multiple)?;
+        #[cfg(feature = "cap-reaction")]
+        if self.source.is_none() && !self.reconstruction_inputs_read {
+            return Err(OperationError::IncompleteCommit {
+                operation: self.spec.method,
+                block: "reconstruction inputs",
+            });
+        }
         let candidates = self.emitted.ok_or(OperationError::IncompleteCommit {
             operation: self.spec.method,
             block: "outputs",
@@ -413,6 +467,31 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                                 &self.reconstruction_inputs,
                                 &product,
                             )?;
+                            if self.source.is_none() {
+                                // Complete detached products have no distinguished source.
+                                // Runtime alone validates and installs their cache facts;
+                                // all other derived state starts invalid, as declared.
+                                let mut cache = crate::molecule::DerivedCacheBlock::default();
+                                cache.install_valence_assignment(product.valence);
+                                let mut prepared = super::DerivedState::VALENCE;
+                                if let Some(rings) = product.rings {
+                                    cache.install_ring_info(rings);
+                                    prepared = prepared.union(super::DerivedState::RINGS);
+                                }
+                                cache.mark_valid(prepared);
+                                validate_reconstruction_input(
+                                    &product.topology,
+                                    &product.coordinates,
+                                    &product.properties,
+                                    &cache,
+                                )?;
+                                return Ok((
+                                    std::sync::Arc::new(product.topology),
+                                    std::sync::Arc::new(product.coordinates),
+                                    std::sync::Arc::new(product.properties),
+                                    std::sync::Arc::new(cache),
+                                ));
+                            }
                             (
                                 product.topology,
                                 Some(product.coordinates),
@@ -426,7 +505,10 @@ impl<'a, Access> MultiOutputOpParts<'a, Access> {
                         }
                     };
                 validate_multiple_candidate(
-                    self.source,
+                    self.source.ok_or(OperationError::IncompleteCommit {
+                        operation: self.spec.method,
+                        block: "single source molecule",
+                    })?,
                     self.spec,
                     topology,
                     coordinates,

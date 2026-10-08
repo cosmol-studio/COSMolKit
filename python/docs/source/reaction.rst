@@ -13,7 +13,7 @@ Generate products
 
    reaction = ck.Reaction.from_smirks("[C:1]>>[N:1]")
    source = ck.Molecule.from_smiles("C")
-   product_sets = source.reaction_products(reaction, 0)
+   product_sets = reaction.run([source], ck.ReactionRunParams())
    assert product_sets[0][0].to_smiles() == "N"
    assert source.to_smiles() == "C"
    assert reaction.is_initialized()
@@ -29,16 +29,19 @@ Products remain a list of product sets: each inner list preserves product
 template order for one matching combination. No match returns an empty outer
 list. Execution may initialize the same reaction handle.
 
-For multiple inputs, preserve reactant-template order. The receiver remains
-the canonical reconstruction anchor:
+For multiple inputs, preserve reactant-template order. Execution belongs to
+the reaction, not an unrelated molecule receiver:
 
 .. code-block:: python
 
    pair = ck.Reaction.from_smirks("[C:1].[C:2]>>[C:1].[C:2]")
-   products = source.reaction_products_from_inputs(
-       pair, [source, source], ck.ReactionRunParams(max_products=1000)
-   )
+   products = pair.run([source, source], ck.ReactionRunParams(max_products=1000))
    assert [m.to_smiles() for m in products[0]] == ["C", "C"]
+
+Rust uses ``use cosmolkit::{Reaction, ReactionRunParams};`` and the inherent
+``reaction.run(&[&mol_a, &mol_b], &params)`` method; no extension trait or
+domain-crate import is needed. The public reaction type, constructors,
+execution method and registry entries require ``cap-reaction``.
 
 ``ReactionSingleRunParams`` selects coordinates for one input;
 ``ReactionRunParams.coordinate_selections`` selects per-reactant coordinates.

@@ -10,6 +10,8 @@
 //! `fingerprints` select bundles; `cap-*` names select individual capabilities,
 //! such as `cap-io` or `cap-kekulize`. With defaults disabled, `core` is not
 //! implicit. Features compose additively and do not change operation behavior.
+//! `core` includes molecular format parsing/writing for text and files;
+//! binary archives remain independently selectable with `cap-serialization`.
 //! See the crate README for bundle membership and advanced selection examples.
 
 #[cfg(doctest)]
@@ -63,6 +65,7 @@ mod alignment;
 mod matrices;
 mod molecule;
 mod molecule_builder;
+#[cfg(feature = "cap-reaction")]
 mod reaction;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-smiles")))]
 pub use cosmolkit_reaction::CxSmilesFields;
@@ -70,19 +73,21 @@ pub use cosmolkit_reaction::CxSmilesFields;
 pub use cosmolkit_reaction::SubstructMatchParams;
 #[cfg(feature = "cap-reaction")]
 pub use cosmolkit_reaction::{
-    Reaction, ReactionApplyError, ReactionApplyParams, ReactionCoordinateSelection,
+    ReactionApplyError, ReactionApplyParams, ReactionCoordinateSelection,
     ReactionInitializationError, ReactionModelError, ReactionParseError, ReactionParseParams,
     ReactionProductError, ReactionRole, ReactionRunError, ReactionRunParams,
-    ReactionSingleRunParams, ReactionTemplateRemoval, ReactionTemplateRemovalParams,
-    ReactionValidationError, ReactionValidationIssue, ReactionValidationIssueKind,
-    ReactionValidationParams, ReactionValidationReport, ReactionValidationSeverity,
-    ReactionWriteError, ReactionWriteParams, parse_smirks, parse_smirks_with_params,
+    ReactionSingleRunParams, ReactionTemplateRemovalParams, ReactionValidationError,
+    ReactionValidationIssue, ReactionValidationIssueKind, ReactionValidationParams,
+    ReactionValidationReport, ReactionValidationSeverity, ReactionWriteError, ReactionWriteParams,
 };
 #[cfg(feature = "cap-reaction")]
 pub(crate) use ops::{
-    ApplyReactionAccess, ReactionProductsAccess, ReactionProductsFromInputsAccess,
+    ApplyReactionAccess, ReactionProductsAccess, ReactionProductsFromInputsAccess, RunAccess,
 };
-pub use reaction::ReactionApplyResult;
+#[cfg(feature = "cap-reaction")]
+pub use reaction::{
+    Reaction, ReactionApplyResult, ReactionTemplateRemoval, parse_smirks, parse_smirks_with_params,
+};
 #[cfg(feature = "cap-fingerprints")]
 mod morgan;
 #[cfg(feature = "cap-fingerprints")]

@@ -19,7 +19,7 @@ mod reaction;
 #[cfg(feature = "smiles")]
 mod smiles;
 #[cfg(feature = "reaction")]
-pub use reaction::ReactionApplyResult;
+pub use reaction::{ReactionApplyResult, reaction_run};
 
 pub use cosmolkit as rust;
 /// Complete Rust facade re-export.

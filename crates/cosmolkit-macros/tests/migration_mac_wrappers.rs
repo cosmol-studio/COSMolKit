@@ -86,6 +86,49 @@ fn empty_registries_emit_only_empty_runtime_owned_inherent_impls() {
 }
 
 #[test]
+fn reaction_receiver_generates_inherent_source_less_runtime_wrapper() {
+    let file = syn::parse_file(include_str!("../../cosmolkit/src/ops/registry.rs")).unwrap();
+    let tokens = file
+        .items
+        .into_iter()
+        .find_map(|item| match item {
+            syn::Item::Macro(item) if item.mac.path.is_ident("molecule_ops") => {
+                Some(item.mac.tokens)
+            }
+            _ => None,
+        })
+        .unwrap();
+    let mut registry: MoleculeRegistry = syn::parse2(tokens).unwrap();
+    registry.operations.retain(|op| op.name == "run");
+    assert_eq!(registry.operations.len(), 1);
+    let output = compact(&expand_molecule_wrappers(&registry).unwrap());
+    assert!(output.contains("implcrate::Reaction"));
+    assert!(output.contains("pubfnrun(&mutself,"));
+    assert!(output.contains("MultiOutputOpParts::new_reconstruction(&RUN_SPEC)?"));
+    assert!(output.contains("run_impl(&mutparts,self,reactants,params)?"));
+    assert!(output.contains("parts.finish()?"));
+    assert!(!output.contains("MultiOutputOpParts::new(self"));
+    assert!(!output.contains("Molecule::new"));
+    // Invalid declarations are rejected by the parser, before wrapper expansion.
+    let source = include_str!("../../cosmolkit/src/ops/registry.rs").replace(
+        "receiver_type: crate::Reaction,",
+        "receiver_type: crate::Reaction, default_method: run_default,",
+    );
+    let file = syn::parse_file(&source).unwrap();
+    let tokens = file
+        .items
+        .into_iter()
+        .find_map(|item| match item {
+            syn::Item::Macro(item) if item.mac.path.is_ident("molecule_ops") => {
+                Some(item.mac.tokens)
+            }
+            _ => None,
+        })
+        .unwrap();
+    assert!(syn::parse2::<MoleculeRegistry>(tokens).is_err());
+}
+
+#[test]
 fn single_untyped_value_wrapper_shares_status_forwards_once_and_finishes() {
     let output = molecule(&molecule_operation(
         "inspect",

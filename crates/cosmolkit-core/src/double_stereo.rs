@@ -1346,6 +1346,25 @@ fn validate_ring_inputs(
     if !rings.is_initialized() {
         return Err(DoubleBondStereoError::RingInfoNotInitialized);
     }
+    // SmartsWrite.cpp::FragmentSmartsConstruct intentionally supplies this
+    // initialized, zero-row cache before Canon's stereo perception.
+    // RDKit✔️✔️:   mol.getRingInfo()->reset();
+    // RDKit✔️✔️:   mol.getRingInfo()->initialize(FIND_RING_TYPE_SYMM_SSSR);
+    // RingInfo.cpp defines reads beyond its membership rows as non-ring:
+    // RDKit✔️✔️: unsigned int RingInfo::numBondRings(unsigned int idx) const {
+    // RDKit✔️✔️:   PRECONDITION(df_init, "RingInfo not initialized");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (idx < d_bondMembers.size()) {
+    // RDKit✔️✔️:     return rdcast<unsigned int>(d_bondMembers[idx].size());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return 0;
+    // RDKit✔️✔️: }
+    // Behavior: accept only the complete empty SymmSSSR sentinel here; keep
+    // rejecting uninitialized and partially populated mismatched carriers.
+    // Complexity: three O(1) metadata reads; no ring finding or allocation.
+    if rings.is_symm_sssr() && rings.atom_row_count() == 0 && rings.bond_row_count() == 0 {
+        return Ok(());
+    }
     let preserved_prefix = (rings.atom_row_count() != topology.atoms.len()
         || rings.bond_row_count() != topology.bonds.len())
         && crate::rings::preserves_appended_terminal_hydrogen_ring_prefix(topology, rings);

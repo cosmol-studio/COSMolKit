@@ -104,6 +104,7 @@ impl Molecule {
             topology: self.topology(),
             coordinates: self.coordinate_block_runtime(),
             properties: self.properties(),
+            rings: self.smiles_ring_state(),
         }
     }
 

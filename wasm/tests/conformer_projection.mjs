@@ -43,11 +43,91 @@ test('EmbedParams all factories, frozen constructor fields, JSON and checked wid
 test('EmbedParams coordinate and CPCI maps retain null/empty distinction, signed keys and detached ordered values',()=>{
  const coordinates=new Map([[2,new Float64Array([4,5,6])],[-1,[1,2,3]]]),cpci=new Map([[[3,1],2.5],[[0,2],-1]]),args=Array(31).fill(undefined);args[8]=coordinates;args[24]=cpci;const p=new b.EmbedParams(...args);coordinates.get(-1)[0]=9;cpci.clear();const map=p.coordMap();assert.deepEqual([...map],[[-1,[1,2,3]],[2,[4,5,6]]]);map.get(-1)[0]=99;assert.equal(p.coordMap().get(-1)[0],1);assert.deepEqual([...p.cpci()],[[[0,2],-1],[[3,1],2.5]]);for(const bad of [{},new Map([[1,[1,2]]]),new Map([['1',[1,2,3]]]),new Map([[2147483648,[1,2,3]]])]){args[8]=bad;assert.throws(()=>new b.EmbedParams(...args));}args[8]=undefined;for(const bad of [new Map([[[1],2]]),new Map([[[0,-1],2]]),new Map([[[0,1],'2']])]){args[24]=bad;assert.throws(()=>new b.EmbedParams(...args));}
 });
-test('All sixteen embedding entrypoints preserve source-defined WASM SIGINT limitation and original receiver/parameters',()=>{
- const params=b.EmbedParams.dg().withJson('{"randomSeed":42,"trackFailures":true}'),original=params.toJson();for(const call of calls.filter(c=>c.params)){const m=b.Molecule.fromSmiles('C'),args=call.multiple?[2,params]:[params];assert.throws(()=>m[call.name](...args),e=>{assert.equal(e.kind,'Conformer');assert.ok(e.cause.detail instanceof b.ConformerRunError);assert.equal(e.cause.cause.message,'independent process SIGINT capability is unsupported on wasm32');assert.equal(e.message,'conformer operation failed: independent process SIGINT capability is unsupported on wasm32');return true;});assert.equal(m.num3dConformers(),0);assert.equal(params.toJson(),original);assert.equal(params.failures().length,0);}for(const [type,names] of [[b.EmbedMoleculeResult,['molecule','params','confId','ok']],[b.EmbedMultipleConfsResult,['molecule','params','confIds','requestedNumConfs','generatedCount']]])for(const name of names)assert.equal(typeof type.prototype[name],'function');
+test('All sixteen embedding entrypoints generate conformers with value/in-place semantics on WASM',()=>{
+ const params=b.EmbedParams.dg().withJson('{"randomSeed":42,"trackFailures":true,"timeout":1}');
+ const original=params.toJson();
+ try {
+  for(const call of calls){
+   const m=b.Molecule.fromSmiles('CCO'),before=m.toBinary();
+   const count=call.multiple?2:1;
+   const args=call.multiple?[count]:[];
+   if(call.params)args.push(params);
+   const result=m[call.name](...args);
+   const out=call.report?result.molecule():call.inplace?m:result;
+   try {
+    assert.equal(out.num3dConformers(),count,call.name);
+    for(let id=0;id<count;id++){
+     const coords=out.coordinates3d(id);
+     assert.equal(coords.length,9,call.name);
+     assert.ok(Array.from(coords).every(Number.isFinite),call.name);
+    }
+    assert.equal(out.toSmiles(),'CCO');
+    if(call.inplace)assert.equal(m.num3dConformers(),count,call.name);
+    else {assert.equal(m.num3dConformers(),0,call.name);assert.deepEqual(m.toBinary(),before,call.name);}
+    if(call.report){
+     if(call.multiple){assert.deepEqual([...result.confIds()],[0,1]);assert.equal(result.generatedCount(),count);assert.equal(result.requestedNumConfs(),count);}
+     else {assert.equal(result.confId(),0);assert.equal(result.ok(),true);}
+     const returned=result.params();
+     assert.equal(returned.randomSeed(),call.params?42:-1);
+     returned.free();
+    }
+    assert.equal(params.toJson(),original);
+    assert.equal(params.failures().length,0);
+   } finally {if(out!==m)out.free();if(call.report)result.free();m.free();}
+  }
+ } finally {params.free();}
 });
-test('Default WASM failures keep original SIGINT source error, and supported invalid inputs remain failures with atomic receivers',()=>{
- for(const call of calls.filter(c=>!c.params)){const m=b.Molecule.fromSmiles('C');assert.throws(()=>m[call.name](...(call.multiple?[1]:[])),e=>{assert.equal(e.kind,'Conformer');assert.ok(e.cause.detail instanceof b.ConformerRunError);assert.equal(e.cause.cause.message,'independent process SIGINT capability is unsupported on wasm32');return true;});assert.equal(m.num3dConformers(),0);}
+test('Seeded ethanol remains repeatable; zero-matrix implicit numerical seeds use the host clock',()=>{
+ const params=b.EmbedParams.dg().withJson('{"randomSeed":42}');
+ const source=b.Molecule.fromSmiles('CCO'),before=source.toBinary(),now=Date.now;
+ let reads=0;
+ Date.now=()=>{reads++;return 1700000000000;};
+ try {
+  const first=source.with3dConformerWithParams(params),second=source.with3dConformerWithParams(params);
+  try {
+   assert.deepEqual(first.coordinates3d(0),second.coordinates3d(0));
+   assert.equal(reads,0);
+   // Pinned RDKit 2026.03.1: EmbedParameters(), randomSeed=42, MolToXYZBlock.
+   assert.equal(first.toXyz(),'3\n\nC      1.218206   -0.254035    0.000000\nC     -0.055315    0.546111   -0.000000\nO     -1.162891   -0.292076   -0.000000\n');
+  }
+  finally {first.free();second.free();}
+  // For one atom, powerEigenSolver receives int(sumSqD2*N)==0 and therefore
+  // takes its own clock-seed branch, independently of the outer EmbedParams.
+  const atom=b.Molecule.fromSmiles('C'),atomBefore=atom.toBinary();
+  try {
+   for(const seed of [-1,42]){
+    const options=params.withJson(JSON.stringify({randomSeed:seed}));
+    const previous=reads,implicit=atom.with3dConformerWithParams(options);
+    try {assert.equal(implicit.num3dConformers(),1);assert.ok(reads>previous);assert.deepEqual([...implicit.coordinates3d(0)],[0,0,0]);assert.deepEqual(atom.toBinary(),atomBefore);}
+    finally {implicit.free();options.free();}
+   }
+  } finally {atom.free();}
+  assert.deepEqual(source.toBinary(),before);
+ } finally {Date.now=now;params.free();source.free();}
+});
+test('WASM deadlines use the host monotonic clock and preserve timeout reports and receivers',()=>{
+ const params=b.EmbedParams.dg().withJson('{"randomSeed":42,"timeout":1,"trackFailures":true}');
+ const source=b.Molecule.fromSmiles('CCO'),before=source.toBinary(),original=params.toJson();
+ const descriptor=Object.getOwnPropertyDescriptor(performance,'now');
+ let reads=0;
+ Object.defineProperty(performance,'now',{configurable:true,value:()=>2000*reads++});
+ try {
+  const report=source.with3dConformerResultWithParams(params),out=report.molecule(),returned=report.params();
+  try {
+   assert.ok(reads>1);
+   assert.equal(report.ok(),false);
+   assert.equal(report.confId(),-1);
+   assert.equal(out.num3dConformers(),0);
+   assert.equal(returned.failures()[11],1); // pinned EmbedFailureCauses::EXCEEDED_TIMEOUT
+   assert.deepEqual(source.toBinary(),before);
+   assert.equal(params.toJson(),original);
+  } finally {out.free();returned.free();report.free();}
+ } finally {
+  if(descriptor)Object.defineProperty(performance,'now',descriptor);else delete performance.now;
+  params.free();source.free();
+ }
+});
+test('Supported invalid embedding inputs remain typed failures with atomic receivers',()=>{
  const p=b.EmbedParams.dg().withJson('{"randomSeed":42}'),m=b.Molecule.fromSmiles('C');for(const n of [-1,4294967296,1.5,NaN])assert.throws(()=>m.with3dConformersWithParams(n,p),RangeError);assert.throws(()=>m.with3dConformersWithParams('1',p),TypeError);assert.equal(m.num3dConformers(),0);const bad=p.withJson('{"ETversion":3}');assert.throws(()=>m.embed3dConformerWithParams(bad),e=>e.kind==='Conformer'&&e.message.includes('Only version 1 and 2'));assert.equal(m.num3dConformers(),0);assert.equal(bad.etVersion(),3);const empty=b.Molecule.new();assert.throws(()=>empty.embed3dConformerWithParams(p),e=>e.kind==='Conformer'&&e.message.includes('molecule has no atoms'));assert.equal(empty.num3dConformers(),0);
 });
 test('Distance-geometry matrix query preserves nested numeric shape and leaves conformers unchanged',()=>{const m=b.Molecule.fromSmiles('CC'),matrix=m.dgBoundsMatrix();assert.equal(matrix.length,2);assert.equal(matrix[0].length,2);assert.equal(matrix[0][0],0);assert.equal(matrix[1][1],0);assert.ok(matrix[0][1]>matrix[1][0]);const old=matrix[0][1];matrix[0][1]=99;assert.equal(m.dgBoundsMatrix()[0][1],old);assert.equal(m.num3dConformers(),0);});

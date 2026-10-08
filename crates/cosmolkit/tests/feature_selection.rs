@@ -14,13 +14,13 @@ const CORE: &[&str] = &[
     "cap-kekulize",
     "cap-aromaticity",
     "cap-sanitize",
+    "cap-io",
 ];
 const BUNDLES: &[(&str, &[&str])] = &[
     ("core", CORE),
     ("bio", &["cap-bio"]),
     ("descriptors", &["cap-descriptors"]),
     ("tautomer", &["cap-tautomer"]),
-    ("io", &["cap-io", "cap-serialization"]),
     (
         "conformer",
         &["cap-conformer", "cap-confseq", "cap-alignment"],
@@ -76,7 +76,7 @@ fn bundle_and_capability_declarations_have_exact_membership() {
     let all: BTreeSet<_> = BUNDLES
         .iter()
         .flat_map(|(_, caps)| caps.iter().copied())
-        .chain(["cap-stereoisomers", "cap-reaction"])
+        .chain(["cap-stereoisomers", "cap-reaction", "cap-serialization"])
         .collect();
     let declared: BTreeSet<_> = manifest["features"]
         .as_table()
@@ -120,7 +120,10 @@ fn bundle_and_capability_declarations_have_exact_membership() {
         vec!["core", "bio"],
         CORE.iter().copied().chain(["cap-bio"]).collect(),
     ));
-    assert_eq!(cases.len(), 55);
+    assert_eq!(cases.len(), 54);
+    assert!(!manifest["features"].as_table().unwrap().contains_key("io"));
+    assert!(!declared_caps(&manifest, false, &["core"]).contains("cap-serialization"));
+    assert!(!declared_caps(&manifest, false, &["core"]).contains("cap-search"));
     for strict in [false, true] {
         for (defaults, selected, expected) in &cases {
             let mut selected = selected.clone();
@@ -273,6 +276,20 @@ fn enabled_registry_rows_use_capability_names_not_bundle_names() {
     }
 }
 
+#[test]
+fn reaction_object_and_execution_are_gated_together() {
+    for id in ["types.Reaction", "Reaction.run"] {
+        let entry = cosmolkit::BINDING_CONTRACT
+            .iter()
+            .find(|entry| entry.semantic_id == id);
+        assert_eq!(entry.is_some(), cfg!(feature = "cap-reaction"), "{id}");
+    }
+    assert_eq!(
+        cosmolkit::MOLECULE_OPS.iter().any(|op| op.method == "run"),
+        cfg!(feature = "cap-reaction")
+    );
+}
+
 // Method references compile once with this target, without executing chemistry.
 #[test]
 fn selected_public_methods_are_available() {
@@ -345,6 +362,22 @@ fn selected_public_methods_are_available() {
         }
         let _ = inspect_ring_error;
     }
+}
+
+#[cfg(feature = "core")]
+#[test]
+fn core_parses_sdf_text_with_explicit_coordinate_policy() {
+    let sdf = "carbon\n     RDKit          3D\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    1.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\nM  END\n$$$$\n";
+    let record = cosmolkit::SdfRecord::from_sdf_with_params(
+        sdf,
+        &cosmolkit::SdfReadParams {
+            coordinate_mode: cosmolkit::SdfCoordinateMode::Require3D,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(record.molecule().unwrap().num_atoms(), 1);
+    assert_eq!(record.molecule().unwrap().conformers_3d().len(), 1);
 }
 
 #[cfg(feature = "cap-bio")]

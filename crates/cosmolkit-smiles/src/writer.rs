@@ -880,6 +880,7 @@ fn write_smiles_output_with_random_stream<'record>(
     prepare_writer_stereochemistry(
         &mut topology,
         stereochem_done_marker_is_computed,
+        record.rings,
         params,
         &components,
     )?;
@@ -1179,6 +1180,7 @@ fn write_smiles_output_with_random_stream<'record>(
         prepare_canonical_nonisomeric_stereo_fallback(
             &mut topology,
             stereochem_done_marker_is_computed,
+            record.rings,
             &components,
         )?;
     }
@@ -1396,6 +1398,7 @@ fn write_smiles_output_with_random_stream<'record>(
 fn prepare_writer_stereochemistry(
     topology: &mut TopologyBlock,
     stereochem_done_marker_is_computed: Option<bool>,
+    source_rings: Option<&cosmolkit_core::RingInfo>,
     params: &SmilesWriteParams,
     components: &[Vec<usize>],
 ) -> Result<(), SmilesParseError> {
@@ -1428,6 +1431,7 @@ fn prepare_writer_stereochemistry(
     prepare_writer_stereo_components(
         topology,
         stereochem_done_marker_is_computed,
+        source_rings,
         params.clean_stereo,
         components,
     )
@@ -1436,6 +1440,7 @@ fn prepare_writer_stereochemistry(
 fn prepare_canonical_nonisomeric_stereo_fallback(
     topology: &mut TopologyBlock,
     stereochem_done_marker_is_computed: Option<bool>,
+    source_rings: Option<&cosmolkit_core::RingInfo>,
     components: &[Vec<usize>],
 ) -> Result<(), SmilesParseError> {
     // BEGIN RDKIT CPP FUNCTION Canon::canonicalizeFragment stereo fallback
@@ -1451,6 +1456,7 @@ fn prepare_canonical_nonisomeric_stereo_fallback(
     prepare_writer_stereo_components(
         topology,
         stereochem_done_marker_is_computed,
+        source_rings,
         false,
         components,
     )
@@ -1459,6 +1465,7 @@ fn prepare_canonical_nonisomeric_stereo_fallback(
 fn prepare_writer_stereo_components(
     topology: &mut TopologyBlock,
     stereochem_done_marker_is_computed: Option<bool>,
+    source_rings: Option<&cosmolkit_core::RingInfo>,
     clean_it: bool,
     components: &[Vec<usize>],
 ) -> Result<(), SmilesParseError> {
@@ -1577,23 +1584,41 @@ fn prepare_writer_stereo_components(
             false,
         )
         .map_err(|error| SmilesParseError::WriterValence(error.to_string()))?;
-        let rings = fast_find_rings_from_parts(
-            fragment.topology.atoms.len(),
-            &fragment.topology.bonds,
-            &fragment.topology.adjacency,
-        )
-        .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+        // MolOps::getTheFrags preserves the sole component's RingInfo:
+        // RDKit✔️✔️:   if (nFrags == 1) {
+        // RDKit✔️✔️:     res.emplace_back(new RWMol(mol));
+        // legacyStereoPerception must not replace a Fast-or-better cache:
+        // RDKit✔️✔️:   if (!mol.getRingInfo()->isFindFastOrBetter()) {
+        // RDKit✔️✔️:     MolOps::fastFindRings(mol);
+        // RDKit✔️✔️:   }
+        // Behavior: single-component indices are unchanged. Extracted/pruned
+        // components reset RingInfo in the source and use the normal fallback.
+        // The core owner handles an uninitialized/Other input cache itself.
+        // Complexity: reuse a borrowed cache in O(1), without a clone or search;
+        // absent/extracted caches retain the existing O(V+E) fast search.
+        let fallback_rings;
+        let rings = if let Some(rings) = source_rings.filter(|_| components.len() == 1) {
+            rings
+        } else {
+            fallback_rings = fast_find_rings_from_parts(
+                fragment.topology.atoms.len(),
+                &fragment.topology.bonds,
+                &fragment.topology.adjacency,
+            )
+            .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+            &fallback_rings
+        };
         let assigned = if clean_it {
             // RDKit❗✔️: the writer passes cleanStereo while the omitted
             // flagPossibleStereoCenters argument defaults to false; the current
             // cleanup wrapper selects true for that flag. The serialized-output
             // regression below checks this wrapper independently.
-            cosmolkit_core::assign_legacy_stereochemistry(fragment.topology, &valence, &rings)
+            cosmolkit_core::assign_legacy_stereochemistry(fragment.topology, &valence, rings)
         } else {
             cosmolkit_core::assign_legacy_stereochemistry_for_depiction(
                 fragment.topology,
                 &valence,
-                &rings,
+                rings,
             )
         }
         .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
@@ -6347,7 +6372,8 @@ mod tests {
         };
         let components = connected_components(&record.topology);
 
-        prepare_writer_stereochemistry(&mut record.topology, None, &params, &components).unwrap();
+        prepare_writer_stereochemistry(&mut record.topology, None, None, &params, &components)
+            .unwrap();
 
         assert!(
             record
