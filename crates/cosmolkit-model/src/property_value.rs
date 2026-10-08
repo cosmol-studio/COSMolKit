@@ -570,7 +570,8 @@ impl PropertyValue {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum PropertyStoreError {
+#[doc(hidden)]
+pub enum PropertyStoreError {
     EmptyKey,
     ComputedListKind(PropertyValueError),
 }
@@ -598,22 +599,23 @@ impl std::error::Error for MissingPropertyError {}
 
 /// One canonical typed value map with source insertion order and computed state.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct PropertyStore {
+#[doc(hidden)]
+pub struct PropertyStore {
     values: BTreeMap<PropertyText, PropertyValue>,
     order: Vec<PropertyText>,
 }
 
 impl PropertyStore {
-    pub(crate) const fn new() -> Self {
+    #[doc(hidden)]
+    pub const fn new() -> Self {
         Self {
             values: BTreeMap::new(),
             order: Vec::new(),
         }
     }
 
-    pub(crate) fn from_records(
-        records: impl IntoIterator<Item = (PropertyText, PropertyValue)>,
-    ) -> Self {
+    #[doc(hidden)]
+    pub fn from_records(records: impl IntoIterator<Item = (PropertyText, PropertyValue)>) -> Self {
         // Detached transport consumes explicit record order, preserving a source
         // clone's ordered dictionary rather than inferring order from keys.
         let mut store = Self::new();
@@ -635,7 +637,8 @@ impl PropertyStore {
         &self.values
     }
 
-    pub(crate) fn get(&self, key: &[u8]) -> Option<&PropertyValue> {
+    #[doc(hidden)]
+    pub fn get(&self, key: &[u8]) -> Option<&PropertyValue> {
         // BEGIN COMPLETE PINNED SF383
         // RDKit✔️🔝: bool getPropIfPresent(const std::string_view key, T &res) const {
         // RDKit✔️🔝:     return d_props.getValIfPresent(key, res);
@@ -714,9 +717,8 @@ impl PropertyStore {
             .is_some_and(|names| names.iter().any(|name| name.as_bytes() == key)))
     }
 
-    pub(crate) fn ordered(
-        &self,
-    ) -> impl ExactSizeIterator<Item = (&PropertyText, &PropertyValue)> + '_ {
+    #[doc(hidden)]
+    pub fn ordered(&self) -> impl ExactSizeIterator<Item = (&PropertyText, &PropertyValue)> + '_ {
         // RDKit✔️❌: STR_VECT keys() const {
         // RDKit✔️❌:     STR_VECT res;
         // RDKit✔️❌:     res.reserve(_data.size());
@@ -810,7 +812,8 @@ impl PropertyStore {
         }))
     }
 
-    pub(crate) fn set(
+    #[doc(hidden)]
+    pub fn set(
         &mut self,
         key: PropertyText,
         value: PropertyValue,
@@ -947,6 +950,35 @@ impl PropertyStore {
         // Complexity: source linear membership scan and deep vector/string
         // copy retained; tree lookups O(log P). The insertion-order index owns
         // extra key bytes versus source Pair vector, recorded as a cost gap.
+        self.register_transient_computed_name(&key)?;
+        self.set(key, value)
+    }
+
+    /// The computed-list prefix of setProp, shared by ordinary values and
+    /// owner-local typed transient values that never enter this dictionary.
+    pub(crate) fn register_transient_computed_name(
+        &mut self,
+        key: &PropertyText,
+    ) -> Result<(), PropertyStoreError> {
+        // RDKit✔️❌:   template <typename T>
+        // RDKit✔️❌:   void setProp(const std::string_view key, T val, bool computed = false) const {
+        // RDKit✔️❌:     if(key.empty()) {
+        // RDKit✔️❌:       throw ValueErrorException("Cannot set property with empty key");
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     if (computed) {
+        // RDKit✔️❌:       STR_VECT compLst;
+        // RDKit✔️❌:       getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️❌:       if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️❌:         compLst.emplace_back(key);
+        // RDKit✔️❌:         d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     d_props.setVal(key, val);
+        // RDKit✔️❌:   }
+        // This helper implements only the computed-list prefix. The caller
+        // owns the typed value write; set_computed below uses canonical set.
+        // Exact source copies, first membership test, tag error and key order
+        // are retained; the existing ordered tree has the known storage cost.
         if key.is_empty() {
             return Err(PropertyStoreError::EmptyKey);
         }
@@ -956,7 +988,7 @@ impl PropertyStore {
                 .map_err(PropertyStoreError::ComputedListKind)?,
             None => Vec::new(),
         };
-        if !names.contains(&key) {
+        if !names.contains(key) {
             names.push(key.clone());
             // setVal copies this borrowed vector. Keep that second source copy.
             self.set(
@@ -964,7 +996,7 @@ impl PropertyStore {
                 PropertyValue::from(names.as_slice()),
             )?;
         }
-        self.set(key, value)
+        Ok(())
     }
 
     pub(crate) fn clear_value(&mut self, key: impl AsRef<[u8]>) {
@@ -2149,7 +2181,9 @@ mod uint_complete_source_condition_cells {
         );
         assert!(store.is_computed("rank").unwrap());
         let saved = store.clone();
-        store.clear_computed();
+        store
+            .clear_computed()
+            .expect("original fixture property clear succeeds");
         assert_eq!(
             saved.get("rank".as_bytes()),
             Some(&PropertyValue::UInt(2147483646_u32))
@@ -2288,7 +2322,9 @@ mod uint_complete_source_condition_cells {
         );
         assert!(store.is_computed("rank").unwrap());
         let saved = store.clone();
-        store.clear_computed();
+        store
+            .clear_computed()
+            .expect("original fixture property clear succeeds");
         assert_eq!(
             saved.get("rank".as_bytes()),
             Some(&PropertyValue::UInt(2147483647_u32))
@@ -2427,7 +2463,9 @@ mod uint_complete_source_condition_cells {
         );
         assert!(store.is_computed("rank").unwrap());
         let saved = store.clone();
-        store.clear_computed();
+        store
+            .clear_computed()
+            .expect("original fixture property clear succeeds");
         assert_eq!(
             saved.get("rank".as_bytes()),
             Some(&PropertyValue::UInt(2147483648_u32))
@@ -2566,7 +2604,9 @@ mod uint_complete_source_condition_cells {
         );
         assert!(store.is_computed("rank").unwrap());
         let saved = store.clone();
-        store.clear_computed();
+        store
+            .clear_computed()
+            .expect("original fixture property clear succeeds");
         assert_eq!(
             saved.get("rank".as_bytes()),
             Some(&PropertyValue::UInt(4294967295_u32))

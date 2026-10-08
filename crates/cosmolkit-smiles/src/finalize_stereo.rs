@@ -12,10 +12,12 @@ use cosmolkit_model::Conformer3D;
 use crate::{SmilesParseParams, SmilesRecord};
 
 /// Structured failures from the source SMILES post-parse stereo stage.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SmilesStereoError {
     #[error(transparent)]
     Properties(#[from] cosmolkit_model::MoleculePropertyError),
+    #[error("source-selected conformer ID {id} was lost during detached transformation")]
+    SelectedConformerMissing { id: usize },
     #[error("prepared valence field {field} has {actual} rows; expected {expected}")]
     ValenceRows {
         field: &'static str,
@@ -1277,10 +1279,34 @@ mod smiles_stereo_ring_routes_tests {
 /// Complete stereo after the caller has performed the requested source
 /// sanitize/RemoveHs stage. Never accepts or constructs a live molecule.
 pub fn finalize_smiles_stereo(
+    record: SmilesRecord,
+    params: &SmilesParseParams,
+    prepared_valence: &mut Option<ValenceAssignment>,
+    prepared_rings: &mut Option<RingInfo>,
+) -> Result<SmilesRecord, SmilesStereoError> {
+    let selected = record
+        .coordinates
+        .conformers_2d
+        .first()
+        .map(|row| row.id())
+        .or_else(|| record.coordinates.conformers_3d.first().map(|row| row.id()));
+    finalize_smiles_stereo_with_conformer(
+        record,
+        params,
+        prepared_valence,
+        prepared_rings,
+        selected,
+    )
+}
+
+// One stereo body shared with the established detached finalizer. The parser
+// passes its actual source numeric-ID/flag choice, before hydrogen remapping.
+pub(crate) fn finalize_smiles_stereo_with_conformer(
     mut record: SmilesRecord,
     params: &SmilesParseParams,
     prepared_valence: &mut Option<ValenceAssignment>,
     prepared_rings: &mut Option<RingInfo>,
+    selected_conformer: Option<usize>,
 ) -> Result<SmilesRecord, SmilesStereoError> {
     // RDKit SmilesParse.cpp, MolFromSmiles (2026.03.1):
     // RDKit✔️✔️:   if (res && (params.sanitize || params.removeHs)) {
@@ -1338,7 +1364,12 @@ pub fn finalize_smiles_stereo(
             .as_ref()
             .is_some_and(|carrier| carrier.is_symm_sssr());
         if needs_symm {
-            let acquired = symmetrized_sssr(&record.topology, &RingSearchParams::default())?;
+            let (acquired, properties) = cosmolkit_core::symmetrized_sssr_with_properties(
+                &record.topology,
+                record.properties,
+                &RingSearchParams::default(),
+            )?;
+            record.properties = properties;
             #[cfg(test)]
             ring_probe::record_symm();
             #[cfg(test)]
@@ -1378,8 +1409,39 @@ pub fn finalize_smiles_stereo(
         // RDKit✔️✔️:       }
         // RDKit's geometry kernel accepts XYZ also for a 2D conformer. Lift
         // only a borrowed 2D input, prefer it over 3D, and keep stored rows intact.
-        let (two_d, three_d) = source_stereo_conformers(&record.coordinates)?;
-        let conformer = two_d.as_deref().or(three_d);
+        let lifted = selected_conformer
+            .and_then(|id| {
+                record
+                    .coordinates
+                    .conformers_2d
+                    .iter()
+                    .find(|row| row.id() == id)
+            })
+            .map(|conformer| {
+                Conformer3D::new(
+                    conformer.id(),
+                    conformer
+                        .coordinates()
+                        .iter()
+                        .map(|xy| [xy[0], xy[1], 0.0])
+                        .collect(),
+                    false,
+                )
+            });
+        let conformer = lifted.as_ref().or_else(|| {
+            selected_conformer.and_then(|id| {
+                record
+                    .coordinates
+                    .conformers_3d
+                    .iter()
+                    .find(|row| row.id() == id)
+            })
+        });
+        if let Some(id) = selected_conformer
+            && conformer.is_none()
+        {
+            return Err(SmilesStereoError::SelectedConformerMissing { id });
+        }
         if conformer.is_some() {
             record.topology = clear_single_bond_directions(record.topology, false)?;
         }
@@ -1510,7 +1572,7 @@ pub fn finalize_smiles_stereo(
     // Complexity: one property insertion; no topology copy or perception pass.
     record
         .properties
-        .set_computed_prop("_StereochemDone", cosmolkit_model::PropertyValue::Int(1))?;
+        .set_computed_prop("_StereochemDone", 1_i32)?;
     Ok(record)
 }
 

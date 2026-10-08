@@ -788,10 +788,109 @@ impl SubstanceGroup {
         // RDKit✔️✔️:   }
         // RDKit✔️✔️: }
         // RDKit✔️✔️: return false;
-        self.bonds.contains(&bond)
-            || self.cstates.iter().any(|cstate| cstate.bond == bond)
-            || self.head_crossing_bonds.contains(&bond)
-            || self.crossing_bond_correspondence.contains(&bond)
+        self.bonds.contains(&bond) || self.cstates.iter().any(|cstate| cstate.bond == bond)
+    }
+
+    fn adjust_source_removed_atom(&mut self, atom: AtomId) {
+        // RDKit❗❌: bool SubstanceGroup::adjustToRemovedAtom(unsigned int atomIdx) {
+        // RDKit❗❌:   bool res = false;
+        // RDKit❗❌:   for (auto &aid : d_atoms) {
+        // RDKit❗❌:     if (aid == atomIdx) {
+        // RDKit❗❌:       throw SubstanceGroupException(
+        // RDKit❗❌:           "adjustToRemovedAtom() called on SubstanceGroup which contains the "
+        // RDKit❗❌:           "atom");
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (aid > atomIdx) {
+        // RDKit❗❌:       res = true;
+        // RDKit❗❌:       --aid;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   for (auto &aid : d_patoms) {
+        // RDKit❗❌:     if (aid == atomIdx) {
+        // RDKit❗❌:       throw SubstanceGroupException(
+        // RDKit❗❌:           "adjustToRemovedAtom() called on SubstanceGroup which contains the "
+        // RDKit❗❌:           "atom");
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (aid > atomIdx) {
+        // RDKit❗❌:       res = true;
+        // RDKit❗❌:       --aid;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   for (auto &ap : d_saps) {
+        // RDKit❗❌:     if (ap.aIdx == atomIdx || ap.lvIdx == rdcast<int>(atomIdx)) {
+        // RDKit❗❌:       throw SubstanceGroupException(
+        // RDKit❗❌:           "adjustToRemovedAtom() called on SubstanceGroup which contains the "
+        // RDKit❗❌:           "atom");
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (ap.aIdx > atomIdx) {
+        // RDKit❗❌:       res = true;
+        // RDKit❗❌:       --ap.aIdx;
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (ap.lvIdx > rdcast<int>(atomIdx)) {
+        // RDKit❗❌:       res = true;
+        // RDKit❗❌:       --ap.lvIdx;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:
+        // RDKit❗❌:   return res;
+        // RDKit❗❌: }
+        // RDKit❗❌:
+        for id in self.atoms.iter_mut().chain(&mut self.parent_atoms) {
+            if id.index() > atom.index() {
+                *id = AtomId::new(id.index() - 1);
+            }
+        }
+        for point in &mut self.attach_points {
+            if point.atom.index() > atom.index() {
+                point.atom = AtomId::new(point.atom.index() - 1);
+            }
+            if let Some(leaving) = &mut point.leaving_atom {
+                if leaving.index() > atom.index() {
+                    *leaving = AtomId::new(leaving.index() - 1);
+                }
+            }
+        }
+    }
+
+    fn adjust_source_removed_bond(&mut self, bond: BondId) {
+        // RDKit❗❌: bool SubstanceGroup::adjustToRemovedBond(unsigned int bondIdx) {
+        // RDKit❗❌:   bool res = false;
+        // RDKit❗❌:   for (auto &bid : d_bonds) {
+        // RDKit❗❌:     if (bid == bondIdx) {
+        // RDKit❗❌:       throw SubstanceGroupException(
+        // RDKit❗❌:           "adjustToRemovedBond() called on SubstanceGroup which contains the "
+        // RDKit❗❌:           "bond");
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (bid > bondIdx) {
+        // RDKit❗❌:       res = true;
+        // RDKit❗❌:       --bid;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   for (auto &cs : d_cstates) {
+        // RDKit❗❌:     if (cs.bondIdx == bondIdx) {
+        // RDKit❗❌:       throw SubstanceGroupException(
+        // RDKit❗❌:           "adjustToRemovedBond() called on SubstanceGroup which contains the "
+        // RDKit❗❌:           "bond");
+        // RDKit❗❌:     }
+        // RDKit❗❌:     if (cs.bondIdx > bondIdx) {
+        // RDKit❗❌:       res = true;
+        // RDKit❗❌:       --cs.bondIdx;
+        // RDKit❗❌:     }
+        // RDKit❗❌:   }
+        // RDKit❗❌:   return res;
+        // RDKit❗❌: }
+        // Caller excludes every matching bond and CState first. Preserve raw
+        // XBHEAD/XBCORR and roles: the native helper does not adjust those.
+        for bid in &mut self.bonds {
+            if bid.index() > bond.index() {
+                *bid = BondId::new(bid.index() - 1);
+            }
+        }
+        for cs in &mut self.cstates {
+            if cs.bond.index() > bond.index() {
+                cs.bond = BondId::new(cs.bond.index() - 1);
+            }
+        }
     }
 
     pub fn can_remap_without_parent(
@@ -892,6 +991,14 @@ impl SubstanceGroup {
         // RDKit❗❌:     addSubstanceGroup(mol, sgroup);
         // RDKit❗❌:   }
         // RDKit❗❌: }
+        // One consumed group is the loop element of the canonical append
+        // caller, which preserves source collection order and owns the clone.
+        // Native setters validate shifted references immediately; this model
+        // adapter retains later detached graph validation and usize arithmetic.
+        // Unsigned32 wrap, signed SAP negatives other than sentinel -1, owning
+        // pointer/index errors and setter failure timing remain explicit gaps.
+        // Parent hierarchy and generic XBHEAD/XBCORR entries are not shifted:
+        // the native function changes only the reference vectors shown above.
         self.id = id;
         for atom in self.atoms.iter_mut().chain(self.parent_atoms.iter_mut()) {
             *atom = AtomId::new(atom.index() + atom_offset);
@@ -1196,6 +1303,40 @@ impl StereoGroup {
         remove_first(&mut self.atoms, &atom);
     }
 
+    pub(crate) fn shift_source_atom_ids_after_removed(&mut self, removed: AtomId) {
+        for atom in &mut self.atoms {
+            if atom.index() > removed.index() {
+                *atom = AtomId::new(atom.index() - 1);
+            }
+        }
+    }
+
+    pub(crate) fn remap_source_retained_atom_ids(&mut self, aliases: &[Option<AtomId>]) {
+        for atom in &mut self.atoms {
+            if let Some(Some(mapped)) = aliases.get(atom.index()) {
+                *atom = *mapped;
+            }
+        }
+    }
+
+    pub(crate) fn remap_source_retained_bond_ids(&mut self, aliases: &[Option<BondId>]) {
+        for bond in &mut self.bonds {
+            if let Some(Some(mapped)) = aliases.get(bond.index()) {
+                *bond = *mapped;
+            }
+        }
+    }
+
+    pub(crate) fn shift_source_bond_ids_after_removed(&mut self, removed: BondId) {
+        // Native StereoGroup retains Bond pointers while RWMol changes indices.
+        // Stable detached IDs must track those same retained objects explicitly.
+        for bond in &mut self.bonds {
+            if bond.index() > removed.index() {
+                *bond = BondId::new(bond.index() - 1);
+            }
+        }
+    }
+
     pub fn remove_bond(&mut self, bond: BondId) {
         // RDKit✔️✔️: auto bondPos = findBond(group);
         // RDKit✔️✔️: if (bondPos != group.d_bonds.end()) {
@@ -1443,62 +1584,70 @@ pub fn insert_stereo_groups(
     atom_offset: usize,
     bond_offset: usize,
 ) -> Vec<StereoGroup> {
-    // RDKit❗✔️: void insertStereoGroups(RWMol &mol, const ROMol &other,
-    // RDKit❗✔️:                         unsigned int origNumAtoms, unsigned int origNumBonds) {
-    // RDKit❗✔️:   if (other.getStereoGroups().empty()) {
-    // RDKit❗✔️:     return;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   std::vector<RDKit::Atom *> abs_atoms;
-    // RDKit❗✔️:   std::vector<RDKit::Bond *> abs_bonds;
-    // RDKit❗✔️:   std::vector<RDKit::StereoGroup> new_groups;
-    // RDKit❗✔️:   new_groups.reserve(mol.getStereoGroups().size());
-    // RDKit❗✔️:   for (const auto &sg : mol.getStereoGroups()) {
-    // RDKit❗✔️:     // The sdf specification forbids more than one ABS stereo group, but we
-    // RDKit❗✔️:     // don't enforce that in our code. But if we see more than one ABS groups
-    // RDKit❗✔️:     // here, just merge the atoms and bonds in them into one group. Other stereo
-    // RDKit❗✔️:     // groups are just forwarded.
-    // RDKit❗✔️:     if (sg.getGroupType() == RDKit::StereoGroupType::STEREO_ABSOLUTE) {
-    // RDKit❗✔️:       auto &atoms = sg.getAtoms();
-    // RDKit❗✔️:       auto &bonds = sg.getBonds();
-    // RDKit❗✔️:       abs_atoms.insert(abs_atoms.end(), atoms.begin(), atoms.end());
-    // RDKit❗✔️:       abs_bonds.insert(abs_bonds.end(), bonds.begin(), bonds.end());
-    // RDKit❗✔️:     } else {
-    // RDKit❗✔️:       new_groups.emplace_back(sg);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:
-    // RDKit❗✔️:   for (const auto &sg : other.getStereoGroups()) {
-    // RDKit❗✔️:     // update the stereo group's atom and bond indices
-    // RDKit❗✔️:     std::vector<RDKit::Atom *> new_atoms;
-    // RDKit❗✔️:     std::vector<RDKit::Bond *> new_bonds;
-    // RDKit❗✔️:     for (auto atom : sg.getAtoms()) {
-    // RDKit❗✔️:       auto idx = atom->getIdx() + origNumAtoms;
-    // RDKit❗✔️:       new_atoms.push_back(mol.getAtomWithIdx(idx));
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     for (auto bond : sg.getBonds()) {
-    // RDKit❗✔️:       auto idx = bond->getIdx() + origNumBonds;
-    // RDKit❗✔️:       new_bonds.push_back(mol.getBondWithIdx(idx));
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:
-    // RDKit❗✔️:     // Collect all ABS atoms and bonds so they are added as a single group
-    // RDKit❗✔️:     if (sg.getGroupType() == RDKit::StereoGroupType::STEREO_ABSOLUTE) {
-    // RDKit❗✔️:       abs_atoms.insert(abs_atoms.end(), new_atoms.begin(), new_atoms.end());
-    // RDKit❗✔️:       abs_bonds.insert(abs_bonds.end(), new_bonds.begin(), new_bonds.end());
-    // RDKit❗✔️:     } else {
-    // RDKit❗✔️:       RDKit::StereoGroup new_group(sg.getGroupType(), new_atoms, new_bonds,
-    // RDKit❗✔️:                                    sg.getReadId());
-    // RDKit❗✔️:       // default write ID to 0 to avoid id clashes. We can use
-    // RDKit❗✔️:       // assignStereoGroupIds() later on to assign new IDs
-    // RDKit❗✔️:       new_group.setWriteId(0);
-    // RDKit❗✔️:       new_groups.push_back(std::move(new_group));
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (!abs_atoms.empty() || !abs_bonds.empty()) {
-    // RDKit❗✔️:     new_groups.emplace_back(RDKit::StereoGroupType::STEREO_ABSOLUTE, abs_atoms,
-    // RDKit❗✔️:                             abs_bonds);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   mol.setStereoGroups(new_groups);
-    // RDKit❗✔️: }
+    // RDKit❗❌: void insertStereoGroups(RWMol &mol, const ROMol &other,
+    // RDKit❗❌:                         unsigned int origNumAtoms, unsigned int origNumBonds) {
+    // RDKit❗❌:   if (other.getStereoGroups().empty()) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   std::vector<RDKit::Atom *> abs_atoms;
+    // RDKit❗❌:   std::vector<RDKit::Bond *> abs_bonds;
+    // RDKit❗❌:   std::vector<RDKit::StereoGroup> new_groups;
+    // RDKit❗❌:   new_groups.reserve(mol.getStereoGroups().size());
+    // RDKit❗❌:   for (const auto &sg : mol.getStereoGroups()) {
+    // RDKit❗❌:     // The sdf specification forbids more than one ABS stereo group, but we
+    // RDKit❗❌:     // don't enforce that in our code. But if we see more than one ABS groups
+    // RDKit❗❌:     // here, just merge the atoms and bonds in them into one group. Other stereo
+    // RDKit❗❌:     // groups are just forwarded.
+    // RDKit❗❌:     if (sg.getGroupType() == RDKit::StereoGroupType::STEREO_ABSOLUTE) {
+    // RDKit❗❌:       auto &atoms = sg.getAtoms();
+    // RDKit❗❌:       auto &bonds = sg.getBonds();
+    // RDKit❗❌:       abs_atoms.insert(abs_atoms.end(), atoms.begin(), atoms.end());
+    // RDKit❗❌:       abs_bonds.insert(abs_bonds.end(), bonds.begin(), bonds.end());
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       new_groups.emplace_back(sg);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   for (const auto &sg : other.getStereoGroups()) {
+    // RDKit❗❌:     // update the stereo group's atom and bond indices
+    // RDKit❗❌:     std::vector<RDKit::Atom *> new_atoms;
+    // RDKit❗❌:     std::vector<RDKit::Bond *> new_bonds;
+    // RDKit❗❌:     for (auto atom : sg.getAtoms()) {
+    // RDKit❗❌:       auto idx = atom->getIdx() + origNumAtoms;
+    // RDKit❗❌:       new_atoms.push_back(mol.getAtomWithIdx(idx));
+    // RDKit❗❌:     }
+    // RDKit❗❌:     for (auto bond : sg.getBonds()) {
+    // RDKit❗❌:       auto idx = bond->getIdx() + origNumBonds;
+    // RDKit❗❌:       new_bonds.push_back(mol.getBondWithIdx(idx));
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // Collect all ABS atoms and bonds so they are added as a single group
+    // RDKit❗❌:     if (sg.getGroupType() == RDKit::StereoGroupType::STEREO_ABSOLUTE) {
+    // RDKit❗❌:       abs_atoms.insert(abs_atoms.end(), new_atoms.begin(), new_atoms.end());
+    // RDKit❗❌:       abs_bonds.insert(abs_bonds.end(), new_bonds.begin(), new_bonds.end());
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       RDKit::StereoGroup new_group(sg.getGroupType(), new_atoms, new_bonds,
+    // RDKit❗❌:                                    sg.getReadId());
+    // RDKit❗❌:       // default write ID to 0 to avoid id clashes. We can use
+    // RDKit❗❌:       // assignStereoGroupIds() later on to assign new IDs
+    // RDKit❗❌:       new_group.setWriteId(0);
+    // RDKit❗❌:       new_groups.push_back(std::move(new_group));
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!abs_atoms.empty() || !abs_bonds.empty()) {
+    // RDKit❗❌:     new_groups.emplace_back(RDKit::StereoGroupType::STEREO_ABSOLUTE, abs_atoms,
+    // RDKit❗❌:                             abs_bonds);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   mol.setStereoGroups(new_groups);
+    // RDKit❗❌: }
+    // Source group order, duplicate member multiplicity, forward ABS append,
+    // existing read/write IDs and incoming write-ID reset to zero are retained.
+    // Stable detached IDs replace owning-pointer resolution; usize offsets do
+    // not reproduce unsigned32 overflow, retained for final source-width review.
+    // Cost: nonempty work is linear in all groups/members like native copying.
+    // Empty incoming still deep-copies existing groups to return an owned Vec,
+    // whereas native returns immediately; overall cost marker records this
+    // existing boundary loss. No sorting/deduplication or heuristic ID repair.
     if incoming.is_empty() {
         return existing.to_vec();
     }
@@ -1543,4 +1692,410 @@ pub fn insert_stereo_groups(
         ));
     }
     merge_absolute_stereo_groups(result)
+}
+
+#[cfg(test)]
+mod source_insert_stereo_groups_complete_tests {
+    use super::*;
+
+    fn group(
+        kind: StereoGroupKind,
+        atoms: &[usize],
+        bonds: &[usize],
+        read: u32,
+        write: u32,
+    ) -> StereoGroup {
+        StereoGroup::new(
+            kind,
+            atoms.iter().copied().map(AtomId::new).collect(),
+            bonds.iter().copied().map(BondId::new).collect(),
+        )
+        .with_id(read)
+        .with_write_id(write)
+    }
+
+    #[test]
+    fn empty_incoming_preserves_multiple_abs_groups_without_assignment_merge() {
+        let existing = vec![
+            group(StereoGroupKind::Absolute, &[2], &[1], 7, 8),
+            group(StereoGroupKind::Absolute, &[0, 0], &[], 9, 10),
+        ];
+        let result = insert_stereo_groups(&existing, &[], 100, 200);
+        assert_eq!(result, existing);
+        assert_ne!(result.as_ptr(), existing.as_ptr());
+        assert_eq!(result[0].write_id(), 8);
+        assert_eq!(result[1].write_id(), 10);
+    }
+
+    #[test]
+    fn nonempty_insertion_keeps_member_order_duplicates_and_independent_id_rules() {
+        let existing = vec![
+            group(StereoGroupKind::Absolute, &[2, 2], &[1], 3, 4),
+            group(StereoGroupKind::And, &[1], &[0], 5, 6),
+            group(StereoGroupKind::Absolute, &[0], &[2], 7, 8),
+        ];
+        let incoming = vec![
+            group(StereoGroupKind::Or, &[1, 0], &[2, 0], 9, 10),
+            group(StereoGroupKind::Absolute, &[0, 1, 0], &[1], 11, 12),
+            group(StereoGroupKind::And, &[], &[], 13, 14),
+        ];
+        let result = insert_stereo_groups(&existing, &incoming, 10, 20);
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[0], existing[1]);
+        assert_eq!(result[1].kind(), StereoGroupKind::Or);
+        assert_eq!(result[1].id(), Some(9));
+        assert_eq!(result[1].write_id(), 0);
+        assert_eq!(result[1].atoms(), [AtomId::new(11), AtomId::new(10)]);
+        assert_eq!(result[1].bonds(), [BondId::new(22), BondId::new(20)]);
+        assert_eq!(result[2].kind(), StereoGroupKind::And);
+        assert_eq!(result[2].id(), Some(13));
+        assert_eq!(result[2].write_id(), 0);
+        assert!(result[2].is_empty());
+        assert_eq!(result[3].kind(), StereoGroupKind::Absolute);
+        assert_eq!(result[3].id(), None);
+        assert_eq!(result[3].write_id(), 0);
+        assert_eq!(
+            result[3].atoms(),
+            [
+                AtomId::new(2),
+                AtomId::new(2),
+                AtomId::new(0),
+                AtomId::new(10),
+                AtomId::new(11),
+                AtomId::new(10)
+            ]
+        );
+        assert_eq!(
+            result[3].bonds(),
+            [BondId::new(1), BondId::new(2), BondId::new(21)]
+        );
+        assert_eq!(existing[1].write_id(), 6);
+        assert_eq!(incoming[0].write_id(), 10);
+    }
+
+    #[test]
+    fn nonempty_empty_abs_input_drops_empty_abs_groups_and_keeps_bond_only_abs() {
+        let empty = group(StereoGroupKind::Absolute, &[], &[], 5, 6);
+        assert!(insert_stereo_groups(&[empty.clone()], &[empty.clone()], 3, 4).is_empty());
+        let bond_only = group(StereoGroupKind::Absolute, &[], &[0, 0], 7, 8);
+        let result = insert_stereo_groups(&[empty], &[bond_only], 3, 4);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].atoms().is_empty());
+        assert_eq!(result[0].bonds(), [BondId::new(4), BondId::new(4)]);
+        assert_eq!(result[0].id(), None);
+        assert_eq!(result[0].write_id(), 0);
+    }
+}
+
+#[cfg(test)]
+mod source_insert_substance_groups_complete_tests {
+    use super::*;
+
+    #[test]
+    fn insertion_shifts_explicit_refs_and_preserves_raw_properties_and_sparse_payloads() {
+        let source = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+            .with_atoms(vec![AtomId::new(2), AtomId::new(0), AtomId::new(2)])
+            .with_parent_atoms(vec![AtomId::new(1), AtomId::new(1)])
+            .with_bonds(vec![BondId::new(1), BondId::new(0), BondId::new(1)])
+            .with_bond_role(BondId::new(1), SGroupBondRole::Contained)
+            .with_parent(SubstanceGroupId::new(0))
+            .with_head_crossing_bonds(vec![BondId::new(0)])
+            .with_crossing_bond_correspondence(vec![BondId::new(1), BondId::new(0)])
+            .with_cstates(vec![SGroupCState::new(BondId::new(1), [-0.0, 2.0, 3.0])])
+            .with_attach_points(vec![
+                SGroupAttachPoint {
+                    atom: AtomId::new(2),
+                    leaving_atom: None,
+                    label: Some(PropertyText::from_bytes(b"label\0\xff")),
+                    order: Some(u32::MAX),
+                },
+                SGroupAttachPoint {
+                    atom: AtomId::new(0),
+                    leaving_atom: Some(AtomId::new(1)),
+                    label: None,
+                    order: None,
+                },
+            ])
+            .with_rdkit_sequence_id(11)
+            .with_external_id(19)
+            .with_prop("PARENT", PropertyValue::UInt(2))
+            .unwrap()
+            .with_prop("XBHEAD", PropertyValue::IntVector(vec![0, 1]))
+            .unwrap()
+            .with_prop("XBCORR", PropertyValue::IntVector(vec![1, 0]))
+            .unwrap();
+        let shifted = source
+            .clone()
+            .with_inserted_offsets(SubstanceGroupId::new(8), 10, 20);
+        assert_eq!(shifted.id(), SubstanceGroupId::new(8));
+        assert_eq!(
+            shifted.atoms(),
+            [AtomId::new(12), AtomId::new(10), AtomId::new(12)]
+        );
+        assert_eq!(shifted.parent_atoms(), [AtomId::new(11), AtomId::new(11)]);
+        assert_eq!(
+            shifted.bonds(),
+            [BondId::new(21), BondId::new(20), BondId::new(21)]
+        );
+        assert_eq!(
+            shifted.bond_roles.get(&BondId::new(21)),
+            Some(&SGroupBondRole::Contained)
+        );
+        assert_eq!(shifted.cstates[0].bond, BondId::new(21));
+        assert_eq!(shifted.cstates[0].vector[0].to_bits(), (-0.0_f64).to_bits());
+        assert_eq!(shifted.attach_points[0].atom, AtomId::new(12));
+        assert_eq!(shifted.attach_points[0].leaving_atom, None);
+        assert_eq!(shifted.attach_points[1].atom, AtomId::new(10));
+        assert_eq!(shifted.attach_points[1].leaving_atom, Some(AtomId::new(11)));
+        assert_eq!(
+            shifted.attach_points[0].label,
+            source.attach_points[0].label
+        );
+        assert_eq!(shifted.attach_points[0].order, Some(u32::MAX));
+        assert_eq!(shifted.props, source.props);
+        assert_eq!(shifted.parent, source.parent);
+        assert_eq!(shifted.head_crossing_bonds, source.head_crossing_bonds);
+        assert_eq!(
+            shifted.crossing_bond_correspondence,
+            source.crossing_bond_correspondence
+        );
+        assert_eq!(shifted.rdkit_sequence_id, source.rdkit_sequence_id);
+        assert_eq!(shifted.external_id, source.external_id);
+        assert_eq!(
+            source.atoms(),
+            [AtomId::new(2), AtomId::new(0), AtomId::new(2)]
+        );
+    }
+
+    #[test]
+    fn empty_and_zero_offset_insertions_keep_payload_and_do_not_assign_index_property() {
+        let source = SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Superatom)
+            .with_prop("index", PropertyValue::UInt(91))
+            .unwrap();
+        let shifted = source
+            .clone()
+            .with_inserted_offsets(SubstanceGroupId::new(4), 11, 17);
+        assert_eq!(shifted.id(), SubstanceGroupId::new(4));
+        assert_eq!(shifted.props, source.props);
+        assert!(shifted.atoms.is_empty());
+        assert!(shifted.bonds.is_empty());
+        assert!(shifted.cstates.is_empty());
+        assert!(shifted.attach_points.is_empty());
+        assert_eq!(
+            source.clone().with_inserted_offsets(source.id(), 0, 0),
+            source
+        );
+    }
+}
+
+/// The single source-shaped deletion helper, borrowing canonical detached groups.
+fn remove_source_groups_referencing<E: From<crate::TopologyEditError>>(
+    groups: &mut Vec<SubstanceGroup>,
+    includes: impl Fn(&SubstanceGroup) -> bool,
+    adjust: impl Fn(&mut SubstanceGroup),
+    uint_reader: &mut (impl FnMut(&PropertyValue) -> Result<u32, E> + ?Sized),
+) -> Result<(), E> {
+    // RDKit❗❌: bool removedParentInHierarchy(
+    // RDKit❗❌:     unsigned int idx, const std::vector<SubstanceGroup> &sgs,
+    // RDKit❗❌:     const boost::dynamic_bitset<> &toRemove,
+    // RDKit❗❌:     const std::map<unsigned int, unsigned int> &indexLookup) {
+    // RDKit❗❌:   PRECONDITION(idx < sgs.size(), "cannot find SubstanceGroup");
+    // RDKit❗❌:   if (toRemove[idx]) {
+    // RDKit❗❌:     return true;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   unsigned int parent;
+    // RDKit❗❌:   if (sgs[idx].getPropIfPresent("PARENT", parent)) {
+    // RDKit❗❌:     auto piter = indexLookup.find(parent);
+    // RDKit❗❌:     if (piter != indexLookup.end()) {
+    // RDKit❗❌:       return removedParentInHierarchy(piter->second, sgs, toRemove,
+    // RDKit❗❌:                                       indexLookup);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return false;
+    // RDKit❗❌: }
+    // RDKit❗❌:
+    // RDKit❗❌: template <bool INCLUDES_METHOD(SubstanceGroup &, unsigned int),
+    // RDKit❗❌:           void ADJUST_METHOD(SubstanceGroup &, unsigned int)>
+    // RDKit❗❌: void removeSubstanceGroupsReferencing(RWMol &mol, unsigned int idx) {
+    // RDKit❗❌:   auto &sgs = getSubstanceGroups(mol);
+    // RDKit❗❌:   if (!sgs.empty()) {
+    // RDKit❗❌:     // first collect the ones that should be removed
+    // RDKit❗❌:     boost::dynamic_bitset<> toRemove(sgs.size());
+    // RDKit❗❌:     unsigned int nRemoved = 0;
+    // RDKit❗❌:     bool parentsPresent = false;
+    // RDKit❗❌:     for (unsigned int i = 0; i < sgs.size(); ++i) {
+    // RDKit❗❌:       if (!parentsPresent && sgs[i].hasProp("PARENT")) {
+    // RDKit❗❌:         parentsPresent = true;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (INCLUDES_METHOD(sgs[i], idx)) {
+    // RDKit❗❌:         toRemove.set(i);
+    // RDKit❗❌:         ++nRemoved;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     // if we're going to be removing anything and there are PARENTS present,
+    // RDKit❗❌:     // we need to build a lookup map between index->position in original array
+    // RDKit❗❌:     std::map<unsigned int, unsigned int> indexLookup;
+    // RDKit❗❌:     if (parentsPresent && nRemoved) {
+    // RDKit❗❌:       for (unsigned int i = 0; i < sgs.size(); ++i) {
+    // RDKit❗❌:         unsigned int index;
+    // RDKit❗❌:         if (sgs[i].getPropIfPresent("index", index)) {
+    // RDKit❗❌:           indexLookup[index] = i;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     // now go through and keep everything that shouldn't be removed
+    // RDKit❗❌:     // and who doesn't have a PARENT that should be removed in their hierarchy
+    // RDKit❗❌:     std::vector<SubstanceGroup> newsgs;
+    // RDKit❗❌:     newsgs.reserve(sgs.size() - nRemoved);
+    // RDKit❗❌:     unsigned int i = 0;
+    // RDKit❗❌:     for (auto &&sg : sgs) {
+    // RDKit❗❌:       if (!toRemove[i]) {
+    // RDKit❗❌:         // we might be keeping it. Check the parent
+    // RDKit❗❌:         if (!parentsPresent || !sg.hasProp("PARENT")) {
+    // RDKit❗❌:           ADJUST_METHOD(sg, idx);
+    // RDKit❗❌:           newsgs.push_back(std::move(sg));
+    // RDKit❗❌:         } else if (parentsPresent) {
+    // RDKit❗❌:           unsigned int parent;
+    // RDKit❗❌:           // has our parent been removed?
+    // RDKit❗❌:           if (sg.getPropIfPresent("PARENT", parent)) {
+    // RDKit❗❌:             auto piter = indexLookup.find(parent);
+    // RDKit❗❌:             bool keepIt = false;
+    // RDKit❗❌:             if (piter == indexLookup.end()) {
+    // RDKit❗❌:               // our parent isn't around, so it isn't being removed
+    // RDKit❗❌:               // note: this is an odd case and probably shouldn't happen, but
+    // RDKit❗❌:               // this isn't the place to enforce that
+    // RDKit❗❌:               keepIt = true;
+    // RDKit❗❌:             } else if (!toRemove[piter->second]) {
+    // RDKit❗❌:               // our parent isn't being removed, recursively check up through
+    // RDKit❗❌:               // parents to see if we find any that are being removed:
+    // RDKit❗❌:               if (!removedParentInHierarchy(piter->second, sgs, toRemove,
+    // RDKit❗❌:                                             indexLookup)) {
+    // RDKit❗❌:                 keepIt = true;
+    // RDKit❗❌:               }
+    // RDKit❗❌:             }
+    // RDKit❗❌:             if (keepIt) {
+    // RDKit❗❌:               ADJUST_METHOD(sg, idx);
+    // RDKit❗❌:               newsgs.push_back(std::move(sg));
+    // RDKit❗❌:             }
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       ++i;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     sgs = std::move(newsgs);
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // Native move-from state on later conversion failure is not representable:
+    // prior field adjustments remain, but ownership stays with this vector.
+    // Dense detached IDs/typed parents must be remapped after source selection;
+    // raw index/PARENT and crossing-property values remain unchanged.
+    if groups.is_empty() {
+        return Ok(());
+    }
+    let mut removed = Vec::with_capacity(groups.len());
+    let mut parents_present = false;
+    let mut n_removed = 0;
+    for group in groups.iter() {
+        if !parents_present && group.props.get(b"PARENT".as_slice()).is_some() {
+            parents_present = true;
+        }
+        let drop = includes(group);
+        n_removed += usize::from(drop);
+        removed.push(drop);
+    }
+    let mut index_lookup = BTreeMap::new();
+    if parents_present && n_removed != 0 {
+        for (i, group) in groups.iter().enumerate() {
+            if let Some(value) = group.props.get(b"index".as_slice()) {
+                index_lookup.insert(uint_reader(value)?, i);
+            }
+        }
+    }
+    let mut keep = vec![false; groups.len()];
+    for i in 0..groups.len() {
+        if removed[i] {
+            continue;
+        }
+        let retain = if !parents_present || !groups[i].props.get(b"PARENT".as_slice()).is_some() {
+            true
+        } else {
+            let mut parent = uint_reader(groups[i].props.get(b"PARENT".as_slice()).unwrap())?;
+            let mut depth = 0;
+            loop {
+                let Some(&position) = index_lookup.get(&parent) else {
+                    break true;
+                };
+                if removed[position] {
+                    break false;
+                }
+                let Some(value) = groups[position].props.get(b"PARENT".as_slice()) else {
+                    break true;
+                };
+                if depth == groups.len() {
+                    return Err(crate::TopologyEditError::SourceGroupParentCycle {
+                        group: groups[i].id,
+                    }
+                    .into());
+                }
+                depth += 1;
+                parent = uint_reader(value)?;
+            }
+        };
+        if retain {
+            adjust(&mut groups[i]);
+            keep[i] = true;
+        }
+    }
+    let mut ids = vec![None; groups.len()];
+    let mut next = 0;
+    for (i, retain) in keep.iter().copied().enumerate() {
+        if retain {
+            ids[i] = Some(SubstanceGroupId::new(next));
+            next += 1;
+        }
+    }
+    let mut i = 0;
+    groups.retain_mut(|group| {
+        let old_position = i;
+        i += 1;
+        if let Some(id) = ids[old_position] {
+            group.id = id;
+            group.parent = group
+                .parent
+                .and_then(|p| ids.get(p.index()).copied().flatten());
+            true
+        } else {
+            false
+        }
+    });
+    Ok(())
+}
+
+pub(crate) fn remove_source_groups_referencing_bond<E: From<crate::TopologyEditError>>(
+    groups: &mut Vec<SubstanceGroup>,
+    bond: BondId,
+    uint_reader: &mut (impl FnMut(&PropertyValue) -> Result<u32, E> + ?Sized),
+) -> Result<(), E> {
+    // RDKit❗❌: removeSubstanceGroupsReferencing<includesBond, removedBond>(mol, idx);
+    remove_source_groups_referencing(
+        groups,
+        |g| g.includes_bond(bond),
+        |g| g.adjust_source_removed_bond(bond),
+        uint_reader,
+    )
+}
+pub(crate) fn remove_source_groups_referencing_atom<E: From<crate::TopologyEditError>>(
+    groups: &mut Vec<SubstanceGroup>,
+    atom: AtomId,
+    uint_reader: &mut (impl FnMut(&PropertyValue) -> Result<u32, E> + ?Sized),
+) -> Result<(), E> {
+    // RDKit❗❌: removeSubstanceGroupsReferencing<includesAtom, removedAtom>(mol, idx);
+    remove_source_groups_referencing(
+        groups,
+        |g| g.includes_atom(atom),
+        |g| g.adjust_source_removed_atom(atom),
+        uint_reader,
+    )
 }

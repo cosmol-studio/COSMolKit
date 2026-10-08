@@ -40,6 +40,38 @@ gate. Release optimization and strict checking are independent. Published
 builds use default features unless extra checks are explicitly requested;
 building does not authorize publishing.
 
+## Pre-commit checks
+
+Run from the repository root against the final changes. The command below
+excludes both parity packages, including `reference_parity`; run corpus and
+special-regression suites separately through their prepare/test entrypoints.
+
+```bash
+uv sync --locked --group dev
+cargo fmt --all --check
+cargo test --workspace --locked --profile dev-test --no-fail-fast \
+    --exclude cosmolkit-parity-tests --exclude cosmolkit-parity-tests-fixed \
+    --features cosmolkit/op-contracts-strict
+cargo run -p cosmolkit-py --no-default-features --features dev-stub --bin stub_gen
+.venv/bin/maturin develop --profile dev-test --manifest-path python/Cargo.toml
+.venv/bin/pytest python/tests
+```
+
+Also run every `run` step in the `feature-matrix` job of
+[features.yml](../.github/workflows/features.yml); do not maintain a separate
+feature list or weaken CI.
+
+Daily `--profile dev-test` builds use optimization level 3 without LTO and with
+16 codegen units. CI distribution builds use `--release` for fat LTO and one
+codegen unit; strict checks are independent of either profile.
+
+All checks must pass before committing. Record commands, exit codes, test
+counts and logs; do not add exclusions beyond the parity-package separation
+above, filters or new skips to hide failures.
+Test the freshly built Python extension, not an older installation. Rerun
+affected checks after further changes. This checklist does not authorize Git
+operations.
+
 ## Domain designs and protocols
 
 - [Double formatting](./double_formatting_contract.md): approved Boost-compatible pure-Rust binary64 string conversion and its validation boundary.

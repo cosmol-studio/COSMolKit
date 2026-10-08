@@ -1,6 +1,9 @@
 use crate::ReactionRole;
 #[derive(Debug, thiserror::Error)]
 pub enum ReactionWriteError {
+    #[error("reaction CX write: {0}")]
+    Cx(#[source] cosmolkit_search::SmartsWriteError),
+
     #[error("{role:?} template {template} SMARTS write: {source}")]
     Template {
         role: ReactionRole,

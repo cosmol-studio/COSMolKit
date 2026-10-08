@@ -3282,7 +3282,7 @@ fn parse_v2000_atom_line(
         (48, "molTotValence"),
         (54, "molRxnRole"),
         (57, "molRxnComponent"),
-        (66, "molRxnExactChange"),
+        (66, "molRxnExachg"),
     ] {
         if line.len() >= start + 3 && rdkit_substr(line, start, 3) != "  0" {
             let value = parse_required_int(line, start, 3, line_number)?;
@@ -7104,7 +7104,7 @@ fn parse_v3000_atom_properties(
             }
             "EXACHG" if value != "0" => {
                 let parsed = parse_v3000_i32(value, "V3000 exact-change flag", line)?;
-                spec = spec.with_prop("molRxnExactChange", parsed.to_string())?;
+                spec = spec.with_prop("molRxnExachg", parsed.to_string())?;
             }
             "INVRET" if value != "0" => {
                 let parsed = parse_v3000_i32(value, "V3000 inversion flag", line)?;
@@ -10467,7 +10467,9 @@ mod tests {
         assert_eq!(string_property(carbon.prop("molTotValence")), Some("4"));
         assert_eq!(string_property(carbon.prop("molRxnRole")), Some("2"));
         assert_eq!(string_property(carbon.prop("molRxnComponent")), Some("3"));
-        assert_eq!(string_property(carbon.prop("molRxnExactChange")), Some("1"));
+        // RDKit types.h: molRxnExactChange = "molRxnExachg".
+        assert_eq!(string_property(carbon.prop("molRxnExachg")), Some("1"));
+        assert_eq!(carbon.prop("molRxnExactChange"), None);
         assert_eq!(topology.bonds[0].direction(), BondDirection::EitherDouble);
         assert_eq!(topology.bonds[0].stereo(), BondStereo::Any);
         assert_eq!(

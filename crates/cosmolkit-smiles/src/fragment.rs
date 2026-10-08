@@ -876,22 +876,22 @@ mod tests {
         assert_eq!(*prepared.valence, expected_valence);
         assert_eq!(prepared.topology.bonds[0].stereo(), BondStereo::Any);
         assert_eq!(
-            (prepared.topology.atoms[0]
+            prepared.topology.atoms[0]
                 .prop("_CIPCode")
                 .unwrap()
                 .as_string()
-                .unwrap())
-            .as_bytes(),
-            ("7").as_bytes()
+                .unwrap()
+                .as_bytes(),
+            b"7".as_slice()
         );
         assert_eq!(
-            (prepared.topology.atoms[1]
+            prepared.topology.atoms[1]
                 .prop("_CIPCode")
                 .unwrap()
                 .as_string()
-                .unwrap())
-            .as_bytes(),
-            ("S").as_bytes()
+                .unwrap()
+                .as_bytes(),
+            b"S".as_slice()
         );
         assert_eq!(record, before);
         assert_eq!(stale_valence, stale_before);

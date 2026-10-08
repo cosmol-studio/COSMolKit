@@ -38,8 +38,8 @@ use crate::query_behavior::{
 use crate::{QueryAtom, QueryBond, QueryGraph};
 use cosmolkit_model::{
     AtomId, AtomMapping, AtomQueryPredicate, Bond, BondId, BondMapping, BondQueryPredicate,
-    BondSpec, QueryAtomIdentity, QueryNode, StereoGroup, SubstanceGroup, SubstanceGroupId,
-    TopologyMapping, query_substance_groups, replace_query_substance_groups,
+    BondSpec, PropertyText, QueryAtomIdentity, QueryNode, StereoGroup, SubstanceGroup,
+    SubstanceGroupId, TopologyMapping, query_substance_groups, replace_query_substance_groups,
 };
 use cosmolkit_types::{BondDirection, BondOrder, ChiralTag, Element, Hybridization};
 
@@ -164,21 +164,122 @@ impl QueryGraphBuilder {
     /// `SmartsParser` and are consumed when their ordinary bond is emitted;
     /// the builder does not keep a cloned mirror of them.
     fn finish(self) -> Result<QueryGraph, SmartsParseError> {
-        // RDKit❗✔️:     func(inp, molVect);
-        // RDKit❗✔️:     if (!molVect.empty()) {
-        // RDKit❗✔️:       res.reset(molVect[0]);
-        // RDKit❗✔️:       SmilesParseOps::CloseMolRings(res.get(), false);
-        // RDKit❗✔️:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
-        // RDKit❗✔️:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
-        // RDKit❗✔️:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
-        // Root toMol finalization applies to this graph only. Recursive mol
-        // grammar reductions call finish_recursive(), which only closes rings.
+        // BEGIN COMPLETE PINNED SF250 toMol
+        // RDKit✔️❌: std::unique_ptr<RWMol> toMol(const std::string &inp,
+        // RDKit✔️❌:                              int func(const std::string &,
+        // RDKit✔️❌:                                       std::vector<RDKit::RWMol *> &),
+        // RDKit✔️❌:                              const std::string &origInp) {
+        // RDKit✔️❌:   // empty strings produce empty molecules:
+        // RDKit✔️❌:   if (inp.empty()) {
+        // RDKit✔️❌:     return std::make_unique<RWMol>();
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   std::unique_ptr<RWMol> res;
+        // RDKit✔️❌:   std::vector<RDKit::RWMol *> molVect;
+        // RDKit✔️❌:   try {
+        // RDKit✔️❌:     func(inp, molVect);
+        // RDKit✔️❌:     if (!molVect.empty()) {
+        // RDKit✔️❌:       res.reset(molVect[0]);
+        // RDKit✔️❌:       SmilesParseOps::CloseMolRings(res.get(), false);
+        // RDKit✔️❌:       SmilesParseOps::CheckChiralitySpecifications(res.get(), true);
+        // RDKit✔️❌:       SmilesParseOps::SetUnspecifiedBondTypes(res.get());
+        // RDKit✔️❌:       SmilesParseOps::AdjustAtomChiralityFlags(res.get());
+        // RDKit✔️❌:       // No sense leaving this bookmark intact:
+        // RDKit✔️❌:       if (res->hasAtomBookmark(ci_RIGHTMOST_ATOM)) {
+        // RDKit✔️❌:         res->clearAtomBookmark(ci_RIGHTMOST_ATOM);
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:       molVect[0] = nullptr;  // NOTE: to avoid leaks on failures, this should
+        // RDKit✔️❌:                              // occur last in this if.
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   } catch (SmilesParseException &e) {
+        // RDKit✔️❌:     std::string nm = "SMILES";
+        // RDKit✔️❌:     if (func == smarts_parse) {
+        // RDKit✔️❌:       nm = "SMARTS";
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:     BOOST_LOG(rdErrorLog) << nm << " Parse Error: " << e.what()
+        // RDKit✔️❌:                           << " for input: '" << origInp << "'" << std::endl;
+        // RDKit✔️❌:
+        // RDKit✔️❌:     // reset res so that we return a nullptr. We don't want to reset(),
+        // RDKit✔️❌:     // because that would delete the mol and leak any unmatched
+        // RDKit✔️❌:     // ring closure bonds. These will be cleaned up in the loop below.
+        // RDKit✔️❌:     res.release();
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:   for (auto *molPtr : molVect) {
+        // RDKit✔️❌:     if (molPtr) {
+        // RDKit✔️❌:       // Clean-up the bond bookmarks when not calling CloseMolRings
+        // RDKit✔️❌:       SmilesParseOps::CleanupAfterParseError(molPtr);
+        // RDKit✔️❌:       delete molPtr;
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌:
+        // RDKit✔️❌:   return res;
+        // RDKit✔️❌: }
+        // END COMPLETE PINNED SF250 toMol
+        // BEGIN COMPLETE PINNED reached SetUnspecifiedBondTypes
+        // RDKit✔️❌: void SetUnspecifiedBondTypes(RWMol *mol) {
+        // RDKit✔️❌:   PRECONDITION(mol, "no molecule");
+        // RDKit✔️❌:   for (auto bond : mol->bonds()) {
+        // RDKit✔️❌:     if (bond->hasProp(RDKit::common_properties::_unspecifiedOrder)) {
+        // RDKit✔️❌:       bond->setBondType(GetUnspecifiedBondType(mol, bond->getBeginAtom(),
+        // RDKit✔️❌:                                                bond->getEndAtom()));
+        // RDKit✔️❌:       if (bond->getBondType() == Bond::AROMATIC) {
+        // RDKit✔️❌:         bond->setIsAromatic(true);
+        // RDKit✔️❌:       } else {
+        // RDKit✔️❌:         bond->setIsAromatic(false);
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        // RDKit✔️❌:   }
+        // RDKit✔️❌: }
+        // END COMPLETE PINNED reached SetUnspecifiedBondTypes
+        // RDKit✔️✔️: Bond::BondType GetUnspecifiedBondType(const RWMol *mol, const Atom *atom1,
+        // RDKit✔️✔️:                                       const Atom *atom2) {
+        // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
+        // RDKit✔️✔️:   PRECONDITION(atom1, "no atom1");
+        // RDKit✔️✔️:   PRECONDITION(atom2, "no atom2");
+        // RDKit✔️✔️:   Bond::BondType res;
+        // RDKit✔️✔️:   if (atom1->getIsAromatic() && atom2->getIsAromatic()) {
+        // RDKit✔️✔️:     res = Bond::AROMATIC;
+        // RDKit✔️✔️:   } else {
+        // RDKit✔️✔️:     res = Bond::SINGLE;
+        // RDKit✔️✔️:   }
+        // RDKit✔️✔️:   return res;
+        // RDKit✔️✔️: }
+        // The sole scanner/parser has already consumed EOS and closed every
+        // pending ring in source bookmark order before this graph is finished.
+        // Empty input produced the canonical empty builder, without scanning.
+        // Recursive reductions use finish_recursive and skip these root passes.
+        // Source strict chirality check precedes unspecified bond flags and
+        // shared chirality adjustment. Setter dispatch here is Bond*, so its
+        // type/aromatic flags change without replacing the query predicate.
+        // No live rightmost bookmark escapes the parser's owned local state;
+        // Result errors drop all owned root/recursive rows rather than leaking
+        // or returning a partly finalized graph. No exception is suppressed.
+        // Cost: graph assembly plus one V chirality pass, one E bond pass and
+        // canonical chirality ordering. Detached validation and assignment
+        // buffers add O(V+E) storage beyond the source in-place finalization.
         let mut graph = self.finish_recursive()?;
         for atom in graph.atoms_mut() {
             materialize_smarts_atom_state(atom)?;
         }
-        crate::query_graph_behavior::finalize_query_parser_chirality(&mut graph)
-            .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+        for bond_index in 0..graph.num_bonds() {
+            let bond = &graph.bonds()[bond_index];
+            if bond
+                .bond()
+                .prop(crate::query_graph_behavior::UNSPECIFIED_ORDER_PROP)
+                .is_some()
+            {
+                let both_aromatic = graph.atoms()[bond.begin().index()].is_aromatic()
+                    && graph.atoms()[bond.end().index()].is_aromatic();
+                let order = if both_aromatic {
+                    BondOrder::Aromatic
+                } else {
+                    BondOrder::Single
+                };
+                let carrier = graph.bonds_mut()[bond_index].bond_mut();
+                carrier.set_order(order);
+                carrier.set_aromatic(both_aromatic);
+            }
+        }
+        crate::query_graph_behavior::finalize_query_parser_chirality(&mut graph)?;
         Ok(graph)
     }
 
@@ -304,59 +405,67 @@ fn query_graph_for_test(inp: &str) -> Result<QueryGraph, String> {
 }
 
 fn materialize_smarts_atom_state(atom: &mut QueryAtom) -> Result<(), SmartsParseError> {
-    // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
-    // RDKit❗✔️:   for (const auto atom : mol->atoms()) {
-    // RDKit❗✔️:     int permutation;
-    // RDKit❗✔️:     if (atom->getChiralTag() > RDKit::Atom::ChiralType::CHI_OTHER &&
-    // RDKit❗✔️:         permutationLimits.find(atom->getChiralTag()) !=
-    // RDKit❗✔️:             permutationLimits.end() &&
-    // RDKit❗✔️:         atom->getPropIfPresent(common_properties::_chiralPermutation,
-    // RDKit❗✔️:                                permutation)) {
-    // RDKit❗✔️:       if (!checkChiralPermutation(atom->getChiralTag(), permutation)) {
-    // RDKit❗✔️:         std::string error =
-    // RDKit❗✔️:             (boost::format("Invalid chiral specification on atom %d") %
-    // RDKit❗✔️:              atom->getIdx())
-    // RDKit❗✔️:                 .str();
-    // RDKit❗✔️:         BOOST_LOG(rdWarningLog) << error << std::endl;
-    // RDKit❗✔️:         if (strict) {
-    // RDKit❗✔️:           throw SmilesParseException(error);
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       // directly convert @TH1 -> @ and @TH2 -> @@
-    // RDKit❗✔️:       if (atom->getChiralTag() == RDKit::Atom::ChiralType::CHI_TETRAHEDRAL) {
-    // RDKit❗✔️:         if (permutation == 0 || permutation == 1) {
-    // RDKit❗✔️:           atom->setChiralTag(RDKit::Atom::ChiralType::CHI_TETRAHEDRAL_CCW);
-    // RDKit❗✔️:           atom->clearProp(common_properties::_chiralPermutation);
-    // RDKit❗✔️:         } else if (permutation == 2) {
-    // RDKit❗✔️:           atom->setChiralTag(RDKit::Atom::ChiralType::CHI_TETRAHEDRAL_CW);
-    // RDKit❗✔️:           atom->clearProp(common_properties::_chiralPermutation);
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // RDKit❗✔️:
-    // The grammar has already moved tag/permutation carrier fields. Checking
-    // only the surviving property preserves asymmetric comma/semicolon
-    // reductions; traversing the predicate would recreate a deleted property.
-    // This is one constant-time check per atom, with no tree rebuild or clone.
-    let mut tag = atom.chiral_tag();
+    // RDKit✔️✔️: void CheckChiralitySpecifications(RDKit::RWMol *mol, bool strict) {
+    // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
+    // RDKit✔️✔️:   for (const auto atom : mol->atoms()) {
+    // RDKit✔️✔️:     int permutation;
+    // RDKit✔️✔️:     if (atom->getChiralTag() > RDKit::Atom::ChiralType::CHI_OTHER &&
+    // RDKit✔️✔️:         permutationLimits.find(atom->getChiralTag()) !=
+    // RDKit✔️✔️:             permutationLimits.end() &&
+    // RDKit✔️✔️:         atom->getPropIfPresent(common_properties::_chiralPermutation,
+    // RDKit✔️✔️:                                permutation)) {
+    // RDKit✔️✔️:       if (!checkChiralPermutation(atom->getChiralTag(), permutation)) {
+    // RDKit✔️✔️:         std::string error =
+    // RDKit✔️✔️:             (boost::format("Invalid chiral specification on atom %d") %
+    // RDKit✔️✔️:              atom->getIdx())
+    // RDKit✔️✔️:                 .str();
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << error << std::endl;
+    // RDKit✔️✔️:         if (strict) {
+    // RDKit✔️✔️:           throw SmilesParseException(error);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       // directly convert @TH1 -> @ and @TH2 -> @@
+    // RDKit✔️✔️:       if (atom->getChiralTag() == RDKit::Atom::ChiralType::CHI_TETRAHEDRAL) {
+    // RDKit✔️✔️:         if (permutation == 0 || permutation == 1) {
+    // RDKit✔️✔️:           atom->setChiralTag(RDKit::Atom::ChiralType::CHI_TETRAHEDRAL_CCW);
+    // RDKit✔️✔️:           atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit✔️✔️:         } else if (permutation == 2) {
+    // RDKit✔️✔️:           atom->setChiralTag(RDKit::Atom::ChiralType::CHI_TETRAHEDRAL_CW);
+    // RDKit✔️✔️:           atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // The grammar supplies its source int32 permutation in the existing
+    // typed field. Standard tags short-circuit before the scalar read. Only
+    // a present mapped-class permutation is checked; TH0/TH1/TH2 are converted
+    // and their permutation cleared. Constant class dispatch and scalar access.
+    let tag = atom.chiral_tag();
+    if !matches!(
+        tag,
+        ChiralTag::Tetrahedral
+            | ChiralTag::Allene
+            | ChiralTag::SquarePlanar
+            | ChiralTag::TrigonalBipyramidal
+            | ChiralTag::Octahedral
+    ) {
+        return Ok(());
+    }
     if let Some(permutation) = atom.chiral_permutation() {
         if !crate::query_graph_behavior::check_chiral_permutation(tag, permutation as i32) {
             return Err(SmartsParseError::Parse(format!(
-                "invalid chiral permutation {permutation} for {}",
-                tag.rdkit_name()
+                "Invalid chiral specification on atom {}",
+                atom.id().index()
             )));
         }
         if tag == ChiralTag::Tetrahedral {
-            if permutation <= 1 {
-                tag = ChiralTag::TetrahedralCcw;
-                atom.set_chiral_permutation(None);
-            } else if permutation == 2 {
-                tag = ChiralTag::TetrahedralCw;
-                atom.set_chiral_permutation(None);
-            }
-            atom.set_chiral_tag(tag);
+            atom.set_chiral_tag(if permutation <= 1 {
+                ChiralTag::TetrahedralCcw
+            } else {
+                ChiralTag::TetrahedralCw
+            });
+            atom.set_chiral_permutation(None);
         }
     }
     Ok(())
@@ -389,7 +498,7 @@ pub struct SmartsParseParams {
     pub merge_hs: bool,
     pub skip_cleanup: bool,
     pub debug_parse: bool,
-    pub replacements: BTreeMap<String, String>,
+    pub replacements: BTreeMap<PropertyText, PropertyText>,
 }
 
 impl Default for SmartsParseParams {
@@ -423,7 +532,8 @@ impl Default for SmartsParseParams {
 // RDKit✔️✔️:   handleCXPartAndName(res.get(), params, cxPart, name);
 // RDKit✔️✔️:   return res;
 // RDKit✔️✔️: }
-fn parse_smarts_graph(smarts: &str) -> Result<QueryGraphBuilder, SmartsParseError> {
+fn parse_smarts_graph(smarts: impl AsRef<[u8]>) -> Result<QueryGraphBuilder, SmartsParseError> {
+    let smarts = smarts.as_ref();
     parse_smarts_with_params(smarts, &SmartsParseParams::default())
 }
 
@@ -433,9 +543,10 @@ fn parse_smarts_graph(smarts: &str) -> Result<QueryGraphBuilder, SmartsParseErro
 /// labeling as the public molecule compiler, but intentionally leaves molecule
 /// postprocessing to `mol_from_smarts`.
 fn parse_smarts_with_params(
-    smarts: &str,
+    smarts: impl AsRef<[u8]>,
     params: &SmartsParseParams,
 ) -> Result<QueryGraphBuilder, SmartsParseError> {
+    let smarts = smarts.as_ref();
     // RDKit✔️✔️: preprocessSmiles — trim whitespace, handle replacements
     let preprocessed = preprocess_smarts(smarts, params);
     let input = label_recursive_patterns(&preprocessed.smarts);
@@ -534,7 +645,8 @@ fn apply_cx_to_query(
             CxRecord::AtomProperties(properties) => {
                 for property in properties {
                     if let Some(atom) = graph.atom_mut(property.atom) {
-                        atom.set_prop(property.name.clone(), property.value.clone())?;
+                        atom.set_prop(property.name.clone(), property.value.clone())
+                            .map_err(SmartsParseError::from)?;
                     }
                 }
             }
@@ -551,29 +663,29 @@ fn apply_cx_to_query(
             CxRecord::Unsaturation(indices) => {
                 for item_index in 0..indices.len() {
                     crate::cx_lowering::apply_cx_query_constraint_item(graph, record, item_index)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                 }
             }
             CxRecord::RingBonds(constraints) => {
                 for item_index in 0..constraints.len() {
                     crate::cx_lowering::apply_cx_query_constraint_item(graph, record, item_index)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                 }
             }
             CxRecord::Substitution(constraints) => {
                 for item_index in 0..constraints.len() {
                     crate::cx_lowering::apply_cx_query_constraint_item(graph, record, item_index)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                 }
             }
             CxRecord::EnhancedStereo(stereo) => {
                 crate::cx_lowering::merge_cx_enhanced_stereo(graph, stereo_tracker, stereo)
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    .map_err(SmartsParseError::from)?;
             }
             CxRecord::WedgedBonds(wedges) => {
                 for wedge in wedges {
                     crate::cx_lowering::apply_cx_wedge_bond_to_query(graph, wedge)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                 }
             }
             CxRecord::DoubleBondStereo(stereo) => {
@@ -583,7 +695,7 @@ fn apply_cx_to_query(
                         index,
                         stereo.stereo,
                     )
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    .map_err(SmartsParseError::from)?;
                 }
             }
             CxRecord::Radicals(radicals) => {
@@ -593,16 +705,16 @@ fn apply_cx_to_query(
             }
             CxRecord::LinkNodes(nodes) => {
                 crate::cx_lowering::apply_cx_link_nodes_to_query(graph, nodes)
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    .map_err(SmartsParseError::from)?;
             }
             CxRecord::DataSGroup(data) => {
                 crate::cx_lowering::apply_cx_data_sgroup_to_query(graph, data, *cx_sequence_id)
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    .map_err(SmartsParseError::from)?;
                 *cx_sequence_id = cx_sequence_id.wrapping_add(1);
             }
             CxRecord::SGroupHierarchy(hierarchies) => {
                 crate::cx_lowering::apply_cx_sgroup_hierarchy_to_query(graph, hierarchies)
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    .map_err(SmartsParseError::from)?;
             }
             CxRecord::PolymerSGroup(polymer) => {
                 crate::cx_lowering::apply_cx_polymer_sgroup_to_query(
@@ -610,13 +722,13 @@ fn apply_cx_to_query(
                     polymer,
                     *cx_sequence_id,
                 )
-                .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                .map_err(SmartsParseError::from)?;
                 *cx_sequence_id = cx_sequence_id.wrapping_add(1);
             }
             CxRecord::VariableAttachments(attachments) => {
                 for attachment in attachments {
                     crate::cx_lowering::apply_cx_variable_attachment_to_query(graph, attachment)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                 }
             }
             CxRecord::Unknown(_) => {}
@@ -631,6 +743,7 @@ struct PendingCxSGroupHierarchy {
     hierarchy_index: usize,
     child_index: usize,
     parent_resolved: bool,
+    next_parent_index: usize,
     resolved_parent: Option<(SubstanceGroupId, u32)>,
     groups: Vec<SubstanceGroup>,
     dirty: bool,
@@ -646,25 +759,15 @@ fn apply_cx_sgroup_hierarchy_progress_item(
             "CX SGroup hierarchy item checkpoints are out of order".to_owned(),
         ));
     }
-    while pending.hierarchy_index < hierarchies.len()
-        && pending.child_index >= hierarchies[pending.hierarchy_index].children.len()
-    {
-        pending.hierarchy_index += 1;
-        pending.child_index = 0;
-        pending.parent_resolved = false;
-        pending.resolved_parent = None;
-    }
     let hierarchy = hierarchies.get(pending.hierarchy_index).ok_or_else(|| {
         crate::cx_lowering::CxQueryLoweringError::InvalidGraph(
-            "CX SGroup hierarchy item checkpoint references a missing child".to_owned(),
+            "CX SGroup hierarchy item checkpoint references a missing parent".to_owned(),
         )
     })?;
-    if !pending.parent_resolved {
-        pending.resolved_parent = crate::cx_lowering::resolve_cx_sgroup_hierarchy_parent(
-            &pending.groups,
-            hierarchy.parent,
-        )?;
-        pending.parent_resolved = true;
+    if !pending.parent_resolved || pending.child_index >= hierarchy.children.len() {
+        return Err(crate::cx_lowering::CxQueryLoweringError::InvalidGraph(
+            "CX SGroup hierarchy child has no matching parent checkpoint".to_owned(),
+        ));
     }
     let child_id = hierarchy.children[pending.child_index];
     let changed = crate::cx_lowering::apply_cx_sgroup_hierarchy_child(
@@ -683,8 +786,7 @@ fn commit_pending_cx_sgroup_hierarchy(
     pending: PendingCxSGroupHierarchy,
 ) -> Result<(), SmartsParseError> {
     if pending.dirty {
-        replace_query_substance_groups(graph, pending.groups)
-            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+        replace_query_substance_groups(graph, pending.groups).map_err(SmartsParseError::from)?;
     }
     Ok(())
 }
@@ -775,7 +877,7 @@ fn apply_cx_progress_to_query_with_cursor(
                         ));
                     }
                     crate::cx_lowering::apply_cx_data_sgroup_to_query(graph, data, cx_sequence_id)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                     cx_sequence_id = cx_sequence_id.wrapping_add(1);
                 }
             }
@@ -833,7 +935,7 @@ fn apply_cx_progress_to_query_with_cursor(
                         polymer,
                         cx_sequence_id,
                     )
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    .map_err(SmartsParseError::from)?;
                     cx_sequence_id = cx_sequence_id.wrapping_add(1);
                 }
             }
@@ -871,7 +973,7 @@ fn apply_cx_progress_to_query_with_cursor(
                         )
                     })?;
                     crate::cx_lowering::apply_cx_wedge_bond_to_query(graph, wedge)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                     *committed += 1;
                 }
                 CxProgressPhase::Complete => {
@@ -929,7 +1031,7 @@ fn apply_cx_progress_to_query_with_cursor(
                         bond_index,
                         stereo.stereo,
                     )
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    .map_err(SmartsParseError::from)?;
                     *committed += 1;
                 }
                 CxProgressPhase::Complete => {
@@ -988,13 +1090,13 @@ fn apply_cx_progress_to_query_with_cursor(
                         crate::cx_lowering::validate_cx_variable_attachment_atom_to_query(
                             graph, attachment,
                         )
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                     } else {
                         // The source installs bond properties only after the full endpoint list.
                         crate::cx_lowering::apply_cx_variable_attachment_effect_to_query(
                             graph, attachment,
                         )
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                     }
                     *committed += 1;
                 }
@@ -1019,9 +1121,120 @@ fn apply_cx_progress_to_query_with_cursor(
             continue;
         }
         if let CxRecord::SGroupHierarchy(hierarchies) = record {
+            // BEGIN COMPLETE PINNED SF197 hierarchy replay
+            // RDKit✔️❌: bool parse_sgroup_hierarchy(Iterator &first, Iterator last, RDKit::RWMol &mol) {
+            // RDKit✔️❌:   // these look like: |SgH:1:0|
+            // RDKit✔️❌:   // from CXSMILES docs:
+            // RDKit✔️❌:   //    SgH:parentSgroupIndex1:childSgroupIndex1.childSgroupIndex2,parentSgroupIndex2:childSgroupIndex1
+            // RDKit✔️❌:   if (first >= last || *first != 'S' || first + 3 >= last ||
+            // RDKit✔️❌:       *(first + 1) != 'g' || *(first + 2) != 'H' || *(first + 3) != ':') {
+            // RDKit✔️❌:     return false;
+            // RDKit✔️❌:   }
+            // RDKit✔️❌:   first += 4;
+            // RDKit✔️❌:   auto &sgs = getSubstanceGroups(mol);
+            // RDKit✔️❌:   while (1) {
+            // RDKit✔️❌:     unsigned int parentId;
+            // RDKit✔️❌:     if (!read_int(first, last, parentId)) {
+            // RDKit✔️❌:       return false;
+            // RDKit✔️❌:     }
+            // RDKit✔️❌:
+            // RDKit✔️❌:     bool validParent = true;
+            // RDKit✔️❌:     auto psg = find_matching_sgroup(sgs, parentId);
+            // RDKit✔️❌:     if (psg == sgs.end()) {
+            // RDKit✔️❌:       validParent = false;
+            // RDKit✔️❌:     } else {
+            // RDKit✔️❌:       psg->getPropIfPresent("index", parentId);
+            // RDKit✔️❌:     }
+            // RDKit✔️❌:     if (first <= last && *first == ':') {
+            // RDKit✔️❌:       ++first;
+            // RDKit✔️❌:       std::vector<unsigned int> children;
+            // RDKit✔️❌:       if (!read_int_list(first, last, children, '.')) {
+            // RDKit✔️❌:         return false;
+            // RDKit✔️❌:       }
+            // RDKit✔️❌:       if (validParent) {
+            // RDKit✔️❌:         for (auto childId : children) {
+            // RDKit✔️❌:           if (childId >= sgs.size()) {
+            // RDKit✔️❌:             throw SmilesParseException(
+            // RDKit✔️❌:                 "child id references non-existent SGroup");
+            // RDKit✔️❌:           }
+            // RDKit✔️❌:           auto csg = find_matching_sgroup(sgs, childId);
+            // RDKit✔️❌:           if (csg != sgs.end()) {
+            // RDKit✔️❌:             unsigned int cid;
+            // RDKit✔️❌:             csg->getProp("index", cid);
+            // RDKit✔️❌:             csg->setProp("PARENT", parentId);
+            // RDKit✔️❌:           }
+            // RDKit✔️❌:         }
+            // RDKit✔️❌:       }
+            // RDKit✔️❌:       if (first <= last && *first == ',') {
+            // RDKit✔️❌:         ++first;
+            // RDKit✔️❌:       } else {
+            // RDKit✔️❌:         break;
+            // RDKit✔️❌:       }
+            // RDKit✔️❌:     } else {
+            // RDKit✔️❌:       return false;
+            // RDKit✔️❌:     }
+            // RDKit✔️❌:   }
+            // RDKit✔️❌:
+            // RDKit✔️❌:   return true;
+            // RDKit✔️❌: }
+            // END COMPLETE PINNED SF197 hierarchy replay
+            // Behavior: replay parent conversion before colon/list grammar, then
+            // source-ordered children only after the whole list succeeds. Retain
+            // prior writes before a later parent/child property failure.
+            // Complexity: pending group copy/checkpoints add source-relative cost;
+            // the canonical finder/converters are reused without reparsing input.
             match checkpoint.phase {
                 CxProgressPhase::Begin => {
-                    if checkpoint.item_index.is_some() || pending_sgroup_hierarchy.is_some() {
+                    if let Some(hierarchy_index) = checkpoint.item_index {
+                        let Some(pending) = pending_sgroup_hierarchy.as_mut() else {
+                            return Err(SmartsParseError::CxSmiles(
+                                "CX SGroup hierarchy parent has no record begin".to_owned(),
+                            ));
+                        };
+                        let hierarchy = hierarchies.get(hierarchy_index).ok_or_else(|| {
+                            SmartsParseError::CxSmiles(
+                                "CX SGroup hierarchy parent references a missing row".to_owned(),
+                            )
+                        })?;
+                        if pending.record_index != checkpoint.record_index
+                            || pending.next_parent_index != hierarchy_index
+                            || (pending.parent_resolved
+                                && pending.child_index
+                                    != hierarchies[pending.hierarchy_index].children.len())
+                        {
+                            let pending = pending_sgroup_hierarchy
+                                .take()
+                                .expect("pending hierarchy was just checked");
+                            commit_pending_cx_sgroup_hierarchy(graph, pending)?;
+                            return Err(SmartsParseError::CxSmiles(
+                                "CX SGroup hierarchy parent checkpoints are out of order"
+                                    .to_owned(),
+                            ));
+                        }
+                        // Pinned parent getPropIfPresent precedes colon/list
+                        // parsing, including empty children and later failure.
+                        match crate::cx_lowering::resolve_cx_sgroup_hierarchy_parent(
+                            &pending.groups,
+                            hierarchy.parent,
+                        ) {
+                            Ok(resolved_parent) => {
+                                pending.hierarchy_index = hierarchy_index;
+                                pending.child_index = 0;
+                                pending.parent_resolved = true;
+                                pending.next_parent_index += 1;
+                                pending.resolved_parent = resolved_parent;
+                            }
+                            Err(error) => {
+                                let pending = pending_sgroup_hierarchy
+                                    .take()
+                                    .expect("pending hierarchy was just checked");
+                                commit_pending_cx_sgroup_hierarchy(graph, pending)?;
+                                return Err(SmartsParseError::CxSmiles(error.to_string()));
+                            }
+                        }
+                        continue;
+                    }
+                    if pending_sgroup_hierarchy.is_some() {
                         if let Some(pending) = pending_sgroup_hierarchy.take() {
                             commit_pending_cx_sgroup_hierarchy(graph, pending)?;
                         }
@@ -1036,6 +1249,7 @@ fn apply_cx_progress_to_query_with_cursor(
                         hierarchy_index: 0,
                         child_index: 0,
                         parent_resolved: false,
+                        next_parent_index: 0,
                         resolved_parent: None,
                         groups: query_substance_groups(graph).to_vec(),
                         dirty: false,
@@ -1084,6 +1298,7 @@ fn apply_cx_progress_to_query_with_cursor(
                     if pending.record_index != checkpoint.record_index
                         || checkpoint.item_index.is_some()
                         || pending.next_item_index != expected_items
+                        || pending.next_parent_index != hierarchies.len()
                     {
                         commit_pending_cx_sgroup_hierarchy(graph, pending)?;
                         return Err(SmartsParseError::CxSmiles(
@@ -1148,7 +1363,7 @@ fn apply_cx_progress_to_query_with_cursor(
                         &mut stereo_tracker,
                         stereo,
                     )
-                    .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                    .map_err(SmartsParseError::from)?;
                 }
             }
             continue;
@@ -1185,7 +1400,7 @@ fn apply_cx_progress_to_query_with_cursor(
                     // Native omitted-outer degree failure precedes comma and
                     // later syntax failure; do not write the whole property yet.
                     crate::cx_lowering::cx_link_node_outer_atoms(graph, &nodes[item_index])
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                     *committed += 1;
                 }
                 CxProgressPhase::Complete => {
@@ -1203,7 +1418,7 @@ fn apply_cx_progress_to_query_with_cursor(
                         ));
                     }
                     crate::cx_lowering::apply_cx_link_nodes_to_query(graph, nodes)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                 }
             }
             continue;
@@ -1239,7 +1454,7 @@ fn apply_cx_progress_to_query_with_cursor(
                         ));
                     }
                     crate::cx_lowering::apply_cx_query_constraint_item(graph, record, item_index)
-                        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+                        .map_err(SmartsParseError::from)?;
                     *committed += 1;
                 }
                 CxProgressPhase::Complete => {
@@ -1443,12 +1658,44 @@ fn apply_cx_progress_to_query_with_cursor(
     if let Some(pending) = pending_sgroup_hierarchy {
         commit_pending_cx_sgroup_hierarchy(graph, pending)?;
     }
-    if progress.is_complete() {
+    // BEGIN COMPLETE PINNED SF207 actual progress caller
+    // RDKit❗❌: void parseCXExtensions(RDKit::RWMol &mol, const std::string &extText,
+    // RDKit❗❌:                        std::string::const_iterator &first,
+    // RDKit❗❌:                        unsigned int startAtomIdx, unsigned int startBondIdx) {
+    // RDKit❗❌:   // BOOST_LOG(rdWarningLog) << "parseCXNExtensions: " << extText << std::endl;
+    // RDKit❗❌:   if (extText.empty()) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (extText[0] != '|') {
+    // RDKit❗❌:     throw RDKit::SmilesParseException(
+    // RDKit❗❌:         "CXSMILES extension does not start with |");
+    // RDKit❗❌:   }
+    // RDKit❗❌:   first = extText.begin();
+    // RDKit❗❌:   bool ok =
+    // RDKit❗❌:       parser::parse_it(first, extText.end(), mol, startAtomIdx, startBondIdx);
+    // RDKit❗❌:   if (!ok) {
+    // RDKit❗❌:     throw RDKit::SmilesParseException("failure parsing CXSMILES extensions");
+    // RDKit❗❌:   }
+    // RDKit❗❌:   processCXSmilesLabels(mol);
+    // RDKit❗❌:   mol.clearProp("_cxsmilesLabelsProcessed");
+    // RDKit❗❌:   mol.clearProp(cxsgTracker);
+    // RDKit❗❌: }
+    // END COMPLETE PINNED SF207 actual progress caller
+    // Empty source extText returns before label/property reads. Complete
+    // nonempty syntax has advanced its source iterator past the final pipe
+    // before label processing and both ordered clearProp operations. Failed
+    // syntax keeps earlier graph effects and bypasses the success epilogue.
+    if progress.is_complete() && progress.consumed() != 0 {
         // parseCXExtensions advances past the closing pipe before its
         // successful-only CX label processing and tracker cleanup.
         *source_cursor = progress.consumed();
-        crate::cx_lowering::finish_cx_smiles_labels(graph)
-            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+        crate::cx_lowering::finish_cx_smiles_labels(graph).map_err(SmartsParseError::from)?;
+    }
+    if !progress.is_complete() {
+        // Source scanning captured a terminal warning, but only successful
+        // replay reaches it. Any earlier graph/property/query failure returned
+        // above before this side effect, matching native sequential parsing.
+        progress.emit_source_warning();
     }
     if !progress.is_complete() {
         // Source scanning captured a terminal warning, but only successful
@@ -1482,7 +1729,7 @@ fn apply_cx_atom_slot_to_query(
     // after `read_text_to`; `VALID_ATIDX` skips indices outside the graph.
     if let Some(atom) = graph.atom_mut(atom_index) {
         atom.set_prop(property, value)
-            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+            .map_err(SmartsParseError::from)?;
     }
     Ok(())
 }
@@ -1506,7 +1753,7 @@ fn apply_cx_atom_property_to_query(
     // advances a following colon; out-of-range indices have no effect.
     if let Some(atom) = graph.atom_mut(property.atom) {
         atom.set_prop(property.name.clone(), property.value.clone())
-            .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))?;
+            .map_err(SmartsParseError::from)?;
     }
     Ok(())
 }
@@ -1589,7 +1836,7 @@ fn apply_cx_coordinate_bond_to_query(
     // writes. This adapter only translates its structured error; the caller
     // already retained the pair's source cursor before invoking it.
     crate::cx_lowering::apply_cx_coordinate_bond(graph, reference, kind)
-        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))
+        .map_err(SmartsParseError::from)
 }
 
 fn apply_cx_zero_bond_to_query(
@@ -1634,8 +1881,7 @@ fn apply_cx_zero_bond_to_query(
     // END COMPLETE PINNED SF190
     // Ordered checkpoint replay already retained this index's source cursor.
     // Use the same destination body as complete records; translate only error.
-    crate::cx_lowering::apply_cx_zero_bond(graph, index)
-        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))
+    crate::cx_lowering::apply_cx_zero_bond(graph, index).map_err(SmartsParseError::from)
 }
 
 fn apply_cx_radical_item_to_query(
@@ -1658,19 +1904,9 @@ fn apply_cx_radical_to_query(
     graph: &mut QueryGraph,
     radical: cosmolkit_cx::CxRadical,
 ) -> Result<(), SmartsParseError> {
-    // RDKit source (verbatim; processRadicalSection assigns each valid atom):
-    /*
-    if (VALID_ATIDX(atIdx)) {
-      mol.getAtomWithIdx(atIdx - startAtomIdx)
-          ->setNumRadicalElectrons(numRadicalElectrons);
-    }
-    */
-    // RDKit❗✔️: this direct atom lookup and one-field assignment match the
-    // source; out-of-range atom indices are its explicit no-op case.
-    if let Some(atom) = graph.atom_mut(radical.atom) {
-        atom.set_radical_electrons(radical.electrons);
-    }
-    Ok(())
+    // Canonical SEARCH effect is shared with complete records. This private
+    // parser adapter translates the domain error only; no second field effect.
+    crate::cx_lowering::apply_cx_radical_to_query(graph, radical).map_err(SmartsParseError::from)
 }
 
 fn append_query_conformer(
@@ -1745,46 +1981,47 @@ fn append_query_conformer(
             values,
             coordinates.is_3d,
         ))
-        .map_err(|error| SmartsParseError::CxSmiles(error.to_string()))
+        .map_err(SmartsParseError::from)
 }
 
 pub fn parse_smarts(
     smarts: impl AsRef<[u8]>,
     params: &SmartsParseParams,
 ) -> Result<QueryGraph, SmartsParseError> {
+    let smarts = smarts.as_ref();
     // BEGIN RDKIT CPP FUNCTION MolFromSmarts
-    // RDKit✔️❌: std::unique_ptr<RWMol> MolFromSmarts(const std::string &smarts,
-    // RDKit✔️❌:                                      const SmartsParserParams &params) {
-    // RDKit✔️✔️:   // Calling MolFromSmarts in a multithreaded context is generally safe *unless*
-    // RDKit✔️✔️:   // the value of debugParse is different for different threads. The if
-    // RDKit✔️✔️:   // statement below avoids a TSAN warning in the case where multiple threads
-    // RDKit✔️✔️:   // all use the same value for debugParse.
+    // RDKit❗❌: std::unique_ptr<RWMol> MolFromSmarts(const std::string &smarts,
+    // RDKit❗❌:                                      const SmartsParserParams &params) {
+    // RDKit❗❌:   // Calling MolFromSmarts in a multithreaded context is generally safe *unless*
+    // RDKit❗❌:   // the value of debugParse is different for different threads. The if
+    // RDKit❗❌:   // statement below avoids a TSAN warning in the case where multiple threads
+    // RDKit❗❌:   // all use the same value for debugParse.
     // RDKit❌❌:   if (yysmarts_debug != params.debugParse) {
     // RDKit❌❌:     yysmarts_debug = params.debugParse;
-    // RDKit❌❌:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::string lsmarts, name, cxPart;
-    // RDKit✔️✔️:   preprocessSmiles(smarts, params, lsmarts, name, cxPart);
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   auto res = toMol(labelRecursivePatterns(lsmarts), smarts_parse, lsmarts);
-    // RDKit✔️❌:   handleCXPartAndName(res.get(), params, cxPart, name);
-    // RDKit✔️❌:   if (res) {
-    // RDKit✔️❌:     if (params.mergeHs) {
-    // RDKit✔️❌:       MolOps::mergeQueryHs(*res);
-    // RDKit✔️❌:     }
-    // RDKit✔️❌:     MolOps::setBondStereoFromDirections(*res);
-    // RDKit✔️❌:     if (!params.skipCleanup) {
-    // RDKit✔️❌:       SmilesParseOps::CleanupAfterParsing(res.get());
-    // RDKit✔️❌:     }
-    // RDKit✔️✔️:     if (!name.empty()) {
-    // RDKit✔️✔️:       res->setProp(common_properties::_Name, name);
-    // RDKit✔️✔️:     }
-    // RDKit✔️❌:   }
-    // RDKit✔️❌:   return res;
-    // RDKit✔️❌: };
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   std::string lsmarts, name, cxPart;
+    // RDKit❗❌:   preprocessSmiles(smarts, params, lsmarts, name, cxPart);
+    // RDKit❗❌:
+    // RDKit❗❌:   auto res = toMol(labelRecursivePatterns(lsmarts), smarts_parse, lsmarts);
+    // RDKit❗❌:   handleCXPartAndName(res.get(), params, cxPart, name);
+    // RDKit❗❌:   if (res) {
+    // RDKit❗❌:     if (params.mergeHs) {
+    // RDKit❗❌:       MolOps::mergeQueryHs(*res);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     MolOps::setBondStereoFromDirections(*res);
+    // RDKit❗❌:     if (!params.skipCleanup) {
+    // RDKit❗❌:       SmilesParseOps::CleanupAfterParsing(res.get());
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (!name.empty()) {
+    // RDKit❗❌:       res->setProp(common_properties::_Name, name);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return res;
+    // RDKit❗❌: }
     // END RDKIT CPP FUNCTION MolFromSmarts
-    // Local complexity review: the lexer allocates remaining-tail strings,
-    // making tokenization O(n^2), unlike the pinned scanner. CX source-index
+    // Local complexity review: current lexer borrows each remaining tail;
+    // token buffering remains an extra O(n) allocation. CX source-index
     // lookup scans O(E) properties per reference, matching RDKit. Query-H
     // merging compacts the detached graph; no MoleculeBuilder is used here.
     if params.debug_parse {
@@ -1797,65 +2034,75 @@ pub fn parse_smarts(
     // Lower parser state to the canonical query value before any source
     // post-processing. All production post-processing below stays in the
     // query model; test-only compatibility adapters are outside this path.
-    let mut parsed_graph = smarts_parse_entry(&labeled)?
-        .finish()
-        .map_err(|error| SmartsParseError::Parse(error.to_string()))?;
+    // Preserve typed reached property/carrier errors through the root entry.
+    let mut parsed_graph = smarts_parse_entry(&labeled)?.finish()?;
     // BEGIN RDKIT CPP FUNCTION handleCXPartAndName
-    // RDKit❗❌: template <typename T>
-    // RDKit❗❌: void handleCXPartAndName(RWMol *res, const T &params, const std::string &cxPart,
-    // RDKit❗❌:                          std::string &name) {
-    // RDKit❗❌:   if (!res || cxPart.empty()) {
-    // RDKit❗❌:     return;
-    // RDKit❗❌:   }
-    // RDKit❗❌:   std::string::const_iterator pos = cxPart.cbegin();
-    // RDKit❗❌:   bool cxfailed = false;
-    // RDKit❗❌:   if (params.allowCXSMILES) {
-    // RDKit❗❌:     if (*pos == '|') {
-    // RDKit❗❌:       try {
-    // RDKit❗❌:         SmilesParseOps::parseCXExtensions(*res, cxPart, pos);
-    // RDKit❗❌:       } catch (...) {
-    // RDKit❗❌:         cxfailed = true;
-    // RDKit❗❌:         if (params.strictCXSMILES) {
-    // RDKit❗❌:           throw;
-    // RDKit❗❌:         }
-    // RDKit❗❌:       }
-    // RDKit❗❌:       res->setProp("_CXSMILES_Data", std::string(cxPart.cbegin(), pos));
-    // RDKit❗❌:     } else if (params.strictCXSMILES && !params.parseName &&
-    // RDKit❗❌:                pos != cxPart.cend()) {
-    // RDKit❗❌:       throw RDKit::SmilesParseException(
-    // RDKit❗❌:           "CXSMILES extension does not start with | and parseName=false");
-    // RDKit❗❌:     }
-    // RDKit❗❌:   }
-    // RDKit❗❌:   if (!cxfailed && params.parseName && pos != cxPart.end()) {
-    // RDKit❗❌:     std::string nmpart(pos, cxPart.cend());
-    // RDKit❗❌:     name = boost::trim_copy(nmpart);
-    // RDKit❗❌:   }
-    // RDKit❗❌: }
+    // RDKit✔️❌: template <typename T>
+    // RDKit✔️❌: void handleCXPartAndName(RWMol *res, const T &params, const std::string &cxPart,
+    // RDKit✔️❌:                          std::string &name) {
+    // RDKit✔️❌:   if (!res || cxPart.empty()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   std::string::const_iterator pos = cxPart.cbegin();
+    // RDKit✔️❌:   bool cxfailed = false;
+    // RDKit✔️❌:   if (params.allowCXSMILES) {
+    // RDKit✔️❌:     if (*pos == '|') {
+    // RDKit✔️❌:       try {
+    // RDKit✔️❌:         SmilesParseOps::parseCXExtensions(*res, cxPart, pos);
+    // RDKit✔️❌:       } catch (...) {
+    // RDKit✔️❌:         cxfailed = true;
+    // RDKit✔️❌:         if (params.strictCXSMILES) {
+    // RDKit✔️❌:           throw;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       res->setProp("_CXSMILES_Data", std::string(cxPart.cbegin(), pos));
+    // RDKit✔️❌:     } else if (params.strictCXSMILES && !params.parseName &&
+    // RDKit✔️❌:                pos != cxPart.cend()) {
+    // RDKit✔️❌:       throw RDKit::SmilesParseException(
+    // RDKit✔️❌:           "CXSMILES extension does not start with | and parseName=false");
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (!cxfailed && params.parseName && pos != cxPart.end()) {
+    // RDKit✔️❌:     std::string nmpart(pos, cxPart.cend());
+    // RDKit✔️❌:     name = boost::trim_copy(nmpart);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION handleCXPartAndName
     // BEGIN RDKIT CPP FUNCTION parseCXExtensions
-    // RDKit❗❌: void parseCXExtensions(RDKit::RWMol &mol, const std::string &extText,
-    // RDKit❗❌:                        std::string::const_iterator &first,
-    // RDKit❗❌:                        unsigned int startAtomIdx, unsigned int startBondIdx) {
-    // RDKit❗❌:   if (extText.empty()) {
-    // RDKit❗❌:     return;
-    // RDKit❗❌:   }
-    // RDKit❗❌:   if (extText[0] != '|') {
-    // RDKit❗❌:     throw RDKit::SmilesParseException(
-    // RDKit❗❌:         "CXSMILES extension does not start with |");
-    // RDKit❗❌:   }
-    // RDKit❗❌:   first = extText.begin();
-    // RDKit❗❌:   bool ok =
-    // RDKit❗❌:       parser::parse_it(first, extText.end(), mol, startAtomIdx, startBondIdx);
-    // RDKit❗❌:   if (!ok) {
-    // RDKit❗❌:     throw RDKit::SmilesParseException("failure parsing CXSMILES extensions");
-    // RDKit❗❌:   }
-    // RDKit❗❌:   processCXSmilesLabels(mol);
-    // RDKit❗❌:   mol.clearProp("_cxsmilesLabelsProcessed");
-    // RDKit❗❌:   mol.clearProp(cxsgTracker);
-    // RDKit❗❌: }
+    // RDKit✔️❌: void parseCXExtensions(RDKit::RWMol &mol, const std::string &extText,
+    // RDKit✔️❌:                        std::string::const_iterator &first,
+    // RDKit✔️❌:                        unsigned int startAtomIdx, unsigned int startBondIdx) {
+    // RDKit✔️❌:   // BOOST_LOG(rdWarningLog) << "parseCXNExtensions: " << extText << std::endl;
+    // RDKit✔️❌:   if (extText.empty()) {
+    // RDKit✔️❌:     return;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (extText[0] != '|') {
+    // RDKit✔️❌:     throw RDKit::SmilesParseException(
+    // RDKit✔️❌:         "CXSMILES extension does not start with |");
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first = extText.begin();
+    // RDKit✔️❌:   bool ok =
+    // RDKit✔️❌:       parser::parse_it(first, extText.end(), mol, startAtomIdx, startBondIdx);
+    // RDKit✔️❌:   if (!ok) {
+    // RDKit✔️❌:     throw RDKit::SmilesParseException("failure parsing CXSMILES extensions");
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   processCXSmilesLabels(mol);
+    // RDKit✔️❌:   mol.clearProp("_cxsmilesLabelsProcessed");
+    // RDKit✔️❌:   mol.clearProp(cxsgTracker);
+    // RDKit✔️❌: }
     // END RDKIT CPP FUNCTION parseCXExtensions
-    // The CX progress boundary preserves the source iterator independently
-    // from helper diagnostics and orders destination commits before failure.
+    // Behavior: empty CX bypasses every CX/name read. With CX disabled, the
+    // entire nonempty suffix becomes the name only when parseName is enabled.
+    // Native catch(...) retains earlier effects and its actual iterator under
+    // strict=false, writes the consumed raw prefix, and skips suffix naming.
+    // Strict=true propagates reached typed errors before prefix/name writes.
+    // A syntax false return uses the native wrapper's fixed exception text.
+    // Successful parsing processes labels and clears both markers before the
+    // prefix property is written; only then does source trimming assign name.
+    // Local cost: prefix/name each copy their counted source bytes once. The
+    // reached progress parser buffers records and checkpoints before replay,
+    // unlike native streaming mutation, so the known buffering cost is ❌.
+    // No clone of the whole query graph, error decoding or heuristic recovery.
     let mut name = preprocessed.name;
     if !preprocessed.cx_part.is_empty() {
         let mut cx_failed = false;
@@ -1887,22 +2134,19 @@ pub fn parse_smarts(
                 } else if !progress.is_complete() {
                     cx_failed = true;
                     if params.strict_cxsmiles {
-                        let error = progress.error().map_or_else(
-                            || "failure parsing CXSMILES extensions".to_owned(),
-                            ToString::to_string,
-                        );
-                        return Err(SmartsParseError::CxSmiles(error));
+                        // parse_it returned false: the native wrapper throws
+                        // this fixed text, rather than its internal diagnostic.
+                        return Err(SmartsParseError::CxSmiles(
+                            "failure parsing CXSMILES extensions".to_owned(),
+                        ));
                     }
                 }
                 let prefix = preprocessed.cx_part.get(..consumed).ok_or_else(|| {
                     SmartsParseError::CxSmiles(
-                        "CX source cursor is outside the counted byte input".to_owned(),
+                        "CX source cursor exceeds the counted extension".to_owned(),
                     )
                 })?;
-                parsed_graph.set_prop(
-                    "_CXSMILES_Data",
-                    cosmolkit_model::PropertyText::from_bytes(prefix),
-                )?;
+                parsed_graph.set_prop("_CXSMILES_Data", PropertyText::from_bytes(prefix))?;
             } else if params.strict_cxsmiles && !params.parse_name {
                 return Err(SmartsParseError::CxSmiles(
                     "CXSMILES extension does not start with | and parseName=false".to_owned(),
@@ -1910,10 +2154,9 @@ pub fn parse_smarts(
             }
         }
         if !cx_failed && params.parse_name && consumed < preprocessed.cx_part.len() {
-            let suffix = trim_source_whitespace(&preprocessed.cx_part[consumed..]);
-            if !suffix.is_empty() {
-                name = suffix.to_owned();
-            }
+            // Native assignment also replaces the local name with an empty
+            // trimmed suffix; only the later _Name assignment tests emptiness.
+            name = trim_source_whitespace(&preprocessed.cx_part[consumed..]).to_owned();
         }
     }
     if params.merge_hs {
@@ -1924,26 +2167,30 @@ pub fn parse_smarts(
         crate::query_graph_behavior::cleanup_query_graph_parser_state(&mut parsed_graph)?;
     }
     if !name.is_empty() {
-        parsed_graph = parsed_graph.with_name(name);
+        parsed_graph = parsed_graph.with_name(PropertyText::from(name));
     }
     Ok(parsed_graph)
 }
 
 fn smarts_parse_helper(input: impl AsRef<[u8]>) -> Result<QueryGraphBuilder, SmartsParseError> {
+    let input = input.as_ref();
     // RDKit✔️✔️: int smarts_parse_helper(const std::string &inp, ...,
     // RDKit✔️✔️:   return generic_parse_helper<yysmarts_lex_init,
     // RDKit✔️✔️:     setup_smarts_string, yysmarts_lex_destroy>(yysmarts_parse,
     // RDKit✔️✔️:     inp, molVect, atom, bond, start_tok, "SMARTS");
     // Local complexity review: preprocessing has already produced one input
     // buffer. Recursive descent follows source reductions, but the lexer
-    // still allocates remaining-tail strings, with known O(n^2) cost.
-    let input = input.as_ref();
+    // still buffers scanned and compacted tokens and recursive subparses;
+    // raw suffix lookup removes the former O(n^2) suffix copying.
     let tokens = tokenize(input)?;
     let mut parser = SmartsParser::new(&tokens, input);
     parser.parse_smarts_molecule()
 }
 
-fn parse_atom_entry(input: &str) -> Result<QueryNode<AtomQueryPredicate>, SmartsParseError> {
+fn parse_atom_entry(
+    input: impl AsRef<[u8]>,
+) -> Result<QueryNode<AtomQueryPredicate>, SmartsParseError> {
+    let input = input.as_ref();
     // RDKit✔️✔️: | START_ATOM atomd EOS_TOKEN {
     // RDKit✔️✔️:   lastAtom = $2;
     // RDKit✔️✔️:   YYACCEPT;
@@ -1961,7 +2208,10 @@ fn parse_atom_entry(input: &str) -> Result<QueryNode<AtomQueryPredicate>, Smarts
     Ok(atom.carrier.predicate().clone())
 }
 
-fn parse_bond_entry(input: &str) -> Result<QueryNode<BondQueryPredicate>, SmartsParseError> {
+fn parse_bond_entry(
+    input: impl AsRef<[u8]>,
+) -> Result<QueryNode<BondQueryPredicate>, SmartsParseError> {
+    let input = input.as_ref();
     // RDKit✔️✔️: | START_BOND bond_expr EOS_TOKEN {
     // RDKit✔️✔️:   lastBond = $2;
     // RDKit✔️✔️:   YYACCEPT;
@@ -1980,7 +2230,10 @@ fn parse_bond_entry(input: &str) -> Result<QueryNode<BondQueryPredicate>, Smarts
     Ok(bond.query)
 }
 
-fn smarts_bond_parse(input: &str) -> Result<QueryNode<BondQueryPredicate>, SmartsParseError> {
+fn smarts_bond_parse(
+    input: impl AsRef<[u8]>,
+) -> Result<QueryNode<BondQueryPredicate>, SmartsParseError> {
+    let input = input.as_ref();
     // RDKit✔️✔️: int smarts_bond_parse(const std::string &inp, Bond *&bond) {
     // RDKit✔️✔️:   auto start_tok = static_cast<int>(START_BOND);
     // RDKit✔️✔️:   std::vector<RWMol *> molVect;
@@ -1993,7 +2246,10 @@ fn smarts_bond_parse(input: &str) -> Result<QueryNode<BondQueryPredicate>, Smart
     parse_bond_entry(input)
 }
 
-fn smarts_atom_parse(input: &str) -> Result<QueryNode<AtomQueryPredicate>, SmartsParseError> {
+fn smarts_atom_parse(
+    input: impl AsRef<[u8]>,
+) -> Result<QueryNode<AtomQueryPredicate>, SmartsParseError> {
+    let input = input.as_ref();
     // RDKit✔️✔️: int smarts_atom_parse(const std::string &inp, Atom *&atom) {
     // RDKit✔️✔️:   auto start_tok = static_cast<int>(START_ATOM);
     // RDKit✔️✔️:   std::vector<RWMol *> molVect;
@@ -2006,7 +2262,10 @@ fn smarts_atom_parse(input: &str) -> Result<QueryNode<AtomQueryPredicate>, Smart
     parse_atom_entry(input)
 }
 
-fn to_atom(inp: &str) -> Result<Option<QueryNode<AtomQueryPredicate>>, SmartsParseError> {
+fn to_atom(
+    inp: impl AsRef<[u8]>,
+) -> Result<Option<QueryNode<AtomQueryPredicate>>, SmartsParseError> {
+    let inp = inp.as_ref();
     // BEGIN RDKIT CPP FUNCTION toAtom
     // RDKit✔️✔️: std::unique_ptr<Atom> toAtom(const std::string &inp,
     // RDKit✔️✔️:                              int func(const std::string &, Atom *&)) {
@@ -2040,8 +2299,9 @@ fn to_atom(inp: &str) -> Result<Option<QueryNode<AtomQueryPredicate>>, SmartsPar
 }
 
 fn atom_from_smarts(
-    smarts: &str,
+    smarts: impl AsRef<[u8]>,
 ) -> Result<Option<QueryNode<AtomQueryPredicate>>, SmartsParseError> {
+    let smarts = smarts.as_ref();
     // BEGIN RDKIT CPP FUNCTION AtomFromSmarts
     // RDKit✔️✔️: std::unique_ptr<Atom> AtomFromSmarts(const std::string &smiles) {
     // RDKit✔️✔️:   yysmarts_debug = false;
@@ -2056,7 +2316,10 @@ fn atom_from_smarts(
     to_atom(smarts)
 }
 
-fn to_bond(inp: &str) -> Result<Option<QueryNode<BondQueryPredicate>>, SmartsParseError> {
+fn to_bond(
+    inp: impl AsRef<[u8]>,
+) -> Result<Option<QueryNode<BondQueryPredicate>>, SmartsParseError> {
+    let inp = inp.as_ref();
     // BEGIN RDKIT CPP FUNCTION toBond
     // RDKit✔️✔️: std::unique_ptr<Bond> toBond(const std::string &inp,
     // RDKit✔️✔️:                              int func(const std::string &, Bond *&)) {
@@ -2090,8 +2353,9 @@ fn to_bond(inp: &str) -> Result<Option<QueryNode<BondQueryPredicate>>, SmartsPar
 }
 
 fn bond_from_smarts(
-    smarts: &str,
+    smarts: impl AsRef<[u8]>,
 ) -> Result<Option<QueryNode<BondQueryPredicate>>, SmartsParseError> {
+    let smarts = smarts.as_ref();
     // BEGIN RDKIT CPP FUNCTION BondFromSmarts
     // RDKit✔️✔️: std::unique_ptr<Bond> BondFromSmarts(const std::string &smiles) {
     // RDKit✔️✔️:   yysmarts_debug = false;
@@ -2106,6 +2370,7 @@ fn bond_from_smarts(
 }
 
 fn smarts_parse_entry(input: impl AsRef<[u8]>) -> Result<QueryGraphBuilder, SmartsParseError> {
+    let input = input.as_ref();
     // RDKit✔️✔️: int smarts_parse(const std::string &inp, std::vector<RDKit::RWMol *> &molVect) {
     // RDKit✔️✔️:   auto start_tok = static_cast<int>(START_MOL);
     // RDKit✔️✔️:   Atom *atom = nullptr;
@@ -2130,225 +2395,329 @@ struct PreprocessedSmarts {
     cx_part: Vec<u8>,
 }
 
-fn trim_source_whitespace(value: &[u8]) -> &[u8] {
-    // C-locale boost::trim_copy tests counted bytes against ASCII whitespace.
-    // NUL and high bytes remain data, including in names and CX suffixes.
-    let start = value
+#[doc(hidden)]
+pub fn trim_source_whitespace(value: &[u8]) -> &[u8] {
+    // Boost✔️✔️: inline SequenceT trim_copy( const SequenceT& Input, const std::locale& Loc=std::locale() )
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             return
+    // Boost✔️✔️:                 ::boost::algorithm::trim_copy_if(
+    // Boost✔️✔️:                     Input,
+    // Boost✔️✔️:                     is_space(Loc) );
+    // Boost✔️✔️:         }
+    // Boost✔️✔️: inline SequenceT trim_copy_if(const SequenceT& Input, PredicateT IsSpace)
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             BOOST_STRING_TYPENAME
+    // Boost✔️✔️:                 range_const_iterator<SequenceT>::type TrimEnd=
+    // Boost✔️✔️:                     ::boost::algorithm::detail::trim_end(
+    // Boost✔️✔️:                         ::boost::begin(Input),
+    // Boost✔️✔️:                         ::boost::end(Input),
+    // Boost✔️✔️:                         IsSpace);
+    // Boost✔️✔️:
+    // Boost✔️✔️:             return SequenceT(
+    // Boost✔️✔️:                 detail::trim_begin(
+    // Boost✔️✔️:                     ::boost::begin(Input),
+    // Boost✔️✔️:                     TrimEnd,
+    // Boost✔️✔️:                     IsSpace),
+    // Boost✔️✔️:                 TrimEnd
+    // Boost✔️✔️:                 );
+    // Boost✔️✔️:         }
+    // Boost✔️✔️: inline ForwardIteratorT trim_begin(
+    // Boost✔️✔️:                 ForwardIteratorT InBegin,
+    // Boost✔️✔️:                 ForwardIteratorT InEnd,
+    // Boost✔️✔️:                 PredicateT IsSpace )
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 ForwardIteratorT It=InBegin;
+    // Boost✔️✔️:                 for(; It!=InEnd; ++It )
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     if (!IsSpace(*It))
+    // Boost✔️✔️:                         return It;
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return It;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️: inline ForwardIteratorT trim_end(
+    // Boost✔️✔️:                 ForwardIteratorT InBegin,
+    // Boost✔️✔️:                 ForwardIteratorT InEnd,
+    // Boost✔️✔️:                 PredicateT IsSpace )
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 typedef BOOST_STRING_TYPENAME
+    // Boost✔️✔️:                     std::iterator_traits<ForwardIteratorT>::iterator_category category;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return ::boost::algorithm::detail::trim_end_iter_select( InBegin, InEnd, IsSpace, category() );
+    // Boost✔️✔️:             }
+    // Boost✔️✔️: inline ForwardIteratorT trim_end_iter_select(
+    // Boost✔️✔️:                 ForwardIteratorT InBegin,
+    // Boost✔️✔️:                 ForwardIteratorT InEnd,
+    // Boost✔️✔️:                 PredicateT IsSpace,
+    // Boost✔️✔️:                 std::bidirectional_iterator_tag )
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 for( ForwardIteratorT It=InEnd; It!=InBegin;  )
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     if ( !IsSpace(*(--It)) )
+    // Boost✔️✔️:                         return ++It;
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return InBegin;
+    // Boost✔️✔️:             }
+    // Boost✔️✔️: struct is_classifiedF :
+    // Boost✔️✔️:                 public predicate_facade<is_classifiedF>
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 // Boost.ResultOf support
+    // Boost✔️✔️:                 typedef bool result_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // Constructor from a locale
+    // Boost✔️✔️:                 is_classifiedF(std::ctype_base::mask Type, std::locale const & Loc = std::locale()) :
+    // Boost✔️✔️:                     m_Type(Type), m_Locale(Loc) {}
+    // Boost✔️✔️:                 // Operation
+    // Boost✔️✔️:                 template<typename CharT>
+    // Boost✔️✔️:                 bool operator()( CharT Ch ) const
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     return std::use_facet< std::ctype<CharT> >(m_Locale).is( m_Type, Ch );
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 #if defined(BOOST_BORLANDC) && (BOOST_BORLANDC >= 0x560) && (BOOST_BORLANDC <= 0x582) && !defined(_USE_OLD_RW_STL)
+    // Boost✔️✔️:                     template<>
+    // Boost✔️✔️:                     bool operator()( char const Ch ) const
+    // Boost✔️✔️:                     {
+    // Boost✔️✔️:                         return std::use_facet< std::ctype<char> >(m_Locale).is( m_Type, Ch );
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                 #endif
+    // Boost✔️✔️:
+    // Boost✔️✔️:             private:
+    // Boost✔️✔️:                 std::ctype_base::mask m_Type;
+    // Boost✔️✔️:                 std::locale m_Locale;
+    // Boost✔️✔️:             }
+    // Exact pinned C-locale ctype<char> space bytes, without decoding. Boost
+    // obtains TrimEnd first, then searches TrimBegin only before that bound.
+    // Each edge scan is linear in trimmed bytes with constant borrowed storage;
+    // the caller owns the single counted copy, like trim_copy's constructor.
+    let end = match value
         .iter()
-        .position(|b| !matches!(*b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c' | b'\x0b'))
-        .unwrap_or(value.len());
-    let end = value
+        .rposition(|b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 12 | 11))
+    {
+        Some(last) => last + 1,
+        None => 0,
+    };
+    let start = value[..end]
         .iter()
-        .rposition(|b| !matches!(*b, b' ' | b'\t' | b'\n' | b'\r' | b'\x0c' | b'\x0b'))
-        .map_or(start, |i| i + 1);
+        .position(|b| !matches!(b, b' ' | b'\t' | b'\n' | b'\r' | 12 | 11))
+        .unwrap_or(end);
     &value[start..end]
 }
 
-#[rustfmt::skip]
-fn replace_all_source_bytes(input: &[u8], search: &[u8], replacement: &[u8]) -> Vec<u8> {
-    // BEGIN BOOST 1.85.0 replace.hpp
-    //         template<typename SequenceT, typename Range1T, typename Range2T>
-    //         inline void replace_all( 
-    //             SequenceT& Input,
-    //             const Range1T& Search,
-    //             const Range2T& Format )
-    //         {
-    //             ::boost::algorithm::find_format_all( 
-    //                 Input, 
-    //                 ::boost::algorithm::first_finder(Search),
-    //                 ::boost::algorithm::const_formatter(Format) );
-    //         }
-    // END BOOST 1.85.0 replace.hpp
-    // BEGIN BOOST 1.85.0 detail/finder.hpp
-    //                 // Operation
-    //                 template< typename ForwardIteratorT >
-    //                 iterator_range<ForwardIteratorT>
-    //                 operator()(
-    //                     ForwardIteratorT Begin,
-    //                     ForwardIteratorT End ) const
-    //                 {
-    //                     typedef iterator_range<ForwardIteratorT> result_type;
-    //                     typedef ForwardIteratorT input_iterator_type;
-    // 
-    //                     // Outer loop
-    //                     for(input_iterator_type OuterIt=Begin;
-    //                         OuterIt!=End;
-    //                         ++OuterIt)
-    //                     {
-    //                         // Sanity check
-    //                         if( boost::empty(m_Search) )
-    //                             return result_type( End, End );
-    // 
-    //                         input_iterator_type InnerIt=OuterIt;
-    //                         search_iterator_type SubstrIt=m_Search.begin();
-    //                         for(;
-    //                             InnerIt!=End && SubstrIt!=m_Search.end();
-    //                             ++InnerIt,++SubstrIt)
-    //                         {
-    //                             if( !( m_Comp(*InnerIt,*SubstrIt) ) )
-    //                                 break;
-    //                         }
-    // 
-    //                         // Substring matching succeeded
-    //                         if ( SubstrIt==m_Search.end() )
-    //                             return result_type( OuterIt, InnerIt );
-    //                     }
-    // 
-    //                     return result_type( End, End );
-    //                 }
-    // END BOOST 1.85.0 detail/finder.hpp
-    // BEGIN BOOST 1.85.0 detail/find_format_all.hpp
-    //             template<
-    //                 typename InputT,
-    //                 typename FinderT,
-    //                 typename FormatterT,
-    //                 typename FindResultT,
-    //                 typename FormatResultT >
-    //             inline void find_format_all_impl2( 
-    //                 InputT& Input,
-    //                 FinderT Finder,
-    //                 FormatterT Formatter,
-    //                 FindResultT FindResult,
-    //                 FormatResultT FormatResult)
-    //             {
-    //                 typedef BOOST_STRING_TYPENAME 
-    //                     range_iterator<InputT>::type input_iterator_type; 
-    //                 typedef find_format_store<
-    //                         input_iterator_type, 
-    //                         FormatterT,
-    //                         FormatResultT > store_type;
-    // 
-    //                 // Create store for the find result
-    //                 store_type M( FindResult, FormatResult, Formatter );
-    //           
-    //                 // Instantiate replacement storage
-    //                 std::deque<
-    //                     BOOST_STRING_TYPENAME range_value<InputT>::type> Storage;
-    // 
-    //                 // Initialize replacement iterators
-    //                 input_iterator_type InsertIt=::boost::begin(Input);
-    //                 input_iterator_type SearchIt=::boost::begin(Input);
-    //                 
-    //                 while( M )
-    //                 {
-    //                     // process the segment
-    //                     InsertIt=process_segment( 
-    //                         Storage,
-    //                         Input,
-    //                         InsertIt,
-    //                         SearchIt,
-    //                         M.begin() );
-    //                     
-    //                     // Adjust search iterator
-    //                     SearchIt=M.end();
-    // 
-    //                     // Copy formatted replace to the storage
-    //                     ::boost::algorithm::detail::copy_to_storage( Storage, M.format_result() );
-    // 
-    //                     // Find range for a next match
-    //                     M=Finder( SearchIt, ::boost::end(Input) );
-    //                 }
-    // 
-    //                 // process the last segment
-    //                 InsertIt=::boost::algorithm::detail::process_segment( 
-    //                     Storage,
-    //                     Input,
-    //                     InsertIt,
-    //                     SearchIt,
-    //                     ::boost::end(Input) );
-    //                 
-    //                 if ( Storage.empty() )
-    //                 {
-    //                     // Truncate input
-    //                     ::boost::algorithm::detail::erase( Input, InsertIt, ::boost::end(Input) );
-    //                 }
-    //                 else
-    //                 {
-    //                     // Copy remaining data to the end of input
-    //                     ::boost::algorithm::detail::insert( Input, ::boost::end(Input), Storage.begin(), Storage.end() );
-    //                 }
-    //             }
-    // END BOOST 1.85.0 detail/find_format_all.hpp
-    // Boost✔️❌: use the same non-overlapping counted ranges and resume after
-    // the old match. A fresh complete output buffer costs more peak storage
-    // than the source's in-place deque-assisted compaction; no perf upgrade.
-    if search.is_empty() { return input.to_vec(); }
-    let mut output = Vec::with_capacity(input.len());
-    let mut cursor = 0;
-    while cursor < input.len() {
-        let Some(found) = input[cursor..].windows(search.len()).position(|part| part == search) else {
-            output.extend_from_slice(&input[cursor..]);
-            break;
-        };
-        output.extend_from_slice(&input[cursor..cursor + found]);
-        output.extend_from_slice(replacement);
-        cursor += found + search.len();
-    }
-    output
-}
-
 fn preprocess_smarts(smarts: impl AsRef<[u8]>, params: &SmartsParseParams) -> PreprocessedSmarts {
-    // BEGIN RDKIT CPP FUNCTION preprocessSmiles<SmartsParserParams>
-    // RDKit✔️✔️: // despite the name: works for both SMILES and SMARTS
-    // RDKit✔️✔️: template <typename T>
-    // RDKit✔️✔️: void preprocessSmiles(const std::string &smiles, const T &params,
-    // RDKit✔️✔️:                       std::string &lsmiles, std::string &name,
-    // RDKit✔️✔️:                       std::string &cxPart) {
-    // RDKit✔️✔️:   cxPart = "";
-    // RDKit✔️✔️:   name = "";
-    // RDKit✔️✔️:   if (params.parseName && !params.allowCXSMILES) {
-    // RDKit✔️✔️:     size_t sidx = smiles.find_first_of(" \t");
-    // RDKit✔️✔️:     if (sidx != std::string::npos && sidx != 0) {
-    // RDKit✔️✔️:       lsmiles = smiles.substr(0, sidx);
-    // RDKit✔️✔️:       name = boost::trim_copy(smiles.substr(sidx, smiles.size() - sidx));
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   } else if (params.allowCXSMILES) {
-    // RDKit✔️✔️:     size_t sidx = smiles.find_first_of(" \t");
-    // RDKit✔️✔️:     if (sidx != std::string::npos && sidx != 0) {
-    // RDKit✔️✔️:       lsmiles = smiles.substr(0, sidx);
-    // RDKit✔️✔️:       cxPart = boost::trim_copy(smiles.substr(sidx, smiles.size() - sidx));
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (lsmiles.empty()) {
-    // RDKit✔️✔️:     lsmiles = smiles;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   if (!params.replacements.empty()) {
-    // RDKit✔️✔️:     std::string smi = lsmiles;
-    // RDKit✔️✔️:     for (auto loopAgain = true; loopAgain;) {
-    // RDKit✔️✔️:       loopAgain = false;
-    // RDKit✔️✔️:       for (const auto &pr : params.replacements) {
-    // RDKit✔️✔️:         if (smi.find(pr.first) != std::string::npos) {
-    // RDKit✔️✔️:           loopAgain = true;
-    // RDKit✔️✔️:           boost::replace_all(smi, pr.first, pr.second);
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     lsmiles = smi;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION preprocessSmiles<SmartsParserParams>
-    // Local complexity review: splitting performs one byte scan and at most
-    // one owned copy per output field. Replacement uses the same ordered-map,
-    // repeat-until-fixed-point scans and whole-string replacements as RDKit;
-    // no extra parser, tokenization pass, or consumer-local preprocessing is
-    // introduced.
     let smarts = smarts.as_ref();
+    // BEGIN RDKIT CPP FUNCTION preprocessSmiles<SmartsParserParams>
+    // RDKit✔️❌: // despite the name: works for both SMILES and SMARTS
+    // RDKit✔️❌: template <typename T>
+    // RDKit✔️❌: void preprocessSmiles(const std::string &smiles, const T &params,
+    // RDKit✔️❌:                       std::string &lsmiles, std::string &name,
+    // RDKit✔️❌:                       std::string &cxPart) {
+    // RDKit✔️❌:   cxPart = "";
+    // RDKit✔️❌:   name = "";
+    // RDKit✔️❌:   if (params.parseName && !params.allowCXSMILES) {
+    // RDKit✔️❌:     size_t sidx = smiles.find_first_of(" \t");
+    // RDKit✔️❌:     if (sidx != std::string::npos && sidx != 0) {
+    // RDKit✔️❌:       lsmiles = smiles.substr(0, sidx);
+    // RDKit✔️❌:       name = boost::trim_copy(smiles.substr(sidx, smiles.size() - sidx));
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   } else if (params.allowCXSMILES) {
+    // RDKit✔️❌:     size_t sidx = smiles.find_first_of(" \t");
+    // RDKit✔️❌:     if (sidx != std::string::npos && sidx != 0) {
+    // RDKit✔️❌:       lsmiles = smiles.substr(0, sidx);
+    // RDKit✔️❌:       cxPart = boost::trim_copy(smiles.substr(sidx, smiles.size() - sidx));
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (lsmiles.empty()) {
+    // RDKit✔️❌:     lsmiles = smiles;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (!params.replacements.empty()) {
+    // RDKit✔️❌:     std::string smi = lsmiles;
+    // RDKit✔️❌:     for (auto loopAgain = true; loopAgain;) {
+    // RDKit✔️❌:       loopAgain = false;
+    // RDKit✔️❌:       for (const auto &pr : params.replacements) {
+    // RDKit✔️❌:         if (smi.find(pr.first) != std::string::npos) {
+    // RDKit✔️❌:           loopAgain = true;
+    // RDKit✔️❌:           boost::replace_all(smi, pr.first, pr.second);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     lsmiles = smi;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END RDKIT CPP FUNCTION preprocessSmiles<SmartsParserParams>
+    // BEGIN COMPLETE REACHED replace_all
+    // Boost✔️❌: inline void replace_all(
+    // Boost✔️❌:             SequenceT& Input,
+    // Boost✔️❌:             const Range1T& Search,
+    // Boost✔️❌:             const Range2T& Format )
+    // Boost✔️❌:         {
+    // Boost✔️❌:             ::boost::algorithm::find_format_all(
+    // Boost✔️❌:                 Input,
+    // Boost✔️❌:                 ::boost::algorithm::first_finder(Search),
+    // Boost✔️❌:                 ::boost::algorithm::const_formatter(Format) );
+    // Boost✔️❌:         }
+    // END COMPLETE REACHED replace_all
+    // BEGIN COMPLETE REACHED first_finderF
+    // Boost✔️✔️: struct first_finderF
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 typedef SearchIteratorT search_iterator_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // Construction
+    // Boost✔️✔️:                 template< typename SearchT >
+    // Boost✔️✔️:                 first_finderF( const SearchT& Search, PredicateT Comp ) :
+    // Boost✔️✔️:                     m_Search(::boost::begin(Search), ::boost::end(Search)), m_Comp(Comp) {}
+    // Boost✔️✔️:                 first_finderF(
+    // Boost✔️✔️:                         search_iterator_type SearchBegin,
+    // Boost✔️✔️:                         search_iterator_type SearchEnd,
+    // Boost✔️✔️:                         PredicateT Comp ) :
+    // Boost✔️✔️:                     m_Search(SearchBegin, SearchEnd), m_Comp(Comp) {}
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 // Operation
+    // Boost✔️✔️:                 template< typename ForwardIteratorT >
+    // Boost✔️✔️:                 iterator_range<ForwardIteratorT>
+    // Boost✔️✔️:                 operator()(
+    // Boost✔️✔️:                     ForwardIteratorT Begin,
+    // Boost✔️✔️:                     ForwardIteratorT End ) const
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     typedef iterator_range<ForwardIteratorT> result_type;
+    // Boost✔️✔️:                     typedef ForwardIteratorT input_iterator_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:                     // Outer loop
+    // Boost✔️✔️:                     for(input_iterator_type OuterIt=Begin;
+    // Boost✔️✔️:                         OuterIt!=End;
+    // Boost✔️✔️:                         ++OuterIt)
+    // Boost✔️✔️:                     {
+    // Boost✔️✔️:                         // Sanity check
+    // Boost✔️✔️:                         if( boost::empty(m_Search) )
+    // Boost✔️✔️:                             return result_type( End, End );
+    // Boost✔️✔️:
+    // Boost✔️✔️:                         input_iterator_type InnerIt=OuterIt;
+    // Boost✔️✔️:                         search_iterator_type SubstrIt=m_Search.begin();
+    // Boost✔️✔️:                         for(;
+    // Boost✔️✔️:                             InnerIt!=End && SubstrIt!=m_Search.end();
+    // Boost✔️✔️:                             ++InnerIt,++SubstrIt)
+    // Boost✔️✔️:                         {
+    // Boost✔️✔️:                             if( !( m_Comp(*InnerIt,*SubstrIt) ) )
+    // Boost✔️✔️:                                 break;
+    // Boost✔️✔️:                         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                         // Substring matching succeeded
+    // Boost✔️✔️:                         if ( SubstrIt==m_Search.end() )
+    // Boost✔️✔️:                             return result_type( OuterIt, InnerIt );
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                     return result_type( End, End );
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:             private:
+    // Boost✔️✔️:                 iterator_range<search_iterator_type> m_Search;
+    // Boost✔️✔️:                 PredicateT m_Comp;
+    // Boost✔️✔️:             }
+    // END COMPLETE REACHED first_finderF
+    // BEGIN COMPLETE REACHED nonoverlapping in-place find_format_all_impl2
+    // Boost✔️❌: inline void find_format_all_impl2(
+    // Boost✔️❌:                 InputT& Input,
+    // Boost✔️❌:                 FinderT Finder,
+    // Boost✔️❌:                 FormatterT Formatter,
+    // Boost✔️❌:                 FindResultT FindResult,
+    // Boost✔️❌:                 FormatResultT FormatResult)
+    // Boost✔️❌:             {
+    // Boost✔️❌:                 typedef BOOST_STRING_TYPENAME
+    // Boost✔️❌:                     range_iterator<InputT>::type input_iterator_type;
+    // Boost✔️❌:                 typedef find_format_store<
+    // Boost✔️❌:                         input_iterator_type,
+    // Boost✔️❌:                         FormatterT,
+    // Boost✔️❌:                         FormatResultT > store_type;
+    // Boost✔️❌:
+    // Boost✔️❌:                 // Create store for the find result
+    // Boost✔️❌:                 store_type M( FindResult, FormatResult, Formatter );
+    // Boost✔️❌:
+    // Boost✔️❌:                 // Instantiate replacement storage
+    // Boost✔️❌:                 std::deque<
+    // Boost✔️❌:                     BOOST_STRING_TYPENAME range_value<InputT>::type> Storage;
+    // Boost✔️❌:
+    // Boost✔️❌:                 // Initialize replacement iterators
+    // Boost✔️❌:                 input_iterator_type InsertIt=::boost::begin(Input);
+    // Boost✔️❌:                 input_iterator_type SearchIt=::boost::begin(Input);
+    // Boost✔️❌:
+    // Boost✔️❌:                 while( M )
+    // Boost✔️❌:                 {
+    // Boost✔️❌:                     // process the segment
+    // Boost✔️❌:                     InsertIt=process_segment(
+    // Boost✔️❌:                         Storage,
+    // Boost✔️❌:                         Input,
+    // Boost✔️❌:                         InsertIt,
+    // Boost✔️❌:                         SearchIt,
+    // Boost✔️❌:                         M.begin() );
+    // Boost✔️❌:
+    // Boost✔️❌:                     // Adjust search iterator
+    // Boost✔️❌:                     SearchIt=M.end();
+    // Boost✔️❌:
+    // Boost✔️❌:                     // Copy formatted replace to the storage
+    // Boost✔️❌:                     ::boost::algorithm::detail::copy_to_storage( Storage, M.format_result() );
+    // Boost✔️❌:
+    // Boost✔️❌:                     // Find range for a next match
+    // Boost✔️❌:                     M=Finder( SearchIt, ::boost::end(Input) );
+    // Boost✔️❌:                 }
+    // Boost✔️❌:
+    // Boost✔️❌:                 // process the last segment
+    // Boost✔️❌:                 InsertIt=::boost::algorithm::detail::process_segment(
+    // Boost✔️❌:                     Storage,
+    // Boost✔️❌:                     Input,
+    // Boost✔️❌:                     InsertIt,
+    // Boost✔️❌:                     SearchIt,
+    // Boost✔️❌:                     ::boost::end(Input) );
+    // Boost✔️❌:
+    // Boost✔️❌:                 if ( Storage.empty() )
+    // Boost✔️❌:                 {
+    // Boost✔️❌:                     // Truncate input
+    // Boost✔️❌:                     ::boost::algorithm::detail::erase( Input, InsertIt, ::boost::end(Input) );
+    // Boost✔️❌:                 }
+    // Boost✔️❌:                 else
+    // Boost✔️❌:                 {
+    // Boost✔️❌:                     // Copy remaining data to the end of input
+    // Boost✔️❌:                     ::boost::algorithm::detail::insert( Input, ::boost::end(Input), Storage.begin(), Storage.end() );
+    // Boost✔️❌:                 }
+    // Boost✔️❌:             }
+    // END COMPLETE REACHED nonoverlapping in-place find_format_all_impl2
+    // Behavior: source split recognizes space/tab only and ignores a split
+    // at byte zero. Name or CX suffix is trimmed with the C-locale byte class;
+    // an empty core after the split uses the complete original counted bytes.
+    // PropertyText map order is unsigned-byte lexicographic, matching native
+    // std::string compare. Every rule checks for a source match, then replaces
+    // nonoverlapping matches of that pass's original buffer. A later map rule
+    // sees earlier output; matching any rule repeats the ordered map. Empty
+    // search sets loopAgain exactly like std::string::find, but Boost's finder
+    // has no empty match, so native repetition is retained without a guard.
+    // NUL/high bytes remain input data. No UTF8 validation, replacement cycle
+    // heuristic, iteration limit, success rejection or consumer preprocessing.
+    // Cost: same ordered fixed-point scans and substring comparisons, but the
+    // Rust matched rule allocates a whole output Vec while Boost mutates the
+    // input and buffers insertion overflow in a deque. That extra output
+    // allocation/copy is a known memory/material constant cost, marked ❌.
     let mut processed = PreprocessedSmarts {
         smarts: Vec::new(),
         name: Vec::new(),
         cx_part: Vec::new(),
     };
     if params.parse_name && !params.allow_cxsmiles {
-        if let Some(split_index) = smarts.iter().position(|byte| matches!(*byte, b' ' | b'\t'))
+        if let Some(split_index) = smarts
+            .iter()
+            .copied()
+            .position(|byte| matches!(byte, b' ' | b'\t'))
             && split_index != 0
         {
             processed.smarts = smarts[..split_index].to_vec();
             processed.name = trim_source_whitespace(&smarts[split_index..]).to_vec();
         }
     } else if params.allow_cxsmiles
-        && let Some(split_index) = smarts.iter().position(|byte| matches!(*byte, b' ' | b'\t'))
+        && let Some(split_index) = smarts
+            .iter()
+            .copied()
+            .position(|byte| matches!(byte, b' ' | b'\t'))
         && split_index != 0
     {
         processed.smarts = smarts[..split_index].to_vec();
@@ -2364,10 +2733,31 @@ fn preprocess_smarts(smarts: impl AsRef<[u8]>, params: &SmartsParseParams) -> Pr
             let mut loop_again = false;
             for (key, value) in &params.replacements {
                 let key = key.as_bytes();
-                if key.is_empty() || processed.smarts.windows(key.len()).any(|part| part == key) {
+                let value = value.as_bytes();
+                // std::string::find(empty) succeeds; boost replace_all has no
+                // match for an empty search range. Source still loops again.
+                if key.is_empty() {
                     loop_again = true;
-                    processed.smarts =
-                        replace_all_source_bytes(&processed.smarts, key, value.as_bytes());
+                    continue;
+                }
+                if processed
+                    .smarts
+                    .windows(key.len())
+                    .any(|window| window == key)
+                {
+                    loop_again = true;
+                    let mut replaced = Vec::new();
+                    let mut cursor = 0;
+                    while cursor < processed.smarts.len() {
+                        if processed.smarts[cursor..].starts_with(key) {
+                            replaced.extend_from_slice(value);
+                            cursor += key.len();
+                        } else {
+                            replaced.push(processed.smarts[cursor]);
+                            cursor += 1;
+                        }
+                    }
+                    processed.smarts = replaced;
                 }
             }
             if !loop_again {
@@ -2512,23 +2902,60 @@ fn merge_recursive_query_hydrogens(
     merge_unmapped_only: bool,
     merge_isotopes: bool,
 ) -> Result<(), SmartsParseError> {
-    match query {
-        QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => {
-            if let Some(nested) = recursive.query_graph().cloned() {
-                let mut nested = nested;
+    // RDKit❗❌:       // recurse if needed (was github isusue 544)
+    // RDKit❗❌:       if (atom->hasQuery()) {
+    // RDKit❗❌:         if (atom->getQuery()->getDescription() == "RecursiveStructure") {
+    // RDKit❗❌:           auto *rsq = dynamic_cast<RecursiveStructureQuery *>(atom->getQuery());
+    // RDKit❗❌:           CHECK_INVARIANT(rsq, "could not convert recursive structure query");
+    // RDKit❗❌:           RWMol *rqm = new RWMol(*rsq->getQueryMol());
+    // RDKit❗❌:           mergeQueryHs(*rqm, mergeUnmappedOnly, mergeIsotopes);
+    // RDKit❗❌:           rsq->setQueryMol(rqm);
+    // RDKit❗❌:         }
+    // RDKit❗❌:
+    // RDKit❗❌:         // FIX: shouldn't be repeating this code here
+    // RDKit❗❌:         std::list<QueryAtom::QUERYATOM_QUERY::CHILD_TYPE> childStack(
+    // RDKit❗❌:             atom->getQuery()->beginChildren(), atom->getQuery()->endChildren());
+    // RDKit❗❌:         while (childStack.size()) {
+    // RDKit❗❌:           QueryAtom::QUERYATOM_QUERY::CHILD_TYPE qry = childStack.front();
+    // RDKit❗❌:           childStack.pop_front();
+    // RDKit❗❌:           if (qry->getDescription() == "RecursiveStructure") {
+    // RDKit❗❌:             auto *rsq = dynamic_cast<RecursiveStructureQuery *>(qry.get());
+    // RDKit❗❌:             CHECK_INVARIANT(rsq, "could not convert recursive structure query");
+    // RDKit❗❌:             RWMol *rqm = new RWMol(*rsq->getQueryMol());
+    // RDKit❗❌:             mergeQueryHs(*rqm, mergeUnmappedOnly, mergeIsotopes);
+    // RDKit❗❌:             rsq->setQueryMol(rqm);
+    // RDKit❗❌:           } else if (qry->beginChildren() != qry->endChildren()) {
+    // RDKit❗❌:             childStack.insert(childStack.end(), qry->beginChildren(),
+    // RDKit❗❌:                               qry->endChildren());
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }  // end of recursion loop
+    // Native root dispatch precedes its FIFO childStack. A canonical Not
+    // represents a source negation bit, not an extra native child edge.
+    // Clone the actual owned recursive graph just as new RWMol(*getQueryMol)
+    // does; a missing graph is an invariant error, never silent omission.
+    // Queue visits each source node once with O(width) live references; no
+    // query-tree cloning or guessed textual reconstruction is performed.
+    let mut pending = VecDeque::from([query]);
+    while let Some(mut node) = pending.pop_front() {
+        while let QueryNode::Not(child) = node {
+            node = child.as_mut();
+        }
+        match node {
+            QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => {
+                let mut nested = recursive
+                    .query_graph()
+                    .cloned()
+                    .ok_or(SmartsParseError::MissingRecursiveQueryGraph)?;
                 merge_query_hs_in_place(&mut nested, merge_unmapped_only, merge_isotopes)?;
                 recursive.set_query_graph(nested);
             }
-        }
-        QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
-            for child in children {
-                merge_recursive_query_hydrogens(child, merge_unmapped_only, merge_isotopes)?;
+            QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
+                pending.extend(children.iter_mut());
             }
+            QueryNode::Predicate(_) => {}
+            QueryNode::Not(_) => unreachable!("source negation layers consumed above"),
         }
-        QueryNode::Not(child) => {
-            merge_recursive_query_hydrogens(child, merge_unmapped_only, merge_isotopes)?;
-        }
-        QueryNode::Predicate(_) => {}
     }
     Ok(())
 }
@@ -2866,7 +3293,8 @@ fn merge_query_hs_in_place(
     // Local complexity review: classification, neighbor traversal, query
     // expansion, recursive traversal, and final compaction remain O(V + E + Q)
     // for each recursively owned query molecule. Rust uses Vec bit/count state
-    // and one MoleculeBuilder rebuild, adding a material O(V + E) clone versus
+    // plus O(R log R) removal sorting and one canonical QueryGraph rebuild,
+    // adding a material O(V + E) clone versus
     // RDKit's batch-edit mutation; this accounts for the second-axis gap.
     let hydrogen_types = molecule
         .atoms()
@@ -2968,16 +3396,19 @@ fn merge_query_hs_in_place(
         let mut predicate =
             std::mem::replace(atom_value.predicate_mut(), QueryNode::and(Vec::new()));
         let count = hydrogen_counts[atom.index()];
-        if count != 0 {
-            let mut children = vec![predicate];
-            for hydrogen_count in 0..count {
-                children.push(QueryNode::Not(Box::new(QueryNode::Predicate(
+        for hydrogen_count in 0..count {
+            crate::query_behavior::query_atom_expand_query(
+                &mut predicate,
+                QueryNode::Not(Box::new(QueryNode::Predicate(
                     AtomQueryPredicate::HydrogenCount(hydrogen_count as i32),
-                ))));
-            }
-            predicate = QueryNode::And(children);
+                ))),
+                CompositeQueryType::And,
+                true,
+            );
         }
-        merge_recursive_query_hydrogens(&mut predicate, merge_unmapped_only, merge_isotopes)?;
+        if hydrogen_types[atom.index()] != QueryHydrogenType::QueryHydrogen {
+            merge_recursive_query_hydrogens(&mut predicate, merge_unmapped_only, merge_isotopes)?;
+        }
         // This compaction renumbers the query atom table, so surviving
         // carriers remap their template attachment targets through the one
         // shared primitive; a carrier whose referenced atom is a removed
@@ -3224,7 +3655,8 @@ fn has_query_hs_graph(graph: &QueryGraph) -> (bool, bool) {
     (query_hs, false)
 }
 
-fn label_recursive_patterns(sma: impl AsRef<[u8]>) -> Vec<u8> {
+fn label_recursive_patterns(sma: impl AsRef<[u8]>) -> PropertyText {
+    let sma = sma.as_ref();
     // RDKit✔️✔️: std::string labelRecursivePatterns(const std::string &sma) {
     // RDKit✔️✔️: #ifndef NO_AUTOMATIC_SMARTS_RELABELLING
     // RDKit✔️✔️:   std::list<SmaState> state;
@@ -3279,11 +3711,20 @@ fn label_recursive_patterns(sma: impl AsRef<[u8]>) -> Vec<u8> {
     // RDKit✔️✔️:   return sma;
     // RDKit✔️✔️: #endif
     // RDKit✔️✔️: }
-    // Local complexity review: input and output are scanned once in O(n),
-    // stack operations are amortized O(1), and recursive-pattern lookup is
-    // O(log p), matching the source. Vec stacks avoid std::list node
-    // allocations; BTreeMap preserves std::map lookup complexity. Byte indexing
-    // reproduces std::string behavior and introduces no parser or reparse path.
+    // Behavior: the pinned default automatic-relabeling branch uses exact
+    // counted source bytes. Recursive keys include the original `$(` and `)`,
+    // including nested source text rather than previously inserted labels.
+    // Existing underscore suppresses lookup/insertion; repeated keys reuse
+    // their first decimal label. A stray close discards all generated labels
+    // and returns every original byte. Both source unsigned32 cursor increments
+    // and size_t label addition wrap explicitly, without a size heuristic.
+    // The independent NO_AUTOMATIC_SMARTS_RELABELLING build branch is outside
+    // this pinned default configuration; no parser policy switch is invented.
+    // Cost: one cursor pass and amortized output/stack append. Let L be the
+    // sum of recursive substring lengths and p the number of distinct keys;
+    // copied keys and ordered-map byte comparisons retain source O(L log p)
+    // work, including nested long keys. Vec stacks avoid list nodes; no
+    // UTF-8 validation, reparse, fallback decoder or additional input copy.
     #[derive(Clone, Copy, PartialEq)]
     enum SmaState {
         Base,
@@ -3294,34 +3735,40 @@ fn label_recursive_patterns(sma: impl AsRef<[u8]>) -> Vec<u8> {
 
     let sma = sma.as_ref();
     let mut state: Vec<SmaState> = vec![Base];
-    let mut start_recurse: Vec<usize> = Vec::new();
+    let mut start_recurse: Vec<u32> = Vec::new();
     let mut patterns: BTreeMap<Vec<u8>, String> = BTreeMap::new();
     let mut res = Vec::with_capacity(sma.len());
     let bytes = sma;
 
-    let mut pos: usize = 0;
-    while pos < bytes.len() {
-        res.push(bytes[pos]);
-        if bytes[pos] == b'$' && pos + 1 < bytes.len() && bytes[pos + 1] == b'(' {
+    let mut pos: u32 = 0;
+    while (pos as usize) < bytes.len() {
+        res.push(bytes[pos as usize]);
+        if bytes[pos as usize] == b'$'
+            && (pos.wrapping_add(1) as usize) < bytes.len()
+            && bytes[pos.wrapping_add(1) as usize] == b'('
+        {
             state.push(Recurse);
             start_recurse.push(pos);
-            pos += 1;
-            res.push(bytes[pos]);
-        } else if bytes[pos] == b'(' {
+            pos = pos.wrapping_add(1);
+            res.push(bytes[pos as usize]);
+        } else if bytes[pos as usize] == b'(' {
             state.push(Branch);
-        } else if bytes[pos] == b')' {
+        } else if bytes[pos as usize] == b')' {
             if state.is_empty() || state.last() == Some(&Base) {
-                return sma.to_vec();
+                return PropertyText::from_bytes(sma);
             }
             let curr_state = state.pop().expect("non-base SMARTS state");
             if curr_state == Recurse {
                 let dollar_pos = start_recurse.pop().expect("recursive SMARTS start");
-                if pos + 1 >= bytes.len() || bytes[pos + 1] != b'_' {
-                    let recurs = &bytes[dollar_pos..=pos];
+                if (pos.wrapping_add(1) as usize) >= bytes.len()
+                    || bytes[pos.wrapping_add(1) as usize] != b'_'
+                {
+                    let length = pos.wrapping_sub(dollar_pos).wrapping_add(1) as usize;
+                    let recurs = &bytes[dollar_pos as usize..dollar_pos as usize + length];
                     let label = if let Some(lbl) = patterns.get(recurs) {
                         lbl.clone()
                     } else {
-                        let lbl = format!("{}", patterns.len() + 100);
+                        let lbl = format!("{}", patterns.len().wrapping_add(100));
                         patterns.insert(recurs.to_vec(), lbl.clone());
                         lbl
                     };
@@ -3330,9 +3777,9 @@ fn label_recursive_patterns(sma: impl AsRef<[u8]>) -> Vec<u8> {
                 }
             }
         }
-        pos += 1;
+        pos = pos.wrapping_add(1);
     }
-    res
+    PropertyText::from(res)
 }
 
 // ---------------------------------------------------------------------------
@@ -3350,9 +3797,9 @@ enum Token {
     /// Aromatic element: c, n, o, s, p
     AromaticElement(String),
     /// Generic aromatic/aliphatic/wildcard atom query from SIMPLE_ATOM_QUERY_TOKEN.
-    SimpleAtomQuery(char),
+    SimpleAtomQuery(u8),
     /// Flex's one-byte BAD_CHARACTER token, preserved until parser dispatch.
-    BadCharacter(char),
+    BadCharacter(u8),
     /// Bracket atom text and the lexical atom tokens selected inside it.
     BracketContent(BracketContent),
     /// Bond specifier: -, =, #, :, ~, /, \\
@@ -3381,7 +3828,7 @@ enum Token {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BondLexeme {
-    Symbol(char),
+    Symbol(u8),
     DativeRight,
     DativeLeft,
 }
@@ -3406,10 +3853,10 @@ enum ScannerToken {
     Start(ScannerStart),
     OrganicElement(String),
     AromaticElement(String),
-    SimpleAtomQuery(char),
+    SimpleAtomQuery(u8),
     AtomElement(String),
-    AtomPrimitive(char),
-    BondSpec(char),
+    AtomPrimitive(u8),
+    BondSpec(u8),
     DativeRight,
     DativeLeft,
     ChiralClass(String),
@@ -3431,7 +3878,7 @@ enum ScannerToken {
     Separator,
     Percent,
     Digit(u8),
-    BadCharacter(char),
+    BadCharacter(u8),
     Not,
     Semi,
     And,
@@ -3447,15 +3894,14 @@ struct ScannedToken {
 
 #[derive(Debug, Clone, PartialEq)]
 struct BracketContent {
-    text: String,
+    text: Vec<u8>,
     span: SmartsTokenSpan,
     lexical_tokens: Vec<ScannedToken>,
 }
 
-/// A scanner/parser span keeps helper-input character indices separate from
-/// RDKit's byte offsets in the trimmed parser buffer. Root tokens use those
-/// origins directly; bracket lexical tokens use both fields relative to the
-/// bracket-content origin so their grammar slices remain character-indexed.
+/// A scanner/parser span carries byte offsets in the original helper input
+/// and the trimmed parser buffer. Bracket tokens use byte offsets relative
+/// to the bracket-content origin; no text decoding or scalar indexing occurs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SmartsTokenSpan {
     input_char_start: usize,
@@ -3471,6 +3917,7 @@ struct SmartsScannerInputWindow {
 }
 
 fn setup_smarts_input(input: impl AsRef<[u8]>) -> SmartsScannerInputWindow {
+    let input = input.as_ref();
     // BEGIN RDKIT CPP FUNCTION setup_smarts_string
     // RDKit✔️❌: size_t setup_smarts_string(const std::string &text,yyscan_t yyscanner){
     // RDKit✔️❌:   yyconst char * yybytes = text.c_str();
@@ -3487,10 +3934,9 @@ fn setup_smarts_input(input: impl AsRef<[u8]>) -> SmartsScannerInputWindow {
     // RDKit✔️❌:   return start;
     // RDKit✔️❌: }
     // Local complexity review: setup keeps the same two O(n) byte passes and
-    // avoids RDKit's scanner-buffer copy. The required byte-boundary map in
-    // `SmartsScanner::new` adds an O(n) usize allocation, so the complete Rust
-    // tokenization path retains more memory than the pinned source.
-    let bytes = input.as_ref();
+    // uses a borrowed window; the canonical raw scanner in
+    // `SmartsScanner::new` owns one O(n) raw byte buffer, matching Flex storage.
+    let bytes = input;
     let mut start = 0;
     while start < bytes.len() {
         if i8::from_ne_bytes([bytes[start]]) > 32 {
@@ -3521,55 +3967,29 @@ fn setup_smarts_input(input: impl AsRef<[u8]>) -> SmartsScannerInputWindow {
 }
 
 struct SmartsScanner {
-    chars: Vec<char>,
-    /// Absolute UTF-8 byte boundary for each input character boundary.
-    input_byte_boundaries: Vec<usize>,
-    /// `setup_smarts_string`'s leading trim, in helper-input bytes.
+    bytes: Vec<u8>,
     parser_byte_base: usize,
     start: ScannerStart,
     states: Vec<ScannerState>,
-    /// Character index into `chars`, never a source byte offset.
     pos: usize,
-    /// Exclusive character index into `chars`, never a source byte offset.
     scan_end: usize,
 }
 
 impl SmartsScanner {
-    fn new(input: impl AsRef<[u8]>, start: ScannerStart, window: SmartsScannerInputWindow) -> Self {
-        // RDKit❗❌:     ltrim = string_setup(inp, scanner);
-        // RDKit❗❌:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
-        // RDKit❗❌:                          numAtomsParsed, numBondsParsed, branchPoints, scanner,
-        // RDKit❗❌:                          start_tok, current_token_position);
-        // The parser sees the trimmed byte buffer; `chars` remains indexed
-        // against the original helper input for safe bracket slicing. The
-        // byte-boundary Vec adds O(n) usize storage alongside `chars`; it
-        // avoids repeated prefix scans but materially increases input memory.
-        // RDKit✔️❌: the existing grammar token units now each represent one
-        // unsigned source octet. This is not text decoding: offsets are bytes,
-        // high bytes reach BAD_CHARACTER or signed-char trimming, and only
-        // accepted ASCII lexemes become grammar Strings. Vec<char> uses more
-        // storage than the source byte scanner; retain that known cost gap.
-        let input = input.as_ref();
-        let mut chars: Vec<char> = input.iter().copied().map(char::from).collect();
-        // setup_smarts_string copies end-start+1 bytes. An all-trimmed
-        // nonempty string therefore copies its defined c_str()[size()] NUL,
-        // which is data before the separate pair of Flex buffer sentinels.
-        if window.byte_end > input.len() {
-            chars.push('\0');
-        }
-        let input_byte_boundaries: Vec<usize> = (0..=chars.len()).collect();
-        let char_start = window.byte_start;
-        let char_end = window.byte_end;
-        debug_assert!(char_start <= char_end && char_end <= chars.len());
-
+    fn new(input: &[u8], start: ScannerStart, window: SmartsScannerInputWindow) -> Self {
+        // RDKit❗✔️:     ltrim = string_setup(inp, scanner);
+        // RDKit❗✔️:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
+        // RDKit❗✔️:                          numAtomsParsed, numBondsParsed, branchPoints, scanner,
+        // RDKit❗✔️:                          start_tok, current_token_position);
+        // Every scanner position is a byte offset into the same counted input.
+        // One O(n) byte copy matches Flex buffer ownership; no Unicode map.
         Self {
-            chars,
-            input_byte_boundaries,
+            bytes: input.to_vec(),
             parser_byte_base: window.byte_start,
             start,
             states: vec![ScannerState::Initial],
-            pos: char_start,
-            scan_end: char_end,
+            pos: window.byte_start,
+            scan_end: window.byte_end,
         }
     }
 
@@ -3581,17 +4001,14 @@ impl SmartsScanner {
     }
 
     fn source_span(&self, input_char_start: usize, input_char_end: usize) -> SmartsTokenSpan {
-        // RDKit❗✔️: #define YY_USER_ACTION current_token_position += yyleng;
-        // A boundary lookup maps the scanner's character slice to the
-        // post-consumption parser-byte counter in O(1), matching the source's
-        // indexed counter update without a token-prefix rescan.
-        debug_assert!(input_char_start <= input_char_end);
-        debug_assert!(input_char_end < self.input_byte_boundaries.len());
+        // RDKit✔️✔️: #define YY_USER_ACTION current_token_position += yyleng;
+        // Existing span names are retained privately; both origins index bytes.
+        debug_assert!(input_char_start <= input_char_end && input_char_end <= self.bytes.len());
         SmartsTokenSpan {
             input_char_start,
             input_char_end,
-            parser_byte_start: self.input_byte_boundaries[input_char_start] - self.parser_byte_base,
-            parser_byte_end: self.input_byte_boundaries[input_char_end] - self.parser_byte_base,
+            parser_byte_start: input_char_start - self.parser_byte_base,
+            parser_byte_end: input_char_end - self.parser_byte_base,
         }
     }
 
@@ -3610,15 +4027,15 @@ impl SmartsScanner {
         // RDKit❗✔️: .		return BAD_CHARACTER;
         // Flex's `.` consumes one source byte even when it begins a multibyte
         // UTF-8 scalar, so the parser counter is post-consumption by one byte.
-        self.input_byte_boundaries[self.pos] - self.parser_byte_base + 1
+        self.pos - self.parser_byte_base + 1
     }
 
-    fn emit_bad_character(&mut self, character: char) -> ScannedToken {
+    fn emit_bad_character(&mut self, character: u8) -> ScannedToken {
         // RDKit❗✔️: #define YY_USER_ACTION current_token_position += yyleng;
         // RDKit❗✔️: .		return BAD_CHARACTER;
-        // Flex consumes one byte. Advance one Rust scalar only to keep the
-        // character-index cursor valid, while retaining the source's one-byte
-        // parser endpoint. Scanning stops at this token for parser priority.
+        // Flex consumes exactly one byte. The input span and parser counter
+        // advance by that byte, including NUL and invalid UTF-8. Scanning stops
+        // at this token for the existing parser's error priority.
         let start = self.pos;
         let parser_byte_end = self.bad_character_error_position();
         self.pos += 1;
@@ -3633,6 +4050,383 @@ impl SmartsScanner {
     }
 
     fn scan(mut self) -> Result<Vec<ScannedToken>, SmartsParseError> {
+        // BEGIN COMPLETE PINNED SMARTS FLEX RULES
+        // RDKit❗✔️: %%
+        // RDKit❗✔️:
+        // RDKit❗✔️: %{
+        // RDKit❗✔️:   if (start_token)
+        // RDKit❗✔️:     {
+        // RDKit❗✔️:       int t = start_token;
+        // RDKit❗✔️:       start_token = 0;
+        // RDKit❗✔️:       return t;
+        // RDKit❗✔️:     }
+        // RDKit❗✔️: %}
+        // RDKit❗✔️:
+        // RDKit❗✔️: @[' ']*TH { yylval->chiraltype = Atom::ChiralType::CHI_TETRAHEDRAL; return CHI_CLASS_TOKEN; }
+        // RDKit❗✔️: @[' ']*AL { yylval->chiraltype = Atom::ChiralType::CHI_ALLENE; return CHI_CLASS_TOKEN; }
+        // RDKit❗✔️: @[' ']*SP { yylval->chiraltype = Atom::ChiralType::CHI_SQUAREPLANAR; return CHI_CLASS_TOKEN; }
+        // RDKit❗✔️: @[' ']*TB { yylval->chiraltype = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL; return CHI_CLASS_TOKEN; }
+        // RDKit❗✔️: @[' ']*OH { yylval->chiraltype = Atom::ChiralType::CHI_OCTAHEDRAL; return CHI_CLASS_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: @		{ return AT_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>He |
+        // RDKit❗✔️: <IN_ATOM_STATE>Li |
+        // RDKit❗✔️: <IN_ATOM_STATE>Be |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ne |
+        // RDKit❗✔️: <IN_ATOM_STATE>Na |
+        // RDKit❗✔️: <IN_ATOM_STATE>Mg |
+        // RDKit❗✔️: <IN_ATOM_STATE>Al |
+        // RDKit❗✔️: <IN_ATOM_STATE>Si |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ar |
+        // RDKit❗✔️: <IN_ATOM_STATE>K |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ca |
+        // RDKit❗✔️: <IN_ATOM_STATE>Sc |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ti |
+        // RDKit❗✔️: <IN_ATOM_STATE>V |
+        // RDKit❗✔️: <IN_ATOM_STATE>Cr |
+        // RDKit❗✔️: <IN_ATOM_STATE>Mn |
+        // RDKit❗✔️: <IN_ATOM_STATE>Co |
+        // RDKit❗✔️: <IN_ATOM_STATE>Fe |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ni |
+        // RDKit❗✔️: <IN_ATOM_STATE>Cu |
+        // RDKit❗✔️: <IN_ATOM_STATE>Zn |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ga |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ge |
+        // RDKit❗✔️: <IN_ATOM_STATE>As |
+        // RDKit❗✔️: <IN_ATOM_STATE>Se |
+        // RDKit❗✔️: <IN_ATOM_STATE>Kr |
+        // RDKit❗✔️: <IN_ATOM_STATE>Rb |
+        // RDKit❗✔️: <IN_ATOM_STATE>Sr |
+        // RDKit❗✔️: <IN_ATOM_STATE>Y |
+        // RDKit❗✔️: <IN_ATOM_STATE>Zr |
+        // RDKit❗✔️: <IN_ATOM_STATE>Nb |
+        // RDKit❗✔️: <IN_ATOM_STATE>Mo |
+        // RDKit❗✔️: <IN_ATOM_STATE>Tc |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ru |
+        // RDKit❗✔️: <IN_ATOM_STATE>Rh |
+        // RDKit❗✔️: <IN_ATOM_STATE>Pd |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ag |
+        // RDKit❗✔️: <IN_ATOM_STATE>Cd |
+        // RDKit❗✔️: <IN_ATOM_STATE>In |
+        // RDKit❗✔️: <IN_ATOM_STATE>Sn |
+        // RDKit❗✔️: <IN_ATOM_STATE>Sb |
+        // RDKit❗✔️: <IN_ATOM_STATE>Te |
+        // RDKit❗✔️: <IN_ATOM_STATE>Xe |
+        // RDKit❗✔️: <IN_ATOM_STATE>Cs |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ba |
+        // RDKit❗✔️: <IN_ATOM_STATE>La |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ce |
+        // RDKit❗✔️: <IN_ATOM_STATE>Pr |
+        // RDKit❗✔️: <IN_ATOM_STATE>Nd |
+        // RDKit❗✔️: <IN_ATOM_STATE>Pm |
+        // RDKit❗✔️: <IN_ATOM_STATE>Sm |
+        // RDKit❗✔️: <IN_ATOM_STATE>Eu |
+        // RDKit❗✔️: <IN_ATOM_STATE>Gd |
+        // RDKit❗✔️: <IN_ATOM_STATE>Tb |
+        // RDKit❗✔️: <IN_ATOM_STATE>Dy |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ho |
+        // RDKit❗✔️: <IN_ATOM_STATE>Er |
+        // RDKit❗✔️: <IN_ATOM_STATE>Tm |
+        // RDKit❗✔️: <IN_ATOM_STATE>Yb |
+        // RDKit❗✔️: <IN_ATOM_STATE>Lu |
+        // RDKit❗✔️: <IN_ATOM_STATE>Hf |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ta |
+        // RDKit❗✔️: <IN_ATOM_STATE>W |
+        // RDKit❗✔️: <IN_ATOM_STATE>Re |
+        // RDKit❗✔️: <IN_ATOM_STATE>Os |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ir |
+        // RDKit❗✔️: <IN_ATOM_STATE>Pt |
+        // RDKit❗✔️: <IN_ATOM_STATE>Au |
+        // RDKit❗✔️: <IN_ATOM_STATE>Hg |
+        // RDKit❗✔️: <IN_ATOM_STATE>Tl |
+        // RDKit❗✔️: <IN_ATOM_STATE>Pb |
+        // RDKit❗✔️: <IN_ATOM_STATE>Bi |
+        // RDKit❗✔️: <IN_ATOM_STATE>Po |
+        // RDKit❗✔️: <IN_ATOM_STATE>At |
+        // RDKit❗✔️: <IN_ATOM_STATE>Rn |
+        // RDKit❗✔️: <IN_ATOM_STATE>Fr |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ra |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ac |
+        // RDKit❗✔️: <IN_ATOM_STATE>Th |
+        // RDKit❗✔️: <IN_ATOM_STATE>Pa |
+        // RDKit❗✔️: <IN_ATOM_STATE>U |
+        // RDKit❗✔️: <IN_ATOM_STATE>Np |
+        // RDKit❗✔️: <IN_ATOM_STATE>Pu |
+        // RDKit❗✔️: <IN_ATOM_STATE>Am |
+        // RDKit❗✔️: <IN_ATOM_STATE>Cm |
+        // RDKit❗✔️: <IN_ATOM_STATE>Bk |
+        // RDKit❗✔️: <IN_ATOM_STATE>Cf |
+        // RDKit❗✔️: <IN_ATOM_STATE>Es |
+        // RDKit❗✔️: <IN_ATOM_STATE>Fm |
+        // RDKit❗✔️: <IN_ATOM_STATE>Md |
+        // RDKit❗✔️: <IN_ATOM_STATE>No |
+        // RDKit❗✔️: <IN_ATOM_STATE>Lr |
+        // RDKit❗✔️: <IN_ATOM_STATE>Rf |
+        // RDKit❗✔️: <IN_ATOM_STATE>Db |
+        // RDKit❗✔️: <IN_ATOM_STATE>Sg |
+        // RDKit❗✔️: <IN_ATOM_STATE>Bh |
+        // RDKit❗✔️: <IN_ATOM_STATE>Hs |
+        // RDKit❗✔️: <IN_ATOM_STATE>Mt |
+        // RDKit❗✔️: <IN_ATOM_STATE>Ds |
+        // RDKit❗✔️: <IN_ATOM_STATE>Rg |
+        // RDKit❗✔️: <IN_ATOM_STATE>Cn |
+        // RDKit❗✔️: <IN_ATOM_STATE>Uut |
+        // RDKit❗✔️: <IN_ATOM_STATE>Fl |
+        // RDKit❗✔️: <IN_ATOM_STATE>Uup |
+        // RDKit❗✔️: <IN_ATOM_STATE>Lv	{   yylval->atom = new QueryAtom( PeriodicTable::getTable()->getAtomicNumber( yytext ) );
+        // RDKit❗✔️: 				return ATOM_TOKEN;
+        // RDKit❗✔️: 			}
+        // RDKit❗✔️: <IN_ATOM_STATE>D {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomExplicitDegreeQuery(1));
+        // RDKit❗✔️: 	return COMPLEX_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: <IN_ATOM_STATE>d {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomNonHydrogenDegreeQuery(1));
+        // RDKit❗✔️: 	return COMPLEX_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>X {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomTotalDegreeQuery(1));
+        // RDKit❗✔️: 	return COMPLEX_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>x {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHasRingBondQuery());
+        // RDKit❗✔️: 	return RINGBOND_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>v {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomTotalValenceQuery(1));
+        // RDKit❗✔️: 	return COMPLEX_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>z {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHasHeteroatomNbrsQuery());
+        // RDKit❗✔️: 	return HETERONEIGHBOR_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>Z {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHasAliphaticHeteroatomNbrsQuery());
+        // RDKit❗✔️: 	return ALIPHATICHETERONEIGHBOR_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>h {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️:         yylval->atom->setQuery(makeAtomHasImplicitHQuery());
+        // RDKit❗✔️: 	return IMPLICIT_H_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>R {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(new AtomRingQuery(-1));
+        // RDKit❗✔️: 	return COMPLEX_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>r {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomInRingQuery());
+        // RDKit❗✔️: 	return MIN_RINGSIZE_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>k {
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomInRingQuery());
+        // RDKit❗✔️: 	return RINGSIZE_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: H			{  return H_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️: B			{  yylval->ival = 5;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: C			{  yylval->ival = 6;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: N			{  yylval->ival = 7;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: O			{  yylval->ival = 8;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: F			{  yylval->ival = 9;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: P			{  yylval->ival = 15;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: S			{  yylval->ival = 16;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: Cl			{  yylval->ival = 17;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: Br			{  yylval->ival = 35;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: I			{  yylval->ival = 53;  return ORGANIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️: b			{  yylval->ival = 5;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: c			{  yylval->ival = 6;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: n			{  yylval->ival = 7;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: o			{  yylval->ival = 8;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: p			{  yylval->ival = 15;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: s			{  yylval->ival = 16;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>si	{  yylval->ival = 14;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>as	{  yylval->ival = 33;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>se	{  yylval->ival = 34;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>te	{  yylval->ival = 52;  return AROMATIC_ATOM_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️: \*			{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomNullQuery());
+        // RDKit❗✔️: 	return SIMPLE_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: a			{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomAromaticQuery());
+        // RDKit❗✔️: 	yylval->atom->setIsAromatic(true);
+        // RDKit❗✔️: 	return SIMPLE_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: A			{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomAliphaticQuery());
+        // RDKit❗✔️: 	return SIMPLE_ATOM_QUERY_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️: \: 			{ return COLON_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \_ 			{ return UNDERSCORE_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \#			{ return HASH_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \=	{ yylval->bond = new QueryBond(Bond::DOUBLE);
+        // RDKit❗✔️: 	yylval->bond->setQuery(makeBondOrderEqualsQuery(Bond::DOUBLE));
+        // RDKit❗✔️: 	return BOND_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \~	{ yylval->bond = new QueryBond();
+        // RDKit❗✔️: 	yylval->bond->setQuery(makeBondNullQuery());
+        // RDKit❗✔️: 	return BOND_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \$	{ yylval->bond = new QueryBond(Bond::QUADRUPLE);
+        // RDKit❗✔️: 	yylval->bond->setQuery(makeBondOrderEqualsQuery(Bond::QUADRUPLE));
+        // RDKit❗✔️:     return BOND_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: [\\]{1,2}    { yylval->bond = new QueryBond(Bond::SINGLE);
+        // RDKit❗✔️: 	yylval->bond->setBondDir(Bond::ENDDOWNRIGHT);
+        // RDKit❗✔️: 	yylval->bond->setQuery(makeSingleOrAromaticBondQuery());
+        // RDKit❗✔️: 	return BOND_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: [\/]    { yylval->bond = new QueryBond(Bond::SINGLE);
+        // RDKit❗✔️: 	yylval->bond->setBondDir(Bond::ENDUPRIGHT);
+        // RDKit❗✔️: 	yylval->bond->setQuery(makeSingleOrAromaticBondQuery());
+        // RDKit❗✔️: 	return BOND_TOKEN;  }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \-\> {
+        // RDKit❗✔️:     yylval->bond = new QueryBond(Bond::DATIVER);
+        // RDKit❗✔️:     return BOND_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: \<\- {
+        // RDKit❗✔️:     yylval->bond = new QueryBond(Bond::DATIVEL);
+        // RDKit❗✔️:     return BOND_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \-			{ return MINUS_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \+			{ return PLUS_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: <IN_ATOM_STATE>\$\(              { yy_push_state(IN_RECURSION_STATE,yyscanner); return BEGIN_RECURSE; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \(       	{ yy_push_state(IN_BRANCH_STATE,yyscanner); return GROUP_OPEN_TOKEN; }
+        // RDKit❗✔️: <IN_BRANCH_STATE>\)       	{ yy_pop_state(yyscanner); return GROUP_CLOSE_TOKEN; }
+        // RDKit❗✔️: <IN_RECURSION_STATE>\)       	{ yy_pop_state(yyscanner); return END_RECURSE; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \{       	{ return RANGE_OPEN_TOKEN; }
+        // RDKit❗✔️: \}       	{ return RANGE_CLOSE_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️:
+        // RDKit❗✔️: \[			{ yy_push_state(IN_ATOM_STATE,yyscanner); return ATOM_OPEN_TOKEN; }
+        // RDKit❗✔️: <IN_ATOM_STATE>\]	{ yy_pop_state(yyscanner); return ATOM_CLOSE_TOKEN; }
+        // RDKit❗✔️: \]			{ /* FIX: ???
+        // RDKit❗✔️:                            This rule is here because otherwise recursive SMARTS queries like:
+        // RDKit❗✔️: 	                   [$(C(=O)[O,N])] lex improperly (no ATOM_CLOSE token is returned).
+        // RDKit❗✔️:  			   I am not 100% sure that the approach we're using here will work
+        // RDKit❗✔️:                            all the time, but I'm hoping that any problems caused here in
+        // RDKit❗✔️:                            the lexer will get caught in the parser.
+        // RDKit❗✔️: 			  */
+        // RDKit❗✔️:                           return ATOM_CLOSE_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \.       	{ return SEPARATOR_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \%              { return PERCENT_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: [0]		{ yylval->ival = 0;  return ZERO_TOKEN; }
+        // RDKit❗✔️: [1-9]		{ yylval->ival = yytext[0]-'0';  return NONZERO_DIGIT_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \!			{ return NOT_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \;			{ return SEMI_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \&			{ return AND_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \,			{ return OR_TOKEN; }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \^0		{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHybridizationQuery(Atom::S));
+        // RDKit❗✔️: 	return HYB_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \^1		{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHybridizationQuery(Atom::SP));
+        // RDKit❗✔️: 	return HYB_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \^2		{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHybridizationQuery(Atom::SP2));
+        // RDKit❗✔️: 	return HYB_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️:
+        // RDKit❗✔️: \^3		{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHybridizationQuery(Atom::SP3));
+        // RDKit❗✔️: 	return HYB_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: \^4		{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHybridizationQuery(Atom::SP3D));
+        // RDKit❗✔️: 	return HYB_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: \^5		{
+        // RDKit❗✔️: 	yylval->atom = new QueryAtom();
+        // RDKit❗✔️: 	yylval->atom->setQuery(makeAtomHybridizationQuery(Atom::SP3D2));
+        // RDKit❗✔️: 	return HYB_TOKEN;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: \n		return EOS_TOKEN;
+        // RDKit❗✔️:
+        // RDKit❗✔️: <<EOF>>		{ return EOS_TOKEN; }
+        // RDKit❗✔️: .		return BAD_CHARACTER;
+        // RDKit❗✔️:
+        // RDKit❗✔️: %%
+        // END COMPLETE PINNED SMARTS FLEX RULES
+
         let mut tokens = vec![ScannedToken {
             token: ScannerToken::Start(self.start),
             span: self.source_span(self.pos, self.pos),
@@ -3640,10 +4434,10 @@ impl SmartsScanner {
 
         while self.pos < self.scan_end {
             let state = self.state();
-            let ch = self.chars[self.pos];
+            let ch = self.bytes[self.pos];
 
             // RDKit❗✔️: \n		return EOS_TOKEN;
-            if ch == '\n' {
+            if ch == b'\n' {
                 tokens.push(self.emit(ScannerToken::EndOfStream, 1));
                 return Ok(tokens);
             }
@@ -3653,17 +4447,25 @@ impl SmartsScanner {
             // RDKit✔️✔️: @[' ']*SP { yylval->chiraltype = Atom::ChiralType::CHI_SQUAREPLANAR; return CHI_CLASS_TOKEN; }
             // RDKit✔️✔️: @[' ']*TB { yylval->chiraltype = Atom::ChiralType::CHI_TRIGONALBIPYRAMIDAL; return CHI_CLASS_TOKEN; }
             // RDKit✔️✔️: @[' ']*OH { yylval->chiraltype = Atom::ChiralType::CHI_OCTAHEDRAL; return CHI_CLASS_TOKEN; }
-            if ch == '@' {
+            if ch == b'@' {
                 let mut cursor = self.pos + 1;
-                while self.chars.get(cursor) == Some(&' ') {
+                while self.bytes.get(cursor) == Some(&b' ') {
                     cursor += 1;
                 }
-                if cursor + 1 < self.chars.len() {
-                    let class: String = self.chars[cursor..cursor + 2].iter().collect();
-                    if matches!(class.as_str(), "TH" | "AL" | "SP" | "TB" | "OH") {
-                        tokens.push(
-                            self.emit(ScannerToken::ChiralClass(class), cursor + 2 - self.pos),
-                        );
+                if cursor + 1 < self.scan_end {
+                    let class = match &self.bytes[cursor..cursor + 2] {
+                        b"TH" => "TH",
+                        b"AL" => "AL",
+                        b"SP" => "SP",
+                        b"TB" => "TB",
+                        b"OH" => "OH",
+                        _ => "",
+                    };
+                    if matches!(class, "TH" | "AL" | "SP" | "TB" | "OH") {
+                        tokens.push(self.emit(
+                            ScannerToken::ChiralClass(class.to_owned()),
+                            cursor + 2 - self.pos,
+                        ));
                         continue;
                     }
                 }
@@ -3674,8 +4476,8 @@ impl SmartsScanner {
 
             // RDKit✔️✔️: <IN_ATOM_STATE>\$\(              { yy_push_state(IN_RECURSION_STATE,yyscanner); return BEGIN_RECURSE; }
             if state == ScannerState::Atom
-                && ch == '$'
-                && self.chars.get(self.pos + 1) == Some(&'(')
+                && ch == b'$'
+                && self.bytes.get(self.pos + 1) == Some(&b'(')
             {
                 self.states.push(ScannerState::Recursion);
                 tokens.push(self.emit(ScannerToken::BeginRecurse, 2));
@@ -3685,12 +4487,12 @@ impl SmartsScanner {
             // RDKit✔️✔️: \(       	{ yy_push_state(IN_BRANCH_STATE,yyscanner); return GROUP_OPEN_TOKEN; }
             // RDKit✔️✔️: <IN_BRANCH_STATE>\)       	{ yy_pop_state(yyscanner); return GROUP_CLOSE_TOKEN; }
             // RDKit✔️✔️: <IN_RECURSION_STATE>\)       	{ yy_pop_state(yyscanner); return END_RECURSE; }
-            if ch == '(' {
+            if ch == b'(' {
                 self.states.push(ScannerState::Branch);
                 tokens.push(self.emit(ScannerToken::GroupOpen, 1));
                 continue;
             }
-            if ch == ')' {
+            if ch == b')' {
                 let token = match state {
                     ScannerState::Branch => {
                         self.states.pop();
@@ -3716,12 +4518,12 @@ impl SmartsScanner {
             // RDKit✔️✔️:                            the lexer will get caught in the parser.
             // RDKit✔️✔️: 			  */
             // RDKit✔️✔️:                           return ATOM_CLOSE_TOKEN; }
-            if ch == '[' {
+            if ch == b'[' {
                 self.states.push(ScannerState::Atom);
                 tokens.push(self.emit(ScannerToken::AtomOpen, 1));
                 continue;
             }
-            if ch == ']' {
+            if ch == b']' {
                 if state == ScannerState::Atom {
                     self.states.pop();
                 }
@@ -3766,11 +4568,10 @@ impl SmartsScanner {
     }
 
     fn scan_atom_token(&mut self) -> Result<Option<ScannedToken>, SmartsParseError> {
-        let ch = self.chars[self.pos];
-        // This scanner copies the remaining suffix at every token attempt.
-        // On token-heavy input that adds O(n^2) copied characters and
-        // allocations compared with Flex's incremental scan.
-        let rest: String = self.chars[self.pos..].iter().collect();
+        let ch = self.bytes[self.pos];
+        // Borrow the source byte suffix; literal matching has no suffix copy,
+        // text decoding, scalar index or token-attempt allocation.
+        let rest = &self.bytes[self.pos..self.scan_end];
 
         // RDKit✔️❌: <IN_ATOM_STATE>He |
         // RDKit✔️❌: <IN_ATOM_STATE>Li |
@@ -3883,10 +4684,10 @@ impl SmartsScanner {
         // Flex uses longest-match selection, so three-letter temporary element
         // names and then two-letter names are checked before one-letter names.
         for symbol in ELEMENT_SYMBOLS {
-            if rest.starts_with(symbol) {
+            if rest.starts_with(symbol.as_bytes()) {
                 return Ok(Some(self.emit(
                     ScannerToken::AtomElement((*symbol).to_string()),
-                    symbol.chars().count(),
+                    symbol.len(),
                 )));
             }
         }
@@ -3896,7 +4697,7 @@ impl SmartsScanner {
         // RDKit✔️❌: <IN_ATOM_STATE>se	{  yylval->ival = 34;  return AROMATIC_ATOM_TOKEN;  }
         // RDKit✔️❌: <IN_ATOM_STATE>te	{  yylval->ival = 52;  return AROMATIC_ATOM_TOKEN;  }
         for symbol in ["si", "as", "se", "te"] {
-            if rest.starts_with(symbol) {
+            if rest.starts_with(symbol.as_bytes()) {
                 return Ok(Some(
                     self.emit(ScannerToken::AromaticElement(symbol.to_string()), 2),
                 ));
@@ -3960,7 +4761,7 @@ impl SmartsScanner {
         // RDKit✔️❌: }
         if matches!(
             ch,
-            'D' | 'd' | 'X' | 'x' | 'v' | 'z' | 'Z' | 'h' | 'R' | 'r' | 'k'
+            b'D' | b'd' | b'X' | b'x' | b'v' | b'z' | b'Z' | b'h' | b'R' | b'r' | b'k'
         ) {
             return Ok(Some(self.emit(ScannerToken::AtomPrimitive(ch), 1)));
         }
@@ -3995,11 +4796,12 @@ impl SmartsScanner {
         // RDKit✔️❌: 	yylval->atom->setQuery(makeAtomHybridizationQuery(Atom::SP3D2));
         // RDKit✔️❌: 	return HYB_TOKEN;
         // RDKit✔️❌: }
-        if ch == '^' {
+        if ch == b'^' {
             if let Some(value) = self
-                .chars
+                .bytes
                 .get(self.pos + 1)
-                .and_then(|digit| digit.to_digit(10))
+                .filter(|digit| digit.is_ascii_digit())
+                .map(|digit| u32::from(*digit - b'0'))
                 .filter(|value| *value <= 5)
             {
                 return Ok(Some(self.emit(ScannerToken::Hybridization(value as u8), 2)));
@@ -4009,11 +4811,10 @@ impl SmartsScanner {
     }
 
     fn scan_common_token(&mut self) -> Result<Option<ScannedToken>, SmartsParseError> {
-        let ch = self.chars[self.pos];
-        // This scanner copies the remaining suffix at every token attempt.
-        // On token-heavy input that adds O(n^2) copied characters and
-        // allocations compared with Flex's incremental scan.
-        let rest: String = self.chars[self.pos..].iter().collect();
+        let ch = self.bytes[self.pos];
+        // Borrow the source byte suffix; literal matching has no suffix copy,
+        // text decoding, scalar index or token-attempt allocation.
+        let rest = &self.bytes[self.pos..self.scan_end];
 
         // RDKit✔️❌: B			{  yylval->ival = 5;  return ORGANIC_ATOM_TOKEN;  }
         // RDKit✔️❌: C			{  yylval->ival = 6;  return ORGANIC_ATOM_TOKEN;  }
@@ -4026,10 +4827,10 @@ impl SmartsScanner {
         // RDKit✔️❌: Br			{  yylval->ival = 35;  return ORGANIC_ATOM_TOKEN;  }
         // RDKit✔️❌: I			{  yylval->ival = 53;  return ORGANIC_ATOM_TOKEN;  }
         for symbol in ["Cl", "Br", "B", "C", "N", "O", "F", "P", "S", "I"] {
-            if rest.starts_with(symbol) {
+            if rest.starts_with(symbol.as_bytes()) {
                 return Ok(Some(self.emit(
                     ScannerToken::OrganicElement(symbol.to_string()),
-                    symbol.chars().count(),
+                    symbol.len(),
                 )));
             }
         }
@@ -4039,18 +4840,32 @@ impl SmartsScanner {
         // RDKit✔️❌: o			{  yylval->ival = 8;  return AROMATIC_ATOM_TOKEN;  }
         // RDKit✔️❌: p			{  yylval->ival = 15;  return AROMATIC_ATOM_TOKEN;  }
         // RDKit✔️❌: s			{  yylval->ival = 16;  return AROMATIC_ATOM_TOKEN;  }
-        if matches!(ch, 'b' | 'c' | 'n' | 'o' | 'p' | 's') {
+        if matches!(ch, b'b' | b'c' | b'n' | b'o' | b'p' | b's') {
             return Ok(Some(
-                self.emit(ScannerToken::AromaticElement(ch.to_string()), 1),
+                self.emit(
+                    ScannerToken::AromaticElement(
+                        match ch {
+                            b'b' => "b",
+                            b'c' => "c",
+                            b'n' => "n",
+                            b'o' => "o",
+                            b'p' => "p",
+                            b's' => "s",
+                            _ => unreachable!("matched aromatic lexer literal"),
+                        }
+                        .to_owned(),
+                    ),
+                    1,
+                ),
             ));
         }
         // Preserve the simple-query token kind; parse_simple_atom constructs its value.
-        if ch == '*' || ch == 'A' || ch == 'a' {
+        if ch == b'*' || ch == b'A' || ch == b'a' {
             return Ok(Some(self.emit(ScannerToken::SimpleAtomQuery(ch), 1)));
         }
         // RDKit✔️❌: H			{  return H_TOKEN;  }
-        if ch == 'H' {
-            return Ok(Some(self.emit(ScannerToken::AtomPrimitive('H'), 1)));
+        if ch == b'H' {
+            return Ok(Some(self.emit(ScannerToken::AtomPrimitive(b'H'), 1)));
         }
 
         // RDKit✔️❌: \: 			{ return COLON_TOKEN; }
@@ -4058,14 +4873,14 @@ impl SmartsScanner {
         // RDKit✔️❌: \#			{ return HASH_TOKEN; }
         // Bond query and carrier construction is anchored in parsed_bond_spec;
         // direction transport is handled by current_bond_direction.
-        if rest.starts_with("->") {
+        if rest.starts_with(b"->") {
             return Ok(Some(self.emit(ScannerToken::DativeRight, 2)));
         }
-        if rest.starts_with("<-") {
+        if rest.starts_with(b"<-") {
             return Ok(Some(self.emit(ScannerToken::DativeLeft, 2)));
         }
-        if matches!(ch, '=' | '~' | '$' | '/' | '\\') {
-            let width = if ch == '\\' && self.chars.get(self.pos + 1) == Some(&'\\') {
+        if matches!(ch, b'=' | b'~' | b'$' | b'/' | b'\\') {
+            let width = if ch == b'\\' && self.bytes.get(self.pos + 1) == Some(&b'\\') {
                 2
             } else {
                 1
@@ -4089,20 +4904,20 @@ impl SmartsScanner {
         // RDKit✔️❌: \&			{ return AND_TOKEN; }
         // RDKit✔️❌: \,			{ return OR_TOKEN; }
         let token = match ch {
-            ':' => ScannerToken::Colon,
-            '_' => ScannerToken::Underscore,
-            '#' => ScannerToken::Hash,
-            '-' => ScannerToken::Minus,
-            '+' => ScannerToken::Plus,
-            '{' => ScannerToken::RangeOpen,
-            '}' => ScannerToken::RangeClose,
-            '.' => ScannerToken::Separator,
-            '%' => ScannerToken::Percent,
-            '0'..='9' => ScannerToken::Digit(ch.to_digit(10).expect("ASCII digit") as u8),
-            '!' => ScannerToken::Not,
-            ';' => ScannerToken::Semi,
-            '&' => ScannerToken::And,
-            ',' => ScannerToken::Or,
+            b':' => ScannerToken::Colon,
+            b'_' => ScannerToken::Underscore,
+            b'#' => ScannerToken::Hash,
+            b'-' => ScannerToken::Minus,
+            b'+' => ScannerToken::Plus,
+            b'{' => ScannerToken::RangeOpen,
+            b'}' => ScannerToken::RangeClose,
+            b'.' => ScannerToken::Separator,
+            b'%' => ScannerToken::Percent,
+            b'0'..=b'9' => ScannerToken::Digit(ch - b'0'),
+            b'!' => ScannerToken::Not,
+            b';' => ScannerToken::Semi,
+            b'&' => ScannerToken::And,
+            b',' => ScannerToken::Or,
             _ => return Ok(None),
         };
         Ok(Some(self.emit(token, 1)))
@@ -4127,6 +4942,7 @@ const ELEMENT_SYMBOLS: &[&str] = &[
 /// adds O(n) usize storage beyond the source scanner. Fixed element-rule
 /// lookup has constant size, and compacted token ranges are not rescanned.
 fn tokenize(input: impl AsRef<[u8]>) -> Result<Vec<(Token, SmartsTokenSpan)>, SmartsParseError> {
+    let input = input.as_ref();
     generic_parse_helper(input, ScannerStart::Molecule)
 }
 
@@ -4134,6 +4950,7 @@ fn generic_parse_helper(
     input: impl AsRef<[u8]>,
     start: ScannerStart,
 ) -> Result<Vec<(Token, SmartsTokenSpan)>, SmartsParseError> {
+    let input = input.as_ref();
     // RDKit❗❌: int generic_parse_helper(T parser,
     // RDKit❗❌:                          const std::string &inp,
     // RDKit❗❌:                          std::vector<RDKit::RWMol *> &molVect,
@@ -4159,7 +4976,7 @@ fn generic_parse_helper(
 }
 
 fn compact_scanned_tokens(
-    input: impl AsRef<[u8]>,
+    input: &[u8],
     scanned: &[ScannedToken],
 ) -> Result<Vec<(Token, SmartsTokenSpan)>, SmartsParseError> {
     // RDKit❗❌:     res = parser(inp.c_str() + ltrim, &molVect, atom, bond,
@@ -4169,8 +4986,7 @@ fn compact_scanned_tokens(
     // also collects an O(n) character vector for safe bracket slices;
     // RDKit consumes its scanner buffer directly. The byte boundary
     // map prevents repeated prefix scans but adds another O(n) vector.
-    let input = input.as_ref();
-    let chars: Vec<char> = input.iter().copied().map(char::from).collect();
+    let chars = input;
     let mut tokens = Vec::new();
     let mut i = 1usize;
     while i < scanned.len() {
@@ -4212,8 +5028,7 @@ fn compact_scanned_tokens(
                         let bad_character = &scanned[bad_index];
                         let content_char_end = bad_character.span.input_char_start;
                         if content_char_start < content_char_end {
-                            let content: String =
-                                chars[content_char_start..content_char_end].iter().collect();
+                            let content = &chars[content_char_start..content_char_end];
                             let lexical_tokens = scanned[i + 1..bad_index]
                                 .iter()
                                 .filter(|token| {
@@ -4251,7 +5066,7 @@ fn compact_scanned_tokens(
                             };
                             tokens.push((
                                 Token::BracketContent(BracketContent {
-                                    text: content,
+                                    text: content.to_vec(),
                                     span: content_span,
                                     lexical_tokens,
                                 }),
@@ -4270,7 +5085,7 @@ fn compact_scanned_tokens(
                 }
                 let close = &scanned[cursor - 1];
                 let content_char_end = close.span.input_char_start;
-                let content: String = chars[content_char_start..content_char_end].iter().collect();
+                let content = &chars[content_char_start..content_char_end];
                 let lexical_tokens = scanned[i + 1..cursor - 1]
                     .iter()
                     .filter(|token| {
@@ -4304,7 +5119,7 @@ fn compact_scanned_tokens(
                 };
                 tokens.push((
                     Token::BracketContent(BracketContent {
-                        text: content,
+                        text: content.to_vec(),
                         span: content_span,
                         lexical_tokens,
                     }),
@@ -4323,16 +5138,16 @@ fn compact_scanned_tokens(
                 tokens.push((Token::BondSpec(BondLexeme::DativeLeft), current.span));
             }
             ScannerToken::At => {
-                tokens.push((Token::BondSpec(BondLexeme::Symbol('@')), current.span))
+                tokens.push((Token::BondSpec(BondLexeme::Symbol(b'@')), current.span))
             }
             ScannerToken::Colon => {
-                tokens.push((Token::BondSpec(BondLexeme::Symbol(':')), current.span))
+                tokens.push((Token::BondSpec(BondLexeme::Symbol(b':')), current.span))
             }
             ScannerToken::Hash => {
-                tokens.push((Token::BondSpec(BondLexeme::Symbol('#')), current.span))
+                tokens.push((Token::BondSpec(BondLexeme::Symbol(b'#')), current.span))
             }
             ScannerToken::Minus => {
-                tokens.push((Token::BondSpec(BondLexeme::Symbol('-')), current.span))
+                tokens.push((Token::BondSpec(BondLexeme::Symbol(b'-')), current.span))
             }
             ScannerToken::GroupOpen => tokens.push((Token::OpenParen, current.span)),
             ScannerToken::GroupClose => tokens.push((Token::CloseParen, current.span)),
@@ -4368,7 +5183,7 @@ fn compact_scanned_tokens(
                     character: chars
                         .get(current.span.input_char_start)
                         .copied()
-                        .unwrap_or('?'),
+                        .expect("non-EOS scanner token owns a source byte"),
                     context: format!("unexpected {token:?} token in molecule SMARTS"),
                 });
             }
@@ -4379,7 +5194,7 @@ fn compact_scanned_tokens(
 }
 
 fn invalid_percent(
-    chars: &[char],
+    chars: &[u8],
     scanned: &[ScannedToken],
     unexpected_index: usize,
 ) -> SmartsParseError {
@@ -4408,7 +5223,7 @@ fn invalid_percent(
 }
 
 fn compact_ring_number(
-    chars: &[char],
+    chars: &[u8],
     scanned: &[ScannedToken],
     percent_index: usize,
 ) -> Result<(u32, usize), SmartsParseError> {
@@ -4466,7 +5281,7 @@ fn compact_ring_number(
     Ok((value, consumed))
 }
 
-fn invalid_atom_operator(position: usize, operator: char) -> SmartsParseError {
+fn invalid_atom_operator(position: usize, operator: u8) -> SmartsParseError {
     SmartsParseError::InvalidAtomPrimitive {
         position,
         detail: format!("operator '{operator}' has no left operand"),
@@ -4746,8 +5561,8 @@ impl ParsedAtomExpr {
     }
 }
 
-fn split_atom_map_suffix(content: &str) -> Result<(&str, Option<u32>), SmartsParseError> {
-    let bytes = content.as_bytes();
+fn split_atom_map_suffix(content: &[u8]) -> Result<(&[u8], Option<u32>), SmartsParseError> {
+    let bytes = content;
     let mut digit_start = bytes.len();
     while digit_start > 0 && bytes[digit_start - 1].is_ascii_digit() {
         digit_start -= 1;
@@ -4756,17 +5571,23 @@ fn split_atom_map_suffix(content: &str) -> Result<(&str, Option<u32>), SmartsPar
         return Ok((content, None));
     }
     let colon = digit_start - 1;
-    let atom_map = content[digit_start..].parse::<u32>().map_err(|_| {
-        SmartsParseError::InvalidAtomPrimitive {
+    let atom_map = content[digit_start..]
+        .iter()
+        .try_fold(0_u32, |value, digit| {
+            value
+                .checked_mul(10)
+                .and_then(|value| value.checked_add(u32::from(*digit - b'0')))
+                .ok_or(())
+        })
+        .map_err(|_| SmartsParseError::InvalidAtomPrimitive {
             position: digit_start,
             detail: "atom map number is out of range".to_string(),
-        }
-    })?;
+        })?;
     Ok((&content[..colon], Some(atom_map)))
 }
 
 impl<'a> SmartsParser<'a> {
-    fn new(tokens: &'a [(Token, SmartsTokenSpan)], input: &'a (impl AsRef<[u8]> + ?Sized)) -> Self {
+    fn new(tokens: &'a [(Token, SmartsTokenSpan)], input: &'a [u8]) -> Self {
         Self {
             tokens,
             input: input.as_ref(),
@@ -4811,7 +5632,7 @@ impl<'a> SmartsParser<'a> {
         self.tokens[self.pos].1.parser_byte_end
     }
 
-    fn bad_character_error(span: SmartsTokenSpan, character: char) -> SmartsParseError {
+    fn bad_character_error(span: SmartsTokenSpan, character: u8) -> SmartsParseError {
         // RDKit❗✔️: | meta_start BAD_CHARACTER {
         // RDKit❗✔️:   yyerrok;
         // RDKit❗✔️:   yyErrorCleanup(molList);
@@ -4825,6 +5646,39 @@ impl<'a> SmartsParser<'a> {
         }
     }
 
+    fn unexpected_token_error(&self, span: SmartsTokenSpan, context: &str) -> SmartsParseError {
+        // RDKit❗✔️: void
+        // RDKit❗✔️: yysmarts_error( const char *input,
+        // RDKit❗✔️:                 std::vector<RDKit::RWMol *> *ms,
+        // RDKit❗✔️:                 RDKit::Atom* &,
+        // RDKit❗✔️:                 RDKit::Bond* &,
+        // RDKit❗✔️:                 unsigned int &,
+        // RDKit❗✔️:                 unsigned int &,
+        // RDKit❗✔️:                 std::vector<std::pair<unsigned int, unsigned int>>&,
+        // RDKit❗✔️:                 void *,
+        // RDKit❗✔️:                 int,
+        // RDKit❗✔️:                 unsigned int bad_token_position,
+        // RDKit❗✔️:                 const char *msg  )
+        // RDKit❗✔️: {
+        // RDKit❗✔️:   yyErrorCleanup(ms);
+        // RDKit❗✔️:   SmilesParseOps::detail::printSyntaxErrorMessage(input,
+        // RDKit❗✔️:                                                   msg,
+        // RDKit❗✔️:                                                   bad_token_position,
+        // RDKit❗✔️:                                                   "SMARTS");
+        // RDKit❗✔️: }
+        // A typed diagnostic preserves EOS absence separately from the exact
+        // token byte. It never substitutes Debug/Display text or a default byte.
+        if matches!(self.peek().0, Token::EndOfStream) {
+            SmartsParseError::UnexpectedEnd(context.to_owned())
+        } else {
+            SmartsParseError::UnexpectedCharacter {
+                position: span.parser_byte_end,
+                character: self.input[span.input_char_start],
+                context: context.to_owned(),
+            }
+        }
+    }
+
     fn require_end(&self, context: &str) -> Result<(), SmartsParseError> {
         // RDKit❗✔️:   yyerror(input, molList, current_token_position, "syntax error");
         match self.peek() {
@@ -4832,14 +5686,9 @@ impl<'a> SmartsParser<'a> {
             (Token::BadCharacter(character), span) => {
                 Err(Self::bad_character_error(*span, *character))
             }
-            (token, span) => Err(SmartsParseError::UnexpectedCharacter {
+            (_token, span) => Err(SmartsParseError::UnexpectedCharacter {
                 position: span.parser_byte_end,
-                character: self
-                    .input
-                    .get(span.input_char_start)
-                    .copied()
-                    .map(char::from)
-                    .unwrap_or_else(|| format!("{token:?}").chars().next().unwrap_or('?')),
+                character: self.input[span.input_char_start],
                 context: format!("unexpected trailing token in {context}"),
             }),
         }
@@ -5123,11 +5972,10 @@ impl<'a> SmartsParser<'a> {
                                     _
                                 )
                             ) {
-                                return Err(SmartsParseError::UnexpectedCharacter {
-                                    position: self.source_error_position(),
-                                    character: '?',
-                                    context: "expected atom expression".to_string(),
-                                });
+                                return Err(self.unexpected_token_error(
+                                    self.peek().1,
+                                    "expected atom expression",
+                                ));
                             }
                             // RDKit✔️✔️:   branchPoints.push_back({atomIdx1, $2});
                             // RDKit✔️✔️: | mol GROUP_CLOSE_TOKEN {
@@ -5138,16 +5986,12 @@ impl<'a> SmartsParser<'a> {
                                 (Token::CloseParen, _) => {
                                     self.advance();
                                 }
-                                (tok, pos) => {
+                                (_tok, pos) => {
                                     // RDKit❗✔️:   yyerror(input, molList, current_token_position, "syntax error");
-                                    return Err(SmartsParseError::UnexpectedCharacter {
-                                        position: pos.parser_byte_end,
-                                        character: format!("{:?}", tok)
-                                            .chars()
-                                            .next()
-                                            .unwrap_or('?'),
-                                        context: "expected close parenthesis".to_string(),
-                                    });
+                                    return Err(self.unexpected_token_error(
+                                        *pos,
+                                        "expected close parenthesis",
+                                    ));
                                 }
                             }
                         }
@@ -5525,8 +6369,8 @@ impl<'a> SmartsParser<'a> {
         self.tokens[self.pos..]
             .iter()
             .find_map(|(token, _)| match token {
-                Token::BondSpec(BondLexeme::Symbol('/')) => Some(BondDirection::EndUpRight),
-                Token::BondSpec(BondLexeme::Symbol('\\')) => Some(BondDirection::EndDownRight),
+                Token::BondSpec(BondLexeme::Symbol(b'/')) => Some(BondDirection::EndUpRight),
+                Token::BondSpec(BondLexeme::Symbol(b'\\')) => Some(BondDirection::EndDownRight),
                 Token::BondSpec(_) => Some(BondDirection::None),
                 Token::Not => None,
                 _ => Some(BondDirection::None),
@@ -5558,18 +6402,18 @@ impl<'a> SmartsParser<'a> {
                 let atom = parse_simple_atom(&name).ok_or_else(|| {
                     SmartsParseError::InvalidAtomPrimitive {
                         position: self.input_character_position(),
-                        detail: format!("invalid simple atom '{name}'"),
+                        detail: format!("invalid simple atom {name:?}"),
                     }
                 })?;
                 self.advance();
                 Ok(atom.into_parsed_atom(None))
             }
             Token::SimpleAtomQuery(name) => {
-                let name = name.to_string();
+                let name = [name];
                 let atom = parse_simple_atom(&name).ok_or_else(|| {
                     SmartsParseError::InvalidAtomPrimitive {
                         position: self.input_character_position(),
-                        detail: format!("invalid simple atom query '{name}'"),
+                        detail: format!("invalid simple atom query {name:?}"),
                     }
                 })?;
                 self.advance();
@@ -5585,12 +6429,7 @@ impl<'a> SmartsParser<'a> {
             Token::BadCharacter(character) => Err(Self::bad_character_error(pos, character)),
             _ => {
                 // RDKit❗✔️:   yyerror(input, molList, current_token_position, "syntax error");
-                let pos = self.source_error_position();
-                Err(SmartsParseError::UnexpectedCharacter {
-                    position: pos,
-                    character: '?',
-                    context: "expected atom expression".to_string(),
-                })
+                Err(self.unexpected_token_error(self.peek().1, "expected atom expression"))
             }
         }
     }
@@ -5608,7 +6447,7 @@ impl<'a> SmartsParser<'a> {
         // predicate. Local complexity review: content is scanned once in
         // O(n), while query nodes and common carrier state move in source order.
         let (content_text, atom_map) = split_atom_map_suffix(&content.text)?;
-        let chars: Vec<char> = content_text.chars().collect();
+        let chars = content_text;
         let len = chars.len();
         if len == 0 {
             return Err(SmartsParseError::InvalidAtomPrimitive {
@@ -5662,7 +6501,7 @@ impl<'a> SmartsParser<'a> {
             let ch = chars[i];
 
             // Handle logical OR (comma)
-            if ch == ',' {
+            if ch == b',' {
                 if needs_operand {
                     return Err(invalid_atom_operator(i, ch));
                 }
@@ -5673,7 +6512,7 @@ impl<'a> SmartsParser<'a> {
             }
 
             // Handle logical AND (ampersand)
-            if ch == '&' {
+            if ch == b'&' {
                 if needs_operand {
                     return Err(invalid_atom_operator(i, ch));
                 }
@@ -5683,7 +6522,7 @@ impl<'a> SmartsParser<'a> {
             }
 
             // Handle semicolon (AND)
-            if ch == ';' {
+            if ch == b';' {
                 if needs_operand {
                     return Err(invalid_atom_operator(i, ch));
                 }
@@ -5731,7 +6570,7 @@ impl<'a> SmartsParser<'a> {
 
     fn parse_point_query(
         &self,
-        chars: &[char],
+        chars: &[u8],
         start: usize,
         len: usize,
         lexical_tokens: &[ScannedToken],
@@ -5760,7 +6599,7 @@ impl<'a> SmartsParser<'a> {
         }
         let mut negation_count = 0usize;
         let mut negate = false;
-        while chars.get(pos) == Some(&'!') {
+        while chars.get(pos) == Some(&b'!') {
             negation_count += 1;
             negate = !negate;
             pos += 1;
@@ -5807,7 +6646,7 @@ impl<'a> SmartsParser<'a> {
 
     fn apply_source_atom_carrier(
         &self,
-        chars: &[char],
+        chars: &[u8],
         start: usize,
         end: usize,
         lexical_token: Option<&ScannedToken>,
@@ -5882,7 +6721,7 @@ impl<'a> SmartsParser<'a> {
         }
         if let Some(lexical_token) = lexical_token {
             match &lexical_token.token {
-                ScannerToken::SimpleAtomQuery('a') => {
+                ScannerToken::SimpleAtomQuery(b'a') => {
                     atom.carrier.set_aromatic(true);
                     return Ok(atom);
                 }
@@ -5905,7 +6744,7 @@ impl<'a> SmartsParser<'a> {
             }
         }
         let ch = chars[start];
-        if ch == '@' {
+        if ch == b'@' {
             // RDKit❗✔️: | AT_TOKEN AT_TOKEN {
             // RDKit❗✔️:   QueryAtom *newQ = new QueryAtom();
             // RDKit❗✔️:   newQ->setQuery(makeAtomNullQuery());
@@ -5977,7 +6816,7 @@ impl<'a> SmartsParser<'a> {
             }
             return Ok(atom);
         }
-        if ch == '#' {
+        if ch == b'#' {
             let (number, _) = self.parse_number(chars, start + 1, end)?;
             atom = set_atom_carrier_identity(atom, number, false, start)?;
             return Ok(atom);
@@ -5992,8 +6831,8 @@ impl<'a> SmartsParser<'a> {
         // These full element tokens win by length before the single H token.
         // Check only the bounded two-character candidate, then retain the H
         // count carrier action below when that candidate is not an element.
-        if ch == 'H' && start + 2 <= end {
-            let name = chars[start..start + 2].iter().collect::<String>();
+        if ch == b'H' && start + 2 <= end {
+            let name = &chars[start..start + 2];
             if let Some(simple) = parse_atom_token(&name) {
                 atom = set_atom_carrier_identity(
                     atom,
@@ -6004,7 +6843,7 @@ impl<'a> SmartsParser<'a> {
                 return Ok(atom);
             }
         }
-        if matches!(ch, '+' | '-') {
+        if matches!(ch, b'+' | b'-') {
             if let Some((charge, _)) = self.parse_charge_spec(chars, start, end)? {
                 // RDKit's `setFormalCharge(int)` writes into its signed
                 // `int8_t` carrier while the query leaf retains the `int`.
@@ -6014,7 +6853,7 @@ impl<'a> SmartsParser<'a> {
             }
             return Ok(atom);
         }
-        if ch == 'H' {
+        if ch == b'H' {
             let (count, consumed) = self.parse_optional_number(chars, start + 1, end)?;
             let count = if consumed == start + 1 {
                 1
@@ -6034,7 +6873,7 @@ impl<'a> SmartsParser<'a> {
             // uint16_t carrier; this carrier projection is independent of the
             // full signed-int predicate target constructed by the parser.
             let isotope = number as u16;
-            if chars.get(consumed) == Some(&'H') {
+            if chars.get(consumed) == Some(&b'H') {
                 let (count, count_end) = self.parse_optional_number(chars, consumed + 1, end)?;
                 let count = if count_end == consumed + 1 {
                     1
@@ -6049,7 +6888,7 @@ impl<'a> SmartsParser<'a> {
                 atom.hydrogen_mask = true;
                 return Ok(atom);
             }
-            if chars.get(consumed) == Some(&'#') {
+            if chars.get(consumed) == Some(&b'#') {
                 let (atomic_number, _) = self.parse_number(chars, consumed + 1, end)?;
                 atom = set_atom_carrier_identity(atom, atomic_number, false, consumed + 1)?;
                 atom.carrier.set_isotope(Some(isotope));
@@ -6058,13 +6897,13 @@ impl<'a> SmartsParser<'a> {
             let symbol_start = consumed;
             if symbol_start < end {
                 let mut symbol_end = symbol_start + 1;
-                if chars.get(symbol_end).is_some_and(char::is_ascii_lowercase) {
-                    let name = chars[symbol_start..=symbol_end].iter().collect::<String>();
+                if chars.get(symbol_end).is_some_and(u8::is_ascii_lowercase) {
+                    let name = &chars[symbol_start..=symbol_end];
                     if parse_atom_token(&name).is_some() {
                         symbol_end += 1;
                     }
                 }
-                let name = chars[symbol_start..symbol_end].iter().collect::<String>();
+                let name = &chars[symbol_start..symbol_end];
                 if let Some(simple) = parse_atom_token(&name) {
                     atom = set_atom_carrier_identity(
                         atom,
@@ -6078,23 +6917,23 @@ impl<'a> SmartsParser<'a> {
             return Ok(atom);
         }
 
-        if ch.is_ascii_uppercase() && ch != 'H' {
+        if ch.is_ascii_uppercase() && ch != b'H' {
             let mut symbol_end = start + 1;
             if start + 3 <= end {
-                let name = chars[start..start + 3].iter().collect::<String>();
+                let name = &chars[start..start + 3];
                 if parse_atom_token(&name).is_some() {
                     symbol_end = start + 3;
                 }
             }
-            if chars.get(symbol_end).is_some_and(char::is_ascii_lowercase) {
+            if chars.get(symbol_end).is_some_and(u8::is_ascii_lowercase) {
                 if symbol_end == start + 1 {
-                    let name = chars[start..=symbol_end].iter().collect::<String>();
+                    let name = &chars[start..=symbol_end];
                     if parse_atom_token(&name).is_some() {
                         symbol_end += 1;
                     }
                 }
             }
-            let name = chars[start..symbol_end].iter().collect::<String>();
+            let name = &chars[start..symbol_end];
             if let Some(simple) = parse_atom_token(&name) {
                 atom = set_atom_carrier_identity(
                     atom,
@@ -6110,7 +6949,7 @@ impl<'a> SmartsParser<'a> {
 
     fn try_parse_hydrogen_atom(
         &self,
-        chars: &[char],
+        chars: &[u8],
         len: usize,
     ) -> Result<Option<ParsedAtomExpr>, SmartsParseError> {
         // RDKit✔️✔️: hydrogen_atom:	ATOM_OPEN_TOKEN H_TOKEN ATOM_CLOSE_TOKEN
@@ -6191,7 +7030,7 @@ impl<'a> SmartsParser<'a> {
             );
             pos = consumed;
         }
-        if pos >= len || chars[pos] != 'H' {
+        if pos >= len || chars[pos] != b'H' {
             return Ok(None);
         }
         pos += 1;
@@ -6200,7 +7039,7 @@ impl<'a> SmartsParser<'a> {
         }
 
         let mut formal_charge = None;
-        if pos < len && matches!(chars[pos], '+' | '-') {
+        if pos < len && matches!(chars[pos], b'+' | b'-') {
             let Some((charge, consumed)) = self.parse_charge_spec(chars, pos, len)? else {
                 return Ok(None);
             };
@@ -6246,7 +7085,7 @@ impl<'a> SmartsParser<'a> {
     /// Grammar anchors below identify the source productions represented here.
     fn parse_atom_primitive(
         &self,
-        chars: &[char],
+        chars: &[u8],
         i: usize,
         len: usize,
         lexical_token: Option<&ScannedToken>,
@@ -6322,7 +7161,7 @@ impl<'a> SmartsParser<'a> {
 
         if let Some(lexical_token) = lexical_token {
             match &lexical_token.token {
-                ScannerToken::SimpleAtomQuery('a') => {
+                ScannerToken::SimpleAtomQuery(b'a') => {
                     let atom = parse_simple_atom("a").expect("generic aromatic query token");
                     return Ok((atom.query, lexical_token.span.input_char_end));
                 }
@@ -6345,7 +7184,7 @@ impl<'a> SmartsParser<'a> {
         // RDKit❗✔️:   return makeAtomSimpleQuery<ATOM_EQUALS_QUERY>(what, queryAtomNum,
         // RDKit❗✔️:                                                 "AtomAtomicNum");
         // RDKit❗✔️: }
-        if ch == '#' {
+        if ch == b'#' {
             let (num, consumed) = self.parse_number(chars, i + 1, len)?;
             let atomic_number =
                 u8::try_from(num).map_err(|_| SmartsParseError::InvalidAtomPrimitive {
@@ -6359,7 +7198,7 @@ impl<'a> SmartsParser<'a> {
         }
 
         // Recursive SMARTS: $(...)
-        if ch == '$' {
+        if ch == b'$' {
             return self.parse_recursive_query(chars, i, len);
         }
 
@@ -6403,9 +7242,9 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️:   newQ->setProp(common_properties::_chiralPermutation,$2);
         // RDKit✔️✔️:   $$=newQ;
         // RDKit✔️✔️: }
-        if ch == '@' {
+        if ch == b'@' {
             let start = i + 1;
-            if start < len && chars[start] == '@' {
+            if start < len && chars[start] == b'@' {
                 // @@
                 return Ok((
                     QueryNode::Predicate(AtomQueryPredicate::ChiralTagMatch(
@@ -6415,17 +7254,17 @@ impl<'a> SmartsParser<'a> {
                 ));
             }
             let class = if start + 1 < len {
-                Some(chars[start..=start + 1].iter().collect::<String>())
+                Some(&chars[start..=start + 1])
             } else {
                 None
             };
-            if let Some((tag, class_end)) = class.as_deref().and_then(|class| {
+            if let Some((tag, class_end)) = class.and_then(|class| {
                 let tag = match class {
-                    "TH" => ChiralTag::Tetrahedral,
-                    "AL" => ChiralTag::Allene,
-                    "SP" => ChiralTag::SquarePlanar,
-                    "TB" => ChiralTag::TrigonalBipyramidal,
-                    "OH" => ChiralTag::Octahedral,
+                    b"TH" => ChiralTag::Tetrahedral,
+                    b"AL" => ChiralTag::Allene,
+                    b"SP" => ChiralTag::SquarePlanar,
+                    b"TB" => ChiralTag::TrigonalBipyramidal,
+                    b"OH" => ChiralTag::Octahedral,
                     _ => return None,
                 };
                 Some((tag, start + 2))
@@ -6577,20 +7416,20 @@ impl<'a> SmartsParser<'a> {
             let start = i;
             let three_end = start + 3;
             if three_end <= len {
-                let three_char: String = chars[start..three_end].iter().collect();
+                let three_char = &chars[start..three_end];
                 if let Some(atom) = parse_atom_token(&three_char) {
                     return Ok((atom.query, three_end));
                 }
             }
             let end = i + 1;
             if end < len && chars[end].is_ascii_lowercase() {
-                let two_char: String = chars[start..=end].iter().collect();
+                let two_char = &chars[start..=end];
                 if let Some(atom) = parse_atom_token(&two_char) {
                     return Ok((atom.query, end + 1));
                 }
             }
-            if ch != 'H' {
-                let one_char: String = chars[start..end].iter().collect();
+            if ch != b'H' {
+                let one_char = &chars[start..end];
                 if let Some(atom) = parse_atom_token(&one_char) {
                     return Ok((atom.query, end));
                 }
@@ -6607,7 +7446,7 @@ impl<'a> SmartsParser<'a> {
         // RDKit❗✔️:   $1->setQuery(makeAtomImplicitHCountQuery($2));
         // RDKit❗✔️:   $$ = $1;
         // RDKit❗✔️: }
-        if ch == 'h' {
+        if ch == b'h' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             if consumed == i + 1 {
                 return Ok((
@@ -6636,7 +7475,7 @@ impl<'a> SmartsParser<'a> {
         // RDKit❗✔️:   newQ->getFlags() |= SMARTS_H_MASK;
         // RDKit❗✔️:   $$=newQ;
         // RDKit❗✔️: }
-        if ch == 'H' {
+        if ch == b'H' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             if consumed == i + 1 {
                 return Ok((crate::query_behavior::make_atom_h_count_query(1), consumed));
@@ -6648,7 +7487,7 @@ impl<'a> SmartsParser<'a> {
         }
 
         // Ring membership: R or R<N>
-        if ch == 'R' {
+        if ch == b'R' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             if consumed == i + 1 {
                 return Ok((crate::query_behavior::make_atom_ring_query(-1), consumed));
@@ -6682,7 +7521,7 @@ impl<'a> SmartsParser<'a> {
                 consumed,
             ));
         }
-        if ch == 'r' {
+        if ch == b'r' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             if consumed == i + 1 {
                 return Ok((crate::query_behavior::make_atom_in_ring_query(), consumed));
@@ -6692,7 +7531,7 @@ impl<'a> SmartsParser<'a> {
                 consumed,
             ));
         }
-        if ch == 'k' {
+        if ch == b'k' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             if consumed == i + 1 {
                 return Ok((crate::query_behavior::make_atom_in_ring_query(), consumed));
@@ -6713,7 +7552,7 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️:   static_cast<ATOM_EQUALS_QUERY *>($1->getQuery())->setVal($2);
         // RDKit✔️✔️:   $$ = $1;
         // RDKit✔️✔️: }
-        if ch == 'X' {
+        if ch == b'X' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             return Ok((
                 crate::query_behavior::make_atom_total_degree_query(if consumed == i + 1 {
@@ -6726,7 +7565,7 @@ impl<'a> SmartsParser<'a> {
         }
 
         // Non-hydrogen degree: d or d<N>
-        if ch == 'd' {
+        if ch == b'd' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             return Ok((
                 crate::query_behavior::make_atom_non_hydrogen_degree_query(if consumed == i + 1 {
@@ -6758,7 +7597,7 @@ impl<'a> SmartsParser<'a> {
         // RDKit❗✔️: }
         // Heteroatom-neighbor queries retain distinct source factories for z
         // and Z; parse_optional_number keeps the shared signed-int guard.
-        if ch == 'z' {
+        if ch == b'z' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             return Ok((
                 if consumed == i + 1 {
@@ -6769,7 +7608,7 @@ impl<'a> SmartsParser<'a> {
                 consumed,
             ));
         }
-        if ch == 'Z' {
+        if ch == b'Z' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             return Ok((
                 if consumed == i + 1 {
@@ -6791,7 +7630,7 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️:   $1->setQuery(makeAtomRingBondCountQuery($2));
         // RDKit✔️✔️:   $$ = $1;
         // RDKit✔️✔️: }
-        if ch == 'x' {
+        if ch == b'x' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             if consumed == i + 1 {
                 return Ok((
@@ -6811,7 +7650,7 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️: 	yylval->atom->setQuery(makeAtomExplicitDegreeQuery(1));
         // RDKit✔️✔️: 	return COMPLEX_ATOM_QUERY_TOKEN;
         // RDKit✔️✔️: }
-        if ch == 'D' {
+        if ch == b'D' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             return Ok((
                 crate::query_behavior::make_atom_explicit_degree_query(if consumed == i + 1 {
@@ -6824,7 +7663,7 @@ impl<'a> SmartsParser<'a> {
         }
 
         // Hybridization: ^1, ^2, ^3, ...
-        if ch == '^' {
+        if ch == b'^' {
             let (num, consumed) = self.parse_number(chars, i + 1, len)?;
             let hybridization = match num {
                 0 => Hybridization::S,
@@ -6852,7 +7691,7 @@ impl<'a> SmartsParser<'a> {
         // RDKit✔️✔️: 	yylval->atom->setQuery(makeAtomTotalValenceQuery(1));
         // RDKit✔️✔️: 	return COMPLEX_ATOM_QUERY_TOKEN;
         // RDKit✔️✔️: }
-        if ch == 'v' {
+        if ch == b'v' {
             let (num, consumed) = self.parse_optional_number(chars, i + 1, len)?;
             return Ok((
                 QueryNode::Predicate(AtomQueryPredicate::TotalValence(if consumed == i + 1 {
@@ -6866,7 +7705,7 @@ impl<'a> SmartsParser<'a> {
 
         // The scanner's SIMPLE_ATOM_QUERY_TOKEN branch above identifies `a`;
         // this branch handles the distinct aliphatic `A` query token.
-        if ch == 'A' {
+        if ch == b'A' {
             return Ok((
                 parse_simple_atom("A")
                     .expect("aliphatic simple query token")
@@ -6876,7 +7715,7 @@ impl<'a> SmartsParser<'a> {
         }
 
         // Unsaturated: u
-        if ch == 'u' {
+        if ch == b'u' {
             return Ok((
                 QueryNode::Predicate(AtomQueryPredicate::IsUnsaturated),
                 i + 1,
@@ -6917,7 +7756,7 @@ impl<'a> SmartsParser<'a> {
             // query leaf; the bounded numeric suffix is read again only for
             // the separate carrier write, without allocation or rescanning
             // any unrelated query input.
-            if chars.get(consumed) == Some(&'H') {
+            if chars.get(consumed) == Some(&b'H') {
                 let (hydrogen_count, end) = self.parse_optional_number(chars, consumed + 1, len)?;
                 let hydrogen_count = if end == consumed + 1 {
                     1
@@ -6935,7 +7774,7 @@ impl<'a> SmartsParser<'a> {
             }
 
             let mut atom_and_end = None;
-            if chars.get(consumed) == Some(&'#') {
+            if chars.get(consumed) == Some(&b'#') {
                 let (atomic_number, end) = self.parse_number(chars, consumed + 1, len)?;
                 let atomic_number = u8::try_from(atomic_number).map_err(|_| {
                     SmartsParseError::InvalidAtomPrimitive {
@@ -6949,14 +7788,14 @@ impl<'a> SmartsParser<'a> {
                 ));
             } else if let Some(next) = chars.get(consumed) {
                 let mut end = consumed + 1;
-                if chars.get(end).is_some_and(char::is_ascii_lowercase) {
-                    let two_char = chars[consumed..=end].iter().collect::<String>();
+                if chars.get(end).is_some_and(u8::is_ascii_lowercase) {
+                    let two_char = &chars[consumed..=end];
                     if parse_atom_token(&two_char).is_some() {
                         end += 1;
                     }
                 }
-                let symbol = chars[consumed..end].iter().collect::<String>();
-                if *next == '*' || parse_atom_token(&symbol).is_some() {
+                let symbol = &chars[consumed..end];
+                if *next == b'*' || parse_atom_token(&symbol).is_some() {
                     atom_and_end = parse_atom_token(&symbol).map(|atom| (atom.query, end));
                 }
             }
@@ -6976,7 +7815,7 @@ impl<'a> SmartsParser<'a> {
         }
 
         // Wildcard inside a bracket uses the same SIMPLE_ATOM_QUERY_TOKEN path.
-        if ch == '*' {
+        if ch == b'*' {
             return Ok((
                 parse_simple_atom("*")
                     .expect("wildcard simple query token")
@@ -6993,7 +7832,7 @@ impl<'a> SmartsParser<'a> {
 
     fn parse_charge_spec(
         &self,
-        chars: &[char],
+        chars: &[u8],
         start: usize,
         len: usize,
     ) -> Result<Option<(i32, usize)>, SmartsParseError> {
@@ -7010,25 +7849,25 @@ impl<'a> SmartsParser<'a> {
         let Some(sign) = chars.get(start).copied() else {
             return Ok(None);
         };
-        if !matches!(sign, '+' | '-') {
+        if !matches!(sign, b'+' | b'-') {
             return Ok(None);
         }
         let next = start + 1;
         if chars.get(next) == Some(&sign) {
-            let charge = if sign == '+' { 2 } else { -2 };
+            let charge = if sign == b'+' { 2 } else { -2 };
             return Ok(Some((charge, next + 1)));
         }
         let (magnitude, consumed) = self.parse_optional_number(chars, next, len)?;
         let magnitude = if consumed == next { 1 } else { magnitude };
         let magnitude = i32::try_from(magnitude)
             .expect("parse_optional_number enforces the source nonnegative int32 range");
-        let charge = if sign == '+' { magnitude } else { -magnitude };
+        let charge = if sign == b'+' { magnitude } else { -magnitude };
         Ok(Some((charge, consumed)))
     }
 
     fn parse_possible_range_query(
         &self,
-        chars: &[char],
+        chars: &[u8],
         start: usize,
         len: usize,
     ) -> Result<Option<(QueryNode<AtomQueryPredicate>, usize)>, SmartsParseError> {
@@ -7121,19 +7960,19 @@ impl<'a> SmartsParser<'a> {
         // matching bison's bounded reductions without rescanning, cloning,
         // keyed lookup, or a second query representation.
         let data_function = match chars.get(start) {
-            Some('D') => AtomRangeDataFunction::ExplicitDegree,
-            Some('d') => AtomRangeDataFunction::NonHydrogenDegree,
-            Some('X') => AtomRangeDataFunction::TotalDegree,
-            Some('v') => AtomRangeDataFunction::TotalValence,
-            Some('R') => AtomRangeDataFunction::NumAtomRings,
-            Some('z') => AtomRangeDataFunction::NumHeteroatomNeighbors,
-            Some('Z') => AtomRangeDataFunction::NumAliphaticHeteroatomNeighbors,
-            Some('r') => AtomRangeDataFunction::MinRingSize,
-            Some('x') => AtomRangeDataFunction::RingBondCount,
-            Some('h') => AtomRangeDataFunction::ImplicitHydrogenCount,
-            Some('+') => AtomRangeDataFunction::FormalCharge,
-            Some('-') => AtomRangeDataFunction::NegativeFormalCharge,
-            Some('k') => AtomRangeDataFunction::AtomRingSize {
+            Some(b'D') => AtomRangeDataFunction::ExplicitDegree,
+            Some(b'd') => AtomRangeDataFunction::NonHydrogenDegree,
+            Some(b'X') => AtomRangeDataFunction::TotalDegree,
+            Some(b'v') => AtomRangeDataFunction::TotalValence,
+            Some(b'R') => AtomRangeDataFunction::NumAtomRings,
+            Some(b'z') => AtomRangeDataFunction::NumHeteroatomNeighbors,
+            Some(b'Z') => AtomRangeDataFunction::NumAliphaticHeteroatomNeighbors,
+            Some(b'r') => AtomRangeDataFunction::MinRingSize,
+            Some(b'x') => AtomRangeDataFunction::RingBondCount,
+            Some(b'h') => AtomRangeDataFunction::ImplicitHydrogenCount,
+            Some(b'+') => AtomRangeDataFunction::FormalCharge,
+            Some(b'-') => AtomRangeDataFunction::NegativeFormalCharge,
+            Some(b'k') => AtomRangeDataFunction::AtomRingSize {
                 lower: 0,
                 upper: 0,
                 lower_open: false,
@@ -7141,7 +7980,7 @@ impl<'a> SmartsParser<'a> {
             },
             _ => return Ok(None),
         };
-        if chars.get(start + 1) != Some(&'{') {
+        if chars.get(start + 1) != Some(&b'{') {
             return Ok(None);
         }
 
@@ -7176,12 +8015,12 @@ impl<'a> SmartsParser<'a> {
 
     fn parse_possible_range_bounds(
         &self,
-        chars: &[char],
+        chars: &[u8],
         start: usize,
         len: usize,
     ) -> Result<(Option<i32>, Option<i32>, usize), SmartsParseError> {
         let mut pos = start;
-        let lower = if chars.get(pos) == Some(&'-') {
+        let lower = if chars.get(pos) == Some(&b'-') {
             None
         } else {
             let (value, consumed) = self.parse_number(chars, pos, len)?;
@@ -7193,14 +8032,14 @@ impl<'a> SmartsParser<'a> {
                 })?,
             )
         };
-        if chars.get(pos) != Some(&'-') {
+        if chars.get(pos) != Some(&b'-') {
             return Err(SmartsParseError::InvalidAtomPrimitive {
                 position: start.saturating_sub(2),
                 detail: "expected '-' in atom range".to_string(),
             });
         }
         pos += 1;
-        let upper = if chars.get(pos).is_some_and(char::is_ascii_digit) {
+        let upper = if chars.get(pos).is_some_and(u8::is_ascii_digit) {
             let (value, consumed) = self.parse_number(chars, pos, len)?;
             pos = consumed;
             Some(
@@ -7218,7 +8057,7 @@ impl<'a> SmartsParser<'a> {
                 detail: "empty atom range".to_string(),
             });
         }
-        if chars.get(pos) != Some(&'}') {
+        if chars.get(pos) != Some(&b'}') {
             return Err(SmartsParseError::InvalidAtomPrimitive {
                 position: start.saturating_sub(2),
                 detail: "expected '}' to close atom range".to_string(),
@@ -7229,7 +8068,7 @@ impl<'a> SmartsParser<'a> {
 
     fn parse_recursive_query(
         &self,
-        chars: &[char],
+        chars: &[u8],
         start: usize,
         len: usize,
     ) -> Result<(QueryNode<AtomQueryPredicate>, usize), SmartsParseError> {
@@ -7277,7 +8116,7 @@ impl<'a> SmartsParser<'a> {
         // scan the recursive SMARTS once, O(n), and graph construction is
         // O(V+E). The compiled query molecule is stored on the predicate, so
         // matching does not reparse the source string.
-        if chars.get(start + 1) != Some(&'(') {
+        if chars.get(start + 1) != Some(&b'(') {
             return Err(SmartsParseError::InvalidAtomPrimitive {
                 position: start,
                 detail: "expected '(' after '$'".to_string(),
@@ -7287,8 +8126,8 @@ impl<'a> SmartsParser<'a> {
         let mut end = start + 2;
         while end < len && depth > 0 {
             match chars[end] {
-                '(' => depth += 1,
-                ')' => depth -= 1,
+                b'(' => depth += 1,
+                b')' => depth -= 1,
                 _ => {}
             }
             end += 1;
@@ -7303,15 +8142,15 @@ impl<'a> SmartsParser<'a> {
             });
         }
 
-        let recursive_smarts: String = chars[start..end].iter().collect();
+        let recursive_smarts = &chars[start..end];
         let mut consumed = end;
         let mut serial_number = 0;
-        if chars.get(consumed) == Some(&'_') {
+        if chars.get(consumed) == Some(&b'_') {
             consumed += 1;
             let serial_start = consumed;
             if !chars
                 .get(consumed)
-                .is_some_and(|digit| matches!(*digit, '1'..='9'))
+                .is_some_and(|digit| matches!(*digit, b'1'..=b'9'))
             {
                 return Err(SmartsParseError::InvalidAtomPrimitive {
                     position: consumed,
@@ -7323,8 +8162,8 @@ impl<'a> SmartsParser<'a> {
             (serial_number, consumed) = self.parse_number(chars, serial_start, len)?;
         }
         let inner = recursive_smarts
-            .strip_prefix("$(")
-            .and_then(|value| value.strip_suffix(')'))
+            .strip_prefix(b"$(")
+            .and_then(|value| value.strip_suffix(b")"))
             .expect("balanced recursive SMARTS has delimiters");
         // RDKit✔️✔️: SmilesParseOps::CloseMolRings(molP,0);
         // RDKit✔️✔️: qA->setQuery(new RecursiveStructureQuery(molP));
@@ -7357,7 +8196,7 @@ impl<'a> SmartsParser<'a> {
     /// Parse a number from position i. Returns (value, consumed_index).
     fn parse_number(
         &self,
-        chars: &[char],
+        chars: &[u8],
         i: usize,
         len: usize,
     ) -> Result<(u32, usize), SmartsParseError> {
@@ -7381,13 +8220,13 @@ impl<'a> SmartsParser<'a> {
                 "expected number".to_string(),
             ));
         }
-        if chars[i] == '0' {
+        if chars[i] == b'0' {
             return Ok((0, i + 1));
         }
-        let mut val = chars[i].to_digit(10).expect("nonzero ASCII digit");
+        let mut val = u32::from(chars[i] - b'0');
         let mut pos = i + 1;
         while pos < len && chars[pos].is_ascii_digit() {
-            let digit = chars[pos].to_digit(10).expect("ASCII digit");
+            let digit = u32::from(chars[pos] - b'0');
             if val >= i32::MAX as u32 / 10 || val * 10 >= i32::MAX as u32 - digit {
                 return Err(SmartsParseError::InvalidAtomPrimitive {
                     position: i,
@@ -7403,7 +8242,7 @@ impl<'a> SmartsParser<'a> {
     /// Parse an optional number from position i. Returns (value if present else 0, consumed_index).
     fn parse_optional_number(
         &self,
-        chars: &[char],
+        chars: &[u8],
         i: usize,
         len: usize,
     ) -> Result<(u32, usize), SmartsParseError> {
@@ -7453,11 +8292,7 @@ impl<'a> SmartsParser<'a> {
         // advance in O(1), returning the original source position without a
         // scan, allocation, or duplicate branch parser.
         let (Token::OpenParen, position) = self.peek() else {
-            return Err(SmartsParseError::UnexpectedCharacter {
-                position: self.source_error_position(),
-                character: '?',
-                context: "expected branch opening token".to_string(),
-            });
+            return Err(self.unexpected_token_error(self.peek().1, "expected branch opening token"));
         };
         let position = position.parser_byte_end;
         self.advance();
@@ -7567,17 +8402,7 @@ impl<'a> SmartsParser<'a> {
                 self.advance();
                 Ok(bond)
             }
-            (_, span) => Err(SmartsParseError::UnexpectedCharacter {
-                // RDKit❗✔️:   yyerror(input, molList, current_token_position, "syntax error");
-                position: span.parser_byte_end,
-                character: self
-                    .input
-                    .get(span.input_char_start)
-                    .copied()
-                    .map(char::from)
-                    .unwrap_or('?'),
-                context: "expected bond query primitive".to_string(),
-            }),
+            (_, span) => Err(self.unexpected_token_error(*span, "expected bond query primitive")),
         }
     }
 }
@@ -7587,7 +8412,8 @@ impl<'a> SmartsParser<'a> {
 // ---------------------------------------------------------------------------
 
 /// Reduce RDKit's `simple_atom` production into its query leaf and carrier.
-fn parse_simple_atom(name: &str) -> Option<SimpleAtom> {
+fn parse_simple_atom(name: impl AsRef<[u8]>) -> Option<SimpleAtom> {
+    let name = name.as_ref();
     // These lexer actions map to the same query leaves and carrier flags in
     // SimpleAtom below. The inline representation avoids heap allocations
     // for RDKit QueryAtom and query objects without changing those values.
@@ -7639,37 +8465,37 @@ fn parse_simple_atom(name: &str) -> Option<SimpleAtom> {
         aromatic,
     };
     Some(match name {
-        "B" => atom_type(5, false),
-        "C" => atom_type(6, false),
-        "N" => atom_type(7, false),
-        "O" => atom_type(8, false),
-        "F" => atom_type(9, false),
-        "P" => atom_type(15, false),
-        "S" => atom_type(16, false),
-        "Cl" => atom_type(17, false),
-        "Br" => atom_type(35, false),
-        "I" => atom_type(53, false),
-        "b" => atom_type(5, true),
-        "c" => atom_type(6, true),
-        "n" => atom_type(7, true),
-        "o" => atom_type(8, true),
-        "p" => atom_type(15, true),
-        "s" => atom_type(16, true),
-        "si" => atom_type(14, true),
-        "as" => atom_type(33, true),
-        "se" => atom_type(34, true),
-        "te" => atom_type(52, true),
-        "*" => SimpleAtom {
+        b"B" => atom_type(5, false),
+        b"C" => atom_type(6, false),
+        b"N" => atom_type(7, false),
+        b"O" => atom_type(8, false),
+        b"F" => atom_type(9, false),
+        b"P" => atom_type(15, false),
+        b"S" => atom_type(16, false),
+        b"Cl" => atom_type(17, false),
+        b"Br" => atom_type(35, false),
+        b"I" => atom_type(53, false),
+        b"b" => atom_type(5, true),
+        b"c" => atom_type(6, true),
+        b"n" => atom_type(7, true),
+        b"o" => atom_type(8, true),
+        b"p" => atom_type(15, true),
+        b"s" => atom_type(16, true),
+        b"si" => atom_type(14, true),
+        b"as" => atom_type(33, true),
+        b"se" => atom_type(34, true),
+        b"te" => atom_type(52, true),
+        b"*" => SimpleAtom {
             query: make_atom_null_query(),
             atomic_number: 0,
             aromatic: false,
         },
-        "a" => SimpleAtom {
+        b"a" => SimpleAtom {
             query: crate::query_behavior::make_atom_aromatic_query(),
             atomic_number: 0,
             aromatic: true,
         },
-        "A" => SimpleAtom {
+        b"A" => SimpleAtom {
             query: crate::query_behavior::make_atom_aliphatic_query(),
             atomic_number: 0,
             aromatic: false,
@@ -7680,7 +8506,8 @@ fn parse_simple_atom(name: &str) -> Option<SimpleAtom> {
 
 /// Decode either RDKit's `simple_atom` production or an `ATOM_TOKEN` emitted
 /// by the bracket-atom lexer.
-fn parse_atom_token(name: &str) -> Option<SimpleAtom> {
+fn parse_atom_token(name: impl AsRef<[u8]>) -> Option<SimpleAtom> {
+    let name = name.as_ref();
     parse_simple_atom(name).or_else(|| {
         element_symbol_to_atomic_number(name).map(|atomic_number| SimpleAtom {
             query: QueryNode::Predicate(AtomQueryPredicate::AtomicNumber(atomic_number)),
@@ -7719,14 +8546,14 @@ fn bond_spec_to_query(lexeme: BondLexeme) -> QueryNode<BondQueryPredicate> {
         BondLexeme::DativeRight => make_bond_order_equals_query(BondOrder::DativeRight),
         BondLexeme::DativeLeft => make_bond_order_equals_query(BondOrder::DativeLeft),
         BondLexeme::Symbol(ch) => match ch {
-            '-' => make_bond_order_equals_query(BondOrder::Single),
-            '=' => make_bond_order_equals_query(BondOrder::Double),
-            '#' => make_bond_order_equals_query(BondOrder::Triple),
-            ':' => make_bond_order_equals_query(BondOrder::Aromatic),
-            '$' => make_bond_order_equals_query(BondOrder::Quadruple),
-            '@' => make_bond_is_in_ring_query(),
-            '~' => make_bond_null_query(),
-            '/' | '\\' => unspecified_smarts_bond_query(),
+            b'-' => make_bond_order_equals_query(BondOrder::Single),
+            b'=' => make_bond_order_equals_query(BondOrder::Double),
+            b'#' => make_bond_order_equals_query(BondOrder::Triple),
+            b':' => make_bond_order_equals_query(BondOrder::Aromatic),
+            b'$' => make_bond_order_equals_query(BondOrder::Quadruple),
+            b'@' => make_bond_is_in_ring_query(),
+            b'~' => make_bond_null_query(),
+            b'/' | b'\\' => unspecified_smarts_bond_query(),
             _ => QueryNode::Predicate(BondQueryPredicate::Any),
         },
     }
@@ -7764,12 +8591,12 @@ fn parsed_bond_spec(lexeme: BondLexeme) -> ParsedSmartsBond {
         BondLexeme::DativeRight => BondOrder::DativeRight,
         BondLexeme::DativeLeft => BondOrder::DativeLeft,
         BondLexeme::Symbol(ch) => match ch {
-            '-' | '/' | '\\' => BondOrder::Single,
-            '=' => BondOrder::Double,
-            '#' => BondOrder::Triple,
-            ':' => BondOrder::Aromatic,
-            '$' => BondOrder::Quadruple,
-            '~' | '@' => BondOrder::Unspecified,
+            b'-' | b'/' | b'\\' => BondOrder::Single,
+            b'=' => BondOrder::Double,
+            b'#' => BondOrder::Triple,
+            b':' => BondOrder::Aromatic,
+            b'$' => BondOrder::Quadruple,
+            b'~' | b'@' => BondOrder::Unspecified,
             _ => BondOrder::Unspecified,
         },
     };
@@ -7850,7 +8677,8 @@ fn normalize_dative_bond(bond: ParsedSmartsBond) -> (ParsedSmartsBond, bool) {
 /// Look up the atomic number for an element symbol.
 ///
 /// RDKit✔️✔️: Standard periodic table mapping.
-fn element_symbol_to_atomic_number(symbol: &str) -> Option<u8> {
+fn element_symbol_to_atomic_number(symbol: impl AsRef<[u8]>) -> Option<u8> {
+    let symbol = symbol.as_ref();
     // RDKit source: third_party/rdkit/Code/GraphMol/atomic_data.cpp
     // RDKit❗✔️: // we leave Uut and Uup in here for backwards
     // RDKit❗✔️: // compatibility. Nh and Mc (the entries appearing first
@@ -7861,126 +8689,126 @@ fn element_symbol_to_atomic_number(symbol: &str) -> Option<u8> {
     // RDKit❗✔️: 115 Mc	7	1.62	0	2.0	288	2	288	288.19274	-1
     // RDKit❗✔️: 115 Uup	7	1.62	0	2.0	288	2	288	288.19274	-1
     match symbol {
-        "H" => Some(1),
-        "He" => Some(2),
-        "Li" => Some(3),
-        "Be" => Some(4),
-        "B" => Some(5),
-        "C" => Some(6),
-        "N" => Some(7),
-        "O" => Some(8),
-        "F" => Some(9),
-        "Ne" => Some(10),
-        "Na" => Some(11),
-        "Mg" => Some(12),
-        "Al" => Some(13),
-        "Si" => Some(14),
-        "P" => Some(15),
-        "S" => Some(16),
-        "Cl" => Some(17),
-        "Ar" => Some(18),
-        "K" => Some(19),
-        "Ca" => Some(20),
-        "Sc" => Some(21),
-        "Ti" => Some(22),
-        "V" => Some(23),
-        "Cr" => Some(24),
-        "Mn" => Some(25),
-        "Fe" => Some(26),
-        "Co" => Some(27),
-        "Ni" => Some(28),
-        "Cu" => Some(29),
-        "Zn" => Some(30),
-        "Ga" => Some(31),
-        "Ge" => Some(32),
-        "As" => Some(33),
-        "Se" => Some(34),
-        "Br" => Some(35),
-        "Kr" => Some(36),
-        "Rb" => Some(37),
-        "Sr" => Some(38),
-        "Y" => Some(39),
-        "Zr" => Some(40),
-        "Nb" => Some(41),
-        "Mo" => Some(42),
-        "Tc" => Some(43),
-        "Ru" => Some(44),
-        "Rh" => Some(45),
-        "Pd" => Some(46),
-        "Ag" => Some(47),
-        "Cd" => Some(48),
-        "In" => Some(49),
-        "Sn" => Some(50),
-        "Sb" => Some(51),
-        "Te" => Some(52),
-        "I" => Some(53),
-        "Xe" => Some(54),
-        "Cs" => Some(55),
-        "Ba" => Some(56),
-        "La" => Some(57),
-        "Ce" => Some(58),
-        "Pr" => Some(59),
-        "Nd" => Some(60),
-        "Pm" => Some(61),
-        "Sm" => Some(62),
-        "Eu" => Some(63),
-        "Gd" => Some(64),
-        "Tb" => Some(65),
-        "Dy" => Some(66),
-        "Ho" => Some(67),
-        "Er" => Some(68),
-        "Tm" => Some(69),
-        "Yb" => Some(70),
-        "Lu" => Some(71),
-        "Hf" => Some(72),
-        "Ta" => Some(73),
-        "W" => Some(74),
-        "Re" => Some(75),
-        "Os" => Some(76),
-        "Ir" => Some(77),
-        "Pt" => Some(78),
-        "Au" => Some(79),
-        "Hg" => Some(80),
-        "Tl" => Some(81),
-        "Pb" => Some(82),
-        "Bi" => Some(83),
-        "Po" => Some(84),
-        "At" => Some(85),
-        "Rn" => Some(86),
-        "Fr" => Some(87),
-        "Ra" => Some(88),
-        "Ac" => Some(89),
-        "Th" => Some(90),
-        "Pa" => Some(91),
-        "U" => Some(92),
-        "Np" => Some(93),
-        "Pu" => Some(94),
-        "Am" => Some(95),
-        "Cm" => Some(96),
-        "Bk" => Some(97),
-        "Cf" => Some(98),
-        "Es" => Some(99),
-        "Fm" => Some(100),
-        "Md" => Some(101),
-        "No" => Some(102),
-        "Lr" => Some(103),
-        "Rf" => Some(104),
-        "Db" => Some(105),
-        "Sg" => Some(106),
-        "Bh" => Some(107),
-        "Hs" => Some(108),
-        "Mt" => Some(109),
-        "Ds" => Some(110),
-        "Rg" => Some(111),
-        "Cn" => Some(112),
-        "Nh" => Some(113),
-        "Uut" => Some(113),
-        "Fl" => Some(114),
-        "Mc" => Some(115),
-        "Uup" => Some(115),
-        "Lv" => Some(116),
-        "Ts" => Some(117),
-        "Og" => Some(118),
+        b"H" => Some(1),
+        b"He" => Some(2),
+        b"Li" => Some(3),
+        b"Be" => Some(4),
+        b"B" => Some(5),
+        b"C" => Some(6),
+        b"N" => Some(7),
+        b"O" => Some(8),
+        b"F" => Some(9),
+        b"Ne" => Some(10),
+        b"Na" => Some(11),
+        b"Mg" => Some(12),
+        b"Al" => Some(13),
+        b"Si" => Some(14),
+        b"P" => Some(15),
+        b"S" => Some(16),
+        b"Cl" => Some(17),
+        b"Ar" => Some(18),
+        b"K" => Some(19),
+        b"Ca" => Some(20),
+        b"Sc" => Some(21),
+        b"Ti" => Some(22),
+        b"V" => Some(23),
+        b"Cr" => Some(24),
+        b"Mn" => Some(25),
+        b"Fe" => Some(26),
+        b"Co" => Some(27),
+        b"Ni" => Some(28),
+        b"Cu" => Some(29),
+        b"Zn" => Some(30),
+        b"Ga" => Some(31),
+        b"Ge" => Some(32),
+        b"As" => Some(33),
+        b"Se" => Some(34),
+        b"Br" => Some(35),
+        b"Kr" => Some(36),
+        b"Rb" => Some(37),
+        b"Sr" => Some(38),
+        b"Y" => Some(39),
+        b"Zr" => Some(40),
+        b"Nb" => Some(41),
+        b"Mo" => Some(42),
+        b"Tc" => Some(43),
+        b"Ru" => Some(44),
+        b"Rh" => Some(45),
+        b"Pd" => Some(46),
+        b"Ag" => Some(47),
+        b"Cd" => Some(48),
+        b"In" => Some(49),
+        b"Sn" => Some(50),
+        b"Sb" => Some(51),
+        b"Te" => Some(52),
+        b"I" => Some(53),
+        b"Xe" => Some(54),
+        b"Cs" => Some(55),
+        b"Ba" => Some(56),
+        b"La" => Some(57),
+        b"Ce" => Some(58),
+        b"Pr" => Some(59),
+        b"Nd" => Some(60),
+        b"Pm" => Some(61),
+        b"Sm" => Some(62),
+        b"Eu" => Some(63),
+        b"Gd" => Some(64),
+        b"Tb" => Some(65),
+        b"Dy" => Some(66),
+        b"Ho" => Some(67),
+        b"Er" => Some(68),
+        b"Tm" => Some(69),
+        b"Yb" => Some(70),
+        b"Lu" => Some(71),
+        b"Hf" => Some(72),
+        b"Ta" => Some(73),
+        b"W" => Some(74),
+        b"Re" => Some(75),
+        b"Os" => Some(76),
+        b"Ir" => Some(77),
+        b"Pt" => Some(78),
+        b"Au" => Some(79),
+        b"Hg" => Some(80),
+        b"Tl" => Some(81),
+        b"Pb" => Some(82),
+        b"Bi" => Some(83),
+        b"Po" => Some(84),
+        b"At" => Some(85),
+        b"Rn" => Some(86),
+        b"Fr" => Some(87),
+        b"Ra" => Some(88),
+        b"Ac" => Some(89),
+        b"Th" => Some(90),
+        b"Pa" => Some(91),
+        b"U" => Some(92),
+        b"Np" => Some(93),
+        b"Pu" => Some(94),
+        b"Am" => Some(95),
+        b"Cm" => Some(96),
+        b"Bk" => Some(97),
+        b"Cf" => Some(98),
+        b"Es" => Some(99),
+        b"Fm" => Some(100),
+        b"Md" => Some(101),
+        b"No" => Some(102),
+        b"Lr" => Some(103),
+        b"Rf" => Some(104),
+        b"Db" => Some(105),
+        b"Sg" => Some(106),
+        b"Bh" => Some(107),
+        b"Hs" => Some(108),
+        b"Mt" => Some(109),
+        b"Ds" => Some(110),
+        b"Rg" => Some(111),
+        b"Cn" => Some(112),
+        b"Nh" => Some(113),
+        b"Uut" => Some(113),
+        b"Fl" => Some(114),
+        b"Mc" => Some(115),
+        b"Uup" => Some(115),
+        b"Lv" => Some(116),
+        b"Ts" => Some(117),
+        b"Og" => Some(118),
         _ => None,
     }
 }
@@ -8260,18 +9088,24 @@ mod query_hydrogen_merge_tests {
             assert_eq!(merged.num_bonds(), expected_source_atoms.len() - 1);
 
             let removed_hydrogen_count = source.num_atoms() - expected_source_atoms.len();
-            let mut expected_predicate = vec![QueryNode::predicate(AtomQueryPredicate::AtomType {
+            let mut expected_predicate = QueryNode::predicate(AtomQueryPredicate::AtomType {
                 atomic_number: 6,
                 aromatic: false,
-            })];
+            });
+            // MolOps::mergeQueryHs calls expandQuery for EACH removed H.
+            // QueryAtom::expandQuery builds a binary COMPOSITE_AND each time;
+            // it does not flatten the already existing composite tree.
             for hydrogen_count in 0..removed_hydrogen_count {
-                expected_predicate.push(QueryNode::Not(Box::new(QueryNode::Predicate(
-                    AtomQueryPredicate::HydrogenCount(hydrogen_count as i32),
-                ))));
+                expected_predicate = QueryNode::And(vec![
+                    expected_predicate,
+                    QueryNode::Not(Box::new(QueryNode::Predicate(
+                        AtomQueryPredicate::HydrogenCount(hydrogen_count as i32),
+                    ))),
+                ]);
             }
             assert_eq!(
                 merged.atoms()[0].predicate(),
-                &QueryNode::And(expected_predicate),
+                &expected_predicate,
                 "flags: merge_unmapped_only={merge_unmapped_only}, merge_isotopes={merge_isotopes}"
             );
 
@@ -8349,7 +9183,7 @@ mod query_hydrogen_merge_tests {
             }])
             .with_cstates(vec![SGroupCState::new(BondId::new(1), [0.25, 0.5, 0.75])])
             .with_prop("custom", "preserved")
-            .unwrap()
+            .expect("original valid fixture constructor must succeed")
             .with_data_field("first raw row")
             .with_data_field("second raw row");
         replace_query_substance_groups(&mut graph, vec![group])
@@ -8398,7 +9232,7 @@ mod query_hydrogen_merge_tests {
                 }])
                 .with_cstates(vec![SGroupCState::new(BondId::new(0), [0.25, 0.5, 0.75])])
                 .with_prop("custom", "preserved")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_data_field("first raw row")
                 .with_data_field("second raw row");
 
@@ -8433,8 +9267,8 @@ mod query_hydrogen_merge_tests {
         assert_eq!(
             coordinates.conformers_2d[0]
                 .props()
-                .get("frame".as_bytes())
-                .map(fixture_text),
+                .get(b"frame".as_slice())
+                .map(crate::smarts_parse::fixture_text),
             Some("first-2d")
         );
         assert_eq!(
@@ -8445,8 +9279,8 @@ mod query_hydrogen_merge_tests {
         assert_eq!(
             coordinates.conformers_2d[1]
                 .props()
-                .get("frame".as_bytes())
-                .map(fixture_text),
+                .get(b"frame".as_slice())
+                .map(crate::smarts_parse::fixture_text),
             Some("second-2d")
         );
         assert_eq!(
@@ -8459,8 +9293,8 @@ mod query_hydrogen_merge_tests {
         assert_eq!(
             coordinates.conformers_3d[0]
                 .props()
-                .get("frame".as_bytes())
-                .map(fixture_text),
+                .get(b"frame".as_slice())
+                .map(crate::smarts_parse::fixture_text),
             Some("first-3d")
         );
         assert_eq!(
@@ -8472,8 +9306,8 @@ mod query_hydrogen_merge_tests {
         assert_eq!(
             coordinates.conformers_3d[1]
                 .props()
-                .get("frame".as_bytes())
-                .map(fixture_text),
+                .get(b"frame".as_slice())
+                .map(crate::smarts_parse::fixture_text),
             Some("second-3d")
         );
         assert_eq!(
@@ -8571,9 +9405,13 @@ mod q03_setup_tests {
     #[test]
     fn q03_scanner_keeps_trimmed_window_in_original_character_coordinates() {
         let input = "\t C\t ";
-        let scanned = SmartsScanner::new(input, ScannerStart::Molecule, setup_smarts_input(input))
-            .scan()
-            .expect("edge controls are trimmed before scanning");
+        let scanned = SmartsScanner::new(
+            input.as_bytes(),
+            ScannerStart::Molecule,
+            setup_smarts_input(input),
+        )
+        .scan()
+        .expect("edge controls are trimmed before scanning");
         assert_eq!(
             scanned[1].token,
             ScannerToken::OrganicElement("C".to_owned())
@@ -8599,18 +9437,26 @@ mod q03_setup_tests {
     }
 
     fn q03_scan_and_compact(input: &str) -> Vec<(Token, SmartsTokenSpan)> {
-        let scanned = SmartsScanner::new(input, ScannerStart::Molecule, setup_smarts_input(input))
-            .scan()
-            .expect("valid scanner input");
-        compact_scanned_tokens(input, &scanned).expect("valid token stream")
+        let scanned = SmartsScanner::new(
+            input.as_bytes(),
+            ScannerStart::Molecule,
+            setup_smarts_input(input),
+        )
+        .scan()
+        .expect("valid scanner input");
+        compact_scanned_tokens(input.as_bytes(), &scanned).expect("valid token stream")
     }
 
     #[test]
     fn q03_ascii_multichar_and_bracket_spans_keep_their_coordinate_origins() {
         let input = "ClBr";
-        let scanned = SmartsScanner::new(input, ScannerStart::Molecule, setup_smarts_input(input))
-            .scan()
-            .expect("two source organic atoms");
+        let scanned = SmartsScanner::new(
+            input.as_bytes(),
+            ScannerStart::Molecule,
+            setup_smarts_input(input),
+        )
+        .scan()
+        .expect("two source organic atoms");
         assert_eq!(
             scanned[1].token,
             ScannerToken::OrganicElement("Cl".to_owned())
@@ -8642,7 +9488,7 @@ mod q03_setup_tests {
         let (Token::BracketContent(content), bracket_span) = &bracketed[0] else {
             panic!("bracket content token")
         };
-        assert_eq!(content.text, "a");
+        assert_eq!(content.text, b"a".to_vec());
         assert_eq!(
             *bracket_span,
             SmartsTokenSpan {
@@ -8664,7 +9510,7 @@ mod q03_setup_tests {
         assert_eq!(content.lexical_tokens.len(), 1);
         assert_eq!(
             content.lexical_tokens[0].token,
-            ScannerToken::SimpleAtomQuery('a')
+            ScannerToken::SimpleAtomQuery(b'a')
         );
         assert_eq!(
             content.lexical_tokens[0].span,
@@ -8680,11 +9526,11 @@ mod q03_setup_tests {
         let (Token::BracketContent(content), _) = &recursive[0] else {
             panic!("recursive bracket content token")
         };
-        assert_eq!(content.text, "$([a])");
+        assert_eq!(content.text, b"$([a])".to_vec());
         assert_eq!(content.lexical_tokens.len(), 1);
         assert_eq!(
             content.lexical_tokens[0].token,
-            ScannerToken::SimpleAtomQuery('a')
+            ScannerToken::SimpleAtomQuery(b'a')
         );
         assert_eq!(
             content.lexical_tokens[0].span,
@@ -8700,9 +9546,13 @@ mod q03_setup_tests {
     #[test]
     fn q03_trimmed_tokens_keep_original_character_and_parser_byte_offsets() {
         let input = "\t ClBr\t ";
-        let scanned = SmartsScanner::new(input, ScannerStart::Molecule, setup_smarts_input(input))
-            .scan()
-            .expect("edge controls are trimmed before scanning");
+        let scanned = SmartsScanner::new(
+            input.as_bytes(),
+            ScannerStart::Molecule,
+            setup_smarts_input(input),
+        )
+        .scan()
+        .expect("edge controls are trimmed before scanning");
         assert_eq!(
             scanned[1].span,
             SmartsTokenSpan {
@@ -8735,7 +9585,7 @@ mod q03_setup_tests {
     #[test]
     fn q03_dispatch_tokens_keep_source_consumption_positions() {
         let newline =
-            SmartsScanner::new("C\nC", ScannerStart::Molecule, setup_smarts_input("C\nC"))
+            SmartsScanner::new(b"C\nC", ScannerStart::Molecule, setup_smarts_input("C\nC"))
                 .scan()
                 .expect("newline returns EOS without scanning the suffix");
         assert_eq!(newline.len(), 3);
@@ -8750,11 +9600,11 @@ mod q03_setup_tests {
             }
         );
 
-        let ascii = SmartsScanner::new("C?C", ScannerStart::Molecule, setup_smarts_input("C?C"))
+        let ascii = SmartsScanner::new(b"C?C", ScannerStart::Molecule, setup_smarts_input("C?C"))
             .scan()
             .expect("BAD_CHARACTER is transported to parser dispatch");
         assert_eq!(ascii.len(), 3);
-        assert_eq!(ascii[2].token, ScannerToken::BadCharacter('?'));
+        assert_eq!(ascii[2].token, ScannerToken::BadCharacter(b'?'));
         assert_eq!(
             ascii[2].span,
             SmartsTokenSpan {
@@ -8765,15 +9615,15 @@ mod q03_setup_tests {
             }
         );
 
-        let multibyte =
-            SmartsScanner::new("C☃C", ScannerStart::Molecule, setup_smarts_input("C☃C"))
-                .scan()
-                .expect("first BAD_CHARACTER stops Flex-style scanning");
+        let multibyte = SmartsScanner::new(
+            "C☃C".as_bytes(),
+            ScannerStart::Molecule,
+            setup_smarts_input("C☃C"),
+        )
+        .scan()
+        .expect("first BAD_CHARACTER stops Flex-style scanning");
         assert_eq!(multibyte.len(), 3);
-        assert_eq!(
-            multibyte[2].token,
-            ScannerToken::BadCharacter(char::from(0xe2))
-        );
+        assert_eq!(multibyte[2].token, ScannerToken::BadCharacter(0xE2));
         assert_eq!(
             multibyte[2].span,
             SmartsTokenSpan {
@@ -8791,7 +9641,7 @@ mod q03_setup_tests {
             parse_atom_entry("C?").expect_err("atom start preserves BAD_CHARACTER"),
             SmartsParseError::UnexpectedCharacter {
                 position: 2,
-                character: '?',
+                character: b'?',
                 context: "unexpected character in SMARTS string".to_owned(),
             }
         );
@@ -8799,7 +9649,7 @@ mod q03_setup_tests {
             parse_bond_entry("-?").expect_err("bond start preserves BAD_CHARACTER"),
             SmartsParseError::UnexpectedCharacter {
                 position: 2,
-                character: '?',
+                character: b'?',
                 context: "unexpected character in SMARTS string".to_owned(),
             }
         );
@@ -8877,12 +9727,16 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &labels).expect("label effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("aAb".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "aAb".to_owned().into()
+            ))
         );
         assert_eq!(graph.atom(1).and_then(|atom| atom.prop("atomLabel")), None);
         assert_eq!(
             graph.atom(2).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("last".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "last".to_owned().into()
+            ))
         );
 
         let values = cosmolkit_cx::parse_cx_extensions_progress("|$_AV:v0;;v2$|");
@@ -8890,7 +9744,9 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &values).expect("value effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("molFileValue")),
-            Some(&cosmolkit_model::PropertyValue::String("v0".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "v0".to_owned().into()
+            ))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("molFileValue")),
@@ -8898,7 +9754,9 @@ mod cx_progress_label_tests {
         );
         assert_eq!(
             graph.atom(2).and_then(|atom| atom.prop("molFileValue")),
-            Some(&cosmolkit_model::PropertyValue::String("v2".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "v2".to_owned().into()
+            ))
         );
     }
 
@@ -8913,11 +9771,15 @@ mod cx_progress_label_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("committed label effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("first".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "first".to_owned().into()
+            ))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("second".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "second".to_owned().into()
+            ))
         );
     }
 
@@ -8963,7 +9825,9 @@ mod cx_progress_label_tests {
         assert!(atom.no_implicit());
         assert_eq!(
             atom.prop("atomLabel"),
-            Some(&cosmolkit_model::PropertyValue::String("Q_e".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "Q_e".to_owned().into()
+            ))
         );
         assert_eq!(query_substance_groups(&graph), &[substance_group]);
         assert_eq!(graph.stereo_groups(), &[stereo_group]);
@@ -8985,7 +9849,9 @@ mod cx_progress_label_tests {
         let atom = graph.atom(0).expect("partial query atom");
         assert_eq!(
             atom.prop("atomLabel"),
-            Some(&cosmolkit_model::PropertyValue::String("Q_e".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "Q_e".to_owned().into()
+            ))
         );
         assert_eq!(atom.predicate(), &original_predicate);
         assert_eq!(atom.element(), Some(cosmolkit_types::Element::C));
@@ -9017,11 +9883,15 @@ mod cx_progress_properties_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("atomProp effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("label")),
-            Some(&cosmolkit_model::PropertyValue::String("first".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "first".to_owned().into()
+            ))
         );
         assert_eq!(
             graph.atom(1).and_then(|atom| atom.prop("kind")),
-            Some(&cosmolkit_model::PropertyValue::String("second".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "second".to_owned().into()
+            ))
         );
     }
 
@@ -9037,7 +9907,9 @@ mod cx_progress_properties_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("committed property effect");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("kept")),
-            Some(&cosmolkit_model::PropertyValue::String("value".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "value".to_owned().into()
+            ))
         );
         assert_eq!(graph.atom(0).and_then(|atom| atom.prop("later")), None);
     }
@@ -9238,28 +10110,39 @@ mod cx_progress_stereo_merge_tests {
     }
 
     #[test]
-    fn cx_progress_stereo_merge_tracker_resets_after_successful_application() {
+    fn cx_progress_second_stereo_session_reports_native_tracker_invariant() {
+        // CXSmilesOps.cpp clears _sgTracker after a successful parse, but
+        // parse_enhanced_stereo asserts groups.size() == sgTracker.size().
+        // A second session on a graph with existing groups is NOT an append API.
         let input = "|o7:0|";
-        let parsed = cosmolkit_cx::parse_cx_extensions(input).expect("complete CX records");
+        let parsed = cosmolkit_cx::parse_cx_extensions(input).unwrap();
         let initial = query_graph("CC");
-
         let mut direct = initial.clone();
-        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("first direct parse");
-        crate::apply_cx_to_query_graph(&mut direct, &parsed).expect("second direct parse");
-
+        crate::apply_cx_to_query_graph(&mut direct, &parsed).unwrap();
+        let before = direct.clone();
+        assert_eq!(
+            crate::apply_cx_to_query_graph(&mut direct, &parsed),
+            Err(crate::cx_lowering::CxQueryLoweringError::StereoGroupMerge(
+                cosmolkit_core::parser_stereo_order::CxStereoGroupMergeError::TrackerCount {
+                    groups: 1,
+                    hashes: 0,
+                }
+            ))
+        );
+        assert_eq!(direct, before);
         let mut progressed = initial;
-        for _ in 0..2 {
-            let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
-            assert!(progress.is_complete());
-            apply_cx_progress_to_query(&mut progressed, &progress)
-                .expect("independent successful parse session");
-        }
-
-        assert_eq!(direct.stereo_groups().len(), 2);
-        assert_eq!(progressed.stereo_groups().len(), 2);
-        assert_eq!(direct.stereo_groups(), progressed.stereo_groups());
+        let progress = cosmolkit_cx::parse_cx_extensions_progress(input);
+        apply_cx_progress_to_query(&mut progressed, &progress).unwrap();
+        let before = progressed.clone();
+        let error = apply_cx_progress_to_query(&mut progressed, &progress).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("source stereo group/tracker count invariant failed: 1 != 0")
+        );
+        assert_eq!(progressed, before);
+        assert_eq!(direct, progressed);
         assert_eq!(direct.stereo_groups()[0].atoms(), &[AtomId::new(0)]);
-        assert_eq!(direct.stereo_groups()[1].atoms(), &[AtomId::new(0)]);
     }
 
     #[test]
@@ -9471,8 +10354,10 @@ mod cx_progress_linknodes_tests {
 
         assert_eq!(progressed, direct);
         assert_eq!(
-            direct.prop("_molLinkNodes").map(fixture_value),
-            Some("1 3 2 1 2 1 3|2 4 2 2 3 2 1")
+            direct.prop("_molLinkNodes"),
+            Some(&cosmolkit_model::PropertyValue::String(
+                "1 3 2 1 2 1 3|2 4 2 2 3 2 1".into()
+            ))
         );
     }
 
@@ -9502,9 +10387,11 @@ mod cx_progress_linknodes_tests {
         apply_cx_progress_to_query(&mut graph, &progress).expect("source partial effects");
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("left".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "left".to_owned().into()
+            ))
         );
-        assert_eq!(graph.prop("molFileLinkNodes"), None);
+        assert_eq!(graph.prop("_molLinkNodes"), None);
     }
 
     #[test]
@@ -9524,8 +10411,10 @@ mod cx_progress_linknodes_tests {
         apply_cx_progress_to_query(&mut graph, &progress)
             .expect("link-node helper completed before outer delimiter failure");
         assert_eq!(
-            graph.prop("_molLinkNodes").map(fixture_value),
-            Some("1 2 2 1 1 1 1")
+            graph.prop("_molLinkNodes"),
+            Some(&cosmolkit_model::PropertyValue::String(
+                "1 2 2 1 1 1 1".into()
+            ))
         );
     }
 
@@ -9535,12 +10424,12 @@ mod cx_progress_linknodes_tests {
         assert!(progress.is_complete());
 
         let mut graph = query_graph("CC")
-            .with_prop("molFileLinkNodes", "prior")
-            .unwrap();
+            .with_prop("_molLinkNodes", "prior")
+            .expect("original valid fixture property must succeed");
         assert!(apply_cx_progress_to_query(&mut graph, &progress).is_err());
         assert_eq!(
-            graph.prop("molFileLinkNodes").map(fixture_value),
-            Some("prior")
+            graph.prop("_molLinkNodes"),
+            Some(&cosmolkit_model::PropertyValue::String("prior".into()))
         );
     }
 }
@@ -9587,21 +10476,21 @@ mod cx_progress_sgroups_tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(5)
                 .with_prop("_cxsmilesindex", "5")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "71")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "92")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
             SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(1)
                 .with_prop("_cxsmilesindex", "1")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "93")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
         ];
         replace_query_substance_groups(&mut graph, groups).expect("valid hierarchy groups");
         graph
@@ -9629,66 +10518,58 @@ mod cx_progress_sgroups_tests {
         assert_eq!(data_group.rdkit_sequence_id(), Some(1));
         assert_eq!(data_group.atoms(), &[AtomId::new(1), AtomId::new(0)]);
         assert_eq!(
-            data_group
-                .props()
-                .get("_cxsmilesindex".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(1_u32)
+            data_group.props().get(b"_cxsmilesindex".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(1))
         );
         assert_eq!(
-            data_group
-                .props()
-                .get("index".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(3_u32)
+            data_group.props().get(b"index".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(3))
         );
         assert_eq!(
-            data_group
-                .props()
-                .get("DATAFIELDS".as_bytes())
-                .map(|value| value
-                    .as_string_vector()
-                    .expect("source DATAFIELDS string vector")
-                    .iter()
-                    .map(fixture_text)
-                    .collect::<Vec<_>>()),
-            Some(vec!["value,with,comma"])
+            data_group.props().get(b"DATAFIELDS".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::StringVector(vec![
+                "value,with,comma".into()
+            ]))
         );
         assert_eq!(
-            data_group
-                .props()
-                .get("COORDS".as_bytes())
-                .map(fixture_value),
-            Some("(1,2")
+            data_group.props().get(b"COORDS".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::String("(1,2".into()))
         );
         assert_eq!(
-            data_group
-                .data_fields()
-                .iter()
-                .map(fixture_text)
-                .collect::<Vec<_>>(),
-            &["value,with,comma"]
+            data_group.data_fields(),
+            &[cosmolkit_model::PropertyText::from("value,with,comma")]
         );
         let typed_data = data_group.data().expect("typed DAT payload");
         assert_eq!(
-            typed_data.field_name.as_ref().map(fixture_text),
+            typed_data
+                .field_name
+                .as_ref()
+                .map(crate::smarts_parse::fixture_text),
             Some("FIELD")
-        );
-        assert_eq!(typed_data.query_op.as_ref().map(fixture_text), Some("="));
-        assert_eq!(
-            typed_data.field_info.as_ref().map(fixture_text),
-            Some("unit")
         );
         assert_eq!(
             typed_data
-                .values
-                .iter()
-                .map(fixture_text)
-                .collect::<Vec<_>>(),
-            ["value,with,comma"]
+                .query_op
+                .as_ref()
+                .map(crate::smarts_parse::fixture_text),
+            Some("=")
         );
         assert_eq!(
-            typed_data.field_display.as_ref().map(fixture_text),
+            typed_data
+                .field_info
+                .as_ref()
+                .map(crate::smarts_parse::fixture_text),
+            Some("unit")
+        );
+        assert_eq!(
+            typed_data.values,
+            [cosmolkit_model::PropertyText::from("value,with,comma")]
+        );
+        assert_eq!(
+            typed_data
+                .field_display
+                .as_ref()
+                .map(crate::smarts_parse::fixture_text),
             Some("    0.0000    0.0000    DR    ALL  0       0")
         );
     }
@@ -9714,7 +10595,9 @@ mod cx_progress_sgroups_tests {
         assert!(query_substance_groups(&graph).is_empty());
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("Q_e".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "Q_e".to_owned().into()
+            ))
         );
     }
 
@@ -9747,19 +10630,12 @@ mod cx_progress_sgroups_tests {
         assert_eq!(groups[0].id(), SubstanceGroupId::new(0));
         assert_eq!(groups[0].rdkit_sequence_id(), Some(0));
         assert_eq!(
-            groups[0]
-                .props()
-                .get("index".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(1_u32)
+            groups[0].props().get(b"index".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(1))
         );
         assert_eq!(
-            groups[0]
-                .data_fields()
-                .iter()
-                .map(fixture_text)
-                .collect::<Vec<_>>(),
-            &["one"]
+            groups[0].data_fields(),
+            &[cosmolkit_model::PropertyText::from("one")]
         );
     }
 
@@ -9782,11 +10658,8 @@ mod cx_progress_sgroups_tests {
         let groups = query_substance_groups(&graph);
         assert_eq!(groups.len(), 1);
         assert_eq!(
-            groups[0]
-                .props()
-                .get("COORDS".as_bytes())
-                .map(fixture_value),
-            Some("(raw|")
+            groups[0].props().get(b"COORDS".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::String("(raw|".into()))
         );
     }
 
@@ -9810,19 +10683,13 @@ mod cx_progress_sgroups_tests {
         assert_eq!(groups[0].parent(), None);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1]
-                .props()
-                .get("PARENT".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(71_u32)
+            groups[1].props().get(b"PARENT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(71))
         );
         assert_eq!(groups[2].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[2]
-                .props()
-                .get("PARENT".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(71_u32)
+            groups[2].props().get(b"PARENT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(71))
         );
         assert_eq!(groups[1].rdkit_sequence_id(), Some(0));
         assert_eq!(groups[2].rdkit_sequence_id(), Some(1));
@@ -9846,8 +10713,16 @@ mod cx_progress_sgroups_tests {
                 CxSGroupHierarchy { parent: 77, children: Vec::new() },
             ]
         ));
-        assert_eq!(progress.checkpoints().len(), 2);
-        assert_eq!(progress.checkpoints()[1].item_index, Some(0));
+        assert_eq!(progress.checkpoints().len(), 4);
+        assert_eq!(
+            progress.checkpoints()[1].phase,
+            cosmolkit_cx::CxProgressPhase::Begin
+        );
+        assert_eq!(progress.checkpoints()[2].item_index, Some(0));
+        assert_eq!(
+            progress.checkpoints()[3].phase,
+            cosmolkit_cx::CxProgressPhase::Begin
+        );
 
         let mut graph = query_graph_with_hierarchy_groups();
         apply_cx_progress_to_query(&mut graph, &progress)
@@ -9856,11 +10731,8 @@ mod cx_progress_sgroups_tests {
         let groups = query_substance_groups(&graph);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1]
-                .props()
-                .get("PARENT".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(71_u32)
+            groups[1].props().get(b"PARENT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(71))
         );
         assert_eq!(groups[2].parent(), None);
     }
@@ -9882,11 +10754,8 @@ mod cx_progress_sgroups_tests {
         let groups = query_substance_groups(&graph);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1]
-                .props()
-                .get("PARENT".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(71_u32)
+            groups[1].props().get(b"PARENT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(71))
         );
         assert_eq!(groups[2].parent(), None);
     }
@@ -9950,8 +10819,14 @@ mod cx_progress_polymer_tests {
         assert_eq!(group.id(), SubstanceGroupId::new(1));
         assert_eq!(group.rdkit_sequence_id(), Some(0));
         assert_eq!(group.kind(), &SubstanceGroupKind::Copolymer);
-        assert_eq!(group.subtype().map(fixture_text), Some("ALT"));
-        assert_eq!(group.label().map(fixture_text), Some("repeat"));
+        assert_eq!(
+            group.subtype().map(crate::smarts_parse::fixture_text),
+            Some("ALT")
+        );
+        assert_eq!(
+            group.label().map(crate::smarts_parse::fixture_text),
+            Some("repeat")
+        );
         assert_eq!(group.connection(), Some(&SGroupConnection::HeadToHead));
         assert_eq!(
             group.atoms(),
@@ -9970,26 +10845,20 @@ mod cx_progress_polymer_tests {
             &[BondId::new(0), BondId::new(1)]
         );
         assert_eq!(
-            group
-                .props()
-                .get("_cxsmilesindex".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(0_u32)
+            group.props().get(b"_cxsmilesindex".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(0))
         );
         assert_eq!(
-            group
-                .props()
-                .get("index".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(2_u32)
+            group.props().get(b"index".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(2))
         );
         assert_eq!(
-            group.props().get("CONNECT".as_bytes()).map(fixture_value),
-            Some("HH")
+            group.props().get(b"CONNECT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::String("HH".into()))
         );
         assert_eq!(
-            group.props().get("SUBTYPE".as_bytes()).map(fixture_value),
-            Some("ALT")
+            group.props().get(b"SUBTYPE".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::String("ALT".into()))
         );
     }
 
@@ -10005,8 +10874,16 @@ mod cx_progress_polymer_tests {
             ("mix", SubstanceGroupKind::MixtureComponent, None),
             ("f", SubstanceGroupKind::Formulation, None),
             ("any", SubstanceGroupKind::AnyPolymer, None),
-            ("gen", SubstanceGroupKind::Generic("GEN".into()), None),
-            ("c", SubstanceGroupKind::Generic("COM".into()), None),
+            (
+                "gen",
+                SubstanceGroupKind::Generic("GEN".to_owned().into()),
+                None,
+            ),
+            (
+                "c",
+                SubstanceGroupKind::Generic("COM".to_owned().into()),
+                None,
+            ),
             ("grf", SubstanceGroupKind::Graft, None),
             ("alt", SubstanceGroupKind::Copolymer, Some("ALT")),
             ("ran", SubstanceGroupKind::Copolymer, Some("RAN")),
@@ -10030,20 +10907,18 @@ mod cx_progress_polymer_tests {
             assert_eq!(group.id(), SubstanceGroupId::new(index));
             assert_eq!(group.rdkit_sequence_id(), Some(index as u32 + 1));
             assert_eq!(group.kind(), &kind, "{type_code}");
-            assert_eq!(group.subtype().map(fixture_text), subtype, "{type_code}");
             assert_eq!(
-                group
-                    .props()
-                    .get("_cxsmilesindex".as_bytes())
-                    .map(|value| value.as_uint().expect("source unsigned property kind")),
-                Some(index as u32 + 1)
+                group.subtype().map(crate::smarts_parse::fixture_text),
+                subtype,
+                "{type_code}"
             );
             assert_eq!(
-                group
-                    .props()
-                    .get("index".as_bytes())
-                    .map(|value| value.as_uint().expect("source unsigned property kind")),
-                Some(index as u32 + 1)
+                group.props().get(b"_cxsmilesindex".as_slice()),
+                Some(&cosmolkit_model::PropertyValue::UInt((index + 1) as u32))
+            );
+            assert_eq!(
+                group.props().get(b"index".as_slice()),
+                Some(&cosmolkit_model::PropertyValue::UInt((index + 1) as u32))
             );
             assert_eq!(group.atoms(), &[AtomId::new(0)], "{type_code}");
         }
@@ -10065,7 +10940,9 @@ mod cx_progress_polymer_tests {
         assert!(query_substance_groups(&graph).is_empty());
         assert_eq!(
             graph.atom(0).and_then(|atom| atom.prop("atomLabel")),
-            Some(&cosmolkit_model::PropertyValue::String("Q_e".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "Q_e".to_owned().into()
+            ))
         );
     }
 
@@ -10116,11 +10993,8 @@ mod cx_progress_polymer_tests {
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].rdkit_sequence_id(), Some(0));
         assert_eq!(
-            groups[0]
-                .props()
-                .get("index".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(1_u32)
+            groups[0].props().get(b"index".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(1))
         );
 
         let missing_outer_pipe = "|Sg:n:0:repeat:hh";
@@ -10137,13 +11011,13 @@ mod cx_progress_polymer_tests {
             .expect("completed polymer helper commits before missing outer pipe");
         let groups = query_substance_groups(&graph);
         assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].label().map(fixture_text), Some("repeat"));
         assert_eq!(
-            groups[0]
-                .props()
-                .get("CONNECT".as_bytes())
-                .map(fixture_value),
-            Some("HH")
+            groups[0].label().map(crate::smarts_parse::fixture_text),
+            Some("repeat")
+        );
+        assert_eq!(
+            groups[0].props().get(b"CONNECT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::String("HH".into()))
         );
         assert_eq!(groups[0].head_crossing_bonds(), &[BondId::new(0)]);
     }
@@ -10171,7 +11045,11 @@ mod cx_progress_attachments_tests {
         graph
             .bond(bond_index)
             .and_then(|bond| bond.bond().prop(key))
-            .map(|value| fixture_text(value.as_string().expect("string property fixture")))
+            .map(|value| {
+                crate::smarts_parse::fixture_text(
+                    value.as_string().expect("string property fixture"),
+                )
+            })
     }
 
     #[test]
@@ -10284,7 +11162,11 @@ mod cx_progress_directions_tests {
         graph
             .bond(bond_index)
             .and_then(|bond| bond.bond().prop(key))
-            .map(|value| fixture_text(value.as_string().expect("string property fixture")))
+            .map(|value| {
+                crate::smarts_parse::fixture_text(
+                    value.as_string().expect("string property fixture"),
+                )
+            })
     }
 
     #[test]
@@ -10311,17 +11193,18 @@ mod cx_progress_directions_tests {
             progressed.bond(1).unwrap().bond().direction(),
             BondDirection::BeginDash
         );
+        // CXSmilesOps::parse_wedged_bonds stores unsigned bond_cfg values.
         assert_eq!(
-            progressed.bond(0).unwrap().bond().prop("_MolFileBondCfg"),
+            progressed.bonds()[0].bond().prop("_MolFileBondCfg"),
             Some(&PropertyValue::UInt(1))
         );
         assert_eq!(
-            progressed.bond(1).unwrap().bond().prop("_MolFileBondCfg"),
+            progressed.bonds()[1].bond().prop("_MolFileBondCfg"),
             Some(&PropertyValue::UInt(3))
         );
         assert_eq!(
             progressed.prop("_needsDetectAtomStereo"),
-            Some(&PropertyValue::Int(1))
+            Some(&cosmolkit_model::PropertyValue::Int(1))
         );
 
         let mut unknown = query_graph("C-C");
@@ -10339,7 +11222,7 @@ mod cx_progress_directions_tests {
         );
         assert_eq!(
             unknown.prop("_needsDetectBondStereo"),
-            Some(&PropertyValue::Int(1))
+            Some(&cosmolkit_model::PropertyValue::Int(1))
         );
 
         for (text, expected) in [
@@ -10365,7 +11248,7 @@ mod cx_progress_directions_tests {
             assert_eq!(bond.stereo_atoms(), Some([AtomId::new(3), AtomId::new(0)]));
             assert_eq!(
                 progressed.prop("_needsDetectBondStereo"),
-                Some(&PropertyValue::Int(1))
+                Some(&cosmolkit_model::PropertyValue::Int(1))
             );
         }
     }
@@ -10443,7 +11326,7 @@ mod uint_counter_proposed_tests {
     #[test]
     fn proposed_uint_source_counter_preserves_unsigned_postincrement() {
         let tokens = [];
-        let parser = SmartsParser::new(&tokens, "");
+        let parser = SmartsParser::new(&tokens, b"");
         for (value, next) in [
             (0_u32, 1_u32),
             (1, 2),
@@ -10466,7 +11349,7 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_counter_0_smarts_parse() {
         let tokens = [];
-        let parser = SmartsParser::new(&tokens, "");
+        let parser = SmartsParser::new(&tokens, b"");
         parser.num_bonds_parsed.set(0_u32);
         assert_eq!(parser.next_bond_source_index(), Ok(0_u32));
         assert_eq!(parser.num_bonds_parsed.get(), 1_u32);
@@ -10475,7 +11358,7 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_counter_1_smarts_parse() {
         let tokens = [];
-        let parser = SmartsParser::new(&tokens, "");
+        let parser = SmartsParser::new(&tokens, b"");
         parser.num_bonds_parsed.set(1_u32);
         assert_eq!(parser.next_bond_source_index(), Ok(1_u32));
         assert_eq!(parser.num_bonds_parsed.get(), 2_u32);
@@ -10484,7 +11367,7 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_counter_2147483646_smarts_parse() {
         let tokens = [];
-        let parser = SmartsParser::new(&tokens, "");
+        let parser = SmartsParser::new(&tokens, b"");
         parser.num_bonds_parsed.set(2147483646_u32);
         assert_eq!(parser.next_bond_source_index(), Ok(2147483646_u32));
         assert_eq!(parser.num_bonds_parsed.get(), 2147483647_u32);
@@ -10493,7 +11376,7 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_counter_2147483647_smarts_parse() {
         let tokens = [];
-        let parser = SmartsParser::new(&tokens, "");
+        let parser = SmartsParser::new(&tokens, b"");
         parser.num_bonds_parsed.set(2147483647_u32);
         assert_eq!(parser.next_bond_source_index(), Ok(2147483647_u32));
         assert_eq!(parser.num_bonds_parsed.get(), 2147483648_u32);
@@ -10502,7 +11385,7 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_counter_2147483648_smarts_parse() {
         let tokens = [];
-        let parser = SmartsParser::new(&tokens, "");
+        let parser = SmartsParser::new(&tokens, b"");
         parser.num_bonds_parsed.set(2147483648_u32);
         assert_eq!(parser.next_bond_source_index(), Ok(2147483648_u32));
         assert_eq!(parser.num_bonds_parsed.get(), 2147483649_u32);
@@ -10511,7 +11394,7 @@ mod uint_complete_source_condition_cells {
     #[test]
     fn uint_cell_counter_4294967295_smarts_parse() {
         let tokens = [];
-        let parser = SmartsParser::new(&tokens, "");
+        let parser = SmartsParser::new(&tokens, b"");
         parser.num_bonds_parsed.set(4294967295_u32);
         assert_eq!(parser.next_bond_source_index(), Ok(4294967295_u32));
         assert_eq!(parser.num_bonds_parsed.get(), 0_u32);
@@ -10536,7 +11419,7 @@ mod original_smarts_boundary_regressions {
             ("[C@TH1@TH2]", Some(1), ChiralTag::TetrahedralCcw),
         ] {
             let tokens = generic_parse_helper(text, ScannerStart::Atom).unwrap();
-            let mut parser = SmartsParser::new(&tokens, text);
+            let mut parser = SmartsParser::new(&tokens, text.as_bytes());
             let mut atom = parser.parse_atomd().unwrap().carrier;
             assert_eq!(atom.chiral_tag(), ChiralTag::Tetrahedral, "grammar {text}");
             assert_eq!(atom.chiral_permutation(), permutation, "grammar {text}");
@@ -10546,7 +11429,7 @@ mod original_smarts_boundary_regressions {
         }
         let text = "[@TH9;C]";
         let tokens = generic_parse_helper(text, ScannerStart::Atom).unwrap();
-        let mut parser = SmartsParser::new(&tokens, text);
+        let mut parser = SmartsParser::new(&tokens, text.as_bytes());
         let mut atom = parser.parse_atomd().unwrap().carrier;
         assert_eq!(atom.chiral_tag(), ChiralTag::Tetrahedral);
         assert_eq!(atom.chiral_permutation(), Some(9));
@@ -10644,4 +11527,178 @@ mod smarts_source_state_tests {
             assert_eq!(bond.predicate(), &make_bond_order_equals_query(order));
         }
     }
+}
+
+#[cfg(test)]
+mod source_complete_smarts_composition_tests {
+    use super::*;
+    use cosmolkit_model::{BondStereo, PropertyValue, RecursiveStructureQuery};
+
+    fn first_recursive(query: &QueryNode<AtomQueryPredicate>) -> &QueryGraph {
+        match query {
+            QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => {
+                recursive.query_graph().unwrap()
+            }
+            QueryNode::And(children) | QueryNode::Or(children) | QueryNode::Xor(children) => {
+                children
+                    .iter()
+                    .find_map(|child| match child {
+                        QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(recursive)) => {
+                            recursive.query_graph()
+                        }
+                        _ => None,
+                    })
+                    .unwrap()
+            }
+            QueryNode::Not(child) => first_recursive(child),
+            _ => panic!("fixture has no source recursive query"),
+        }
+    }
+
+    #[test]
+    fn each_source_expand_query_call_retains_its_own_nested_and_node() {
+        let graph = parse_smarts(
+            "[C]([H])[H]",
+            &SmartsParseParams {
+                merge_hs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(graph.num_atoms(), 1);
+        assert_eq!(
+            graph.atoms()[0].predicate(),
+            &QueryNode::And(vec![
+                QueryNode::And(vec![
+                    QueryNode::Predicate(AtomQueryPredicate::AtomType {
+                        atomic_number: 6,
+                        aromatic: false
+                    }),
+                    QueryNode::Not(Box::new(QueryNode::Predicate(
+                        AtomQueryPredicate::HydrogenCount(0)
+                    ))),
+                ]),
+                QueryNode::Not(Box::new(QueryNode::Predicate(
+                    AtomQueryPredicate::HydrogenCount(1)
+                ))),
+            ])
+        );
+    }
+
+    #[test]
+    fn source_query_hydrogen_guard_skips_recursive_merging_for_retained_hydrogen_rows() {
+        let input = "[#1;$([C][H])]";
+        let raw = parse_smarts(input, &Default::default()).unwrap();
+        assert_eq!(raw.num_atoms(), 1);
+        assert_eq!(first_recursive(raw.atoms()[0].predicate()).num_atoms(), 2);
+        let merged = parse_smarts(
+            input,
+            &SmartsParseParams {
+                merge_hs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(merged.num_atoms(), 1);
+        assert_eq!(
+            first_recursive(merged.atoms()[0].predicate()).num_atoms(),
+            2
+        );
+        // The native copying wrapper also quick-copies recursive query molecules.
+        assert_eq!(merged, raw.clone());
+    }
+
+    #[test]
+    fn source_h_token_in_an_expression_is_a_count_query_and_reaches_recursion() {
+        // smarts.yy H_TOKEN action installs AtomHCount(1); HASH_TOKEN number
+        // installs AtomAtomicNum. Retain the original failing input as its own
+        // exact source grammar case rather than discarding its coverage.
+        let input = "[H;$([C][H])]";
+        let raw = parse_smarts(input, &Default::default()).unwrap();
+        assert_eq!(first_recursive(raw.atoms()[0].predicate()).num_atoms(), 2);
+        let merged = parse_smarts(
+            input,
+            &SmartsParseParams {
+                merge_hs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            first_recursive(merged.atoms()[0].predicate()).num_atoms(),
+            1
+        );
+        assert!(
+            matches!(raw.atoms()[0].predicate(), QueryNode::And(children)
+            if children.iter().any(|node| matches!(node, QueryNode::Predicate(AtomQueryPredicate::HydrogenCount(1)))))
+        );
+    }
+
+    #[test]
+    fn source_non_hydrogen_recursive_rows_reach_the_same_hydrogen_owner() {
+        let input = "[C;$([C][H])]";
+        let raw = parse_smarts(input, &Default::default()).unwrap();
+        assert_eq!(first_recursive(raw.atoms()[0].predicate()).num_atoms(), 2);
+        let merged = parse_smarts(
+            input,
+            &SmartsParseParams {
+                merge_hs: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let nested = first_recursive(merged.atoms()[0].predicate());
+        assert_eq!(nested.num_atoms(), 1);
+        assert_eq!(nested.num_bonds(), 0);
+        assert!(matches!(nested.atoms()[0].predicate(), QueryNode::And(_)));
+        assert_eq!(first_recursive(raw.atoms()[0].predicate()).num_atoms(), 2);
+    }
+
+    #[test]
+    fn source_direction_clear_errors_propagate_before_any_bond_changes() {
+        let mut graph = parse_smarts("F/C=C/Cl", &Default::default()).unwrap();
+        graph.set_prop("_needsDetectBondStereo", 1_i32).unwrap();
+        graph.set_prop("__computedProps", 7_i32).unwrap();
+        let before = graph.clone();
+        assert!(matches!(
+            crate::query_graph_behavior::set_bond_stereo_from_directions(&mut graph),
+            Err(SmartsParseError::MoleculeProperty(_))
+        ));
+        assert_eq!(graph, before);
+        assert_eq!(
+            graph.prop("_needsDetectBondStereo"),
+            Some(&PropertyValue::Int(1))
+        );
+    }
+
+    #[test]
+    fn missing_recursive_source_graph_is_a_structural_error() {
+        let mut query = QueryNode::Predicate(AtomQueryPredicate::RecursiveSmarts(
+            RecursiveStructureQuery::new(),
+        ));
+        assert_eq!(
+            merge_recursive_query_hydrogens(&mut query, false, false),
+            Err(SmartsParseError::MissingRecursiveQueryGraph)
+        );
+    }
+
+    #[test]
+    fn source_direction_postprocessing_sets_carriers_before_cis_trans_and_names_last() {
+        for (input, stereo) in [
+            ("F/C=C/Cl sample", BondStereo::Trans),
+            ("F/C=C\\Cl sample", BondStereo::Cis),
+        ] {
+            let graph = parse_smarts(input, &Default::default()).unwrap();
+            let bond = graph.bonds()[1].bond();
+            assert_eq!(bond.stereo(), stereo);
+            assert_eq!(bond.stereo_atoms(), Some([AtomId::new(0), AtomId::new(3)]));
+            assert_eq!(graph.name().unwrap(), Some(&"sample".into()));
+            assert_eq!(graph.prop("_needsDetectBondStereo"), None);
+        }
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_text(value: &cosmolkit_model::PropertyText) -> &str {
+    std::str::from_utf8(value.as_bytes()).expect("original text fixture has valid UTF8 bytes")
 }

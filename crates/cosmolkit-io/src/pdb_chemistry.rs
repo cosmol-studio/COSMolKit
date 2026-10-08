@@ -1241,7 +1241,10 @@ pub fn apply_standard_pdb_residue_chirality_detached(
     Ok(())
 }
 
-fn standard_pdb_chiral_atom_like_rdkit(residue_name: &str, atom_name: &str) -> bool {
+fn standard_pdb_chiral_atom_like_rdkit(
+    residue_name: impl AsRef<[u8]>,
+    atom_name: impl AsRef<[u8]>,
+) -> bool {
     // BEGIN RDKIT CPP FUNCTION StandardPDBChiralAtom
     // RDKit✔️✔️: bool StandardPDBChiralAtom(const char *resnam, const char *atmnam) {
     // RDKit✔️✔️:   switch (BCNAM(resnam[0], resnam[1], resnam[2])) {
@@ -1275,8 +1278,8 @@ fn standard_pdb_chiral_atom_like_rdkit(residue_name: &str, atom_name: &str) -> b
     // RDKit✔️✔️:   return false;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION StandardPDBChiralAtom
-    let rescode = fixed_width_code(residue_name.as_bytes(), 3);
-    let atom = atom_name.as_bytes();
+    let rescode = fixed_width_code(residue_name.as_ref(), 3);
+    let atom = atom_name.as_ref();
     match rescode {
         res if res == bcnam(b'G', b'L', b'Y') => false,
         res if res == bcnam(b'I', b'L', b'E') || res == bcnam(b'T', b'H', b'R') => {

@@ -2,9 +2,15 @@ use cosmolkit_model::{AtomId, BondId};
 #[derive(Debug, thiserror::Error)]
 pub enum ReactionProductError {
     #[error(transparent)]
+    Coordinate(#[from] cosmolkit_model::CoordinateValidationError),
+    #[error(transparent)]
+    TopologyEdit(#[from] cosmolkit_model::TopologyEditError),
+    #[error(transparent)]
     Adjacency(#[from] cosmolkit_model::AdjacencyError),
     #[error(transparent)]
     RingFinding(#[from] cosmolkit_core::RingFindingError),
+    #[error(transparent)]
+    SourceUInt(#[from] cosmolkit_core::PropertyUIntReadError),
     #[error(transparent)]
     Valence(#[from] cosmolkit_core::ValenceError),
     #[error(transparent)]

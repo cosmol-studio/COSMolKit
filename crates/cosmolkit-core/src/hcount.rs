@@ -1,5 +1,6 @@
 //! RDKit-aligned hydrogen-count composition over detached topology values.
 
+use crate::stereo_graph::{StereoAtomAccess, StereoGraphAccess};
 use cosmolkit_model::{Atom, AtomId, TopologyBlock, TopologyValidationError};
 
 use crate::{
@@ -187,15 +188,15 @@ pub fn adjust_hs(
     })
 }
 
-fn explicit_hydrogen_count(atom: &Atom) -> u32 {
+fn explicit_hydrogen_count<A: StereoAtomAccess>(atom: &A) -> u32 {
     // BEGIN RDKIT CPP FUNCTION Atom::getNumExplicitHs
     // RDKit✔️✔️: unsigned int getNumExplicitHs() const { return d_numExplicitHs; }
     // END RDKIT CPP FUNCTION Atom::getNumExplicitHs
     u32::from(atom.explicit_hydrogens())
 }
 
-pub(crate) fn implicit_hydrogen_count(
-    atom: &Atom,
+pub(crate) fn implicit_hydrogen_count<A: StereoAtomAccess>(
+    atom: &A,
     valence: &ValenceAssignment,
 ) -> Result<u32, ValenceError> {
     // BEGIN RDKIT CPP FUNCTION Atom::getNumImplicitHs
@@ -210,6 +211,28 @@ pub(crate) fn implicit_hydrogen_count(
     // RDKit✔️✔️:   return getValence(ValenceType::IMPLICIT);
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::getNumImplicitHs
+    // RDKit✔️✔️: unsigned int Atom::getValence(ValenceType which) const {
+    // RDKit✔️✔️:   if (!dp_mol) {
+    // RDKit✔️✔️:     return 0;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   PRECONDITION(
+    // RDKit✔️✔️:       (which == ValenceType::IMPLICIT || d_explicitValence > -1),
+    // RDKit✔️✔️:       "getValence(ValenceType::EXPLICIT) called without call to calcExplicitValence()");
+    // RDKit✔️✔️:   PRECONDITION(
+    // RDKit✔️✔️:       (which == ValenceType::EXPLICIT || df_noImplicit ||
+    // RDKit✔️✔️:        d_implicitValence > -1),
+    // RDKit✔️✔️:       "getValence(ValenceType::IMPLICIT) called without call to calcImplicitValence()");
+    // RDKit✔️✔️:   if (which == ValenceType::EXPLICIT) {
+    // RDKit✔️✔️:     return d_explicitValence;
+    // RDKit✔️✔️:   } else {
+    // RDKit✔️✔️:     return df_noImplicit ? 0 : d_implicitValence;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Source getValence reach is IMPLICIT on a topology-owned atom: the
+    // explicit branch and no-owning-molecule branch are unreachable here.
+    // The noImplicit return precedes cache access; negative/missing actual
+    // cache rows propagate the source precondition, never the legacy H flag.
+    // Complexity review: one flag, one indexed cache read, constant stack work.
     if atom.no_implicit() {
         return Ok(0);
     }
@@ -244,18 +267,18 @@ pub fn total_hydrogen_count(
 /// Compose hydrogen counts after the caller has validated topology and
 /// assignment dimensions. This is the unique O(degree) implementation used by
 /// chemistry phases that would otherwise repeat a whole-topology scan.
-pub fn total_hydrogen_count_from_validated(
-    topology: &TopologyBlock,
+pub fn total_hydrogen_count_from_validated<G: StereoGraphAccess>(
+    topology: &G,
     valence: &ValenceAssignment,
     atom_id: AtomId,
     include_neighbors: bool,
 ) -> Result<u32, ValenceError> {
     let atom = topology
-        .atoms
+        .atoms()
         .get(atom_id.index())
         .ok_or(ValenceError::AtomOutOfRange {
             atom: atom_id,
-            atom_count: topology.atoms.len(),
+            atom_count: topology.atoms().len(),
         })?;
 
     // BEGIN RDKIT CPP FUNCTION Atom::getTotalNumHs
@@ -277,31 +300,86 @@ pub fn total_hydrogen_count_from_validated(
     let implicit = implicit_hydrogen_count(atom, valence)?;
     let neighbor_hydrogens = if include_neighbors {
         topology
-            .adjacency
+            .adjacency()
             .neighbors_of(atom_id.index())
             .iter()
-            .filter(|neighbor| topology.atoms[neighbor.atom_index].atomic_number() == 1)
+            .filter(|neighbor| topology.atoms()[neighbor.atom_index].atomic_number() == 1)
             .count()
     } else {
         0
     };
-    let overflow = || ValenceError::HydrogenCountOverflow {
-        atom: atom_id,
-        explicit,
-        implicit,
-        neighbor_hydrogens,
-    };
-    let explicit = i32::try_from(explicit).map_err(|_| overflow())?;
-    let implicit = i32::try_from(implicit).map_err(|_| overflow())?;
-    let neighbor_count = i32::try_from(neighbor_hydrogens).map_err(|_| overflow())?;
-    let total = explicit
-        .checked_add(implicit)
-        .and_then(|count| count.checked_add(neighbor_count))
-        .ok_or_else(overflow)?;
-    u32::try_from(total).map_err(|_| ValenceError::HydrogenCountOverflow {
-        atom: atom_id,
-        explicit: explicit as u32,
-        implicit: implicit as u32,
-        neighbor_hydrogens,
-    })
+    // Both source getters return unsigned int: their initial sum is uint32.
+    // The native int initializer preserves the low bits on the pinned two's
+    // complement target. count_if returns ptrdiff_t; its addition is performed
+    // in that wider signed type before conversion back to int. The returned
+    // unsigned int therefore preserves the final low 32 bits. This is not a
+    // signed-int addition-overflow check or a chemical-count fallback.
+    // Actual native cache is int8 and explicit H count uint8; the detached
+    // count carrier can also exercise the widened arithmetic boundary.
+    Ok(explicit
+        .wrapping_add(implicit)
+        .wrapping_add(neighbor_hydrogens as u32))
+}
+
+#[cfg(test)]
+mod source646_implicit_hydrogen_tests {
+    use super::*;
+    use cosmolkit_model::AtomSpec;
+    use cosmolkit_types::Element;
+    #[test]
+    fn source646_no_implicit_short_circuits_missing_or_negative_actual_cache() {
+        let atom = Atom::from_spec(
+            AtomId::new(2),
+            AtomSpec::new(Element::C)
+                .with_no_implicit(true)
+                .with_implicit_hydrogen(true),
+        );
+        for rows in [vec![], vec![-1, -1, -1], vec![1, 2, 127]] {
+            assert_eq!(
+                implicit_hydrogen_count(
+                    &atom,
+                    &ValenceAssignment {
+                        explicit_valence: vec![],
+                        implicit_hydrogens: rows
+                    }
+                ),
+                Ok(0)
+            );
+        }
+    }
+    #[test]
+    fn source646_actual_cache_count_preconditions_and_flag_independence() {
+        for flag in [false, true] {
+            let atom = Atom::from_spec(
+                AtomId::new(0),
+                AtomSpec::new(Element::C).with_implicit_hydrogen(flag),
+            );
+            for count in [0, 1, 7, 127] {
+                assert_eq!(
+                    implicit_hydrogen_count(
+                        &atom,
+                        &ValenceAssignment {
+                            explicit_valence: vec![],
+                            implicit_hydrogens: vec![count]
+                        }
+                    ),
+                    Ok(count as u32)
+                );
+            }
+            for rows in [vec![], vec![-1], vec![-128]] {
+                assert_eq!(
+                    implicit_hydrogen_count(
+                        &atom,
+                        &ValenceAssignment {
+                            explicit_valence: vec![],
+                            implicit_hydrogens: rows
+                        }
+                    ),
+                    Err(ValenceError::ImplicitValenceCacheNotInitialized {
+                        atom: AtomId::new(0)
+                    })
+                );
+            }
+        }
+    }
 }

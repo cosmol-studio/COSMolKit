@@ -218,7 +218,8 @@ impl PathGraphAccess<'_> {
 
 pub(crate) trait NeighborSource {
     fn atom_count(&self) -> usize;
-    fn visit_neighbors(&self, atom: usize, visitor: &mut dyn FnMut(usize));
+    fn neighbor_count(&self, atom: usize) -> usize;
+    fn neighbor_at(&self, atom: usize, position: usize) -> usize;
 }
 
 impl NeighborSource for TopologyBlock {
@@ -226,10 +227,12 @@ impl NeighborSource for TopologyBlock {
         self.atoms.len()
     }
 
-    fn visit_neighbors(&self, atom: usize, visitor: &mut dyn FnMut(usize)) {
-        for neighbor in self.adjacency.neighbors_of(atom) {
-            visitor(neighbor.atom_index);
-        }
+    fn neighbor_count(&self, atom: usize) -> usize {
+        self.adjacency.neighbors_of(atom).len()
+    }
+
+    fn neighbor_at(&self, atom: usize, position: usize) -> usize {
+        self.adjacency.neighbors_of(atom)[position].atom_index
     }
 }
 
@@ -238,10 +241,12 @@ impl NeighborSource for QueryGraph {
         self.num_atoms()
     }
 
-    fn visit_neighbors(&self, atom: usize, visitor: &mut dyn FnMut(usize)) {
-        for &(neighbor, _) in &self.adjacency()[atom] {
-            visitor(neighbor);
-        }
+    fn neighbor_count(&self, atom: usize) -> usize {
+        self.adjacency()[atom].len()
+    }
+
+    fn neighbor_at(&self, atom: usize, position: usize) -> usize {
+        self.adjacency()[atom][position].0
     }
 }
 
@@ -249,12 +254,211 @@ pub(crate) fn connected_components_from_source(
     source: &impl NeighborSource,
 ) -> ConnectedComponents {
     // BEGIN RDKIT CPP FUNCTION MolOps::getMolFrags
-    // RDKit✔️✔️: unsigned int getMolFrags(const ROMol &mol, INT_VECT &mapping) {
-    // RDKit✔️✔️:   unsigned int natms = mol.getNumAtoms();
-    // RDKit✔️✔️:   mapping.resize(natms);
-    // RDKit✔️✔️:   return natms ? boost::connected_components(mol.getTopology(), &mapping[0])
-    // RDKit✔️✔️:                : 0;
-    // RDKit✔️✔️: };
+    // RDKit✔️❌: unsigned int getMolFrags(const ROMol &mol, INT_VECT &mapping) {
+    // RDKit✔️❌:   unsigned int natms = mol.getNumAtoms();
+    // RDKit✔️❌:   mapping.resize(natms);
+    // RDKit✔️❌:   return natms ? boost::connected_components(mol.getTopology(), &mapping[0])
+    // RDKit✔️❌:                : 0;
+    // RDKit✔️❌: };
+    // END RDKIT CPP FUNCTION MolOps::getMolFrags(INT_VECT&)
+    // The canonical paired result also owns atom groups required by the
+    // companion overload. That output adds allocations compared with the
+    // mapping-only source overload; no allocation-equivalence claim is made.
+    // BEGIN REACHED BOOST connected_components / recorder / depth_first_search
+    // Source defining body connected_components.hpp::components_recorder
+    // Boost✔️✔️:     template < class ComponentsMap >
+    // Boost✔️✔️:     class components_recorder : public dfs_visitor<>
+    // Boost✔️✔️:     {
+    // Boost✔️✔️:         typedef typename property_traits< ComponentsMap >::value_type comp_type;
+    // Boost✔️✔️:
+    // Boost✔️✔️:     public:
+    // Boost✔️✔️:         components_recorder(ComponentsMap c, comp_type& c_count)
+    // Boost✔️✔️:         : m_component(c), m_count(c_count)
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:         template < class Vertex, class Graph > void start_vertex(Vertex, Graph&)
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             if (m_count == (std::numeric_limits< comp_type >::max)())
+    // Boost✔️✔️:                 m_count = 0; // start counting components at zero
+    // Boost✔️✔️:             else
+    // Boost✔️✔️:                 ++m_count;
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:         template < class Vertex, class Graph >
+    // Boost✔️✔️:         void discover_vertex(Vertex u, Graph&)
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             put(m_component, u, m_count);
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:
+    // Boost✔️✔️:     protected:
+    // Boost✔️✔️:         ComponentsMap m_component;
+    // Boost✔️✔️:         comp_type& m_count;
+    // Boost✔️✔️:     };
+    // Source defining body connected_components.hpp::connected_components
+    // Boost✔️✔️: template < class Graph, class ComponentMap >
+    // Boost✔️✔️: inline typename property_traits< ComponentMap >::value_type
+    // Boost✔️✔️: connected_components(const Graph& g,
+    // Boost✔️✔️:     ComponentMap c BOOST_GRAPH_ENABLE_IF_MODELS_PARM(
+    // Boost✔️✔️:         Graph, vertex_list_graph_tag))
+    // Boost✔️✔️: {
+    // Boost✔️✔️:     if (num_vertices(g) == 0)
+    // Boost✔️✔️:         return 0;
+    // Boost✔️✔️:
+    // Boost✔️✔️:     typedef typename graph_traits< Graph >::vertex_descriptor Vertex;
+    // Boost✔️✔️:     BOOST_CONCEPT_ASSERT((WritablePropertyMapConcept< ComponentMap, Vertex >));
+    // Boost✔️✔️:     // typedef typename boost::graph_traits<Graph>::directed_category directed;
+    // Boost✔️✔️:     // BOOST_STATIC_ASSERT((boost::is_same<directed, undirected_tag>::value));
+    // Boost✔️✔️:
+    // Boost✔️✔️:     typedef typename property_traits< ComponentMap >::value_type comp_type;
+    // Boost✔️✔️:     // c_count initialized to "nil" (with nil represented by (max)())
+    // Boost✔️✔️:     comp_type c_count((std::numeric_limits< comp_type >::max)());
+    // Boost✔️✔️:     detail::components_recorder< ComponentMap > vis(c, c_count);
+    // Boost✔️✔️:     depth_first_search(g, visitor(vis));
+    // Boost✔️✔️:     return c_count + 1;
+    // Boost✔️✔️: }
+    // Source defining body depth_first_search.hpp::depth_first_visit_impl
+    // Boost✔️✔️:     template < class IncidenceGraph, class DFSVisitor, class ColorMap,
+    // Boost✔️✔️:         class TerminatorFunc >
+    // Boost✔️✔️:     void depth_first_visit_impl(const IncidenceGraph& g,
+    // Boost✔️✔️:         typename graph_traits< IncidenceGraph >::vertex_descriptor u,
+    // Boost✔️✔️:         DFSVisitor& vis, ColorMap color, TerminatorFunc func = TerminatorFunc())
+    // Boost✔️✔️:     {
+    // Boost✔️✔️:         BOOST_CONCEPT_ASSERT((IncidenceGraphConcept< IncidenceGraph >));
+    // Boost✔️✔️:         BOOST_CONCEPT_ASSERT((DFSVisitorConcept< DFSVisitor, IncidenceGraph >));
+    // Boost✔️✔️:         typedef
+    // Boost✔️✔️:             typename graph_traits< IncidenceGraph >::vertex_descriptor Vertex;
+    // Boost✔️✔️:         typedef typename graph_traits< IncidenceGraph >::edge_descriptor Edge;
+    // Boost✔️✔️:         BOOST_CONCEPT_ASSERT((ReadWritePropertyMapConcept< ColorMap, Vertex >));
+    // Boost✔️✔️:         typedef typename property_traits< ColorMap >::value_type ColorValue;
+    // Boost✔️✔️:         BOOST_CONCEPT_ASSERT((ColorValueConcept< ColorValue >));
+    // Boost✔️✔️:         typedef color_traits< ColorValue > Color;
+    // Boost✔️✔️:         typedef typename graph_traits< IncidenceGraph >::out_edge_iterator Iter;
+    // Boost✔️✔️:         typedef std::pair< Vertex,
+    // Boost✔️✔️:             std::pair< boost::optional< Edge >, std::pair< Iter, Iter > > >
+    // Boost✔️✔️:             VertexInfo;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         boost::optional< Edge > src_e;
+    // Boost✔️✔️:         Iter ei, ei_end;
+    // Boost✔️✔️:         std::vector< VertexInfo > stack;
+    // Boost✔️✔️:
+    // Boost✔️✔️:         // Possible optimization for vector
+    // Boost✔️✔️:         // stack.reserve(num_vertices(g));
+    // Boost✔️✔️:
+    // Boost✔️✔️:         put(color, u, Color::gray());
+    // Boost✔️✔️:         vis.discover_vertex(u, g);
+    // Boost✔️✔️:         boost::tie(ei, ei_end) = out_edges(u, g);
+    // Boost✔️✔️:         if (func(u, g))
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             // If this vertex terminates the search, we push empty range
+    // Boost✔️✔️:             stack.push_back(std::make_pair(u,
+    // Boost✔️✔️:                 std::make_pair(boost::optional< Edge >(),
+    // Boost✔️✔️:                     std::make_pair(ei_end, ei_end))));
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:         else
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             stack.push_back(std::make_pair(u,
+    // Boost✔️✔️:                 std::make_pair(
+    // Boost✔️✔️:                     boost::optional< Edge >(), std::make_pair(ei, ei_end))));
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:         while (!stack.empty())
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             VertexInfo& back = stack.back();
+    // Boost✔️✔️:             u = back.first;
+    // Boost✔️✔️:             src_e = back.second.first;
+    // Boost✔️✔️:             boost::tie(ei, ei_end) = back.second.second;
+    // Boost✔️✔️:             stack.pop_back();
+    // Boost✔️✔️:             // finish_edge has to be called here, not after the
+    // Boost✔️✔️:             // loop. Think of the pop as the return from a recursive call.
+    // Boost✔️✔️:             if (src_e)
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 call_finish_edge(vis, src_e.get(), g);
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             while (ei != ei_end)
+    // Boost✔️✔️:             {
+    // Boost✔️✔️:                 Vertex v = target(*ei, g);
+    // Boost✔️✔️:                 vis.examine_edge(*ei, g);
+    // Boost✔️✔️:                 ColorValue v_color = get(color, v);
+    // Boost✔️✔️:                 if (v_color == Color::white())
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     vis.tree_edge(*ei, g);
+    // Boost✔️✔️:                     src_e = *ei;
+    // Boost✔️✔️:                     stack.push_back(std::make_pair(u,
+    // Boost✔️✔️:                         std::make_pair(src_e, std::make_pair(++ei, ei_end))));
+    // Boost✔️✔️:                     u = v;
+    // Boost✔️✔️:                     put(color, u, Color::gray());
+    // Boost✔️✔️:                     vis.discover_vertex(u, g);
+    // Boost✔️✔️:                     boost::tie(ei, ei_end) = out_edges(u, g);
+    // Boost✔️✔️:                     if (func(u, g))
+    // Boost✔️✔️:                     {
+    // Boost✔️✔️:                         ei = ei_end;
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:                 else
+    // Boost✔️✔️:                 {
+    // Boost✔️✔️:                     if (v_color == Color::gray())
+    // Boost✔️✔️:                     {
+    // Boost✔️✔️:                         vis.back_edge(*ei, g);
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                     else
+    // Boost✔️✔️:                     {
+    // Boost✔️✔️:                         vis.forward_or_cross_edge(*ei, g);
+    // Boost✔️✔️:                     }
+    // Boost✔️✔️:                     call_finish_edge(vis, *ei, g);
+    // Boost✔️✔️:                     ++ei;
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:             }
+    // Boost✔️✔️:             put(color, u, Color::black());
+    // Boost✔️✔️:             vis.finish_vertex(u, g);
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:     }
+    // Boost✔️✔️:
+    // Source defining body depth_first_search.hpp::depth_first_search
+    // Boost✔️✔️: template < class VertexListGraph, class DFSVisitor, class ColorMap >
+    // Boost✔️✔️: void depth_first_search(const VertexListGraph& g, DFSVisitor vis,
+    // Boost✔️✔️:     ColorMap color,
+    // Boost✔️✔️:     typename graph_traits< VertexListGraph >::vertex_descriptor start_vertex)
+    // Boost✔️✔️: {
+    // Boost✔️✔️:     typedef typename graph_traits< VertexListGraph >::vertex_descriptor Vertex;
+    // Boost✔️✔️:     BOOST_CONCEPT_ASSERT((DFSVisitorConcept< DFSVisitor, VertexListGraph >));
+    // Boost✔️✔️:     typedef typename property_traits< ColorMap >::value_type ColorValue;
+    // Boost✔️✔️:     typedef color_traits< ColorValue > Color;
+    // Boost✔️✔️:
+    // Boost✔️✔️:     typename graph_traits< VertexListGraph >::vertex_iterator ui, ui_end;
+    // Boost✔️✔️:     for (boost::tie(ui, ui_end) = vertices(g); ui != ui_end; ++ui)
+    // Boost✔️✔️:     {
+    // Boost✔️✔️:         Vertex u = implicit_cast< Vertex >(*ui);
+    // Boost✔️✔️:         put(color, u, Color::white());
+    // Boost✔️✔️:         vis.initialize_vertex(u, g);
+    // Boost✔️✔️:     }
+    // Boost✔️✔️:
+    // Boost✔️✔️:     if (start_vertex != detail::get_default_starting_vertex(g))
+    // Boost✔️✔️:     {
+    // Boost✔️✔️:         vis.start_vertex(start_vertex, g);
+    // Boost✔️✔️:         detail::depth_first_visit_impl(
+    // Boost✔️✔️:             g, start_vertex, vis, color, detail::nontruth2());
+    // Boost✔️✔️:     }
+    // Boost✔️✔️:
+    // Boost✔️✔️:     for (boost::tie(ui, ui_end) = vertices(g); ui != ui_end; ++ui)
+    // Boost✔️✔️:     {
+    // Boost✔️✔️:         Vertex u = implicit_cast< Vertex >(*ui);
+    // Boost✔️✔️:         ColorValue u_color = get(color, u);
+    // Boost✔️✔️:         if (u_color == Color::white())
+    // Boost✔️✔️:         {
+    // Boost✔️✔️:             vis.start_vertex(u, g);
+    // Boost✔️✔️:             detail::depth_first_visit_impl(
+    // Boost✔️✔️:                 g, u, vis, color, detail::nontruth2());
+    // Boost✔️✔️:         }
+    // Boost✔️✔️:     }
+    // Boost✔️✔️: }
+    // END REACHED BOOST connected_components / recorder / depth_first_search
+    // vecS vertices start in index order; each white root increments the
+    // component counter, and discovery records that counter. An explicit
+    // (vertex, next-out-edge) stack preserves native DFS adjacency order.
+    // The recorder has no finish/edge callback effects, so the component
+    // label itself represents both gray and black without a second color map.
+    // O(V+E) discovery and O(V) stack/labels, no graph/query/atom copies.
+    // Group rows are the companion getMolFrags overload's output, assembled
+    // only after discovery in atom-index order using dense component labels.
     let mut atom_to_component = vec![usize::MAX; source.atom_count()];
     let mut components = Vec::new();
     for start in 0..source.atom_count() {
@@ -262,36 +466,54 @@ pub(crate) fn connected_components_from_source(
             continue;
         }
         let component = components.len();
-        let mut queue = VecDeque::from([start]);
+        let mut stack = vec![(start, 0_usize)];
         atom_to_component[start] = component;
-        while let Some(atom) = queue.pop_front() {
-            source.visit_neighbors(atom, &mut |neighbor| {
-                if atom_to_component[neighbor] == usize::MAX {
-                    atom_to_component[neighbor] = component;
-                    queue.push_back(neighbor);
-                }
-            });
+        while let Some((atom, next_neighbor)) = stack.last_mut() {
+            if *next_neighbor == source.neighbor_count(*atom) {
+                stack.pop();
+                continue;
+            }
+            let neighbor = source.neighbor_at(*atom, *next_neighbor);
+            *next_neighbor += 1;
+            if atom_to_component[neighbor] == usize::MAX {
+                atom_to_component[neighbor] = component;
+                stack.push((neighbor, 0));
+            }
         }
         components.push(Vec::new());
     }
-    // RDKit✔️✔️:   INT_INT_VECT_MAP comMap;
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
-    // RDKit✔️✔️:     int mi = mapping[i];
-    // RDKit✔️✔️:     if (comMap.find(mi) == comMap.end()) {
-    // RDKit✔️✔️:       INT_VECT comp;
-    // RDKit✔️✔️:       comMap[mi] = comp;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     comMap[mi].push_back(i);
-    // RDKit✔️✔️:   }
+    // BEGIN RDKIT CPP FUNCTION MolOps::getMolFrags(VECT_INT_VECT&)
+    // RDKit✔️🔝: unsigned int getMolFrags(const ROMol &mol, VECT_INT_VECT &frags) {
+    // RDKit✔️🔝:   frags.clear();
+    // RDKit✔️🔝:   INT_VECT mapping;
+    // RDKit✔️🔝:   getMolFrags(mol, mapping);
+    // RDKit✔️🔝:
+    // RDKit✔️🔝:   INT_INT_VECT_MAP comMap;
+    // RDKit✔️🔝:   for (unsigned int i = 0; i < mol.getNumAtoms(); i++) {
+    // RDKit✔️🔝:     int mi = mapping[i];
+    // RDKit✔️🔝:     if (comMap.find(mi) == comMap.end()) {
+    // RDKit✔️🔝:       INT_VECT comp;
+    // RDKit✔️🔝:       comMap[mi] = comp;
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:     comMap[mi].push_back(i);
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:
+    // RDKit✔️🔝:   for (INT_INT_VECT_MAP_CI mci = comMap.begin(); mci != comMap.end(); mci++) {
+    // RDKit✔️🔝:     frags.push_back((*mci).second);
+    // RDKit✔️🔝:   }
+    // RDKit✔️🔝:   return rdcast<unsigned int>(frags.size());
+    // RDKit✔️🔝: }
+    // END RDKIT CPP FUNCTION MolOps::getMolFrags(VECT_INT_VECT&)
+    // Behavior: DFS assigns dense labels 0..K in ascending-root order. Source
+    // comMap iteration therefore equals this vector's index order, and its
+    // push_back loop equals ascending atom enumeration below. Fresh detached
+    // groups represent the source-cleared output without any old entries.
+    // Complexity improvement: dense component IDs replace O(log K) tree-map
+    // lookups/node allocations with O(1) indexing, preserving all member and
+    // fragment ordering. One O(V) pass, required output only, no atom copies.
     for (atom, component) in atom_to_component.iter().copied().enumerate() {
         components[component].push(AtomId::new(atom));
     }
-    // RDKit✔️✔️:   for (INT_INT_VECT_MAP_CI mci = comMap.begin(); mci != comMap.end(); mci++) {
-    // RDKit✔️✔️:     frags.push_back((*mci).second);
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return rdcast<unsigned int>(frags.size());
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION MolOps::getMolFrags
     ConnectedComponents {
         atom_to_component,
         components,

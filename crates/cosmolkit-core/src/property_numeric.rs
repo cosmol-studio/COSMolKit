@@ -280,6 +280,14 @@ fn trim_source_c_locale_right(bytes: &[u8]) -> &[u8] {
 }
 
 fn parse_decimal_magnitude(bytes: &[u8], offset: usize) -> Result<u32, UIntLexicalReadError> {
+    parse_decimal_magnitude_with_limit(bytes, offset, u64::from(u32::MAX)).map(|value| value as u32)
+}
+
+fn parse_decimal_magnitude_with_limit(
+    bytes: &[u8],
+    offset: usize,
+    maximum: u64,
+) -> Result<u64, UIntLexicalReadError> {
     // BEGIN BOOST CPP INPUT CONVERTER lcast_ret_unsigned
     // Boost✔️✔️:         template <class Traits, class T, class CharT>
     // Boost✔️✔️:         class lcast_ret_unsigned: boost::noncopyable {
@@ -415,7 +423,7 @@ fn parse_decimal_magnitude(bytes: &[u8], offset: usize) -> Result<u32, UIntLexic
     // Boost✔️✔️:         };
     // END BOOST CPP INPUT CONVERTER lcast_ret_unsigned
     // Behavior: the modeled C-locale branch accepts a nonempty decimal run
-    // iff its magnitude fits u32. Arbitrarily many leading zeros are accepted.
+    // iff its magnitude fits its actual unsigned source width. Arbitrarily many leading zeros are accepted.
     // Source reverse weighting and this forward checked accumulation have the
     // same success/value domain; failure returns the enclosing bad_any_cast,
     // with additional structural diagnostic detail retained locally.
@@ -425,7 +433,7 @@ fn parse_decimal_magnitude(bytes: &[u8], offset: usize) -> Result<u32, UIntLexic
     if bytes.is_empty() {
         return Err(UIntLexicalReadError::Empty);
     }
-    let mut magnitude = 0u32;
+    let mut magnitude = 0u64;
     for (position, &byte) in bytes.iter().enumerate() {
         if !byte.is_ascii_digit() {
             return Err(UIntLexicalReadError::Character {
@@ -435,7 +443,8 @@ fn parse_decimal_magnitude(bytes: &[u8], offset: usize) -> Result<u32, UIntLexic
         }
         magnitude = magnitude
             .checked_mul(10)
-            .and_then(|value| value.checked_add(u32::from(byte - b'0')))
+            .and_then(|value| value.checked_add(u64::from(byte - b'0')))
+            .filter(|value| *value <= maximum)
             .ok_or(UIntLexicalReadError::Overflow)?;
     }
     Ok(magnitude)
@@ -7141,4 +7150,183 @@ pub fn source_unsigned_stream_array(
     }
     let last = !failed && bytes.get(position) == Some(&b')');
     Ok((values, first, last))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PropertyULongReadError {
+    #[error("signed value {value} causes negative_overflow converting to uint64_t")]
+    Negative { value: i32 },
+    #[error("bad_any_cast reading {kind:?} as uint64_t")]
+    InvalidKind { kind: PropertyValueKind },
+    #[error(
+        "bad_any_cast reading string {value:?} as uint64_t: unsigned decimal magnitude exceeds u64"
+    )]
+    LexicalOverflow { value: PropertyText },
+    #[error("bad_any_cast reading string {value:?} as uint64_t: {source}")]
+    Lexical {
+        value: PropertyText,
+        #[source]
+        source: UIntLexicalReadError,
+    },
+}
+
+/// Reached source size_t getter on the pinned unsigned-long64 ABI.
+/// Generic Any-backed uint64_t values are supplied by explicit source metadata;
+/// every existing represented scalar tag follows the actual source specialization.
+#[doc(hidden)]
+pub fn property_value_to_ulong(value: &PropertyValue) -> Result<u64, PropertyULongReadError> {
+    // RDKit❗✔️: template <class T>
+    // RDKit❗✔️: typename boost::enable_if<boost::is_arithmetic<T>, T>::type from_rdvalue(
+    // RDKit❗✔️:     RDValue_cast_t arg) {
+    // RDKit❗✔️:   T res;
+    // RDKit❗✔️:   if (arg.getTag() == RDTypeTag::StringTag) {
+    // RDKit❗✔️:     Utils::LocaleSwitcher ls;
+    // RDKit❗✔️:     try {
+    // RDKit❗✔️:       res = rdvalue_cast<T>(arg);
+    // RDKit❗✔️:     } catch (const std::bad_any_cast &exc) {
+    // RDKit❗✔️:       try {
+    // RDKit❗✔️: 	std::string val = rdvalue_cast<std::string>(arg);
+    // RDKit❗✔️: 	// trim only the right characters, this mimics how SD values
+    // RDKit❗✔️: 	//  work on read, they will be trimmed by the MolFile parser
+    // RDKit❗✔️: 	boost::trim_right(val);
+    // RDKit❗✔️:         res = boost::lexical_cast<T>(val);
+    // RDKit❗✔️:       } catch (...) {
+    // RDKit❗✔️:         throw exc;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     res = rdvalue_cast<T>(arg);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // RDKit❗✔️:
+    // RDKit❗✔️: template <>
+    // RDKit❗✔️: inline std::uint64_t rdvalue_cast<std::uint64_t>(RDValue_cast_t v) {
+    // RDKit❗✔️:   if (rdvalue_is<unsigned int>(v)) {
+    // RDKit❗✔️:     return static_cast<std::uint64_t>(v.value.u);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<int>(v)) {
+    // RDKit❗✔️:     return boost::numeric_cast<std::uint64_t>(v.value.i);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (rdvalue_is<std::any>(v)) {
+    // RDKit❗✔️:     return std::any_cast<std::uint64_t>(*v.ptrCast<std::any>());
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   throw std::bad_any_cast();
+    // RDKit❗✔️: }
+    // Boost✔️✔️:             template <typename Type>
+    // Boost✔️✔️:             bool shr_unsigned(Type& output) {
+    // Boost✔️✔️:                 if (start == finish) return false;
+    // Boost✔️✔️:                 CharT const minus = lcast_char_constants<CharT>::minus;
+    // Boost✔️✔️:                 CharT const plus = lcast_char_constants<CharT>::plus;
+    // Boost✔️✔️:                 bool const has_minus = Traits::eq(minus, *start);
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 /* We won`t use `start' any more, so no need in decrementing it after */
+    // Boost✔️✔️:                 if (has_minus || Traits::eq(plus, *start)) {
+    // Boost✔️✔️:                     ++start;
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 bool const succeed = lcast_ret_unsigned<Traits, Type, CharT>(output, start, finish).convert();
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 if (has_minus) {
+    // Boost✔️✔️:                     output = static_cast<Type>(0u - output);
+    // Boost✔️✔️:                 }
+    // Boost✔️✔️:
+    // Boost✔️✔️:                 return succeed;
+    // Boost✔️✔️:             }
+    // Native UInt widens; signed negative typed values throw numeric-cast
+    // errors. Counted strings use right-only C-locale trimming and optional
+    // sign; textual minus is unsigned wrapping after full-width magnitude.
+    // The single bounded unsigned parser below serves u32 and u64, preserving
+    // all prior u32 limits/errors; no alternate chemistry parser or heuristic.
+    // O(bytes), constant scalar state, no successful-string allocation/UTF8
+    // decoding, versus native string copy and reverse weighted conversion.
+    match value {
+        PropertyValue::UInt(value) => Ok(u64::from(*value)),
+        PropertyValue::Int(value) => {
+            u64::try_from(*value).map_err(|_| PropertyULongReadError::Negative { value: *value })
+        }
+        PropertyValue::String(value) => {
+            let bytes = trim_source_c_locale_right(value.as_bytes());
+            let negative = bytes.first() == Some(&b'-');
+            let start = usize::from(negative || bytes.first() == Some(&b'+'));
+            let magnitude = parse_decimal_magnitude_with_limit(&bytes[start..], start, u64::MAX)
+                .map_err(|source| {
+                    if source == UIntLexicalReadError::Overflow {
+                        PropertyULongReadError::LexicalOverflow {
+                            value: value.clone(),
+                        }
+                    } else {
+                        PropertyULongReadError::Lexical {
+                            value: value.clone(),
+                            source,
+                        }
+                    }
+                })?;
+            Ok(if negative {
+                magnitude.wrapping_neg()
+            } else {
+                magnitude
+            })
+        }
+        other => Err(PropertyULongReadError::InvalidKind { kind: other.kind() }),
+    }
+}
+
+#[cfg(test)]
+mod source590_ulong_tests {
+    use super::*;
+    #[test]
+    fn source590_ulong_preserves_full_width_and_source_tag_asymmetry() {
+        assert_eq!(
+            property_value_to_ulong(&PropertyValue::UInt(u32::MAX)),
+            Ok(u64::from(u32::MAX))
+        );
+        assert!(matches!(
+            property_value_to_ulong(&PropertyValue::Int(-1)),
+            Err(PropertyULongReadError::Negative { value: -1 })
+        ));
+        for (text, expected) in [
+            ("4294967296", 4294967296),
+            ("18446744073709551615", u64::MAX),
+            ("-1", u64::MAX),
+            ("-18446744073709551615", 1),
+            ("+0001\x0b ", 1),
+        ] {
+            assert_eq!(
+                property_value_to_ulong(&PropertyValue::String(text.into())),
+                Ok(expected),
+                "{text:?}"
+            );
+        }
+        assert!(matches!(
+            property_value_to_ulong(&PropertyValue::String("18446744073709551616".into())),
+            Err(PropertyULongReadError::LexicalOverflow { .. })
+        ));
+        assert!(property_value_to_ulong(&PropertyValue::String(" 1".into())).is_err());
+        assert!(property_value_to_ulong(&PropertyValue::Bool(true)).is_err());
+        assert!(
+            property_value_to_ulong(&PropertyValue::String(PropertyText::from_bytes(&[
+                b'1', 0, b'2'
+            ])))
+            .is_err()
+        );
+    }
+    #[test]
+    fn source590_shared_parser_keeps_existing_unsigned32_acceptance_boundary() {
+        assert_eq!(
+            property_value_to_uint(&PropertyValue::String("4294967295".into())),
+            Ok(u32::MAX)
+        );
+        assert!(property_value_to_uint(&PropertyValue::String("4294967296".into())).is_err());
+        assert_eq!(
+            property_value_to_int(&PropertyValue::String("-2147483648".into())),
+            Ok(i32::MIN)
+        );
+        assert!(property_value_to_int(&PropertyValue::String("2147483648".into())).is_err());
+        assert_eq!(
+            property_value_to_uint(&PropertyValue::String("-4294967295".into())),
+            Ok(1)
+        );
+        assert!(property_value_to_uint(&PropertyValue::String("-4294967296".into())).is_err());
+    }
 }

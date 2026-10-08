@@ -40,7 +40,7 @@ pub use properties::{
 #[doc(hidden)]
 pub use property_text::PropertyText;
 #[doc(hidden)]
-pub use property_value::MissingPropertyError;
+pub use property_value::{MissingPropertyError, PropertyStore, PropertyStoreError};
 pub use property_value::{PropertyValue, PropertyValueError, PropertyValueKind};
 pub use query::{
     AtomQueryPredicate, AtomRangeBounds, AtomRangeDataFunction, AtomRangeQuery, BondQueryPredicate,
@@ -76,3 +76,23 @@ pub use sgroup::merge_absolute_stereo_groups;
 
 #[doc(hidden)]
 pub use sgroup::insert_stereo_groups;
+
+#[doc(hidden)]
+pub use topology::{SourceBondBatchMasks, SourceBondNeighbors, add_source_bond_order};
+
+// Narrow source state/value boundary for detached owning algorithms only.
+#[doc(hidden)]
+pub use topology::{SourceBatchCommitState, commit_batch_edit_source};
+
+#[doc(hidden)]
+pub use topology::{replace_source_bond, source_bond_between_atoms};
+
+#[doc(hidden)]
+pub use topology::add_source_bond_value;
+
+#[doc(hidden)]
+pub use coordinates::source_set_atom_position;
+
+mod source_ring_info;
+#[doc(hidden)]
+pub use source_ring_info::SourceRingInfo;

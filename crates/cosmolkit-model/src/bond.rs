@@ -321,7 +321,7 @@ pub struct Bond {
     is_conjugated: bool,
     direction: BondDirection,
     stereo: BondStereo,
-    stereo_atoms: Option<[AtomId; 2]>,
+    stereo_atoms: Vec<AtomId>,
     unknown_stereo: bool,
     properties: PropertyStore,
     query: Option<Box<QueryNode<BondQueryPredicate>>>,
@@ -398,7 +398,7 @@ impl Bond {
             is_conjugated: spec.is_conjugated,
             direction: spec.direction,
             stereo: spec.stereo,
-            stereo_atoms: spec.stereo_atoms,
+            stereo_atoms: spec.stereo_atoms.into_iter().flatten().collect(),
             unknown_stereo: spec.unknown_stereo,
             properties: spec.properties,
             query: spec.query,
@@ -420,7 +420,7 @@ impl Bond {
     }
 
     pub fn validate(&self) -> Result<(), BondValueError> {
-        validate_stereo_references(self.stereo, self.stereo_atoms)
+        validate_stereo_references(self.stereo, self.stereo_atoms())
     }
 
     #[doc(hidden)]
@@ -434,8 +434,17 @@ impl Bond {
         self.id = id;
         self.begin = begin;
         self.end = end;
-        self.stereo_atoms = stereo_atoms;
+        self.stereo_atoms = stereo_atoms.into_iter().flatten().collect();
         self
+    }
+
+    pub(crate) fn replace_source_properties_from(&mut self, source: &Self) {
+        // RDKit✔️❌: void updateProps(const RDProps &source, bool preserveExisting = false) {
+        // RDKit✔️❌:     d_props.update(source.getDict(), preserveExisting);
+        // RDKit✔️❌:   }
+        // Reuse the sole dictionary operation, including insertion order,
+        // computed-property carriers and replacement (not union) semantics.
+        self.properties.update_from(&source.properties, false);
     }
 
     #[must_use]
@@ -511,16 +520,37 @@ impl Bond {
         self.stereo
     }
 
+    /// The two-reference view used by pair-specific detached value APIs.
+    /// Other vector widths are available through `stereo_atom_references`.
     #[must_use]
-    pub const fn stereo_atoms(&self) -> Option<[AtomId; 2]> {
-        // RDKit✔️✔️: const INT_VECT &getStereoAtoms() const {
-        // RDKit✔️✔️:   if (!dp_stereoAtoms) {
-        // RDKit✔️✔️:     const_cast<Bond *>(this)->dp_stereoAtoms = new INT_VECT();
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   return *dp_stereoAtoms;
-        // RDKit✔️✔️: }
-        // The empty source vector is projected as `None`.
-        self.stereo_atoms
+    pub fn stereo_atoms(&self) -> Option<[AtomId; 2]> {
+        match self.stereo_atoms.as_slice() {
+            [begin, end] => Some([*begin, *end]),
+            _ => None,
+        }
+    }
+
+    /// Complete source stereo-reference vector, preserving cardinality and order.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn stereo_atom_references(&self) -> &[AtomId] {
+        // RDKit❗✔️:   const INT_VECT &getStereoAtoms() const {
+        // RDKit❗✔️:     if (!dp_stereoAtoms) {
+        // RDKit❗✔️:       const_cast<Bond *>(this)->dp_stereoAtoms = new INT_VECT();
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     return *dp_stereoAtoms;
+        // RDKit❗✔️:   }
+        // Native signed indices and lazy allocation identity are unmodeled.
+        // Borrow the sole actual vector without allocation or pair projection.
+        &self.stereo_atoms
+    }
+
+    /// Restore the complete detached source vector. The enclosing topology
+    /// constructor remains responsible for index and stereo validation.
+    #[doc(hidden)]
+    pub fn set_source_stereo_atom_references(&mut self, references: Vec<AtomId>) {
+        // RDKit❗✔️: bond->getStereoAtoms().swap(stereoAtoms);
+        self.stereo_atoms = references;
     }
 
     #[must_use]
@@ -642,14 +672,14 @@ impl Bond {
         // RDKit✔️✔️:   d_stereo = what;
         // RDKit✔️✔️: }
         // END RDKIT CPP FUNCTION Bond::setStereo
-        validate_stereo_references(stereo, self.stereo_atoms)?;
+        validate_stereo_references(stereo, self.stereo_atoms())?;
         self.stereo = stereo;
         Ok(())
     }
 
     #[doc(hidden)]
     pub fn set_stereo_atoms(&mut self, stereo_atoms: Option<[AtomId; 2]>) {
-        self.stereo_atoms = stereo_atoms;
+        self.stereo_atoms = stereo_atoms.into_iter().flatten().collect();
     }
 
     #[doc(hidden)]
@@ -817,7 +847,10 @@ mod tests {
         );
         assert!(query.bond().is_prop_computed("computed").unwrap());
 
-        query.bond_mut().clear_prop("first");
+        query
+            .bond_mut()
+            .clear_prop("first")
+            .expect("original fixture property clear succeeds");
         query
             .bond_mut()
             .set_prop("first", PropertyValue::Double(1.25))
@@ -892,7 +925,9 @@ mod flags_tests {
         assert_eq!(remapped.temporary_flags(), u64::MAX);
 
         let mut cleared = source.clone();
-        cleared.clear_computed_props();
+        cleared
+            .clear_computed_props()
+            .expect("original fixture property clear succeeds");
         assert_eq!(cleared.temporary_flags(), u64::MAX);
         assert_eq!(cleared.prop("derived"), None);
         assert_eq!(

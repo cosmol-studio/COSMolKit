@@ -218,12 +218,15 @@ fn checked_bond_properties_cover_empty_overwrite_membership_and_clear() {
         1
     );
 
-    bond.clear_prop("missing");
-    bond.clear_prop("cache");
+    bond.clear_prop("missing")
+        .expect("original fixture property clear succeeds");
+    bond.clear_prop("cache")
+        .expect("original fixture property clear succeeds");
     assert_eq!(bond.prop("cache"), None);
     assert!(!bond.is_prop_computed("cache").unwrap());
     bond.set_computed_prop("temporary", "gone").unwrap();
-    bond.clear_computed_props();
+    bond.clear_computed_props()
+        .expect("original fixture property clear succeeds");
     assert_eq!(bond.prop("temporary"), None);
     assert_eq!(string_prop(bond.prop("ordinary")), Some("second"));
     assert!(

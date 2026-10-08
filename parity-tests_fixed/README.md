@@ -6,8 +6,8 @@ then compare with Cargo. Ordinary regressions stay in their owning crates.
 ## Corpus
 
 ```bash
-cargo run -p cosmolkit-parity-tests-fixed --release -- prepare --corpus smiles_5000 --threads 112
-cargo test -p cosmolkit-parity-tests-fixed --release --features cosmolkit/op-contracts-strict --test corpus
+cargo run -p cosmolkit-parity-tests-fixed --profile dev-test -- prepare --corpus smiles_5000 --threads 112
+cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolkit/op-contracts-strict --test corpus
 ```
 
 Available corpora: `smiles_smoke`, `smiles_small`, `smiles_5000`, `bio_small`.
@@ -19,8 +19,8 @@ parameter combinations for each case remain together. Valid references show `reu
 To prepare and run just one task:
 
 ```bash
-cargo run -p cosmolkit-parity-tests-fixed --release -- prepare --corpus smiles_smoke --threads 112 --task smiles_write_smiles
-cargo test -p cosmolkit-parity-tests-fixed --release --features cosmolkit/op-contracts-strict --test corpus smiles_write_smiles -- --exact
+cargo run -p cosmolkit-parity-tests-fixed --profile dev-test -- prepare --corpus smiles_smoke --threads 112 --task smiles_write_smiles
+cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolkit/op-contracts-strict --test corpus smiles_write_smiles -- --exact
 ```
 
 Cargo owns name filtering and scheduling. `smiles_write_smiles` tests 768
@@ -56,8 +56,8 @@ No separate fingerprint-pairs corpus is needed. Results compare exactly.
 ## Special regressions
 
 ```bash
-cargo run -p cosmolkit-parity-tests-fixed --release -- prepare --special all --threads 112
-cargo test -p cosmolkit-parity-tests-fixed --release --features cosmolkit/op-contracts-strict --test special_regression
+cargo run -p cosmolkit-parity-tests-fixed --profile dev-test -- prepare --special all --threads 112
+cargo test -p cosmolkit-parity-tests-fixed --profile dev-test --features cosmolkit/op-contracts-strict --test special_regression
 ```
 
 For one special regression, replace `all` with `structure_tags`,

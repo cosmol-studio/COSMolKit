@@ -608,8 +608,8 @@ pub(super) fn is_blacklisted_pair(atoms: &[Atom], begin: AtomId, end: AtomId) ->
     !same_pdb_residue(begin_info, end_info)
         && (is_blacklisted_atom(begin_atom.atomic_number())
             || is_blacklisted_atom(end_atom.atomic_number())
-            || begin_info.residue_name() == "HOH"
-            || end_info.residue_name() == "HOH")
+            || begin_info.residue_name().as_bytes() == b"HOH"
+            || end_info.residue_name().as_bytes() == b"HOH")
 }
 
 pub(super) fn apply_conect_target(
@@ -1783,8 +1783,8 @@ mod tests {
         assert_eq!(topology.atoms[1].element(), Element::H);
         assert_eq!(topology.atoms[1].isotope(), Some(2));
         let info = topology.atoms[0].pdb_residue_info().expect("residue info");
-        assert_eq!(info.atom_name(), " O  ");
-        assert_eq!(info.alt_loc(), "A");
+        assert_eq!(info.atom_name().as_bytes(), b" O  ");
+        assert_eq!(info.alt_loc().as_bytes(), b"A");
         assert_eq!(info.occupancy(), 0.5);
         assert_eq!(info.temp_factor(), 12.25);
         assert_eq!(

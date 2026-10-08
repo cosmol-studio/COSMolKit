@@ -1,8 +1,102 @@
+#[cfg(test)]
+mod native_source_conformer_tests {
+    use super::*;
+    use cosmolkit_model::{Conformer2D, Conformer3D, CoordinateBlock, CoordinateDimension};
+
+    #[test]
+    fn source_default_selects_first_of_multiple_homogeneous_sets_without_id_sorting() {
+        let two = CoordinateBlock {
+            conformers_2d: vec![
+                Conformer2D::new(91, vec![[9.0, 1.0]]),
+                Conformer2D::new(0, vec![[0.0, 0.0]]),
+            ],
+            ..Default::default()
+        };
+        let before = two.clone();
+        match source_conformer_by_id(&two, -1).unwrap() {
+            CoordinateSource::TwoD(conf) => assert!(std::ptr::eq(conf, &two.conformers_2d[0])),
+            CoordinateSource::ThreeD(_) => panic!("wrong stored conformer"),
+        }
+        assert_eq!(two, before);
+        let three = CoordinateBlock {
+            conformers_3d: vec![
+                Conformer3D::new(91, vec![[9.0, 1.0, 2.0]], false),
+                Conformer3D::new(0, vec![[0.0, 0.0, 0.0]], true),
+            ],
+            ..Default::default()
+        };
+        let before = three.clone();
+        match source_conformer_by_id(&three, -1).unwrap() {
+            CoordinateSource::ThreeD(conf) => assert!(std::ptr::eq(conf, &three.conformers_3d[0])),
+            CoordinateSource::TwoD(_) => panic!("wrong stored conformer"),
+        }
+        assert_eq!(three, before);
+    }
+
+    #[test]
+    fn source_default_consumes_actual_cross_dimension_order_and_preserves_explicit_choices() {
+        for first in [CoordinateDimension::ThreeD, CoordinateDimension::TwoD] {
+            let order = if first == CoordinateDimension::ThreeD {
+                vec![
+                    CoordinateDimension::ThreeD,
+                    CoordinateDimension::TwoD,
+                    CoordinateDimension::ThreeD,
+                ]
+            } else {
+                vec![
+                    CoordinateDimension::TwoD,
+                    CoordinateDimension::ThreeD,
+                    CoordinateDimension::ThreeD,
+                ]
+            };
+            let coords = CoordinateBlock {
+                conformers_2d: vec![Conformer2D::new(1, vec![[1.0, 2.0]])],
+                conformers_3d: vec![
+                    Conformer3D::new(91, vec![[9.0, 1.0, 2.0]], false),
+                    Conformer3D::new(0, vec![[0.0, 0.0, 3.0]], true),
+                ],
+                source_conformer_order: Some(order),
+                ..Default::default()
+            };
+            let before = coords.clone();
+            match (first, source_conformer_by_id(&coords, -1).unwrap()) {
+                (CoordinateDimension::ThreeD, CoordinateSource::ThreeD(conf)) => {
+                    assert!(std::ptr::eq(conf, &coords.conformers_3d[0]))
+                }
+                (CoordinateDimension::TwoD, CoordinateSource::TwoD(conf)) => {
+                    assert!(std::ptr::eq(conf, &coords.conformers_2d[0]))
+                }
+                _ => panic!("source insertion order not retained"),
+            }
+            match select_cx_coordinates(&coords, CxCoordinateSelection::ThreeD { id: 0 })
+                .unwrap()
+                .unwrap()
+            {
+                CoordinateSource::ThreeD(conf) => {
+                    assert!(std::ptr::eq(conf, &coords.conformers_3d[1]))
+                }
+                _ => panic!("explicit dimension/ID changed"),
+            }
+            match select_cx_coordinates(&coords, CxCoordinateSelection::TwoD { id: 1 })
+                .unwrap()
+                .unwrap()
+            {
+                CoordinateSource::TwoD(conf) => {
+                    assert!(std::ptr::eq(conf, &coords.conformers_2d[0]))
+                }
+                _ => panic!("explicit dimension/ID changed"),
+            }
+            assert_eq!(coords, before);
+        }
+    }
+}
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
 };
 
+use cosmolkit_core::stereo_graph::StereoGraphAccess;
 use cosmolkit_core::{
     AtropisomerConformer, CrossedBondContext, RingInfo, RingSearchParams, ValenceAssignment,
     ValenceModel, WedgeAssignments, WedgeInfo, assign_valence_with_options_for_topology,
@@ -139,7 +233,7 @@ pub struct CxSmilesWriteParams {
 /// Selects which stored coordinate set a CXSMILES export uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CxCoordinateSelection {
-    /// Use the only stored set, omit coordinates when none exist, and reject ambiguity.
+    /// Use the first inserted conformer, and omit coordinates when none exist.
     Auto,
     /// Select a stored 2D layout by its dimension-scoped ID.
     TwoD { id: usize },
@@ -374,20 +468,24 @@ fn apply_cx_post_base_stereochemistry(
         .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
         prepared_record
             .properties
-            .set_computed_prop("_StereochemDone", cosmolkit_model::PropertyValue::Int(1))
+            .set_computed_prop("_StereochemDone", 1_i32)
             .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     }
     cosmolkit_core::cleanup_stereo_groups(&mut prepared_record.topology);
     Ok(())
 }
 
-fn append_extension(addition: impl AsRef<[u8]>, output: &mut PropertyText) {
-    // RDKit✔️✔️: void appendToCXExtension(const std::string &addition, std::string &base) {
-    // RDKit✔️✔️:   if (!addition.empty()) {
-    // RDKit✔️✔️:     if (base.size() > 1) { base += ","; }
-    // RDKit✔️✔️:     base += addition;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️: }
+/// Append counted CX bytes using the sole source delimiter rule.
+#[doc(hidden)]
+pub fn append_cx_extension_source(addition: impl AsRef<[u8]>, output: &mut PropertyText) {
+    // RDKit❗✔️: void appendToCXExtension(const std::string &addition, std::string &base) {
+    // RDKit❗✔️:   if (!addition.empty()) {
+    // RDKit❗✔️:     if (base.size() > 1) {
+    // RDKit❗✔️:       base += ",";
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     base += addition;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
     let addition = addition.as_ref();
     if !addition.is_empty() {
         if output.len() > 1 {
@@ -395,6 +493,12 @@ fn append_extension(addition: impl AsRef<[u8]>, output: &mut PropertyText) {
         }
         output.extend_bytes(addition);
     }
+    // O(addition bytes), one growing destination, no scan/clone/UTF8 parsing;
+    // Rust lacks Native SSO but no material asymptotic/buffering difference.
+}
+
+fn append_extension(addition: impl AsRef<[u8]>, output: &mut PropertyText) {
+    append_cx_extension_source(addition, output);
 }
 
 pub(crate) fn write_cx_extensions<'record>(
@@ -523,7 +627,8 @@ pub(crate) fn write_cx_extensions<'record>(
     } else {
         None
     };
-    if let Some(coords) = write_coordinates(selected_source, atom_order) {
+    if let Some(source) = selected_source {
+        let coords = write_cx_coordinates_from_source(source, atom_order)?;
         result.push_byte(b'(');
         result.extend_bytes((&coords).as_ref());
         result.push_byte(b')');
@@ -652,18 +757,18 @@ pub(crate) fn write_cx_extensions<'record>(
     }
     if fields.contains(CxSmilesFields::COORDINATE_BONDS) {
         append_extension(
-            write_coordinate_bonds(record, atom_order, bond_order, BondOrder::Dative, "C"),
+            write_coordinate_bonds(record, atom_order, bond_order, BondOrder::Dative, "C")?,
             &mut result,
         );
     }
     if fields.contains(CxSmilesFields::HYDROGEN_BONDS) {
         append_extension(
-            write_coordinate_bonds(record, atom_order, bond_order, BondOrder::Hydrogen, "H"),
+            write_coordinate_bonds(record, atom_order, bond_order, BondOrder::Hydrogen, "H")?,
             &mut result,
         );
     }
     if fields.contains(CxSmilesFields::ZERO_BONDS) {
-        append_extension(write_zero_bonds(record, bond_order), &mut result);
+        append_extension(write_zero_bonds(record, bond_order)?, &mut result);
     }
     if fields.contains(CxSmilesFields::LINKNODES) {
         append_extension(write_link_nodes(record, atom_order)?, &mut result);
@@ -710,7 +815,8 @@ fn atom_positions(atom_order: &[AtomId], atom_count: usize) -> Vec<Option<usize>
     positions
 }
 
-fn zero_small(value: f64) -> f64 {
+#[doc(hidden)]
+pub fn zero_small_cx_coordinate(value: f64) -> f64 {
     // BEGIN RDKIT CPP FUNCTION CXSmilesOps.cpp::zero_small_vals
     // RDKit✔️✔️: double zero_small_vals(double val) {
     // RDKit✔️✔️:   if (fabs(val) < 1e-4) {
@@ -738,8 +844,17 @@ fn zero_small(value: f64) -> f64 {
 // six digits; exponent parsing and in-place conversion keep this comparable
 // to the pinned single `%g` formatting result.
 fn format_general(value: f64) -> String {
+    // RDKit❗❌:     res += boost::str(boost::format("%g,%g,") % zero_small_vals(pt.x) %
+    // RDKit❗❌:                       zero_small_vals(pt.y));
+    // RDKit❗❌:       auto zc = boost::str(boost::format("%g") % zero_small_vals(pt.z));
     if !value.is_finite() {
-        return value.to_string();
+        // Pinned lower-case %g and the canonical CORE Boost conversion share
+        // inf/-inf/nan/-nan spelling and sign. Double is an infallible modeled
+        // source tag; do not use Rust Display's uppercase, unsigned NaN.
+        let text = property_value_to_string(&PropertyValue::Double(value))
+            .expect("source Double-to-string conversion is infallible");
+        return String::from_utf8(text.into_bytes())
+            .expect("canonical numeric string conversion emits ASCII");
     }
     if value == 0.0 {
         return if value.is_sign_negative() {
@@ -828,7 +943,7 @@ fn format_general(value: f64) -> String {
 /// The canonical SOURCE coordinate number conversion, shared by query output.
 #[doc(hidden)]
 pub fn format_cx_coordinate(value: f64) -> String {
-    format_general(zero_small(value))
+    format_general(zero_small_cx_coordinate(value))
 }
 
 #[derive(Clone, Copy)]
@@ -933,52 +1048,260 @@ pub fn select_cx_coordinates_from_sets<'record>(
     }
 }
 
-fn write_coordinates(
-    source: Option<CoordinateSource<'_>>,
-    atom_order: &[AtomId],
-) -> Option<String> {
-    // BEGIN RDKIT CPP FUNCTION get_coords_block
-    // RDKit✔️✔️: for (auto idx : atomOrder) {
-    // RDKit✔️✔️:   const auto &pt = conf.getAtomPos(idx);
-    // RDKit✔️✔️:   res += boost::str(boost::format("%g,%g,") % zero_small_vals(pt.x) %
-    // RDKit✔️✔️:                     zero_small_vals(pt.y));
-    // RDKit✔️✔️:   if (conf.is3D()) {
-    // RDKit✔️✔️:     auto zc = boost::str(boost::format("%g") % zero_small_vals(pt.z));
-    // RDKit✔️✔️:     if (zc != "0") { res += zc; }
+#[derive(Clone, Copy)]
+enum SourceConformerIndex {
+    TwoD(usize),
+    ThreeD(usize),
+}
+
+fn source_conformer_index_by_id(
+    coordinates: &cosmolkit_model::CoordinateBlock,
+    id: i32,
+) -> Result<SourceConformerIndex, SmilesParseError> {
+    // BEGIN RDKIT COMPLETE CPP FUNCTION ROMol.cpp::getConformer(int id) const
+    // RDKit✔️✔️: const Conformer &ROMol::getConformer(int id) const {
+    // RDKit✔️✔️:   // make sure we have more than one conformation
+    // RDKit✔️✔️:   if (d_confs.size() == 0) {
+    // RDKit✔️✔️:     throw ConformerException("No conformations available on the molecule");
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (id < 0) {
+    // RDKit✔️✔️:     return *(d_confs.front());
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   auto cid = (unsigned int)id;
+    // RDKit✔️✔️:   for (auto conf : d_confs) {
+    // RDKit✔️✔️:     if (conf->getId() == cid) {
+    // RDKit✔️✔️:       return *conf;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   // we did not find a conformation with the specified ID
+    // RDKit✔️✔️:   std::string mesg = "Can't find conformation with ID: ";
+    // RDKit✔️✔️:   mesg += id;
+    // RDKit✔️✔️:   throw ConformerException(mesg);
     // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION get_coords_block
-    let source = source?;
-    let mut points = Vec::with_capacity(atom_order.len());
-    for atom in atom_order {
-        let point = match source {
-            CoordinateSource::ThreeD(conformer) => {
-                let point = conformer.coordinates()[atom.index()];
-                let mut text = format!(
-                    "{},{},",
-                    format_general(zero_small(point[0])),
-                    format_general(zero_small(point[1]))
-                );
-                if conformer.is_3d() {
-                    let z = format_general(zero_small(point[2]));
-                    if z != "0" {
-                        text.push_str(&z);
-                    }
-                }
-                text
+    // END RDKIT COMPLETE CPP FUNCTION ROMol.cpp::getConformer(int id) const
+    // MODEL supplies the genuine source front; indexes identify that same
+    // existing row for both immutable and mutable borrowed projections below.
+    // O(1) default / O(C) ID scan, constant counters and no success allocation.
+    // No pointer reconstruction, guessed ordering or second lookup algorithm.
+    // Native mesg += id appends a narrowed char: decimal error context below
+    // is project-structured exception translation, not source message bytes.
+    if coordinates.conformers_2d.is_empty() && coordinates.conformers_3d.is_empty() {
+        return Err(SmilesParseError::Model(
+            "No conformations available on the molecule".into(),
+        ));
+    }
+    if id < 0 {
+        let first = coordinates
+            .first_source_conformer()
+            .map_err(SmilesParseError::Coordinates)?
+            .ok_or(SmilesParseError::Coordinates(
+                cosmolkit_model::CoordinateValidationError::MissingSourceConformerOrder,
+            ))?;
+        return Ok(match first {
+            cosmolkit_model::CoordinateSourceConformer::TwoD(_) => SourceConformerIndex::TwoD(0),
+            cosmolkit_model::CoordinateSourceConformer::ThreeD(_) => {
+                SourceConformerIndex::ThreeD(0)
             }
-            CoordinateSource::TwoD(conformer) => {
-                let point = conformer.coordinates()[atom.index()];
-                format!(
-                    "{},{},",
-                    format_general(zero_small(point[0])),
-                    format_general(zero_small(point[1]))
+        });
+    }
+    let cid = id as u32 as usize;
+    if let Some(order) = coordinates.source_conformer_order.as_deref() {
+        let mut two_d_index = 0;
+        let mut three_d_index = 0;
+        for dimension in order {
+            let (stored_id, index) =
+                match dimension {
+                    cosmolkit_model::CoordinateDimension::TwoD => {
+                        let row = coordinates
+                            .conformers_2d
+                            .get(two_d_index)
+                            .ok_or(SmilesParseError::Coordinates(
+                            cosmolkit_model::CoordinateValidationError::MissingSourceConformerOrder,
+                        ))?;
+                        let index = SourceConformerIndex::TwoD(two_d_index);
+                        two_d_index += 1;
+                        (row.id(), index)
+                    }
+                    cosmolkit_model::CoordinateDimension::ThreeD => {
+                        let row = coordinates
+                            .conformers_3d
+                            .get(three_d_index)
+                            .ok_or(SmilesParseError::Coordinates(
+                            cosmolkit_model::CoordinateValidationError::MissingSourceConformerOrder,
+                        ))?;
+                        let index = SourceConformerIndex::ThreeD(three_d_index);
+                        three_d_index += 1;
+                        (row.id(), index)
+                    }
+                };
+            if stored_id == cid {
+                return Ok(index);
+            }
+        }
+        if two_d_index != coordinates.conformers_2d.len()
+            || three_d_index != coordinates.conformers_3d.len()
+        {
+            return Err(SmilesParseError::Coordinates(
+                cosmolkit_model::CoordinateValidationError::MissingSourceConformerOrder,
+            ));
+        }
+    } else if coordinates.conformers_2d.is_empty() {
+        if let Some(index) = coordinates
+            .conformers_3d
+            .iter()
+            .position(|row| row.id() == cid)
+        {
+            return Ok(SourceConformerIndex::ThreeD(index));
+        }
+    } else if coordinates.conformers_3d.is_empty() {
+        if let Some(index) = coordinates
+            .conformers_2d
+            .iter()
+            .position(|row| row.id() == cid)
+        {
+            return Ok(SourceConformerIndex::TwoD(index));
+        }
+    } else {
+        return Err(SmilesParseError::Coordinates(
+            cosmolkit_model::CoordinateValidationError::MissingSourceConformerOrder,
+        ));
+    }
+    Err(SmilesParseError::Model(format!(
+        "Can't find conformation with ID: {id}"
+    )))
+}
+
+pub(super) fn source_conformer_by_id(
+    coordinates: &cosmolkit_model::CoordinateBlock,
+    id: i32,
+) -> Result<CoordinateSource<'_>, SmilesParseError> {
+    Ok(match source_conformer_index_by_id(coordinates, id)? {
+        SourceConformerIndex::TwoD(index) => {
+            CoordinateSource::TwoD(&coordinates.conformers_2d[index])
+        }
+        SourceConformerIndex::ThreeD(index) => {
+            CoordinateSource::ThreeD(&coordinates.conformers_3d[index])
+        }
+    })
+}
+
+enum CoordinateSourceMut<'a> {
+    TwoD(&'a mut Conformer2D),
+    ThreeD(&'a mut Conformer3D),
+}
+
+fn source_conformer_by_id_mut(
+    coordinates: &mut cosmolkit_model::CoordinateBlock,
+    id: i32,
+) -> Result<CoordinateSourceMut<'_>, SmilesParseError> {
+    // BEGIN RDKIT COMPLETE CPP FUNCTION ROMol.cpp::getConformer(int id)
+    // RDKit✔️✔️: Conformer &ROMol::getConformer(int id) {
+    // RDKit✔️✔️:   return const_cast<Conformer &>(
+    // RDKit✔️✔️:       static_cast<const ROMol *>(this)->getConformer(id));
+    // RDKit✔️✔️: }
+    // END RDKIT COMPLETE CPP FUNCTION ROMol.cpp::getConformer(int id)
+    // Both overloads delegate to the sole compared const lookup body. The
+    // returned mutable reference aliases the same original detached row;
+    // no clone, Cow, unrestricted runtime access, or duplicated selection.
+    // Lookup O(1)/O(C) then O(1) borrowed projection; no new allocation/scan.
+    Ok(match source_conformer_index_by_id(coordinates, id)? {
+        SourceConformerIndex::TwoD(index) => {
+            CoordinateSourceMut::TwoD(&mut coordinates.conformers_2d[index])
+        }
+        SourceConformerIndex::ThreeD(index) => {
+            CoordinateSourceMut::ThreeD(&mut coordinates.conformers_3d[index])
+        }
+    })
+}
+
+/// Write the canonical CX coordinate body from an actual borrowed conformer.
+#[doc(hidden)]
+pub fn write_cx_coordinates_from_source(
+    source: CoordinateSource<'_>,
+    atom_order: &[AtomId],
+) -> Result<String, SmilesParseError> {
+    // RDKit❗❌: std::string get_coords_block(const ROMol &mol,
+    // RDKit❗❌:                              const std::vector<unsigned int> &atomOrder) {
+    // RDKit❗❌:   std::string res = "";
+    // RDKit❗❌:   const auto &conf = mol.getConformer();
+    // RDKit❗❌:   bool first = true;
+    // RDKit❗❌:   for (auto idx : atomOrder) {
+    // RDKit❗❌:     const auto &pt = conf.getAtomPos(idx);
+    // RDKit❗❌:     if (!first) {
+    // RDKit❗❌:       res += ";";
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       first = false;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     res += boost::str(boost::format("%g,%g,") % zero_small_vals(pt.x) %
+    // RDKit❗❌:                       zero_small_vals(pt.y));
+    // RDKit❗❌:     if (conf.is3D()) {
+    // RDKit❗❌:       auto zc = boost::str(boost::format("%g") % zero_small_vals(pt.z));
+    // RDKit❗❌:       if (zc != "0") {
+    // RDKit❗❌:         res += zc;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return res;
+    // RDKit❗❌: }
+    // RDKit❗✔️: const RDGeom::Point3D &Conformer::getAtomPos(unsigned int atomId) const {
+    // RDKit❗✔️:   if (dp_mol) {
+    // RDKit❗✔️:     PRECONDITION(dp_mol->getNumAtoms() == d_positions.size(), "");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   URANGE_CHECK(atomId, d_positions.size());
+    // RDKit❗✔️:   return d_positions.at(atomId);
+    // RDKit❗✔️: }
+    // Source getConformer/front selection is performed by the caller's sole
+    // MODEL selector. This input is that existing borrowed row, never guessed
+    // from an ID, dimension preference, geometry or import-provenance hint.
+    let mut output = String::new();
+    for (position, atom) in atom_order.iter().enumerate() {
+        let (x, y, z) = match source {
+            CoordinateSource::ThreeD(conformer) => {
+                let point = conformer.coordinates().get(atom.index()).ok_or(
+                    SmilesParseError::CxCoordinateAtomOutOfRange {
+                        atom: *atom,
+                        atom_count: conformer.coordinates().len(),
+                    },
+                )?;
+                (
+                    point[0],
+                    point[1],
+                    if conformer.is_3d() {
+                        Some(point[2])
+                    } else {
+                        None
+                    },
                 )
             }
+            CoordinateSource::TwoD(conformer) => {
+                let point = conformer.coordinates().get(atom.index()).ok_or(
+                    SmilesParseError::CxCoordinateAtomOutOfRange {
+                        atom: *atom,
+                        atom_count: conformer.coordinates().len(),
+                    },
+                )?;
+                (point[0], point[1], None)
+            }
         };
-        points.push(point);
+        if position != 0 {
+            output.push(';');
+        }
+        output.push_str(&format_general(zero_small_cx_coordinate(x)));
+        output.push(',');
+        output.push_str(&format_general(zero_small_cx_coordinate(y)));
+        output.push(',');
+        if let Some(z) = z {
+            let z = format_general(zero_small_cx_coordinate(z));
+            if z != "0" {
+                output.push_str(&z);
+            }
+        }
     }
-    Some(points.join(";"))
+    // Cost ❌: the shared scalar formatter owns heap strings and reparses its
+    // rounded exponent/digits, and output has no SSO. One output buffer avoids
+    // the old per-point String vector/join and keeps source member traversal.
+    Ok(output)
 }
 
 fn write_atom_labels<'record>(
@@ -1221,25 +1544,28 @@ fn write_radicals<'record>(
     Ok(block)
 }
 
-fn quote_atom_property(text: &[u8]) -> PropertyText {
+#[doc(hidden)]
+pub fn quote_cx_atom_property(text: &[u8]) -> PropertyText {
     // BEGIN RDKIT CPP FUNCTION quote_atomprop_string
-    // RDKit❗✔️: std::string quote_atomprop_string(const std::string &txt) {
-    // RDKit❗✔️:   // at a bare minimum, . needs to be escaped
-    // RDKit❗✔️:   std::string res;
-    // RDKit❗✔️:   for (auto c : txt) {
-    // RDKit❗✔️:     if (c == '.') {
-    // RDKit❗✔️:       res += "&#46;";
-    // RDKit❗✔️:     } else {
-    // RDKit❗✔️:       res += c;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   return res;
-    // RDKit❗✔️: }
+    // RDKit❗❌: std::string quote_atomprop_string(const std::string &txt) {
+    // RDKit❗❌:   // at a bare minimum, . needs to be escaped
+    // RDKit❗❌:   std::string res;
+    // RDKit❗❌:   for (auto c : txt) {
+    // RDKit❗❌:     if (c == '.') {
+    // RDKit❗❌:       res += "&#46;";
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       res += c;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return res;
+    // RDKit❗❌: }
     // END RDKIT CPP FUNCTION quote_atomprop_string
     // Behavior review: Rust replaces only ASCII periods with the source token;
-    // empty text and every other UTF-8 sequence remain unchanged.
+    // empty text and every other counted byte, including NUL/non-UTF8, remain unchanged.
     // Complexity review: one linear string replacement creates one output
     // buffer, matching the source's linear scan and output construction.
+    // Cost ❌: short Native std::string results use SSO; the counted byte
+    // vector allocates even for a single period. The scan/buffer stay linear.
     let mut result = PropertyText::new();
     for &byte in text {
         if byte == b'.' {
@@ -1251,83 +1577,160 @@ fn quote_atom_property(text: &[u8]) -> PropertyText {
     result
 }
 
+trait SourceCxAtomProperties {
+    fn source_atomic_number(&self) -> u8;
+    fn source_prop(&self, key: &[u8]) -> Option<&PropertyValue>;
+    fn source_prop_required(
+        &self,
+        key: &PropertyText,
+    ) -> Result<&PropertyValue, cosmolkit_model::MissingPropertyError>;
+    fn source_property_records(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = (&PropertyText, &PropertyValue)> + '_,
+        cosmolkit_model::AtomPropertyError,
+    >;
+}
+impl SourceCxAtomProperties for cosmolkit_model::Atom {
+    fn source_atomic_number(&self) -> u8 {
+        self.atomic_number()
+    }
+    fn source_prop(&self, key: &[u8]) -> Option<&PropertyValue> {
+        self.prop(key)
+    }
+    fn source_prop_required(
+        &self,
+        key: &PropertyText,
+    ) -> Result<&PropertyValue, cosmolkit_model::MissingPropertyError> {
+        self.prop_required(key)
+    }
+    fn source_property_records(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = (&PropertyText, &PropertyValue)> + '_,
+        cosmolkit_model::AtomPropertyError,
+    > {
+        self.property_records(false, false)
+    }
+}
+impl SourceCxAtomProperties for cosmolkit_model::QueryAtom {
+    fn source_atomic_number(&self) -> u8 {
+        self.atomic_number()
+    }
+    fn source_prop(&self, key: &[u8]) -> Option<&PropertyValue> {
+        self.prop(key)
+    }
+    fn source_prop_required(
+        &self,
+        key: &PropertyText,
+    ) -> Result<&PropertyValue, cosmolkit_model::MissingPropertyError> {
+        self.prop_required(key)
+    }
+    fn source_property_records(
+        &self,
+    ) -> Result<
+        impl Iterator<Item = (&PropertyText, &PropertyValue)> + '_,
+        cosmolkit_model::AtomPropertyError,
+    > {
+        self.property_records(false, false)
+    }
+}
+
 fn write_atom_properties<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     atom_order: &[AtomId],
 ) -> Result<PropertyText, SmilesParseError> {
-    let record = record.into();
-    // BEGIN RDKIT CPP FUNCTION get_atom_props_block
-    // RDKit❗✔️: std::string get_atom_props_block(const ROMol &mol,
-    // RDKit❗✔️:                                  const std::vector<unsigned int> &atomOrder) {
-    // RDKit❗✔️:   constexpr std::array<std::string_view, 7> skip = {
-    // RDKit❗✔️:       common_properties::atomLabel,       common_properties::molFileValue,
-    // RDKit❗✔️:       common_properties::molParity,       common_properties::molAtomMapNumber,
-    // RDKit❗✔️:       common_properties::molStereoCare,   common_properties::molRxnExactChange,
-    // RDKit❗✔️:       common_properties::molInversionFlag};
-    // RDKit❗✔️:   std::string res = "";
-    // RDKit❗✔️:   unsigned int which = 0;
-    // RDKit❗✔️:   for (auto idx : atomOrder) {
-    // RDKit❗✔️:     const auto atom = mol.getAtomWithIdx(idx);
-    // RDKit❗✔️:     bool isAttachmentPoint = !atom->getAtomicNum() &&
-    // RDKit❗✔️:                              atom->hasProp(common_properties::_fromAttachPoint);
-    // RDKit❗✔️:     bool includePrivate = false, includeComputed = false;
-    // RDKit❗✔️:     for (const auto &pn : atom->getPropList(includePrivate, includeComputed)) {
-    // RDKit❗✔️:       if (std::find(skip.begin(), skip.end(), pn) == skip.end()) {
-    // RDKit❗✔️:         std::string pv = atom->getProp<std::string>(pn);
-    // RDKit❗✔️:         if (pn == "dummyLabel" &&
-    // RDKit❗✔️:             (isAttachmentPoint || pv == "*" ||
-    // RDKit❗✔️:              std::find(SmilesParseOps::pseudoatoms.begin(),
-    // RDKit❗✔️:                        SmilesParseOps::pseudoatoms.end(),
-    // RDKit❗✔️:                        pv) != SmilesParseOps::pseudoatoms.end())) {
-    // RDKit❗✔️:           // it's a pseudoatom or attachment point, skip it
-    // RDKit❗✔️:           continue;
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:         if (res.empty()) {
-    // RDKit❗✔️:           res += "atomProp";
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:         res +=
-    // RDKit❗✔️:             boost::str(boost::format(":%d.%s.%s") % which %
-    // RDKit❗✔️:                        quote_atomprop_string(pn) % quote_atomprop_string(pv));
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     ++which;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   return res;
-    // RDKit❗✔️: }
-    // END RDKIT CPP FUNCTION get_atom_props_block
-    // Behavior review: source insertion order, filtering, typed RDValue string
-    // projection and the exact dummyLabel exclusions are reproduced for the
-    // modeled String/Int/Double/Bool property state.
-    // Complexity review: one output String is accumulated directly, matching
-    // the source shape without per-property entry buffers.
-    const SKIP: [&str; 7] = [
-        "atomLabel",
-        "molFileValue",
-        "molParity",
-        "molAtomMapNumber",
-        "molStereoCare",
-        "molRxnExachg",
-        "molInversionFlag",
+    write_cx_atom_properties_impl(&record.into().topology.atoms, atom_order)
+}
+
+/// Serialize actual borrowed query-carrier properties through the sole CX body.
+#[doc(hidden)]
+pub fn write_query_cx_atom_properties_source(
+    query: &cosmolkit_model::QueryGraph,
+    atom_order: &[AtomId],
+) -> Result<PropertyText, SmilesParseError> {
+    write_cx_atom_properties_impl(query.atoms(), atom_order)
+}
+
+fn write_cx_atom_properties_impl<A: SourceCxAtomProperties>(
+    atoms: &[A],
+    atom_order: &[AtomId],
+) -> Result<PropertyText, SmilesParseError> {
+    // RDKit❗❌: std::string get_atom_props_block(const ROMol &mol,
+    // RDKit❗❌:                                  const std::vector<unsigned int> &atomOrder) {
+    // RDKit❗❌:   constexpr std::array<std::string_view, 7> skip = {
+    // RDKit❗❌:       common_properties::atomLabel,       common_properties::molFileValue,
+    // RDKit❗❌:       common_properties::molParity,       common_properties::molAtomMapNumber,
+    // RDKit❗❌:       common_properties::molStereoCare,   common_properties::molRxnExactChange,
+    // RDKit❗❌:       common_properties::molInversionFlag};
+    // RDKit❗❌:   std::string res = "";
+    // RDKit❗❌:   unsigned int which = 0;
+    // RDKit❗❌:   for (auto idx : atomOrder) {
+    // RDKit❗❌:     const auto atom = mol.getAtomWithIdx(idx);
+    // RDKit❗❌:     bool isAttachmentPoint = !atom->getAtomicNum() &&
+    // RDKit❗❌:                              atom->hasProp(common_properties::_fromAttachPoint);
+    // RDKit❗❌:     bool includePrivate = false, includeComputed = false;
+    // RDKit❗❌:     for (const auto &pn : atom->getPropList(includePrivate, includeComputed)) {
+    // RDKit❗❌:       if (std::find(skip.begin(), skip.end(), pn) == skip.end()) {
+    // RDKit❗❌:         std::string pv = atom->getProp<std::string>(pn);
+    // RDKit❗❌:         if (pn == "dummyLabel" &&
+    // RDKit❗❌:             (isAttachmentPoint || pv == "*" ||
+    // RDKit❗❌:              std::find(SmilesParseOps::pseudoatoms.begin(),
+    // RDKit❗❌:                        SmilesParseOps::pseudoatoms.end(),
+    // RDKit❗❌:                        pv) != SmilesParseOps::pseudoatoms.end())) {
+    // RDKit❗❌:           // it's a pseudoatom or attachment point, skip it
+    // RDKit❗❌:           continue;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         if (res.empty()) {
+    // RDKit❗❌:           res += "atomProp";
+    // RDKit❗❌:         }
+    // RDKit❗❌:         res +=
+    // RDKit❗❌:             boost::str(boost::format(":%d.%s.%s") % which %
+    // RDKit❗❌:                        quote_atomprop_string(pn) % quote_atomprop_string(pv));
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     ++which;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return res;
+    // RDKit❗❌: }
+    // RDKit❗✔️: inline constexpr std::string_view molRxnExactChange = "molRxnExachg";
+    const SKIP: [&[u8]; 7] = [
+        b"atomLabel",
+        b"molFileValue",
+        b"molParity",
+        b"molAtomMapNumber",
+        b"molStereoCare",
+        b"molRxnExachg",
+        b"molInversionFlag",
     ];
     const PSEUDOATOMS: [&[u8]; 2] = [b"Pol", b"Mod"];
     let mut result = PropertyText::new();
-    for (position, atom_id) in atom_order.iter().copied().enumerate() {
-        let atom = &record.topology.atoms[atom_id.index()];
-        let attachment = atom.atomic_number() == 0 && atom.prop("_fromAttchpt").is_some();
-        for (name, _stored_value) in atom.property_records(false, false).map_err(|source| {
+    let mut which = 0u32;
+    for atom_id in atom_order {
+        let atom =
+            atoms
+                .get(atom_id.index())
+                .ok_or(SmilesParseError::CxAtomPropertyAtomOutOfRange {
+                    atom: *atom_id,
+                    atom_count: atoms.len(),
+                })?;
+        let attachment =
+            atom.source_atomic_number() == 0 && atom.source_prop(b"_fromAttchpt").is_some();
+        for (name, _) in atom.source_property_records().map_err(|source| {
             SmilesParseError::WriterPropertyList {
-                atom: atom_id,
+                atom: *atom_id,
                 source,
             }
         })? {
-            if SKIP.iter().any(|skip| skip.as_bytes() == name.as_bytes()) {
+            if SKIP.contains(&name.as_bytes()) {
                 continue;
             }
-            let value = cosmolkit_core::required_property_value_to_string(atom.prop_required(name))
-                .map_err(|source| SmilesParseError::WriterRequiredProperty {
-                    atom: atom_id,
-                    source,
-                })?;
+            let value =
+                cosmolkit_core::required_property_value_to_string(atom.source_prop_required(name))
+                    .map_err(|source| SmilesParseError::WriterRequiredProperty {
+                        atom: *atom_id,
+                        source,
+                    })?;
             if name.as_bytes() == b"dummyLabel"
                 && (attachment
                     || value.as_bytes() == b"*"
@@ -1336,14 +1739,20 @@ fn write_atom_properties<'record>(
                 continue;
             }
             if result.is_empty() {
-                result.extend_bytes(("atomProp").as_ref());
+                result.extend_bytes(b"atomProp");
             }
-            write!(&mut result, ":{position}.").expect("byte output formatting cannot fail");
-            result.extend_bytes(quote_atom_property(name.as_bytes()).as_bytes());
+            write!(&mut result, ":{which}.").expect("counted byte formatting is infallible");
+            result.extend_bytes(quote_cx_atom_property(name.as_bytes()).as_bytes());
             result.push_byte(b'.');
-            result.extend_bytes(quote_atom_property(value.as_bytes()).as_bytes());
+            result.extend_bytes(quote_cx_atom_property(value.as_bytes()).as_bytes());
         }
+        which = which.wrapping_add(1);
     }
+    // Cost ❌: canonical scalar/quoted text owns heap buffers without Native
+    // SSO. One borrowed property iterator and one output buffer replace the
+    // old QUERY entry vector/join; no Atom/QueryAtom/AST/property payload clone.
+    // The closed private trait reads actual canonical facts only; one body
+    // preserves all source branches for ordinary and query carriers.
     Ok(result)
 }
 
@@ -1768,57 +2177,137 @@ fn write_coordinate_bonds<'record>(
     bond_order: &[BondId],
     order: BondOrder,
     symbol: &str,
-) -> String {
-    let record = record.into();
-    // BEGIN RDKIT CPP FUNCTION get_coord_or_hydrogen_bonds_block
-    // RDKit✔️✔️: for (unsigned int i = 0; i < bondOrder.size(); ++i) {
-    // RDKit✔️✔️:   const auto bond = mol.getBondWithIdx(bondOrder[i]);
-    // RDKit✔️✔️:   if (bond->getBondType() != bondType) { continue; }
-    // RDKit✔️✔️:   auto begAtomOrder = std::find(atomOrder.begin(), atomOrder.end(),
-    // RDKit✔️✔️:                                  bond->getBeginAtomIdx()) - atomOrder.begin();
-    // RDKit✔️✔️:   res += format("%d.%d", begAtomOrder, i);
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION get_coord_or_hydrogen_bonds_block
-    let positions = atom_positions(atom_order, record.topology.atoms.len());
-    let entries = bond_order
-        .iter()
-        .copied()
-        .enumerate()
-        .filter_map(|(position, bond_id)| {
-            let bond = &record.topology.bonds[bond_id.index()];
-            (bond.order() == order).then(|| {
-                positions[bond.begin().index()].map(|begin| format!("{begin}.{position}"))
-            })?
-        })
-        .collect::<Vec<_>>();
-    if entries.is_empty() {
-        String::new()
-    } else {
-        format!("{symbol}:{}", entries.join(","))
+) -> Result<PropertyText, SmilesParseError> {
+    write_cx_coord_or_hydrogen_bonds_source(
+        cosmolkit_core::stereo_graph::BondRows::Concrete(&record.into().topology.bonds),
+        atom_order,
+        bond_order,
+        order,
+        symbol.as_bytes(),
+    )
+}
+
+/// Source CX typed-bond emitter over the actual borrowed canonical bond rows.
+#[doc(hidden)]
+pub fn write_cx_coord_or_hydrogen_bonds_source(
+    bonds: cosmolkit_core::stereo_graph::BondRows<'_>,
+    atom_order: &[AtomId],
+    bond_order: &[BondId],
+    order: BondOrder,
+    symbol: &[u8],
+) -> Result<PropertyText, SmilesParseError> {
+    // RDKit❗🔝: std::string get_coord_or_hydrogen_bonds_block(
+    // RDKit❗🔝:     const ROMol &mol, Bond::BondType bondType, std::string symbol,
+    // RDKit❗🔝:     const std::vector<unsigned int> &atomOrder,
+    // RDKit❗🔝:     const std::vector<unsigned int> &bondOrder) {
+    // RDKit❗🔝:   std::string res = "";
+    // RDKit❗🔝:   for (unsigned int i = 0; i < bondOrder.size(); ++i) {
+    // RDKit❗🔝:     auto idx = bondOrder[i];
+    // RDKit❗🔝:     const auto bond = mol.getBondWithIdx(idx);
+    // RDKit❗🔝:     if (bond->getBondType() != bondType) {
+    // RDKit❗🔝:       continue;
+    // RDKit❗🔝:     }
+    // RDKit❗🔝:     auto begAtomOrder =
+    // RDKit❗🔝:         std::find(atomOrder.begin(), atomOrder.end(), bond->getBeginAtomIdx()) -
+    // RDKit❗🔝:         atomOrder.begin();
+    // RDKit❗🔝:     if (!res.empty()) {
+    // RDKit❗🔝:       res += ",";
+    // RDKit❗🔝:     } else {
+    // RDKit❗🔝:       res = symbol + ":";
+    // RDKit❗🔝:     }
+    // RDKit❗🔝:     res += boost::str(boost::format("%d.%d") % begAtomOrder % i);
+    // RDKit❗🔝:   }
+    // RDKit❗🔝:   return res;
+    // RDKit❗🔝: }
+    let mut result = PropertyText::new();
+    for (i, &id) in bond_order.iter().enumerate() {
+        let bond = bonds
+            .get(id.index())
+            .ok_or(SmilesParseError::CxTypedBondOutOfRange {
+                bond: id,
+                bond_count: bonds.len(),
+            })?;
+        if bond.order() != order {
+            continue;
+        }
+        let begin = atom_order
+            .iter()
+            .position(|&atom| atom == bond.begin())
+            .unwrap_or(atom_order.len());
+        if !result.is_empty() {
+            result.push_byte(b',');
+        } else {
+            result.extend_bytes(symbol);
+            result.push_byte(b':');
+        }
+        write!(&mut result, "{begin}.{i}").expect("counted byte formatting is infallible");
     }
+    // Cost 🔝: one growing output buffer, identical literal first std::find
+    // and source loop order. Direct decimal writing removes each Native
+    // boost::format construction/parse, dynamic format-item/argument storage
+    // and materialized item string; borrowed closed bond rows add no graph
+    // copy, atom conversion, query loss, map or per-item output buffer.
+    Ok(result)
 }
 
 fn write_zero_bonds<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     bond_order: &[BondId],
-) -> String {
-    let record = record.into();
-    // RDKit✔️✔️: if (bond->getBondType() != Bond::BondType::ZERO) { continue; }
-    // RDKit✔️✔️: res += boost::str(boost::format("%d") % i);
-    let entries = bond_order
-        .iter()
-        .copied()
-        .enumerate()
-        .filter_map(|(position, bond)| {
-            (record.topology.bonds[bond.index()].order() == BondOrder::Zero)
-                .then(|| position.to_string())
-        })
-        .collect::<Vec<_>>();
-    if entries.is_empty() {
-        String::new()
-    } else {
-        format!("Z:{}", entries.join(","))
+) -> Result<PropertyText, SmilesParseError> {
+    write_cx_zero_bonds_source(
+        cosmolkit_core::stereo_graph::BondRows::Concrete(&record.into().topology.bonds),
+        bond_order,
+    )
+}
+
+/// Source zero-order CX emission over actual ordinary or query bond rows.
+#[doc(hidden)]
+pub fn write_cx_zero_bonds_source(
+    bonds: cosmolkit_core::stereo_graph::BondRows<'_>,
+    bond_order: &[BondId],
+) -> Result<PropertyText, SmilesParseError> {
+    // RDKit❗🔝: std::string get_zerobonds_block(const ROMol &mol,
+    // RDKit❗🔝:                                 const std::vector<unsigned int> &,
+    // RDKit❗🔝:                                 const std::vector<unsigned int> &bondOrder) {
+    // RDKit❗🔝:   std::string res = "";
+    // RDKit❗🔝:   for (unsigned int i = 0; i < bondOrder.size(); ++i) {
+    // RDKit❗🔝:     auto idx = bondOrder[i];
+    // RDKit❗🔝:     const auto bond = mol.getBondWithIdx(idx);
+    // RDKit❗🔝:     if (bond->getBondType() != Bond::BondType::ZERO) {
+    // RDKit❗🔝:       continue;
+    // RDKit❗🔝:     }
+    // RDKit❗🔝:     if (!res.empty()) {
+    // RDKit❗🔝:       res += ",";
+    // RDKit❗🔝:     } else {
+    // RDKit❗🔝:       res = "Z:";
+    // RDKit❗🔝:     }
+    // RDKit❗🔝:     res += boost::str(boost::format("%d") % i);
+    // RDKit❗🔝:   }
+    // RDKit❗🔝:   return res;
+    // RDKit❗🔝: }
+    let mut result = PropertyText::new();
+    for (i, &id) in bond_order.iter().enumerate() {
+        let bond = bonds
+            .get(id.index())
+            .ok_or(SmilesParseError::CxZeroBondOutOfRange {
+                bond: id,
+                bond_count: bonds.len(),
+            })?;
+        if bond.order() != BondOrder::Zero {
+            continue;
+        }
+        if !result.is_empty() {
+            result.push_byte(b',');
+        } else {
+            result.extend_bytes(b"Z:");
+        }
+        write!(&mut result, "{i}").expect("counted byte formatting is infallible");
     }
+    // Cost 🔝: identical source-order loop, O(B) work and output storage;
+    // direct decimal emission eliminates per-item Boost format construction,
+    // parsed format/argument buffers and item strings, plus previous Rust
+    // Vec<String>/join. Borrowed actual bond rows preserve query predicates.
+    Ok(result)
 }
 
 fn other_atom(bond: &Bond, atom: AtomId) -> Option<AtomId> {
@@ -2224,273 +2713,609 @@ fn write_enhanced_stereo<'record>(
         .join(","))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct SourceLinkNode {
+    min_repetitions: u32,
+    max_repetitions: u32,
+    bond_atoms: [(u32, u32); 2],
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SourceLinkIssueKind {
+    UnsignedConversion,
+    TooFewValues,
+    BadCounts,
+    UnderConstruction,
+    DifferentCenters,
+    MissingMappedAtom(u32),
+    MissingBond,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SourceLinkIssue {
+    kind: SourceLinkIssueKind,
+    raw_node: PropertyText,
+}
+
+fn source_link_issue(
+    strict: bool,
+    warnings: &mut Vec<SourceLinkIssue>,
+    kind: SourceLinkIssueKind,
+    raw_node: &[u8],
+) -> Result<(), SmilesParseError> {
+    // RDKit❗✔️: #define UNDER_CONSTRUCTION(fn)                                           \
+    // RDKit❗✔️:   Invar::Invariant inv("Incomplete Code",                                \
+    // RDKit❗✔️:                        "This routine is still under development", fn,    \
+    // RDKit❗✔️:                        __FILE__, __LINE__);                              \
+    // RDKit❗✔️:   BOOST_LOG(rdErrorLog) << "\n\n****\n" << inv << "****\n" << std::endl; \
+    // RDKit❗✔️:   throw inv;
+    // Preserve raw diagnostic bytes in the detached warning. The existing CX
+    // error display translates native ValueError/Incomplete Code structurally;
+    // this source-defined exception is never labeled an unsupported input.
+    let message = source_link_diagnostic(&kind, raw_node, strict);
+    if strict {
+        return Err(SmilesParseError::Cx(
+            String::from_utf8_lossy(message.as_bytes()).into_owned(),
+        ));
+    }
+    warnings.push(SourceLinkIssue {
+        kind,
+        raw_node: PropertyText::from_bytes(raw_node),
+    });
+    Ok(())
+}
+
+fn source_link_diagnostic(kind: &SourceLinkIssueKind, raw: &[u8], strict: bool) -> PropertyText {
+    // Each literal is the corresponding pinned LinkNode.h stream insertion;
+    // raw node bytes are never interpreted as UTF-8 for a warning.
+    let (prefix, suffix) = match kind {
+        SourceLinkIssueKind::UnsignedConversion => {
+            ("Cannot convert values in LINKNODE '", "' to unsigned ints")
+        }
+        SourceLinkIssueKind::TooFewValues => ("not enough values in LINKNODE '", "'"),
+        SourceLinkIssueKind::BadCounts => ("bad counts in LINKNODE '", "'"),
+        SourceLinkIssueKind::DifferentCenters => {
+            ("bonds don't start at the same atom for LINKNODE '", "'")
+        }
+        SourceLinkIssueKind::MissingBond => ("bond not found between atoms in LINKNODE '", "'"),
+        SourceLinkIssueKind::UnderConstruction => {
+            return PropertyText::from(if strict {
+                "Incomplete Code: only link nodes with 2 bonds are currently supported"
+            } else {
+                "only link nodes with 2 bonds are currently supported"
+            });
+        }
+        SourceLinkIssueKind::MissingMappedAtom(index) => {
+            let mut out = PropertyText::new();
+            write!(
+                &mut out,
+                "atom index {index} cannot be found in molecule for LINKNODE '"
+            )
+            .expect("byte formatting");
+            out.extend_bytes(raw);
+            out.push_byte(b'\'');
+            return out;
+        }
+    };
+    let mut out = PropertyText::from(prefix);
+    out.extend_bytes(raw);
+    out.extend_bytes(suffix.as_bytes());
+    out
+}
+
+/// Deliver one counted-byte Native warning, preserving the stream newline.
+#[doc(hidden)]
+pub fn emit_cx_link_node_warning_source(message: &[u8]) {
+    use std::io::Write as _;
+    let mut sink = std::io::stderr().lock();
+    // Native log stream failure does not change chemistry control flow.
+    let _ = sink.write_all(message);
+    let _ = sink.write_all(b"\n");
+}
+
+fn source_link_tokens(input: &[u8], delimiter: u8) -> impl Iterator<Item = &[u8]> {
+    // Boost❗🔝:     explicit
+    // Boost❗🔝:     char_separator(const Char* dropped_delims,
+    // Boost❗🔝:                    const Char* kept_delims = 0,
+    // Boost❗🔝:                    empty_token_policy empty_tokens = drop_empty_tokens)
+    // Boost❗🔝:       : m_dropped_delims(dropped_delims),
+    // Boost❗🔝:         m_use_ispunct(false),
+    // Boost❗🔝:         m_use_isspace(false),
+    // Boost❗🔝:         m_empty_tokens(empty_tokens),
+    // Boost❗🔝:         m_output_done(false)
+    // Boost❗🔝:     {
+    // Boost❗🔝:       // Borland workaround
+    // Boost❗🔝:       if (kept_delims)
+    // Boost❗🔝:         m_kept_delims = kept_delims;
+    // Boost❗🔝:     }
+    // Boost❗🔝:
+    // Boost❗🔝:     template <typename InputIterator, typename Token>
+    // Boost❗🔝:     bool operator()(InputIterator& next, InputIterator end, Token& tok)
+    // Boost❗🔝:     {
+    // Boost❗🔝:       typedef tokenizer_detail::assign_or_plus_equal<
+    // Boost❗🔝:         BOOST_DEDUCED_TYPENAME tokenizer_detail::get_iterator_category<
+    // Boost❗🔝:           InputIterator
+    // Boost❗🔝:         >::iterator_category
+    // Boost❗🔝:       > assigner;
+    // Boost❗🔝:
+    // Boost❗🔝:       assigner::clear(tok);
+    // Boost❗🔝:
+    // Boost❗🔝:       // skip past all dropped_delims
+    // Boost❗🔝:       if (m_empty_tokens == drop_empty_tokens)
+    // Boost❗🔝:         for (; next != end  && is_dropped(*next); ++next)
+    // Boost❗🔝:           { }
+    // Boost❗🔝:
+    // Boost❗🔝:       InputIterator start(next);
+    // Boost❗🔝:
+    // Boost❗🔝:       if (m_empty_tokens == drop_empty_tokens) {
+    // Boost❗🔝:
+    // Boost❗🔝:         if (next == end)
+    // Boost❗🔝:           return false;
+    // Boost❗🔝:
+    // Boost❗🔝:
+    // Boost❗🔝:         // if we are on a kept_delims move past it and stop
+    // Boost❗🔝:         if (is_kept(*next)) {
+    // Boost❗🔝:           assigner::plus_equal(tok,*next);
+    // Boost❗🔝:           ++next;
+    // Boost❗🔝:         } else
+    // Boost❗🔝:           // append all the non delim characters
+    // Boost❗🔝:           for (; next != end && !is_dropped(*next) && !is_kept(*next); ++next)
+    // Boost❗🔝:             assigner::plus_equal(tok,*next);
+    // Boost❗🔝:       }
+    // Boost❗🔝:       else { // m_empty_tokens == keep_empty_tokens
+    // Boost❗🔝:
+    // Boost❗🔝:         // Handle empty token at the end
+    // Boost❗🔝:         if (next == end)
+    // Boost❗🔝:         {
+    // Boost❗🔝:           if (m_output_done == false)
+    // Boost❗🔝:           {
+    // Boost❗🔝:             m_output_done = true;
+    // Boost❗🔝:             assigner::assign(start,next,tok);
+    // Boost❗🔝:             return true;
+    // Boost❗🔝:           }
+    // Boost❗🔝:           else
+    // Boost❗🔝:             return false;
+    // Boost❗🔝:         }
+    // Boost❗🔝:
+    // Boost❗🔝:         if (is_kept(*next)) {
+    // Boost❗🔝:           if (m_output_done == false)
+    // Boost❗🔝:             m_output_done = true;
+    // Boost❗🔝:           else {
+    // Boost❗🔝:             assigner::plus_equal(tok,*next);
+    // Boost❗🔝:             ++next;
+    // Boost❗🔝:             m_output_done = false;
+    // Boost❗🔝:           }
+    // Boost❗🔝:         }
+    // Boost❗🔝:         else if (m_output_done == false && is_dropped(*next)) {
+    // Boost❗🔝:           m_output_done = true;
+    // Boost❗🔝:         }
+    // Boost❗🔝:         else {
+    // Boost❗🔝:           if (is_dropped(*next))
+    // Boost❗🔝:             start=++next;
+    // Boost❗🔝:           for (; next != end && !is_dropped(*next) && !is_kept(*next); ++next)
+    // Boost❗🔝:             assigner::plus_equal(tok,*next);
+    // Boost❗🔝:           m_output_done = true;
+    // Boost❗🔝:         }
+    // Boost❗🔝:       }
+    // Boost❗🔝:       assigner::assign(start,next,tok);
+    // Boost❗🔝:       return true;
+    // Boost❗🔝:     }
+    // Boost❗🔝:     bool is_kept(Char E) const
+    // Boost❗🔝:     {
+    // Boost❗🔝:       if (m_kept_delims.length())
+    // Boost❗🔝:         return m_kept_delims.find(E) != string_type::npos;
+    // Boost❗🔝:       else if (m_use_ispunct) {
+    // Boost❗🔝:         return Traits::ispunct(E) != 0;
+    // Boost❗🔝:       } else
+    // Boost❗🔝:         return false;
+    // Boost❗🔝:     }
+    // Boost❗🔝:     bool is_dropped(Char E) const
+    // Boost❗🔝:     {
+    // Boost❗🔝:       if (m_dropped_delims.length())
+    // Boost❗🔝:         return m_dropped_delims.find(E) != string_type::npos;
+    // Boost❗🔝:       else if (m_use_isspace) {
+    // Boost❗🔝:         return Traits::isspace(E) != 0;
+    // Boost❗🔝:       } else
+    // Boost❗🔝:         return false;
+    // Boost❗🔝:     }
+    // Explicit char_separator("|") / char_separator(" ") only: no kept
+    // delimiters, no locale whitespace/punctuation and drop_empty_tokens.
+    // Borrowing slices replaces native per-token copies without changing bytes.
+    input
+        .split(move |byte| *byte == delimiter)
+        .filter(|token| !token.is_empty())
+}
+
+fn source_link_unsigned(token: &[u8]) -> Option<u32> {
+    // lexical_cast does not trim whitespace. The sole CORE from_rdvalue uint
+    // owner has the full Boost unsigned converter anchor; prevent its explicit
+    // RDValue trim_right adaptation before delegating the same decimal/sign loop.
+    if token
+        .iter()
+        .any(|byte| matches!(*byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
+    {
+        return None;
+    }
+    cosmolkit_core::property_value_to_uint(&PropertyValue::String(PropertyText::from_bytes(token)))
+        .ok()
+}
+
+fn source_link_has_bond<G: StereoGraphAccess>(
+    topology: &G,
+    first: u32,
+    second: u32,
+) -> Result<bool, SmilesParseError> {
+    // RDKit❗✔️: const Bond *ROMol::getBondBetweenAtoms(unsigned int idx1,
+    // RDKit❗✔️:                                        unsigned int idx2) const {
+    // RDKit❗✔️:   URANGE_CHECK(idx1, getNumAtoms());
+    // RDKit❗✔️:   URANGE_CHECK(idx2, getNumAtoms());
+    // RDKit❗✔️:   const Bond *res = nullptr;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   auto [edge, found] = boost::edge(boost::vertex(idx1, d_graph),
+    // RDKit❗✔️:                                    boost::vertex(idx2, d_graph), d_graph);
+    // RDKit❗✔️:   if (found) {
+    // RDKit❗✔️:     res = d_graph[edge];
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // Native range checks precede edge lookup and remain errors in non-strict
+    // mode. Lookup follows the first endpoint's adjacency, including self edges.
+    let atom_count = topology.atoms().len();
+    for atom in [first, second] {
+        if atom as usize >= atom_count {
+            return Err(SmilesParseError::Cx(format!(
+                "link-node atom index {atom} is out of range for {atom_count} atoms"
+            )));
+        }
+    }
+    Ok(topology
+        .adjacency()
+        .neighbors_of(first as usize)
+        .iter()
+        .any(|neighbor| neighbor.atom_index == second as usize))
+}
+
+#[cfg(test)]
+fn get_mol_link_nodes_source(
+    topology: &cosmolkit_model::TopologyBlock,
+    properties: &cosmolkit_model::MoleculeProperties,
+    strict: bool,
+    atom_index_map: Option<&BTreeMap<u32, AtomId>>,
+    warnings: &mut Vec<SourceLinkIssue>,
+) -> Result<Vec<SourceLinkNode>, SmilesParseError> {
+    get_mol_link_nodes_impl(
+        topology,
+        properties.prop("_molLinkNodes"),
+        strict,
+        atom_index_map,
+        warnings,
+        &mut |_| {},
+    )
+}
+
+fn get_mol_link_nodes_impl<G: StereoGraphAccess>(
+    topology: &G,
+    property: Option<&PropertyValue>,
+    strict: bool,
+    atom_index_map: Option<&BTreeMap<u32, AtomId>>,
+    warnings: &mut Vec<SourceLinkIssue>,
+    warning_sink: &mut dyn FnMut(&[u8]),
+) -> Result<Vec<SourceLinkNode>, SmilesParseError> {
+    // RDKit❗✔️: inline std::vector<LinkNode> getMolLinkNodes(
+    // RDKit❗✔️:     const ROMol &mol, bool strict = true,
+    // RDKit❗✔️:     const std::map<unsigned, Atom *> *atomIdxMap = nullptr) {
+    // RDKit❗✔️:   std::vector<LinkNode> res;
+    // RDKit❗✔️:   std::string pval;
+    // RDKit❗✔️:   if (!mol.getPropIfPresent(common_properties::molFileLinkNodes, pval)) {
+    // RDKit❗✔️:     return res;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   std::vector<int> mapping;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   boost::char_separator<char> pipesep("|");
+    // RDKit❗✔️:   boost::char_separator<char> spacesep(" ");
+    // RDKit❗✔️:   for (auto linknodetext : tokenizer(pval, pipesep)) {
+    // RDKit❗✔️:     LinkNode node;
+    // RDKit❗✔️:     tokenizer tokens(linknodetext, spacesep);
+    // RDKit❗✔️:     std::vector<unsigned int> data;
+    // RDKit❗✔️:     try {
+    // RDKit❗✔️:       std::transform(tokens.begin(), tokens.end(), std::back_inserter(data),
+    // RDKit❗✔️:                      [](const std::string &token) -> unsigned int {
+    // RDKit❗✔️:                        return boost::lexical_cast<unsigned int>(token);
+    // RDKit❗✔️:                      });
+    // RDKit❗✔️:     } catch (boost::bad_lexical_cast &) {
+    // RDKit❗✔️:       std::ostringstream errout;
+    // RDKit❗✔️:       errout << "Cannot convert values in LINKNODE '" << linknodetext
+    // RDKit❗✔️:              << "' to unsigned ints";
+    // RDKit❗✔️:       if (strict) {
+    // RDKit❗✔️:         throw ValueErrorException(errout.str());
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     // the second test here is for the atom-pairs defining the bonds
+    // RDKit❗✔️:     // data[2] contains the number of bonds
+    // RDKit❗✔️:     if (data.size() < 5 || data.size() < 3 + 2 * data[2]) {
+    // RDKit❗✔️:       std::ostringstream errout;
+    // RDKit❗✔️:       errout << "not enough values in LINKNODE '" << linknodetext << "'";
+    // RDKit❗✔️:       if (strict) {
+    // RDKit❗✔️:         throw ValueErrorException(errout.str());
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     node.minRep = data[0];
+    // RDKit❗✔️:     node.maxRep = data[1];
+    // RDKit❗✔️:     if (node.minRep == 0 || node.maxRep < node.minRep) {
+    // RDKit❗✔️:       std::ostringstream errout;
+    // RDKit❗✔️:       errout << "bad counts in LINKNODE '" << linknodetext << "'";
+    // RDKit❗✔️:       if (strict) {
+    // RDKit❗✔️:         throw ValueErrorException(errout.str());
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     node.nBonds = data[2];
+    // RDKit❗✔️:     if (node.nBonds != 2) {
+    // RDKit❗✔️:       if (strict) {
+    // RDKit❗✔️:         UNDER_CONSTRUCTION(
+    // RDKit❗✔️:             "only link nodes with 2 bonds are currently supported");
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:             << "only link nodes with 2 bonds are currently supported"
+    // RDKit❗✔️:             << std::endl;
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     // both bonds must start from the same atom:
+    // RDKit❗✔️:     if (data[3] != data[5]) {
+    // RDKit❗✔️:       std::ostringstream errout;
+    // RDKit❗✔️:       errout << "bonds don't start at the same atom for LINKNODE '"
+    // RDKit❗✔️:              << linknodetext << "'";
+    // RDKit❗✔️:       if (strict) {
+    // RDKit❗✔️:         throw ValueErrorException(errout.str());
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     if (atomIdxMap) {
+    // RDKit❗✔️:       // map the indices back to the original atom numbers
+    // RDKit❗✔️:       for (unsigned int i = 3; i <= 6; ++i) {
+    // RDKit❗✔️:         const auto aidx = atomIdxMap->find(data[i] - 1);
+    // RDKit❗✔️:         if (aidx == atomIdxMap->end()) {
+    // RDKit❗✔️:           std::ostringstream errout;
+    // RDKit❗✔️:           errout << "atom index " << data[i]
+    // RDKit❗✔️:                  << " cannot be found in molecule for LINKNODE '"
+    // RDKit❗✔️:                  << linknodetext << "'";
+    // RDKit❗✔️:           if (strict) {
+    // RDKit❗✔️:             throw ValueErrorException(errout.str());
+    // RDKit❗✔️:           } else {
+    // RDKit❗✔️:             BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:             continue;
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         } else {
+    // RDKit❗✔️:           data[i] = aidx->second->getIdx();
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       for (unsigned int i = 3; i <= 6; ++i) {
+    // RDKit❗✔️:         --data[i];
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     node.bondAtoms.push_back(std::make_pair(data[3], data[4]));
+    // RDKit❗✔️:     node.bondAtoms.push_back(std::make_pair(data[5], data[6]));
+    // RDKit❗✔️:     if (!mol.getBondBetweenAtoms(data[4], data[3]) ||
+    // RDKit❗✔️:         !mol.getBondBetweenAtoms(data[6], data[5])) {
+    // RDKit❗✔️:       std::ostringstream errout;
+    // RDKit❗✔️:       errout << "bond not found between atoms in LINKNODE '" << linknodetext
+    // RDKit❗✔️:              << "'";
+    // RDKit❗✔️:       if (strict) {
+    // RDKit❗✔️:         throw ValueErrorException(errout.str());
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
+    // RDKit❗✔️:         continue;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     res.push_back(std::move(node));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return res;
+    // RDKit❗✔️: }
+    // Behavior: all native strict/non-strict branches and both index-map paths.
+    // Missing mapped indices in non-strict mode continue only the inner loop,
+    // retaining that original one-based value; validation then uses real bonds.
+    // Complexity: linear byte/token work, one u32 vector per node and one result
+    // vector; four logarithmic map lookups and at most two degree-bound edge
+    // searches. No topology/property clone or synthetic mapping/cached facts.
+    let mut result = Vec::new();
+    let Some(raw) = property else {
+        return Ok(result);
+    };
+    let raw = property_value_to_string(raw).map_err(SmilesParseError::WriterProperty)?;
+    let mut issue = |kind, item: &[u8]| -> Result<(), SmilesParseError> {
+        source_link_issue(strict, warnings, kind, item)?;
+        let warning = warnings.last().expect("non-strict issue records warning");
+        warning_sink(
+            source_link_diagnostic(&warning.kind, warning.raw_node.as_bytes(), false).as_bytes(),
+        );
+        Ok(())
+    };
+    for item in source_link_tokens(raw.as_bytes(), b'|') {
+        let Some(mut data) = source_link_tokens(item, b' ')
+            .map(source_link_unsigned)
+            .collect::<Option<Vec<_>>>()
+        else {
+            issue(SourceLinkIssueKind::UnsignedConversion, item)?;
+            continue;
+        };
+        if data.len() < 5 || data.len() < 3u32.wrapping_add(2u32.wrapping_mul(data[2])) as usize {
+            issue(SourceLinkIssueKind::TooFewValues, item)?;
+            continue;
+        }
+        let min_repetitions = data[0];
+        let max_repetitions = data[1];
+        if min_repetitions == 0 || max_repetitions < min_repetitions {
+            issue(SourceLinkIssueKind::BadCounts, item)?;
+            continue;
+        }
+        if data[2] != 2 {
+            issue(SourceLinkIssueKind::UnderConstruction, item)?;
+            continue;
+        }
+        if data[3] != data[5] {
+            issue(SourceLinkIssueKind::DifferentCenters, item)?;
+            continue;
+        }
+        if let Some(map) = atom_index_map {
+            for value in &mut data[3..=6] {
+                if let Some(atom) = map.get(&value.wrapping_sub(1)) {
+                    *value = atom.index() as u32;
+                } else {
+                    issue(SourceLinkIssueKind::MissingMappedAtom(*value), item)?;
+                    continue;
+                }
+            }
+        } else {
+            for value in &mut data[3..=6] {
+                *value = value.wrapping_sub(1);
+            }
+        }
+        let bond_atoms = [(data[3], data[4]), (data[5], data[6])];
+        if !source_link_has_bond(topology, data[4], data[3])?
+            || !source_link_has_bond(topology, data[6], data[5])?
+        {
+            issue(SourceLinkIssueKind::MissingBond, item)?;
+            continue;
+        }
+        result.push(SourceLinkNode {
+            min_repetitions,
+            max_repetitions,
+            bond_atoms,
+        });
+    }
+    Ok(result)
+}
+
 fn write_link_nodes<'record>(
     record: impl Into<crate::SmilesRecordView<'record>>,
     atom_order: &[AtomId],
 ) -> Result<String, SmilesParseError> {
     let record = record.into();
-    // BEGIN RDKIT CPP FUNCTION MolEnumerator::utils::getMolLinkNodes
-    // RDKit✔️✔️: inline std::vector<LinkNode> getMolLinkNodes(
-    // RDKit✔️✔️:     const ROMol &mol, bool strict = true,
-    // RDKit✔️✔️:     const std::map<unsigned, Atom *> *atomIdxMap = nullptr) {
-    // RDKit✔️✔️:   std::vector<LinkNode> res;
-    // RDKit✔️✔️:   std::string pval;
-    // RDKit✔️✔️:   if (!mol.getPropIfPresent(common_properties::molFileLinkNodes, pval)) {
-    // RDKit✔️✔️:     return res;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   std::vector<int> mapping;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   boost::char_separator<char> pipesep("|");
-    // RDKit✔️✔️:   boost::char_separator<char> spacesep(" ");
-    // RDKit✔️✔️:   for (auto linknodetext : tokenizer(pval, pipesep)) {
-    // RDKit✔️✔️:     LinkNode node;
-    // RDKit✔️✔️:     tokenizer tokens(linknodetext, spacesep);
-    // RDKit✔️✔️:     std::vector<unsigned int> data;
-    // RDKit✔️✔️:     try {
-    // RDKit✔️✔️:       std::transform(tokens.begin(), tokens.end(), std::back_inserter(data),
-    // RDKit✔️✔️:                      [](const std::string &token) -> unsigned int {
-    // RDKit✔️✔️:                        return boost::lexical_cast<unsigned int>(token);
-    // RDKit✔️✔️:                      });
-    // RDKit✔️✔️:     } catch (boost::bad_lexical_cast &) {
-    // RDKit✔️✔️:       std::ostringstream errout;
-    // RDKit✔️✔️:       errout << "Cannot convert values in LINKNODE '" << linknodetext
-    // RDKit✔️✔️:              << "' to unsigned ints";
-    // RDKit✔️✔️:       if (strict) {
-    // RDKit✔️✔️:         throw ValueErrorException(errout.str());
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     // the second test here is for the atom-pairs defining the bonds
-    // RDKit✔️✔️:     // data[2] contains the number of bonds
-    // RDKit✔️✔️:     if (data.size() < 5 || data.size() < 3 + 2 * data[2]) {
-    // RDKit✔️✔️:       std::ostringstream errout;
-    // RDKit✔️✔️:       errout << "not enough values in LINKNODE '" << linknodetext << "'";
-    // RDKit✔️✔️:       if (strict) {
-    // RDKit✔️✔️:         throw ValueErrorException(errout.str());
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     node.minRep = data[0];
-    // RDKit✔️✔️:     node.maxRep = data[1];
-    // RDKit✔️✔️:     if (node.minRep == 0 || node.maxRep < node.minRep) {
-    // RDKit✔️✔️:       std::ostringstream errout;
-    // RDKit✔️✔️:       errout << "bad counts in LINKNODE '" << linknodetext << "'";
-    // RDKit✔️✔️:       if (strict) {
-    // RDKit✔️✔️:         throw ValueErrorException(errout.str());
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     node.nBonds = data[2];
-    // RDKit✔️✔️:     if (node.nBonds != 2) {
-    // RDKit✔️✔️:       if (strict) {
-    // RDKit✔️✔️:         UNDER_CONSTRUCTION(
-    // RDKit✔️✔️:             "only link nodes with 2 bonds are currently supported");
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
-    // RDKit✔️✔️:             << "only link nodes with 2 bonds are currently supported"
-    // RDKit✔️✔️:             << std::endl;
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     // both bonds must start from the same atom:
-    // RDKit✔️✔️:     if (data[3] != data[5]) {
-    // RDKit✔️✔️:       std::ostringstream errout;
-    // RDKit✔️✔️:       errout << "bonds don't start at the same atom for LINKNODE '"
-    // RDKit✔️✔️:              << linknodetext << "'";
-    // RDKit✔️✔️:       if (strict) {
-    // RDKit✔️✔️:         throw ValueErrorException(errout.str());
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:     if (atomIdxMap) {
-    // RDKit✔️✔️:       // map the indices back to the original atom numbers
-    // RDKit✔️✔️:       for (unsigned int i = 3; i <= 6; ++i) {
-    // RDKit✔️✔️:         const auto aidx = atomIdxMap->find(data[i] - 1);
-    // RDKit✔️✔️:         if (aidx == atomIdxMap->end()) {
-    // RDKit✔️✔️:           std::ostringstream errout;
-    // RDKit✔️✔️:           errout << "atom index " << data[i]
-    // RDKit✔️✔️:                  << " cannot be found in molecule for LINKNODE '"
-    // RDKit✔️✔️:                  << linknodetext << "'";
-    // RDKit✔️✔️:           if (strict) {
-    // RDKit✔️✔️:             throw ValueErrorException(errout.str());
-    // RDKit✔️✔️:           } else {
-    // RDKit✔️✔️:             BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
-    // RDKit✔️✔️:             continue;
-    // RDKit✔️✔️:           }
-    // RDKit✔️✔️:         } else {
-    // RDKit✔️✔️:           data[i] = aidx->second->getIdx();
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     } else {
-    // RDKit✔️✔️:       for (unsigned int i = 3; i <= 6; ++i) {
-    // RDKit✔️✔️:         --data[i];
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     node.bondAtoms.push_back(std::make_pair(data[3], data[4]));
-    // RDKit✔️✔️:     node.bondAtoms.push_back(std::make_pair(data[5], data[6]));
-    // RDKit✔️✔️:     if (!mol.getBondBetweenAtoms(data[4], data[3]) ||
-    // RDKit✔️✔️:         !mol.getBondBetweenAtoms(data[6], data[5])) {
-    // RDKit✔️✔️:       std::ostringstream errout;
-    // RDKit✔️✔️:       errout << "bond not found between atoms in LINKNODE '" << linknodetext
-    // RDKit✔️✔️:              << "'";
-    // RDKit✔️✔️:       if (strict) {
-    // RDKit✔️✔️:         throw ValueErrorException(errout.str());
-    // RDKit✔️✔️:       } else {
-    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog) << errout.str() << std::endl;
-    // RDKit✔️✔️:         continue;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     res.push_back(std::move(node));
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return res;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION MolEnumerator::utils::getMolLinkNodes
-    // BEGIN RDKIT CPP FUNCTION get_linknodes_block
-    // RDKit✔️✔️: std::string get_linknodes_block(const ROMol &mol,
-    // RDKit✔️✔️:                                 const std::vector<unsigned int> &atomOrder) {
-    // RDKit✔️✔️:   bool strict = false;
-    // RDKit✔️✔️:   auto linkNodes = MolEnumerator::utils::getMolLinkNodes(mol, strict);
-    // RDKit✔️✔️:   if (linkNodes.empty()) {
-    // RDKit✔️✔️:     return "";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   // we need a map from original atom idx to output idx:
-    // RDKit✔️✔️:   std::vector<unsigned int> revOrder(mol.getNumAtoms());
-    // RDKit✔️✔️:   for (unsigned i = 0; i < atomOrder.size(); ++i) {
-    // RDKit✔️✔️:     revOrder[atomOrder[i]] = i;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::stringstream res;
-    // RDKit✔️✔️:   res << "LN:";
-    // RDKit✔️✔️:   for (const auto &ln : linkNodes) {
-    // RDKit✔️✔️:     unsigned int atomIdx = atomOrder[ln.bondAtoms[0].first];
-    // RDKit✔️✔️:     res << atomIdx << ":" << ln.minRep << "." << ln.maxRep;
-    // RDKit✔️✔️:     if (mol.getAtomWithIdx(ln.bondAtoms[0].first)->getDegree() > 2) {
-    // RDKit✔️✔️:       // include the outer atom indices
-    // RDKit✔️✔️:       res << "." << atomOrder[ln.bondAtoms[0].second] << "."
-    // RDKit✔️✔️:           << atomOrder[ln.bondAtoms[1].second];
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     res << ",";
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   std::string resStr = res.str();
-    // RDKit✔️✔️:   if (!resStr.empty() && resStr.back() == ',') {
-    // RDKit✔️✔️:     resStr.pop_back();
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return resStr;
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION get_linknodes_block
-    // Behavior review: strict=false skips malformed lexical/count/shape/bond
-    // records, while ROMol's range check still propagates for zero or
-    // out-of-range bond atom numbers. Boost unsigned lexical conversion
-    // accepts a leading sign, so negative magnitudes are represented with the
-    // same u32 wrap before the source's explicit decrement. The serializer
-    // deliberately indexes atomOrder by original atom index; the computed
-    // revOrder in the source is unused.
-    // Complexity review: each token is parsed once, and each of the two bond
-    // checks scans only the center's adjacency list, matching the source graph
-    // edge lookup's degree-bounded work. Output is buffered once per accepted
-    // record and joined once, with no repeated whole-graph scans or clones.
-    let Some(raw) = record.properties.prop("_molLinkNodes") else {
+    write_cx_link_nodes_impl(
+        record.topology,
+        record.properties.prop("_molLinkNodes"),
+        atom_order,
+        &mut emit_cx_link_node_warning_source,
+    )
+}
+
+/// Borrow actual query carriers and the actual counted source property.
+#[doc(hidden)]
+pub fn write_query_cx_link_nodes_source(
+    query: &cosmolkit_model::QueryGraph,
+    atom_order: &[AtomId],
+    warning_sink: &mut dyn FnMut(&[u8]),
+) -> Result<String, SmilesParseError> {
+    write_cx_link_nodes_impl(query, query.prop("_molLinkNodes"), atom_order, warning_sink)
+}
+
+fn write_cx_link_nodes_impl<G: StereoGraphAccess>(
+    graph: &G,
+    property: Option<&PropertyValue>,
+    atom_order: &[AtomId],
+    warning_sink: &mut dyn FnMut(&[u8]),
+) -> Result<String, SmilesParseError> {
+    // RDKit❗❌: std::string get_linknodes_block(const ROMol &mol,
+    // RDKit❗❌:                                 const std::vector<unsigned int> &atomOrder) {
+    // RDKit❗❌:   bool strict = false;
+    // RDKit❗❌:   auto linkNodes = MolEnumerator::utils::getMolLinkNodes(mol, strict);
+    // RDKit❗❌:   if (linkNodes.empty()) {
+    // RDKit❗❌:     return "";
+    // RDKit❗❌:   }
+    // RDKit❗❌:   // we need a map from original atom idx to output idx:
+    // RDKit❗❌:   std::vector<unsigned int> revOrder(mol.getNumAtoms());
+    // RDKit❗❌:   for (unsigned i = 0; i < atomOrder.size(); ++i) {
+    // RDKit❗❌:     revOrder[atomOrder[i]] = i;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   std::stringstream res;
+    // RDKit❗❌:   res << "LN:";
+    // RDKit❗❌:   for (const auto &ln : linkNodes) {
+    // RDKit❗❌:     unsigned int atomIdx = atomOrder[ln.bondAtoms[0].first];
+    // RDKit❗❌:     res << atomIdx << ":" << ln.minRep << "." << ln.maxRep;
+    // RDKit❗❌:     if (mol.getAtomWithIdx(ln.bondAtoms[0].first)->getDegree() > 2) {
+    // RDKit❗❌:       // include the outer atom indices
+    // RDKit❗❌:       res << "." << atomOrder[ln.bondAtoms[0].second] << "."
+    // RDKit❗❌:           << atomOrder[ln.bondAtoms[1].second];
+    // RDKit❗❌:     }
+    // RDKit❗❌:     res << ",";
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   std::string resStr = res.str();
+    // RDKit❗❌:   if (!resStr.empty() && resStr.back() == ',') {
+    // RDKit❗❌:     resStr.pop_back();
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return resStr;
+    // RDKit❗❌: }
+    let mut warnings = Vec::new();
+    let nodes = get_mol_link_nodes_impl(graph, property, false, None, &mut warnings, warning_sink)?;
+    if nodes.is_empty() {
         return Ok(String::new());
-    };
-
-    let raw = property_value_to_string(raw).map_err(SmilesParseError::WriterProperty)?;
-    let parse_unsigned = |token: &[u8]| -> Option<u32> {
-        // Boost's lexical_cast has no whitespace trimming. Guard the only
-        // from_rdvalue difference before reusing its decimal/sign owner.
-        if token
-            .iter()
-            .any(|byte| matches!(*byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0b | 0x0c))
-        {
-            return None;
-        }
-        cosmolkit_core::property_value_to_uint(&PropertyValue::String(PropertyText::from_bytes(
-            token,
-        )))
-        .ok()
-    };
-    let atom_count = record.topology.atoms.len();
-    let has_declared_bond = |endpoint: u32, center: u32| -> Result<bool, SmilesParseError> {
-        for atom in [endpoint, center] {
-            if atom as usize >= atom_count {
-                return Err(SmilesParseError::Cx(format!(
-                    "link-node atom index {atom} is out of range for {atom_count} atoms"
-                )));
-            }
-        }
-        Ok(record
-            .topology
-            .adjacency
-            .neighbors_of(center as usize)
-            .iter()
-            .any(|neighbor| neighbor.atom_index == endpoint as usize))
-    };
-
-    let mut entries = Vec::new();
-    for item in raw
-        .as_bytes()
-        .split(|byte| *byte == b'|')
-        .filter(|item| !item.is_empty())
-    {
-        let values = item
-            .split(|byte| *byte == b' ')
-            .filter(|token| !token.is_empty())
-            .map(parse_unsigned)
-            .collect::<Option<Vec<_>>>();
-        let Some(mut values) = values else { continue };
-        if values.len() < 5 {
-            continue;
-        }
-        let required_values = 3u32.wrapping_add(2u32.wrapping_mul(values[2])) as usize;
-        if values.len() < required_values {
-            continue;
-        }
-        let min_repetitions = values[0];
-        let max_repetitions = values[1];
-        if min_repetitions == 0 || max_repetitions < min_repetitions {
-            continue;
-        }
-        if values[2] != 2 {
-            continue;
-        }
-        if values[3] != values[5] {
-            continue;
-        }
-        for value in &mut values[3..=6] {
-            *value = value.wrapping_sub(1);
-        }
-        if !has_declared_bond(values[4], values[3])? {
-            continue;
-        }
-        if !has_declared_bond(values[6], values[5])? {
-            continue;
-        }
-
-        let center = values[3] as usize;
-        let center_output = atom_order[center].index();
-        let mut entry = format!("{center_output}:{min_repetitions}.{max_repetitions}");
-        if record.topology.adjacency.neighbors_of(center).len() > 2 {
-            let first_output = atom_order[values[4] as usize].index();
-            let second_output = atom_order[values[6] as usize].index();
-            entry.push_str(&format!(".{first_output}.{second_output}"));
-        }
-        entries.push(entry);
     }
-    if entries.is_empty() {
-        Ok(String::new())
-    } else {
-        Ok(format!("LN:{}", entries.join(",")))
+    // Preserve the source zero-initialization and last-wins writes even
+    // though the pinned source does not subsequently read this vector.
+    let mut reverse_order = vec![0u32; graph.atoms().len()];
+    for (i, &id) in atom_order.iter().enumerate() {
+        let count = reverse_order.len();
+        *reverse_order
+            .get_mut(id.index())
+            .ok_or(SmilesParseError::CxLinkAtomOutOfRange {
+                atom: id.index(),
+                atom_count: count,
+            })? = i as u32;
     }
+    let output_at = |index: usize| {
+        atom_order.get(index).map(|a| a.index() as u32).ok_or(
+            SmilesParseError::CxLinkOrderOutOfRange {
+                index,
+                count: atom_order.len(),
+            },
+        )
+    };
+    let mut result = String::from("LN:");
+    for node in nodes {
+        let center = node.bond_atoms[0].0 as usize;
+        write!(
+            &mut result,
+            "{}:{}.{}",
+            output_at(center)?,
+            node.min_repetitions,
+            node.max_repetitions
+        )
+        .expect("string formatting");
+        if graph.adjacency().neighbors_of(center).len() > 2 {
+            write!(
+                &mut result,
+                ".{}.{}",
+                output_at(node.bond_atoms[0].1 as usize)?,
+                output_at(node.bond_atoms[1].1 as usize)?
+            )
+            .expect("string formatting");
+        }
+        result.push(',');
+    }
+    if result.as_bytes().last() == Some(&b',') {
+        result.pop();
+    }
+    // Cost ❌: the existing detached parser collects warning records as well
+    // as emitting source diagnostics. Source tokens/result/revOrder loops,
+    // edge checks and forward indexes retained. One output buffer replaces
+    // previous per-node strings/Vec/join; no query/Atom/property-map clones.
+    Ok(result)
 }
 
 fn is_data_sgroup(group: &SubstanceGroup) -> Result<bool, SmilesParseError> {
@@ -3115,18 +3940,21 @@ mod tests {
     }
 
     fn write_noncanonical(input: &str) -> String {
-        write_cx_smiles_with_params(
-            &parse(input),
-            &CxSmilesWriteParams {
-                smiles: SmilesWriteParams {
-                    canonical: false,
+        String::from_utf8(
+            write_cx_smiles_with_params(
+                &parse(input),
+                &CxSmilesWriteParams {
+                    smiles: SmilesWriteParams {
+                        canonical: false,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
-                ..Default::default()
-            },
+            )
+            .expect("write CXSMILES")
+            .into_bytes(),
         )
-        .map(|value| fixed_property_text(&value).to_owned())
-        .expect("write CXSMILES")
+        .expect("original fixture CX text is UTF-8")
     }
 
     fn record_with_coordinate_sets(
@@ -3204,11 +4032,13 @@ mod tests {
 
         for (record, expected_2d, expected_3d) in [(multiple_2d, 2, 0), (multiple_3d, 0, 2)] {
             let before = record.clone();
+            assert_eq!(record.coordinates.conformers_2d.len(), expected_2d);
+            assert_eq!(record.coordinates.conformers_3d.len(), expected_3d);
             assert!(matches!(
                 coordinate_source(&record, CxCoordinateSelection::Auto),
                 Err(SmilesParseError::AmbiguousCoordinateSelection {
                     two_d_count,
-                    three_d_count
+                    three_d_count,
                 }) if two_d_count == expected_2d && three_d_count == expected_3d
             ));
             assert_eq!(record, before);
@@ -3217,11 +4047,15 @@ mod tests {
         for input in ["CC |(0,0;1,0)(0,0,1;1,0,2)|", "CC |(0,0,1;1,0,2)(0,0;1,0)|"] {
             let record = parse(input);
             let before = record.clone();
+            // Native parse_coords appends Point3D-backed conformers and stores
+            // is3D separately; both source rows remain in append order.
+            assert_eq!(record.coordinates.conformers_2d.len(), 0);
+            assert_eq!(record.coordinates.conformers_3d.len(), 2);
             assert!(matches!(
                 coordinate_source(&record, CxCoordinateSelection::Auto),
                 Err(SmilesParseError::AmbiguousCoordinateSelection {
                     two_d_count: 0,
-                    three_d_count: 2
+                    three_d_count: 2,
                 })
             ));
             assert_eq!(record, before, "selection must preserve {input}");
@@ -3243,7 +4077,7 @@ mod tests {
             coordinate_source(&shared_id, CxCoordinateSelection::Auto),
             Err(SmilesParseError::AmbiguousCoordinateSelection {
                 two_d_count: 1,
-                three_d_count: 1
+                three_d_count: 1,
             })
         ));
         match coordinate_source(&shared_id, CxCoordinateSelection::TwoD { id: 5 })
@@ -3371,20 +4205,21 @@ mod tests {
         let fields = CxSmilesFields::COORDS | CxSmilesFields::BOND_CFG;
 
         assert_eq!(
-            (write_cx_smiles_with_params(
+            write_cx_smiles_with_params(
                 &record,
                 &coordinate_consumer_params(CxCoordinateSelection::TwoD { id: 101 }, fields),
             )
-            .unwrap())
-            .as_bytes(),
-            ("C[C@H](O)Cl |(3.9163,5.4767,;3.9163,3.9367,;2.5826,3.1667,;5.25,3.1667,),wU:1.0|")
-                .as_bytes()
+            .unwrap(),
+            "C[C@H](O)Cl |(3.9163,5.4767,;3.9163,3.9367,;2.5826,3.1667,;5.25,3.1667,),wU:1.0|"
+                .into()
         );
-        assert_eq!( (write_cx_smiles_with_params(
+        assert_eq!(write_cx_smiles_with_params(
                 &record,
                 &coordinate_consumer_params(CxCoordinateSelection::ThreeD { id: 202 }, fields),
             )
-            .unwrap()).as_bytes(), ("C[C@H](O)Cl |(-3.9163,5.4767,;-3.9163,3.9367,1;-2.5826,3.1667,2;-5.25,3.1667,3),wD:1.0|").as_bytes());
+            .unwrap(),
+            "C[C@H](O)Cl |(-3.9163,5.4767,;-3.9163,3.9367,1;-2.5826,3.1667,2;-5.25,3.1667,3),wD:1.0|".into()
+        );
         assert_eq!(
             record, before,
             "coordinate consumers must preserve the input"
@@ -3402,12 +4237,12 @@ mod tests {
                 CxSmilesFields::COORDS | CxSmilesFields::BOND_CFG,
             ),
         )
-        .expect_err("two stored dimensions make Auto ambiguous");
+        .expect_err("multiple stored sets require explicit selection under CK-COORD-002");
         assert!(matches!(
             error,
             SmilesParseError::AmbiguousCoordinateSelection {
                 two_d_count: 1,
-                three_d_count: 1
+                three_d_count: 1,
             }
         ));
         assert_eq!(record, before, "failed selection must preserve the input");
@@ -3418,16 +4253,15 @@ mod tests {
         let record = coordinate_consumer_record();
         let before = record.clone();
         assert_eq!(
-            (write_cx_smiles_with_params(
+            write_cx_smiles_with_params(
                 &record,
                 &coordinate_consumer_params(
                     CxCoordinateSelection::TwoD { id: 999 },
                     CxSmilesFields::BOND_CFG,
                 ),
             )
-            .unwrap())
-            .as_bytes(),
-            ("C[C@H](O)Cl").as_bytes()
+            .unwrap(),
+            "C[C@H](O)Cl".into()
         );
         assert_eq!(
             record, before,
@@ -3487,12 +4321,17 @@ mod tests {
             None,
             CxCoordinateSelection::Auto,
         )
-        .map(|value| fixed_property_text(&value).to_owned())
+        .map(|text| {
+            String::from_utf8(text.into_bytes()).expect("original fixture CX extension is UTF-8")
+        })
     }
 
     fn atrop_record(stereo: BondStereo, reverse_carrier_bonds: bool) -> SmilesRecord {
         let atom_specs = (0..4)
-            .map(|_| AtomSpec::new(Element::from_atomic_number(6).expect("carbon")))
+            .map(|_| {
+                AtomSpec::new(Element::from_atomic_number(6).expect("carbon"))
+                    .with_no_implicit(true)
+            })
             .collect::<Vec<_>>();
         let atoms = atom_specs
             .into_iter()
@@ -3601,8 +4440,8 @@ mod tests {
             ("CC |Z:0|", "C~C |Z:0|"),
         ] {
             assert_eq!(
-                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
-                (expected).as_bytes(),
+                write_cx_smiles(&parse(input)).unwrap(),
+                expected.into(),
                 "{input}"
             );
         }
@@ -3612,8 +4451,8 @@ mod tests {
     fn writes_enhanced_stereo_with_source_sorting_and_fresh_write_ids() {
         let input = "F[C@H](Cl)Br.O[C@@H](N)I |&7:1,o2:5|";
         assert_eq!(
-            (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
-            ("F[C@H](Cl)Br.N[C@H](O)I |o1:5,&1:1|").as_bytes()
+            write_cx_smiles(&parse(input)).unwrap(),
+            "F[C@H](Cl)Br.N[C@H](O)I |o1:5,&1:1|".into()
         );
         assert_eq!(
             write_noncanonical(input),
@@ -3785,14 +4624,14 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
-                (expected).as_bytes(),
+                write_cx_smiles(&parse(input)).unwrap(),
+                expected.into(),
                 "{input}"
             );
         }
         assert_eq!(
-            (write_cx_smiles(&parse("CC |(0,0,;1,0,),wU:0.0|")).unwrap()).as_bytes(),
-            ("CC |(0,0,;1,0,)|").as_bytes()
+            write_cx_smiles(&parse("CC |(0,0,;1,0,),wU:0.0|")).unwrap(),
+            "CC |(0,0,;1,0,)|".into()
         );
     }
 
@@ -3893,8 +4732,8 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
-                (expected).as_bytes(),
+                write_cx_smiles(&parse(input)).unwrap(),
+                expected.into(),
                 "{input}"
             );
         }
@@ -3913,10 +4752,9 @@ mod tests {
             BondId::new(0),
         ];
         assert_eq!(
-            (write_polymer_sgroups(&record, &atom_order, &bond_order)
-                .expect("typed crossings map through traversal order"))
-            .as_bytes(),
-            ("Sg:n:1,2,3:repeat:ht:3,3,0:0,0,3:").as_bytes()
+            write_polymer_sgroups(&record, &atom_order, &bond_order)
+                .expect("typed crossings map through traversal order"),
+            "Sg:n:1,2,3:repeat:ht:3,3,0:0,0,3:".into()
         );
     }
 
@@ -3986,8 +4824,8 @@ mod tests {
             ("C1=CCCCCCCCC1 |ctu:0|", "C1=CCCCCCCCC1 |ctu:0|"),
         ] {
             assert_eq!(
-                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
-                (expected).as_bytes(),
+                write_cx_smiles(&parse(input)).unwrap(),
+                expected.into(),
                 "{input}"
             );
         }
@@ -4004,8 +4842,8 @@ mod tests {
             ("C1OCCC1C |LN:0:1.5,1:1.3|", "CC1CCOC1 |LN:5:1.5,4:1.3|"),
         ] {
             assert_eq!(
-                (write_cx_smiles(&parse(input)).unwrap()).as_bytes(),
-                (expected).as_bytes(),
+                write_cx_smiles(&parse(input)).unwrap(),
+                expected.into(),
                 "{input}"
             );
         }
@@ -4022,7 +4860,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!((result).as_bytes(), ("CC |$_AV:left;right$|").as_bytes());
+        assert_eq!(result, "CC |$_AV:left;right$|".into());
     }
 
     #[test]
@@ -4236,8 +5074,8 @@ mod tests {
         };
 
         assert_eq!(
-            (write_cx_smiles_with_params(&record, &params).unwrap()).as_bytes(),
-            ("").as_bytes()
+            write_cx_smiles_with_params(&record, &params).unwrap(),
+            "".into()
         );
         assert_eq!(record, before, "empty CX writing must preserve its caller");
     }
@@ -4278,11 +5116,11 @@ mod uint_cx_proposed_tests {
                 Ok(value)
             );
             assert_eq!(
-                (source_string_property(Some(&PropertyValue::UInt(value)), "atomLabel")
+                source_string_property(Some(&PropertyValue::UInt(value)), "atomLabel")
                     .unwrap()
-                    .unwrap())
-                .as_bytes(),
-                (text).as_bytes()
+                    .expect("original present property cell")
+                    .as_bytes(),
+                text.as_bytes()
             );
         }
     }
@@ -4336,11 +5174,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(0_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            (source_string_property(Some(v), "_cxsmilesBondIdx")
+            source_string_property(Some(v), "_cxsmilesBondIdx")
                 .unwrap()
-                .unwrap())
-            .as_bytes(),
-            ("0").as_bytes()
+                .expect("original present property cell")
+                .as_bytes(),
+            b"0".as_slice()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_1
@@ -4359,11 +5197,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(1_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            (source_string_property(Some(v), "_cxsmilesBondIdx")
+            source_string_property(Some(v), "_cxsmilesBondIdx")
                 .unwrap()
-                .unwrap())
-            .as_bytes(),
-            ("1").as_bytes()
+                .expect("original present property cell")
+                .as_bytes(),
+            b"1".as_slice()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483646
@@ -4382,11 +5220,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(2147483646_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            (source_string_property(Some(v), "_cxsmilesBondIdx")
+            source_string_property(Some(v), "_cxsmilesBondIdx")
                 .unwrap()
-                .unwrap())
-            .as_bytes(),
-            ("2147483646").as_bytes()
+                .expect("original present property cell")
+                .as_bytes(),
+            b"2147483646".as_slice()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483647
@@ -4405,11 +5243,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(2147483647_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            (source_string_property(Some(v), "_cxsmilesBondIdx")
+            source_string_property(Some(v), "_cxsmilesBondIdx")
                 .unwrap()
-                .unwrap())
-            .as_bytes(),
-            ("2147483647").as_bytes()
+                .expect("original present property cell")
+                .as_bytes(),
+            b"2147483647".as_slice()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_2147483648
@@ -4428,11 +5266,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(2147483648_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            (source_string_property(Some(v), "_cxsmilesBondIdx")
+            source_string_property(Some(v), "_cxsmilesBondIdx")
                 .unwrap()
-                .unwrap())
-            .as_bytes(),
-            ("2147483648").as_bytes()
+                .expect("original present property cell")
+                .as_bytes(),
+            b"2147483648".as_slice()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CONSUMER_smiles/CXwriter_4294967295
@@ -4451,11 +5289,11 @@ mod uint_complete_source_condition_cells {
         let g = graph(vec![PropertyValue::UInt(4294967295_u32)]);
         let v = g.bonds[0].prop("_cxsmilesBondIdx").unwrap();
         assert_eq!(
-            (source_string_property(Some(v), "_cxsmilesBondIdx")
+            source_string_property(Some(v), "_cxsmilesBondIdx")
                 .unwrap()
-                .unwrap())
-            .as_bytes(),
-            ("4294967295").as_bytes()
+                .expect("original present property cell")
+                .as_bytes(),
+            b"4294967295".as_slice()
         );
     }
     // FROZEN UINT CONDITION: UNSIGNED_CFG_0
@@ -4902,4 +5740,1173 @@ mod uint_complete_source_condition_cells {
 #[cfg(test)]
 fn fixed_property_text(value: &cosmolkit_model::PropertyText) -> &str {
     std::str::from_utf8(value.as_bytes()).expect("original fixed fixture text is UTF8")
+}
+
+#[cfg(test)]
+mod source_getter_tests {
+    use super::*;
+    use cosmolkit_model::{CoordinateBlock, CoordinateDimension, CoordinateValidationError};
+
+    #[test]
+    fn source_getter_handles_negative_ids_ordered_duplicate_ids_and_errors() {
+        for first in [CoordinateDimension::TwoD, CoordinateDimension::ThreeD] {
+            let order = if first == CoordinateDimension::TwoD {
+                vec![
+                    CoordinateDimension::TwoD,
+                    CoordinateDimension::ThreeD,
+                    CoordinateDimension::ThreeD,
+                ]
+            } else {
+                vec![
+                    CoordinateDimension::ThreeD,
+                    CoordinateDimension::TwoD,
+                    CoordinateDimension::ThreeD,
+                ]
+            };
+            let rows = CoordinateBlock {
+                conformers_2d: vec![Conformer2D::new(19, vec![[1.0, 2.0]])],
+                conformers_3d: vec![
+                    Conformer3D::new(19, vec![[3.0, 4.0, 5.0]], false),
+                    Conformer3D::new(0, vec![[6.0, 7.0, 8.0]], true),
+                ],
+                source_conformer_order: Some(order),
+                ..Default::default()
+            };
+            let before = rows.clone();
+            for id in [-1, i32::MIN, 19] {
+                match (first, source_conformer_by_id(&rows, id).unwrap()) {
+                    (CoordinateDimension::TwoD, CoordinateSource::TwoD(row)) => {
+                        assert!(std::ptr::eq(row, &rows.conformers_2d[0]))
+                    }
+                    (CoordinateDimension::ThreeD, CoordinateSource::ThreeD(row)) => {
+                        assert!(std::ptr::eq(row, &rows.conformers_3d[0]))
+                    }
+                    _ => panic!("not the first inserted matching conformer"),
+                }
+            }
+            match source_conformer_by_id(&rows, 0).unwrap() {
+                CoordinateSource::ThreeD(row) => assert!(std::ptr::eq(row, &rows.conformers_3d[1])),
+                _ => panic!("wrong explicit source ID"),
+            }
+            for id in [1, i32::MAX] {
+                assert!(
+                    matches!(source_conformer_by_id(&rows, id), Err(SmilesParseError::Model(message)) if message == format!("Can't find conformation with ID: {id}"))
+                );
+            }
+            let mut missing_order = rows.clone();
+            missing_order.source_conformer_order = None;
+            for id in [-1, 19, 0] {
+                assert!(matches!(
+                    source_conformer_by_id(&missing_order, id),
+                    Err(SmilesParseError::Coordinates(
+                        CoordinateValidationError::MissingSourceConformerOrder
+                    ))
+                ));
+            }
+            assert_eq!(rows, before);
+        }
+        let empty = CoordinateBlock::default();
+        for id in [-1, i32::MIN, 0, i32::MAX] {
+            assert!(
+                matches!(source_conformer_by_id(&empty, id), Err(SmilesParseError::Model(message)) if message == "No conformations available on the molecule")
+            );
+        }
+        for rows in [
+            CoordinateBlock {
+                conformers_2d: vec![Conformer2D::new(19, vec![[1.0, 2.0]])],
+                ..Default::default()
+            },
+            CoordinateBlock {
+                conformers_3d: vec![Conformer3D::new(19, vec![[3.0, 4.0, 5.0]], false)],
+                ..Default::default()
+            },
+        ] {
+            assert!(source_conformer_by_id(&rows, 19).is_ok());
+            assert!(matches!(
+                source_conformer_by_id(&rows, 0),
+                Err(SmilesParseError::Model(_))
+            ));
+        }
+    }
+}
+
+#[cfg(test)]
+mod source_mutable_getter_tests {
+    use super::*;
+    use cosmolkit_model::{CoordinateBlock, CoordinateDimension};
+
+    #[test]
+    fn source_mutable_getter_aliases_const_first_matching_row_without_other_changes() {
+        for first in [CoordinateDimension::TwoD, CoordinateDimension::ThreeD] {
+            for id in [-1, i32::MIN, 19, 0] {
+                let order = if first == CoordinateDimension::TwoD {
+                    vec![
+                        CoordinateDimension::TwoD,
+                        CoordinateDimension::ThreeD,
+                        CoordinateDimension::ThreeD,
+                    ]
+                } else {
+                    vec![
+                        CoordinateDimension::ThreeD,
+                        CoordinateDimension::TwoD,
+                        CoordinateDimension::ThreeD,
+                    ]
+                };
+                let mut rows = CoordinateBlock {
+                    conformers_2d: vec![Conformer2D::new(19, vec![[1.0, 2.0]])],
+                    conformers_3d: vec![
+                        Conformer3D::new(19, vec![[3.0, 4.0, 5.0]], false),
+                        Conformer3D::new(0, vec![[6.0, 7.0, 8.0]], true),
+                    ],
+                    source_conformer_order: Some(order),
+                    ..Default::default()
+                };
+                let before = rows.clone();
+                let address = match source_conformer_by_id(&rows, id).unwrap() {
+                    CoordinateSource::TwoD(row) => row as *const Conformer2D as usize,
+                    CoordinateSource::ThreeD(row) => row as *const Conformer3D as usize,
+                };
+                match source_conformer_by_id_mut(&mut rows, id).unwrap() {
+                    CoordinateSourceMut::TwoD(row) => {
+                        assert_eq!(row as *const Conformer2D as usize, address);
+                        row.coordinates_mut()[0][0] = 42.0;
+                    }
+                    CoordinateSourceMut::ThreeD(row) => {
+                        assert_eq!(row as *const Conformer3D as usize, address);
+                        row.coordinates_mut()[0][0] = 42.0;
+                    }
+                }
+                let mut expected = before;
+                if id == 0 {
+                    expected.conformers_3d[1].coordinates_mut()[0][0] = 42.0;
+                } else if first == CoordinateDimension::TwoD {
+                    expected.conformers_2d[0].coordinates_mut()[0][0] = 42.0;
+                } else {
+                    expected.conformers_3d[0].coordinates_mut()[0][0] = 42.0;
+                }
+                assert_eq!(rows, expected);
+                let before_failure = rows.clone();
+                assert!(matches!(
+                    source_conformer_by_id_mut(&mut rows, 1),
+                    Err(SmilesParseError::Model(_))
+                ));
+                assert_eq!(rows, before_failure);
+            }
+        }
+        let mut empty = CoordinateBlock::default();
+        assert!(
+            matches!(source_conformer_by_id_mut(&mut empty, -1), Err(SmilesParseError::Model(message)) if message == "No conformations available on the molecule")
+        );
+        assert_eq!(empty, CoordinateBlock::default());
+    }
+}
+
+#[cfg(test)]
+mod complete_link_node_source_tests {
+    use super::*;
+    use crate::{SmilesParseParams, parse_smiles};
+
+    fn record(bytes: &[u8]) -> SmilesRecord {
+        let mut record = parse_smiles("CC(C)C", &SmilesParseParams::default()).unwrap();
+        record
+            .properties
+            .set_prop(
+                "_molLinkNodes",
+                PropertyValue::String(PropertyText::from_bytes(bytes)),
+            )
+            .unwrap();
+        record
+    }
+    fn read(
+        record: &SmilesRecord,
+        strict: bool,
+        map: Option<&BTreeMap<u32, AtomId>>,
+        warnings: &mut Vec<SourceLinkIssue>,
+    ) -> Result<Vec<SourceLinkNode>, SmilesParseError> {
+        get_mol_link_nodes_source(&record.topology, &record.properties, strict, map, warnings)
+    }
+
+    #[test]
+    fn absent_empty_and_numeric_property_use_the_real_string_owner() {
+        let mut r = parse_smiles("CC", &SmilesParseParams::default()).unwrap();
+        let mut warnings = Vec::new();
+        assert!(read(&r, true, None, &mut warnings).unwrap().is_empty());
+        r.properties.set_prop("_molLinkNodes", "").unwrap();
+        assert!(read(&r, true, None, &mut warnings).unwrap().is_empty());
+        r.properties
+            .set_prop("_molLinkNodes", PropertyValue::UInt(123))
+            .unwrap();
+        assert!(read(&r, false, None, &mut warnings).unwrap().is_empty());
+        assert_eq!(warnings[0].kind, SourceLinkIssueKind::TooFewValues);
+        assert_eq!(warnings[0].raw_node.as_bytes(), b"123");
+    }
+
+    #[test]
+    fn every_native_rejection_has_strict_error_and_nonstrict_outer_continue() {
+        for (bad, kind, expected_error) in [
+            (
+                "x 3 2 2 1 2 3",
+                SourceLinkIssueKind::UnsignedConversion,
+                "Cannot convert values",
+            ),
+            (
+                "1 3 2 2 1",
+                SourceLinkIssueKind::TooFewValues,
+                "not enough values",
+            ),
+            (
+                "0 3 2 2 1 2 3",
+                SourceLinkIssueKind::BadCounts,
+                "bad counts",
+            ),
+            (
+                "4 3 2 2 1 2 3",
+                SourceLinkIssueKind::BadCounts,
+                "bad counts",
+            ),
+            (
+                "1 3 1 2 1",
+                SourceLinkIssueKind::UnderConstruction,
+                "Incomplete Code",
+            ),
+            (
+                "1 3 2 2 1 1 3",
+                SourceLinkIssueKind::DifferentCenters,
+                "bonds don't start",
+            ),
+            (
+                "1 3 2 2 2 2 3",
+                SourceLinkIssueKind::MissingBond,
+                "bond not found",
+            ),
+        ] {
+            let r = record(format!("{bad}|1 3 2 2 1 2 3").as_bytes());
+            let mut warnings = Vec::new();
+            assert!(
+                read(&r, true, None, &mut warnings)
+                    .unwrap_err()
+                    .to_string()
+                    .contains(expected_error),
+                "{bad}"
+            );
+            assert!(warnings.is_empty());
+            let nodes = read(&r, false, None, &mut warnings).unwrap();
+            assert_eq!(nodes.len(), 1, "{bad}");
+            assert_eq!(warnings.len(), 1);
+            assert_eq!(warnings[0].kind, kind);
+            assert_eq!(warnings[0].raw_node.as_bytes(), bad.as_bytes());
+            assert_eq!(nodes[0].bond_atoms, [(1, 0), (1, 2)]);
+        }
+    }
+
+    #[test]
+    fn separators_drop_only_explicit_empty_tokens_and_keep_raw_bad_bytes() {
+        let r = record(b"||  +1   3  2  2 1 2 3  ||1 3 2 2 1 2 4||");
+        let mut warnings = Vec::new();
+        let nodes = read(&r, true, None, &mut warnings).unwrap();
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[1].bond_atoms[1], (1, 3));
+        assert!(warnings.is_empty());
+        for suffix in [b'\t', b'\n', b'\r', 0x0b, 0x0c, 0, 0xff] {
+            let mut raw = b"1 3 2 2 1 2 3".to_vec();
+            raw.push(suffix);
+            let r = record(&raw);
+            warnings.clear();
+            assert!(read(&r, false, None, &mut warnings).unwrap().is_empty());
+            assert_eq!(warnings[0].kind, SourceLinkIssueKind::UnsignedConversion);
+            assert_eq!(warnings[0].raw_node.as_bytes(), raw);
+        }
+    }
+
+    #[test]
+    fn uint_sign_boundaries_and_required_size_wrap_precede_bond_count_guard() {
+        let mut warnings = Vec::new();
+        let r = record(b"-1 -1 2 2 1 2 3");
+        let nodes = read(&r, true, None, &mut warnings).unwrap();
+        assert_eq!(nodes[0].min_repetitions, u32::MAX);
+        assert_eq!(nodes[0].max_repetitions, u32::MAX);
+        for (raw, kind) in [
+            (
+                b"1 3 2147483649 2 1".as_slice(),
+                SourceLinkIssueKind::UnderConstruction,
+            ),
+            (
+                b"1 3 2147483647 2 1".as_slice(),
+                SourceLinkIssueKind::UnderConstruction,
+            ),
+            (
+                b"1 3 2147483646 2 1".as_slice(),
+                SourceLinkIssueKind::TooFewValues,
+            ),
+            (
+                b"1 4294967296 2 2 1 2 3".as_slice(),
+                SourceLinkIssueKind::UnsignedConversion,
+            ),
+        ] {
+            warnings.clear();
+            assert!(
+                read(&record(raw), false, None, &mut warnings)
+                    .unwrap()
+                    .is_empty()
+            );
+            assert_eq!(warnings[0].kind, kind);
+        }
+    }
+
+    #[test]
+    fn supplied_map_uses_actual_atom_ids_and_checks_centers_before_mapping() {
+        let r = record(b"1 3 2 11 21 11 31");
+        let map = BTreeMap::from([
+            (10, AtomId::new(1)),
+            (20, AtomId::new(0)),
+            (30, AtomId::new(3)),
+        ]);
+        let mut warnings = Vec::new();
+        assert_eq!(
+            read(&r, true, Some(&map), &mut warnings).unwrap()[0].bond_atoms,
+            [(1, 0), (1, 3)]
+        );
+        let r = record(b"1 3 2 11 21 12 31");
+        assert!(
+            read(&r, false, Some(&map), &mut warnings)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].kind, SourceLinkIssueKind::DifferentCenters);
+    }
+
+    #[test]
+    fn missing_map_entries_continue_inner_loop_and_can_still_accept_node() {
+        let r = record(b"1 3 2 1 21 1 31");
+        let map = BTreeMap::from([(20, AtomId::new(0)), (30, AtomId::new(3))]);
+        let mut warnings = Vec::new();
+        assert_eq!(
+            read(&r, false, Some(&map), &mut warnings).unwrap()[0].bond_atoms,
+            [(1, 0), (1, 3)]
+        );
+        assert_eq!(
+            warnings.iter().map(|w| &w.kind).collect::<Vec<_>>(),
+            vec![
+                &SourceLinkIssueKind::MissingMappedAtom(1),
+                &SourceLinkIssueKind::MissingMappedAtom(1)
+            ]
+        );
+        warnings.clear();
+        assert!(
+            read(&r, true, Some(&map), &mut warnings)
+                .unwrap_err()
+                .to_string()
+                .contains("atom index 1 cannot be found")
+        );
+        assert!(warnings.is_empty());
+        let r = record(b"1 3 2 0 21 0 31");
+        let map = BTreeMap::from([
+            (u32::MAX, AtomId::new(1)),
+            (20, AtomId::new(0)),
+            (30, AtomId::new(3)),
+        ]);
+        assert_eq!(
+            read(&r, true, Some(&map), &mut warnings).unwrap()[0].bond_atoms[0],
+            (1, 0)
+        );
+    }
+
+    #[test]
+    fn bond_lookup_range_errors_ignore_strict_and_first_missing_bond_short_circuits() {
+        for strict in [false, true] {
+            let mut warnings = Vec::new();
+            assert!(
+                read(&record(b"1 3 2 2 0 2 3"), strict, None, &mut warnings)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("4294967295")
+            );
+            assert!(warnings.is_empty());
+            assert!(
+                read(&record(b"1 3 2 0 1 0 3"), strict, None, &mut warnings)
+                    .unwrap_err()
+                    .to_string()
+                    .contains("4294967295")
+            );
+            assert!(warnings.is_empty());
+        }
+        let mut warnings = Vec::new();
+        assert!(
+            read(&record(b"1 3 2 2 2 2 0"), false, None, &mut warnings)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(warnings[0].kind, SourceLinkIssueKind::MissingBond);
+        warnings.clear();
+        assert!(read(&record(b"1 3 2 2 1 2 0"), false, None, &mut warnings).is_err());
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn strict_late_failure_and_writer_preserve_source_order_and_atomorder_indexing() {
+        let r = record(b"1 3 2 2 1 2 3|bad|2 4 2 2 3 2 4");
+        let mut warnings = Vec::new();
+        assert!(read(&r, true, None, &mut warnings).is_err());
+        assert!(warnings.is_empty());
+        let nodes = read(&r, false, None, &mut warnings).unwrap();
+        assert_eq!(
+            nodes.iter().map(|n| n.min_repetitions).collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        let order = [
+            AtomId::new(3),
+            AtomId::new(0),
+            AtomId::new(1),
+            AtomId::new(2),
+        ];
+        assert_eq!(
+            write_link_nodes(&r, &order).unwrap(),
+            "LN:0:1.3.3.1,0:2.4.1.2"
+        );
+    }
+}
+
+#[cfg(test)]
+mod cx_coordinate_shared_source_tests {
+    use super::*;
+    #[test]
+    fn nonfinite_coordinate_strings_reuse_source_case_and_sign() {
+        for (value, expected) in [
+            (f64::INFINITY, "inf"),
+            (f64::NEG_INFINITY, "-inf"),
+            (f64::from_bits(0x7ff8000000001234), "nan"),
+            (f64::from_bits(0xfff8000000001234), "-nan"),
+            (f64::from_bits(0x7ff0000000001234), "nan"),
+        ] {
+            assert_eq!(format_cx_coordinate(value), expected);
+        }
+    }
+    #[test]
+    fn two_d_positions_retain_duplicates_and_empty_selection() {
+        let row = Conformer2D::new(9, vec![[1.0, 2.0], [3.0, 4.0]]);
+        let source = CoordinateSource::TwoD(&row);
+        assert_eq!(
+            write_cx_coordinates_from_source(
+                source,
+                &[AtomId::new(1), AtomId::new(1), AtomId::new(0)]
+            )
+            .unwrap(),
+            "3,4,;3,4,;1,2,"
+        );
+        assert_eq!(write_cx_coordinates_from_source(source, &[]).unwrap(), "");
+    }
+    #[test]
+    fn is3d_flag_controls_z_independently_of_three_column_storage() {
+        for (flag, expected) in [(false, "1,2,"), (true, "1,2,-nan")] {
+            let row = Conformer3D::new(
+                3,
+                vec![[1.0, 2.0, f64::from_bits(0xfff8000000001234)]],
+                flag,
+            );
+            assert_eq!(
+                write_cx_coordinates_from_source(CoordinateSource::ThreeD(&row), &[AtomId::new(0)])
+                    .unwrap(),
+                expected
+            );
+        }
+    }
+    #[test]
+    fn invalid_position_has_structural_source_range_error() {
+        let row = Conformer2D::new(0, vec![[1.0, 2.0]]);
+        assert!(matches!(
+            write_cx_coordinates_from_source(CoordinateSource::TwoD(&row), &[AtomId::new(1)]),
+            Err(SmilesParseError::CxCoordinateAtomOutOfRange { atom_count: 1, .. })
+        ));
+    }
+    #[test]
+    fn source_zero_threshold_six_digit_format_and_z_string_guard_are_shared() {
+        let row = Conformer3D::new(
+            0,
+            vec![[999999.9, 1e-4, -0.0], [-1e6, 0.0000999, 1e-4]],
+            true,
+        );
+        assert_eq!(
+            write_cx_coordinates_from_source(
+                CoordinateSource::ThreeD(&row),
+                &[AtomId::new(0), AtomId::new(1)]
+            )
+            .unwrap(),
+            "1e+06,0.0001,;-1e+06,0,0.0001"
+        );
+    }
+}
+
+#[cfg(test)]
+mod zero_small_source_tests {
+    use super::*;
+    #[test]
+    fn signed_zeros_and_subnormals_return_positive_zero() {
+        for value in [0.0, -0.0, f64::from_bits(1), -f64::from_bits(1)] {
+            assert_eq!(zero_small_cx_coordinate(value).to_bits(), 0.0f64.to_bits());
+        }
+    }
+    #[test]
+    fn threshold_is_strict_on_both_sides_and_signs() {
+        let edge = 1e-4f64;
+        let below = f64::from_bits(edge.to_bits() - 1);
+        let above = f64::from_bits(edge.to_bits() + 1);
+        for value in [below, -below] {
+            assert_eq!(zero_small_cx_coordinate(value).to_bits(), 0.0f64.to_bits());
+        }
+        for value in [edge, -edge, above, -above] {
+            assert_eq!(zero_small_cx_coordinate(value).to_bits(), value.to_bits());
+        }
+    }
+    #[test]
+    fn ordinary_and_max_finite_values_keep_original_bits() {
+        for value in [1.0, -1.0, 42.25, -42.25, f64::MAX, -f64::MAX] {
+            assert_eq!(zero_small_cx_coordinate(value).to_bits(), value.to_bits());
+        }
+    }
+    #[test]
+    fn infinities_and_nan_payloads_return_original_input_bits() {
+        for value in [
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::from_bits(0x7ff8000000001234),
+            f64::from_bits(0xfff8000000001234),
+            f64::from_bits(0x7ff0000000001234),
+        ] {
+            assert_eq!(zero_small_cx_coordinate(value).to_bits(), value.to_bits());
+        }
+    }
+}
+
+#[cfg(test)]
+mod quote_cx_atom_property_source_tests {
+    use super::*;
+    #[test]
+    fn empty_source_string_stays_empty() {
+        assert!(quote_cx_atom_property(b"").is_empty());
+    }
+    #[test]
+    fn only_periods_are_escaped_and_existing_entities_are_unchanged() {
+        assert_eq!(
+            quote_cx_atom_property(b"a..b&#46;:c,$|\\"),
+            PropertyText::from("a&#46;&#46;b&#46;:c,$|\\")
+        );
+    }
+    #[test]
+    fn every_other_counted_byte_including_nul_and_nonutf8_is_preserved() {
+        let input = (0..=255).collect::<Vec<u8>>();
+        let mut expected = input[..46].to_vec();
+        expected.extend_from_slice(b"&#46;");
+        expected.extend_from_slice(&input[47..]);
+        assert_eq!(
+            quote_cx_atom_property(&input).as_bytes(),
+            expected.as_slice()
+        );
+    }
+}
+
+#[cfg(test)]
+mod atom_properties_source_tests {
+    use super::*;
+    use cosmolkit_model::{
+        Atom, AtomQueryPredicate, AtomSpec, QueryAtom, QueryAtomIdentity, QueryNode,
+    };
+    use cosmolkit_types::Element;
+    fn atom(i: usize, n: u8) -> QueryAtom {
+        QueryAtom::from_identity_parts(
+            AtomId::new(i),
+            QueryAtomIdentity::from_atomic_number(n),
+            QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+        )
+    }
+    fn write(atoms: &[QueryAtom]) -> PropertyText {
+        write_cx_atom_properties_impl(
+            atoms,
+            &(0..atoms.len()).map(AtomId::new).collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn empty_order_and_no_properties_have_no_prefix() {
+        assert!(
+            write_cx_atom_properties_impl::<QueryAtom>(&[], &[])
+                .unwrap()
+                .is_empty()
+        );
+        assert!(write(&[atom(0, 6)]).is_empty());
+    }
+    #[test]
+    fn source_insertion_order_and_overwrite_position_are_retained() {
+        let mut a = atom(0, 6);
+        a.set_prop("z", "old").unwrap();
+        a.set_prop("a", "first").unwrap();
+        a.set_prop("z", "new").unwrap();
+        assert_eq!(
+            write(&[a]),
+            PropertyText::from("atomProp:0.z.new:0.a.first")
+        );
+    }
+    #[test]
+    fn exact_skip_private_and_computed_flags_filter_before_output() {
+        let mut a = atom(0, 6);
+        for key in [
+            "atomLabel",
+            "molFileValue",
+            "molParity",
+            "molAtomMapNumber",
+            "molStereoCare",
+            "molRxnExachg",
+            "molInversionFlag",
+            "_private",
+        ] {
+            a.set_prop(key, "ignored").unwrap();
+        }
+        a.set_computed_prop("derived", "ignored").unwrap();
+        a.set_prop("visible", "value").unwrap();
+        assert_eq!(write(&[a]), PropertyText::from("atomProp:0.visible.value"));
+    }
+    #[test]
+    fn dummy_special_values_skip_on_any_actual_atomic_identity_but_empty_does_not() {
+        for n in [0, 6, 119] {
+            for value in ["*", "Pol", "Mod"] {
+                let mut a = atom(0, n);
+                a.set_prop("dummyLabel", value).unwrap();
+                assert!(write(&[a]).is_empty());
+            }
+        }
+        let mut a = atom(0, 0);
+        a.set_prop("dummyLabel", "").unwrap();
+        assert_eq!(write(&[a]), PropertyText::from("atomProp:0.dummyLabel."));
+    }
+    #[test]
+    fn attachment_uses_property_presence_without_integer_conversion() {
+        for (n, expected) in [(0, ""), (6, "atomProp:0.dummyLabel.custom")] {
+            let mut a = atom(0, n);
+            a.set_prop("_fromAttchpt", "bad-int").unwrap();
+            a.set_prop("dummyLabel", "custom").unwrap();
+            assert_eq!(write(&[a]), PropertyText::from(expected));
+        }
+    }
+    #[test]
+    fn counter_advances_for_empty_rows_and_repeated_atom_ids() {
+        let mut a = atom(0, 6);
+        a.set_prop("key", "v").unwrap();
+        let atoms = [a, atom(1, 6)];
+        assert_eq!(
+            write_cx_atom_properties_impl(
+                &atoms,
+                &[AtomId::new(0), AtomId::new(1), AtomId::new(0)]
+            )
+            .unwrap(),
+            PropertyText::from("atomProp:0.key.v:2.key.v")
+        );
+    }
+    #[test]
+    fn counted_binary_property_keys_and_values_escape_only_periods() {
+        let mut a = atom(0, 6);
+        a.set_prop(
+            PropertyText::from(vec![255, 0, b'.']),
+            PropertyValue::String(PropertyText::from(vec![128, b'.', 0])),
+        )
+        .unwrap();
+        let mut expected = PropertyText::from("atomProp:0.");
+        expected.extend_bytes(&[255, 0]);
+        expected.extend_bytes(b"&#46;.");
+        expected.push_byte(128);
+        expected.extend_bytes(b"&#46;");
+        expected.push_byte(0);
+        assert_eq!(write(&[a]), expected);
+    }
+    #[test]
+    fn all_seven_modeled_property_tags_use_source_string_projection() {
+        let mut a = atom(0, 6);
+        for (k, v) in [
+            ("s", PropertyValue::String("x".into())),
+            ("i", PropertyValue::Int(-7)),
+            ("u", PropertyValue::UInt(u32::MAX)),
+            ("d", PropertyValue::Double(-0.0)),
+            ("b", PropertyValue::Bool(true)),
+            ("iv", PropertyValue::IntVector(vec![1, -2])),
+            (
+                "sv",
+                PropertyValue::StringVector(vec!["a".into(), "b".into()]),
+            ),
+        ] {
+            a.set_prop(k, v).unwrap();
+        }
+        assert_eq!(
+            write(&[a]),
+            PropertyText::from(
+                "atomProp:0.s.x:0.i.-7:0.u.4294967295:0.d.-0:0.b.1:0.iv.[1,-2]:0.sv.[a,b]"
+            )
+        );
+    }
+    #[test]
+    fn malformed_computed_list_is_not_replaced_by_empty_filter() {
+        let mut a = atom(0, 6);
+        a.set_prop("__computedProps", "bad-tag").unwrap();
+        a.set_prop("molAtomMapNumber", "skipped").unwrap();
+        assert!(matches!(
+            write_cx_atom_properties_impl(&[a], &[AtomId::new(0)]),
+            Err(SmilesParseError::WriterPropertyList { .. })
+        ));
+    }
+    #[test]
+    fn invalid_atom_order_returns_source_structural_range_error() {
+        assert!(matches!(
+            write_cx_atom_properties_impl::<QueryAtom>(&[], &[AtomId::new(0)]),
+            Err(SmilesParseError::CxAtomPropertyAtomOutOfRange { atom_count: 0, .. })
+        ));
+    }
+    #[test]
+    fn ordinary_atom_consumer_uses_the_same_single_body() {
+        let mut a = Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C));
+        a.set_prop("a.b", "c.d").unwrap();
+        assert_eq!(
+            write_cx_atom_properties_impl(&[a], &[AtomId::new(0)]).unwrap(),
+            PropertyText::from("atomProp:0.a&#46;b.c&#46;d")
+        );
+    }
+}
+
+#[cfg(test)]
+mod typed_bonds_source_tests {
+    use super::*;
+    use cosmolkit_core::stereo_graph::BondRows;
+    use cosmolkit_model::{BondSpec, QueryBond};
+    fn bonds(orders: &[BondOrder]) -> Vec<Bond> {
+        orders
+            .iter()
+            .enumerate()
+            .map(|(i, &o)| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(i), AtomId::new(i + 1), o),
+                )
+            })
+            .collect()
+    }
+    fn write(
+        bonds: &[Bond],
+        ao: &[usize],
+        bo: &[usize],
+        order: BondOrder,
+        symbol: &[u8],
+    ) -> PropertyText {
+        write_cx_coord_or_hydrogen_bonds_source(
+            BondRows::Concrete(bonds),
+            &ao.iter().map(|&i| AtomId::new(i)).collect::<Vec<_>>(),
+            &bo.iter().map(|&i| BondId::new(i)).collect::<Vec<_>>(),
+            order,
+            symbol,
+        )
+        .unwrap()
+    }
+    #[test]
+    fn empty_and_unselected_order_never_emit_bare_prefix() {
+        assert!(write(&[], &[], &[], BondOrder::Dative, b"C").is_empty());
+        assert!(
+            write(
+                &bonds(&[BondOrder::Single]),
+                &[0, 1],
+                &[0],
+                BondOrder::Dative,
+                b"C"
+            )
+            .is_empty()
+        );
+    }
+    #[test]
+    fn bond_type_comparison_is_exact_without_dative_one_folding() {
+        let b = bonds(&[
+            BondOrder::DativeOne,
+            BondOrder::Dative,
+            BondOrder::Hydrogen,
+            BondOrder::Single,
+        ]);
+        assert_eq!(
+            write(&b, &[0, 1, 2, 3, 4], &[3, 0, 2, 1], BondOrder::Dative, b"C"),
+            PropertyText::from("C:1.3")
+        );
+        assert_eq!(
+            write(
+                &b,
+                &[0, 1, 2, 3, 4],
+                &[3, 0, 2, 1],
+                BondOrder::Hydrogen,
+                b"H"
+            ),
+            PropertyText::from("H:2.2")
+        );
+        assert_eq!(
+            write(
+                &b,
+                &[0, 1, 2, 3, 4],
+                &[3, 0, 2, 1],
+                BondOrder::DativeOne,
+                b"X"
+            ),
+            PropertyText::from("X:0.1")
+        );
+    }
+    #[test]
+    fn first_duplicate_atom_position_matches_std_find() {
+        assert_eq!(
+            write(
+                &bonds(&[BondOrder::Dative]),
+                &[1, 0, 0],
+                &[0],
+                BondOrder::Dative,
+                b"C"
+            ),
+            PropertyText::from("C:1.0")
+        );
+    }
+    #[test]
+    fn missing_start_atom_is_end_distance_even_for_empty_order() {
+        let b = bonds(&[BondOrder::Hydrogen]);
+        assert_eq!(
+            write(&b, &[1], &[0], BondOrder::Hydrogen, b"H"),
+            PropertyText::from("H:1.0")
+        );
+        assert_eq!(
+            write(&b, &[], &[0], BondOrder::Hydrogen, b"H"),
+            PropertyText::from("H:0.0")
+        );
+    }
+    #[test]
+    fn repeated_bonds_keep_output_positions_including_filtered_rows() {
+        assert_eq!(
+            write(
+                &bonds(&[BondOrder::Dative, BondOrder::Single]),
+                &[0, 1, 2],
+                &[1, 0, 0],
+                BondOrder::Dative,
+                b"C"
+            ),
+            PropertyText::from("C:0.1,0.2")
+        );
+    }
+    #[test]
+    fn actual_oriented_begin_is_not_canonicalized_to_lower_endpoint() {
+        let b = [Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(1), AtomId::new(0), BondOrder::Dative),
+        )];
+        assert_eq!(
+            write(&b, &[0, 1], &[0], BondOrder::Dative, b"C"),
+            PropertyText::from("C:1.0")
+        );
+    }
+    #[test]
+    fn counted_binary_symbol_is_preserved_once_without_escaping() {
+        let b = bonds(&[BondOrder::Dative, BondOrder::Dative]);
+        let mut expected = PropertyText::from(vec![255, 0, b'.', b':']);
+        expected.extend_bytes(b"0.0,1.1");
+        assert_eq!(
+            write(&b, &[0, 1, 2], &[0, 1], BondOrder::Dative, &[255, 0, b'.']),
+            expected
+        );
+        assert_eq!(
+            write(&b, &[0, 1, 2], &[0], BondOrder::Dative, b""),
+            PropertyText::from(":0.0")
+        );
+    }
+    #[test]
+    fn ordinary_and_query_carriers_share_one_body_and_propagate_range_error() {
+        let b = bonds(&[BondOrder::Dative]);
+        let q = [QueryBond::from_parts(
+            b[0].clone(),
+            cosmolkit_model::QueryNode::predicate(cosmolkit_model::BondQueryPredicate::Any),
+        )];
+        let ao = [AtomId::new(0), AtomId::new(1)];
+        let bo = [BondId::new(0)];
+        assert_eq!(
+            write_cx_coord_or_hydrogen_bonds_source(
+                BondRows::Concrete(&b),
+                &ao,
+                &bo,
+                BondOrder::Dative,
+                b"C"
+            )
+            .unwrap(),
+            write_cx_coord_or_hydrogen_bonds_source(
+                BondRows::Query(&q),
+                &ao,
+                &bo,
+                BondOrder::Dative,
+                b"C"
+            )
+            .unwrap()
+        );
+        assert!(matches!(
+            write_cx_coord_or_hydrogen_bonds_source(
+                BondRows::Query(&q),
+                &ao,
+                &[BondId::new(1)],
+                BondOrder::Dative,
+                b"C"
+            ),
+            Err(SmilesParseError::CxTypedBondOutOfRange { bond_count: 1, .. })
+        ));
+    }
+}
+
+#[cfg(test)]
+mod zero_bonds_owner_source_tests {
+    use super::*;
+    use cosmolkit_core::stereo_graph::BondRows;
+    use cosmolkit_model::{BondQueryPredicate, BondSpec, QueryBond, QueryNode};
+    fn bonds(orders: &[BondOrder]) -> Vec<Bond> {
+        orders
+            .iter()
+            .enumerate()
+            .map(|(i, &o)| {
+                Bond::from_spec(
+                    BondId::new(i),
+                    BondSpec::new(AtomId::new(i), AtomId::new(i + 1), o),
+                )
+            })
+            .collect()
+    }
+    fn write(bonds: &[Bond], bo: &[usize]) -> PropertyText {
+        write_cx_zero_bonds_source(
+            BondRows::Concrete(bonds),
+            &bo.iter().map(|&i| BondId::new(i)).collect::<Vec<_>>(),
+        )
+        .unwrap()
+    }
+    #[test]
+    fn empty_and_unselected_bonds_have_no_prefix() {
+        assert!(write(&[], &[]).is_empty());
+        assert!(write(&bonds(&[BondOrder::Single]), &[0]).is_empty());
+    }
+    #[test]
+    fn repeated_selected_bonds_keep_positions_after_filtered_rows() {
+        assert_eq!(
+            write(
+                &bonds(&[BondOrder::Zero, BondOrder::Zero, BondOrder::Single]),
+                &[2, 1, 0, 1]
+            ),
+            PropertyText::from("Z:1,2,3")
+        );
+    }
+    #[test]
+    fn all_zero_bonds_emit_one_prefix_and_no_trailing_comma() {
+        assert_eq!(
+            write(
+                &bonds(&[BondOrder::Zero, BondOrder::Zero, BondOrder::Zero]),
+                &[0, 1, 2]
+            ),
+            PropertyText::from("Z:0,1,2")
+        );
+    }
+    #[test]
+    fn other_modeled_bond_types_are_not_zero_aliases() {
+        assert!(
+            write(
+                &bonds(&[
+                    BondOrder::Single,
+                    BondOrder::Dative,
+                    BondOrder::Hydrogen,
+                    BondOrder::DativeOne,
+                    BondOrder::Aromatic
+                ]),
+                &[0, 1, 2, 3, 4]
+            )
+            .is_empty()
+        );
+    }
+    #[test]
+    fn actual_query_carrier_order_wins_without_reading_or_dropping_predicate() {
+        let b = bonds(&[BondOrder::Zero]);
+        let q = [QueryBond::from_parts(
+            b[0].clone(),
+            QueryNode::predicate(BondQueryPredicate::Any),
+        )];
+        let before = q.clone();
+        assert_eq!(
+            write_cx_zero_bonds_source(BondRows::Query(&q), &[BondId::new(0)]).unwrap(),
+            PropertyText::from("Z:0")
+        );
+        assert_eq!(q, before);
+    }
+    #[test]
+    fn invalid_source_bond_is_error_before_type_filter() {
+        assert!(matches!(
+            write_cx_zero_bonds_source(
+                BondRows::Concrete(&bonds(&[BondOrder::Single])),
+                &[BondId::new(1)]
+            ),
+            Err(SmilesParseError::CxZeroBondOutOfRange { bond_count: 1, .. })
+        ));
+    }
+}
+
+#[cfg(test)]
+mod link_nodes_owner_source_tests {
+    use super::*;
+    use cosmolkit_model::{
+        AtomQueryPredicate, BondSpec, QueryAtom, QueryAtomIdentity, QueryBond, QueryGraph,
+        QueryNode,
+    };
+    fn graph(raw: Option<&[u8]>, branched: bool) -> QueryGraph {
+        let atoms = (0..4)
+            .map(|i| {
+                QueryAtom::from_identity_parts(
+                    AtomId::new(i),
+                    QueryAtomIdentity::from_atomic_number(if i % 2 == 0 { 0 } else { 119 }),
+                    QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                )
+            })
+            .collect();
+        let edges = if branched {
+            vec![(1, 0), (1, 2), (1, 3)]
+        } else {
+            vec![(1, 0), (1, 2)]
+        };
+        QueryGraph::from_parts(
+            atoms,
+            edges
+                .into_iter()
+                .enumerate()
+                .map(|(i, (a, b))| {
+                    QueryBond::new(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            raw.map(|v| {
+                (
+                    PropertyText::from("_molLinkNodes"),
+                    PropertyValue::String(PropertyText::from_bytes(v)),
+                )
+            }),
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    fn run(q: &QueryGraph, ao: &[usize]) -> (Result<String, SmilesParseError>, Vec<Vec<u8>>) {
+        let mut warnings = vec![];
+        let output = write_query_cx_link_nodes_source(
+            q,
+            &ao.iter().copied().map(AtomId::new).collect::<Vec<_>>(),
+            &mut |v| warnings.push(v.to_vec()),
+        );
+        (output, warnings)
+    }
+    #[test]
+    fn absent_or_empty_nodes_return_before_invalid_reverse_order() {
+        for raw in [None, Some(&b"|||"[..])] {
+            let (out, w) = run(&graph(raw, false), &[99]);
+            assert_eq!(out.unwrap(), "");
+            assert!(w.is_empty());
+        }
+    }
+    #[test]
+    fn degree_two_uses_forward_order_and_does_not_read_outer_order() {
+        let q = graph(Some(b"1 3 2 2 1 2 3"), false);
+        assert_eq!(run(&q, &[3, 0, 2, 1]).0.unwrap(), "LN:0:1.3");
+        assert_eq!(run(&q, &[0, 1]).0.unwrap(), "LN:1:1.3");
+    }
+    #[test]
+    fn degree_three_includes_source_outer_pair_in_property_order() {
+        let q = graph(Some(b"1 3 2 2 3 2 1"), true);
+        assert_eq!(run(&q, &[3, 0, 2, 1]).0.unwrap(), "LN:0:1.3.2.3");
+    }
+    #[test]
+    fn repeated_nodes_and_empty_delimiter_tokens_preserve_output_order() {
+        let q = graph(Some(b"|1 3 2 2 1 2 3||2 4 2 2 1 2 3|"), false);
+        assert_eq!(run(&q, &[0, 1, 2, 3]).0.unwrap(), "LN:1:1.3,1:2.4");
+    }
+    #[test]
+    fn all_nonstrict_rejections_warn_then_continue_to_valid_node() {
+        let cases: [(&[u8], &[u8]); 7] = [
+            (
+                b"x",
+                b"Cannot convert values in LINKNODE 'x' to unsigned ints",
+            ),
+            (b"1 3 2 2 1", b"not enough values in LINKNODE '1 3 2 2 1'"),
+            (b"0 3 2 2 1 2 3", b"bad counts in LINKNODE '0 3 2 2 1 2 3'"),
+            (b"4 3 2 2 1 2 3", b"bad counts in LINKNODE '4 3 2 2 1 2 3'"),
+            (
+                b"1 3 3 2 1 2 3 2 4",
+                b"only link nodes with 2 bonds are currently supported",
+            ),
+            (
+                b"1 3 2 2 1 3 2",
+                b"bonds don't start at the same atom for LINKNODE '1 3 2 2 1 3 2'",
+            ),
+            (
+                b"1 3 2 2 1 2 4",
+                b"bond not found between atoms in LINKNODE '1 3 2 2 1 2 4'",
+            ),
+        ];
+        for (raw, expected) in cases {
+            let mut v = raw.to_vec();
+            v.extend_from_slice(b"|1 3 2 2 1 2 3");
+            let (out, w) = run(&graph(Some(&v), false), &[0, 1, 2, 3]);
+            assert_eq!(out.unwrap(), "LN:1:1.3");
+            assert_eq!(w, vec![expected.to_vec()]);
+        }
+    }
+    #[test]
+    fn binary_warning_bytes_are_not_utf8_normalized() {
+        let (out, w) = run(&graph(Some(b"\xff\0"), false), &[]);
+        assert_eq!(out.unwrap(), "");
+        assert_eq!(
+            w,
+            vec![b"Cannot convert values in LINKNODE '\xff\0' to unsigned ints".to_vec()]
+        );
+    }
+    #[test]
+    fn warning_prefix_is_emitted_before_later_hard_range_error() {
+        let (out, w) = run(&graph(Some(b"x|1 3 2 2 0 2 3"), false), &[0, 1, 2, 3]);
+        assert!(matches!(out,Err(SmilesParseError::Cx(ref s))if s.contains("4294967295")));
+        assert_eq!(w.len(), 1);
+        assert_eq!(
+            w[0],
+            b"Cannot convert values in LINKNODE 'x' to unsigned ints"
+        );
+    }
+    #[test]
+    fn reverse_order_writes_are_checked_only_after_nonempty_nodes() {
+        let (out, w) = run(&graph(Some(b"1 3 2 2 1 2 3"), false), &[99]);
+        assert!(matches!(
+            out,
+            Err(SmilesParseError::CxLinkAtomOutOfRange {
+                atom: 99,
+                atom_count: 4
+            })
+        ));
+        assert!(w.is_empty());
+    }
+    #[test]
+    fn missing_forward_order_is_error_at_reached_source_read() {
+        for (ao, index) in [(vec![0], 1), (vec![0, 1], 2)] {
+            let (out, _) = run(&graph(Some(b"1 3 2 2 1 2 3"), true), &ao);
+            assert!(
+                matches!(out,Err(SmilesParseError::CxLinkOrderOutOfRange{index:i,..})if i==index)
+            );
+        }
+    }
+    #[test]
+    fn scalar_property_uses_canonical_string_conversion() {
+        let mut q = graph(None, false);
+        q.set_prop("_molLinkNodes", PropertyValue::UInt(123))
+            .unwrap();
+        let (out, w) = run(&q, &[]);
+        assert_eq!(out.unwrap(), "");
+        assert_eq!(w, vec![b"not enough values in LINKNODE '123'".to_vec()]);
+    }
+    #[test]
+    fn actual_query_identity_predicates_properties_and_cache_are_immutable() {
+        let q = graph(Some(b"1 3 2 2 1 2 3"), true);
+        let before = q.clone();
+        assert_eq!(run(&q, &[0, 1, 2, 3]).0.unwrap(), "LN:1:1.3.0.2");
+        assert_eq!(q, before);
+    }
 }

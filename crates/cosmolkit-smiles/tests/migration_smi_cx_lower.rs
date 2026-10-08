@@ -60,6 +60,9 @@ fn coordinates_lower_into_dimension_specific_typed_conformers() {
         truncated.coordinates.source_coordinate_dim,
         Some(CoordinateDimension::ThreeD)
     );
+    assert_eq!(truncated.coordinates.conformers_2d.len(), 0);
+    assert_eq!(truncated.coordinates.conformers_3d.len(), 1);
+    assert!(!truncated.coordinates.conformers_3d[0].is_3d());
 
     let error = parse_smiles("C |(1e309,0)|", &Default::default()).unwrap_err();
     assert!(
@@ -456,10 +459,19 @@ fn cx_polymer_crossings_lower_and_write_as_ordered_typed_references() {
         .map(fixture_writer_text)
         .expect("typed crossings write through CXSMILES");
     assert!(
-        output.contains("Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:"),
-        "{output}"
+        output
+            .as_bytes()
+            .windows(b"Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:".len())
+            .any(|bytes| bytes == b"Sg:n:1,2,3:repeat:ht:0,0,3:3,3,0:"),
+        "{output:?}"
     );
-    assert!(output.contains("atomProp:4.keep.value"), "{output}");
+    assert!(
+        output
+            .as_bytes()
+            .windows(b"atomProp:4.keep.value".len())
+            .any(|bytes| bytes == b"atomProp:4.keep.value"),
+        "{output:?}"
+    );
 }
 
 #[test]

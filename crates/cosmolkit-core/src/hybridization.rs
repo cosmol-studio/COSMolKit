@@ -10,7 +10,7 @@ pub struct HybridizationAssignment {
     pub values: Vec<Hybridization>,
 }
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum HybridizationError {
     #[error("conjugated bond assignment has {actual} rows; expected {expected}")]
     ConjugatedBondAssignmentLength { actual: usize, expected: usize },

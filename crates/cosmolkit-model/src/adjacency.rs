@@ -127,6 +127,16 @@ impl AdjacencyList {
             .expect("topology must be valid before building adjacency")
     }
 
+    /// Borrow an actual CSR row, preserving absence separately from zero degree.
+    #[must_use]
+    #[doc(hidden)]
+    pub fn try_neighbors_of(&self, atom_index: usize) -> Option<&[NeighborRef]> {
+        let end = atom_index.checked_add(2)?;
+        let window = self.offsets.get(atom_index..end)?;
+        let [start, end] = window else { return None };
+        self.entries.get(*start..*end)
+    }
+
     #[must_use]
     pub fn neighbors_of(&self, atom_index: usize) -> &[NeighborRef] {
         let Some(window) = self.offsets.get(atom_index..atom_index.saturating_add(2)) else {

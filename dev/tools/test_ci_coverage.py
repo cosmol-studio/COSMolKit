@@ -44,7 +44,7 @@ class CoverageWorkflowTests(unittest.TestCase):
 
     def test_feature_matrix_uses_declared_leaf_capabilities_and_user_bundles(self):
         workflow = (ROOT / ".github/workflows/features.yml").read_text()
-        self.assertIn("cargo test -p cosmolkit --no-default-features --release --features op-contracts-strict", workflow)
+        self.assertIn("cargo test -p cosmolkit --no-default-features --profile dev-test --features op-contracts-strict", workflow)
         loop = workflow.split("for feature in \\\n", 1)[1].split("                  do", 1)[0]
         selected = loop.replace("\\", "").split()
         features = tomllib.loads((ROOT / "crates/cosmolkit/Cargo.toml").read_text())["features"]
@@ -86,7 +86,8 @@ class CoverageWorkflowTests(unittest.TestCase):
                 self.assertEqual(script.count("cargo llvm-cov show-env --sh"), 1)
                 self.assertIn('eval "$coverage_env"', script)
                 self.assertLess(script.index('export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"'), script.index(command))
-                self.assertIn("--release", script)
+                self.assertIn("--profile dev-test", script)
+                self.assertNotIn("--release", script)
                 self.assertIn("cosmolkit/op-contracts-strict", script)
                 self.assertNotIn("--no-clean", script)
                 self.assertNotIn("--no-report", script)
@@ -94,13 +95,30 @@ class CoverageWorkflowTests(unittest.TestCase):
         parity = steps["Run all parity integration targets with coverage"]
         self.assertIn("cargo test -p cosmolkit-parity-tests", parity)
         self.assertIn("--test '*' --no-fail-fast", parity)
+        prepare = steps["Prepare and validate all reference values"]
+        self.assertIn('$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests', prepare)
+        self.assertNotIn('$CARGO_TARGET_DIR/release/', prepare)
 
     def test_report_is_separate_and_test_failures_remain_failures(self):
         steps = shell_steps()
         self.assertIn("cargo llvm-cov report", steps["Generate coverage reports"])
+        self.assertIn("--profile dev-test", steps["Generate coverage reports"])
         self.assertIn('exit "$status"', steps["Run all default crate regression suites with coverage"])
         self.assertIn("set -o pipefail", steps["Run all parity integration targets with coverage"])
         self.assertIn("run: exit 1", (ROOT / ".github/workflows/coverage.yml").read_text())
+
+    def test_development_tests_and_distribution_have_separate_profiles(self):
+        profiles = tomllib.loads((ROOT / "Cargo.toml").read_text())["profile"]
+        self.assertEqual(profiles["release"]["opt-level"], 3)
+        self.assertEqual(profiles["release"]["lto"], "fat")
+        self.assertEqual(profiles["release"]["codegen-units"], 1)
+        self.assertEqual(profiles["dev-test"]["inherits"], "release")
+        self.assertEqual(profiles["dev-test"]["lto"], "off")
+        self.assertEqual(profiles["dev-test"]["codegen-units"], 16)
+        workflow = (ROOT / ".github/workflows/python-publish.yml").read_text()
+        self.assertEqual(workflow.count("--release"), 5)
+        self.assertNotIn("--profile dist", workflow)
+        self.assertNotIn("--profile dev-test", workflow)
 
 
 if __name__ == "__main__":

@@ -141,6 +141,8 @@ pub struct CxProgressCheckpoint {
     /// Index into [`CxParseProgress::records`].
     pub record_index: usize,
     /// Item index within a record when the source commits one item at a time.
+    /// For a hierarchy relationship Begin this identifies the parent row;
+    /// its Item checkpoints retain the flat child index.
     pub item_index: Option<usize>,
     /// Actual source iterator byte position at this commit.
     pub cursor: usize,
@@ -152,6 +154,8 @@ pub struct CxProgressCheckpoint {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CxProgressPhase {
     /// The source helper began and its initial progress record is available.
+    /// A hierarchy relationship also begins immediately after its parent
+    /// integer is read, before the colon and complete child list are parsed.
     Begin,
     /// The progress record received one item; its destination effect may be
     /// deferred until the helper completes.

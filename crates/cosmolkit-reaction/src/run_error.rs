@@ -26,6 +26,19 @@ pub enum ReactionRunError {
         #[source]
         source: cosmolkit_search::SubstructMatchError,
     },
+    #[error(
+        "reactant {reactant}, template {template} match refers to atom {atom} outside {atom_count} atoms"
+    )]
+    MatchAtomIndex {
+        reactant: usize,
+        template: usize,
+        atom: usize,
+        atom_count: usize,
+    },
+    #[error("reactant combination level {level} is outside {count} levels")]
+    CombinationLevel { level: u32, count: u32 },
+    #[error("reactant combination has {actual} slots; expected {expected}")]
+    CombinationSize { expected: u32, actual: usize },
     #[error("reactant combination recursion has no levels")]
     EmptyCombinationLevels,
 }

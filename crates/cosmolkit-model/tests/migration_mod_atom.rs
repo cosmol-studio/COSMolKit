@@ -84,34 +84,34 @@ fn zero_isotope_is_absent_at_every_atom_construction_and_update_boundary() {
 #[test]
 fn pdb_residue_info_covers_source_defaults_and_all_fields() {
     let default = AtomPdbResidueInfo::default();
-    assert_eq!(default.atom_name(), "");
+    assert_eq!(default.atom_name().as_bytes(), b"");
     assert_eq!(default.serial_number(), 0);
-    assert_eq!(default.alt_loc(), "");
-    assert_eq!(default.residue_name(), "");
+    assert_eq!(default.alt_loc().as_bytes(), b"");
+    assert_eq!(default.residue_name().as_bytes(), b"");
     assert_eq!(default.residue_number(), 0);
-    assert_eq!(default.chain_id(), "");
-    assert_eq!(default.insertion_code(), "");
+    assert_eq!(default.chain_id().as_bytes(), b"");
+    assert_eq!(default.insertion_code().as_bytes(), b"");
     assert_eq!(default.occupancy(), 1.0);
     assert_eq!(default.temp_factor(), 0.0);
     assert!(!default.is_hetero_atom());
     assert_eq!(default.secondary_structure(), 0);
     assert_eq!(default.segment_number(), 0);
-    assert_eq!(default.monomer_class(), "");
+    assert_eq!(default.monomer_class().as_bytes(), b"");
 
     let full = full_residue();
-    assert_eq!(full.atom_name(), " CA ");
+    assert_eq!(full.atom_name().as_bytes(), b" CA ");
     assert_eq!(full.serial_number(), 42);
-    assert_eq!(full.alt_loc(), "B");
-    assert_eq!(full.residue_name(), "ALA");
+    assert_eq!(full.alt_loc().as_bytes(), b"B");
+    assert_eq!(full.residue_name().as_bytes(), b"ALA");
     assert_eq!(full.residue_number(), 7);
-    assert_eq!(full.chain_id(), "A");
-    assert_eq!(full.insertion_code(), "I");
+    assert_eq!(full.chain_id().as_bytes(), b"A");
+    assert_eq!(full.insertion_code().as_bytes(), b"I");
     assert_eq!(full.occupancy(), 0.75);
     assert_eq!(full.temp_factor(), 12.5);
     assert!(full.is_hetero_atom());
     assert_eq!(full.secondary_structure(), 3);
     assert_eq!(full.segment_number(), 9);
-    assert_eq!(full.monomer_class(), "LGRP");
+    assert_eq!(full.monomer_class().as_bytes(), b"LGRP");
     assert_eq!(full, full.clone());
 
     let positive_zero = AtomPdbResidueInfo::default().with_temp_factor(0.0);

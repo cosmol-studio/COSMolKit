@@ -2075,3 +2075,7 @@ mod final_rings_transport_tests {
         assert_eq!(calls, 8, "exact census");
     }
 }
+
+#[cfg(test)]
+#[path = "tests/property_cache.rs"]
+mod property_cache_tests;

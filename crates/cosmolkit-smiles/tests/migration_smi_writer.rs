@@ -413,7 +413,7 @@ fn atom_hydrogen_charge_and_isotope_fields_match_pinned_rdkit() {
             )
             .map(fixture_writer_text)
             .unwrap(),
-            "[NH3]",
+            "[NH3]".to_owned(),
             "all-H bracket count for {input}"
         );
         assert_eq!(record, before, "writing preserves {input}");
@@ -855,7 +855,7 @@ fn canonical_double_bond_directions_follow_ring_and_isomeric_options() {
         )
         .map(fixture_writer_text)
         .unwrap(),
-        "C1=CCC=C2C3=CCC=CC=CC3C2C=C1"
+        "C1=CCC=C2C3=CCC=CC=CC3C2C=C1".to_owned()
     );
     assert_eq!(
         write(
@@ -1038,7 +1038,7 @@ fn rooted_writer_rejects_out_of_range_atom_but_keeps_empty_molecule_behavior() {
         )
         .map(fixture_writer_text)
         .unwrap(),
-        ""
+        "".to_owned()
     );
 }
 
@@ -1073,8 +1073,17 @@ fn ignored_atom_maps_change_canonical_ranking_but_remain_serialized() {
     )
     .map(fixture_writer_text)
     .unwrap();
-    assert_eq!(ignored, "[CH3:99]C([CH3:1])O");
-    assert!(ignored.contains(":99") && ignored.contains(":1"));
+    assert_eq!(ignored, "[CH3:99]C([CH3:1])O".to_owned());
+    assert!(
+        ignored
+            .as_bytes()
+            .windows(b":99".len())
+            .any(|bytes| bytes == b":99")
+            && ignored
+                .as_bytes()
+                .windows(b":1".len())
+                .any(|bytes| bytes == b":1")
+    );
     assert_eq!(
         record
             .topology
@@ -1095,7 +1104,7 @@ fn ignored_atom_maps_change_canonical_ranking_but_remain_serialized() {
     )
     .map(fixture_writer_text)
     .unwrap();
-    assert_eq!(noncanonical, "C(C)(C)O");
+    assert_eq!(noncanonical, "C(C)(C)O".to_owned());
     assert_eq!(
         record
             .topology
@@ -1117,7 +1126,7 @@ fn ignored_atom_maps_change_canonical_ranking_but_remain_serialized() {
         )
         .map(fixture_writer_text)
         .unwrap(),
-        "CO"
+        "CO".to_owned()
     );
 }
 
@@ -1138,7 +1147,7 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_isotope_and_is_renumbering_s
             )
             .map(fixture_writer_text)
             .unwrap(),
-            "CCC(C)C"
+            "CCC(C)C".to_owned()
         );
         assert_eq!(
             write_smiles(candidate).map(fixture_writer_text).unwrap(),
@@ -1174,7 +1183,7 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_tetrahedral_stereo() {
                 )
                 .map(fixture_writer_text)
                 .unwrap(),
-                "CC(N)C(C)O",
+                "CC(N)C(C)O".to_owned(),
                 "{input}"
             );
             assert_eq!(
@@ -1210,7 +1219,7 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_double_bond_stereo() {
                 )
                 .map(fixture_writer_text)
                 .unwrap(),
-                "CC=CC",
+                "CC=CC".to_owned(),
                 "{input}"
             );
             assert_eq!(
@@ -1369,7 +1378,7 @@ fn clean_stereo_option_selects_source_cleanup_and_preservation() {
         )
         .map(fixture_writer_text)
         .unwrap(),
-        "C[C@@](C)(O)F"
+        "C[C@@](C)(O)F".to_owned()
     );
     assert_eq!(
         write_smiles_with_params(
@@ -1381,7 +1390,7 @@ fn clean_stereo_option_selects_source_cleanup_and_preservation() {
         )
         .map(fixture_writer_text)
         .unwrap(),
-        "CC(C)(O)F"
+        "CC(C)(O)F".to_owned()
     );
 
     record
@@ -1539,7 +1548,11 @@ fn current_stereo_wrapper_candidates_preserve_pinned_large_ring_cx_output() {
         )
         .map(fixture_writer_text)
         .unwrap();
-        assert_eq!(output, PINNED_LEGACY_CX, "clean_stereo={clean_stereo}");
+        assert_eq!(
+            output,
+            PINNED_LEGACY_CX.to_owned(),
+            "clean_stereo={clean_stereo}"
+        );
     }
     assert_eq!(finalized, finalized_snapshot, "writer preserves its input");
 }
@@ -1676,7 +1689,7 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
     )
     .map(fixture_writer_text)
     .unwrap();
-    assert_eq!(output, "C1=C\\CCCCCCCC/1");
+    assert_eq!(output, "C1=C\\CCCCCCCC/1".to_owned());
     assert_eq!(
         finalized, finalized_snapshot,
         "writing preserves finalized input"

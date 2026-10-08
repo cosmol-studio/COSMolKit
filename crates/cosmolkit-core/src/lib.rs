@@ -76,9 +76,12 @@ pub use atropisomer::{
     AtropisomerDiagnostic, AtropisomerError, AtropisomerRejectionKind, AtropisomerWedgeAssignment,
     AtropisomerWedgeUpdate, StereoGroupAssignment, atropisomer_carriers,
     atropisomer_carriers_for_bonds, cleanup_atropisomer_stereo_groups,
+    collect_query_stereo_group_atom_ids_source, collect_stereo_group_atom_ids_source,
     detect_atropisomer_chirality, does_topology_have_atropisomers,
     get_all_atom_ids_for_stereo_group, get_all_atom_ids_for_stereo_groups, stereo_group_atom_ids,
-    wedge_bonds_from_atropisomers,
+    wedge_atropisomer_no_conformer_source, wedge_atropisomer_three_d_source,
+    wedge_atropisomer_two_d_source, wedge_bonds_from_atropisomers,
+    wedge_bonds_from_atropisomers_projected_source, wedge_bonds_from_atropisomers_source,
 };
 
 pub use aromaticity::{
@@ -109,9 +112,10 @@ pub use double_stereo::{
     DoubleBondStereoError, DoubleBondStereoInfo, DoubleBondStereoSpecified, DoubleBondStereoUpdate,
     StereoAtomSearch, StereoAtomSearchWarning, assign_directional_double_bond_stereo,
     assign_double_bond_stereo_from_directions, clear_bond_directions, clear_single_bond_directions,
-    double_bond_stereo_info, find_double_bond_stereo_atoms,
+    double_bond_stereo_info, double_bond_stereo_reference_atoms, find_double_bond_stereo_atoms,
     find_double_bond_stereo_atoms_with_rank_reader, has_stereo_bond_direction,
-    is_double_bond_stereo_candidate, neighboring_directed_bond, opposite_stereo_bond_direction,
+    is_double_bond_stereo_candidate, neighboring_directed_bond,
+    neighboring_directed_bond_from_incident, opposite_stereo_bond_direction,
     set_double_bond_neighbor_directions, should_detect_double_bond_stereo,
     translate_ez_to_cis_trans, with_double_bond_stereo_reference,
 };
@@ -136,8 +140,9 @@ pub use kekulize::{
 
 pub use legacy_stereo::{
     LegacyStereoAssignment, LegacyStereoError, assign_legacy_stereochemistry,
-    assign_legacy_stereochemistry_for_depiction, assign_legacy_stereochemistry_with_assignments,
-    assign_legacy_stereochemistry_with_flags, assign_legacy_stereochemistry_with_query_state,
+    assign_legacy_stereochemistry_for_depiction, assign_legacy_stereochemistry_source,
+    assign_legacy_stereochemistry_with_assignments, assign_legacy_stereochemistry_with_flags,
+    assign_legacy_stereochemistry_with_query_state,
 };
 
 pub use structure_tags::cleanup_stereo_groups;
@@ -182,8 +187,10 @@ pub use radicals::{RadicalAssignment, RadicalDiagnostic, RadicalError, assign_ra
 pub use rings::{
     RingFindType, RingFindingError, RingInfo, RingSearchParams, fast_find_rings,
     fast_find_rings_from_parts, find_ring_families, find_ring_families_from_parts, find_sssr,
-    find_sssr_from_parts, find_sssr_with_options_from_parts, is_atom_bridgehead_from_topology,
+    find_sssr_from_parts, find_sssr_with_options_from_parts,
+    find_sssr_with_source_outputs_from_parts, is_atom_bridgehead_from_topology,
     ring_info_from_selected_rows, symmetrize_sssr_with_options_from_parts, symmetrized_sssr,
+    symmetrized_sssr_with_properties,
 };
 
 pub use sanitize::{
@@ -197,8 +204,9 @@ pub(crate) use sanitize::{
 
 pub use stereo_order::{
     StereoOrderError, TetrahedralLigand, TetrahedralRemap, atom_nonzero_degree,
-    bond_affects_atom_chirality, count_swaps_to_interconvert, incident_tetrahedral_bond_order,
-    invert_tetrahedral_tag, remap_tetrahedral_center, tetrahedral_tag_after_order_change,
+    atom_perturbation_order, bond_affects_atom_chirality, count_swaps_to_interconvert,
+    incident_tetrahedral_bond_order, invert_tetrahedral_tag, remap_tetrahedral_center,
+    tetrahedral_tag_after_order_change,
 };
 
 pub use structure_tags::{
@@ -216,7 +224,8 @@ pub use transforms::{
 };
 
 pub use valence::{
-    AtomMetadata, ValenceAssignment, ValenceError, ValenceModel, ValenceParams, ValencePhase,
+    AtomMetadata, AtomicSymbolLookupError, SymbolValenceLookupError, ValenceAssignment,
+    ValenceError, ValenceModel, ValenceParams, ValencePhase,
     assign_explicit_valence_for_atom_from_parts,
     assign_implicit_valence_for_atom_from_parts_with_explicit_valence, assign_valence,
     assign_valence_for_topology, assign_valence_state_for_atom_from_parts,
@@ -228,14 +237,16 @@ pub use valence::{
     calculate_implicit_valence_from_parts, can_be_hypervalent, explicit_valence_for_atom,
     get_effective_atomic_num, has_valence_violation, implicit_valence_for_atom,
     num_pi_electrons_for_topology, periodic_table_more_electronegative,
-    periodic_table_outer_electrons, periodic_table_row, rdkit_atomic_number_from_symbol,
-    rdkit_default_valence, rdkit_element_symbol, rdkit_rb0, rdkit_valence_list,
-    required_valence_list,
+    periodic_table_outer_electrons, periodic_table_row, rdkit_atomic_number_from_c_symbol,
+    rdkit_atomic_number_from_symbol, rdkit_default_valence, rdkit_default_valence_from_c_symbol,
+    rdkit_default_valence_from_symbol, rdkit_element_symbol, rdkit_rb0, rdkit_valence_list,
+    rdkit_valence_list_from_c_symbol, rdkit_valence_list_from_symbol, required_valence_list,
 };
 
 pub use wedge::{
     CrossedBondContext, MolFileBondStereoInfo, WedgeAssignments, WedgeError, WedgeInfo,
     determine_bond_wedge_state, get_molfile_bond_stereo_info, pick_bonds_to_wedge,
+    pick_bonds_to_wedge_default_source, pick_bonds_to_wedge_source,
     pick_bonds_to_wedge_with_existing_ring_info, pick_bonds_to_wedge_with_ring_info,
 };
 
@@ -265,3 +276,34 @@ pub use property_numeric::{
     source_lexical_double, source_lexical_double_with_rounding, source_unsigned_stream_array,
     source_unsigned_stream_read,
 };
+
+pub use fragments::{
+    FragmentSourceMetadata, FragmentSourceMetadataView,
+    assign_molecule_fragments_with_source_outputs, get_molecule_fragments_with_source_outputs,
+    get_shared_molecule_fragments_with_source_outputs,
+};
+
+#[doc(hidden)]
+pub use potential_stereo::potential_tetrahedral_center_from_source;
+
+#[doc(hidden)]
+pub use wedge::pick_bond_to_wedge_with_source_properties;
+
+#[doc(hidden)]
+pub use valence::update_query_atom_property_cache_source;
+
+#[doc(hidden)]
+pub use query_ops::query_bond_has_complex_type_query;
+
+#[doc(hidden)]
+pub use atropisomer::query_atropisomer_carriers_source;
+#[doc(hidden)]
+pub use wedge::get_query_directional_bond_stereo_info_source;
+
+#[doc(hidden)]
+pub use atropisomer::wedge_query_bonds_from_atropisomers_source;
+#[doc(hidden)]
+pub use wedge::pick_query_bonds_to_wedge_source;
+
+#[doc(hidden)]
+pub use property_numeric::{PropertyULongReadError, property_value_to_ulong};

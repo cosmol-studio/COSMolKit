@@ -64,14 +64,16 @@ fn metadata_defaults_names_and_ordered_sdf_records_are_exact() {
 
     assert_eq!(properties.name().map(fixture_text), Some(""));
     assert_eq!(
-        properties
-            .sdf_data_fields()
-            .iter()
-            .map(|(key, value)| (fixture_text(key).to_owned(), fixture_text(value).to_owned()))
-            .collect::<Vec<_>>(),
+        properties.sdf_data_fields(),
         &[
-            ("duplicate".to_owned(), "one".to_owned()),
-            ("duplicate".to_owned(), "two".to_owned()),
+            (
+                cosmolkit_model::PropertyText::from_bytes(b"duplicate"),
+                cosmolkit_model::PropertyText::from_bytes(b"one")
+            ),
+            (
+                cosmolkit_model::PropertyText::from_bytes(b"duplicate"),
+                cosmolkit_model::PropertyText::from_bytes(b"two")
+            ),
         ]
     );
     assert_eq!(properties.sdf_property_lists(), &[atom_list, bond_list]);
@@ -157,8 +159,12 @@ fn ordinary_and_computed_properties_cover_errors_overwrites_and_clears() {
 
     properties.set_computed_prop("temporary", "gone").unwrap();
     properties.set_prop("cache_like_name", "kept").unwrap();
-    properties.clear_computed_props();
-    properties.clear_computed_props();
+    properties
+        .clear_computed_props()
+        .expect("original fixture property clear succeeds");
+    properties
+        .clear_computed_props()
+        .expect("original fixture property clear succeeds");
     assert_eq!(properties.prop("temporary"), None);
     assert_eq!(
         string_item_prop(properties.prop("ordinary")),
@@ -320,7 +326,10 @@ fn atom_cip_projection_covers_absent_all_supported_and_invalid_values() {
                 .unwrap(),
         );
         assert_eq!(atom.cip_descriptor(), Ok(Some(descriptor)));
-        assert_eq!(string_item_prop(atom.prop("_CIPCode")), Some(spelling));
+        assert_eq!(
+            string_item_prop(atom.prop("_CIPCode")).map(str::as_bytes),
+            Some(spelling.as_bytes())
+        );
     }
 
     let invalid = Atom::from_spec(
@@ -335,7 +344,10 @@ fn atom_cip_projection_covers_absent_all_supported_and_invalid_values() {
             value: "UNKNOWN".into(),
         })
     );
-    assert_eq!(string_item_prop(invalid.prop("_CIPCode")), Some("UNKNOWN"));
+    assert_eq!(
+        string_item_prop(invalid.prop("_CIPCode")).map(str::as_bytes),
+        Some(b"UNKNOWN".as_slice())
+    );
 }
 
 #[test]
@@ -350,7 +362,10 @@ fn bond_cip_projection_covers_absent_all_supported_and_invalid_values() {
             bond_spec().with_prop("_CIPCode", spelling).unwrap(),
         );
         assert_eq!(bond.cip_descriptor(), Ok(Some(descriptor)));
-        assert_eq!(string_item_prop(bond.prop("_CIPCode")), Some(spelling));
+        assert_eq!(
+            string_item_prop(bond.prop("_CIPCode")).map(str::as_bytes),
+            Some(spelling.as_bytes())
+        );
     }
 
     let invalid = Bond::from_spec(
@@ -363,5 +378,8 @@ fn bond_cip_projection_covers_absent_all_supported_and_invalid_values() {
             value: "seqCis".into(),
         })
     );
-    assert_eq!(string_item_prop(invalid.prop("_CIPCode")), Some("seqCis"));
+    assert_eq!(
+        string_item_prop(invalid.prop("_CIPCode")).map(str::as_bytes),
+        Some(b"seqCis".as_slice())
+    );
 }

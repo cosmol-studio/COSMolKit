@@ -321,7 +321,6 @@ pub(crate) fn total_degree(
     valence: &ValenceAssignment,
     atom: AtomId,
 ) -> Result<usize, PotentialStereoError> {
-    // BEGIN RDKIT CPP FUNCTION Atom::getTotalDegree
     // RDKit❗✔️: unsigned int Atom::getTotalDegree() const {
     // RDKit❗✔️:   unsigned int res = this->getTotalNumHs(false) + this->getDegree();
     // RDKit❗✔️:   return res;
@@ -387,23 +386,74 @@ fn is_potential_tetrahedral(
     ring_rows_validated: &mut bool,
     atom: AtomId,
 ) -> Result<bool, PotentialStereoError> {
-    // BEGIN RDKIT CPP FUNCTION isAtomPotentialTetrahedralCenter
-    // RDKit✔️❌: auto nzDegree = getAtomNonzeroDegree(atom);
-    // RDKit✔️❌: auto tnzDegree = nzDegree + atom->getTotalNumHs();
-    // RDKit✔️❌: if (tnzDegree > 4) return false;
-    // RDKit✔️❌: if (nzDegree == 4) return true;
-    // RDKit✔️❌: if (nzDegree <= 1) return false;
-    // RDKit✔️❌: if (nzDegree < 3 && anum != 15 && anum != 33) return false;
-    // RDKit✔️❌: if (anum == 15 || anum == 33) return true;
-    // RDKit✔️❌: if (nzDegree == 3 && atom->getTotalNumHs() == 1) {
-    // RDKit✔️❌:   if (detail::has_protium_neighbor(mol, atom)) return false;
-    // RDKit✔️❌:   return true;
-    // RDKit✔️❌: }
-    // RDKit✔️❌: if ((anum == 16 || anum == 34) &&
-    // RDKit✔️❌:    (explicitValence == 4 || (explicitValence == 3 && charge == 1))) return true;
-    // RDKit✔️❌: if (anum == 7 && hybridization == SP3 && !atomHasConjugatedBond(atom) &&
-    // RDKit✔️❌:    (isAtomInRingOfSize(idx, 3) || queryIsAtomBridgehead(atom))) return true;
-    // END RDKIT CPP FUNCTION isAtomPotentialTetrahedralCenter
+    // RDKit❗✔️: bool isAtomPotentialTetrahedralCenter(const Atom *atom) {
+    // RDKit❗✔️:   PRECONDITION(atom, "atom is null");
+    // RDKit❗✔️:   auto nzDegree = getAtomNonzeroDegree(atom);
+    // RDKit❗✔️:   auto tnzDegree = nzDegree + atom->getTotalNumHs();
+    // RDKit❗✔️:   if (tnzDegree > 4) {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   } else {
+    // RDKit❗✔️:     const auto &mol = atom->getOwningMol();
+    // RDKit❗✔️:     if (nzDegree == 4) {
+    // RDKit❗✔️:       // chirality is always possible with 4 nbrs
+    // RDKit❗✔️:       return true;
+    // RDKit❗✔️:     } else if (nzDegree <= 1) {
+    // RDKit❗✔️:       // chirality is never possible with 0 or 1 nbr
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     } else if (nzDegree < 3 &&
+    // RDKit❗✔️:                (atom->getAtomicNum() != 15 && atom->getAtomicNum() != 33)) {
+    // RDKit❗✔️:       // less than three neighbors is never stereogenic
+    // RDKit❗✔️:       // unless it is a phosphine/arsine with implicit H
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     } else if (atom->getAtomicNum() == 15 || atom->getAtomicNum() == 33) {
+    // RDKit❗✔️:       // from logical flow: degree is 2 or 3 (implicit H)
+    // RDKit❗✔️:       // Since InChI Software v. 1.02-standard (2009), phosphines and arsines
+    // RDKit❗✔️:       // are always treated as stereogenic even with H atom neighbors.
+    // RDKit❗✔️:       // Accept automatically.
+    // RDKit❗✔️:       return true;
+    // RDKit❗✔️:     } else if (nzDegree == 3) {
+    // RDKit❗✔️:       // three-coordinate with a single H we'll accept automatically:
+    // RDKit❗✔️:       if (atom->getTotalNumHs() == 1) {
+    // RDKit❗✔️:         if (detail::has_protium_neighbor(mol, atom)) {
+    // RDKit❗✔️:           // more than one H is never stereogenic
+    // RDKit❗✔️:           return false;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         return true;
+    // RDKit❗✔️:       } else {
+    // RDKit❗✔️:         // otherwise we default to not being a legal center
+    // RDKit❗✔️:         bool legalCenter = false;
+    // RDKit❗✔️:         // but there are a few special cases we'll accept
+    // RDKit❗✔️:         // sulfur or selenium with either a positive charge or a double
+    // RDKit❗✔️:         // bond:
+    // RDKit❗✔️:         if ((atom->getAtomicNum() == 16 || atom->getAtomicNum() == 34) &&
+    // RDKit❗✔️:             (atom->getValence(Atom::ValenceType::EXPLICIT) == 4 ||
+    // RDKit❗✔️:              (atom->getValence(Atom::ValenceType::EXPLICIT) == 3 &&
+    // RDKit❗✔️:               atom->getFormalCharge() == 1))) {
+    // RDKit❗✔️:           legalCenter = true;
+    // RDKit❗✔️:         } else if (atom->getAtomicNum() == 7) {
+    // RDKit❗✔️:           // three-coordinate N additional requirements:
+    // RDKit❗✔️:           //   in a ring of size 3  (from InChI)
+    // RDKit❗✔️:           // OR
+    // RDKit❗✔️:           /// is a bridgehead atom (RDKit extension)
+    // RDKit❗✔️:           // Also: cannot be SP2 hybridized or have a conjugated bond
+    // RDKit❗✔️:           //   (this was Github #7434)
+    // RDKit❗✔️:           if (atom->getHybridization() == Atom::HybridizationType::SP3 &&
+    // RDKit❗✔️:               !MolOps::atomHasConjugatedBond(atom) &&
+    // RDKit❗✔️:               (mol.getRingInfo()->isAtomInRingOfSize(atom->getIdx(), 3) ||
+    // RDKit❗✔️:                queryIsAtomBridgehead(atom))) {
+    // RDKit❗✔️:             legalCenter = true;
+    // RDKit❗✔️:           }
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         return legalCenter;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️: }
+    // Source scalar and checked batch share this predicate. Scalar callers
+    // carry actual source cache membership vectors, which may be sparse after
+    // reset/addRing; the batch interface retains its full detached validation.
     let value = &topology.atoms[atom.index()];
     let degree = nonzero_degree(topology, atom)?;
     let hydrogens = total_hydrogens(topology, valence, atom, false)?;
@@ -447,6 +497,14 @@ fn is_potential_tetrahedral(
                 value: 0,
                 limit: 0,
             })?;
+            if !rings.is_initialized() {
+                return Err(PotentialStereoError::InvalidRingInfo {
+                    reason: "ring information is not initialized",
+                    row: 0,
+                    value: 0,
+                    limit: 0,
+                });
+            }
             if !*ring_rows_validated {
                 validate_ring_rows(topology, rings)?;
                 *ring_rows_validated = true;
@@ -485,6 +543,30 @@ fn is_potential_atom(
 ///
 /// Ring data is consulted and validated only when an atom reaches the source's
 /// ring-dependent nitrogen branch; the supplied ring finding type is retained.
+/// Scalar getter over actual source topology, valence cache and ring cache.
+/// Source reset/addRing caches permit sparse membership rows. Initialization
+/// is checked at the nitrogen ring branch, as in RingInfo's source getters;
+/// the separate checked-batch interface retains its complete shape checks.
+#[doc(hidden)]
+pub fn potential_tetrahedral_center_from_source(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: Option<&RingInfo>,
+    atom: AtomId,
+) -> Result<bool, PotentialStereoError> {
+    // RDKit❗✔️: Chirality::detail::isAtomPotentialTetrahedralCenter(atom)
+    // The shared predicate below contains the complete pinned helper body.
+    // O(degree) source getters, no complete graph scan or per-center cache copy.
+    if atom.index() >= topology.atoms.len() {
+        return Err(PotentialStereoError::AtomOutOfRange {
+            atom,
+            atom_count: topology.atoms.len(),
+        });
+    }
+    let mut source_cache_rows = true;
+    is_potential_tetrahedral(topology, valence, rings, &mut source_cache_rows, atom)
+}
+
 pub fn potential_tetrahedral_centers_for_atoms(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
@@ -603,6 +685,16 @@ pub(crate) fn is_potential_bond(
     // A standalone detached candidate check owns a fresh structural proof.
     let mut preserved_prefix = None;
     is_potential_bond_with_prefix_check(topology, valence, rings, bond, &mut preserved_prefix)
+}
+
+/// Native FileParsers consumes bondRings directly, not checked membership rows.
+pub(crate) fn is_potential_bond_source(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    bond: &Bond,
+) -> Result<bool, PotentialStereoError> {
+    is_potential_bond_impl(topology, valence, rings, bond, None)
 }
 
 fn bond_info(
@@ -2762,6 +2854,16 @@ fn is_potential_bond_with_prefix_check(
     bond: &Bond,
     preserved_prefix: &mut Option<bool>,
 ) -> Result<bool, PotentialStereoError> {
+    is_potential_bond_impl(topology, valence, rings, bond, Some(preserved_prefix))
+}
+
+fn is_potential_bond_impl(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    bond: &Bond,
+    preserved_prefix: Option<&mut Option<bool>>,
+) -> Result<bool, PotentialStereoError> {
     // BEGIN RDKIT CPP FUNCTION isBondPotentialStereoBond
     // RDKit✔️❌: bool isBondPotentialStereoBond(const Bond *bond) {
     // RDKit✔️❌:   PRECONDITION(bond, "bond is null");
@@ -2809,6 +2911,14 @@ fn is_potential_bond_with_prefix_check(
     {
         return Ok(false);
     }
+    let Some(preserved_prefix) = preserved_prefix else {
+        // Native bondRings() is the stored ring vector, including an empty
+        // vector before initialization. Membership tables are not consulted.
+        return Ok(!rings
+            .bond_rings()
+            .iter()
+            .any(|ring| ring.len() < 8 && ring.contains(&bond.id())));
+    };
     if !rings.is_initialized() {
         return Err(PotentialStereoError::InvalidRingInfo {
             reason: "ring information is not initialized",
@@ -2983,5 +3093,95 @@ mod source_cached_getter_conditions {
                 value: -1
             })
         );
+    }
+}
+
+#[cfg(test)]
+mod source590_scalar_tests {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, Bond, BondSpec, Element};
+    #[test]
+    fn source590_scalar_nitrogen_accepts_initialized_sparse_source_cache() {
+        let mut atoms = (0..4)
+            .map(|i| {
+                Atom::from_spec(
+                    AtomId::new(i),
+                    AtomSpec::new(if i == 0 { Element::N } else { Element::C }),
+                )
+            })
+            .collect::<Vec<_>>();
+        atoms[0].set_hybridization(Hybridization::Sp3);
+        let topology = TopologyBlock::try_from_parts(
+            atoms,
+            (1..4)
+                .map(|i| {
+                    Bond::from_spec(
+                        BondId::new(i - 1),
+                        BondSpec::new(AtomId::new(0), AtomId::new(i), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let valence = crate::assign_valence_with_options_for_topology(
+            &topology,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        let mut rings = crate::RingInfo::new(crate::RingFindType::Sssr, 0, 0);
+        rings.reset();
+        crate::find_sssr_with_source_outputs_from_parts(
+            4,
+            &topology.bonds,
+            &topology.adjacency,
+            &mut rings,
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        assert!(rings.is_initialized());
+        assert_eq!(rings.atom_row_count(), 0);
+        assert!(
+            !potential_tetrahedral_center_from_source(
+                &topology,
+                &valence,
+                Some(&rings),
+                AtomId::new(0)
+            )
+            .unwrap()
+        );
+        assert!(matches!(
+            potential_tetrahedral_centers_for_atoms(
+                &topology,
+                &valence,
+                Some(&rings),
+                &[AtomId::new(0)]
+            ),
+            Err(PotentialStereoError::InvalidRingInfo {
+                reason: "atom membership row count mismatch",
+                ..
+            })
+        ));
+        assert!(matches!(
+            potential_tetrahedral_center_from_source(
+                &topology,
+                &valence,
+                Some(&{
+                    let mut empty = crate::RingInfo::new(crate::RingFindType::Sssr, 0, 0);
+                    empty.reset();
+                    empty
+                }),
+                AtomId::new(0)
+            ),
+            Err(PotentialStereoError::InvalidRingInfo {
+                reason: "ring information is not initialized",
+                ..
+            })
+        ));
     }
 }

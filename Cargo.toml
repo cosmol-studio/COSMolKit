@@ -52,3 +52,9 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 incremental = false
+
+# Optimized development tests avoid expensive whole-program optimization.
+[profile.dev-test]
+inherits = "release"
+lto = "off"
+codegen-units = 16

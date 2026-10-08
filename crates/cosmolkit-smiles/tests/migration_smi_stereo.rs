@@ -205,7 +205,7 @@ fn parser_and_writer_preserve_tetrahedral_storage_and_traversal_order() {
             )
             .map(fixture_writer_text)
             .unwrap(),
-            noncanonical,
+            noncanonical.to_owned(),
             "{input}"
         );
     }

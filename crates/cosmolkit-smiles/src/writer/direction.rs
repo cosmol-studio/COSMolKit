@@ -40,7 +40,7 @@ pub(super) fn canonicalize_double_bond_directions_for_writer(
                 }
             }
             MolStackElem::Ring(_) => {}
-            MolStackElem::BranchOpen | MolStackElem::BranchClose => {}
+            MolStackElem::BranchOpen(_) | MolStackElem::BranchClose(_) => {}
         }
     }
 

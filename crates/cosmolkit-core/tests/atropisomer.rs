@@ -68,6 +68,55 @@ fn axial(left: BondDirection, right: BondDirection, axial_stereo: BondStereo) ->
     )
 }
 
+// Retain each original uncached graph and conformer as a genuine native
+// early-degree negative. Separately retain the old exact geometry assertions
+// on a source-legal initialized cache state. No production code uses this
+// fixture preparation: native Atom.h setNoImplicit only sets its flag, so
+// updatePropertyCache(false) with noImplicit=true followed by restoring the
+// original flag leaves an initialized zero implicit cache (Atom.cpp).
+fn detect_original_and_source_cached_geometry_control(
+    topology: &TopologyBlock,
+    conformer: Option<AtropisomerConformer<'_>>,
+) -> Result<AtropisomerAssignment, AtropisomerError> {
+    let before = topology.clone();
+    let original = detect_atropisomer_chirality(topology, conformer)?;
+    assert!(
+        original.bond_updates.is_empty(),
+        "original uncached carbon fixture must fail source degree gate"
+    );
+    assert!(
+        original.diagnostics.is_empty(),
+        "source degree gate precedes geometry diagnostics"
+    );
+    assert_eq!(topology, &before);
+    let mut control = topology.clone();
+    for atom in &mut control.atoms {
+        atom.set_no_implicit(true);
+    }
+    let cache = cosmolkit_core::assign_valence_with_options_for_topology(
+        &control,
+        cosmolkit_core::ValenceModel::RdkitLike,
+        false,
+    )?;
+    for (index, atom) in control.atoms.iter_mut().enumerate() {
+        atom.set_no_implicit(topology.atoms[index].no_implicit());
+        atom.set_source_valence_facts(cosmolkit_model::SourceAtomValenceFacts {
+            explicit_valence: cache.explicit_valence[index] as i8,
+            implicit_valence: cache.implicit_hydrogens[index] as i8,
+        });
+    }
+    // All original graph/atom fields remain identical; only the separately
+    // modeled derived source cache differs in this additional control.
+    let mut identity = control.clone();
+    for (atom, original) in identity.atoms.iter_mut().zip(&topology.atoms) {
+        atom.set_source_valence_facts(original.source_valence_facts());
+    }
+    assert_eq!(identity, *topology);
+    let result = detect_atropisomer_chirality(&control, conformer);
+    assert_eq!(topology, &before);
+    result
+}
+
 fn sssr(topology: &TopologyBlock) -> RingInfo {
     find_sssr(topology, &RingSearchParams::default()).unwrap()
 }
@@ -228,7 +277,7 @@ fn empty_predicate_and_detection_are_total_and_deterministic() {
 
 #[test]
 fn no_conformer_wedge_hash_pairs_assign_bond_cw_and_ccw() {
-    let ccw = detect_atropisomer_chirality(
+    let ccw = detect_original_and_source_cached_geometry_control(
         &axial(
             BondDirection::BeginWedge,
             BondDirection::BeginDash,
@@ -245,7 +294,7 @@ fn no_conformer_wedge_hash_pairs_assign_bond_cw_and_ccw() {
         }]
     );
 
-    let cw = detect_atropisomer_chirality(
+    let cw = detect_original_and_source_cached_geometry_control(
         &axial(
             BondDirection::BeginDash,
             BondDirection::BeginWedge,
@@ -372,7 +421,7 @@ fn missing_unknown_and_inconsistent_carriers_do_not_fabricate_stereo() {
         vec![],
     );
     assert!(
-        detect_atropisomer_chirality(&missing, None)
+        detect_original_and_source_cached_geometry_control(&missing, None)
             .unwrap()
             .bond_updates
             .is_empty()
@@ -427,7 +476,7 @@ fn missing_unknown_and_inconsistent_carriers_do_not_fabricate_stereo() {
         ],
         vec![],
     );
-    let result = detect_atropisomer_chirality(&unknown, None).unwrap();
+    let result = detect_original_and_source_cached_geometry_control(&unknown, None).unwrap();
     assert!(result.bond_updates.is_empty());
     assert_eq!(
         result.diagnostics[0].kind,
@@ -483,7 +532,7 @@ fn missing_unknown_and_inconsistent_carriers_do_not_fabricate_stereo() {
         ],
         vec![],
     );
-    let result = detect_atropisomer_chirality(&same_end, None).unwrap();
+    let result = detect_original_and_source_cached_geometry_control(&same_end, None).unwrap();
     assert!(result.bond_updates.is_empty());
     assert_eq!(
         result.diagnostics[0].kind,
@@ -499,14 +548,19 @@ fn two_dimensional_geometry_assigns_and_rejects_zero_axis() {
         BondStereo::None,
     );
     let conformer = Conformer2D::new(7, vec![[0.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]);
-    let result =
-        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::TwoD(&conformer)))
-            .unwrap();
+    let result = detect_original_and_source_cached_geometry_control(
+        &topology,
+        Some(AtropisomerConformer::TwoD(&conformer)),
+    )
+    .unwrap();
     assert_eq!(result.bond_updates[0].stereo, BondStereo::AtropCcw);
 
     let zero = Conformer2D::new(8, vec![[0.0, 1.0], [0.0, 0.0], [0.0, 0.0], [1.0, 1.0]]);
-    let result =
-        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::TwoD(&zero))).unwrap();
+    let result = detect_original_and_source_cached_geometry_control(
+        &topology,
+        Some(AtropisomerConformer::TwoD(&zero)),
+    )
+    .unwrap();
     assert!(result.bond_updates.is_empty());
     assert_eq!(
         result.diagnostics[0].kind,
@@ -531,9 +585,11 @@ fn three_dimensional_geometry_covers_frame_branches_and_coplanarity() {
         ],
         true,
     );
-    let result =
-        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(&along_x)))
-            .unwrap();
+    let result = detect_original_and_source_cached_geometry_control(
+        &topology,
+        Some(AtropisomerConformer::ThreeD(&along_x)),
+    )
+    .unwrap();
     assert_eq!(result.bond_updates[0].stereo, BondStereo::AtropCw);
 
     let along_z = Conformer3D::new(
@@ -547,10 +603,13 @@ fn three_dimensional_geometry_covers_frame_branches_and_coplanarity() {
         true,
     );
     assert_eq!(
-        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(&along_z)),)
-            .unwrap()
-            .bond_updates
-            .len(),
+        detect_original_and_source_cached_geometry_control(
+            &topology,
+            Some(AtropisomerConformer::ThreeD(&along_z)),
+        )
+        .unwrap()
+        .bond_updates
+        .len(),
         1
     );
 
@@ -564,9 +623,11 @@ fn three_dimensional_geometry_covers_frame_branches_and_coplanarity() {
         ],
         true,
     );
-    let result =
-        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(&coplanar)))
-            .unwrap();
+    let result = detect_original_and_source_cached_geometry_control(
+        &topology,
+        Some(AtropisomerConformer::ThreeD(&coplanar)),
+    )
+    .unwrap();
     assert!(result.bond_updates.is_empty());
     assert_eq!(
         result.diagnostics[0].kind,
@@ -644,9 +705,11 @@ fn two_carrier_projection_rejects_same_side_and_uses_collinear_fallback() {
             [1.0, -1.0],
         ],
     );
-    let result =
-        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::TwoD(&same_side)))
-            .unwrap();
+    let result = detect_original_and_source_cached_geometry_control(
+        &topology,
+        Some(AtropisomerConformer::TwoD(&same_side)),
+    )
+    .unwrap();
     assert!(result.bond_updates.is_empty());
     assert_eq!(
         result.diagnostics[0].kind,
@@ -666,10 +729,13 @@ fn two_carrier_projection_rejects_same_side_and_uses_collinear_fallback() {
         true,
     );
     assert_eq!(
-        detect_atropisomer_chirality(&topology, Some(AtropisomerConformer::ThreeD(&fallback)),)
-            .unwrap()
-            .bond_updates
-            .len(),
+        detect_original_and_source_cached_geometry_control(
+            &topology,
+            Some(AtropisomerConformer::ThreeD(&fallback)),
+        )
+        .unwrap()
+        .bond_updates
+        .len(),
         1
     );
 }
@@ -930,6 +996,7 @@ fn structured_validation_rejects_coordinates_rings_assignments_and_group_ids() {
                     stereo: BondStereo::AtropCw,
                 }],
                 diagnostics: vec![],
+                ..AtropisomerAssignment::default()
             },
         ),
         Err(AtropisomerError::AssignmentBondOutOfRange {

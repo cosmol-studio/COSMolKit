@@ -16,6 +16,7 @@ pub trait StereoAtomAccess: sealed::AtomCarrier {
     fn atomic_number(&self) -> u8;
     fn explicit_hydrogens(&self) -> u8;
     fn no_implicit(&self) -> bool;
+    fn source_valence_facts(&self) -> cosmolkit_model::SourceAtomValenceFacts;
     fn prop(&self, key: &str) -> Option<&PropertyValue>;
     fn props(&self) -> &BTreeMap<PropertyText, PropertyValue>;
 }
@@ -37,6 +38,9 @@ macro_rules! stereo_atom_access {
             }
             fn no_implicit(&self) -> bool {
                 <$carrier>::no_implicit(self)
+            }
+            fn source_valence_facts(&self) -> cosmolkit_model::SourceAtomValenceFacts {
+                <$carrier>::source_valence_facts(self)
             }
             fn prop(&self, key: &str) -> Option<&PropertyValue> {
                 <$carrier>::prop(self, key)
@@ -125,6 +129,15 @@ impl NeighborRows<'_> {
     pub fn is_empty(self) -> bool {
         self.len() == 0
     }
+    pub fn get(self, index: usize) -> Option<NeighborRef> {
+        match self {
+            Self::Concrete(v) => v.get(index).copied(),
+            Self::Query(v) => v.get(index).map(|&(atom_index, bond)| NeighborRef {
+                atom_index,
+                bond: BondId::new(bond),
+            }),
+        }
+    }
     pub fn iter(self) -> impl ExactSizeIterator<Item = NeighborRef> {
         (0..self.len()).map(move |i| match self {
             Self::Concrete(v) => v[i],
@@ -141,6 +154,13 @@ pub enum GraphAdjacency<'a> {
     Query(&'a QueryGraph),
 }
 impl<'a> GraphAdjacency<'a> {
+    pub(crate) fn try_neighbors_of(self, atom: usize) -> Option<NeighborRows<'a>> {
+        match self {
+            Self::Concrete(v) => v.try_neighbors_of(atom).map(NeighborRows::Concrete),
+            Self::Query(v) => v.adjacency().get(atom).map(|row| NeighborRows::Query(row)),
+        }
+    }
+
     pub fn neighbors_of(self, atom: usize) -> NeighborRows<'a> {
         match self {
             Self::Concrete(v) => NeighborRows::Concrete(v.neighbors_of(atom)),
@@ -199,5 +219,50 @@ impl StereoGraphAccess for QueryGraph {
     }
     fn validate(&self) -> Result<(), StereoGraphError> {
         QueryGraph::validate(self).map_err(Into::into)
+    }
+}
+
+impl<'a> IntoIterator for NeighborRows<'a> {
+    type Item = NeighborRef;
+    type IntoIter = NeighborRowIterator<'a>;
+    fn into_iter(self) -> Self::IntoIter {
+        NeighborRowIterator {
+            rows: self,
+            index: 0,
+        }
+    }
+}
+pub struct NeighborRowIterator<'a> {
+    rows: NeighborRows<'a>,
+    index: usize,
+}
+impl Iterator for NeighborRowIterator<'_> {
+    type Item = NeighborRef;
+    fn next(&mut self) -> Option<Self::Item> {
+        let out = self.rows.get(self.index);
+        self.index += usize::from(out.is_some());
+        out
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let n = self.rows.len() - self.index;
+        (n, Some(n))
+    }
+}
+impl ExactSizeIterator for NeighborRowIterator<'_> {}
+impl std::iter::FusedIterator for NeighborRowIterator<'_> {}
+
+/// Actual detached source bond writes; the same sealed graph owners apply.
+#[doc(hidden)]
+pub(crate) trait StereoGraphMut: StereoGraphAccess {
+    fn source_bond_mut(&mut self, index: usize) -> &mut Bond;
+}
+impl StereoGraphMut for TopologyBlock {
+    fn source_bond_mut(&mut self, index: usize) -> &mut Bond {
+        &mut self.bonds[index]
+    }
+}
+impl StereoGraphMut for QueryGraph {
+    fn source_bond_mut(&mut self, index: usize) -> &mut Bond {
+        self.bonds_mut()[index].bond_mut()
     }
 }

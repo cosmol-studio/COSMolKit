@@ -115,8 +115,8 @@ fn disabled_placement_grows_all_conformers_and_preserves_every_old_value() {
             Conformer3D::new(11, vec![[3.0, 4.0, 5.0]], true).with_prop("source", "three"),
             Conformer3D::new(12, vec![[-1.0, 2.0, 0.0]], false).with_prop("flat", "yes"),
         ],
-        source_conformer_order: None,
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     let coordinates_snapshot = coordinates.clone();
     let output =
@@ -693,8 +693,9 @@ fn residue_assignment_preserves_existing_info_consumes_ids_wraps_names_and_uses_
         output.topology.atoms[1]
             .pdb_residue_info()
             .unwrap()
-            .atom_name(),
-        " H1 "
+            .atom_name()
+            .as_bytes(),
+        b" H1 ".as_slice()
     );
     assert_eq!(output.topology.atoms[2].pdb_residue_info(), Some(&existing));
     assert_eq!(
@@ -705,30 +706,32 @@ fn residue_assignment_preserves_existing_info_consumes_ids_wraps_names_and_uses_
         output.topology.atoms[4]
             .pdb_residue_info()
             .unwrap()
-            .atom_name(),
-        " H4 "
+            .atom_name()
+            .as_bytes(),
+        b" H4 ".as_slice()
     );
     assert_eq!(
         output.topology.atoms[123]
             .pdb_residue_info()
             .unwrap()
-            .atom_name(),
-        "3H12"
+            .atom_name()
+            .as_bytes(),
+        b"3H12".as_slice()
     );
     let appended = output.topology.atoms[1_001].pdb_residue_info().unwrap();
-    assert_eq!(appended.atom_name(), "1H00");
+    assert_eq!(appended.atom_name().as_bytes(), b"1H00".as_slice());
     assert_eq!(appended.serial_number(), 1_088);
-    assert_eq!(appended.residue_name(), "LIG");
+    assert_eq!(appended.residue_name().as_bytes(), b"LIG".as_slice());
     assert_eq!(appended.residue_number(), 8);
-    assert_eq!(appended.chain_id(), "Q");
+    assert_eq!(appended.chain_id().as_bytes(), b"Q".as_slice());
     assert!(appended.is_hetero_atom());
-    assert_eq!(appended.alt_loc(), "");
-    assert_eq!(appended.insertion_code(), "");
+    assert_eq!(appended.alt_loc().as_bytes(), b"".as_slice());
+    assert_eq!(appended.insertion_code().as_bytes(), b"".as_slice());
     assert_eq!(appended.occupancy(), 1.0);
     assert_eq!(appended.temp_factor(), 0.0);
     assert_eq!(appended.secondary_structure(), 0);
     assert_eq!(appended.segment_number(), 0);
-    assert_eq!(appended.monomer_class(), "");
+    assert_eq!(appended.monomer_class().as_bytes(), b"".as_slice());
 }
 
 #[test]
@@ -760,9 +763,17 @@ fn residue_identity_resets_only_on_number_or_chain_and_disabled_flag_is_inert() 
     let output = add_hydrogen_coordinates(plan, CoordinateBlock::default(), false, true).unwrap();
     let names = output.topology.atoms[4..]
         .iter()
-        .map(|atom| atom.pdb_residue_info().unwrap().atom_name())
+        .map(|atom| atom.pdb_residue_info().unwrap().atom_name().as_bytes())
         .collect::<Vec<_>>();
-    assert_eq!(names, vec![" H1 ", " H2 ", " H1 ", " H1 "]);
+    assert_eq!(
+        names,
+        vec![
+            b" H1 ".as_slice(),
+            b" H2 ".as_slice(),
+            b" H1 ".as_slice(),
+            b" H1 ".as_slice()
+        ]
+    );
 }
 
 #[test]

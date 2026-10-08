@@ -1,6 +1,8 @@
 #[derive(Debug, thiserror::Error)]
 pub enum ReactionApplyError {
     #[error(transparent)]
+    SourceText(#[from] cosmolkit_core::PropertyStringError),
+    #[error(transparent)]
     Initialization(#[from] crate::ReactionInitializationError),
     #[error(
         "only single reactant - single product reactions can be applied; found {reactants} reactants and {products} products"

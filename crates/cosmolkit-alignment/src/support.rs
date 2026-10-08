@@ -78,7 +78,7 @@ fn terminal_atom_query() -> Result<&'static QueryGraph, AlignmentError> {
     static QUERY: OnceLock<Result<QueryGraph, SmartsParseError>> = OnceLock::new();
     QUERY.get_or_init(|| {
         let params = SmartsParseParams {
-            replacements: BTreeMap::from([("{atomPattern}".to_string(), "O,N;D1".to_string())]),
+            replacements: BTreeMap::from([("{atomPattern}".into(), "O,N;D1".into())]),
             ..Default::default()
         };
         cosmolkit_search::parse_smarts(

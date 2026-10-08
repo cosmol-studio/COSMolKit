@@ -8,8 +8,8 @@ use cosmolkit_cx::{
 };
 use cosmolkit_model::{
     AtomId, AtomQueryPredicate, BondDirection, BondId, BondOrder, BondStereo, Conformer3D,
-    QueryAtom, QueryAtomIdentity, QueryGraph, QueryGraphError, QueryNode, SGroupData, StereoGroup,
-    StereoGroupKind, SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, query_substance_groups,
+    QueryAtom, QueryAtomIdentity, QueryGraph, QueryNode, SGroupData, StereoGroup, StereoGroupKind,
+    SubstanceGroup, SubstanceGroupId, SubstanceGroupKind, query_substance_groups,
     replace_query_stereo_groups, replace_query_substance_groups,
 };
 use cosmolkit_types::{ChiralTag, Hybridization};
@@ -18,6 +18,8 @@ const QUERY_SCAN_MAGIC_VALUE: u32 = 0xDEAD_BEEF;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CxQueryLoweringError {
+    #[error("CX stereo group merge failed: {0}")]
+    StereoGroupMerge(#[from] cosmolkit_core::parser_stereo_order::CxStereoGroupMergeError),
     #[error("CX unsigned property read failed: {0}")]
     Numeric(#[from] cosmolkit_core::PropertyUIntReadError),
     #[error("CX bond property operation failed: {0}")]
@@ -179,10 +181,10 @@ pub(crate) struct CxStereoGroupTracker {
 }
 
 impl CxStereoGroupTracker {
-    pub(crate) fn new(graph: &QueryGraph) -> Self {
+    pub(crate) fn new(_graph: &QueryGraph) -> Self {
         Self {
             hashes: Vec::new(),
-            first_group_index: graph.stereo_groups().len(),
+            first_group_index: 0,
         }
     }
 }
@@ -191,92 +193,113 @@ pub(crate) fn merge_cx_enhanced_stereo(
     graph: &mut QueryGraph,
     tracker: &mut CxStereoGroupTracker,
     stereo: &CxEnhancedStereo,
-) -> Result<(), QueryGraphError> {
-    // RDKit source (verbatim; see CXSmilesOps.cpp::VALID_ATIDX and
-    // parse_enhanced_stereo):
-    /*
-    #define VALID_ATIDX(_atidx_) \
-      ((_atidx_) >= startAtomIdx && (_atidx_) < startAtomIdx + mol.getNumAtoms())
-    if (VALID_ATIDX(aidx)) {
-      Atom *atom = mol.getAtomWithIdx(aidx - startAtomIdx);
-      if (!atom) {
-        BOOST_LOG(rdWarningLog)
-            << "Atom " << aidx << " not found!" << std::endl;
-        return false;
-      }
-      atoms.push_back(atom);
-    }
-    */
-    // RDKit✔️✔️: invalid source indexes are skipped; valid indexes append in order.
-    // RDKit source (verbatim; see CXSmilesOps.cpp::parse_enhanced_stereo):
-    /*
-    if (!atoms.empty()) {
-      const auto group_hash =
-          10 * group_id + static_cast<unsigned int>(group_type);
-      std::vector<unsigned int> sgTracker;
-      mol.getPropIfPresent(cxsgTracker, sgTracker);
-      std::vector<StereoGroup> mol_stereo_groups(mol.getStereoGroups());
-      TEST_ASSERT(mol_stereo_groups.size() == sgTracker.size());
-
-      auto iter = std::find(sgTracker.begin(), sgTracker.end(), group_hash);
-      if (iter != sgTracker.end()) {
-        auto index = iter - sgTracker.begin();
-        auto gAtoms = mol_stereo_groups[index].getAtoms();
-        gAtoms.insert(gAtoms.end(), atoms.begin(), atoms.end());
-        mol_stereo_groups[index] =
-            StereoGroup(mol_stereo_groups[index].getGroupType(),
-                        std::move(gAtoms), std::move(bonds), group_id);
-      } else {
-        // not seen this before, create a new stereogroup
-        mol_stereo_groups.emplace_back(group_type, std::move(atoms),
-                                       std::move(bonds), group_id);
-        sgTracker.push_back(group_hash);
-        mol.setProp(cxsgTracker, sgTracker);
-      }
-
-      mol.setStereoGroups(std::move(mol_stereo_groups));
-    }
-    */
-    // RDKit✔️✔️: the tracker stores first-seen group hashes in parallel order;
-    // RDKit✔️✔️: repeated groups append atoms and reconstruct with the incoming ID.
-    let (kind, kind_code) = match stereo.kind {
-        CxStereoGroupKind::Absolute => (StereoGroupKind::Absolute, 0_u32),
-        CxStereoGroupKind::Or => (StereoGroupKind::Or, 1_u32),
-        CxStereoGroupKind::And => (StereoGroupKind::And, 2_u32),
+) -> Result<(), CxQueryLoweringError> {
+    // BEGIN COMPLETE PINNED SF205 query caller
+    // RDKit❗✔️: bool parse_enhanced_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit❗✔️:                            unsigned int startAtomIdx) {
+    // RDKit❗✔️:   StereoGroupType group_type = StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗✔️:   if (*first == 'a') {
+    // RDKit❗✔️:     group_type = StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗✔️:   } else if (*first == 'o') {
+    // RDKit❗✔️:     group_type = StereoGroupType::STEREO_OR;
+    // RDKit❗✔️:   } else if (*first == '&') {
+    // RDKit❗✔️:     group_type = StereoGroupType::STEREO_AND;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // OR and AND groups carry a group number
+    // RDKit❗✔️:   unsigned int group_id = 0;
+    // RDKit❗✔️:   if (group_type != StereoGroupType::STEREO_ABSOLUTE) {
+    // RDKit❗✔️:     read_int(first, last, group_id);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (first >= last || *first != ':') {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::vector<Atom *> atoms;
+    // RDKit❗✔️:   std::vector<Bond *> bonds;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit❗✔️:     unsigned int aidx;
+    // RDKit❗✔️:     if (read_int(first, last, aidx)) {
+    // RDKit❗✔️:       if (VALID_ATIDX(aidx)) {
+    // RDKit❗✔️:         Atom *atom = mol.getAtomWithIdx(aidx - startAtomIdx);
+    // RDKit❗✔️:         if (!atom) {
+    // RDKit❗✔️:           BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:               << "Atom " << aidx << " not found!" << std::endl;
+    // RDKit❗✔️:           return false;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         atoms.push_back(atom);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     if (first < last && *first == ',') {
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!atoms.empty()) {
+    // RDKit❗✔️:     // we need to do a bit of work to check whether or not we've already seen
+    // RDKit❗✔️:     // this particular StereoGroup (was Github #6050)
+    // RDKit❗✔️:     const auto group_hash =
+    // RDKit❗✔️:         10 * group_id + static_cast<unsigned int>(group_type);
+    // RDKit❗✔️:     std::vector<unsigned int> sgTracker;
+    // RDKit❗✔️:     mol.getPropIfPresent(cxsgTracker, sgTracker);
+    // RDKit❗✔️:     std::vector<StereoGroup> mol_stereo_groups(mol.getStereoGroups());
+    // RDKit❗✔️:     TEST_ASSERT(mol_stereo_groups.size() == sgTracker.size());
+    // RDKit❗✔️:
+    // RDKit❗✔️:     auto iter = std::find(sgTracker.begin(), sgTracker.end(), group_hash);
+    // RDKit❗✔️:     if (iter != sgTracker.end()) {
+    // RDKit❗✔️:       auto index = iter - sgTracker.begin();
+    // RDKit❗✔️:       auto gAtoms = mol_stereo_groups[index].getAtoms();
+    // RDKit❗✔️:       gAtoms.insert(gAtoms.end(), atoms.begin(), atoms.end());
+    // RDKit❗✔️:       mol_stereo_groups[index] =
+    // RDKit❗✔️:           StereoGroup(mol_stereo_groups[index].getGroupType(),
+    // RDKit❗✔️:                       std::move(gAtoms), std::move(bonds), group_id);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       // not seen this before, create a new stereogroup
+    // RDKit❗✔️:       mol_stereo_groups.emplace_back(group_type, std::move(atoms),
+    // RDKit❗✔️:                                      std::move(bonds), group_id);
+    // RDKit❗✔️:       sgTracker.push_back(group_hash);
+    // RDKit❗✔️:       mol.setProp(cxsgTracker, sgTracker);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     mol.setStereoGroups(std::move(mol_stereo_groups));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
+    // END COMPLETE PINNED SF205 query caller
+    // The sole CORE merge algorithm owns count/hash/reconstruction behavior.
+    // This adapter projects validated local atom rows and final graph commit.
+    // Cost: member filter + canonical source group clone; detached graph
+    // validation is an additional existing model cost after source effects.
+    debug_assert_eq!(tracker.first_group_index, 0);
+    let kind = match stereo.kind {
+        CxStereoGroupKind::Absolute => StereoGroupKind::Absolute,
+        CxStereoGroupKind::Or => StereoGroupKind::Or,
+        CxStereoGroupKind::And => StereoGroupKind::And,
     };
     let atoms = stereo
         .atoms
         .iter()
         .filter(|&&index| index < graph.num_atoms())
         .map(|&index| AtomId::new(index))
-        .collect::<Vec<_>>();
-    if atoms.is_empty() {
-        return Ok(());
-    }
-
-    let group_hash = stereo.group_id.wrapping_mul(10).wrapping_add(kind_code);
-    let mut groups = graph.stereo_groups().to_vec();
-    let matched_index = tracker.hashes.iter().position(|hash| *hash == group_hash);
-    debug_assert_eq!(
-        groups.len(),
-        tracker.first_group_index + tracker.hashes.len()
-    );
-    if let Some(position) = matched_index {
-        let group_index = tracker.first_group_index + position;
-        let previous_kind = groups[group_index].kind();
-        let mut merged_atoms = groups[group_index].atoms().to_vec();
-        merged_atoms.extend(atoms);
-        groups[group_index] =
-            StereoGroup::new(previous_kind, merged_atoms, Vec::new()).with_id(stereo.group_id);
-    } else {
-        groups.push(StereoGroup::new(kind, atoms, Vec::new()).with_id(stereo.group_id));
-    }
-
-    // Complexity review: one tracker scan and one group-vector clone per
-    // nonempty record match the source's linear hash lookup and group copy.
-    replace_query_stereo_groups(graph, groups)?;
-    if matched_index.is_none() {
-        tracker.hashes.push(group_hash);
+        .collect();
+    let groups = cosmolkit_core::parser_stereo_order::merge_cx_stereo_group(
+        graph.stereo_groups(),
+        &mut tracker.hashes,
+        graph.prop(b"_sgTracker"),
+        kind,
+        stereo.group_id,
+        atoms,
+    )?;
+    if let Some(groups) = groups {
+        replace_query_stereo_groups(graph, groups)
+            .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
     }
     Ok(())
 }
@@ -1344,6 +1367,67 @@ pub(crate) fn apply_cx_query_constraint_item(
     // RDKit✔️✔️:                     Queries::COMPOSITE_AND);
     // RDKit✔️✔️: }
      */
+    // BEGIN COMPLETE PINNED SF202 substitution branch
+    // RDKit✔️❌: bool parse_substitution(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                         unsigned int startAtomIdx) {
+    // RDKit✔️❌:   if (first >= last || *first != 's' || first + 1 >= last ||
+    // RDKit✔️❌:       *(first + 1) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 2;
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int n1;
+    // RDKit✔️❌:     if (!read_int(first, last, n1)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     // check that we can read at least two more characters:
+    // RDKit✔️❌:     if (first + 1 >= last || *first != ':') {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     unsigned int n2;
+    // RDKit✔️❌:     if (*first == '*') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       n2 = 0xDEADBEEF;
+    // RDKit✔️❌:       if (VALID_ATIDX(n1)) {
+    // RDKit✔️❌:         mol.setProp(common_properties::_NeedsQueryScan, 1);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       if (!read_int(first, last, n2)) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_ATIDX(n1)) {
+    // RDKit✔️❌:       auto atom = mol.getAtomWithIdx(n1 - startAtomIdx);
+    // RDKit✔️❌:       if (!atom->hasQuery()) {
+    // RDKit✔️❌:         atom = QueryOps::replaceAtomWithQueryAtom(&mol, atom);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       atom->expandQuery(makeAtomNonHydrogenDegreeQuery(n2),
+    // RDKit✔️❌:                         Queries::COMPOSITE_AND);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF202 substitution branch
+    // BEGIN COMPLETE SF202 reached NonHydrogenDegree factory
+    // RDKit✔️❌: ATOM_EQUALS_QUERY *makeAtomNonHydrogenDegreeQuery(int what) {
+    // RDKit✔️❌:   auto *res =
+    // RDKit✔️❌:       makeAtomSimpleQuery<ATOM_EQUALS_QUERY>(what, queryAtomNonHydrogenDegree);
+    // RDKit✔️❌:   res->setDescription("AtomNonHydrogenDegree");
+    // RDKit✔️❌:   return res;
+    // RDKit✔️❌: }
+    // END COMPLETE SF202 reached NonHydrogenDegree factory
+    // Behavior: source unsigned-to-int equality value travels in its native
+    // 32-bit bit pattern, including DEADBEEF. Source scan flag is Int(1),
+    // written only for a valid destination before ordinary query replacement
+    // or existing-root AND expansion; failure retains this earlier effect.
+    // Signed writer/scanner projections are their separately scheduled owner
+    // functions; no numeric string formatting or signed cast is guessed here.
+    // Complexity: shared canonical replacement/expand helpers reused, no
+    // second query tree algorithm, graph clone or predicate deduplication.
     // The parser's source-valid atom-index window is the detached graph range.
     // Skipping before direct indexing retains VALID_ATIDX's source behavior.
     let (atom, predicate) = match record {
@@ -1402,12 +1486,22 @@ pub(crate) fn apply_cx_query_constraint_item(
     if atom >= graph.num_atoms() {
         return Ok(());
     }
-    if let CxRecord::RingBonds(constraints) = record
-        && matches!(
-            constraints[item_index].constraint,
-            CxCountConstraint::QueryScan
-        )
-    {
+    let query_scan = match record {
+        CxRecord::RingBonds(constraints) => {
+            matches!(
+                constraints[item_index].constraint,
+                CxCountConstraint::QueryScan
+            )
+        }
+        CxRecord::Substitution(constraints) => {
+            matches!(
+                constraints[item_index].constraint,
+                CxCountConstraint::QueryScan
+            )
+        }
+        _ => false,
+    };
+    if query_scan {
         // RDKit✔️✔️: if (VALID_ATIDX(n1)) {
         // RDKit✔️✔️:   mol.setProp(common_properties::_NeedsQueryScan, 1);
         // RDKit✔️✔️: }
@@ -1569,8 +1663,51 @@ pub(crate) fn process_cx_smiles_labels(graph: &mut QueryGraph) -> Result<(), CxQ
 /// Finish one complete CX application, matching parseCXExtensions' guard
 /// cleanup after its final label pass.
 pub(crate) fn finish_cx_smiles_labels(graph: &mut QueryGraph) -> Result<(), CxQueryLoweringError> {
+    // BEGIN COMPLETE PINNED SF207 query success cleanup
+    // RDKit❗✔️: void parseCXExtensions(RDKit::RWMol &mol, const std::string &extText,
+    // RDKit❗✔️:                        std::string::const_iterator &first,
+    // RDKit❗✔️:                        unsigned int startAtomIdx, unsigned int startBondIdx) {
+    // RDKit❗✔️:   // BOOST_LOG(rdWarningLog) << "parseCXNExtensions: " << extText << std::endl;
+    // RDKit❗✔️:   if (extText.empty()) {
+    // RDKit❗✔️:     return;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (extText[0] != '|') {
+    // RDKit❗✔️:     throw RDKit::SmilesParseException(
+    // RDKit❗✔️:         "CXSMILES extension does not start with |");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   first = extText.begin();
+    // RDKit❗✔️:   bool ok =
+    // RDKit❗✔️:       parser::parse_it(first, extText.end(), mol, startAtomIdx, startBondIdx);
+    // RDKit❗✔️:   if (!ok) {
+    // RDKit❗✔️:     throw RDKit::SmilesParseException("failure parsing CXSMILES extensions");
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   processCXSmilesLabels(mol);
+    // RDKit❗✔️:   mol.clearProp("_cxsmilesLabelsProcessed");
+    // RDKit❗✔️:   mol.clearProp(cxsgTracker);
+    // RDKit❗✔️: }
+    // END COMPLETE PINNED SF207 query success cleanup
+    // BEGIN COMPLETE reached typed computed-list-aware clearProp
+    // RDKit✔️❌: void clearProp(const std::string_view key) const {
+    // RDKit✔️❌:     STR_VECT compLst;
+    // RDKit✔️❌:     if (getPropIfPresent(RDKit::detail::computedPropName, compLst)) {
+    // RDKit✔️❌:       auto svi = std::find(compLst.begin(), compLst.end(), key);
+    // RDKit✔️❌:       if (svi != compLst.end()) {
+    // RDKit✔️❌:         compLst.erase(svi);
+    // RDKit✔️❌:         d_props.setVal(RDKit::detail::computedPropName, compLst);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     d_props.clearVal(key);
+    // RDKit✔️❌:   }
+    // END COMPLETE reached typed computed-list-aware clearProp
+    // Behavior: parse_it has already advanced past its closing pipe.
+    // Process labels first, then clear the label guard, then _sgTracker.
+    // Each actual computed-list type error propagates at that exact stage;
+    // an absent property still performs source clearProp's typed list read.
+    // Cost: canonical label pass plus two canonical dictionary clears, whose
+    // computed-vector clone/order maintenance cost is reviewed in MODEL.
     process_cx_smiles_labels(graph)?;
     graph.clear_prop(CX_LABELS_PROCESSED_PROP)?;
+    graph.clear_prop(b"_sgTracker")?;
     Ok(())
 }
 
@@ -1579,40 +1716,85 @@ pub(crate) fn apply_cx_data_sgroup_to_query(
     data: &CxDataSGroup,
     cx_sequence_id: u32,
 ) -> Result<(), CxQueryLoweringError> {
-    // RDKit source (verbatim; source atom filtering and local group mutation):
-    /*
-      SubstanceGroup sgroup(&mol, std::string("DAT"));
-      sgroup.setProp(cxsmilesindex, nSGroups);
-      bool keepSGroup = false;
-      for (auto idx : atoms) {
-        if (VALID_ATIDX(idx)) {
-          keepSGroup = true;
-          sgroup.addAtomWithIdx(idx - startAtomIdx);
-        }
-      }
-      parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "FIELDNAME");
-      if (keepSGroup) {
-        sgroup.setProp("FIELDDISP", "    0.0000    0.0000    DR    ALL  0       0");
-      }
-      parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "DATAFIELDS", true);
-      parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "QUERYOP");
-      parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "FIELDINFO");
-      parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "FIELDTAG");
-      if (first < last && *first == '(') {
-        std::string coords = read_text_to(first, last, ")");
-        ++first;
-        if (keepSGroup) {
-          sgroup.setProp("COORDS", coords);
-        }
-      }
-      if (keepSGroup) {
-        processCXSmilesLabels(mol);
-        sgroup.setProp<unsigned int>("index", getSubstanceGroups(mol).size() + 1);
-        addSubstanceGroup(mol, sgroup);
-      }
-    */
-    // RDKit❗✔️: preserve valid input atom order and duplicates, process labels
-    // before attachment, and keep CX sequence ID separate from dense storage ID.
+    // BEGIN COMPLETE PINNED SF195
+    // RDKit✔️❌: bool parse_data_sgroup(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                        unsigned int startAtomIdx, unsigned int nSGroups) {
+    // RDKit✔️❌:   // these look like: |SgD:2,1:FIELD:info::::|
+    // RDKit✔️❌:   // example from CXSMILES docs:
+    // RDKit✔️❌:   //    SgD:3,2,1,0:name:data:like:unit:t:(1.,1.)
+    // RDKit✔️❌:   // the fields are:
+    // RDKit✔️❌:   //    SgD:[atom indices]:[field name]:[data value]:[query
+    // RDKit✔️❌:   //    operator]:[unit]:[tag]:[coords]
+    // RDKit✔️❌:   //   coords are (-1) if atomic coordinates are present
+    // RDKit✔️❌:   if (first >= last || *first != 'S' || first + 3 >= last ||
+    // RDKit✔️❌:       *(first + 1) != 'g' || *(first + 2) != 'D' || *(first + 3) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 4;
+    // RDKit✔️❌:   std::vector<unsigned int> atoms;
+    // RDKit✔️❌:   if (!read_int_list(first, last, atoms)) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   SubstanceGroup sgroup(&mol, std::string("DAT"));
+    // RDKit✔️❌:   sgroup.setProp(cxsmilesindex, nSGroups);
+    // RDKit✔️❌:   bool keepSGroup = false;
+    // RDKit✔️❌:   for (auto idx : atoms) {
+    // RDKit✔️❌:     if (VALID_ATIDX(idx)) {
+    // RDKit✔️❌:       keepSGroup = true;
+    // RDKit✔️❌:       sgroup.addAtomWithIdx(idx - startAtomIdx);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "FIELDNAME");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // FIX:
+    // RDKit✔️❌:   if (keepSGroup) {
+    // RDKit✔️❌:     sgroup.setProp("FIELDDISP", "    0.0000    0.0000    DR    ALL  0       0");
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "DATAFIELDS", true);
+    // RDKit✔️❌:
+    // RDKit✔️❌:   parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "QUERYOP");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "FIELDINFO");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   parse_data_sgroup_attr(first, last, sgroup, keepSGroup, "FIELDTAG");
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (first < last && *first == '(') {
+    // RDKit✔️❌:     // FIX
+    // RDKit✔️❌:     std::string coords = read_text_to(first, last, ")");
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     if (keepSGroup) {
+    // RDKit✔️❌:       sgroup.setProp("COORDS", coords);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   // the label processing can destroy sgroup info, so do that now
+    // RDKit✔️❌:   // (the function will immediately return if already called)
+    // RDKit✔️❌:   if (keepSGroup) {
+    // RDKit✔️❌:     processCXSmilesLabels(mol);
+    // RDKit✔️❌:     sgroup.setProp<unsigned int>("index", getSubstanceGroups(mol).size() + 1);
+    // RDKit✔️❌:     addSubstanceGroup(mol, sgroup);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF195
+    // BEGIN COMPLETE SubstanceGroup::addAtomWithIdx
+    // RDKit✔️✔️: void SubstanceGroup::addAtomWithIdx(unsigned int idx) {
+    // RDKit✔️✔️:   PRECONDITION(dp_mol, "bad mol");
+    // RDKit✔️✔️:   if (idx >= dp_mol->getNumAtoms()) {
+    // RDKit✔️✔️:     throw ValueErrorException("Atom index out of range");
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   d_atoms.push_back(idx);
+    // RDKit✔️✔️: }
+    // END COMPLETE SubstanceGroup::addAtomWithIdx
+    // Behavior: preserve source-valid atom order and duplicates. This
+    // canonical local owner uses startAtomIdx=0; enclosing reaction window
+    // rebasing is its separately scheduled caller, not inferred here.
+    // Construct and write the local group before the delayed label pass,
+    // then derive its one-based source UInt index from the actual collection
+    // and attach only on successful completion.
+    // Complexity: linear filtering and source fields, plus typed projection
+    // copies and cloning/validation of prior groups at detached installation.
     let atoms = data
         .atoms
         .iter()
@@ -1623,11 +1805,7 @@ pub(crate) fn apply_cx_data_sgroup_to_query(
         return Ok(());
     }
 
-    process_cx_smiles_labels(graph)?;
-
-    let mut groups = query_substance_groups(graph).to_vec();
-    let dense_id = SubstanceGroupId::new(groups.len());
-    let source_index = groups.len() + 1;
+    let dense_id = SubstanceGroupId::new(query_substance_groups(graph).len());
     let typed_data = SGroupData {
         field_name: (!data.field_name.is_empty()).then(|| data.field_name.clone()),
         field_info: (!data.field_info.is_empty()).then(|| data.field_info.clone()),
@@ -1695,7 +1873,10 @@ pub(crate) fn apply_cx_data_sgroup_to_query(
     if let Some(coordinates) = &data.coordinates {
         group.set_prop("COORDS", coordinates.clone())?;
     }
-    group.set_prop("index", source_index as u32)?;
+    process_cx_smiles_labels(graph)?;
+    let mut groups = query_substance_groups(graph).to_vec();
+    let source_index = (groups.len() as u32).wrapping_add(1);
+    group.set_prop("index", source_index)?;
     groups.push(group);
     replace_query_substance_groups(graph, groups)
         .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))
@@ -1705,19 +1886,33 @@ pub(crate) fn validate_cx_variable_attachment_atom_to_query(
     graph: &QueryGraph,
     attachment: &CxVariableAttachment,
 ) -> Result<(), CxQueryLoweringError> {
-    // RDKit source (verbatim; CXSmilesOps.cpp::parse_variable_attachments):
-    // RDKit❗✔️:     if (VALID_ATIDX(at1idx) &&
-    // RDKit❗✔️:         mol.getAtomWithIdx(at1idx - startAtomIdx)->getDegree() != 1) {
-    // RDKit❗✔️:       BOOST_LOG(rdWarningLog)
-    // RDKit❗✔️:           << "position variation bond to atom with more than one bond"
-    // RDKit❗✔️:           << std::endl;
-    // RDKit❗✔️:       return false;
-    // RDKit❗✔️:     }
+    // BEGIN COMPLETE SF199 reached degree helpers
+    // RDKit✔️✔️: unsigned int Atom::getDegree() const {
+    // RDKit✔️✔️:   return dp_mol ? getOwningMol().getAtomDegree(this) : 0;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️: unsigned int ROMol::getAtomDegree(const Atom *at) const {
+    // RDKit✔️✔️:   PRECONDITION(at, "no atom");
+    // RDKit✔️✔️:   PRECONDITION(&at->getOwningMol() == this,
+    // RDKit✔️✔️:                "atom not associated with this molecule");
+    // RDKit✔️✔️:   return rdcast<unsigned int>(boost::out_degree(at->getIdx(), d_graph));
+    // RDKit✔️✔️: };
+    // END COMPLETE SF199 reached degree helpers
+    // Behavior: only an in-window atom reaches degree validation, which
+    // emits its native warning and fails even for degree zero, before colon.
+    // Complexity: O(1) degree access; no graph clone or neighbor scan.
     if attachment.atom >= graph.num_atoms() {
         return Ok(());
     }
-    let degree = graph.adjacency().get(attachment.atom).map_or(0, Vec::len);
+    let degree = graph
+        .adjacency()
+        .get(attachment.atom)
+        .ok_or(CxQueryLoweringError::AtomIndex {
+            index: attachment.atom,
+        })?
+        .len();
     if degree != 1 {
+        eprintln!("position variation bond to atom with more than one bond");
         return Err(CxQueryLoweringError::InvalidGraph(
             "position variation bond to atom with more than one bond".to_owned(),
         ));
@@ -1729,23 +1924,77 @@ pub(crate) fn apply_cx_variable_attachment_effect_to_query(
     graph: &mut QueryGraph,
     attachment: &CxVariableAttachment,
 ) -> Result<(), CxQueryLoweringError> {
-    // RDKit source (verbatim; CXSmilesOps.cpp::parse_variable_attachments):
-    // RDKit❗✔️:       if (VALID_ATIDX(aidx)) {
-    // RDKit❗✔️:         others.push_back(std::to_string(aidx - startAtomIdx + 1));
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       if (VALID_ATIDX(at1idx)) {
-    // RDKit❗✔️:         std::string endPts = "(" + std::to_string(others.size());
-    // RDKit❗✔️:         for (auto idx : others) {
-    // RDKit❗✔️:           endPts += " " + idx;
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:         endPts += ")";
-    // RDKit❗✔️:         for (auto nbri : boost::make_iterator_range(
-    // RDKit❗✔️:                  mol.getAtomBonds(mol.getAtomWithIdx(at1idx - startAtomIdx)))) {
-    // RDKit❗✔️:           auto bnd = mol[nbri];
-    // RDKit❗✔️:           bnd->setProp(common_properties::_MolFileBondEndPts, endPts);
-    // RDKit❗✔️:           bnd->setProp(common_properties::_MolFileBondAttach, std::string("ANY"));
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:       }
+    // BEGIN COMPLETE PINNED SF199 effect caller
+    // RDKit❗❌: bool parse_variable_attachments(Iterator &first, Iterator last,
+    // RDKit❗❌:                                 RDKit::RWMol &mol, unsigned int startAtomIdx) {
+    // RDKit❗❌:   // these look like: CO*.C1=CC=NC=C1 |m:2:3.5.4|
+    // RDKit❗❌:   // that corresponds to replacing the bond to atom 2 with bonds to atom 3, 5,
+    // RDKit❗❌:   // or 4
+    // RDKit❗❌:   //
+    // RDKit❗❌:   if (first >= last || *first != 'm' || first + 1 >= last ||
+    // RDKit❗❌:       *(first + 1) != ':') {
+    // RDKit❗❌:     return false;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   first += 2;
+    // RDKit❗❌:
+    // RDKit❗❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit❗❌:     unsigned int at1idx;
+    // RDKit❗❌:     if (!read_int(first, last, at1idx)) {
+    // RDKit❗❌:       return false;
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     if (VALID_ATIDX(at1idx) &&
+    // RDKit❗❌:         mol.getAtomWithIdx(at1idx - startAtomIdx)->getDegree() != 1) {
+    // RDKit❗❌:       BOOST_LOG(rdWarningLog)
+    // RDKit❗❌:           << "position variation bond to atom with more than one bond"
+    // RDKit❗❌:           << std::endl;
+    // RDKit❗❌:       return false;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (first < last && *first == ':') {
+    // RDKit❗❌:       ++first;
+    // RDKit❗❌:     } else {
+    // RDKit❗❌:       BOOST_LOG(rdWarningLog) << "improperly formatted m: block" << std::endl;
+    // RDKit❗❌:       return false;
+    // RDKit❗❌:     }
+    // RDKit❗❌:     std::vector<std::string> others;
+    // RDKit❗❌:     while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit❗❌:       unsigned int aidx;
+    // RDKit❗❌:       if (!read_int(first, last, aidx)) {
+    // RDKit❗❌:         return false;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (VALID_ATIDX(aidx)) {
+    // RDKit❗❌:         others.push_back(std::to_string(aidx - startAtomIdx + 1));
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (first < last && *first == '.') {
+    // RDKit❗❌:         ++first;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (VALID_ATIDX(at1idx)) {
+    // RDKit❗❌:       std::string endPts = "(" + std::to_string(others.size());
+    // RDKit❗❌:       for (auto idx : others) {
+    // RDKit❗❌:         endPts += " " + idx;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       endPts += ")";
+    // RDKit❗❌:
+    // RDKit❗❌:       for (auto nbri : boost::make_iterator_range(
+    // RDKit❗❌:                mol.getAtomBonds(mol.getAtomWithIdx(at1idx - startAtomIdx)))) {
+    // RDKit❗❌:         auto bnd = mol[nbri];
+    // RDKit❗❌:         bnd->setProp(common_properties::_MolFileBondEndPts, endPts);
+    // RDKit❗❌:         bnd->setProp(common_properties::_MolFileBondAttach, std::string("ANY"));
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (first < last && *first == ',') {
+    // RDKit❗❌:       ++first;
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return true;
+    // RDKit❗❌: }
+    // END COMPLETE PINNED SF199 effect caller
+    // Behavior: valid endpoints preserve order/duplicates; unsigned32 plus
+    // one wraps exactly as source. Emit literal ASCII count/list text, then
+    // ordinary String EndPts and Attach in source incident-bond order.
+    // Complexity: endpoint temporary strings/vector match source shape;
+    // source-linear formatting and degree loop, no graph/collection clone.
     if attachment.atom >= graph.num_atoms() {
         return Ok(());
     }
@@ -1806,131 +2055,171 @@ pub(crate) fn apply_cx_wedge_bond_to_query(
     graph: &mut QueryGraph,
     wedge: &CxWedgeBond,
 ) -> Result<(), CxQueryLoweringError> {
-    // RDKit source (verbatim; CXSmilesOps.cpp::parse_wedged_bonds):
-    // RDKit❗✔️: template <typename Iterator>
-    // RDKit❗✔️: bool parse_wedged_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
-    // RDKit❗✔️:                         unsigned int startAtomIdx, unsigned int startBondIdx) {
-    // RDKit❗✔️:   // these look like: CC(O)Cl |w:1.0|
-    // RDKit❗✔️:   // also wD and wU for down and up wedges.
-    // RDKit❗✔️:   //
-    // RDKit❗✔️:   // We do not end up using this to set stereochemistry, but the relevant bond
-    // RDKit❗✔️:   // properties are set in case client code wants to do something with the
-    // RDKit❗✔️:   // information.
-    // RDKit❗✔️:   if (first >= last || *first != 'w' || first + 1 >= last) {
-    // RDKit❗✔️:     return false;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   ++first;
-    // RDKit❗✔️:   Bond::BondDir state = Bond::BondDir::NONE;
-    // RDKit❗✔️:   unsigned int cfg = 0;
-    // RDKit❗✔️:   switch (*first) {
-    // RDKit❗✔️:     case ':':
-    // RDKit❗✔️:       state = Bond::BondDir::UNKNOWN;
-    // RDKit❗✔️:       cfg = 2;
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️:     case 'U':
-    // RDKit❗✔️:       state = Bond::BondDir::BEGINWEDGE;
-    // RDKit❗✔️:       cfg = 1;
-    // RDKit❗✔️:       ++first;
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️:     case 'D':
-    // RDKit❗✔️:       state = Bond::BondDir::BEGINDASH;
-    // RDKit❗✔️:       cfg = 3;
-    // RDKit❗✔️:       ++first;
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️:     default:
-    // RDKit❗✔️:       break;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (state == Bond::BondDir::NONE || first >= last || first + 1 >= last ||
-    // RDKit❗✔️:       *first != ':') {
-    // RDKit❗✔️:     return false;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   ++first;
-    // RDKit❗✔️:   while (first < last && *first >= '0' && *first <= '9') {
-    // RDKit❗✔️:     unsigned int atomIdx;
-    // RDKit❗✔️:     if (!read_int(first, last, atomIdx)) {
-    // RDKit❗✔️:       return false;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     if (first < last && *first == '.') {
-    // RDKit❗✔️:       ++first;
-    // RDKit❗✔️:     } else {
-    // RDKit❗✔️:       BOOST_LOG(rdWarningLog) << "improperly formatted w block" << std::endl;
-    // RDKit❗✔️:       return false;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     unsigned int bondIdx;
-    // RDKit❗✔️:     if (!read_int(first, last, bondIdx)) {
-    // RDKit❗✔️:       return false;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     if (VALID_ATIDX(atomIdx) && VALID_BNDIDX(bondIdx)) {
-    // RDKit❗✔️:       auto atom = mol.getAtomWithIdx(atomIdx - startAtomIdx);
-    // RDKit❗✔️:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
-    // RDKit❗✔️:       if (!bond) {
-    // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
-    // RDKit❗✔️:             << "bond " << bondIdx << " not found, wedge from atom " << atomIdx
-    // RDKit❗✔️:             << " cannot be applied." << std::endl;
-    // RDKit❗✔️:         return false;
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       if (bond->hasProp(common_properties::_MolFileBondCfg)) {
-    // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
-    // RDKit❗✔️:             << "w block attempts to set wedging on bond " << bond->getIdx()
-    // RDKit❗✔️:             << " more than once." << std::endl;
-    // RDKit❗✔️:         return false;
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       if (atom->getIdx() != bond->getBeginAtomIdx()) {
-    // RDKit❗✔️:         if (atom->getIdx() != bond->getEndAtomIdx()) {
-    // RDKit❗✔️:           BOOST_LOG(rdWarningLog)
-    // RDKit❗✔️:               << "atom " << atomIdx << " is not associated with bond "
-    // RDKit❗✔️:               << bondIdx << "(" << bond->getBeginAtomIdx() + startAtomIdx << "-"
-    // RDKit❗✔️:               << bond->getEndAtomIdx() + startAtomIdx << ")"
-    // RDKit❗✔️:               << " in w block" << std::endl;
-    // RDKit❗✔️:           return false;
-    // RDKit❗✔️:         }
-    // RDKit❗✔️:         auto eidx = bond->getBeginAtomIdx();
-    // RDKit❗✔️:         bond->setBeginAtomIdx(atom->getIdx());
-    // RDKit❗✔️:         bond->setEndAtomIdx(eidx);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       bond->setProp(common_properties::_MolFileBondCfg, cfg);
-    // RDKit❗✔️:       bond->setBondDir(state);
-    // RDKit❗✔️:       if (cfg == 2 && canHaveDirection(*bond)) {
-    // RDKit❗✔️:         bond->getBeginAtom()->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
-    // RDKit❗✔️:         mol.setProp(detail::_needsDetectBondStereo, 1);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       if ((cfg == 1 || cfg == 3) && canHaveDirection(*bond)) {
-    // RDKit❗✔️:         mol.setProp(detail::_needsDetectAtomStereo, 1);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     if (first < last && *first == ',') {
-    // RDKit❗✔️:       ++first;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   return true;
-    // RDKit❗✔️: }
-    // RDKit source helper (verbatim; CXSmilesOps.cpp::get_bond_with_smiles_idx):
-    // RDKit❗✔️: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
-    // RDKit❗✔️:   for (auto bnd : mol.bonds()) {
-    // RDKit❗✔️:     unsigned int smilesIdx;
-    // RDKit❗✔️:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
-    // RDKit❗✔️:         smilesIdx == idx) {
-    // RDKit❗✔️:       return bnd;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   return nullptr;
-    // RDKit❗✔️: }
-    // RDKit source helper (verbatim; Bond.h::canHaveDirection):
-    // RDKit❗✔️: inline bool canHaveDirection(const Bond &bond) {
-    // RDKit❗✔️:   auto bondType = bond.getBondType();
-    // RDKit❗✔️:   return (bondType == Bond::SINGLE || bondType == Bond::AROMATIC);
-    // RDKit❗✔️: }
-    // Source grammar indices and final bond rows are distinct. Lookup scans
-    // the preserved scalar properties in final row order, O(E) as in RDKit.
+    // BEGIN COMPLETE PINNED SF200
+    // RDKit✔️❌: bool parse_wedged_bonds(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                         unsigned int startAtomIdx, unsigned int startBondIdx) {
+    // RDKit✔️❌:   // these look like: CC(O)Cl |w:1.0|
+    // RDKit✔️❌:   // also wD and wU for down and up wedges.
+    // RDKit✔️❌:   //
+    // RDKit✔️❌:   // We do not end up using this to set stereochemistry, but the relevant bond
+    // RDKit✔️❌:   // properties are set in case client code wants to do something with the
+    // RDKit✔️❌:   // information.
+    // RDKit✔️❌:   if (first >= last || *first != 'w' || first + 1 >= last) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   Bond::BondDir state = Bond::BondDir::NONE;
+    // RDKit✔️❌:   unsigned int cfg = 0;
+    // RDKit✔️❌:   switch (*first) {
+    // RDKit✔️❌:     case ':':
+    // RDKit✔️❌:       state = Bond::BondDir::UNKNOWN;
+    // RDKit✔️❌:       cfg = 2;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case 'U':
+    // RDKit✔️❌:       state = Bond::BondDir::BEGINWEDGE;
+    // RDKit✔️❌:       cfg = 1;
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     case 'D':
+    // RDKit✔️❌:       state = Bond::BondDir::BEGINDASH;
+    // RDKit✔️❌:       cfg = 3;
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:     default:
+    // RDKit✔️❌:       break;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (state == Bond::BondDir::NONE || first >= last || first + 1 >= last ||
+    // RDKit✔️❌:       *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int atomIdx;
+    // RDKit✔️❌:     if (!read_int(first, last, atomIdx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == '.') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       BOOST_LOG(rdWarningLog) << "improperly formatted w block" << std::endl;
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     unsigned int bondIdx;
+    // RDKit✔️❌:     if (!read_int(first, last, bondIdx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     if (VALID_ATIDX(atomIdx) && VALID_BNDIDX(bondIdx)) {
+    // RDKit✔️❌:       auto atom = mol.getAtomWithIdx(atomIdx - startAtomIdx);
+    // RDKit✔️❌:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+    // RDKit✔️❌:
+    // RDKit✔️❌:       if (!bond) {
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << "bond " << bondIdx << " not found, wedge from atom " << atomIdx
+    // RDKit✔️❌:             << " cannot be applied." << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:
+    // RDKit✔️❌:       // we can't set wedging twice:
+    // RDKit✔️❌:       if (bond->hasProp(common_properties::_MolFileBondCfg)) {
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << "w block attempts to set wedging on bond " << bond->getIdx()
+    // RDKit✔️❌:             << " more than once." << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:
+    // RDKit✔️❌:       // first things first, the atom needs to be the start atom of the bond for
+    // RDKit✔️❌:       // any of this to make sense
+    // RDKit✔️❌:       if (atom->getIdx() != bond->getBeginAtomIdx()) {
+    // RDKit✔️❌:         if (atom->getIdx() != bond->getEndAtomIdx()) {
+    // RDKit✔️❌:           BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:               << "atom " << atomIdx << " is not associated with bond "
+    // RDKit✔️❌:               << bondIdx << "(" << bond->getBeginAtomIdx() + startAtomIdx << "-"
+    // RDKit✔️❌:               << bond->getEndAtomIdx() + startAtomIdx << ")"
+    // RDKit✔️❌:               << " in w block" << std::endl;
+    // RDKit✔️❌:           return false;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         auto eidx = bond->getBeginAtomIdx();
+    // RDKit✔️❌:         bond->setBeginAtomIdx(atom->getIdx());
+    // RDKit✔️❌:         bond->setEndAtomIdx(eidx);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       bond->setProp(common_properties::_MolFileBondCfg, cfg);
+    // RDKit✔️❌:       bond->setBondDir(state);
+    // RDKit✔️❌:       if (cfg == 2 && canHaveDirection(*bond)) {
+    // RDKit✔️❌:         bond->getBeginAtom()->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit✔️❌:         mol.setProp(detail::_needsDetectBondStereo, 1);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if ((cfg == 1 || cfg == 3) && canHaveDirection(*bond)) {
+    // RDKit✔️❌:         mol.setProp(detail::_needsDetectAtomStereo, 1);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF200
+    // BEGIN COMPLETE SF200 actual reached helpers
+    // RDKit✔️❌: Bond *get_bond_with_smiles_idx(const ROMol &mol, unsigned idx) {
+    // RDKit✔️❌:   for (auto bnd : mol.bonds()) {
+    // RDKit✔️❌:     unsigned int smilesIdx;
+    // RDKit✔️❌:     if (bnd->getPropIfPresent("_cxsmilesBondIdx", smilesIdx) &&
+    // RDKit✔️❌:         smilesIdx == idx) {
+    // RDKit✔️❌:       return bnd;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return nullptr;
+    // RDKit✔️❌: }
+    // RDKit✔️❌:
+    // RDKit✔️❌: inline bool canHaveDirection(const Bond &bond) {
+    // RDKit✔️❌:   auto bondType = bond.getBondType();
+    // RDKit✔️❌:   return (bondType == Bond::SINGLE || bondType == Bond::AROMATIC);
+    // RDKit✔️❌: }
+    // RDKit✔️❌:
+    // RDKit✔️❌: void Bond::setBeginAtomIdx(unsigned int what) {
+    // RDKit✔️❌:   if (dp_mol) {
+    // RDKit✔️❌:     URANGE_CHECK(what, getOwningMol().getNumAtoms());
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   d_beginAtomIdx = what;
+    // RDKit✔️❌: }
+    // RDKit✔️❌:
+    // RDKit✔️❌: void Bond::setEndAtomIdx(unsigned int what) {
+    // RDKit✔️❌:   if (dp_mol) {
+    // RDKit✔️❌:     URANGE_CHECK(what, getOwningMol().getNumAtoms());
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   d_endAtomIdx = what;
+    // RDKit✔️❌: }
+    // END COMPLETE SF200 actual reached helpers
+    // Behavior: source atom/bond windows guard all lookups. First matching
+    // native uint property scan precedes duplicate/endpoint checks; typed
+    // conversion errors propagate without a source warning. Successful
+    // endpoint orientation precedes UInt cfg, direction, and Int flags.
+    // Complexity: O(E) source bond-property prefix scan, O(1) mutations;
+    // detached checkpoint transport adds allocation cost outside this helper.
     if wedge.atom >= graph.num_atoms() || wedge.bond >= graph.num_bonds() {
         return Ok(());
     }
-    let row = query_bond_row_from_source_index(graph, wedge.bond)?;
+    let row = match query_bond_row_from_source_index(graph, wedge.bond) {
+        Ok(row) => row,
+        Err(error @ CxQueryLoweringError::BondIndex { .. }) => {
+            eprintln!(
+                "bond {} not found, wedge from atom {} cannot be applied.",
+                wedge.bond, wedge.atom
+            );
+            return Err(error);
+        }
+        Err(error) => return Err(error),
+    };
     let bond = graph
         .bonds_mut()
         .get_mut(row)
         .ok_or(CxQueryLoweringError::BondIndex { index: wedge.bond })?;
     if bond.bond().prop("_MolFileBondCfg").is_some() {
+        eprintln!(
+            "w block attempts to set wedging on bond {} more than once.",
+            bond.id().index()
+        );
         return Err(CxQueryLoweringError::InvalidGraph(format!(
             "w block attempts to set wedging on bond {} more than once.",
             bond.id().index()
@@ -1938,6 +2227,13 @@ pub(crate) fn apply_cx_wedge_bond_to_query(
     }
     let atom = AtomId::new(wedge.atom);
     if bond.begin() != atom && bond.end() != atom {
+        eprintln!(
+            "atom {} is not associated with bond {}({}-{}) in w block",
+            wedge.atom,
+            wedge.bond,
+            bond.begin().index(),
+            bond.end().index()
+        );
         return Err(CxQueryLoweringError::WedgeAtomMismatch {
             atom: wedge.atom,
             bond: wedge.bond,
@@ -1977,120 +2273,125 @@ pub(crate) fn apply_cx_double_bond_stereo_to_query(
     bond_index: usize,
     stereo: CxDoubleBondStereoKind,
 ) -> Result<(), CxQueryLoweringError> {
-    // RDKit source (verbatim; CXSmilesOps.cpp::parse_doublebond_stereo):
-    // RDKit❗✔️: template <typename Iterator>
-    // RDKit❗✔️: bool parse_doublebond_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
-    // RDKit❗✔️:                              unsigned int, unsigned int startBondIdx,
-    // RDKit❗✔️:                              Bond::BondStereo stereo) {
-    // RDKit❗✔️:   // these look like: C1CCCC/C=C/CCC1 |ctu:5|
-    // RDKit❗✔️:   // also c and t for cis or trans
-    // RDKit❗✔️:   while (first < last && *first != ':') {
-    // RDKit❗✔️:     ++first;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (first >= last || *first != ':') {
-    // RDKit❗✔️:     return false;
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   ++first;
-    // RDKit❗✔️:   while (first < last && *first >= '0' && *first <= '9') {
-    // RDKit❗✔️:     unsigned int bondIdx;
-    // RDKit❗✔️:     if (!read_int(first, last, bondIdx)) {
-    // RDKit❗✔️:       return false;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     if (VALID_BNDIDX(bondIdx)) {
-    // RDKit❗✔️:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
-    // RDKit❗✔️:       if (!bond) {
-    // RDKit❗✔️:         BOOST_LOG(rdWarningLog)
-    // RDKit❗✔️:             << "bond " << bondIdx
-    // RDKit❗✔️:             << " not found, cannot mark as stereo double bond." << std::endl;
-    // RDKit❗✔️:         return false;
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       bool useCXOrdering = true;
-    // RDKit❗✔️:       Chirality::detail::setStereoForBond(mol, bond, stereo, useCXOrdering);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     if (first < last && *first == ',') {
-    // RDKit❗✔️:       ++first;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   return true;
-    // RDKit❗✔️: }
-    // RDKit source helper (verbatim; Chirality.cpp::setStereoForBond):
-    // RDKit❗✔️: void setStereoForBond(ROMol &mol, Bond *bond, Bond::BondStereo stereo,
-    // RDKit❗✔️:                       bool useCXSmilesOrdering) {
-    // RDKit❗✔️:   // NOTE:  moved from parse_doublebond_stereo CXSmilesOps
-    // RDKit❗✔️:   // IF useCXSmilesOrdering is true, the cis/trans/unknown marker will be
-    // RDKit❗✔️:   // assigned relative to the lowest-numbered neighbor of each double bond atom.
-    // RDKit❗✔️:   // Otherwise it uses the lowest-numbered neighbor on the lower-numbered atom
-    // RDKit❗✔️:   // of the double bond and the highest-numbered neighbor on the higher-numbered
-    // RDKit❗✔️:   // atom
-    // RDKit❗✔️:   auto begAtom = bond->getBeginAtom();
-    // RDKit❗✔️:   auto endAtom = bond->getEndAtom();
-    // RDKit❗✔️:   if (begAtom->getIdx() > endAtom->getIdx()) {
-    // RDKit❗✔️:     std::swap(begAtom, endAtom);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (begAtom->getDegree() > 1 && endAtom->getDegree() > 1) {
-    // RDKit❗✔️:     unsigned int begControl = mol.getNumAtoms();
-    // RDKit❗✔️:     for (auto nbr : mol.atomNeighbors(begAtom)) {
-    // RDKit❗✔️:       if (nbr == endAtom) {
-    // RDKit❗✔️:         continue;
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       begControl = std::min(nbr->getIdx(), begControl);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     unsigned int endControl = useCXSmilesOrdering ? mol.getNumAtoms() : 0;
-    // RDKit❗✔️:     for (auto nbr : mol.atomNeighbors(endAtom)) {
-    // RDKit❗✔️:       if (nbr == begAtom) {
-    // RDKit❗✔️:         continue;
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       endControl = useCXSmilesOrdering ? std::min(nbr->getIdx(), endControl)
-    // RDKit❗✔️:                                        : std::max(nbr->getIdx(), endControl);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     if (begAtom != bond->getBeginAtom()) {
-    // RDKit❗✔️:       std::swap(begControl, endControl);
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     bond->setStereoAtoms(begControl, endControl);
-    // RDKit❗✔️:     bond->setStereo(stereo);
-    // RDKit❗✔️:     mol.setProp("_needsDetectBondStereo", 1);
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
-    // Source property lookup scans final rows, O(E) as in RDKit;
-    // adjacency iteration retains the same source control-atom minima.
+    // BEGIN COMPLETE PINNED SF201
+    // RDKit✔️❌: bool parse_doublebond_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                              unsigned int, unsigned int startBondIdx,
+    // RDKit✔️❌:                              Bond::BondStereo stereo) {
+    // RDKit✔️❌:   // these look like: C1CCCC/C=C/CCC1 |ctu:5|
+    // RDKit✔️❌:   // also c and t for cis or trans
+    // RDKit✔️❌:   //
+    // RDKit✔️❌:   while (first < last && *first != ':') {
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (first >= last || *first != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   while (first < last && *first >= '0' && *first <= '9') {
+    // RDKit✔️❌:     unsigned int bondIdx;
+    // RDKit✔️❌:     if (!read_int(first, last, bondIdx)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (VALID_BNDIDX(bondIdx)) {
+    // RDKit✔️❌:       auto bond = get_bond_with_smiles_idx(mol, bondIdx - startBondIdx);
+    // RDKit✔️❌:
+    // RDKit✔️❌:       if (!bond) {
+    // RDKit✔️❌:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:             << "bond " << bondIdx
+    // RDKit✔️❌:             << " not found, cannot mark as stereo double bond." << std::endl;
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:
+    // RDKit✔️❌:       bool useCXOrdering = true;
+    // RDKit✔️❌:       Chirality::detail::setStereoForBond(mol, bond, stereo, useCXOrdering);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first < last && *first == ',') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF201
+    // BEGIN COMPLETE SF201 reached canonical CORE selector
+    // RDKit✔️❌: void setStereoForBond(ROMol &mol, Bond *bond, Bond::BondStereo stereo,
+    // RDKit✔️❌:                       bool useCXSmilesOrdering) {
+    // RDKit✔️❌:   // NOTE:  moved from parse_doublebond_stereo CXSmilesOps
+    // RDKit✔️❌:   // IF useCXSmilesOrdering is true, the cis/trans/unknown marker will be
+    // RDKit✔️❌:   // assigned relative to the lowest-numbered neighbor of each double bond atom.
+    // RDKit✔️❌:   // Otherwise it uses the lowest-numbered neighbor on the lower-numbered atom
+    // RDKit✔️❌:   // of the double bond and the highest-numbered neighbor on the higher-numbered
+    // RDKit✔️❌:   // atom
+    // RDKit✔️❌:   auto begAtom = bond->getBeginAtom();
+    // RDKit✔️❌:   auto endAtom = bond->getEndAtom();
+    // RDKit✔️❌:   if (begAtom->getIdx() > endAtom->getIdx()) {
+    // RDKit✔️❌:     std::swap(begAtom, endAtom);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (begAtom->getDegree() > 1 && endAtom->getDegree() > 1) {
+    // RDKit✔️❌:     unsigned int begControl = mol.getNumAtoms();
+    // RDKit✔️❌:     for (auto nbr : mol.atomNeighbors(begAtom)) {
+    // RDKit✔️❌:       if (nbr == endAtom) {
+    // RDKit✔️❌:         continue;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       begControl = std::min(nbr->getIdx(), begControl);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     unsigned int endControl = useCXSmilesOrdering ? mol.getNumAtoms() : 0;
+    // RDKit✔️❌:     for (auto nbr : mol.atomNeighbors(endAtom)) {
+    // RDKit✔️❌:       if (nbr == begAtom) {
+    // RDKit✔️❌:         continue;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       endControl = useCXSmilesOrdering ? std::min(nbr->getIdx(), endControl)
+    // RDKit✔️❌:                                        : std::max(nbr->getIdx(), endControl);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (begAtom != bond->getBeginAtom()) {
+    // RDKit✔️❌:       std::swap(begControl, endControl);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     bond->setStereoAtoms(begControl, endControl);
+    // RDKit✔️❌:     bond->setStereo(stereo);
+    // RDKit✔️❌:     mol.setProp("_needsDetectBondStereo", 1);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // END COMPLETE SF201 reached canonical CORE selector
+    // Behavior: retain native bond window and first-match property lookup;
+    // canonical CORE owns control selection for concrete and query graphs.
+    // Successful refs precede stereo and actual Int flag writes; degree gate
+    // suppresses all writes. No double-bond order guard exists in source.
+    // Complexity: O(E) lookup and degree-linear control scans, no graph clone.
     if bond_index >= graph.num_bonds() {
         return Ok(());
     }
-    let bond_index = query_bond_row_from_source_index(graph, bond_index)?;
-    let (begin, end, begin_degree, end_degree) = {
-        let bond = graph
-            .bonds()
-            .get(bond_index)
-            .ok_or(CxQueryLoweringError::BondIndex { index: bond_index })?;
-        let begin = bond.begin();
-        let end = bond.end();
-        let begin_degree = graph.adjacency().get(begin.index()).map_or(0, Vec::len);
-        let end_degree = graph.adjacency().get(end.index()).map_or(0, Vec::len);
-        (begin, end, begin_degree, end_degree)
+    let bond_index = match query_bond_row_from_source_index(graph, bond_index) {
+        Ok(row) => row,
+        Err(error @ CxQueryLoweringError::BondIndex { .. }) => {
+            eprintln!(
+                "bond {} not found, cannot mark as stereo double bond.",
+                bond_index
+            );
+            return Err(error);
+        }
+        Err(error) => return Err(error),
     };
-    if begin_degree <= 1 || end_degree <= 1 {
+    let bond = graph
+        .bonds()
+        .get(bond_index)
+        .ok_or(CxQueryLoweringError::BondIndex { index: bond_index })?;
+    let references = cosmolkit_core::double_bond_stereo_reference_atoms(
+        bond.id(),
+        graph.num_atoms(),
+        bond.begin(),
+        bond.end(),
+        true,
+        |atom| graph.adjacency()[atom.index()].len(),
+        |atom| {
+            graph.adjacency()[atom.index()]
+                .iter()
+                .map(|&(neighbor, _)| AtomId::new(neighbor))
+        },
+    )
+    .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+    let Some(references) = references else {
         return Ok(());
-    }
-    let (low, high) = if begin.index() <= end.index() {
-        (begin, end)
-    } else {
-        (end, begin)
     };
-    let find_control = |atom: AtomId, other: AtomId| {
-        graph
-            .adjacency()
-            .get(atom.index())
-            .into_iter()
-            .flatten()
-            .filter_map(|&(neighbor, _)| (neighbor != other.index()).then_some(neighbor))
-            .min()
-            .unwrap_or(graph.num_atoms())
-    };
-    let mut begin_control = find_control(low, high);
-    let mut end_control = find_control(high, low);
-    if low != begin {
-        std::mem::swap(&mut begin_control, &mut end_control);
-    }
     let value = match stereo {
         CxDoubleBondStereoKind::Any => BondStereo::Any,
         CxDoubleBondStereoKind::Cis => BondStereo::Cis,
@@ -2100,8 +2401,7 @@ pub(crate) fn apply_cx_double_bond_stereo_to_query(
         .bonds_mut()
         .get_mut(bond_index)
         .ok_or(CxQueryLoweringError::BondIndex { index: bond_index })?;
-    bond.bond_mut()
-        .set_stereo_atoms(Some([AtomId::new(begin_control), AtomId::new(end_control)]));
+    bond.bond_mut().set_stereo_atoms(Some(references));
     bond.bond_mut()
         .set_stereo(value)
         .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
@@ -2120,33 +2420,124 @@ pub(crate) fn apply_cx_polymer_sgroup_to_query(
     // RDKit✔️✔️:     {"xl", "CRO"},  {"mod", "MOD"}, {"mix", "MIX"}, {"f", "FOR"},
     // RDKit✔️✔️:     {"any", "ANY"}, {"gen", "GEN"}, {"c", "COM"},   {"grf", "GRA"},
     // RDKit✔️✔️:     {"alt", "COP"}, {"ran", "COP"}, {"blk", "COP"}};
-    // RDKit source (verbatim; CXSmilesOps.cpp::parse_polymer_sgroup):
-    /*
-    bool keepSGroup = false;
-    SubstanceGroup sgroup(&mol, type->second);
-    sgroup.setProp(cxsmilesindex, nSGroups);
-    if (type_code == "alt") {
-      sgroup.setProp("SUBTYPE", std::string("ALT"));
-    } else if (type_code == "ran") {
-      sgroup.setProp("SUBTYPE", std::string("RAN"));
-    } else if (type_code == "blk") {
-      sgroup.setProp("SUBTYPE", std::string("BLO"));
-    }
-    for (auto idx : atoms) {
-      if (VALID_ATIDX(idx)) {
-        sgroup.addAtomWithIdx(idx - startAtomIdx);
-        keepSGroup = true;
-      }
-    }
-    if (keepSGroup) {
-      processCXSmilesLabels(mol);
-      finalizePolymerSGroup(mol, sgroup);
-      sgroup.setProp<unsigned int>("index", getSubstanceGroups(mol).size() + 1);
-      addSubstanceGroup(mol, sgroup);
-    }
-    */
-    // RDKit✔️❌: valid atom occurrences retain source order and duplicates; a
-    // group with no valid atoms is skipped before labels or crossings run.
+    // BEGIN COMPLETE PINNED SF198
+    // RDKit✔️❌: bool parse_polymer_sgroup(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit✔️❌:                           unsigned int startAtomIdx, unsigned int nSGroups) {
+    // RDKit✔️❌:   // these look like:
+    // RDKit✔️❌:   //    |Sg:n:6,1,2,4::hh&#44;f:6,0,:4,2,|
+    // RDKit✔️❌:   // example from CXSMILES docs:
+    // RDKit✔️❌:   // the fields are:
+    // RDKit✔️❌:   //    Sg:[type]:[atom indices]:[subscript]:[superscript]:[head crossing
+    // RDKit✔️❌:   //    bonds]:[tail crossing bonds]:
+    // RDKit✔️❌:   //
+    // RDKit✔️❌:   // note that it's legit for empty fields to be completely missing.
+    // RDKit✔️❌:   //   for example, this doesn't have any crossing bonds indicated:
+    // RDKit✔️❌:   // *-CCCN-* |$star_e;;;;;star_e$,Sg:n:4,1,2,3::hh|
+    // RDKit✔️❌:   // this last bit makes the whole thing doubleplusfun to parse
+    // RDKit✔️❌:
+    // RDKit✔️❌:   if (first >= last || *first != 'S' || first + 2 >= last ||
+    // RDKit✔️❌:       *(first + 1) != 'g' || *(first + 2) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 3;
+    // RDKit✔️❌:
+    // RDKit✔️❌:   const auto type_code = read_text_to(first, last, ":");
+    // RDKit✔️❌:   ++first;
+    // RDKit✔️❌:   const auto type = sgroupTypemap.find(type_code);
+    // RDKit✔️❌:   if (type == sgroupTypemap.end()) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   bool keepSGroup = false;
+    // RDKit✔️❌:   SubstanceGroup sgroup(&mol, type->second);
+    // RDKit✔️❌:   sgroup.setProp(cxsmilesindex, nSGroups);
+    // RDKit✔️❌:   if (type_code == "alt") {
+    // RDKit✔️❌:     sgroup.setProp("SUBTYPE", std::string("ALT"));
+    // RDKit✔️❌:   } else if (type_code == "ran") {
+    // RDKit✔️❌:     sgroup.setProp("SUBTYPE", std::string("RAN"));
+    // RDKit✔️❌:   } else if (type_code == "blk") {
+    // RDKit✔️❌:     sgroup.setProp("SUBTYPE", std::string("BLO"));
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   std::vector<unsigned int> atoms;
+    // RDKit✔️❌:   if (!read_int_list(first, last, atoms)) {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   //++first;
+    // RDKit✔️❌:   for (auto idx : atoms) {
+    // RDKit✔️❌:     if (VALID_ATIDX(idx)) {
+    // RDKit✔️❌:       sgroup.addAtomWithIdx(idx - startAtomIdx);
+    // RDKit✔️❌:       keepSGroup = true;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   std::vector<unsigned int> headCrossing;
+    // RDKit✔️❌:   std::vector<unsigned int> tailCrossing;
+    // RDKit✔️❌:   if (first <= last && *first == ':') {
+    // RDKit✔️❌:     ++first;
+    // RDKit✔️❌:     std::string subscript = read_text_to(first, last, ":|");
+    // RDKit✔️❌:     if (keepSGroup && !subscript.empty()) {
+    // RDKit✔️❌:       sgroup.setProp("LABEL", subscript);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first <= last && *first == ':') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       std::string superscript = read_text_to(first, last, ":|,");
+    // RDKit✔️❌:       if (keepSGroup && !superscript.empty()) {
+    // RDKit✔️❌:         sgroup.setProp("CONNECT", superscript);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:
+    // RDKit✔️❌:       if (first <= last && *first == ':') {
+    // RDKit✔️❌:         ++first;
+    // RDKit✔️❌:         if (!read_int_list(first, last, headCrossing)) {
+    // RDKit✔️❌:           return false;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (keepSGroup && !headCrossing.empty()) {
+    // RDKit✔️❌:           for (auto &cidx : headCrossing) {
+    // RDKit✔️❌:             if (VALID_ATIDX(cidx)) {
+    // RDKit✔️❌:               cidx -= startAtomIdx;
+    // RDKit✔️❌:             } else {
+    // RDKit✔️❌:               keepSGroup = false;
+    // RDKit✔️❌:               break;
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           sgroup.setProp(_headCrossings, headCrossing, true);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (first <= last && *first == ':') {
+    // RDKit✔️❌:           ++first;
+    // RDKit✔️❌:           if (!read_int_list(first, last, tailCrossing)) {
+    // RDKit✔️❌:             return false;
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         if (keepSGroup && !tailCrossing.empty()) {
+    // RDKit✔️❌:           for (auto &cidx : tailCrossing) {
+    // RDKit✔️❌:             if (VALID_ATIDX(cidx)) {
+    // RDKit✔️❌:               cidx -= startAtomIdx;
+    // RDKit✔️❌:             } else {
+    // RDKit✔️❌:               keepSGroup = false;
+    // RDKit✔️❌:               break;
+    // RDKit✔️❌:             }
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           sgroup.setProp("_tailCrossings", tailCrossing, true);
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (keepSGroup) {  // the label processing can destroy sgroup info, so do that
+    // RDKit✔️❌:                      // now (the function will immediately return if already
+    // RDKit✔️❌:                      // called)
+    // RDKit✔️❌:     processCXSmilesLabels(mol);
+    // RDKit✔️❌:
+    // RDKit✔️❌:     finalizePolymerSGroup(mol, sgroup);
+    // RDKit✔️❌:     sgroup.setProp<unsigned int>("index", getSubstanceGroups(mol).size() + 1);
+    // RDKit✔️❌:
+    // RDKit✔️❌:     addSubstanceGroup(mol, sgroup);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF198
+    // Behavior: valid atom occurrences preserve duplicates and order. A
+    // crossing outside the native atom window drops the entire local group
+    // before labels/finalization, without an invented early bond-range error.
+    // Complexity: source-linear filtering/fields plus typed copies and later
+    // detached SGroup collection copy/validation; no whole graph clone.
     let (kind, source_type) = match polymer.type_code.as_bytes() {
         b"n" => (SubstanceGroupKind::StructuralRepeatUnit, "SRU"),
         b"mon" => (SubstanceGroupKind::Monomer, "MON"),
@@ -2200,12 +2591,7 @@ pub(crate) fn apply_cx_polymer_sgroup_to_query(
         .map(BondId::new)
         .collect::<Vec<_>>();
 
-    // Source calls processCXSmilesLabels before finalizing or attaching this
-    // local group, so a later finalizer error retains label mutations only.
-    process_cx_smiles_labels(graph)?;
-
-    let mut groups = query_substance_groups(graph).to_vec();
-    let dense_id = SubstanceGroupId::new(groups.len());
+    let dense_id = SubstanceGroupId::new(query_substance_groups(graph).len());
     let mut group = SubstanceGroup::new(dense_id, kind)
         .with_rdkit_sequence_id(cx_sequence_id)
         .with_atoms(atoms);
@@ -2242,6 +2628,38 @@ pub(crate) fn apply_cx_polymer_sgroup_to_query(
     if !polymer.connect.is_empty() {
         group.set_prop("CONNECT", polymer.connect.clone())?;
     }
+    // BEGIN COMPLETE RDProps::setProp computed crossing bookkeeping
+    // RDKit✔️❌: void setProp(const std::string_view key, T val, bool computed = false) const {
+    // RDKit✔️❌:     if(key.empty()) {
+    // RDKit✔️❌:       throw ValueErrorException("Cannot set property with empty key");
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (computed) {
+    // RDKit✔️❌:       STR_VECT compLst;
+    // RDKit✔️❌:       getPropIfPresent(RDKit::detail::computedPropName, compLst);
+    // RDKit✔️❌:       if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+    // RDKit✔️❌:         compLst.emplace_back(key);
+    // RDKit✔️❌:         d_props.setVal(RDKit::detail::computedPropName, compLst);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     d_props.setVal(key, val);
+    // RDKit✔️❌:   }
+    // END COMPLETE RDProps::setProp computed crossing bookkeeping
+    // Source computed crossing payloads travel through the existing typed
+    // head/tail arguments. The modeled StringVector bookkeeping remains an
+    // actual ordered property record; CORE clearProp removes these names and
+    // leaves the source empty reserved entry, including its insertion position.
+    // No opaque unsigned-vector tag or parallel computed classification store.
+    let mut computed_crossings = Vec::<cosmolkit_model::PropertyText>::new();
+    if !head.is_empty() {
+        computed_crossings.push("_headCrossings".into());
+        group.set_prop("__computedProps", computed_crossings.clone())?;
+    }
+    if !tail.is_empty() {
+        computed_crossings.push("_tailCrossings".into());
+        group.set_prop("__computedProps", computed_crossings)?;
+    }
+    // Native local fields/computed metadata precede the guarded label pass.
+    process_cx_smiles_labels(graph)?;
     cosmolkit_core::finalize_polymer_sgroup(
         &mut group,
         (!polymer.connect.is_empty()).then_some(polymer.connect.as_bytes()),
@@ -2261,8 +2679,9 @@ pub(crate) fn apply_cx_polymer_sgroup_to_query(
     .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
 
     // RDKit sets the one-based source index only after finalization succeeds.
-    let source_index = groups.len() + 1;
-    group.set_prop("index", source_index as u32)?;
+    let mut groups = query_substance_groups(graph).to_vec();
+    let source_index = (groups.len() as u32).wrapping_add(1);
+    group.set_prop("index", source_index)?;
     groups.push(group);
     replace_query_substance_groups(graph, groups)
         .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))
@@ -2374,18 +2793,24 @@ fn find_query_sgroup_by_cx_sequence_id(
     target_id: u32,
 ) -> Result<Option<usize>, CxQueryLoweringError> {
     // RDKit source (verbatim; find_matching_sgroup from CXSmilesOps.cpp):
-    // RDKit✔️✔️: std::vector<RDKit::SubstanceGroup>::iterator find_matching_sgroup(
-    // RDKit✔️✔️:     std::vector<RDKit::SubstanceGroup> &sgs, unsigned int targetId) {
-    // RDKit✔️✔️:   return std::find_if(sgs.begin(), sgs.end(), [targetId](const auto &sg) {
-    // RDKit✔️✔️:     unsigned int pval;
-    // RDKit✔️✔️:     if (sg.getPropIfPresent(cxsmilesindex, pval)) {
-    // RDKit✔️✔️:       if (pval == targetId) {
-    // RDKit✔️✔️:         return true;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     return false;
-    // RDKit✔️✔️:   });
-    // RDKit✔️✔️: }
+    // RDKit✔️🔝: std::vector<RDKit::SubstanceGroup>::iterator find_matching_sgroup(
+    // RDKit✔️🔝:     std::vector<RDKit::SubstanceGroup> &sgs, unsigned int targetId) {
+    // RDKit✔️🔝:   return std::find_if(sgs.begin(), sgs.end(), [targetId](const auto &sg) {
+    // RDKit✔️🔝:     unsigned int pval;
+    // RDKit✔️🔝:     if (sg.getPropIfPresent(cxsmilesindex, pval)) {
+    // RDKit✔️🔝:       if (pval == targetId) {
+    // RDKit✔️🔝:         return true;
+    // RDKit✔️🔝:       }
+    // RDKit✔️🔝:     }
+    // RDKit✔️🔝:     return false;
+    // RDKit✔️🔝:   });
+    // RDKit✔️🔝: }
+    // Behavior: read actual source property tags only for visited groups.
+    // Stop at the first matching UInt conversion; later duplicate or invalid
+    // property values are untouched. Absence skips, conversion errors propagate.
+    // Complexity: the same O(visited groups) scan; canonical borrowed tree
+    // lookup is O(log properties) rather than source Dict's linear lookup.
+    // This reduces key-search work without copying values or changing order.
     for (index, group) in groups.iter().enumerate() {
         let Some(value) = group.props().get(b"_cxsmilesindex".as_slice()) else {
             continue;
@@ -2402,12 +2827,81 @@ pub(crate) fn apply_cx_sgroup_hierarchy_to_query(
     graph: &mut QueryGraph,
     hierarchies: &[CxSGroupHierarchy],
 ) -> Result<(), CxQueryLoweringError> {
-    // RDKit✔️✔️: parent relationships and child references are visited in
-    // source order; each successful child sets typed parent state and PARENT.
+    // BEGIN COMPLETE PINNED SF197
+    // RDKit✔️❌: bool parse_sgroup_hierarchy(Iterator &first, Iterator last, RDKit::RWMol &mol) {
+    // RDKit✔️❌:   // these look like: |SgH:1:0|
+    // RDKit✔️❌:   // from CXSMILES docs:
+    // RDKit✔️❌:   //    SgH:parentSgroupIndex1:childSgroupIndex1.childSgroupIndex2,parentSgroupIndex2:childSgroupIndex1
+    // RDKit✔️❌:   if (first >= last || *first != 'S' || first + 3 >= last ||
+    // RDKit✔️❌:       *(first + 1) != 'g' || *(first + 2) != 'H' || *(first + 3) != ':') {
+    // RDKit✔️❌:     return false;
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   first += 4;
+    // RDKit✔️❌:   auto &sgs = getSubstanceGroups(mol);
+    // RDKit✔️❌:   while (1) {
+    // RDKit✔️❌:     unsigned int parentId;
+    // RDKit✔️❌:     if (!read_int(first, last, parentId)) {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     bool validParent = true;
+    // RDKit✔️❌:     auto psg = find_matching_sgroup(sgs, parentId);
+    // RDKit✔️❌:     if (psg == sgs.end()) {
+    // RDKit✔️❌:       validParent = false;
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       psg->getPropIfPresent("index", parentId);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (first <= last && *first == ':') {
+    // RDKit✔️❌:       ++first;
+    // RDKit✔️❌:       std::vector<unsigned int> children;
+    // RDKit✔️❌:       if (!read_int_list(first, last, children, '.')) {
+    // RDKit✔️❌:         return false;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if (validParent) {
+    // RDKit✔️❌:         for (auto childId : children) {
+    // RDKit✔️❌:           if (childId >= sgs.size()) {
+    // RDKit✔️❌:             throw SmilesParseException(
+    // RDKit✔️❌:                 "child id references non-existent SGroup");
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:           auto csg = find_matching_sgroup(sgs, childId);
+    // RDKit✔️❌:           if (csg != sgs.end()) {
+    // RDKit✔️❌:             unsigned int cid;
+    // RDKit✔️❌:             csg->getProp("index", cid);
+    // RDKit✔️❌:             csg->setProp("PARENT", parentId);
+    // RDKit✔️❌:           }
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if (first <= last && *first == ',') {
+    // RDKit✔️❌:         ++first;
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         break;
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       return false;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   return true;
+    // RDKit✔️❌: }
+    // END COMPLETE PINNED SF197
+    // Behavior: parent lookup precedes its children, including empty lists.
+    // Native earlier child mutations survive a later parent conversion error.
+    // Complexity: copied-group staging and reference validation add O(groups
+    // and payloads) cost; the source mutates its existing vector directly.
     let mut groups = query_substance_groups(graph).to_vec();
     let mut dirty = false;
     for hierarchy in hierarchies {
-        let resolved_parent = resolve_cx_sgroup_hierarchy_parent(&groups, hierarchy.parent)?;
+        let resolved_parent = match resolve_cx_sgroup_hierarchy_parent(&groups, hierarchy.parent) {
+            Ok(parent) => parent,
+            Err(error) => {
+                if dirty {
+                    replace_query_substance_groups(graph, groups).map_err(|validation| {
+                        CxQueryLoweringError::InvalidGraph(validation.to_string())
+                    })?;
+                }
+                return Err(error);
+            }
+        };
         for &child_id in &hierarchy.children {
             match apply_cx_sgroup_hierarchy_child(&mut groups, resolved_parent, child_id) {
                 Ok(changed) => dirty |= changed,
@@ -2935,6 +3429,60 @@ fn warn_cx_zero_bond_not_found(index: usize) {
     .and_then(|_| output.flush());
 }
 
+/// Apply one source radical assignment to the canonical query value.
+pub(crate) fn apply_cx_radical_to_query(
+    graph: &mut QueryGraph,
+    radical: cosmolkit_cx::CxRadical,
+) -> Result<(), CxQueryLoweringError> {
+    // BEGIN COMPLETE PINNED SF203 canonical occurrence
+    // RDKit❗✔️: bool processRadicalSection(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit❗✔️:                            unsigned int numRadicalElectrons,
+    // RDKit❗✔️:                            unsigned int startAtomIdx) {
+    // RDKit❗✔️:   if (first >= last) {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:   if (first >= last || *first != ':') {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:   unsigned int atIdx;
+    // RDKit❗✔️:   if (!read_int(first, last, atIdx)) {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (VALID_ATIDX(atIdx)) {
+    // RDKit❗✔️:     mol.getAtomWithIdx(atIdx - startAtomIdx)
+    // RDKit❗✔️:         ->setNumRadicalElectrons(numRadicalElectrons);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   while (first < last && *first == ',') {
+    // RDKit❗✔️:     ++first;
+    // RDKit❗✔️:     if (first < last && (*first < '0' || *first > '9')) {
+    // RDKit❗✔️:       return true;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (!read_int(first, last, atIdx)) {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (VALID_ATIDX(atIdx)) {
+    // RDKit❗✔️:       mol.getAtomWithIdx(atIdx - startAtomIdx)
+    // RDKit❗✔️:           ->setNumRadicalElectrons(numRadicalElectrons);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return first < last;
+    // RDKit❗✔️: }
+    // END COMPLETE PINNED SF203 canonical occurrence
+    // RDKit✔️✔️: void setNumRadicalElectrons(unsigned int num) { d_numRadicalElectrons = num; }
+    // Behavior: the syntax owner supplies 1/2/3 source electrons per complete
+    // atom checkpoint. Invalid indices are the exact VALID_ATIDX no-op;
+    // repeated valid indices overwrite in source visitation order. MODEL owns
+    // the single field setter; complete and progress query consumers reuse it.
+    // Complexity: O(1) direct atom access and scalar write, no allocations,
+    // query replacement, typed property conversion or graph clone.
+    if let Some(atom) = graph.atom_mut(radical.atom) {
+        atom.set_radical_electrons(radical.electrons);
+    }
+    Ok(())
+}
+
 /// Apply parsed CX records directly to the canonical query value.
 ///
 /// Parsing remains owned by `cosmolkit-cx`; this function owns only the
@@ -3186,8 +3734,7 @@ pub fn apply_cx_to_query_graph(
                 }
             }
             CxRecord::EnhancedStereo(stereo) => {
-                merge_cx_enhanced_stereo(graph, &mut stereo_tracker, stereo)
-                    .map_err(|error| CxQueryLoweringError::InvalidGraph(error.to_string()))?;
+                merge_cx_enhanced_stereo(graph, &mut stereo_tracker, stereo)?;
             }
             CxRecord::WedgedBonds(wedges) => {
                 for wedge in wedges {
@@ -3200,14 +3747,46 @@ pub fn apply_cx_to_query_graph(
                 }
             }
             CxRecord::Radicals(radicals) => {
-                for radical in radicals {
-                    // RDKit❗✔️: if (VALID_ATIDX(atIdx)) {
-                    // RDKit❗✔️:   mol.getAtomWithIdx(atIdx - startAtomIdx)
-                    // RDKit❗✔️:       ->setNumRadicalElectrons(numRadicalElectrons);
-                    // RDKit❗✔️: }
-                    if let Some(atom) = graph.atom_mut(radical.atom) {
-                        atom.set_radical_electrons(radical.electrons);
-                    }
+                // BEGIN COMPLETE PINNED SF203 complete-record caller
+                // RDKit✔️❌: bool processRadicalSection(Iterator &first, Iterator last, RDKit::RWMol &mol,
+                // RDKit✔️❌:                            unsigned int numRadicalElectrons,
+                // RDKit✔️❌:                            unsigned int startAtomIdx) {
+                // RDKit✔️❌:   if (first >= last) {
+                // RDKit✔️❌:     return false;
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:   ++first;
+                // RDKit✔️❌:   if (first >= last || *first != ':') {
+                // RDKit✔️❌:     return false;
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:   ++first;
+                // RDKit✔️❌:   unsigned int atIdx;
+                // RDKit✔️❌:   if (!read_int(first, last, atIdx)) {
+                // RDKit✔️❌:     return false;
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:   if (VALID_ATIDX(atIdx)) {
+                // RDKit✔️❌:     mol.getAtomWithIdx(atIdx - startAtomIdx)
+                // RDKit✔️❌:         ->setNumRadicalElectrons(numRadicalElectrons);
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:   while (first < last && *first == ',') {
+                // RDKit✔️❌:     ++first;
+                // RDKit✔️❌:     if (first < last && (*first < '0' || *first > '9')) {
+                // RDKit✔️❌:       return true;
+                // RDKit✔️❌:     }
+                // RDKit✔️❌:     if (!read_int(first, last, atIdx)) {
+                // RDKit✔️❌:       return false;
+                // RDKit✔️❌:     }
+                // RDKit✔️❌:     if (VALID_ATIDX(atIdx)) {
+                // RDKit✔️❌:       mol.getAtomWithIdx(atIdx - startAtomIdx)
+                // RDKit✔️❌:           ->setNumRadicalElectrons(numRadicalElectrons);
+                // RDKit✔️❌:     }
+                // RDKit✔️❌:   }
+                // RDKit✔️❌:   return first < last;
+                // RDKit✔️❌: }
+                // END COMPLETE PINNED SF203 complete-record caller
+                // Native complete occurrences and source prefix replay use
+                // the same canonical one-field effect; grammar stays in CX.
+                for &radical in radicals {
+                    apply_cx_radical_to_query(graph, radical)?;
                 }
             }
             CxRecord::LinkNodes(nodes) => apply_cx_link_nodes_to_query(graph, nodes)?,
@@ -3320,14 +3899,14 @@ mod tests {
                     .with_parent_atoms(vec![AtomId::new(1)])
                     .with_label("typed polymer label")
                     .with_data(SGroupData {
-                        field_name: Some("FIELD".into()),
-                        field_type: Some("S".into()),
-                        values: vec!["one".into(), "two".into()],
+                        field_name: Some("FIELD".to_owned().into()),
+                        field_type: Some("S".to_owned().into()),
+                        values: vec!["one".to_owned().into(), "two".to_owned().into()],
                         ..SGroupData::default()
                     })
                     .with_cstates(vec![SGroupCState::new(BondId::new(0), [0.25, 0.5, 0.75])])
                     .with_prop("origin", "existing")
-                    .unwrap()
+                    .expect("original valid fixture constructor must succeed")
                     .with_data_field("first source row")
                     .with_data_field("second source row");
             replace_query_substance_groups(&mut query, vec![substance_group.clone()])
@@ -3343,7 +3922,10 @@ mod tests {
                 .expect("stereo group references are valid");
 
             let parsed = ParsedCxExtensions::new(
-                vec![CxRecord::AtomLabels(vec![Some(label.into()), None])],
+                vec![CxRecord::AtomLabels(vec![
+                    Some(label.to_owned().into()),
+                    None,
+                ])],
                 0,
             );
             apply_cx_to_query_graph(&mut query, &parsed).expect("source CX label lowering");
@@ -3361,13 +3943,17 @@ mod tests {
             assert_eq!(atom.atom_map(), Some(9), "{label}");
             assert_eq!(
                 atom.prop("atomLabel"),
-                Some(&cosmolkit_model::PropertyValue::String(label.into())),
+                Some(&cosmolkit_model::PropertyValue::String(
+                    label.to_owned().into()
+                )),
                 "{label}"
             );
             assert_eq!(atom.prop("dummyLabel"), None, "{label}");
             assert_eq!(
                 atom.prop("sourceProperty"),
-                Some(&cosmolkit_model::PropertyValue::String("retained".into())),
+                Some(&cosmolkit_model::PropertyValue::String(
+                    "retained".to_owned().into()
+                )),
                 "{label}"
             );
             assert_eq!(query_substance_groups(&query), &[substance_group]);
@@ -3392,7 +3978,10 @@ mod tests {
             let source_predicate = atom.predicate().clone();
             let source_identity = atom.identity();
             let parsed = ParsedCxExtensions::new(
-                vec![CxRecord::AtomLabels(vec![Some(label.into()), None])],
+                vec![CxRecord::AtomLabels(vec![
+                    Some(label.to_owned().into()),
+                    None,
+                ])],
                 0,
             );
 
@@ -3430,11 +4019,11 @@ mod tests {
             .expect("dummy label property");
         let parsed = ParsedCxExtensions::new(
             vec![
-                CxRecord::AtomLabels(vec![Some("Q_e".into()), None]),
+                CxRecord::AtomLabels(vec![Some("Q_e".to_owned().into()), None]),
                 CxRecord::AtomProperties(vec![cosmolkit_cx::CxAtomProperty {
                     atom: 0,
-                    name: "atomLabel".into(),
-                    value: "ordinary after atomProp".into(),
+                    name: "atomLabel".to_owned().into(),
+                    value: "ordinary after atomProp".to_owned().into(),
                 }]),
             ],
             0,
@@ -3446,7 +4035,7 @@ mod tests {
         assert_eq!(
             atom.prop("atomLabel"),
             Some(&cosmolkit_model::PropertyValue::String(
-                "ordinary after atomProp".into()
+                "ordinary after atomProp".to_owned().into()
             ))
         );
         assert_eq!(atom.prop("dummyLabel"), None);
@@ -3476,12 +4065,14 @@ mod tests {
         let atom = query.atom(0).expect("guarded atom");
         assert_eq!(
             atom.prop("atomLabel"),
-            Some(&cosmolkit_model::PropertyValue::String("Pol_p".into()))
+            Some(&cosmolkit_model::PropertyValue::String(
+                "Pol_p".to_owned().into()
+            ))
         );
         assert_eq!(
             atom.prop("dummyLabel"),
             Some(&cosmolkit_model::PropertyValue::String(
-                "later property".into()
+                "later property".to_owned().into()
             ))
         );
         assert_eq!(atom.predicate(), &first_predicate);
@@ -3575,7 +4166,7 @@ mod tests {
                     atom: 1,
                     constraint: CxCountConstraint::Exact(1),
                 }]),
-                CxRecord::AtomLabels(vec![Some("left".into()), None]),
+                CxRecord::AtomLabels(vec![Some("left".to_owned().into()), None]),
             ],
             8,
         );
@@ -3583,7 +4174,7 @@ mod tests {
         apply_cx_to_query_graph(&mut query, &parsed).unwrap();
         assert_eq!(
             query.atom(0).unwrap().prop("atomLabel"),
-            Some(&PropertyValue::String("left".into()))
+            Some(&PropertyValue::String("left".to_owned().into()))
         );
         assert!(matches!(
             query.atom(0).unwrap().predicate(),
@@ -3711,11 +4302,13 @@ mod tests {
     #[test]
     fn cx_progress_linknodes_empty_record_preserves_existing_property() {
         let parsed = ParsedCxExtensions::new(vec![CxRecord::LinkNodes(Vec::new())], 4);
-        let mut query = graph().with_prop("molFileLinkNodes", "prior").unwrap();
+        let mut query = graph()
+            .with_prop("_molLinkNodes", "prior")
+            .expect("original valid fixture property must succeed");
         apply_cx_to_query_graph(&mut query, &parsed).expect("empty source accumulator");
         assert_eq!(
-            query.prop("molFileLinkNodes").map(fixture_value),
-            Some("prior")
+            query.prop("_molLinkNodes"),
+            Some(&cosmolkit_model::PropertyValue::String("prior".into()))
         );
     }
 
@@ -3775,8 +4368,10 @@ mod tests {
         apply_cx_to_query_graph(&mut query, &parsed).expect("source link-node projection");
 
         assert_eq!(
-            query.prop("_molLinkNodes").map(fixture_value),
-            Some("1 3 2 1 2 1 3|2 4 2 1 2 1 3")
+            query.prop("_molLinkNodes"),
+            Some(&cosmolkit_model::PropertyValue::String(
+                "1 3 2 1 2 1 3|2 4 2 1 2 1 3".into()
+            ))
         );
     }
 
@@ -3799,12 +4394,14 @@ mod tests {
             ])],
             0,
         );
-        let mut query = graph().with_prop("molFileLinkNodes", "prior").unwrap();
+        let mut query = graph()
+            .with_prop("_molLinkNodes", "prior")
+            .expect("original valid fixture property must succeed");
 
         assert!(apply_cx_to_query_graph(&mut query, &parsed).is_err());
         assert_eq!(
-            query.prop("molFileLinkNodes").map(fixture_value),
-            Some("prior")
+            query.prop("_molLinkNodes"),
+            Some(&cosmolkit_model::PropertyValue::String("prior".into()))
         );
     }
 
@@ -3869,21 +4466,21 @@ mod tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(5)
                 .with_prop("_cxsmilesindex", "5")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "71")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "92")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
             SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(1)
                 .with_prop("_cxsmilesindex", "1")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "93")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
         ];
         let parsed =
             cosmolkit_cx::parse_cx_extensions("|SgH:5:0.1.0|").expect("source hierarchy syntax");
@@ -3900,19 +4497,13 @@ mod tests {
         assert_eq!(groups[0].parent(), None);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1]
-                .props()
-                .get("PARENT".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(71_u32)
+            groups[1].props().get(b"PARENT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(71))
         );
         assert_eq!(groups[2].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[2]
-                .props()
-                .get("PARENT".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(71_u32)
+            groups[2].props().get(b"PARENT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(71))
         );
     }
 
@@ -3922,15 +4513,15 @@ mod tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(5)
                 .with_prop("_cxsmilesindex", "5")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "71")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "92")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
         ];
         let parsed = cosmolkit_cx::parse_cx_extensions("|SgH:99:4294967295|")
             .expect("source hierarchy syntax");
@@ -3949,19 +4540,19 @@ mod tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(5)
                 .with_prop("_cxsmilesindex", "5")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "71")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "92")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
             SubstanceGroup::new(SubstanceGroupId::new(2), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(1)
                 .with_prop("_cxsmilesindex", "1")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
         ];
         let parsed =
             cosmolkit_cx::parse_cx_extensions("|SgH:5:0.1|").expect("source hierarchy syntax");
@@ -3975,14 +4566,11 @@ mod tests {
         let groups = query_substance_groups(&query);
         assert_eq!(groups[1].parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            groups[1]
-                .props()
-                .get("PARENT".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(71_u32)
+            groups[1].props().get(b"PARENT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(71))
         );
         assert_eq!(groups[2].parent(), None);
-        assert_eq!(groups[2].props().get("PARENT".as_bytes()), None);
+        assert_eq!(groups[2].props().get(b"PARENT".as_slice()), None);
     }
 
     #[test]
@@ -3991,13 +4579,13 @@ mod tests {
             SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(17)
                 .with_prop("_cxsmilesindex", "17")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
             SubstanceGroup::new(SubstanceGroupId::new(1), SubstanceGroupKind::Data)
                 .with_rdkit_sequence_id(0)
                 .with_prop("_cxsmilesindex", "0")
-                .unwrap()
+                .expect("original valid fixture constructor must succeed")
                 .with_prop("index", "4")
-                .unwrap(),
+                .expect("original valid fixture property must succeed"),
         ];
         let parsed = ParsedCxExtensions::new(
             vec![CxRecord::SGroupHierarchy(vec![CxSGroupHierarchy {
@@ -4014,11 +4602,8 @@ mod tests {
         let child = &query_substance_groups(&query)[1];
         assert_eq!(child.parent(), Some(SubstanceGroupId::new(0)));
         assert_eq!(
-            child
-                .props()
-                .get("PARENT".as_bytes())
-                .map(|value| value.as_uint().expect("source unsigned property kind")),
-            Some(17_u32)
+            child.props().get(b"PARENT".as_slice()),
+            Some(&cosmolkit_model::PropertyValue::UInt(17))
         );
     }
 }

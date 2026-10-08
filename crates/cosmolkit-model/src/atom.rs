@@ -198,19 +198,19 @@ impl TemplateAttachmentOrder {
 /// remap it with the atom row.
 #[derive(Debug, Clone)]
 pub struct AtomPdbResidueInfo {
-    atom_name: String,
+    atom_name: PropertyText,
     serial_number: i32,
-    alt_loc: String,
-    residue_name: String,
+    alt_loc: PropertyText,
+    residue_name: PropertyText,
     residue_number: i32,
-    chain_id: String,
-    insertion_code: String,
+    chain_id: PropertyText,
+    insertion_code: PropertyText,
     occupancy: f64,
     temp_factor: f64,
     is_hetero_atom: bool,
     secondary_structure: u32,
     segment_number: u32,
-    monomer_class: String,
+    monomer_class: PropertyText,
 }
 
 impl PartialEq for AtomPdbResidueInfo {
@@ -243,59 +243,68 @@ impl Default for AtomPdbResidueInfo {
 impl AtomPdbResidueInfo {
     #[must_use]
     pub fn new(
-        atom_name: impl Into<String>,
+        atom_name: impl Into<PropertyText>,
         serial_number: i32,
-        residue_name: impl Into<String>,
+        residue_name: impl Into<PropertyText>,
         residue_number: i32,
-        chain_id: impl Into<String>,
+        chain_id: impl Into<PropertyText>,
         is_hetero_atom: bool,
     ) -> Self {
-        // BEGIN RDKIT CPP FUNCTION AtomPDBResidueInfo::AtomPDBResidueInfo
-        // RDKit✔️✔️: AtomPDBResidueInfo(const std::string &atomName, int serialNumber = 0,
-        // RDKit✔️✔️:                    std::string altLoc = "", std::string residueName = "",
-        // RDKit✔️✔️:                    int residueNumber = 0, std::string chainId = "",
-        // RDKit✔️✔️:                    std::string insertionCode = "", double occupancy = 1.0,
-        // RDKit✔️✔️:                    double tempFactor = 0.0, bool isHeteroAtom = false,
-        // RDKit✔️✔️:                    unsigned int secondaryStructure = 0,
-        // RDKit✔️✔️:                    unsigned int segmentNumber = 0,
-        // RDKit✔️✔️:                    std::string monomerClass = "")
-        // RDKit✔️✔️:     : AtomMonomerInfo(PDBRESIDUE, atomName, residueName, residueNumber, chainId,
-        // RDKit✔️✔️:                       monomerClass),
-        // RDKit✔️✔️:       d_serialNumber(serialNumber),
-        // RDKit✔️✔️:       d_altLoc(std::move(altLoc)),
-        // RDKit✔️✔️:       d_insertionCode(std::move(insertionCode)),
-        // RDKit✔️✔️:       d_occupancy(occupancy),
-        // RDKit✔️✔️:       d_tempFactor(tempFactor),
-        // RDKit✔️✔️:       df_heteroAtom(isHeteroAtom),
-        // RDKit✔️✔️:       d_secondaryStructure(secondaryStructure),
-        // RDKit✔️✔️:       d_segmentNumber(segmentNumber) {}
-        // END RDKIT CPP FUNCTION AtomPDBResidueInfo::AtomPDBResidueInfo
+        // RDKit✔️✔️:   AtomMonomerInfo(AtomMonomerType typ, std::string nm = "", std::string residueName = "",
+        // RDKit✔️✔️:                   int resNum = 0, std::string chainId = "", std::string monomerClass = "")
+        // RDKit✔️✔️:       : d_monomerType(typ), d_name(std::move(nm)), d_residueNumber(resNum),
+        // RDKit✔️✔️:         d_chainId(std::move(chainId)), d_monomerClass(std::move(monomerClass)),
+        // RDKit✔️✔️:         d_residueName(std::move(residueName)) {}
+        // RDKit✔️✔️:   AtomPDBResidueInfo(const std::string &atomName, int serialNumber = 0,
+        // RDKit✔️✔️:                      std::string altLoc = "", std::string residueName = "",
+        // RDKit✔️✔️:                      int residueNumber = 0, std::string chainId = "",
+        // RDKit✔️✔️:                      std::string insertionCode = "", double occupancy = 1.0,
+        // RDKit✔️✔️:                      double tempFactor = 0.0, bool isHeteroAtom = false,
+        // RDKit✔️✔️:                      unsigned int secondaryStructure = 0,
+        // RDKit✔️✔️:                      unsigned int segmentNumber = 0,
+        // RDKit✔️✔️:                      std::string monomerClass = "")
+        // RDKit✔️✔️:       : AtomMonomerInfo(PDBRESIDUE, atomName, residueName, residueNumber, chainId,
+        // RDKit✔️✔️:                         monomerClass),
+        // RDKit✔️✔️:         d_serialNumber(serialNumber),
+        // RDKit✔️✔️:         d_altLoc(std::move(altLoc)),
+        // RDKit✔️✔️:         d_insertionCode(std::move(insertionCode)),
+        // RDKit✔️✔️:         d_occupancy(occupancy),
+        // RDKit✔️✔️:         d_tempFactor(tempFactor),
+        // RDKit✔️✔️:         df_heteroAtom(isHeteroAtom),
+        // RDKit✔️✔️:         d_secondaryStructure(secondaryStructure),
+        // RDKit✔️✔️:         d_segmentNumber(segmentNumber) {}
+        // Native std::string fields each own their counted bytes. Canonical
+        // PropertyText moves owned buffers or copies borrowed slices once,
+        // including NUL and high bytes. One store; no decode/second text view.
+        // Scalar defaults/order and bit equality remain the existing state.
+        // Local cost: one owning buffer per field, O(total field bytes), no
+        // whole-atom clone, UTF8 validation scan or intermediate conversion.
         Self {
             atom_name: atom_name.into(),
             serial_number,
-            alt_loc: String::new(),
+            alt_loc: PropertyText::new(),
             residue_name: residue_name.into(),
             residue_number,
             chain_id: chain_id.into(),
-            insertion_code: String::new(),
+            insertion_code: PropertyText::new(),
             occupancy: 1.0,
             temp_factor: 0.0,
             is_hetero_atom,
             secondary_structure: 0,
             segment_number: 0,
-            monomer_class: String::new(),
+            monomer_class: PropertyText::new(),
         }
     }
 
     #[must_use]
-    pub fn with_alt_loc(mut self, alt_loc: impl Into<String>) -> Self {
+    pub fn with_alt_loc(mut self, alt_loc: impl Into<PropertyText>) -> Self {
         // RDKit✔️✔️: void setAltLoc(const std::string &val) { d_altLoc = val; }
         self.alt_loc = alt_loc.into();
         self
     }
 
     #[must_use]
-    pub fn with_insertion_code(mut self, insertion_code: impl Into<String>) -> Self {
+    pub fn with_insertion_code(mut self, insertion_code: impl Into<PropertyText>) -> Self {
         // RDKit✔️✔️: void setInsertionCode(const std::string &val) { d_insertionCode = val; }
         self.insertion_code = insertion_code.into();
         self
@@ -330,14 +339,14 @@ impl AtomPdbResidueInfo {
     }
 
     #[must_use]
-    pub fn with_monomer_class(mut self, monomer_class: impl Into<String>) -> Self {
+    pub fn with_monomer_class(mut self, monomer_class: impl Into<PropertyText>) -> Self {
         // RDKit✔️✔️: void setMonomerClass(const std::string &val) { d_monomerClass = val; }
         self.monomer_class = monomer_class.into();
         self
     }
 
     #[must_use]
-    pub fn atom_name(&self) -> &str {
+    pub fn atom_name(&self) -> &PropertyText {
         // RDKit✔️✔️: const std::string &getName() const { return d_name; }
         &self.atom_name
     }
@@ -349,13 +358,13 @@ impl AtomPdbResidueInfo {
     }
 
     #[must_use]
-    pub fn alt_loc(&self) -> &str {
+    pub fn alt_loc(&self) -> &PropertyText {
         // RDKit✔️✔️: const std::string &getAltLoc() const { return d_altLoc; }
         &self.alt_loc
     }
 
     #[must_use]
-    pub fn residue_name(&self) -> &str {
+    pub fn residue_name(&self) -> &PropertyText {
         // RDKit✔️✔️: const std::string &getResidueName() const { return d_residueName; }
         &self.residue_name
     }
@@ -367,13 +376,13 @@ impl AtomPdbResidueInfo {
     }
 
     #[must_use]
-    pub fn chain_id(&self) -> &str {
+    pub fn chain_id(&self) -> &PropertyText {
         // RDKit✔️✔️: const std::string &getChainId() const { return d_chainId; }
         &self.chain_id
     }
 
     #[must_use]
-    pub fn insertion_code(&self) -> &str {
+    pub fn insertion_code(&self) -> &PropertyText {
         // RDKit✔️✔️: const std::string &getInsertionCode() const { return d_insertionCode; }
         &self.insertion_code
     }
@@ -409,7 +418,7 @@ impl AtomPdbResidueInfo {
     }
 
     #[must_use]
-    pub fn monomer_class(&self) -> &str {
+    pub fn monomer_class(&self) -> &PropertyText {
         // RDKit✔️✔️: const std::string &getMonomerClass() const { return d_monomerClass; }
         &self.monomer_class
     }
@@ -1008,8 +1017,17 @@ impl Atom {
         }
     }
 
+    pub(crate) fn source_common_properties(&self) -> &AtomProperties {
+        &self.properties
+    }
+
     pub(crate) fn into_query_parts(self) -> (AtomId, Element, AtomProperties) {
         (self.id, self.element, self.properties)
+    }
+
+    pub(crate) fn set_source_index(&mut self, id: AtomId) {
+        // RDKit✔️✔️: void setIdx(unsigned int index) { d_index = index; }
+        self.id = id;
     }
 
     #[doc(hidden)]
@@ -1425,9 +1443,13 @@ mod tests {
             Some("updated")
         );
 
-        properties.clear_prop("z");
+        properties
+            .clear_prop("z")
+            .expect("original fixture property clear succeeds");
         assert_property_order_invariant(&properties, &["a"]);
-        properties.clear_prop("missing");
+        properties
+            .clear_prop("missing")
+            .expect("original fixture property clear succeeds");
         assert_property_order_invariant(&properties, &["a"]);
 
         properties.set_prop("z", "reinserted").unwrap();
@@ -1606,7 +1628,9 @@ mod flags_tests {
         assert_eq!(remapped.id(), AtomId::new(9));
         assert_eq!(remapped.temporary_flags(), 0xFEDC_BA98_7654_3210);
 
-        clone.clear_computed_props();
+        clone
+            .clear_computed_props()
+            .expect("original fixture property clear succeeds");
         assert_eq!(clone.temporary_flags(), 0xFEDC_BA98_7654_3210);
         assert_eq!(clone.prop("derived"), None);
         assert!(

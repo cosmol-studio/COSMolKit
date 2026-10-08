@@ -497,8 +497,8 @@ fn coordinates_property_lists_and_row_properties_follow_one_final_mapping() {
             )
             .with_prop("dim", "three"),
         ],
-        source_conformer_order: None,
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     let properties = MoleculeProperties::default()
         .with_name("named")

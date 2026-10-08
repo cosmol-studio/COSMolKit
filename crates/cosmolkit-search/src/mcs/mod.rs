@@ -12121,7 +12121,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(smarts.as_bytes(), b"[#8]=[#6]");
+        assert_eq!(smarts, "[#8]=[#6]".into());
         assert_eq!(
             smarts,
             crate::query_graph_to_smarts(&graph, &crate::SmartsWriteParams::default()).unwrap()

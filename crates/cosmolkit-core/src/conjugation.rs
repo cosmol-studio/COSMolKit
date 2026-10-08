@@ -7,7 +7,7 @@ use crate::{
     periodic_table_outer_electrons, required_valence_list,
 };
 
-#[derive(Clone, Debug, PartialEq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ConjugationError {
     #[error("invalid topology: {0}")]
     InvalidTopology(#[from] TopologyValidationError),
@@ -332,3 +332,11 @@ fn assign_conjugation_with_writer(
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "tests/conjugation.rs"]
+mod source_tests;
+
+#[cfg(test)]
+#[path = "tests/conformer_shared_conjugation_assignments.rs"]
+mod shared_assignment_tests;

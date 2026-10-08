@@ -32,6 +32,9 @@ pub use fragment::FragmentWriteInputError;
 #[doc(hidden)]
 pub use writer::{SmartsTraversalError, prepare_smarts_serialization_topology};
 
+pub use writer::in_organic_subset;
+#[doc(hidden)]
+pub use writer::{AtomColor, DfsBondSymbols, MolStackElem, dfs_build_query_stack};
 pub use writer::{
     RandomSmilesWriteParams, SmilesWriteOutput, SmilesWriteParams, write_fragment_cx_smiles,
     write_fragment_smiles_output, write_random_smiles_vector, write_smiles,
@@ -82,10 +85,54 @@ impl SmilesRecordView<'_> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum SmilesParseError {
     #[error("detached writer topology edit failed: {0}")]
     TopologyEdit(#[source] cosmolkit_model::TopologyEditError),
+
+    #[error("CX link-node atom {atom} is outside {atom_count} source atoms")]
+    CxLinkAtomOutOfRange { atom: usize, atom_count: usize },
+    #[error("CX link-node order index {index} is outside {count} entries")]
+    CxLinkOrderOutOfRange { index: usize, count: usize },
+
+    #[error("CX zero-bond source bond {bond} is outside {bond_count} bonds")]
+    CxZeroBondOutOfRange { bond: BondId, bond_count: usize },
+
+    #[error("CX typed-bond source bond {bond} is outside {bond_count} bonds")]
+    CxTypedBondOutOfRange { bond: BondId, bond_count: usize },
+
+    #[error("CX atom-property source atom {atom} is outside {atom_count} atoms")]
+    CxAtomPropertyAtomOutOfRange { atom: AtomId, atom_count: usize },
+
+    #[error("CX conformer atom {atom} is outside {atom_count} coordinate rows")]
+    CxCoordinateAtomOutOfRange { atom: AtomId, atom_count: usize },
+
+    #[error("source canonicalization invariant failed: {0}")]
+    WriterCanonicalInvariant(&'static str),
+    #[error("source signed property read failed: {0}")]
+    WriterInt(#[source] cosmolkit_core::PropertyIntReadError),
+    #[error("source size_t property read failed: {0}")]
+    WriterULong(#[source] cosmolkit_core::PropertyULongReadError),
+    #[error("source ring preparation failed: {0}")]
+    WriterRings(#[source] cosmolkit_core::RingFindingError),
+    #[error("source stereo perception failed: {0}")]
+    WriterLegacyStereo(#[source] cosmolkit_core::LegacyStereoError),
+    #[error("source potential stereo getter failed: {0}")]
+    WriterPotentialStereo(#[source] cosmolkit_core::PotentialStereoError),
+    #[error("source non-tetrahedral permutation failed: {0}")]
+    WriterParserStereoOrder(#[source] cosmolkit_core::parser_stereo_order::ParserStereoOrderError),
+
+    #[error("Too many rings open at once. SMILES cannot be generated.")]
+    TraversalTooManyOpenRings,
+    #[error("source traversal {state} index {index} is outside {count} entries")]
+    TraversalStateIndex {
+        state: &'static str,
+        index: usize,
+        count: usize,
+    },
+
+    #[error("source stereo order failed: {0}")]
+    WriterStereoOrder(#[source] cosmolkit_core::StereoOrderError),
     #[error("CX property value has the wrong source type: {0}")]
     WriterPropertyKind(#[source] cosmolkit_model::PropertyValueError),
     #[error("invalid CX coordinate state: {0}")]
@@ -138,6 +185,14 @@ pub enum SmilesParseError {
     WriterProperty(#[source] cosmolkit_core::PropertyStringError),
     #[error("SMILES writer stereochemistry preparation failed: {0}")]
     WriterStereo(String),
+    #[error("SMILES sanitize stage failed: {0}")]
+    ParserSanitize(#[source] cosmolkit_core::SanitizeError),
+    #[error("SMILES hydrogen removal stage failed: {0}")]
+    ParserRemoveHydrogens(#[source] cosmolkit_core::HydrogenError),
+    #[error("SMILES final stereo stage failed: {0}")]
+    ParserStereo(#[source] finalize_stereo::SmilesStereoError),
+    #[error("SMILES source atropisomer stage failed: {0}")]
+    ParserAtropisomer(#[source] cosmolkit_core::AtropisomerError),
     #[error("SMILES writer stereo-group inversion failed: {0}")]
     WriterStereoBond(#[source] cosmolkit_model::BondValueError),
     #[error("CX coordinate selection is ambiguous ({two_d_count} 2D and {three_d_count} 3D sets)")]
@@ -1162,6 +1217,61 @@ fn adjust_atom_chirality_flags(
 /// Complete delayed component cleanup after reaction-wide CX annotations.
 #[doc(hidden)]
 pub fn cleanup_after_parsing(record: &mut SmilesRecord) -> Result<(), SmilesParseError> {
+    cleanup_after_parsing_impl(record, true)
+}
+
+fn cleanup_after_parsing_impl(
+    record: &mut SmilesRecord,
+    cleanup_nontetrahedral: bool,
+) -> Result<(), SmilesParseError> {
+    // RDKit✔️❌: void CleanupAfterParsing(RWMol *mol) {
+    // RDKit✔️❌:   PRECONDITION(mol, "no molecule");
+    // RDKit✔️❌:   for (auto atom : mol->atoms()) {
+    // RDKit✔️❌:     atom->clearProp(common_properties::_RingClosures);
+    // RDKit✔️❌:     atom->clearProp(common_properties::_SmilesStart);
+    // RDKit✔️❌:     std::string label;
+    // RDKit✔️❌:     if (atom->getAtomicNum() == 0 &&
+    // RDKit✔️❌:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
+    // RDKit✔️❌:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
+    // RDKit✔️❌:       // aren't part of the MOL file spec so we don't treat them as attachment
+    // RDKit✔️❌:       // points
+    // RDKit✔️❌:       if (label == "_AP1") {
+    // RDKit✔️❌:         atom->setProp(common_properties::_fromAttachPoint, 1);
+    // RDKit✔️❌:       } else if (label == "_AP2") {
+    // RDKit✔️❌:         atom->setProp(common_properties::_fromAttachPoint, 2);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   for (auto bond : mol->bonds()) {
+    // RDKit✔️❌:     bond->clearProp(common_properties::_unspecifiedOrder);
+    // RDKit✔️❌:     bond->clearProp("_cxsmilesBondIdx");
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
+    // RDKit✔️❌:     sg.clearProp("_cxsmilesindex");
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (!Chirality::getAllowNontetrahedralChirality()) {
+    // RDKit✔️❌:     bool needWarn = false;
+    // RDKit✔️❌:     for (auto atom : mol->atoms()) {
+    // RDKit✔️❌:       if (atom->hasProp(common_properties::_chiralPermutation)) {
+    // RDKit✔️❌:         needWarn = true;
+    // RDKit✔️❌:         atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if (atom->getChiralTag() > Atom::ChiralType::CHI_OTHER) {
+    // RDKit✔️❌:         needWarn = true;
+    // RDKit✔️❌:         atom->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (needWarn) {
+    // RDKit✔️❌:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:           << "ignoring non-tetrahedral stereo specification since setAllowNontetrahedralChirality() is false."
+    // RDKit✔️❌:           << std::endl;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // Destination composition preserves all reached error/effect ordering.
+    // Atom algorithms remain in CORE; copying each SGroup matches native
+    // by-value iteration, with the known canonical tree/order allocation cost.
+
     cosmolkit_core::parser_helpers::cleanup_parser_atoms(&mut record.topology.atoms)?;
     for bond in &mut record.topology.bonds {
         bond.clear_prop("_unspecifiedOrder")?;
@@ -1170,6 +1280,11 @@ pub fn cleanup_after_parsing(record: &mut SmilesRecord) -> Result<(), SmilesPars
     cosmolkit_core::parser_helpers::cleanup_parser_substance_groups(
         &record.topology.substance_groups,
     )?;
+    if cleanup_nontetrahedral {
+        cosmolkit_core::parser_helpers::cleanup_parser_nontetrahedral_atoms(
+            &mut record.topology.atoms,
+        )?;
+    }
     Ok(())
 }
 
@@ -1178,6 +1293,148 @@ pub fn parse_smiles(
     input: &str,
     params: &SmilesParseParams,
 ) -> Result<SmilesRecord, SmilesParseError> {
+    // MAIN's detached parsing seam: the live facade owns the subsequent
+    // sanitize/removeHs/finalize sequence and installs its derived carriers.
+    parse_smiles_stages(input, params, false)
+}
+
+/// Complete source parser composition for detached reaction components.
+/// Unlike the live-facade parsing seam, this includes requested final stages.
+#[doc(hidden)]
+pub fn parse_smiles_complete_source(
+    input: &str,
+    params: &SmilesParseParams,
+) -> Result<SmilesRecord, SmilesParseError> {
+    parse_smiles_stages(input, params, true)
+}
+
+fn parse_smiles_stages(
+    input: &str,
+    params: &SmilesParseParams,
+    complete: bool,
+) -> Result<SmilesRecord, SmilesParseError> {
+    // BEGIN COMPLETE PINNED SF253 MolFromSmiles
+    // RDKit❗❌: std::unique_ptr<RWMol> MolFromSmiles(const std::string &smiles,
+    // RDKit❗❌:                                      const SmilesParserParams &params) {
+    // RDKit❗❌:   // Calling MolFromSmiles in a multithreaded context is generally safe *unless*
+    // RDKit❗❌:   // the value of debugParse is different for different threads. The if
+    // RDKit❗❌:   // statement below avoids a TSAN warning in the case where multiple threads
+    // RDKit❗❌:   // all use the same value for debugParse.
+    // RDKit❗❌:   if (yysmiles_debug != params.debugParse) {
+    // RDKit❗❌:     yysmiles_debug = params.debugParse;
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   std::string lsmiles, name, cxPart;
+    // RDKit❗❌:   preprocessSmiles(smiles, params, lsmiles, name, cxPart);
+    // RDKit❗❌:   // strip any leading/trailing whitespace:
+    // RDKit❗❌:   // boost::trim_if(smi,boost::is_any_of(" \t\r\n"));
+    // RDKit❗❌:   auto res = toMol(lsmiles, smiles_parse, lsmiles);
+    // RDKit❗❌:   if (!res) {
+    // RDKit❗❌:     return res;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   handleCXPartAndName(res.get(), params, cxPart, name);
+    // RDKit❗❌:
+    // RDKit❗❌:   // get a conformer
+    // RDKit❗❌:   const Conformer *conf = nullptr, *conf3d = nullptr;
+    // RDKit❗❌:   if (res && res->getNumConformers() > 0) {
+    // RDKit❗❌:     for (unsigned int confId = 0; confId < res->getNumConformers(); ++confId) {
+    // RDKit❗❌:       auto *testConf = &res->getConformer(confId);
+    // RDKit❗❌:       if (!testConf->is3D()) {
+    // RDKit❗❌:         if (conf == nullptr) {  // only take the first 2d conf
+    // RDKit❗❌:           conf = testConf;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         if (conf3d == nullptr) {  // only take the first 3d conf
+    // RDKit❗❌:           conf3d = testConf;
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (conf != nullptr && conf3d != nullptr) {
+    // RDKit❗❌:         break;
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (res->hasProp(SmilesParseOps::detail::_needsDetectAtomStereo)) {
+    // RDKit❗❌:     // we encountered a wedged bond in the CXSMILES,
+    // RDKit❗❌:     // these need to be handled the same way they were in mol files
+    // RDKit❗❌:     res->clearProp(SmilesParseOps::detail::_needsDetectAtomStereo);
+    // RDKit❗❌:
+    // RDKit❗❌:     if (conf) {
+    // RDKit❗❌:       MolOps::assignChiralTypesFromBondDirs(*res, conf->getId());
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   // if we read a 3D conformer, set the stereo:
+    // RDKit❗❌:   // if (res->getNumConformers() && res->getConformer().is3D()) {
+    // RDKit❗❌:   if (!conf && conf3d) {
+    // RDKit❗❌:     res->updatePropertyCache(false);
+    // RDKit❗❌:     MolOps::assignChiralTypesFrom3D(*res, conf3d->getId(), true);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (conf) {
+    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, conf);
+    // RDKit❗❌:   } else if (conf3d) {
+    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, conf3d);
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, nullptr);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (res && (params.sanitize || params.removeHs)) {
+    // RDKit❗❌:     if (params.removeHs) {
+    // RDKit❗❌:       MolOps::RemoveHsParameters rhp;
+    // RDKit❗❌:       rhp.updateExplicitCount = true;
+    // RDKit❗❌:       MolOps::removeHs(*res, rhp, params.sanitize);
+    // RDKit❗❌:     } else if (params.sanitize) {
+    // RDKit❗❌:       MolOps::sanitizeMol(*res);
+    // RDKit❗❌:     }
+    // RDKit❗❌:
+    // RDKit❗❌:     if (res->hasProp(SmilesParseOps::detail::_needsDetectBondStereo)) {
+    // RDKit❗❌:       // we encountered either wiggly bond in the CXSMILES,
+    // RDKit❗❌:       // these need to be handled the same way they were in mol files
+    // RDKit❗❌:       if (conf || conf3d) {
+    // RDKit❗❌:         MolOps::clearSingleBondDirFlags(*res);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       MolOps::setDoubleBondNeighborDirections(*res, conf ? conf : conf3d);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     res->clearProp(SmilesParseOps::detail::_needsDetectBondStereo);
+    // RDKit❗❌:     // figure out stereochemistry:
+    // RDKit❗❌:     bool cleanIt = true, force = true, flagPossible = true;
+    // RDKit❗❌:     MolOps::assignStereochemistry(*res, cleanIt, force, flagPossible);
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     //  we still need to do something about double bond stereochemistry
+    // RDKit❗❌:     //  (was github issue 337)
+    // RDKit❗❌:     //  now that atom stereochem has been perceived, the wedging
+    // RDKit❗❌:     //  information is no longer needed, so we clear
+    // RDKit❗❌:     //  single bond dir flags:
+    // RDKit❗❌:     MolOps::clearSingleBondDirFlags(*res, true);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (res && res->hasProp(common_properties::_NeedsQueryScan)) {
+    // RDKit❗❌:     res->clearProp(common_properties::_NeedsQueryScan);
+    // RDKit❗❌:     if (!params.sanitize) {
+    // RDKit❗❌:       // we know that this can be the ring bond query, do ring perception if we
+    // RDKit❗❌:       // need to:
+    // RDKit❗❌:       MolOps::fastFindRings(*res);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     QueryOps::completeMolQueries(res.get(), 0xDEADBEEF);
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (res) {
+    // RDKit❗❌:     if (!params.skipCleanup) {
+    // RDKit❗❌:       SmilesParseOps::CleanupAfterParsing(res.get());
+    // RDKit❗❌:     }
+    // RDKit❗❌:     if (!name.empty()) {
+    // RDKit❗❌:       res->setProp(common_properties::_Name, name);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return res;
+    // RDKit❗❌: }
+    // END COMPLETE PINNED SF253 MolFromSmiles
+    // Canonical CORE owners execute the source sanitize/H-removal branches.
+    // Atrop candidate ordering remains user-authorized deferred equivalence.
+    // Concrete SMILES query-only capabilities remain explicitly unsupported.
+    // Local cost: sanitizer detached topology copy and geometry XY lift are
+    // known extra allocation; no duplicated chemistry algorithm is introduced.
     // BEGIN RDKIT CPP FUNCTION MolFromSmiles (debug selection)
     // RDKit✔️✔️:   if (yysmiles_debug != params.debugParse) {
     // RDKit✔️✔️:     yysmiles_debug = params.debugParse;
@@ -1474,21 +1731,84 @@ pub fn parse_smiles(
             name = cx.trim().to_owned();
         }
     }
+    apply_parser_wedge_stereo(&mut record)?;
+    apply_parser_3d_stereo(&mut record)?;
+    apply_parser_atrop_stereo(&mut record)?;
+    if complete {
+        // Preserve the actual source-selected conformer identity across removeHs;
+        // the hydrogen owner remaps coordinate rows without changing these IDs.
+        let (conf, conf3d) = parser_conformers(&record.coordinates)?;
+        let selected_conformer = conf.or(conf3d).map(|row| match row {
+            CoordinateSource::TwoD(row) => row.id(),
+            CoordinateSource::ThreeD(row) => row.id(),
+        });
+        let mut final_valence = None;
+        let mut final_rings = None;
+        if params.remove_hydrogens {
+            let removed = cosmolkit_core::remove_hydrogens_with_params(
+                record.topology,
+                record.coordinates,
+                record.properties,
+                &cosmolkit_core::RemoveHsParams {
+                    update_explicit_count: true,
+                    sanitize: params.sanitize,
+                    ..Default::default()
+                },
+            )
+            .map_err(SmilesParseError::ParserRemoveHydrogens)?;
+            record = SmilesRecord {
+                topology: removed.topology,
+                coordinates: removed.coordinates,
+                properties: removed.properties,
+            };
+            final_valence = removed.final_valence;
+            final_rings = removed.final_rings;
+        } else if params.sanitize {
+            let sanitized = cosmolkit_core::sanitize_topology(
+                &record.topology,
+                &cosmolkit_core::SanitizeParams::default(),
+            )
+            .map_err(SmilesParseError::ParserSanitize)?;
+            record.properties.clear_computed_props()?;
+            if let Some(count) = sanitized.aromatic_ring_count {
+                // Native numArom has the source setAromaticity integral value.
+                record
+                    .properties
+                    .set_computed_prop("numArom", count as i32)?;
+            }
+            record.topology = sanitized.topology;
+            final_valence = sanitized.final_valence;
+            final_rings = sanitized.final_rings;
+        }
+        record = finalize_stereo::finalize_smiles_stereo_with_conformer(
+            record,
+            params,
+            &mut final_valence,
+            &mut final_rings,
+            selected_conformer,
+        )
+        .map_err(SmilesParseError::ParserStereo)?;
+        if let Some(valence) = final_valence {
+            for (index, atom) in record.topology.atoms.iter_mut().enumerate() {
+                atom.set_source_valence_facts(cosmolkit_model::SourceAtomValenceFacts {
+                    explicit_valence: valence.explicit_valence[index] as i8,
+                    implicit_valence: valence.implicit_hydrogens[index] as i8,
+                });
+            }
+        }
+        // Query-only CX atom records are rejected by the existing representation
+        // boundary. No fake query completion is performed on concrete atoms.
+        if record.properties.prop("_NeedsQueryScan").is_some() {
+            return Err(SmilesParseError::UnsupportedCx(
+                "CX atom-query completion requires the canonical QueryGraph",
+            ));
+        }
+    }
+    if !params.skip_cleanup {
+        cleanup_after_parsing_impl(&mut record, complete)?;
+    }
     if !name.is_empty() {
         record.properties = record.properties.with_name(&name);
-    }
-    // BEGIN RDKIT CPP FUNCTION MolFromSmiles (cleanup gate)
-    // RDKit✔️✔️:   if (res) {
-    // RDKit✔️✔️:     if (!params.skipCleanup) {
-    // RDKit✔️✔️:       SmilesParseOps::CleanupAfterParsing(res.get());
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     if (!name.empty()) {
-    // RDKit✔️✔️:       res->setProp(common_properties::_Name, name);
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:   }
-    // END RDKIT CPP FUNCTION MolFromSmiles (cleanup gate)
-    if !params.skip_cleanup {
-        cleanup_after_parsing(&mut record)?;
     }
     record
         .topology
@@ -1499,6 +1819,198 @@ pub fn parse_smiles(
         .validate_for_atom_count(record.topology.atoms.len())
         .map_err(|error| SmilesParseError::Model(error.to_string()))?;
     Ok(record)
+}
+
+fn parser_conformers(
+    coordinates: &CoordinateBlock,
+) -> Result<(Option<CoordinateSource<'_>>, Option<CoordinateSource<'_>>), SmilesParseError> {
+    // BEGIN RDKIT COMPLETE SOURCE MolFromSmiles conformer selection stage
+    // RDKit✔️✔️:   // get a conformer
+    // RDKit✔️✔️:   const Conformer *conf = nullptr, *conf3d = nullptr;
+    // RDKit✔️✔️:   if (res && res->getNumConformers() > 0) {
+    // RDKit✔️✔️:     for (unsigned int confId = 0; confId < res->getNumConformers(); ++confId) {
+    // RDKit✔️✔️:       auto *testConf = &res->getConformer(confId);
+    // RDKit✔️✔️:       if (!testConf->is3D()) {
+    // RDKit✔️✔️:         if (conf == nullptr) {  // only take the first 2d conf
+    // RDKit✔️✔️:           conf = testConf;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         if (conf3d == nullptr) {  // only take the first 3d conf
+    // RDKit✔️✔️:           conf3d = testConf;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (conf != nullptr && conf3d != nullptr) {
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // END RDKIT COMPLETE SOURCE MolFromSmiles conformer selection stage
+    // The source scans explicit numeric IDs 0..getNumConformers, not array
+    // positions or default selection. Fresh CX producers assign these IDs.
+    // is3D is independent of XYZ storage. No ID sorting, dimension guess or
+    // copying; one source-shaped ID lookup per iteration with early exit.
+    // O(C^2) worst case like the source's repeated linear ID getter; O(1)
+    // extra storage, borrowed original rows. Empty collection returns no pair.
+    let count = (coordinates.conformers_2d.len() + coordinates.conformers_3d.len()) as u32;
+    let mut two_d = None;
+    let mut three_d = None;
+    for id in 0..count {
+        let row = cx_writer::source_conformer_by_id(coordinates, id as i32)?;
+        let is_3d = match row {
+            CoordinateSource::TwoD(_) => false,
+            CoordinateSource::ThreeD(row) => row.is_3d(),
+        };
+        if !is_3d {
+            if two_d.is_none() {
+                two_d = Some(row);
+            }
+        } else if three_d.is_none() {
+            three_d = Some(row);
+        }
+        if two_d.is_some() && three_d.is_some() {
+            break;
+        }
+    }
+    Ok((two_d, three_d))
+}
+
+fn apply_parser_wedge_stereo(record: &mut SmilesRecord) -> Result<(), SmilesParseError> {
+    // BEGIN RDKIT COMPLETE SOURCE MolFromSmiles pending wedge stage
+    // RDKit✔️✔️:     // we encountered a wedged bond in the CXSMILES,
+    // RDKit✔️✔️:     // these need to be handled the same way they were in mol files
+    // RDKit✔️✔️:     res->clearProp(SmilesParseOps::detail::_needsDetectAtomStereo);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     if (conf) {
+    // RDKit✔️✔️:       MolOps::assignChiralTypesFromBondDirs(*res, conf->getId());
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // END RDKIT COMPLETE SOURCE MolFromSmiles pending wedge stage
+    // Consume only after handleCXPartAndName, clear pending before the core
+    // assignment/error, and use the exact selected false-is3D conformer. The
+    // normal native Point3D-backed 2D path is borrowed with no allocation.
+    // Legacy detached XY rows need the existing exact XYZ(z=0) lift: O(V)
+    // allocation versus the native borrowed Point3D row, a known worse cost.
+    let (two_d, _) = parser_conformers(&record.coordinates)?;
+    if record.properties.prop("_needsDetectAtomStereo").is_none() {
+        return Ok(());
+    }
+    record.properties.clear_prop("_needsDetectAtomStereo")?;
+    match two_d {
+        Some(CoordinateSource::ThreeD(row)) => {
+            cosmolkit_core::assign_chiral_types_from_bond_dirs(&mut record.topology, row, false)
+                .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+        }
+        Some(CoordinateSource::TwoD(row)) => {
+            let xyz = cosmolkit_model::Conformer3D::new(
+                row.id(),
+                row.coordinates()
+                    .iter()
+                    .map(|xy| [xy[0], xy[1], 0.0])
+                    .collect(),
+                false,
+            );
+            cosmolkit_core::assign_chiral_types_from_bond_dirs(&mut record.topology, &xyz, false)
+                .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+        }
+        None => {}
+    }
+    Ok(())
+}
+
+fn apply_parser_3d_stereo(record: &mut SmilesRecord) -> Result<(), SmilesParseError> {
+    // BEGIN COMPLETE PINNED MolFromSmiles source3D stage
+    // RDKit✔️❌:   // if we read a 3D conformer, set the stereo:
+    // RDKit✔️❌:   // if (res->getNumConformers() && res->getConformer().is3D()) {
+    // RDKit✔️❌:   if (!conf && conf3d) {
+    // RDKit✔️❌:     res->updatePropertyCache(false);
+    // RDKit✔️❌:     MolOps::assignChiralTypesFrom3D(*res, conf3d->getId(), true);
+    // RDKit✔️❌:   }
+    // END COMPLETE PINNED MolFromSmiles source3D stage
+    // Use the same genuine numeric-ID/flag selection. A false-is3D Point3D
+    // row suppresses this stage even when a true 3D row is also present.
+    // The one CORE cache kernel computes native signed8 cache values, then
+    // the owned parser result retains those exact facts before geometry.
+    // Errors propagate; this owned parse result is discarded on error, as
+    // the source unique_ptr result is. No live molecule authority is exposed.
+    // Cost: readonly cache result has two O(V) scalar buffers; the existing
+    // detached structure transform owns a topology copy versus native in-place
+    // mutation. Repeated borrowed selection adds O(C^2). Known worse cost.
+    let (two_d, three_d) = parser_conformers(&record.coordinates)?;
+    if two_d.is_some() {
+        return Ok(());
+    }
+    let Some(CoordinateSource::ThreeD(conformer)) = three_d else {
+        return Ok(());
+    };
+    let conformer_id = conformer.id() as i32;
+    let valence = cosmolkit_core::assign_valence_with_options_for_topology(
+        &record.topology,
+        cosmolkit_core::ValenceModel::RdkitLike,
+        false,
+    )
+    .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+    for (index, atom) in record.topology.atoms.iter_mut().enumerate() {
+        atom.set_source_valence_facts(cosmolkit_model::SourceAtomValenceFacts {
+            explicit_valence: valence.explicit_valence[index] as i8,
+            implicit_valence: valence.implicit_hydrogens[index] as i8,
+        });
+    }
+    // Native assignChiralTypesFrom3D clears the marker before perception.
+    record.properties.clear_prop("_StereochemDone")?;
+    let assignment = cosmolkit_core::assign_chiral_tags_from_structure(
+        &record.topology,
+        &record.coordinates,
+        &valence,
+        &cosmolkit_core::StructureTagParams {
+            conformer_id,
+            replace_existing_tags: true,
+        },
+    )
+    .map_err(|error| SmilesParseError::WriterStereo(error.to_string()))?;
+    record.topology = assignment.topology;
+    Ok(())
+}
+
+fn apply_parser_atrop_stereo(record: &mut SmilesRecord) -> Result<(), SmilesParseError> {
+    // BEGIN COMPLETE PINNED MolFromSmiles sourceatrop stage
+    // RDKit❗❌:   if (conf) {
+    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, conf);
+    // RDKit❗❌:   } else if (conf3d) {
+    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, conf3d);
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     Atropisomers::detectAtropisomerChirality(*res, nullptr);
+    // RDKit❗❌:   }
+    // END COMPLETE PINNED MolFromSmiles sourceatrop stage
+    // Borrow the genuine first false-is3D row, else true-is3D row, else null.
+    // CORE owns all cache/conjugation/hybridization/detection algorithms.
+    // This source-owned parse result applies explicit detached writes; it is
+    // discarded on error. The remaining full-function comparison includes
+    // native pointer-set traversal/diagnostic order (currently unresolved).
+    let (two_d, three_d) = parser_conformers(&record.coordinates)?;
+    let conformer = two_d.or(three_d).map(|row| match row {
+        CoordinateSource::TwoD(row) => cosmolkit_core::AtropisomerConformer::TwoD(row),
+        CoordinateSource::ThreeD(row) => cosmolkit_core::AtropisomerConformer::ThreeD(row),
+    });
+    let assignment = cosmolkit_core::detect_atropisomer_chirality(&record.topology, conformer)
+        .map_err(SmilesParseError::ParserAtropisomer)?;
+    for (id, facts) in assignment.atom_valence_updates {
+        record.topology.atoms[id.index()].set_source_valence_facts(facts);
+    }
+    if let Some(flags) = assignment.conjugated_bonds {
+        for (bond, flag) in record.topology.bonds.iter_mut().zip(flags) {
+            bond.set_conjugated(flag);
+        }
+    }
+    if let Some(hybridization) = assignment.hybridization {
+        for (atom, value) in record.topology.atoms.iter_mut().zip(hybridization.values) {
+            atom.set_hybridization(value);
+        }
+    }
+    for update in assignment.bond_updates {
+        record.topology.bonds[update.bond.index()].set_stereo(update.stereo)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2280,3 +2792,481 @@ pub use cx_writer::assign_stereo_group_ids;
 fn fixed_property_text(value: &cosmolkit_model::PropertyText) -> &str {
     std::str::from_utf8(value.as_bytes()).expect("original fixed fixture text is UTF8")
 }
+
+#[cfg(test)]
+mod source_parser_conformer_tests {
+    use super::parse_smiles_complete_source as parse_smiles;
+    use super::*;
+    use cosmolkit_model::{Conformer3D, CoordinateDimension};
+
+    #[test]
+    fn parser_uses_numeric_source_ids_and_explicit_is3d_not_default_front_or_geometry() {
+        let rows = CoordinateBlock {
+            conformers_3d: vec![
+                Conformer3D::new(1, vec![[1.0, 2.0, 3.0]], false),
+                Conformer3D::new(0, vec![[4.0, 5.0, 6.0]], false),
+                Conformer3D::new(2, vec![[0.0, 0.0, 0.0]], true),
+            ],
+            source_conformer_order: Some(vec![CoordinateDimension::ThreeD; 3]),
+            ..Default::default()
+        };
+        let before = rows.clone();
+        let (two_d, three_d) = parser_conformers(&rows).unwrap();
+        match two_d.unwrap() {
+            CoordinateSource::ThreeD(row) => assert!(std::ptr::eq(row, &rows.conformers_3d[1])),
+            _ => panic!("native 2D flag lives in XYZ storage"),
+        }
+        match three_d.unwrap() {
+            CoordinateSource::ThreeD(row) => assert!(std::ptr::eq(row, &rows.conformers_3d[2])),
+            _ => panic!("explicit source 3D flag must remain independent of geometry"),
+        }
+        match cx_writer::source_conformer_by_id(&rows, -1).unwrap() {
+            CoordinateSource::ThreeD(row) => assert!(std::ptr::eq(row, &rows.conformers_3d[0])),
+            _ => panic!("native getter uses actual insertion front"),
+        }
+        assert!(matches!(
+            select_cx_coordinates(&rows, CxCoordinateSelection::Auto),
+            Err(SmilesParseError::AmbiguousCoordinateSelection {
+                two_d_count: 0,
+                three_d_count: 3,
+            })
+        ));
+        assert_eq!(rows, before);
+    }
+
+    #[test]
+    fn parser_preserves_source_missing_numeric_id_error_and_empty_case() {
+        let empty = CoordinateBlock::default();
+        let (two_d, three_d) = parser_conformers(&empty).unwrap();
+        assert!(two_d.is_none() && three_d.is_none());
+        let rows = CoordinateBlock {
+            conformers_3d: vec![
+                Conformer3D::new(0, vec![[0.0, 0.0, 0.0]], false),
+                Conformer3D::new(19, vec![[1.0, 2.0, 3.0]], false),
+            ],
+            ..Default::default()
+        };
+        let before = rows.clone();
+        assert!(
+            matches!(parser_conformers(&rows), Err(SmilesParseError::Model(message)) if message == "Can't find conformation with ID: 1")
+        );
+        assert_eq!(rows, before);
+    }
+
+    #[test]
+    fn parser_wedge_uses_first_2d_flag_even_after_a_3d_conformer() {
+        let two_d = "(-3.9163,5.4767,;-3.9163,3.9367,;-2.5826,3.1667,;-5.25,3.1667,)";
+        let three_d = "(-3.9163,5.4767,1;-3.9163,3.9367,1;-2.5826,3.1667,1;-5.25,3.1667,1)";
+        for blocks in [format!("{three_d}{two_d}"), format!("{two_d}{three_d}")] {
+            for (wedge, expected) in [
+                ("wU", ChiralTag::TetrahedralCw),
+                ("wD", ChiralTag::TetrahedralCcw),
+            ] {
+                // Original exact native fixture geometry and opposite wedge directions.
+                let input = format!("CC(O)Cl |{blocks},{wedge}:1.0|");
+                let record = parse_smiles(
+                    &input,
+                    &SmilesParseParams {
+                        sanitize: false,
+                        remove_hydrogens: false,
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                assert_eq!(record.topology.atoms[1].chiral_tag(), expected, "{input}");
+                assert_eq!(record.topology.atoms[1].explicit_hydrogens(), 1);
+                assert_eq!(record.properties.prop("_needsDetectAtomStereo"), None);
+                assert_eq!(record.coordinates.conformers_3d.len(), 2);
+                assert!(record.coordinates.conformers_2d.is_empty());
+                assert_eq!(
+                    record.coordinates.conformers_3d[0].is_3d(),
+                    blocks.starts_with(three_d)
+                );
+                assert_eq!(
+                    record.coordinates.conformers_3d[1].is_3d(),
+                    !blocks.starts_with(three_d)
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod source_parser_3d_tests {
+    use super::parse_smiles_complete_source as parse_smiles;
+    use super::*;
+    use cosmolkit_model::{PropertyValue, SourceAtomValenceFacts};
+    const XYZ: &str = "(1,0,0;0,0,0;0,1,0;0,0,1)";
+    const XY: &str = "(1,0,0;0,0,0;0,1,0;0,0,0)";
+    fn params() -> SmilesParseParams {
+        SmilesParseParams {
+            sanitize: false,
+            remove_hydrogens: false,
+            ..Default::default()
+        }
+    }
+    #[test]
+    fn true_3d_updates_all_cache_rows_then_emits_native_tetrahedral_int_property() {
+        let record = parse_smiles(&format!("FC(Cl)Br |{XYZ}|"), &params()).unwrap();
+        assert_eq!(
+            record.topology.atoms[1].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
+        assert_eq!(
+            record.topology.atoms[1].prop("_NonExplicit3DChirality"),
+            Some(&PropertyValue::Int(1))
+        );
+        assert_eq!(record.topology.atoms[1].explicit_hydrogens(), 0);
+        for (index, atom) in record.topology.atoms.iter().enumerate() {
+            assert_eq!(
+                atom.source_valence_facts(),
+                SourceAtomValenceFacts {
+                    explicit_valence: if index == 1 { 3 } else { 1 },
+                    implicit_valence: if index == 1 { 1 } else { 0 },
+                }
+            );
+        }
+        assert!(record.coordinates.conformers_3d[0].is_3d());
+        assert_eq!(
+            record.coordinates.conformers_3d[0].coordinates(),
+            &[
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0]
+            ]
+        );
+    }
+    #[test]
+    fn any_false_is3d_conformer_suppresses_3d_stage_in_both_source_orders() {
+        for blocks in [format!("{XYZ}{XY}"), format!("{XY}{XYZ}")] {
+            let mut record = parse_smiles(&format!("FC(Cl)Br |{blocks}|"), &params()).unwrap();
+            for atom in &record.topology.atoms {
+                assert_eq!(atom.chiral_tag(), ChiralTag::Unspecified);
+                assert_eq!(
+                    atom.source_valence_facts(),
+                    SourceAtomValenceFacts::UNINITIALIZED
+                );
+            }
+            record.properties.set_prop("_StereochemDone", "0").unwrap();
+            let before = record.clone();
+            apply_parser_3d_stereo(&mut record).unwrap();
+            assert_eq!(record, before);
+            assert_eq!(
+                record.coordinates.conformers_3d[0].is_3d(),
+                blocks.starts_with(XYZ)
+            );
+            assert_eq!(
+                record.coordinates.conformers_3d[1].is_3d(),
+                !blocks.starts_with(XYZ)
+            );
+            assert!(record.coordinates.conformers_2d.is_empty());
+        }
+    }
+    #[test]
+    fn true_3d_clears_done_by_presence_and_replaces_existing_tag_without_new_nonexplicit_marker() {
+        let mut record = parse_smiles(&format!("FC(Cl)Br |{XYZ}|"), &params()).unwrap();
+        record.properties.set_prop("_StereochemDone", "0").unwrap();
+        record.topology.atoms[1].set_chiral_tag(ChiralTag::TetrahedralCw);
+        record.topology.atoms[1]
+            .clear_prop("_NonExplicit3DChirality")
+            .unwrap();
+        for atom in &mut record.topology.atoms {
+            atom.set_source_valence_facts(SourceAtomValenceFacts::UNINITIALIZED);
+        }
+        let coordinates_before = record.coordinates.clone();
+        apply_parser_3d_stereo(&mut record).unwrap();
+        assert_eq!(record.properties.prop("_StereochemDone"), None);
+        assert_eq!(
+            record.topology.atoms[1].chiral_tag(),
+            ChiralTag::TetrahedralCcw
+        );
+        assert_eq!(
+            record.topology.atoms[1].prop("_NonExplicit3DChirality"),
+            None
+        );
+        assert_eq!(
+            record.topology.atoms[1].source_valence_facts(),
+            SourceAtomValenceFacts {
+                explicit_valence: 3,
+                implicit_valence: 1
+            }
+        );
+        assert_eq!(record.coordinates, coordinates_before);
+    }
+}
+
+#[cfg(test)]
+mod source_parser_atrop_tests {
+    use super::parse_smiles_complete_source as parse_smiles;
+    use super::*;
+    use cosmolkit_model::{BondStereo, SourceAtomValenceFacts};
+    use cosmolkit_types::Hybridization;
+    fn params() -> SmilesParseParams {
+        SmilesParseParams {
+            sanitize: false,
+            remove_hydrogens: false,
+            ..Default::default()
+        }
+    }
+    const TWO_D: &str = "(0,1,0;0,0,0;0,-1,0;1,0,0;1,1,0;1,-1,0)";
+    const THREE_D: &str = "(0,1,0;0,0,0;0,-1,0;1,0,0;1,0,1;1,0,-1)";
+    fn check_native_global_prelude(record: &SmilesRecord) {
+        let cache = [(1, 3), (4, 0), (2, 0), (4, 0), (2, 0), (1, 3)];
+        let hybs = [
+            Hybridization::Sp3,
+            Hybridization::Sp2,
+            Hybridization::Sp2,
+            Hybridization::Sp2,
+            Hybridization::Sp2,
+            Hybridization::Sp3,
+        ];
+        for (i, atom) in record.topology.atoms.iter().enumerate() {
+            assert_eq!(
+                atom.source_valence_facts(),
+                SourceAtomValenceFacts {
+                    explicit_valence: cache[i].0,
+                    implicit_valence: cache[i].1
+                }
+            );
+            assert_eq!(atom.hybridization(), hybs[i]);
+        }
+        assert_eq!(
+            record
+                .topology
+                .bonds
+                .iter()
+                .map(|b| b.is_conjugated())
+                .collect::<Vec<_>>(),
+            vec![false, true, true, true, false]
+        );
+    }
+    #[test]
+    fn no_conformer_native_wedges_trigger_global_cache_conjugation_hybridization_and_atrop_tag() {
+        let record = parse_smiles("CC(=O)C(=O)C |wU:1.0,3.4|", &params()).unwrap();
+        check_native_global_prelude(&record);
+        assert_eq!(record.topology.bonds[2].stereo(), BondStereo::AtropCcw);
+        assert!(
+            record.coordinates.conformers_2d.is_empty()
+                && record.coordinates.conformers_3d.is_empty()
+        );
+        assert_eq!(record.properties.prop("_needsDetectAtomStereo"), None);
+    }
+    #[test]
+    fn native_degree_failure_keeps_only_endpoint_cache_effects_and_skips_hybridization() {
+        let record = parse_smiles("CCCC |wU:1.0,2.2|", &params()).unwrap();
+        for (i, atom) in record.topology.atoms.iter().enumerate() {
+            let expected = if i == 1 || i == 2 {
+                SourceAtomValenceFacts {
+                    explicit_valence: 2,
+                    implicit_valence: 2,
+                }
+            } else {
+                SourceAtomValenceFacts::UNINITIALIZED
+            };
+            assert_eq!(atom.source_valence_facts(), expected);
+            assert_eq!(atom.hybridization(), Hybridization::Unspecified);
+        }
+        assert!(
+            record
+                .topology
+                .bonds
+                .iter()
+                .all(|b| b.stereo() == BondStereo::None && !b.is_conjugated())
+        );
+    }
+    #[test]
+    fn source_atrop_uses_first_false_is3d_row_before_any_true_row_in_both_orders() {
+        for blocks in [format!("{THREE_D}{TWO_D}"), format!("{TWO_D}{THREE_D}")] {
+            let record =
+                parse_smiles(&format!("CC(=O)C(=O)C |{blocks},wU:1.0,3.4|"), &params()).unwrap();
+            check_native_global_prelude(&record);
+            assert_eq!(record.topology.bonds[2].stereo(), BondStereo::AtropCcw);
+            assert_eq!(
+                record.coordinates.conformers_3d[0].is_3d(),
+                blocks.starts_with(THREE_D)
+            );
+            assert_eq!(
+                record.coordinates.conformers_3d[1].is_3d(),
+                !blocks.starts_with(THREE_D)
+            );
+        }
+        let record =
+            parse_smiles(&format!("CC(=O)C(=O)C |{THREE_D},wU:1.0,3.4|"), &params()).unwrap();
+        check_native_global_prelude(&record);
+        assert_eq!(record.topology.bonds[2].stereo(), BondStereo::AtropCw);
+        let small = "(0,0.0001,0;0,0,0;0,-0.0001,0;1,0,0;1,0,0.0001;1,0,-0.0001)";
+        let record =
+            parse_smiles(&format!("CC(=O)C(=O)C |{small},wU:1.0,3.4|"), &params()).unwrap();
+        check_native_global_prelude(&record);
+        assert_eq!(record.topology.bonds[2].stereo(), BondStereo::None);
+    }
+    #[test]
+    fn native_normalization_failure_propagates_the_original_core_error_type() {
+        let huge = "1.7976931348623157e308";
+        let coords = format!("(0,1,0;0,0,0;0,-1,0;{huge},0,0;{huge},0,1;{huge},0,-1)");
+        assert!(
+            matches!(parse_smiles(&format!("CC(=O)C(=O)C |{coords},wU:1.0,3.4|"),&params()),
+            Err(SmilesParseError::ParserAtropisomer(cosmolkit_core::AtropisomerError::Normalization(
+                cosmolkit_core::StereoError::ZeroLengthVector {center,neighbor}
+            ))) if center==AtomId::new(1) && neighbor==AtomId::new(3))
+        );
+    }
+}
+
+#[cfg(test)]
+mod source_full_parser_composition_tests {
+    use super::parse_smiles_complete_source as parse_smiles;
+    use super::*;
+    use cosmolkit_model::{Element, PropertyValue};
+
+    #[test]
+    fn source_flag_matrix_removes_hydrogens_and_finishes_stereo_at_the_actual_parser_boundary() {
+        for sanitize in [false, true] {
+            for remove_hydrogens in [false, true] {
+                let params = SmilesParseParams {
+                    sanitize,
+                    remove_hydrogens,
+                    ..Default::default()
+                };
+                let record = parse_smiles("[H]C sample", &params).unwrap();
+                assert_eq!(
+                    record.topology.atoms.len(),
+                    if remove_hydrogens { 1 } else { 2 }
+                );
+                assert_eq!(record.properties.name(), Some(&"sample".into()));
+                assert_eq!(
+                    record.properties.prop("_StereochemDone"),
+                    if sanitize || remove_hydrogens {
+                        Some(&PropertyValue::Int(1))
+                    } else {
+                        None
+                    }
+                );
+                if sanitize || remove_hydrogens {
+                    assert!(
+                        record
+                            .properties
+                            .is_prop_computed("_StereochemDone")
+                            .unwrap()
+                    );
+                }
+                record.topology.validate().unwrap();
+                record
+                    .coordinates
+                    .validate_for_atom_count(record.topology.atoms.len())
+                    .unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn source_sanitize_failures_propagate_from_the_reached_canonical_owner() {
+        let raw = SmilesParseParams {
+            sanitize: false,
+            remove_hydrogens: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            parse_smiles("C(C)(C)(C)(C)C", &raw)
+                .unwrap()
+                .topology
+                .atoms
+                .len(),
+            6
+        );
+        let sanitize = SmilesParseParams {
+            sanitize: true,
+            remove_hydrogens: false,
+            ..Default::default()
+        };
+        assert!(matches!(
+            parse_smiles("C(C)(C)(C)(C)C", &sanitize),
+            Err(SmilesParseError::ParserSanitize(
+                cosmolkit_core::SanitizeError::Properties { .. }
+            ))
+        ));
+        assert!(matches!(
+            parse_smiles("C(C)(C)(C)(C)C", &Default::default()),
+            Err(SmilesParseError::ParserRemoveHydrogens(
+                cosmolkit_core::HydrogenError::Sanitize(
+                    cosmolkit_core::SanitizeError::Properties { .. }
+                )
+            ))
+        ));
+    }
+
+    #[test]
+    fn source_default_hydrogen_parameters_keep_isotopic_atoms() {
+        let ordinary = parse_smiles("[H]C", &Default::default()).unwrap();
+        let isotope = parse_smiles("[2H]C", &Default::default()).unwrap();
+        assert_eq!(ordinary.topology.atoms.len(), 1);
+        assert_eq!(ordinary.topology.atoms[0].element(), Element::C);
+        assert_eq!(isotope.topology.atoms.len(), 2);
+        assert_eq!(isotope.topology.atoms[0].element(), Element::H);
+        assert_eq!(isotope.topology.atoms[0].isotope(), Some(2));
+    }
+
+    #[test]
+    fn source_remove_hydrogens_remaps_cx_coordinates_before_stereo_finalization() {
+        let record = parse_smiles("[H]C |(0,0,;1,0,)|", &Default::default()).unwrap();
+        assert_eq!(record.topology.atoms.len(), 1);
+        assert_eq!(record.coordinates.conformers_3d.len(), 1);
+        assert_eq!(record.coordinates.conformers_3d[0].id(), 0);
+        assert!(!record.coordinates.conformers_3d[0].is_3d());
+        assert_eq!(
+            record.coordinates.conformers_3d[0].coordinates(),
+            &[[1.0, 0.0, 0.0]]
+        );
+    }
+
+    #[test]
+    fn source_aromatic_count_keeps_integral_type_on_both_sanitize_dispatches() {
+        for remove_hydrogens in [false, true] {
+            let record = parse_smiles(
+                "c1ccccc1",
+                &SmilesParseParams {
+                    remove_hydrogens,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                record.properties.prop("numArom"),
+                Some(&PropertyValue::Int(1))
+            );
+            assert!(record.properties.is_prop_computed("numArom").unwrap());
+            assert!(record.topology.atoms.iter().all(|atom| atom.is_aromatic()));
+        }
+    }
+}
+
+#[doc(hidden)]
+pub use writer::canonicalize_fragment_source;
+
+#[doc(hidden)]
+pub use writer::canonicalize_fragment_from_bond_mask_source;
+
+#[doc(hidden)]
+pub use writer::canonicalize_query_fragment_source;
+
+#[doc(hidden)]
+pub use cx_writer::{write_cx_coordinates_from_source, zero_small_cx_coordinate};
+
+#[doc(hidden)]
+pub use cx_writer::quote_cx_atom_property;
+
+#[doc(hidden)]
+pub use cx_writer::write_query_cx_atom_properties_source;
+
+#[doc(hidden)]
+pub use cx_writer::write_cx_coord_or_hydrogen_bonds_source;
+
+#[doc(hidden)]
+pub use cx_writer::write_cx_zero_bonds_source;
+
+#[doc(hidden)]
+pub use cx_writer::{emit_cx_link_node_warning_source, write_query_cx_link_nodes_source};
+
+#[doc(hidden)]
+pub use cx_writer::append_cx_extension_source;

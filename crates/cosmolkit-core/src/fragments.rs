@@ -10,6 +10,44 @@ use cosmolkit_model::{
     SubstanceGroupId, TopologyBlock, TopologyEditError, TopologyMapping, TopologyValidationError,
 };
 
+/// Actual optional source annotations for detached fragment copying.
+/// `None` means that independent source capability is not modeled by this input.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy)]
+pub struct FragmentSourceMetadataView<'a> {
+    pub rings: Option<&'a crate::RingInfo>,
+    pub atom_bookmarks: Option<&'a BTreeMap<i32, Vec<AtomId>>>,
+    pub bond_bookmarks: Option<&'a BTreeMap<i32, Vec<BondId>>>,
+}
+
+impl FragmentSourceMetadataView<'_> {
+    fn unmodeled() -> Self {
+        Self {
+            rings: None,
+            atom_bookmarks: None,
+            bond_bookmarks: None,
+        }
+    }
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FragmentSourceMetadata {
+    pub rings: Option<crate::RingInfo>,
+    pub atom_bookmarks: Option<BTreeMap<i32, Vec<AtomId>>>,
+    pub bond_bookmarks: Option<BTreeMap<i32, Vec<BondId>>>,
+}
+
+impl FragmentSourceMetadata {
+    fn unmodeled() -> Self {
+        Self {
+            rings: None,
+            atom_bookmarks: None,
+            bond_bookmarks: None,
+        }
+    }
+}
+
 const MASK_WORD_BITS: usize = usize::BITS as usize;
 
 #[derive(Debug, Clone, Copy)]
@@ -1009,6 +1047,7 @@ fn copy_single_full_molecule_component_with_view(
             source_topology.atoms.len(),
             source_topology.bonds.len(),
         ),
+        source_metadata: FragmentSourceMetadata::unmodeled(),
     }
 }
 
@@ -1018,10 +1057,16 @@ struct FullCopyComponent {
     coordinates: CoordinateBlock,
     molecule_properties: MoleculeProperties,
     mapping: TopologyMapping,
+    source_metadata: FragmentSourceMetadata,
 }
 
 #[derive(Debug, thiserror::Error)]
 enum FullCopyComponentError {
+    #[error(transparent)]
+    SourceUInt(#[from] crate::PropertyUIntReadError),
+    #[error(transparent)]
+    SourceText(#[from] crate::PropertyStringError),
+
     #[error(transparent)]
     TopologyEdit(#[from] TopologyEditError),
     #[error(transparent)]
@@ -1168,10 +1213,9 @@ fn copy_full_molecule_remove_atoms_outside_component(
     source_properties: &MoleculeProperties,
     atoms_in_fragment: &SelectionMask,
 ) -> Result<FullCopyComponent, FullCopyComponentError> {
-    let coordinate_view = FragmentCoordinateView::from_coordinate_block(source_coordinates);
     copy_full_molecule_remove_atoms_outside_component_with_view(
         source_topology,
-        &coordinate_view,
+        &FragmentCoordinateView::from_coordinate_block(source_coordinates),
         source_properties,
         atoms_in_fragment,
     )
@@ -1310,6 +1354,190 @@ fn copy_full_molecule_remove_atoms_outside_component_with_view(
         coordinates,
         molecule_properties,
         mapping,
+        source_metadata: FragmentSourceMetadata::unmodeled(),
+    })
+}
+
+fn copy_full_molecule_remove_atoms_outside_component_with_source_metadata(
+    source_topology: &TopologyBlock,
+    source_coordinates: &FragmentCoordinateView<'_>,
+    source_properties: &MoleculeProperties,
+    atoms_in_fragment: &SelectionMask,
+    source_metadata: FragmentSourceMetadataView<'_>,
+) -> Result<FullCopyComponent, FullCopyComponentError> {
+    // BEGIN RDKIT CPP FUNCTION RWMol copy constructor and ROMol::initFromOther
+    // RDKit❗❌: RWMol(const RWMol &other) : ROMol(other) {}
+    // RDKit❗❌: ROMol(const ROMol &other, bool quickCopy = false, int confId = -1)
+    // RDKit❗❌:     : RDProps() {
+    // RDKit❗❌:   initFromOther(other, quickCopy, confId);
+    // RDKit❗❌: }
+    // RDKit❗❌: void ROMol::initFromOther(const ROMol &other, bool quickCopy, int confId) {
+    // RDKit❗❌:   if (this == &other) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   numBonds = 0;
+    // RDKit❗❌:   for (const auto oatom : other.atoms()) {
+    // RDKit❗❌:     constexpr bool updateLabel = false;
+    // RDKit❗❌:     constexpr bool takeOwnership = true;
+    // RDKit❗❌:     addAtom(oatom->copy(), updateLabel, takeOwnership);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   for (const auto obond : other.bonds()) {
+    // RDKit❗❌:     addBond(obond->copy(), true);
+    // RDKit❗❌:   }
+    // RDKit❗❌:   d_stereo_groups.clear();
+    // RDKit❗❌:   for (auto &otherGroup : other.d_stereo_groups) {
+    // RDKit❗❌:     std::vector<Atom *> atoms;
+    // RDKit❗❌:     for (auto &otherAtom : otherGroup.getAtoms()) {
+    // RDKit❗❌:       atoms.push_back(getAtomWithIdx(otherAtom->getIdx()));
+    // RDKit❗❌:     }
+    // RDKit❗❌:     std::vector<Bond *> bonds;
+    // RDKit❗❌:     for (auto &otherBond : otherGroup.getBonds()) {
+    // RDKit❗❌:       bonds.push_back(getBondWithIdx(otherBond->getIdx()));
+    // RDKit❗❌:     }
+    // RDKit❗❌:     d_stereo_groups.emplace_back(otherGroup.getGroupType(), std::move(atoms),
+    // RDKit❗❌:                                  std::move(bonds), otherGroup.getReadId());
+    // RDKit❗❌:     d_stereo_groups.back().setWriteId(otherGroup.getWriteId());
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!quickCopy) {
+    // RDKit❗❌:     for (const auto &conf : other.d_confs) {
+    // RDKit❗❌:       if (confId < 0 || rdcast<int>(conf->getId()) == confId) {
+    // RDKit❗❌:         this->addConformer(new Conformer(*conf));
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     for (const auto &sg : getSubstanceGroups(other)) {
+    // RDKit❗❌:       addSubstanceGroup(*this, sg);
+    // RDKit❗❌:     }
+    // RDKit❗❌:     d_props = other.d_props;
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION RWMol copy constructor and ROMol::initFromOther
+    // BEGIN RDKIT CPP FUNCTION MolOps::getTheFrags slow-copy branch
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         res.emplace_back(new RWMol(mol));
+    // RDKit❗❌:         auto &frag = res.back();
+    // RDKit❗❌:         frag->beginBatchEdit();
+    // RDKit❗❌:         for (unsigned int idx = 0; idx < mol.getNumAtoms(); ++idx) {
+    // RDKit❗❌:           if (!atomsInFrag[idx]) {
+    // RDKit❗❌:             frag->removeAtom(idx);
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         frag->commitBatchEdit();
+    // RDKit❗❌:       }
+    // END RDKIT CPP FUNCTION MolOps::getTheFrags slow-copy branch
+    // BEGIN RDKIT CPP FUNCTION RWMol::commitBatchEdit changed/no-op order
+    // RDKit❗❌: void RWMol::commitBatchEdit() {
+    // RDKit❗❌:   if (!(dp_delBonds || dp_delAtoms)) {
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   } else if (dp_delBonds->none() && dp_delAtoms->none()) {
+    // RDKit❗❌:     // no need to reset ring info & calculated properties,
+    // RDKit❗❌:     // since nothing gets removed
+    // RDKit❗❌:     dp_delBonds.reset();
+    // RDKit❗❌:     dp_delAtoms.reset();
+    // RDKit❗❌:     return;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   batchRemoveBonds();
+    // RDKit❗❌:   batchRemoveAtoms();
+    // RDKit❗❌:   dp_ringInfo->reset();
+    // RDKit❗❌:   clearComputedProps(true);
+    // RDKit❗❌:   dp_delBonds.reset();
+    // RDKit❗❌:   dp_delAtoms.reset();
+    // RDKit❗❌: }
+    // END RDKIT CPP FUNCTION RWMol::commitBatchEdit changed/no-op order
+    // Behavior: the source slow route copies raw coordinates and real optional
+    // source metadata, schedules complement atoms in ascending order, and
+    // invokes the canonical MODEL source batch commit. No finite-coordinate
+    // guard or final stereo-cardinality validation precedes native filtering.
+    // Unmodeled metadata remains explicitly absent; represented metadata is
+    // copied, deleted, remapped, and reset in source order. Typed molecule row
+    // projections still add an explicitly recorded transport step below.
+    // Complexity: one topology/coordinate/property copy followed by native
+    // descending removal. MODEL adjacency rebuilding, per-row Vec erasure,
+    // mapping creation, and typed property transport add material costs versus
+    // native pointer graph deletion; no second detached topology clone occurs.
+    if atoms_in_fragment.bit_count != source_topology.atoms.len() {
+        return Err(FullCopyComponentError::AtomMaskSize {
+            expected: source_topology.atoms.len(),
+            actual: atoms_in_fragment.bit_count,
+        });
+    }
+
+    let mut edit = source_topology.begin_batch_edit()?;
+    for atom_index in 0..source_topology.atoms.len() {
+        if !atoms_in_fragment.contains(atom_index) {
+            edit.remove_atom(AtomId::new(atom_index))?;
+        }
+    }
+    let (mut topology, mut atoms, mut bonds) = edit.into_source_batch_parts();
+    let mut coordinates = copy_full_molecule_coordinates(source_coordinates);
+    let mut molecule_properties = source_properties.clone();
+    let mut metadata = clone_source_fragment_metadata(source_topology, source_metadata)?;
+    let mut ring_reset = metadata.rings.as_mut().map(|ring| move || ring.reset());
+    cosmolkit_model::commit_batch_edit_source(
+        &mut topology,
+        cosmolkit_model::SourceBatchCommitState {
+            atoms: &mut atoms,
+            bonds: &mut bonds,
+            atom_bookmarks: metadata.atom_bookmarks.as_mut(),
+            bond_bookmarks: metadata.bond_bookmarks.as_mut(),
+            coordinates: &mut coordinates,
+            properties: &mut molecule_properties,
+            reset_ring: ring_reset.as_mut().map(|reset| reset as &mut dyn FnMut()),
+            uint_reader: &mut |value| {
+                crate::property_value_to_uint(value).map_err(FullCopyComponentError::from)
+            },
+            text_reader: &mut |value| {
+                crate::property_value_to_string(value).map_err(FullCopyComponentError::from)
+            },
+        },
+    )?;
+    drop(ring_reset);
+    let mut atom_old_to_new = vec![None; source_topology.atoms.len()];
+    let mut atom_new_to_old = Vec::with_capacity(topology.atoms.len());
+    for old in 0..source_topology.atoms.len() {
+        if atoms_in_fragment.contains(old) {
+            let new = AtomId::new(atom_new_to_old.len());
+            atom_old_to_new[old] = Some(new);
+            atom_new_to_old.push(Some(AtomId::new(old)));
+        }
+    }
+    let mut bond_old_to_new = vec![None; source_topology.bonds.len()];
+    let mut bond_new_to_old = Vec::with_capacity(topology.bonds.len());
+    for bond in &source_topology.bonds {
+        if atoms_in_fragment.contains(bond.begin().index())
+            && atoms_in_fragment.contains(bond.end().index())
+        {
+            let new = BondId::new(bond_new_to_old.len());
+            bond_old_to_new[bond.id().index()] = Some(new);
+            bond_new_to_old.push(Some(bond.id()));
+        }
+    }
+    let mapping = TopologyMapping {
+        atoms: AtomMapping {
+            old_to_new: atom_old_to_new,
+            new_to_old: atom_new_to_old,
+        },
+        bonds: BondMapping {
+            old_to_new: bond_old_to_new,
+            new_to_old: bond_new_to_old,
+        },
+    };
+    mapping.validate_for_counts(
+        source_topology.atoms.len(),
+        topology.atoms.len(),
+        source_topology.bonds.len(),
+        topology.bonds.len(),
+    )?;
+    // Existing typed row projections follow the returned structural mapping;
+    // native generic property dictionaries remain the canonical property owner.
+    // This extra modeled row transport remains an explicit source-boundary gap.
+    molecule_properties.remap_topology(mapping.atoms().new_to_old(), mapping.bonds().new_to_old());
+
+    Ok(FullCopyComponent {
+        topology,
+        coordinates,
+        molecule_properties,
+        mapping,
+        source_metadata: metadata,
     })
 }
 
@@ -1894,6 +2122,12 @@ impl MoleculeFragment {
         &self.copy.molecule_properties
     }
 
+    /// Explicitly modeled copied source metadata; missing capabilities stay None.
+    #[doc(hidden)]
+    pub fn source_metadata(&self) -> &FragmentSourceMetadata {
+        &self.copy.source_metadata
+    }
+
     /// The validated source-to-component and component-to-source row maps.
     pub fn topology_mapping(&self) -> &TopologyMapping {
         &self.copy.mapping
@@ -1974,6 +2208,31 @@ fn build_ordered_fragment_copies_with_view(
     sanitize: bool,
     copy_conformers: bool,
 ) -> Result<Vec<OrderedFragmentCopy>, OrderedFragmentBuildError> {
+    let connected = crate::paths::connected_components(source_topology)?;
+    build_ordered_fragment_copies_from_components(
+        source_topology,
+        source_coordinates,
+        source_properties,
+        sanitize,
+        copy_conformers,
+        connected,
+        None,
+        FragmentSourceMetadataView::unmodeled(),
+        false,
+    )
+}
+
+fn build_ordered_fragment_copies_from_components(
+    source_topology: &TopologyBlock,
+    source_coordinates: &FragmentCoordinateView<'_>,
+    source_properties: &MoleculeProperties,
+    sanitize: bool,
+    copy_conformers: bool,
+    connected: crate::paths::ConnectedComponents,
+    mut component_output: Option<&mut Vec<Vec<i32>>>,
+    source_metadata: FragmentSourceMetadataView<'_>,
+    source_boundary: bool,
+) -> Result<Vec<OrderedFragmentCopy>, OrderedFragmentBuildError> {
     // BEGIN RDKIT CPP FUNCTION MolOps::getTheFrags ordered component construction
     // RDKit❗❌: int nFrags = getMolFrags(mol, *frags);
     // RDKit❗❌: std::vector<std::unique_ptr<RWMol>> res;
@@ -2033,18 +2292,30 @@ fn build_ordered_fragment_copies_with_view(
     // Complexity: component labeling is O(V+E), then source-shaped per-fragment
     // atom scans and masks are O(FV). The validated model subset and batch paths
     // carry known additional allocations compared with RDKit's in-place rows.
-    let connected = crate::paths::connected_components(source_topology)?;
     let fragment_count = connected.components.len();
     if fragment_count == 0 {
         return Ok(Vec::new());
     }
     if fragment_count == 1 {
         let component_atoms = connected.components.into_iter().next().unwrap();
-        let copy = copy_single_full_molecule_component_with_view(
+        let mut copy = copy_single_full_molecule_component_with_view(
             source_topology,
             source_coordinates,
             source_properties,
         );
+        copy.source_metadata = clone_source_fragment_metadata(source_topology, source_metadata)
+            .map_err(|source| OrderedFragmentBuildError::SlowFullCopy {
+                component_index: 0,
+                source,
+            })?;
+        if let Some(output) = component_output.as_deref_mut() {
+            output.push(
+                component_atoms
+                    .iter()
+                    .map(|atom| atom.index() as i32)
+                    .collect(),
+            );
+        }
         return Ok(vec![OrderedFragmentCopy {
             component_atoms,
             copy,
@@ -2087,25 +2358,136 @@ fn build_ordered_fragment_copies_with_view(
                 coordinates: subset.coordinates,
                 molecule_properties: subset.molecule_properties,
                 mapping: subset.mapping,
+                source_metadata: fresh_subset_source_metadata(source_metadata),
             }
         } else {
-            copy_full_molecule_remove_atoms_outside_component_with_view(
-                source_topology,
-                source_coordinates,
-                source_properties,
-                &atoms_in_fragment,
-            )
-            .map_err(|source| OrderedFragmentBuildError::SlowFullCopy {
+            let copied = if source_boundary {
+                copy_full_molecule_remove_atoms_outside_component_with_source_metadata(
+                    source_topology,
+                    source_coordinates,
+                    source_properties,
+                    &atoms_in_fragment,
+                    source_metadata,
+                )
+            } else {
+                copy_full_molecule_remove_atoms_outside_component_with_view(
+                    source_topology,
+                    source_coordinates,
+                    source_properties,
+                    &atoms_in_fragment,
+                )
+            };
+            copied.map_err(|source| OrderedFragmentBuildError::SlowFullCopy {
                 component_index,
                 source,
             })?
         };
+        if let Some(output) = component_output.as_deref_mut() {
+            output.push(
+                component_atoms
+                    .iter()
+                    .map(|atom| atom.index() as i32)
+                    .collect(),
+            );
+        }
         fragments.push(OrderedFragmentCopy {
             component_atoms,
             copy: copied,
         });
     }
     Ok(fragments)
+}
+
+/// Source shared-ownership fragment overload over detached domain values.
+#[doc(hidden)]
+pub fn get_shared_molecule_fragments_with_source_outputs(
+    source_topology: &TopologyBlock,
+    source_coordinates: &FragmentCoordinateView<'_>,
+    source_properties: &MoleculeProperties,
+    sanitize_fragments: bool,
+    copy_conformers: bool,
+    label_output: Option<&mut Vec<i32>>,
+    component_output: Option<&mut Vec<Vec<i32>>>,
+    source_metadata: FragmentSourceMetadataView<'_>,
+) -> Result<Vec<std::sync::Arc<MoleculeFragment>>, MoleculeFragmentsError> {
+    // RDKit❗✔️: std::vector<ROMOL_SPTR> getMolFrags(const ROMol &mol, bool sanitizeFrags,
+    // RDKit❗✔️:                                     INT_VECT *frags,
+    // RDKit❗✔️:                                     VECT_INT_VECT *fragsMolAtomMapping,
+    // RDKit❗✔️:                                     bool copyConformers) {
+    // RDKit❗✔️:   auto upFrags = getTheFrags(mol, sanitizeFrags, frags, fragsMolAtomMapping,
+    // RDKit❗✔️:                              copyConformers);
+    // RDKit❗✔️:   std::vector<boost::shared_ptr<ROMol>> finalRes;
+    // RDKit❗✔️:   for (auto &r : upFrags) {
+    // RDKit❗✔️:     finalRes.emplace_back(r.get());
+    // RDKit❗✔️:     r.release();
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return finalRes;
+    // RDKit❗✔️: }
+    // Behavior: build every unique detached fragment before transferring each
+    // into shared ownership. Graph, coordinates, properties, and mappings are
+    // moved, not cloned; all kernel errors and partial output updates propagate.
+    // Native allocation exceptions/pointer deletion and Rust allocation failure
+    // remain distinct owner-state capabilities, hence the behavior marker.
+    // Complexity: one result-vector pass and one shared allocation per fragment,
+    // as in the native shared control-block construction; Arc moves the owned
+    // detached value and does not clone its vectors or underlying blocks.
+    let fragments = get_molecule_fragments_with_source_outputs(
+        source_topology,
+        source_coordinates,
+        source_properties,
+        sanitize_fragments,
+        copy_conformers,
+        label_output,
+        component_output,
+        source_metadata,
+    )?;
+    Ok(fragments.into_iter().map(std::sync::Arc::new).collect())
+}
+
+/// Source owned-output fragment overload over detached domain values.
+#[doc(hidden)]
+pub fn assign_molecule_fragments_with_source_outputs(
+    source_topology: &TopologyBlock,
+    source_coordinates: &FragmentCoordinateView<'_>,
+    source_properties: &MoleculeProperties,
+    fragments_output: &mut Vec<MoleculeFragment>,
+    sanitize_fragments: bool,
+    copy_conformers: bool,
+    label_output: Option<&mut Vec<i32>>,
+    component_output: Option<&mut Vec<Vec<i32>>>,
+    source_metadata: FragmentSourceMetadataView<'_>,
+) -> Result<u32, MoleculeFragmentsError> {
+    // RDKit❗✔️: unsigned int getMolFrags(const ROMol &mol,
+    // RDKit❗✔️:                          std::vector<std::unique_ptr<ROMol>> &molFrags,
+    // RDKit❗✔️:                          bool sanitizeFrags, std::vector<int> *frags,
+    // RDKit❗✔️:                          std::vector<std::vector<int>> *fragsMolAtomMapping,
+    // RDKit❗✔️:                          bool copyConformers) {
+    // RDKit❗✔️:   molFrags = getTheFrags(mol, sanitizeFrags, frags, fragsMolAtomMapping,
+    // RDKit❗✔️:                          copyConformers);
+    // RDKit❗✔️:   return rdcast<unsigned int>(molFrags.size());
+    // RDKit❗✔️: }
+    // Behavior: evaluate the complete kernel before replacing the caller's
+    // prior owned fragments. On error those fragments stay intact while actual
+    // label/map updates performed by the kernel remain observable. Assignment
+    // moves the complete vector before reading its source unsigned count.
+    // RDKit❗✔️: #define rdcast static_cast
+    // Ordinary pinned native builds use unsigned truncation for rdcast; native
+    // RDDEBUG numeric_cast exceptions are a separate unmodeled build policy.
+    // Complexity: no topology/coordinate/property clone; vector assignment
+    // drops the old owned results and transfers the new vector in O(1), aside
+    // from the same old-fragment destruction costs as native unique ownership.
+    let fragments = get_molecule_fragments_with_source_outputs(
+        source_topology,
+        source_coordinates,
+        source_properties,
+        sanitize_fragments,
+        copy_conformers,
+        label_output,
+        component_output,
+        source_metadata,
+    )?;
+    *fragments_output = fragments;
+    Ok(fragments_output.len() as u32)
 }
 
 /// Build connected components in source order from borrowed detached values.
@@ -2140,6 +2522,189 @@ pub fn get_molecule_fragments_with_coordinate_view(
     sanitize_fragments: bool,
     copy_conformers: bool,
 ) -> Result<Vec<MoleculeFragment>, MoleculeFragmentsError> {
+    get_molecule_fragments_impl(
+        source_topology,
+        source_coordinates,
+        source_properties,
+        sanitize_fragments,
+        copy_conformers,
+        None,
+        None,
+        FragmentSourceMetadataView::unmodeled(),
+        false,
+    )
+}
+
+/// Complete source fragment dispatch with actual optional output buffers and metadata.
+/// Independently unmodeled ring/bookmark fields remain `None`, never invented defaults.
+#[doc(hidden)]
+pub fn get_molecule_fragments_with_source_outputs(
+    source_topology: &TopologyBlock,
+    source_coordinates: &FragmentCoordinateView<'_>,
+    source_properties: &MoleculeProperties,
+    sanitize_fragments: bool,
+    copy_conformers: bool,
+    label_output: Option<&mut Vec<i32>>,
+    component_output: Option<&mut Vec<Vec<i32>>>,
+    source_metadata: FragmentSourceMetadataView<'_>,
+) -> Result<Vec<MoleculeFragment>, MoleculeFragmentsError> {
+    get_molecule_fragments_impl(
+        source_topology,
+        source_coordinates,
+        source_properties,
+        sanitize_fragments,
+        copy_conformers,
+        label_output,
+        component_output,
+        source_metadata,
+        true,
+    )
+}
+
+fn get_molecule_fragments_impl(
+    source_topology: &TopologyBlock,
+    source_coordinates: &FragmentCoordinateView<'_>,
+    source_properties: &MoleculeProperties,
+    sanitize_fragments: bool,
+    copy_conformers: bool,
+    label_output: Option<&mut Vec<i32>>,
+    component_output: Option<&mut Vec<Vec<i32>>>,
+    source_metadata: FragmentSourceMetadataView<'_>,
+    source_boundary: bool,
+) -> Result<Vec<MoleculeFragment>, MoleculeFragmentsError> {
+    // RDKit❗❌: std::vector<std::unique_ptr<ROMol>> getTheFrags(
+    // RDKit❗❌:     const ROMol &mol, bool sanitizeFrags, INT_VECT *frags,
+    // RDKit❗❌:     VECT_INT_VECT *fragsMolAtomMapping, bool copyConformers) {
+    // RDKit❗❌:   std::unique_ptr<INT_VECT> mappingStorage;
+    // RDKit❗❌:   if (!frags) {
+    // RDKit❗❌:     mappingStorage.reset(new INT_VECT);
+    // RDKit❗❌:     frags = mappingStorage.get();
+    // RDKit❗❌:   }
+    // RDKit❗❌:   int nFrags = getMolFrags(mol, *frags);
+    // RDKit❗❌:   std::vector<std::unique_ptr<RWMol>> res;
+    // RDKit❗❌:
+    // RDKit❗❌:   if (nFrags == 1) {
+    // RDKit❗❌:     res.emplace_back(new RWMol(mol));
+    // RDKit❗❌:     if (fragsMolAtomMapping) {
+    // RDKit❗❌:       INT_VECT comp;
+    // RDKit❗❌:       for (unsigned int idx = 0; idx < mol.getNumAtoms(); ++idx) {
+    // RDKit❗❌:         comp.push_back(idx);
+    // RDKit❗❌:       }
+    // RDKit❗❌:       (*fragsMolAtomMapping).push_back(comp);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     res.reserve(nFrags);
+    // RDKit❗❌:     for (int i = 0; i < nFrags; ++i) {
+    // RDKit❗❌:       boost::dynamic_bitset<> atomsInFrag(mol.getNumAtoms());
+    // RDKit❗❌:       INT_VECT comp;
+    // RDKit❗❌:       for (unsigned int idx = 0; idx < mol.getNumAtoms(); ++idx) {
+    // RDKit❗❌:         if ((*frags)[idx] == i) {
+    // RDKit❗❌:           comp.push_back(idx);
+    // RDKit❗❌:           atomsInFrag.set(idx);
+    // RDKit❗❌:         }
+    // RDKit❗❌:       }
+    // RDKit❗❌:       auto fragmentHasChallengingFeatures =
+    // RDKit❗❌:           [&](const INT_VECT &comp,
+    // RDKit❗❌:               const boost::dynamic_bitset<> &atomsInFrag) -> bool {
+    // RDKit❗❌:         for (auto idx : comp) {
+    // RDKit❗❌:           // check for atoms with stereochem:
+    // RDKit❗❌:           const auto atom = mol.getAtomWithIdx(idx);
+    // RDKit❗❌:           if (atom->getChiralTag() != Atom::ChiralType::CHI_UNSPECIFIED &&
+    // RDKit❗❌:               atom->getChiralTag() != Atom::ChiralType::CHI_OTHER) {
+    // RDKit❗❌:             return true;
+    // RDKit❗❌:           }
+    // RDKit❗❌:           for (auto bnd : mol.atomBonds(atom)) {
+    // RDKit❗❌:             if (atomsInFrag[bnd->getOtherAtomIdx(idx)]) {
+    // RDKit❗❌:               if (bnd->getStereo() != Bond::BondStereo::STEREONONE &&
+    // RDKit❗❌:                   bnd->getStereo() != Bond::BondStereo::STEREOANY) {
+    // RDKit❗❌:                 return true;
+    // RDKit❗❌:               }
+    // RDKit❗❌:             }
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         for (auto sgroup : getSubstanceGroups(mol)) {
+    // RDKit❗❌:           for (auto aid : sgroup.getAtoms()) {
+    // RDKit❗❌:             if (atomsInFrag[aid]) {
+    // RDKit❗❌:               return true;
+    // RDKit❗❌:             }
+    // RDKit❗❌:           }
+    // RDKit❗❌:           for (auto aid : sgroup.getParentAtoms()) {
+    // RDKit❗❌:             if (atomsInFrag[aid]) {
+    // RDKit❗❌:               return true;
+    // RDKit❗❌:             }
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         for (auto stereoGroup : mol.getStereoGroups()) {
+    // RDKit❗❌:           // doesn't seem like this should be necessary, but in case
+    // RDKit❗❌:           // we ever need stereogroups where the atoms aren't marked
+    // RDKit❗❌:           // with stereo...
+    // RDKit❗❌:           for (auto atom : stereoGroup.getAtoms()) {
+    // RDKit❗❌:             if (atomsInFrag[atom->getIdx()]) {
+    // RDKit❗❌:               return true;
+    // RDKit❗❌:             }
+    // RDKit❗❌:           }
+    // RDKit❗❌:           // same check for stereo groups involving bonds:
+    // RDKit❗❌:           for (auto bond : stereoGroup.getBonds()) {
+    // RDKit❗❌:             if (atomsInFrag[bond->getBeginAtomIdx()] &&
+    // RDKit❗❌:                 atomsInFrag[bond->getEndAtomIdx()]) {
+    // RDKit❗❌:               return true;
+    // RDKit❗❌:             }
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         return false;
+    // RDKit❗❌:       };
+    // RDKit❗❌:       if (comp.size() == 1 ||
+    // RDKit❗❌:           (nFrags > 3 && !fragmentHasChallengingFeatures(comp, atomsInFrag))) {
+    // RDKit❗❌:         // special case for a small, simple fragments when a bunch of fragments
+    // RDKit❗❌:         // are present. The check on the number of fragments is purely
+    // RDKit❗❌:         // empirical. This is mainly intended to catch situations like proteins
+    // RDKit❗❌:         // where you have a bunch of single-atom fragments (waters); the
+    // RDKit❗❌:         // standard approach below ends up being horribly inefficient there
+    // RDKit❗❌:         SubsetOptions opts{.sanitize = sanitizeFrags,
+    // RDKit❗❌:                            .clearComputedProps = true,
+    // RDKit❗❌:                            .copyCoordinates = copyConformers,
+    // RDKit❗❌:                            .method = SubsetMethod::BONDS_BETWEEN_ATOMS};
+    // RDKit❗❌:         std::vector<unsigned int> atoms{comp.begin(), comp.end()};
+    // RDKit❗❌:         SubsetInfo info;
+    // RDKit❗❌:         auto submol = copyMolSubset(mol, atoms, info, opts);
+    // RDKit❗❌:         res.push_back(std::move(submol));
+    // RDKit❗❌:       } else {
+    // RDKit❗❌:         res.emplace_back(new RWMol(mol));
+    // RDKit❗❌:         auto &frag = res.back();
+    // RDKit❗❌:
+    // RDKit❗❌:         frag->beginBatchEdit();
+    // RDKit❗❌:         for (unsigned int idx = 0; idx < mol.getNumAtoms(); ++idx) {
+    // RDKit❗❌:           if (!atomsInFrag[idx]) {
+    // RDKit❗❌:             frag->removeAtom(idx);
+    // RDKit❗❌:           }
+    // RDKit❗❌:         }
+    // RDKit❗❌:         frag->commitBatchEdit();
+    // RDKit❗❌:       }
+    // RDKit❗❌:       if (fragsMolAtomMapping) {
+    // RDKit❗❌:         (*fragsMolAtomMapping).push_back(comp);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:   if (!copyConformers) {
+    // RDKit❗❌:     for (auto &frag : res) {
+    // RDKit❗❌:       frag->clearConformers();
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   if (sanitizeFrags) {
+    // RDKit❗❌:     for (auto &frag : res) {
+    // RDKit❗❌:       sanitizeMol(*frag);
+    // RDKit❗❌:     }
+    // RDKit❗❌:   }
+    // RDKit❗❌:
+    // RDKit❗❌:   std::vector<std::unique_ptr<ROMol>> finalRes;
+    // RDKit❗❌:   for (auto &r : res) {
+    // RDKit❗❌:     finalRes.emplace_back(r.get());
+    // RDKit❗❌:     r.release();
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return finalRes;
+    // RDKit❗❌: }
+
     // BEGIN RDKIT CPP FUNCTION MolOps::getTheFrags postprocessing
     // RDKit❗❌:   if (!copyConformers) {
     // RDKit❗❌:     for (auto &frag : res) {
@@ -2188,12 +2753,28 @@ pub fn get_molecule_fragments_with_coordinate_view(
     // Complexity: clearing is linear in copied conformer records; optional
     // default sanitation visits each completed fragment once more. Moving the
     // already-built vector adds no second topology or coordinate clone.
-    let mut fragments = build_ordered_fragment_copies_with_view(
+    let connected = crate::paths::connected_components(source_topology)
+        .map_err(OrderedFragmentBuildError::from)
+        .map_err(MoleculeFragmentsError::from)?;
+    if let Some(output) = label_output {
+        output.clear();
+        output.extend(
+            connected
+                .atom_to_component
+                .iter()
+                .map(|label| *label as i32),
+        );
+    }
+    let mut fragments = build_ordered_fragment_copies_from_components(
         source_topology,
         source_coordinates,
         source_properties,
         sanitize_fragments,
         copy_conformers,
+        connected,
+        component_output,
+        source_metadata,
+        source_boundary,
     )
     .map_err(MoleculeFragmentsError::from)?;
 
@@ -2224,6 +2805,12 @@ pub fn get_molecule_fragments_with_coordinate_view(
                     },
                 })?;
             fragment.copy.topology = sanitized.topology;
+            if fragment.copy.source_metadata.rings.is_some() {
+                fragment.copy.source_metadata.rings = Some(match sanitized.final_rings {
+                    Some(rings) => rings,
+                    None => source_uninitialized_ring_info(),
+                });
+            }
         }
     }
 
@@ -2530,8 +3117,8 @@ mod cf3d_frag_f07_tests {
                 )
                 .with_prop("subset-only", "drop"),
             ],
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::TwoD),
+            source_conformer_order: None,
         };
         let original_one = one.clone();
         let one_view = FragmentCoordinateView::from_coordinate_block(&one);
@@ -2539,8 +3126,8 @@ mod cf3d_frag_f07_tests {
         let expected_subset = CoordinateBlock {
             conformers_2d: vec![Conformer2D::new(41, vec![[3.0, 4.0]])],
             conformers_3d: vec![Conformer3D::new(41, vec![[4.0, 5.0, 6.0]], false)],
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::TwoD),
+            source_conformer_order: None,
         };
 
         assert_eq!(
@@ -2608,8 +3195,8 @@ mod cf3d_frag_f07_tests {
                 )
                 .with_prop("kind", "3d-second"),
             ],
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         let original_source = source.clone();
         let atom_mapping = BTreeMap::from([
@@ -2638,8 +3225,8 @@ mod cf3d_frag_f07_tests {
                     false,
                 ),
             ],
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
 
         assert_eq!(copy_subset_coordinates(&source, &atom_mapping), expected);
@@ -2661,8 +3248,8 @@ mod cf3d_frag_f07_tests {
                 Conformer3D::new(9, vec![[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]], false)
                     .with_prop("copy", "preserved-second-3d"),
             ],
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         let original_source = source.clone();
         let source_view = FragmentCoordinateView::from_coordinate_block(&source);
@@ -4015,8 +4602,8 @@ mod cf3d_frag_f10_tests {
                 )
                 .with_prop("kind", "source-3d"),
             ],
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
 
         (topology, coordinates)
@@ -4076,8 +4663,8 @@ mod cf3d_frag_f10_tests {
                 ],
                 false,
             )],
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         }
     }
 
@@ -4171,8 +4758,8 @@ mod cf3d_frag_f10_tests {
             CoordinateBlock {
                 conformers_2d: vec![Conformer2D::new(31, Vec::new())],
                 conformers_3d: vec![Conformer3D::new(45, Vec::new(), false)],
-                source_conformer_order: None,
                 source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+                source_conformer_order: None,
             }
         );
 
@@ -4211,8 +4798,8 @@ mod cf3d_frag_f10_tests {
                     vec![[0.0, 10.0, 20.0], [2.0, 12.0, 22.0], [4.0, 14.0, 24.0]],
                     false,
                 )],
-                source_conformer_order: None,
                 source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+                source_conformer_order: None,
             }
         );
         assert_eq!(source_topology, original_topology);
@@ -4564,8 +5151,8 @@ mod cf3d_frag_f15_tests {
         let coordinates = CoordinateBlock {
             conformers_2d,
             conformers_3d,
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         let properties = MoleculeProperties::default()
             .with_name("source-molecule")
@@ -4912,8 +5499,8 @@ mod cf3d_frag_f16_tests {
         CoordinateBlock {
             conformers_2d,
             conformers_3d,
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         }
     }
 
@@ -5254,8 +5841,8 @@ mod cf3d_frag_f17_tests {
                 )
                 .with_prop("source-conformer", "3d-source"),
             ],
-            source_conformer_order: None,
             source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         }
     }
 
@@ -6097,5 +6684,566 @@ mod cf3d_frag_f17_tests {
                 }
             }
         ));
+    }
+
+    fn ids(indices: &[usize]) -> Vec<AtomId> {
+        indices.iter().copied().map(AtomId::new).collect()
+    }
+    fn bond_ids(indices: &[usize]) -> Vec<BondId> {
+        indices.iter().copied().map(BondId::new).collect()
+    }
+
+    fn source562_run(
+        topology: &TopologyBlock,
+        coordinates: &CoordinateBlock,
+        sanitize: bool,
+        copy_coordinates: bool,
+        labels: &mut Vec<i32>,
+        mapping: &mut Vec<Vec<i32>>,
+        metadata: super::FragmentSourceMetadataView<'_>,
+    ) -> Result<Vec<super::MoleculeFragment>, super::MoleculeFragmentsError> {
+        // These new native fixtures explicitly construct the source conformer
+        // vector as [2D(id41), 3D(id73)]. This is fixture input, not production
+        // inference for an unknown mixed-dimension source ordering.
+        assert_eq!(coordinates.conformers_2d.len(), 1);
+        assert_eq!(coordinates.conformers_3d.len(), 1);
+        let mut fixture_coordinates = coordinates.clone();
+        fixture_coordinates.source_conformer_order =
+            Some(vec![CoordinateDimension::TwoD, CoordinateDimension::ThreeD]);
+        super::get_molecule_fragments_with_source_outputs(
+            topology,
+            &super::FragmentCoordinateView::from_coordinate_block(&fixture_coordinates),
+            &MoleculeProperties::default(),
+            sanitize,
+            copy_coordinates,
+            Some(labels),
+            Some(mapping),
+            metadata,
+        )
+    }
+
+    #[test]
+    fn source562_outputs_replace_labels_but_append_maps_in_source_order() {
+        let (graph, coords, _, _) =
+            source_for(&[ComponentShape::PlainDimer, ComponentShape::Singleton]);
+        let mut labels = vec![77, 88];
+        let mut mapping = vec![vec![91]];
+        let result = source562_run(
+            &graph,
+            &coords,
+            false,
+            true,
+            &mut labels,
+            &mut mapping,
+            super::FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap();
+        assert_eq!(labels, vec![0, 0, 1]);
+        assert_eq!(mapping, vec![vec![91], vec![0, 1], vec![2]]);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn source562_slow_raw_coordinates_preserve_float_bits() {
+        let (graph, mut coords, _, _) =
+            source_for(&[ComponentShape::PlainDimer, ComponentShape::PlainDimer]);
+        let nan = f64::from_bits(0x7ff8_0000_0000_1234);
+        coords.conformers_3d[0] = Conformer3D::new(
+            73,
+            vec![
+                [nan, -0.0, f64::INFINITY],
+                [1.0, 2.0, 3.0],
+                [4.0, 5.0, 6.0],
+                [7.0, 8.0, 9.0],
+            ],
+            true,
+        );
+        let result = source562_run(
+            &graph,
+            &coords,
+            false,
+            true,
+            &mut vec![],
+            &mut vec![],
+            super::FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap();
+        let row = result[0].coordinates().conformers_3d[0].coordinates()[0];
+        assert_eq!(row[0].to_bits(), nan.to_bits());
+        assert_eq!(row[1].to_bits(), (-0.0f64).to_bits());
+        assert_eq!(row[2].to_bits(), f64::INFINITY.to_bits());
+    }
+
+    #[test]
+    fn source562_deleted_missing_tail_is_allowed_until_a_retained_row_is_lost() {
+        let (graph, mut coords, _, _) =
+            source_for(&[ComponentShape::PlainDimer, ComponentShape::PlainDimer]);
+        coords.conformers_2d[0] = Conformer2D::new(41, vec![[0.0, 0.0]; 2]);
+        let mut labels = vec![77];
+        let mut mapping = vec![vec![91]];
+        let error = source562_run(
+            &graph,
+            &coords,
+            false,
+            false,
+            &mut labels,
+            &mut mapping,
+            super::FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap_err();
+        assert_eq!(error.component_index(), Some(1));
+        assert_eq!(labels, vec![0, 0, 1, 1]);
+        assert_eq!(mapping, vec![vec![91], vec![0, 1]]);
+        // copyConformers=false clears copies only after all builders finish;
+        // the second slow-copy coordinate invariant still executes first.
+        assert!(matches!(
+            error.failure,
+            MoleculeFragmentsFailure::Build(OrderedFragmentBuildError::SlowFullCopy {
+                component_index: 1,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn source562_fast_sanitize_failure_keeps_only_completed_component_maps() {
+        let atom = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::O).with_explicit_hydrogens(3),
+        );
+        let graph = TopologyBlock::try_from_parts(
+            vec![
+                atom,
+                Atom::from_spec(AtomId::new(1), AtomSpec::new(Element::C)),
+            ],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let mut labels = vec![77];
+        let mut mapping = vec![vec![91]];
+        let error = source562_run(
+            &graph,
+            &coordinates(2),
+            true,
+            true,
+            &mut labels,
+            &mut mapping,
+            super::FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap_err();
+        assert_eq!(error.component_index(), Some(0));
+        assert_eq!(labels, vec![0, 1]);
+        assert_eq!(mapping, vec![vec![91]]);
+    }
+
+    #[test]
+    fn source562_outer_sanitize_failure_follows_all_component_map_appends() {
+        let (graph, coords, _) = two_distinct_final_sanitize_failures(false);
+        let mut labels = vec![77];
+        let mut mapping = vec![vec![91]];
+        let error = source562_run(
+            &graph,
+            &coords,
+            true,
+            true,
+            &mut labels,
+            &mut mapping,
+            super::FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap_err();
+        assert_eq!(error.component_index(), Some(0));
+        assert_eq!(mapping.len(), 3);
+        assert_eq!(mapping[0], vec![91]);
+        assert_eq!(labels.len(), graph.atoms.len());
+        assert!(matches!(
+            error.failure,
+            MoleculeFragmentsFailure::FinalSanitize { .. }
+        ));
+    }
+
+    #[test]
+    fn source562_full_copy_and_slow_delete_transport_actual_bookmarks_and_rings() {
+        use std::collections::BTreeMap;
+        let (single, single_coords, _, _) = source_for(&[ComponentShape::PlainDimer]);
+        let ring = super::source_uninitialized_ring_info();
+        let atom_marks = BTreeMap::from([(10, ids(&[1, 0, 1])), (11, vec![])]);
+        let bond_marks = BTreeMap::from([(12, bond_ids(&[0, 0])), (13, vec![])]);
+        let meta = super::FragmentSourceMetadataView {
+            rings: Some(&ring),
+            atom_bookmarks: Some(&atom_marks),
+            bond_bookmarks: Some(&bond_marks),
+        };
+        let full = source562_run(
+            &single,
+            &single_coords,
+            false,
+            false,
+            &mut vec![],
+            &mut vec![],
+            meta,
+        )
+        .unwrap();
+        assert_eq!(full[0].source_metadata().rings.as_ref(), Some(&ring));
+        assert_eq!(
+            full[0].source_metadata().atom_bookmarks.as_ref().unwrap(),
+            &BTreeMap::from([(10, ids(&[1, 0, 1]))])
+        );
+        assert_eq!(
+            full[0].source_metadata().bond_bookmarks.as_ref().unwrap(),
+            &BTreeMap::from([(12, bond_ids(&[0, 0]))])
+        );
+        assert!(full[0].coordinates().conformers_2d.is_empty());
+        let (graph, coords, _, _) =
+            source_for(&[ComponentShape::PlainDimer, ComponentShape::PlainDimer]);
+        let atoms = BTreeMap::from([(7, ids(&[2, 3]))]);
+        let bonds = BTreeMap::from([(8, bond_ids(&[1]))]);
+        let fragments = source562_run(
+            &graph,
+            &coords,
+            false,
+            true,
+            &mut vec![],
+            &mut vec![],
+            super::FragmentSourceMetadataView {
+                rings: Some(&ring),
+                atom_bookmarks: Some(&atoms),
+                bond_bookmarks: Some(&bonds),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            fragments[1]
+                .source_metadata()
+                .atom_bookmarks
+                .as_ref()
+                .unwrap()[&7],
+            ids(&[0, 1])
+        );
+        assert_eq!(
+            fragments[1]
+                .source_metadata()
+                .bond_bookmarks
+                .as_ref()
+                .unwrap()[&8],
+            bond_ids(&[0])
+        );
+        assert!(
+            !fragments[1]
+                .source_metadata()
+                .rings
+                .as_ref()
+                .unwrap()
+                .is_initialized()
+        );
+    }
+
+    #[test]
+    fn source562_slow_delete_keeps_native_one_entry_stereo_vector_and_tag() {
+        let atoms = (0..3)
+            .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+            .collect();
+        let bond = Bond::from_spec(
+            BondId::new(0),
+            BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Double)
+                .with_stereo(BondStereo::Cis)
+                .with_stereo_atoms(AtomId::new(0), AtomId::new(2)),
+        );
+        let graph = TopologyBlock::try_from_parts(atoms, vec![bond], vec![], vec![]).unwrap();
+        let result = source562_run(
+            &graph,
+            &coordinates(3),
+            false,
+            true,
+            &mut vec![],
+            &mut vec![],
+            super::FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap();
+        let bond = &result[0].topology().bonds[0];
+        assert_eq!(bond.stereo(), BondStereo::Cis);
+        assert_eq!(bond.stereo_atom_references(), &[AtomId::new(0)]);
+    }
+}
+
+fn source_uninitialized_ring_info() -> crate::RingInfo {
+    // RDKit❗✔️: RingInfo() {}
+    // RDKit❗✔️: bool df_init{false};
+    // Source constructor state, distinct from an unmodeled metadata capability.
+    crate::RingInfo::from_persisted_components(
+        false,
+        crate::RingFindType::OtherOrUnknown,
+        0,
+        0,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("exact source uninitialized RingInfo constructor state is structurally valid")
+}
+
+fn fresh_subset_source_metadata(source: FragmentSourceMetadataView<'_>) -> FragmentSourceMetadata {
+    // RDKit❗✔️: auto extracted_mol = std::make_unique<RWMol>();
+    // RDKit❗✔️: dp_ringInfo = new RingInfo();
+    // A fresh subset owns empty bookmarks and, after clearComputedProps=true,
+    // an uninitialized ring value. Only explicitly modeled capabilities are
+    // returned; None remains unmodeled rather than a native empty value.
+    FragmentSourceMetadata {
+        rings: source.rings.map(|_| source_uninitialized_ring_info()),
+        atom_bookmarks: source.atom_bookmarks.map(|_| BTreeMap::new()),
+        bond_bookmarks: source.bond_bookmarks.map(|_| BTreeMap::new()),
+    }
+}
+
+fn clone_source_fragment_metadata(
+    topology: &TopologyBlock,
+    source: FragmentSourceMetadataView<'_>,
+) -> Result<FragmentSourceMetadata, FullCopyComponentError> {
+    // RDKit❗❌:     // Bookmarks should be copied as well:
+    // RDKit❗❌:     for (auto abmI : other.d_atomBookmarks) {
+    // RDKit❗❌:       for (const auto *aptr : abmI.second) {
+    // RDKit❗❌:         setAtomBookmark(getAtomWithIdx(aptr->getIdx()), abmI.first);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     for (auto bbmI : other.d_bondBookmarks) {
+    // RDKit❗❌:       for (const auto *bptr : bbmI.second) {
+    // RDKit❗❌:         setBondBookmark(getBondWithIdx(bptr->getIdx()), bbmI.first);
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // Native bookmark setters append once per pointer; empty source keys are
+    // not copied. Typed IDs retain native duplicate encounter order.
+    let atoms = source
+        .atom_bookmarks
+        .map(|marks| {
+            let mut copied = BTreeMap::new();
+            for (mark, references) in marks {
+                for atom in references {
+                    if atom.index() >= topology.atoms.len() {
+                        return Err(FullCopyComponentError::TopologyEdit(
+                            TopologyEditError::AtomOutOfRange {
+                                atom: *atom,
+                                atom_count: topology.atoms.len(),
+                            },
+                        ));
+                    }
+                    copied.entry(*mark).or_insert_with(Vec::new).push(*atom);
+                }
+            }
+            Ok(copied)
+        })
+        .transpose()?;
+    let bonds = source
+        .bond_bookmarks
+        .map(|marks| {
+            let mut copied = BTreeMap::new();
+            for (mark, references) in marks {
+                for bond in references {
+                    if bond.index() >= topology.bonds.len() {
+                        return Err(FullCopyComponentError::TopologyEdit(
+                            TopologyEditError::BondOutOfRange {
+                                bond: *bond,
+                                bond_count: topology.bonds.len(),
+                            },
+                        ));
+                    }
+                    copied.entry(*mark).or_insert_with(Vec::new).push(*bond);
+                }
+            }
+            Ok(copied)
+        })
+        .transpose()?;
+    Ok(FragmentSourceMetadata {
+        rings: source.rings.cloned(),
+        atom_bookmarks: atoms,
+        bond_bookmarks: bonds,
+    })
+}
+
+#[cfg(test)]
+mod source566_shared_fragment_tests {
+    use super::*;
+    use cosmolkit_model::AtomSpec;
+    use cosmolkit_types::Element;
+
+    #[test]
+    fn source566_shared_fragment_clone_retains_identical_owned_value() {
+        let graph = TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let coordinates = CoordinateBlock::default();
+        let mut labels = vec![77];
+        let mut maps = vec![vec![91]];
+        let fragments = get_shared_molecule_fragments_with_source_outputs(
+            &graph,
+            &FragmentCoordinateView::from_coordinate_block(&coordinates),
+            &MoleculeProperties::default(),
+            false,
+            true,
+            Some(&mut labels),
+            Some(&mut maps),
+            FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap();
+        assert_eq!(fragments.len(), 1);
+        assert_eq!(labels, vec![0]);
+        assert_eq!(maps, vec![vec![91], vec![0]]);
+        let shared = std::sync::Arc::clone(&fragments[0]);
+        assert!(std::sync::Arc::ptr_eq(&shared, &fragments[0]));
+        assert_eq!(std::sync::Arc::strong_count(&shared), 2);
+        assert_eq!(shared.topology(), &graph);
+        drop(fragments);
+        assert_eq!(std::sync::Arc::strong_count(&shared), 1);
+        assert_eq!(shared.component_atoms(), &[AtomId::new(0)]);
+    }
+
+    #[test]
+    fn source566_shared_wrapper_preserves_inner_error_and_partial_outputs() {
+        let graph = TopologyBlock::try_from_parts(
+            vec![
+                Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
+                Atom::from_spec(
+                    AtomId::new(1),
+                    AtomSpec::new(Element::O).with_explicit_hydrogens(3),
+                ),
+            ],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let coordinates = CoordinateBlock::default();
+        let mut labels = vec![77];
+        let mut maps = vec![vec![91]];
+        let error = get_shared_molecule_fragments_with_source_outputs(
+            &graph,
+            &FragmentCoordinateView::from_coordinate_block(&coordinates),
+            &MoleculeProperties::default(),
+            true,
+            true,
+            Some(&mut labels),
+            Some(&mut maps),
+            FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap_err();
+        assert_eq!(error.component_index(), Some(1));
+        assert_eq!(labels, vec![0, 1]);
+        assert_eq!(maps, vec![vec![91], vec![0]]);
+        assert!(matches!(
+            error.failure,
+            MoleculeFragmentsFailure::Build(OrderedFragmentBuildError::FastSubset {
+                component_index: 1,
+                ..
+            })
+        ));
+    }
+}
+
+#[cfg(test)]
+mod source570_owned_fragment_tests {
+    use super::*;
+    use cosmolkit_model::AtomSpec;
+    use cosmolkit_types::Element;
+
+    fn single_graph() -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            vec![Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C))],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn source570_owned_output_replaces_old_values_after_success_and_empty_success() {
+        let graph = single_graph();
+        let coordinates = CoordinateBlock::default();
+        let view = FragmentCoordinateView::from_coordinate_block(&coordinates);
+        let props = MoleculeProperties::default();
+        let mut output = get_molecule_fragments(&graph, &coordinates, &props, false, true).unwrap();
+        let mut labels = vec![77];
+        let mut maps = vec![vec![91]];
+        let count = assign_molecule_fragments_with_source_outputs(
+            &TopologyBlock::default(),
+            &view,
+            &props,
+            &mut output,
+            false,
+            true,
+            Some(&mut labels),
+            Some(&mut maps),
+            FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap();
+        assert_eq!(count, 0);
+        assert!(output.is_empty());
+        assert!(labels.is_empty());
+        assert_eq!(maps, vec![vec![91]]);
+        let count = assign_molecule_fragments_with_source_outputs(
+            &graph,
+            &view,
+            &props,
+            &mut output,
+            false,
+            true,
+            Some(&mut labels),
+            Some(&mut maps),
+            FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(output.len(), 1);
+        assert_eq!(output[0].topology(), &graph);
+        assert_eq!(labels, vec![0]);
+        assert_eq!(maps, vec![vec![91], vec![0]]);
+    }
+
+    #[test]
+    fn source570_owned_output_failure_retains_prior_fragments_and_completed_maps() {
+        let graph = single_graph();
+        let coordinates = CoordinateBlock::default();
+        let props = MoleculeProperties::default();
+        let mut output = get_molecule_fragments(&graph, &coordinates, &props, false, true).unwrap();
+        let before = output.clone();
+        let invalid = TopologyBlock::try_from_parts(
+            vec![
+                Atom::from_spec(AtomId::new(0), AtomSpec::new(Element::C)),
+                Atom::from_spec(
+                    AtomId::new(1),
+                    AtomSpec::new(Element::O).with_explicit_hydrogens(3),
+                ),
+            ],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap();
+        let mut labels = vec![77];
+        let mut maps = vec![vec![91]];
+        let error = assign_molecule_fragments_with_source_outputs(
+            &invalid,
+            &FragmentCoordinateView::from_coordinate_block(&coordinates),
+            &props,
+            &mut output,
+            true,
+            true,
+            Some(&mut labels),
+            Some(&mut maps),
+            FragmentSourceMetadataView::unmodeled(),
+        )
+        .unwrap_err();
+        assert_eq!(error.component_index(), Some(1));
+        assert_eq!(output, before);
+        assert_eq!(labels, vec![0, 1]);
+        assert_eq!(maps, vec![vec![91], vec![0]]);
     }
 }

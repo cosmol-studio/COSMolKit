@@ -677,19 +677,19 @@ struct Property {
 #[musli(Binary, name(type = u32))]
 struct PdbInfo {
     #[musli(Binary, name = 0)]
-    atom_name: String,
+    atom_name: Vec<u8>,
     #[musli(Binary, name = 1)]
     serial_number: i32,
     #[musli(Binary, name = 2)]
-    alt_loc: String,
+    alt_loc: Vec<u8>,
     #[musli(Binary, name = 3)]
-    residue_name: String,
+    residue_name: Vec<u8>,
     #[musli(Binary, name = 4)]
     residue_number: i32,
     #[musli(Binary, name = 5)]
-    chain_id: String,
+    chain_id: Vec<u8>,
     #[musli(Binary, name = 6)]
-    insertion_code: String,
+    insertion_code: Vec<u8>,
     #[musli(Binary, name = 7)]
     occupancy_bits: u64,
     #[musli(Binary, name = 8)]
@@ -701,7 +701,7 @@ struct PdbInfo {
     #[musli(Binary, name = 11)]
     segment_number: u32,
     #[musli(Binary, name = 12)]
-    monomer_class: String,
+    monomer_class: Vec<u8>,
 }
 #[derive(Debug, Clone, Encode, Decode)]
 #[musli(Binary, name(type = u32))]
@@ -780,6 +780,10 @@ struct BondRecord {
     properties: Vec<Property>,
     #[musli(Binary, name = 10)]
     temporary_flags: u64,
+    // Keep tag 7 readable for existing V2 pairs. Source vectors with another
+    // cardinality use a new defaulted field instead of losing their entries.
+    #[musli(Binary, name = 11, default, skip_encoding_if = Option::is_none)]
+    source_stereo_atoms: Option<Vec<u64>>,
 }
 #[derive(Debug, Clone, Encode, Decode)]
 #[musli(Binary, name(type = u32))]
@@ -1078,19 +1082,19 @@ fn checked_text_props(
 impl From<&AtomPdbResidueInfo> for PdbInfo {
     fn from(p: &AtomPdbResidueInfo) -> Self {
         Self {
-            atom_name: p.atom_name().into(),
+            atom_name: p.atom_name().as_bytes().to_vec(),
             serial_number: p.serial_number(),
-            alt_loc: p.alt_loc().into(),
-            residue_name: p.residue_name().into(),
+            alt_loc: p.alt_loc().as_bytes().to_vec(),
+            residue_name: p.residue_name().as_bytes().to_vec(),
             residue_number: p.residue_number(),
-            chain_id: p.chain_id().into(),
-            insertion_code: p.insertion_code().into(),
+            chain_id: p.chain_id().as_bytes().to_vec(),
+            insertion_code: p.insertion_code().as_bytes().to_vec(),
             occupancy_bits: p.occupancy().to_bits(),
             temp_factor_bits: p.temp_factor().to_bits(),
             hetero: p.is_hetero_atom(),
             secondary_structure: p.secondary_structure(),
             segment_number: p.segment_number(),
-            monomer_class: p.monomer_class().into(),
+            monomer_class: p.monomer_class().as_bytes().to_vec(),
         }
     }
 }
@@ -1226,6 +1230,9 @@ impl From<&Bond> for BondRecord {
             unknown_stereo: b.unknown_stereo(),
             properties: props(ordered_bond_properties(b)),
             temporary_flags: b.temporary_flags(),
+            source_stereo_atoms: (!b.stereo_atom_references().is_empty()
+                && b.stereo_atoms().is_none())
+            .then(|| ids(b.stereo_atom_references(), AtomId::index)),
         }
     }
 }
@@ -1254,6 +1261,12 @@ impl BondRecord {
         }
         let mut b = Bond::from_spec(BondId::new(id), b);
         b.set_temporary_flags(self.temporary_flags);
+        if let Some(references) = self.source_stereo_atoms {
+            if self.stereo_atoms.is_some() {
+                return Err(invalid("conflicting bond stereo reference representations"));
+            }
+            b.set_source_stereo_atom_references(atom_ids(references)?);
+        }
         Ok(b)
     }
 }
@@ -1932,6 +1945,71 @@ fn decode_payload<'de, T: Decode<'de, Binary, musli::alloc::Global>>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn archive20_complete_source_bond_reference_vectors_are_not_pair_truncated() {
+        for references in [
+            vec![],
+            vec![AtomId::new(1)],
+            vec![AtomId::new(0), AtomId::new(1)],
+            vec![AtomId::new(1), AtomId::new(0), AtomId::new(1)],
+        ] {
+            let mut record = fixture();
+            record.topology.bonds[0].set_source_stereo_atom_references(references.clone());
+            record.topology.validate().unwrap();
+            let bytes = encode_molecule_binary(&input(&record)).unwrap();
+            let restored = decode_molecule_binary(&bytes).unwrap();
+            assert_eq!(
+                restored.topology.bonds[0].stereo_atom_references(),
+                references
+            );
+            assert_eq!(restored.topology, record.topology);
+            assert_eq!(encode_molecule_binary(&input(&restored)).unwrap(), bytes);
+        }
+        let record = fixture();
+        let bytes = encode_molecule_binary(&input(&record)).unwrap();
+        // Absent tag 11 exercises the defaulted reader used for previous V2.
+        let restored = decode_molecule_binary(&bytes).unwrap();
+        assert!(
+            restored.topology.bonds[0]
+                .stereo_atom_references()
+                .is_empty()
+        );
+        let bad = mutate_molecule(&bytes, |m| m.bonds[0].source_stereo_atoms = Some(vec![2]));
+        assert!(decode_molecule_binary(&bad).is_err());
+    }
+
+    #[test]
+    fn archive20_pdb_text_preserves_bytes_and_reads_previous_utf8_encoding() {
+        // The former V2 String fields used this same storage sequence encoding.
+        // Check the actual library codec rather than assuming wire equivalence.
+        for value in ["", " CA ", "é\0链"] {
+            let previous = musli::storage::to_vec(&value.to_owned()).unwrap();
+            let current = musli::storage::to_vec(&value.as_bytes().to_vec()).unwrap();
+            assert_eq!(previous, current);
+            assert_eq!(
+                decode_payload::<Vec<u8>>(&previous).unwrap(),
+                value.as_bytes()
+            );
+        }
+        let mut record = fixture();
+        let info = AtomPdbResidueInfo::new(
+            vec![b'C', 0xff, 0],
+            17,
+            vec![0xfe, b'R'],
+            3,
+            vec![0xfd],
+            true,
+        )
+        .with_alt_loc(vec![0xfc])
+        .with_insertion_code(vec![0xfb])
+        .with_monomer_class(vec![0xfa]);
+        record.topology.atoms[0].set_pdb_residue_info(Some(info));
+        let bytes = encode_molecule_binary(&input(&record)).unwrap();
+        let restored = decode_molecule_binary(&bytes).unwrap();
+        assert_eq!(restored.topology, record.topology);
+        assert_eq!(encode_molecule_binary(&input(&restored)).unwrap(), bytes);
+    }
 
     fn fixture() -> BinaryRecord {
         BinaryRecord {

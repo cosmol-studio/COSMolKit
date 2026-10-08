@@ -24,12 +24,23 @@ pub struct TetrahedralRemap {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum StereoOrderError {
+    #[error("source chiral permutation read failed: {0}")]
+    ChiralPermutationRead(#[from] crate::PropertyUIntReadError),
+    #[error("source chiral permutation property write failed: {0}")]
+    ChiralPermutationWrite(#[from] cosmolkit_model::AtomPropertyError),
+    #[error(
+        "atom {atom} has conflicting typed ({typed}) and raw ({raw}) chiral permutation projections"
+    )]
+    ConflictingChiralPermutation { atom: AtomId, typed: u32, raw: u32 },
+
     #[error("reference order has {reference} entries but probe order has {probe}")]
     PermutationLength { reference: usize, probe: usize },
     #[error(
         "probe order does not contain the value required at reference position {reference_position}"
     )]
     MissingProbeValue { reference_position: usize },
+    #[error("bond index {bond_index} exceeds the source unsigned32 index range")]
+    BondIndexSourceWidth { bond_index: usize },
     #[error("invalid topology: {0}")]
     InvalidTopology(TopologyValidationError),
     #[error("invalid topology mapping: {0}")]
@@ -66,35 +77,45 @@ pub fn count_swaps_to_interconvert<T: Copy + Eq>(
     probe: &[T],
 ) -> Result<usize, StereoOrderError> {
     // BEGIN RDKIT CPP FUNCTION RDGeneral::countSwapsToInterconvert
-    // RDKit✔️✔️: template <class T>
-    // RDKit✔️✔️: unsigned int countSwapsToInterconvert(const T &ref, T probe) {
-    // RDKit✔️✔️:   PRECONDITION(ref.size() == probe.size(), "size mismatch");
-    // RDKit✔️✔️:   typename T::const_iterator refIt = ref.begin();
-    // RDKit✔️✔️:   typename T::iterator probeIt = probe.begin();
-    // RDKit✔️✔️:   typename T::iterator probeIt2;
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:   unsigned int nSwaps = 0;
-    // RDKit✔️✔️:   while (refIt != ref.end()) {
-    // RDKit✔️✔️:     if ((*probeIt) != (*refIt)) {
-    // RDKit✔️✔️:       bool foundIt = false;
-    // RDKit✔️✔️:       probeIt2 = probeIt;
-    // RDKit✔️✔️:       while ((*probeIt2) != (*refIt) && probeIt2 != probe.end()) {
-    // RDKit✔️✔️:         ++probeIt2;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       if (probeIt2 != probe.end()) {
-    // RDKit✔️✔️:         foundIt = true;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       CHECK_INVARIANT(foundIt, "could not find probe element");
-    // RDKit✔️✔️:
-    // RDKit✔️✔️:       std::swap(*probeIt, *probeIt2);
-    // RDKit✔️✔️:       nSwaps++;
-    // RDKit✔️✔️:     }
-    // RDKit✔️✔️:     ++probeIt;
-    // RDKit✔️✔️:     ++refIt;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return nSwaps;
-    // RDKit✔️✔️: }
+    // RDKit❗✔️: template <class T>
+    // RDKit❗✔️: unsigned int countSwapsToInterconvert(const T &ref, T probe) {
+    // RDKit❗✔️:   PRECONDITION(ref.size() == probe.size(), "size mismatch");
+    // RDKit❗✔️:   typename T::const_iterator refIt = ref.begin();
+    // RDKit❗✔️:   typename T::iterator probeIt = probe.begin();
+    // RDKit❗✔️:   typename T::iterator probeIt2;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   unsigned int nSwaps = 0;
+    // RDKit❗✔️:   while (refIt != ref.end()) {
+    // RDKit❗✔️:     if ((*probeIt) != (*refIt)) {
+    // RDKit❗✔️:       bool foundIt = false;
+    // RDKit❗✔️:       probeIt2 = probeIt;
+    // RDKit❗✔️:       while ((*probeIt2) != (*refIt) && probeIt2 != probe.end()) {
+    // RDKit❗✔️:         ++probeIt2;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       if (probeIt2 != probe.end()) {
+    // RDKit❗✔️:         foundIt = true;
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:       CHECK_INVARIANT(foundIt, "could not find probe element");
+    // RDKit❗✔️:
+    // RDKit❗✔️:       std::swap(*probeIt, *probeIt2);
+    // RDKit❗✔️:       nSwaps++;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     ++probeIt;
+    // RDKit❗✔️:     ++refIt;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   return nSwaps;
+    // RDKit❗✔️: }
     // END RDKIT CPP FUNCTION RDGeneral::countSwapsToInterconvert
+    // Source nSwaps is unsigned32: preserve defined wrap at every increment,
+    // then widen its bits to the existing public usize return carrier.
+    // The first matching value in the remaining probe suffix is exchanged;
+    // duplicate values retain native encounter order. One detached probe copy
+    // matches native pass-by-value storage, with O(N^2) worst-case comparisons
+    // and O(N) scratch; no graph clone, sorting or alternate parity algorithm.
+    // Missing values become the source CHECK_INVARIANT's structural error.
+    // Native tests the dereference before its end guard, which is undefined
+    // for a missing value. Rust never dereferences past the slice; behavioral
+    // status stays ❗ for that source-language edge, not an invented fallback.
     if reference.len() != probe.len() {
         return Err(StereoOrderError::PermutationLength {
             reference: reference.len(),
@@ -103,7 +124,7 @@ pub fn count_swaps_to_interconvert<T: Copy + Eq>(
     }
 
     let mut probe = probe.to_vec();
-    let mut swaps = 0;
+    let mut swaps = 0_u32;
     for (reference_position, expected) in reference.iter().enumerate() {
         if probe[reference_position] == *expected {
             continue;
@@ -115,112 +136,148 @@ pub fn count_swaps_to_interconvert<T: Copy + Eq>(
             return Err(StereoOrderError::MissingProbeValue { reference_position });
         };
         probe.swap(reference_position, reference_position + offset);
-        swaps += 1;
+        swaps = swaps.wrapping_add(1);
     }
-    Ok(swaps)
+    Ok(swaps as usize)
+}
+
+/// Count source atom perturbations from its actual incident-bond encounter order.
+pub fn atom_perturbation_order(
+    probe: &[i32],
+    incident_bond_indices: impl IntoIterator<Item = usize>,
+) -> Result<i32, StereoOrderError> {
+    // BEGIN COMPLETE PINNED SF304 Atom::getPerturbationOrder
+    // RDKit❗🔝: int Atom::getPerturbationOrder(const INT_LIST &probe) const {
+    // RDKit❗🔝:   INT_LIST ref;
+    // RDKit❗🔝:   for (const auto bnd : getOwningMol().atomBonds(this)) {
+    // RDKit❗🔝:     ref.push_back(bnd->getIdx());
+    // RDKit❗🔝:   }
+    // RDKit❗🔝:   return static_cast<int>(countSwapsToInterconvert(probe, ref));
+    // RDKit❗🔝: }
+    // END COMPLETE PINNED SF304 Atom::getPerturbationOrder
+    // The detached iterator supplies the actual owning graph's incident order;
+    // consume it once, without sorting, filtering zero/dative bonds or imposing
+    // tetrahedral degree limits. Native unsigned32 indices become INT_LIST's
+    // signed32 elements, including indices with the high bit set. Wider project
+    // indices fail structurally at this transport boundary, never as unsupported.
+    // Reuse the sole swap algorithm with native argument orientation. Its
+    // unsigned32 result is converted to the source signed32 return bits.
+    // Counter behavior retains ❗ for the missing-value native undefined read.
+    // Vec storage removes linked-list node allocation and pointer chasing while
+    // preserving encounter order: O(D) construction and O(D^2) swap scanning,
+    // O(D) scratch, fewer allocations than two source INT_LIST instances.
+    let reference = incident_bond_indices
+        .into_iter()
+        .map(|bond_index| {
+            u32::try_from(bond_index)
+                .map(|index| index as i32)
+                .map_err(|_| StereoOrderError::BondIndexSourceWidth { bond_index })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(count_swaps_to_interconvert(probe, &reference)? as u32 as i32)
 }
 
 /// Invert a source-supported atom stereochemical tag and its permutation state.
-pub fn invert_atom_chirality(atom: &mut Atom) -> bool {
+pub fn invert_atom_chirality(atom: &mut Atom) -> Result<bool, StereoOrderError> {
     // BEGIN RDKIT CPP FUNCTION Atom::invertChirality tables and body
-    // RDKit✔️✔️: static const unsigned char octahedral_invert[31] = {
-    // RDKit✔️✔️:     0,   //  0 -> 0
-    // RDKit✔️✔️:     2,   //  1 -> 2
-    // RDKit✔️✔️:     1,   //  2 -> 1
-    // RDKit✔️✔️:     16,  //  3 -> 16
-    // RDKit✔️✔️:     14,  //  4 -> 14
-    // RDKit✔️✔️:     15,  //  5 -> 15
-    // RDKit✔️✔️:     18,  //  6 -> 18
-    // RDKit✔️✔️:     17,  //  7 -> 17
-    // RDKit✔️✔️:     10,  //  8 -> 10
-    // RDKit✔️✔️:     11,  //  9 -> 11
-    // RDKit✔️✔️:     8,   // 10 -> 8
-    // RDKit✔️✔️:     9,   // 11 -> 9
-    // RDKit✔️✔️:     13,  // 12 -> 13
-    // RDKit✔️✔️:     12,  // 13 -> 12
-    // RDKit✔️✔️:     4,   // 14 -> 4
-    // RDKit✔️✔️:     5,   // 15 -> 5
-    // RDKit✔️✔️:     3,   // 16 -> 3
-    // RDKit✔️✔️:     7,   // 17 -> 7
-    // RDKit✔️✔️:     6,   // 18 -> 6
-    // RDKit✔️✔️:     24,  // 19 -> 24
-    // RDKit✔️✔️:     23,  // 20 -> 23
-    // RDKit✔️✔️:     22,  // 21 -> 22
-    // RDKit✔️✔️:     21,  // 22 -> 21
-    // RDKit✔️✔️:     20,  // 23 -> 20
-    // RDKit✔️✔️:     19,  // 24 -> 19
-    // RDKit✔️✔️:     30,  // 25 -> 30
-    // RDKit✔️✔️:     29,  // 26 -> 29
-    // RDKit✔️✔️:     28,  // 27 -> 28
-    // RDKit✔️✔️:     27,  // 28 -> 27
-    // RDKit✔️✔️:     26,  // 29 -> 26
-    // RDKit✔️✔️:     25   // 30 -> 25
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️:
-    // RDKit✔️✔️: static const unsigned char trigonalbipyramidal_invert[21] = {
-    // RDKit✔️✔️:     0,   //  0 -> 0
-    // RDKit✔️✔️:     2,   //  1 -> 2
-    // RDKit✔️✔️:     1,   //  2 -> 1
-    // RDKit✔️✔️:     4,   //  3 -> 4
-    // RDKit✔️✔️:     3,   //  4 -> 3
-    // RDKit✔️✔️:     6,   //  5 -> 6
-    // RDKit✔️✔️:     5,   //  6 -> 5
-    // RDKit✔️✔️:     8,   //  7 -> 8
-    // RDKit✔️✔️:     7,   //  8 -> 7
-    // RDKit✔️✔️:     11,  //  9 -> 11
-    // RDKit✔️✔️:     12,  // 10 -> 12
-    // RDKit✔️✔️:     9,   // 11 -> 9
-    // RDKit✔️✔️:     10,  // 12 -> 10
-    // RDKit✔️✔️:     14,  // 13 -> 14
-    // RDKit✔️✔️:     13,  // 14 -> 13
-    // RDKit✔️✔️:     20,  // 15 -> 20
-    // RDKit✔️✔️:     19,  // 16 -> 19
-    // RDKit✔️✔️:     18,  // 17 -> 28
-    // RDKit✔️✔️:     17,  // 18 -> 17
-    // RDKit✔️✔️:     16,  // 19 -> 16
-    // RDKit✔️✔️:     15   // 20 -> 15
-    // RDKit✔️✔️: };
-    // RDKit✔️✔️: bool Atom::invertChirality() {
-    // RDKit✔️✔️:   unsigned int perm;
-    // RDKit✔️✔️:   switch (getChiralTag()) {
-    // RDKit✔️✔️:     case CHI_TETRAHEDRAL_CW:
-    // RDKit✔️✔️:       setChiralTag(CHI_TETRAHEDRAL_CCW);
-    // RDKit✔️✔️:       return true;
-    // RDKit✔️✔️:     case CHI_TETRAHEDRAL_CCW:
-    // RDKit✔️✔️:       setChiralTag(CHI_TETRAHEDRAL_CW);
-    // RDKit✔️✔️:       return true;
-    // RDKit✔️✔️:     case CHI_TETRAHEDRAL:
-    // RDKit✔️✔️:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
-    // RDKit✔️✔️:         if (perm == 1) {
-    // RDKit✔️✔️:           perm = 2;
-    // RDKit✔️✔️:         } else if (perm == 2) {
-    // RDKit✔️✔️:           perm = 1;
-    // RDKit✔️✔️:         } else {
-    // RDKit✔️✔️:           perm = 0;
-    // RDKit✔️✔️:         }
-    // RDKit✔️✔️:         setProp(common_properties::_chiralPermutation, perm);
-    // RDKit✔️✔️:         return perm != 0;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       break;
-    // RDKit✔️✔️:     case CHI_TRIGONALBIPYRAMIDAL:
-    // RDKit✔️✔️:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
-    // RDKit✔️✔️:         perm = (perm <= 20) ? trigonalbipyramidal_invert[perm] : 0;
-    // RDKit✔️✔️:         setProp(common_properties::_chiralPermutation, perm);
-    // RDKit✔️✔️:         return perm != 0;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       break;
-    // RDKit✔️✔️:     case CHI_OCTAHEDRAL:
-    // RDKit✔️✔️:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
-    // RDKit✔️✔️:         perm = (perm <= 30) ? octahedral_invert[perm] : 0;
-    // RDKit✔️✔️:         setProp(common_properties::_chiralPermutation, perm);
-    // RDKit✔️✔️:         return perm != 0;
-    // RDKit✔️✔️:       }
-    // RDKit✔️✔️:       break;
-    // RDKit✔️✔️:     default:
-    // RDKit✔️✔️:       break;
-    // RDKit✔️✔️:   }
-    // RDKit✔️✔️:   return false;
-    // RDKit✔️✔️: }
+    // RDKit❗❌: static const unsigned char octahedral_invert[31] = {
+    // RDKit❗❌:     0,   //  0 -> 0
+    // RDKit❗❌:     2,   //  1 -> 2
+    // RDKit❗❌:     1,   //  2 -> 1
+    // RDKit❗❌:     16,  //  3 -> 16
+    // RDKit❗❌:     14,  //  4 -> 14
+    // RDKit❗❌:     15,  //  5 -> 15
+    // RDKit❗❌:     18,  //  6 -> 18
+    // RDKit❗❌:     17,  //  7 -> 17
+    // RDKit❗❌:     10,  //  8 -> 10
+    // RDKit❗❌:     11,  //  9 -> 11
+    // RDKit❗❌:     8,   // 10 -> 8
+    // RDKit❗❌:     9,   // 11 -> 9
+    // RDKit❗❌:     13,  // 12 -> 13
+    // RDKit❗❌:     12,  // 13 -> 12
+    // RDKit❗❌:     4,   // 14 -> 4
+    // RDKit❗❌:     5,   // 15 -> 5
+    // RDKit❗❌:     3,   // 16 -> 3
+    // RDKit❗❌:     7,   // 17 -> 7
+    // RDKit❗❌:     6,   // 18 -> 6
+    // RDKit❗❌:     24,  // 19 -> 24
+    // RDKit❗❌:     23,  // 20 -> 23
+    // RDKit❗❌:     22,  // 21 -> 22
+    // RDKit❗❌:     21,  // 22 -> 21
+    // RDKit❗❌:     20,  // 23 -> 20
+    // RDKit❗❌:     19,  // 24 -> 19
+    // RDKit❗❌:     30,  // 25 -> 30
+    // RDKit❗❌:     29,  // 26 -> 29
+    // RDKit❗❌:     28,  // 27 -> 28
+    // RDKit❗❌:     27,  // 28 -> 27
+    // RDKit❗❌:     26,  // 29 -> 26
+    // RDKit❗❌:     25   // 30 -> 25
+    // RDKit❗❌: };
+    // RDKit❗❌:
+    // RDKit❗❌: static const unsigned char trigonalbipyramidal_invert[21] = {
+    // RDKit❗❌:     0,   //  0 -> 0
+    // RDKit❗❌:     2,   //  1 -> 2
+    // RDKit❗❌:     1,   //  2 -> 1
+    // RDKit❗❌:     4,   //  3 -> 4
+    // RDKit❗❌:     3,   //  4 -> 3
+    // RDKit❗❌:     6,   //  5 -> 6
+    // RDKit❗❌:     5,   //  6 -> 5
+    // RDKit❗❌:     8,   //  7 -> 8
+    // RDKit❗❌:     7,   //  8 -> 7
+    // RDKit❗❌:     11,  //  9 -> 11
+    // RDKit❗❌:     12,  // 10 -> 12
+    // RDKit❗❌:     9,   // 11 -> 9
+    // RDKit❗❌:     10,  // 12 -> 10
+    // RDKit❗❌:     14,  // 13 -> 14
+    // RDKit❗❌:     13,  // 14 -> 13
+    // RDKit❗❌:     20,  // 15 -> 20
+    // RDKit❗❌:     19,  // 16 -> 19
+    // RDKit❗❌:     18,  // 17 -> 28
+    // RDKit❗❌:     17,  // 18 -> 17
+    // RDKit❗❌:     16,  // 19 -> 16
+    // RDKit❗❌:     15   // 20 -> 15
+    // RDKit❗❌: };
+    // RDKit❗❌: bool Atom::invertChirality() {
+    // RDKit❗❌:   unsigned int perm;
+    // RDKit❗❌:   switch (getChiralTag()) {
+    // RDKit❗❌:     case CHI_TETRAHEDRAL_CW:
+    // RDKit❗❌:       setChiralTag(CHI_TETRAHEDRAL_CCW);
+    // RDKit❗❌:       return true;
+    // RDKit❗❌:     case CHI_TETRAHEDRAL_CCW:
+    // RDKit❗❌:       setChiralTag(CHI_TETRAHEDRAL_CW);
+    // RDKit❗❌:       return true;
+    // RDKit❗❌:     case CHI_TETRAHEDRAL:
+    // RDKit❗❌:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
+    // RDKit❗❌:         if (perm == 1) {
+    // RDKit❗❌:           perm = 2;
+    // RDKit❗❌:         } else if (perm == 2) {
+    // RDKit❗❌:           perm = 1;
+    // RDKit❗❌:         } else {
+    // RDKit❗❌:           perm = 0;
+    // RDKit❗❌:         }
+    // RDKit❗❌:         setProp(common_properties::_chiralPermutation, perm);
+    // RDKit❗❌:         return perm != 0;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       break;
+    // RDKit❗❌:     case CHI_TRIGONALBIPYRAMIDAL:
+    // RDKit❗❌:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
+    // RDKit❗❌:         perm = (perm <= 20) ? trigonalbipyramidal_invert[perm] : 0;
+    // RDKit❗❌:         setProp(common_properties::_chiralPermutation, perm);
+    // RDKit❗❌:         return perm != 0;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       break;
+    // RDKit❗❌:     case CHI_OCTAHEDRAL:
+    // RDKit❗❌:       if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
+    // RDKit❗❌:         perm = (perm <= 30) ? octahedral_invert[perm] : 0;
+    // RDKit❗❌:         setProp(common_properties::_chiralPermutation, perm);
+    // RDKit❗❌:         return perm != 0;
+    // RDKit❗❌:       }
+    // RDKit❗❌:       break;
+    // RDKit❗❌:     default:
+    // RDKit❗❌:       break;
+    // RDKit❗❌:   }
+    // RDKit❗❌:   return false;
+    // RDKit❗❌: }
     // END RDKIT CPP FUNCTION Atom::invertChirality tables and body
     const OCTAHEDRAL_INVERT: [u32; 31] = [
         0, 2, 1, 16, 14, 15, 18, 17, 10, 11, 8, 9, 13, 12, 4, 5, 3, 7, 6, 24, 23, 22, 21, 20, 19,
@@ -229,31 +286,86 @@ pub fn invert_atom_chirality(atom: &mut Atom) -> bool {
     const TRIGONAL_BIPYRAMIDAL_INVERT: [u32; 21] = [
         0, 2, 1, 4, 3, 6, 5, 8, 7, 11, 12, 9, 10, 14, 13, 20, 19, 18, 17, 16, 15,
     ];
+    // Complete native branch/table behavior. Canonical source UInt reads are
+    // performed only for tags whose source switch reads the property. Model's
+    // explicit typed source fact and raw dictionary are two existing transport
+    // projections; contradictory duplicate facts are a structural input error,
+    // never a guessed precedence or absent-value default. Native ownership,
+    // dictionary insertion identity for typed-only facts and dual projection
+    // synchronization remain model boundary differences, with ❗ behavior.
+    // Constant dispatch/table access; same canonical property conversion cost,
+    // no graph clone, neighbor scan, sort, or speculative property reads.
+    // Known cost gap: PropertyText owns Vec bytes, so raw-key overwrite makes
+    // an extra key allocation compared with native borrowed string_view and
+    // existing Dict Pair overwrite, despite faster tree lookup for many keys.
     match atom.chiral_tag() {
         ChiralTag::TetrahedralCw => {
             atom.set_chiral_tag(ChiralTag::TetrahedralCcw);
-            true
+            Ok(true)
         }
         ChiralTag::TetrahedralCcw => {
             atom.set_chiral_tag(ChiralTag::TetrahedralCw);
-            true
+            Ok(true)
         }
         ChiralTag::Tetrahedral => invert_chiral_permutation(atom, &[0, 2, 1]),
         ChiralTag::TrigonalBipyramidal => {
             invert_chiral_permutation(atom, &TRIGONAL_BIPYRAMIDAL_INVERT)
         }
         ChiralTag::Octahedral => invert_chiral_permutation(atom, &OCTAHEDRAL_INVERT),
-        _ => false,
+        _ => Ok(false),
     }
 }
 
-fn invert_chiral_permutation(atom: &mut Atom, table: &[u32]) -> bool {
-    let Some(permutation) = atom.chiral_permutation() else {
-        return false;
+fn invert_chiral_permutation(atom: &mut Atom, table: &[u32]) -> Result<bool, StereoOrderError> {
+    // RDKit❗❌: if (getPropIfPresent(common_properties::_chiralPermutation, perm)) {
+    // RDKit❗❌:   perm = (perm <= 20) ? trigonalbipyramidal_invert[perm] : 0;
+    // RDKit❗❌:   setProp(common_properties::_chiralPermutation, perm);
+    // RDKit❗❌:   return perm != 0;
+    // RDKit❗❌: }
+    // RDKit❗❌: template <typename T>
+    // RDKit❗❌:   bool getPropIfPresent(const std::string_view key, T &res) const {
+    // RDKit❗❌:     return d_props.getValIfPresent(key, res);
+    // RDKit❗❌:   }
+    // Canonical reader implements native UInt numeric/tag/right-trimmed lexical
+    // conversion and propagates its actual errors before any atom mutation.
+    let raw = atom.prop("_chiralPermutation");
+    let has_raw = raw.is_some();
+    let permutation = match raw {
+        Some(value) => {
+            let value = crate::property_value_to_uint(value)?;
+            if let Some(typed) = atom.chiral_permutation()
+                && typed != value
+            {
+                return Err(StereoOrderError::ConflictingChiralPermutation {
+                    atom: atom.id(),
+                    typed,
+                    raw: value,
+                });
+            }
+            Some(value)
+        }
+        None => atom.chiral_permutation(),
     };
-    let inverted = table.get(permutation as usize).copied().unwrap_or(0);
-    atom.set_chiral_permutation(Some(inverted));
-    inverted != 0
+    let Some(permutation) = permutation else {
+        return Ok(false);
+    };
+    let inverted = if (permutation as usize) < table.len() {
+        table[permutation as usize]
+    } else {
+        0
+    };
+    if has_raw {
+        atom.set_prop(
+            "_chiralPermutation",
+            cosmolkit_model::PropertyValue::UInt(inverted),
+        )?;
+    }
+    // Do not manufacture a typed fact for raw-only source state: otherwise a
+    // later computed-property clear would leave a ghost permutation behind.
+    if !has_raw || atom.chiral_permutation().is_some() {
+        atom.set_chiral_permutation(Some(inverted));
+    }
+    Ok(inverted != 0)
 }
 
 /// Invert atrop stereochemistry on a bond while preserving all other bond state.
@@ -628,7 +740,10 @@ mod stereo_inversion_tests {
         expected.set_chiral_tag(expected_tag);
         expected.set_chiral_permutation(expected_permutation);
 
-        assert_eq!(invert_atom_chirality(&mut actual), expected_changed);
+        assert_eq!(
+            invert_atom_chirality(&mut actual).unwrap(),
+            expected_changed
+        );
         assert_eq!(actual, expected);
     }
 
@@ -808,5 +923,125 @@ mod stereo_inversion_tests {
             assert_eq!(invert_bond_chirality(&mut actual), Ok(false));
             assert_eq!(actual, original);
         }
+    }
+}
+
+#[cfg(test)]
+mod source_atom_invert_chirality_property_complete_tests {
+    use super::*;
+    use cosmolkit_model::{AtomSpec, PropertyValue};
+    use cosmolkit_types::Element;
+    fn atom(tag: ChiralTag, value: PropertyValue) -> Atom {
+        let mut atom = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C).with_chiral_tag(tag),
+        );
+        atom.set_prop("_chiralPermutation", value).unwrap();
+        atom
+    }
+    #[test]
+    fn source_atom_inversion_reads_native_unsigned_property_coercions_and_writes_uint() {
+        for (tag, value, expected) in [
+            (ChiralTag::Tetrahedral, PropertyValue::Int(1), 2),
+            (
+                ChiralTag::Tetrahedral,
+                PropertyValue::String("+2  ".into()),
+                1,
+            ),
+            (ChiralTag::Tetrahedral, PropertyValue::UInt(u32::MAX), 0),
+            (
+                ChiralTag::TrigonalBipyramidal,
+                PropertyValue::String("3".into()),
+                4,
+            ),
+            (ChiralTag::Octahedral, PropertyValue::Int(3), 16),
+        ] {
+            let mut atom = atom(tag, value);
+            assert_eq!(invert_atom_chirality(&mut atom).unwrap(), expected != 0);
+            assert_eq!(
+                atom.prop("_chiralPermutation"),
+                Some(&PropertyValue::UInt(expected))
+            );
+            assert_eq!(atom.chiral_permutation(), None); // raw-only state stays raw-only
+        }
+    }
+    #[test]
+    fn source_atom_inversion_wrong_property_kind_or_lexical_value_errors_without_mutation() {
+        for value in [
+            PropertyValue::Bool(true),
+            PropertyValue::String("1x".into()),
+            PropertyValue::Int(-1),
+            PropertyValue::String("".into()),
+        ] {
+            let mut atom = atom(ChiralTag::Octahedral, value);
+            let before = atom.clone();
+            assert!(matches!(
+                invert_atom_chirality(&mut atom),
+                Err(StereoOrderError::ChiralPermutationRead(_))
+            ));
+            assert_eq!(atom, before);
+        }
+    }
+    #[test]
+    fn source_atom_inversion_cw_and_unhandled_tags_do_not_read_bad_permutation_property() {
+        for (tag, expected_tag, changed) in [
+            (ChiralTag::TetrahedralCw, ChiralTag::TetrahedralCcw, true),
+            (ChiralTag::TetrahedralCcw, ChiralTag::TetrahedralCw, true),
+            (ChiralTag::Unspecified, ChiralTag::Unspecified, false),
+            (ChiralTag::Other, ChiralTag::Other, false),
+        ] {
+            let mut atom = atom(tag, PropertyValue::Bool(false));
+            atom.set_chiral_permutation(Some(1));
+            let mut expected = atom.clone();
+            expected.set_chiral_tag(expected_tag);
+            assert_eq!(invert_atom_chirality(&mut atom).unwrap(), changed);
+            assert_eq!(atom, expected);
+        }
+    }
+    #[test]
+    fn source_atom_inversion_noncomputed_write_does_not_read_malformed_computed_list() {
+        let mut atom = atom(ChiralTag::TrigonalBipyramidal, PropertyValue::UInt(20));
+        atom.set_prop("__computedProps", PropertyValue::Int(7))
+            .unwrap();
+        assert!(invert_atom_chirality(&mut atom).unwrap());
+        assert_eq!(
+            atom.prop("_chiralPermutation"),
+            Some(&PropertyValue::UInt(15))
+        );
+        assert_eq!(atom.prop("__computedProps"), Some(&PropertyValue::Int(7)));
+    }
+    #[test]
+    fn source_atom_inversion_conflicting_existing_transport_projections_are_structural_error() {
+        let mut atom = atom(ChiralTag::Tetrahedral, PropertyValue::UInt(1));
+        atom.set_chiral_permutation(Some(2));
+        let before = atom.clone();
+        assert_eq!(
+            invert_atom_chirality(&mut atom),
+            Err(StereoOrderError::ConflictingChiralPermutation {
+                atom: AtomId::new(0),
+                typed: 2,
+                raw: 1
+            })
+        );
+        assert_eq!(atom, before);
+    }
+    #[test]
+    fn source_atom_inversion_raw_computed_permutation_clear_restores_absent_property_branch() {
+        let mut atom = Atom::from_spec(
+            AtomId::new(0),
+            AtomSpec::new(Element::C).with_chiral_tag(ChiralTag::TrigonalBipyramidal),
+        );
+        atom.set_computed_prop("_chiralPermutation", PropertyValue::UInt(20))
+            .unwrap();
+        assert!(invert_atom_chirality(&mut atom).unwrap());
+        assert_eq!(
+            atom.prop("_chiralPermutation"),
+            Some(&PropertyValue::UInt(15))
+        );
+        assert_eq!(atom.chiral_permutation(), None);
+        atom.clear_computed_props().unwrap();
+        let before = atom.clone();
+        assert!(!invert_atom_chirality(&mut atom).unwrap());
+        assert_eq!(atom, before);
     }
 }

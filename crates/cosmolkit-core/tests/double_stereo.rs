@@ -828,3 +828,129 @@ fn q01_b1_neighbor_directions_vector_error_keeps_source_guard() {
     t.bonds[0].set_stereo(BondStereo::Any).unwrap();
     assert!(set_double_bond_neighbor_directions(t, &rings, None).is_ok());
 }
+
+#[test]
+fn source_stereo_flag_event_preserves_degree_guard_and_ordinary_property_write() {
+    // Pinned Chirality.cpp setStereoForBond: no write before both degree>1;
+    // after stereo atoms/stereo, mol.setProp("_needsDetectBondStereo", 1).
+    // RDProps computed=false never reads/removes computed membership; Dict
+    // replacement preserves key insertion position. No reference oracle ran.
+    let isolated = topology(2, vec![bond(0, 0, 1, BondOrder::Double)]);
+    let no_write =
+        with_double_bond_stereo_reference(isolated.clone(), BondId::new(0), BondStereo::Any, false)
+            .unwrap();
+    assert!(!no_write.needs_detect_bond_stereo);
+    assert_eq!(no_write.topology, isolated);
+
+    let specified = four_atom_chain(BondDirection::None, BondDirection::None, BondStereo::E);
+    let no_write =
+        set_double_bond_neighbor_directions(specified.clone(), &empty_rings(&specified), None)
+            .unwrap();
+    assert!(!no_write.needs_detect_bond_stereo);
+
+    let squiggle = four_atom_chain(
+        BondDirection::Unknown,
+        BondDirection::None,
+        BondStereo::None,
+    );
+    let first =
+        set_double_bond_neighbor_directions(squiggle.clone(), &empty_rings(&squiggle), None)
+            .unwrap();
+    assert!(first.needs_detect_bond_stereo);
+    assert_eq!(first.topology.bonds[1].stereo(), BondStereo::Any);
+    assert_eq!(
+        first.topology.bonds[1].stereo_atoms(),
+        Some([AtomId::new(0), AtomId::new(3)])
+    );
+    let end_squiggle = four_atom_chain(
+        BondDirection::None,
+        BondDirection::Unknown,
+        BondStereo::None,
+    );
+    let end_update = set_double_bond_neighbor_directions(
+        end_squiggle.clone(),
+        &empty_rings(&end_squiggle),
+        None,
+    )
+    .unwrap();
+    assert!(end_update.needs_detect_bond_stereo);
+    assert_eq!(end_update.topology.bonds[1].stereo(), BondStereo::Any);
+    let unmarked = four_atom_chain(BondDirection::None, BondDirection::None, BondStereo::None);
+    let linear = Conformer3D::new(
+        0,
+        vec![
+            [-1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+        ],
+        true,
+    );
+    let linear_update = set_double_bond_neighbor_directions(
+        unmarked.clone(),
+        &empty_rings(&unmarked),
+        Some(&linear),
+    )
+    .unwrap();
+    assert!(linear_update.needs_detect_bond_stereo);
+    assert_eq!(linear_update.topology.bonds[1].stereo(), BondStereo::Any);
+    let repeated =
+        with_double_bond_stereo_reference(first.topology, BondId::new(1), BondStereo::Any, false)
+            .unwrap();
+    assert!(repeated.needs_detect_bond_stereo);
+
+    let mut properties = cosmolkit_model::MoleculeProperties::default();
+    properties.set_prop("head", "kept").unwrap();
+    properties
+        .set_computed_prop("_needsDetectBondStereo", -7_i32)
+        .unwrap();
+    properties.set_prop("tail", "kept").unwrap();
+    let ordered_keys = |p: &cosmolkit_model::MoleculeProperties| {
+        p.property_records(true, true)
+            .unwrap()
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>()
+    };
+    let before_keys = ordered_keys(&properties);
+    if no_write.needs_detect_bond_stereo {
+        properties
+            .set_prop("_needsDetectBondStereo", 1_i32)
+            .unwrap();
+    }
+    assert_eq!(
+        properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(-7))
+    );
+    for event in [
+        first.needs_detect_bond_stereo,
+        repeated.needs_detect_bond_stereo,
+    ] {
+        if event {
+            properties
+                .set_prop("_needsDetectBondStereo", 1_i32)
+                .unwrap();
+        }
+        assert_eq!(
+            properties.prop("_needsDetectBondStereo"),
+            Some(&PropertyValue::Int(1))
+        );
+        assert_eq!(ordered_keys(&properties), before_keys);
+        assert!(
+            properties
+                .is_prop_computed("_needsDetectBondStereo")
+                .unwrap()
+        );
+    }
+    properties.set_prop("__computedProps", 3_i32).unwrap();
+    properties
+        .set_prop("_needsDetectBondStereo", 1_i32)
+        .unwrap();
+    assert!(matches!(
+        properties.clear_prop("_needsDetectBondStereo"),
+        Err(cosmolkit_model::MoleculePropertyError::ComputedListKind(_))
+    ));
+    assert_eq!(
+        properties.prop("_needsDetectBondStereo"),
+        Some(&PropertyValue::Int(1))
+    );
+}

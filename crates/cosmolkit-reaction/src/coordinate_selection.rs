@@ -1,7 +1,9 @@
 /// Coordinate selection for a reaction input or template.
 ///
-/// Auto omits absent coordinates, selects one stored set, and reports ambiguity
-/// for multiple sets. ROOT-approved D4 differs from RDKit's first insertion.
+/// Auto omits absent coordinates and selects the first source conformer using
+/// the canonical source insertion order. Explicit dimension/id selections are
+/// the approved detached projection; selection is reached only for source
+/// conformers during product construction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ReactionCoordinateSelection {
     #[default]

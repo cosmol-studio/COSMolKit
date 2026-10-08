@@ -3252,6 +3252,15 @@ fn parse_sgroup_hierarchy_progress(
             }
             _ => unreachable!("SGroup hierarchy progress record changed kind"),
         };
+        // Native resolves parent properties immediately after reading its ID,
+        // before the colon and child-list grammar. The consumer must observe
+        // this even when the later list is incomplete.
+        checkpoints.push(CxProgressCheckpoint {
+            record_index,
+            item_index: Some(hierarchy_index),
+            cursor: *cursor,
+            phase: CxProgressPhase::Begin,
+        });
         expect_byte(text, cursor, b':')?;
         let first_item_index = next_item_index;
         loop {
@@ -5905,10 +5914,23 @@ mod tests {
             ])]
         );
         let checkpoints = progress.checkpoints();
-        assert_eq!(checkpoints.len(), 6);
+        assert_eq!(checkpoints.len(), 8);
         assert_eq!(checkpoints[0].phase, CxProgressPhase::Begin);
         assert_eq!(checkpoints[0].cursor, text.find('4').expect("first parent"));
-        for (checkpoint, (item_index, cursor)) in checkpoints[1..5].iter().zip([
+        assert_eq!(checkpoints[1].phase, CxProgressPhase::Begin);
+        assert_eq!(checkpoints[1].item_index, Some(0));
+        assert_eq!(checkpoints[1].cursor, text.find("4:").unwrap() + 1);
+        assert_eq!(checkpoints[4].phase, CxProgressPhase::Begin);
+        assert_eq!(checkpoints[4].item_index, Some(1));
+        assert_eq!(checkpoints[4].cursor, text.find("7:").unwrap() + 1);
+        for (checkpoint, (item_index, cursor)) in [
+            checkpoints[2],
+            checkpoints[3],
+            checkpoints[5],
+            checkpoints[6],
+        ]
+        .iter()
+        .zip([
             (0, second_parent_cursor),
             (1, second_parent_cursor),
             (2, final_list_cursor),
@@ -5918,8 +5940,8 @@ mod tests {
             assert_eq!(checkpoint.item_index, Some(item_index));
             assert_eq!(checkpoint.cursor, cursor);
         }
-        assert_eq!(checkpoints[5].phase, CxProgressPhase::Complete);
-        assert_eq!(checkpoints[5].cursor, final_list_cursor);
+        assert_eq!(checkpoints[7].phase, CxProgressPhase::Complete);
+        assert_eq!(checkpoints[7].cursor, final_list_cursor);
     }
 
     #[test]
@@ -5987,7 +6009,11 @@ mod tests {
             [CxRecord::SGroupHierarchy(hierarchies)]
                 if hierarchies == &[CxSGroupHierarchy { parent: 1, children: Vec::new() }]
         ));
-        assert_eq!(missing_colon_progress.checkpoints().len(), 1);
+        assert_eq!(missing_colon_progress.checkpoints().len(), 2);
+        assert_eq!(
+            missing_colon_progress.checkpoints()[1].phase,
+            CxProgressPhase::Begin
+        );
 
         let child_overflow = "|SgH:1:0.4294967296|";
         let child_overflow_start = child_overflow
@@ -6008,7 +6034,7 @@ mod tests {
             [CxRecord::SGroupHierarchy(hierarchies)]
                 if hierarchies == &[CxSGroupHierarchy { parent: 1, children: vec![0] }]
         ));
-        assert_eq!(child_overflow_progress.checkpoints().len(), 1);
+        assert_eq!(child_overflow_progress.checkpoints().len(), 2);
 
         let later_parent_error = "|SgH:1:0,2x:3|";
         let later_error_offset = later_parent_error.find('x').expect("later parent error");
@@ -6026,9 +6052,9 @@ mod tests {
                 CxSGroupHierarchy { parent: 2, children: Vec::new() },
             ]
         ));
-        assert_eq!(later_parent_progress.checkpoints().len(), 2);
+        assert_eq!(later_parent_progress.checkpoints().len(), 4);
         assert_eq!(
-            later_parent_progress.checkpoints()[1].phase,
+            later_parent_progress.checkpoints()[2].phase,
             CxProgressPhase::Item
         );
 
@@ -6041,8 +6067,8 @@ mod tests {
             trailing_comma_progress.error().map(|error| error.offset),
             Some(comma_error)
         );
-        assert_eq!(trailing_comma_progress.checkpoints().len(), 2);
-        assert_eq!(trailing_comma_progress.checkpoints()[1].item_index, Some(0));
+        assert_eq!(trailing_comma_progress.checkpoints().len(), 3);
+        assert_eq!(trailing_comma_progress.checkpoints()[2].item_index, Some(0));
 
         let empty_children = parse_cx_extensions_progress("|SgH:1:|");
         assert!(empty_children.is_complete());
@@ -6051,9 +6077,9 @@ mod tests {
             [CxRecord::SGroupHierarchy(hierarchies)]
                 if hierarchies == &[CxSGroupHierarchy { parent: 1, children: Vec::new() }]
         ));
-        assert_eq!(empty_children.checkpoints().len(), 2);
+        assert_eq!(empty_children.checkpoints().len(), 3);
         assert_eq!(
-            empty_children.checkpoints()[1].phase,
+            empty_children.checkpoints()[2].phase,
             CxProgressPhase::Complete
         );
     }

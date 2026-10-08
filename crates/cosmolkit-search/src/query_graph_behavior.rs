@@ -15,28 +15,63 @@ pub fn cleanup_query_graph_parser_state(
     cleanup_query_parser_state(graph)
 }
 
-fn neighboring_directed_bond(graph: &QueryGraph, atom: AtomId) -> Option<BondId> {
-    // RDKit✔️✔️: for (const auto &bondIdx :
-    // RDKit✔️✔️:      boost::make_iterator_range(mol.getAtomBonds(atom))) {
-    // RDKit✔️✔️:   const Bond *bond = mol[bondIdx];
-    // RDKit✔️✔️:   if (bond->getBondType() != Bond::BondType::DOUBLE &&
-    // RDKit✔️✔️:       hasStereoBondDir(bond)) { return bond; }
+fn neighboring_directed_bond(
+    graph: &QueryGraph,
+    atom: AtomId,
+) -> Result<Option<BondId>, crate::SmartsParseError> {
+    // RDKit✔️✔️: const Bond *getNeighboringDirectedBond(const ROMol &mol, const Atom *atom) {
+    // RDKit✔️✔️:   PRECONDITION(atom, "no atom");
+    // RDKit✔️✔️:   for (const auto &bondIdx :
+    // RDKit✔️✔️:        boost::make_iterator_range(mol.getAtomBonds(atom))) {
+    // RDKit✔️✔️:     const Bond *bond = mol[bondIdx];
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     if (bond->getBondType() != Bond::BondType::DOUBLE &&
+    // RDKit✔️✔️:         hasStereoBondDir(bond)) {
+    // RDKit✔️✔️:       return bond;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return nullptr;
     // RDKit✔️✔️: }
-    for (_, bond_index) in graph.adjacency().get(atom.index())?.iter().copied() {
-        let bond = graph.bonds().get(bond_index)?;
+    // RDKit✔️✔️:
+    // Canonical QueryGraph adjacency is physical bond-row order, validated
+    // against that order by its constructor. No neighbor sorting or copying.
+    // A missing row is an invariant failure, never a source nullptr fallback.
+    let neighbors = graph
+        .adjacency()
+        .get(atom.index())
+        .ok_or(cosmolkit_model::QueryGraphError::AdjacencyMismatch)?;
+    for &(_, bond_index) in neighbors {
+        let bond = graph
+            .bonds()
+            .get(bond_index)
+            .ok_or(cosmolkit_model::QueryGraphError::AdjacencyMismatch)?;
         if bond.bond().order() != BondOrder::Double
             && matches!(
                 bond.bond().direction(),
                 BondDirection::EndDownRight | BondDirection::EndUpRight
             )
         {
-            return Some(bond.id());
+            return Ok(Some(bond.id()));
         }
     }
-    None
+    Ok(None)
 }
 
 fn opposite_direction(direction: BondDirection) -> BondDirection {
+    // RDKit✔️✔️: Bond::BondDir getOppositeBondDir(Bond::BondDir dir) {
+    // RDKit✔️✔️:   PRECONDITION(dir == Bond::ENDDOWNRIGHT || dir == Bond::ENDUPRIGHT,
+    // RDKit✔️✔️:                "bad bond direction");
+    // RDKit✔️✔️:   switch (dir) {
+    // RDKit✔️✔️:     case Bond::ENDDOWNRIGHT:
+    // RDKit✔️✔️:       return Bond::ENDUPRIGHT;
+    // RDKit✔️✔️:     case Bond::ENDUPRIGHT:
+    // RDKit✔️✔️:       return Bond::ENDDOWNRIGHT;
+    // RDKit✔️✔️:     default:
+    // RDKit✔️✔️:       return Bond::NONE;
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // Source callers pass only the two directed-bond states. Enum dispatch
+    // preserves those inversions in O(1), without allocation or extra lookup.
     match direction {
         BondDirection::EndUpRight => BondDirection::EndDownRight,
         BondDirection::EndDownRight => BondDirection::EndUpRight,
@@ -47,45 +82,84 @@ fn opposite_direction(direction: BondDirection) -> BondDirection {
 pub(crate) fn set_bond_stereo_from_directions(
     graph: &mut QueryGraph,
 ) -> Result<(), crate::SmartsParseError> {
-    // RDKit✔️✔️: mol.clearProp("_needsDetectBondStereo");
-    // RDKit✔️✔️: if (bond->getBondType() == Bond::DOUBLE &&
-    // RDKit✔️✔️:     bond->getStereo() != Bond::STEREOANY) {
-    // RDKit✔️✔️:   const Bond *directedBondAtBegin =
-    // RDKit✔️✔️:       Chirality::getNeighboringDirectedBond(mol, stereoBondBeginAtom);
-    // RDKit✔️✔️:   const Bond *directedBondAtEnd =
-    // RDKit✔️✔️:       Chirality::getNeighboringDirectedBond(mol, stereoBondEndAtom);
-    // RDKit✔️✔️:   if (beginSideBondDirection == endSideBondDirection) {
-    // RDKit✔️✔️:     bond->setStereo(Bond::STEREOTRANS);
-    // RDKit✔️✔️:   } else { bond->setStereo(Bond::STEREOCIS); }
+    // RDKit✔️✔️: void setBondStereoFromDirections(ROMol &mol) {
+    // RDKit✔️✔️:   mol.clearProp("_needsDetectBondStereo");
+    // RDKit✔️✔️:   for (Bond *bond : mol.bonds()) {
+    // RDKit✔️✔️:     if (bond->getBondType() == Bond::DOUBLE &&
+    // RDKit✔️✔️:         bond->getStereo() != Bond::STEREOANY) {
+    // RDKit✔️✔️:       const Atom *stereoBondBeginAtom = bond->getBeginAtom();
+    // RDKit✔️✔️:       const Atom *stereoBondEndAtom = bond->getEndAtom();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       const Bond *directedBondAtBegin =
+    // RDKit✔️✔️:           Chirality::getNeighboringDirectedBond(mol, stereoBondBeginAtom);
+    // RDKit✔️✔️:       const Bond *directedBondAtEnd =
+    // RDKit✔️✔️:           Chirality::getNeighboringDirectedBond(mol, stereoBondEndAtom);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       if (directedBondAtBegin != nullptr && directedBondAtEnd != nullptr) {
+    // RDKit✔️✔️:         unsigned beginSideStereoAtom =
+    // RDKit✔️✔️:             directedBondAtBegin->getOtherAtomIdx(stereoBondBeginAtom->getIdx());
+    // RDKit✔️✔️:         unsigned endSideStereoAtom =
+    // RDKit✔️✔️:             directedBondAtEnd->getOtherAtomIdx(stereoBondEndAtom->getIdx());
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         bond->setStereoAtoms(beginSideStereoAtom, endSideStereoAtom);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         auto beginSideBondDirection = directedBondAtBegin->getBondDir();
+    // RDKit✔️✔️:         if (directedBondAtBegin->getBeginAtom() == stereoBondBeginAtom) {
+    // RDKit✔️✔️:           beginSideBondDirection = getOppositeBondDir(beginSideBondDirection);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         auto endSideBondDirection = directedBondAtEnd->getBondDir();
+    // RDKit✔️✔️:         if (directedBondAtEnd->getEndAtom() == stereoBondEndAtom) {
+    // RDKit✔️✔️:           endSideBondDirection = getOppositeBondDir(endSideBondDirection);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         if (beginSideBondDirection == endSideBondDirection) {
+    // RDKit✔️✔️:           bond->setStereo(Bond::STEREOTRANS);
+    // RDKit✔️✔️:         } else {
+    // RDKit✔️✔️:           bond->setStereo(Bond::STEREOCIS);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
     // RDKit✔️✔️: }
+    // RDKit✔️✔️:
+    // Same source clear-first and physical row mutation order. Each row's
+    // source-selected neighboring directions are borrowed before mutation;
+    // only a two-ID scalar result is retained, not a graph/update buffer.
+    // Source absence of a directed neighbor is the only skip branch; every
+    // reached property/invariant/setStereo failure propagates structurally.
     graph.clear_prop("_needsDetectBondStereo")?;
-    let mut updates = Vec::new();
-    for bond in graph.bonds() {
+    for index in 0..graph.num_bonds() {
+        let bond = &graph.bonds()[index];
         if bond.bond().order() != BondOrder::Double || bond.bond().stereo() == BondStereo::Any {
             continue;
         }
         let begin = bond.begin();
         let end = bond.end();
-        let (Some(begin_id), Some(end_id)) = (
-            neighboring_directed_bond(graph, begin),
-            neighboring_directed_bond(graph, end),
-        ) else {
+        let begin_id = neighboring_directed_bond(graph, begin)?;
+        let end_id = neighboring_directed_bond(graph, end)?;
+        let (Some(begin_id), Some(end_id)) = (begin_id, end_id) else {
             continue;
         };
-        let (Some(begin_bond), Some(end_bond)) =
-            (graph.bond(begin_id.index()), graph.bond(end_id.index()))
-        else {
-            continue;
-        };
+        let begin_bond = graph
+            .bond(begin_id.index())
+            .ok_or(cosmolkit_model::QueryGraphError::AdjacencyMismatch)?;
+        let end_bond = graph
+            .bond(end_id.index())
+            .ok_or(cosmolkit_model::QueryGraphError::AdjacencyMismatch)?;
         let begin_atom = if begin_bond.begin() == begin {
             begin_bond.end()
-        } else {
+        } else if begin_bond.end() == begin {
             begin_bond.begin()
+        } else {
+            return Err(cosmolkit_model::QueryGraphError::AdjacencyMismatch.into());
         };
         let end_atom = if end_bond.begin() == end {
             end_bond.end()
-        } else {
+        } else if end_bond.end() == end {
             end_bond.begin()
+        } else {
+            return Err(cosmolkit_model::QueryGraphError::AdjacencyMismatch.into());
         };
         let begin_direction = if begin_bond.begin() == begin {
             opposite_direction(begin_bond.bond().direction())
@@ -102,13 +176,9 @@ pub(crate) fn set_bond_stereo_from_directions(
         } else {
             BondStereo::Cis
         };
-        updates.push((bond.id(), [begin_atom, end_atom], stereo));
-    }
-    for (bond_id, stereo_atoms, stereo) in updates {
-        if let Some(bond) = graph.bonds_mut().get_mut(bond_id.index()) {
-            bond.bond_mut().set_stereo_atoms(Some(stereo_atoms));
-            bond.bond_mut().set_stereo(stereo)?;
-        }
+        let carrier = graph.bonds_mut()[index].bond_mut();
+        carrier.set_stereo_atoms(Some([begin_atom, end_atom]));
+        carrier.set_stereo(stereo)?;
     }
     Ok(())
 }
@@ -182,52 +252,52 @@ pub(crate) fn finalize_query_parser_chirality(
 /// Cleanup source parser state on the canonical detached query value.
 #[doc(hidden)]
 fn cleanup_query_parser_state(graph: &mut QueryGraph) -> Result<(), crate::SmartsParseError> {
-    // RDKit❗❌: void CleanupAfterParsing(RWMol *mol) {
-    // RDKit❗❌:   PRECONDITION(mol, "no molecule");
-    // RDKit❗❌:   for (auto atom : mol->atoms()) {
-    // RDKit❗❌:     atom->clearProp(common_properties::_RingClosures);
-    // RDKit❗❌:     atom->clearProp(common_properties::_SmilesStart);
-    // RDKit❗❌:     std::string label;
-    // RDKit❗❌:     if (atom->getAtomicNum() == 0 &&
-    // RDKit❗❌:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
-    // RDKit❗❌:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
-    // RDKit❗❌:       // aren't part of the MOL file spec so we don't treat them as attachment
-    // RDKit❗❌:       // points
-    // RDKit❗❌:       if (label == "_AP1") {
-    // RDKit❗❌:         atom->setProp(common_properties::_fromAttachPoint, 1);
-    // RDKit❗❌:       } else if (label == "_AP2") {
-    // RDKit❗❌:         atom->setProp(common_properties::_fromAttachPoint, 2);
-    // RDKit❗❌:       }
-    // RDKit❗❌:     }
-    // RDKit❗❌:   }
-    // RDKit❗❌:   for (auto bond : mol->bonds()) {
-    // RDKit❗❌:     bond->clearProp(common_properties::_unspecifiedOrder);
-    // RDKit❗❌:     bond->clearProp("_cxsmilesBondIdx");
-    // RDKit❗❌:   }
-    // RDKit❗❌:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
-    // RDKit❗❌:     sg.clearProp("_cxsmilesindex");
-    // RDKit❗❌:   }
-    // RDKit❗❌:   if (!Chirality::getAllowNontetrahedralChirality()) {
-    // RDKit❗❌:     bool needWarn = false;
-    // RDKit❗❌:     for (auto atom : mol->atoms()) {
-    // RDKit❗❌:       if (atom->hasProp(common_properties::_chiralPermutation)) {
-    // RDKit❗❌:         needWarn = true;
-    // RDKit❗❌:         atom->clearProp(common_properties::_chiralPermutation);
-    // RDKit❗❌:       }
-    // RDKit❗❌:       if (atom->getChiralTag() > Atom::ChiralType::CHI_OTHER) {
-    // RDKit❗❌:         needWarn = true;
-    // RDKit❗❌:         atom->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
-    // RDKit❗❌:       }
-    // RDKit❗❌:     }
-    // RDKit❗❌:     if (needWarn) {
-    // RDKit❗❌:       BOOST_LOG(rdWarningLog)
-    // RDKit❗❌:           << "ignoring non-tetrahedral stereo specification since setAllowNontetrahedralChirality() is false."
-    // RDKit❗❌:           << std::endl;
-    // RDKit❗❌:     }
-    // RDKit❗❌:   }
-    // RDKit❗❌: }
-    // Propagate reached property errors in atom, bond, then copied-group
-    // order. Full non-tetrahedral cleanup remains its existing CORE boundary.
+    // RDKit✔️❌: void CleanupAfterParsing(RWMol *mol) {
+    // RDKit✔️❌:   PRECONDITION(mol, "no molecule");
+    // RDKit✔️❌:   for (auto atom : mol->atoms()) {
+    // RDKit✔️❌:     atom->clearProp(common_properties::_RingClosures);
+    // RDKit✔️❌:     atom->clearProp(common_properties::_SmilesStart);
+    // RDKit✔️❌:     std::string label;
+    // RDKit✔️❌:     if (atom->getAtomicNum() == 0 &&
+    // RDKit✔️❌:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
+    // RDKit✔️❌:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
+    // RDKit✔️❌:       // aren't part of the MOL file spec so we don't treat them as attachment
+    // RDKit✔️❌:       // points
+    // RDKit✔️❌:       if (label == "_AP1") {
+    // RDKit✔️❌:         atom->setProp(common_properties::_fromAttachPoint, 1);
+    // RDKit✔️❌:       } else if (label == "_AP2") {
+    // RDKit✔️❌:         atom->setProp(common_properties::_fromAttachPoint, 2);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   for (auto bond : mol->bonds()) {
+    // RDKit✔️❌:     bond->clearProp(common_properties::_unspecifiedOrder);
+    // RDKit✔️❌:     bond->clearProp("_cxsmilesBondIdx");
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
+    // RDKit✔️❌:     sg.clearProp("_cxsmilesindex");
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   if (!Chirality::getAllowNontetrahedralChirality()) {
+    // RDKit✔️❌:     bool needWarn = false;
+    // RDKit✔️❌:     for (auto atom : mol->atoms()) {
+    // RDKit✔️❌:       if (atom->hasProp(common_properties::_chiralPermutation)) {
+    // RDKit✔️❌:         needWarn = true;
+    // RDKit✔️❌:         atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       if (atom->getChiralTag() > Atom::ChiralType::CHI_OTHER) {
+    // RDKit✔️❌:         needWarn = true;
+    // RDKit✔️❌:         atom->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (needWarn) {
+    // RDKit✔️❌:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️❌:           << "ignoring non-tetrahedral stereo specification since setAllowNontetrahedralChirality() is false."
+    // RDKit✔️❌:           << std::endl;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌: }
+    // Propagate errors in source atom, bond, copied-group, then final
+    // non-tetrahedral pass order. Shared CORE owns both atom algorithms.
     // Known cost: each local SGroup clone includes tree/order key storage.
 
     cosmolkit_core::parser_helpers::cleanup_parser_atoms(graph.atoms_mut())?;
@@ -238,74 +308,6 @@ fn cleanup_query_parser_state(graph: &mut QueryGraph) -> Result<(), crate::Smart
     cosmolkit_core::parser_helpers::cleanup_parser_substance_groups(
         cosmolkit_model::query_substance_groups(graph),
     )?;
+    cosmolkit_core::parser_helpers::cleanup_parser_nontetrahedral_atoms(graph.atoms_mut())?;
     Ok(())
-}
-
-#[cfg(test)]
-mod source_property_failure_tests {
-    use super::*;
-    use crate::{SmartsParseError, SmartsParseParams, parse_smarts};
-
-    #[test]
-    fn directional_stereo_retains_reserved_property_failure_before_bond_updates() {
-        for (input, stereo) in [
-            ("C/C=C/C", BondStereo::Trans),
-            (r"C/C=C\C", BondStereo::Cis),
-        ] {
-            for marker_present in [false, true] {
-                let mut graph = parse_smarts(input, &SmartsParseParams::default()).unwrap();
-                graph.bonds_mut()[1]
-                    .bond_mut()
-                    .set_stereo(BondStereo::None)
-                    .unwrap();
-                graph.bonds_mut()[1].bond_mut().set_stereo_atoms(None);
-                if marker_present {
-                    graph.set_prop("_needsDetectBondStereo", true).unwrap();
-                }
-                graph
-                    .set_prop("__computedProps", PropertyValue::Int(7))
-                    .unwrap();
-                let before = graph.clone();
-                let error = set_bond_stereo_from_directions(&mut graph).unwrap_err();
-                assert!(matches!(
-                    &error,
-                    SmartsParseError::MoleculeProperty(
-                        cosmolkit_model::MoleculePropertyError::ComputedListKind(_)
-                    )
-                ));
-                assert!(
-                    std::error::Error::source(&error)
-                        .unwrap()
-                        .downcast_ref::<cosmolkit_model::MoleculePropertyError>()
-                        .is_some()
-                );
-                assert_eq!(
-                    graph, before,
-                    "source property failure precedes every stereo update"
-                );
-
-                let names = if marker_present {
-                    vec![cosmolkit_model::PropertyText::from(
-                        "_needsDetectBondStereo",
-                    )]
-                } else {
-                    Vec::new()
-                };
-                graph
-                    .set_prop("__computedProps", PropertyValue::StringVector(names))
-                    .unwrap();
-                set_bond_stereo_from_directions(&mut graph).unwrap();
-                assert_eq!(graph.prop("_needsDetectBondStereo"), None);
-                assert_eq!(
-                    graph.prop("__computedProps"),
-                    Some(&PropertyValue::StringVector(Vec::new()))
-                );
-                assert_eq!(graph.bonds()[1].bond().stereo(), stereo);
-                assert_eq!(
-                    graph.bonds()[1].bond().stereo_atoms(),
-                    Some([AtomId::new(0), AtomId::new(3)])
-                );
-            }
-        }
-    }
 }

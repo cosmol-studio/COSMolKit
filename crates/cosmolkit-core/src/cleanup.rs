@@ -804,3 +804,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "tests/cleanup.rs"]
+mod source_tests;

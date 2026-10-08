@@ -59,32 +59,58 @@ pub fn is_rdkit_organic_subset(atomic_number: u8) -> bool {
 }
 
 fn rows() -> &'static [PeriodicRow] {
+    // BEGIN RDKIT CPP FUNCTION PeriodicTable::getTable complete source
+    // RDKit✔️✔️: PeriodicTable *PeriodicTable::getTable() {
+    // RDKit✔️✔️: #ifdef RDK_BUILD_THREADSAFE_SSS
+    // RDKit✔️✔️:   static std::once_flag pt_init_once;
+    // RDKit✔️✔️:   std::call_once(pt_init_once, initInstance);
+    // RDKit✔️✔️: #else
+    // RDKit✔️✔️:   if (!ds_instance) {
+    // RDKit✔️✔️:     initInstance();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: #endif
+    // RDKit✔️✔️:   return ds_instance.get();
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION PeriodicTable::getTable complete source
+    // BEGIN RDKIT CPP FUNCTION PeriodicTable::initInstance complete source
+    // RDKit✔️✔️: void PeriodicTable::initInstance() {
+    // RDKit✔️✔️:   ds_instance = std::unique_ptr<PeriodicTable>(new PeriodicTable());
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION PeriodicTable::initInstance complete source
+    // The pinned thread-safe branch publishes one fully constructed table.
+    // OnceLock owns the same one-time immutable numeric projection and returns
+    // the same stable borrowed slice thereafter. The non-thread-safe source
+    // branch has the same sequential table lifetime; source data are immutable.
+    // The accessor itself adds no allocation/copy after initialization; the
+    // single canonical initializer below retains the already-reviewed row and
+    // isotope loader, with its separate construction cost review.
     PERIODIC_ROWS.get_or_init(|| {
-        // BEGIN RDKIT CPP FUNCTION PeriodicTable::PeriodicTable
-        // RDKit✔️✔️: PeriodicTable::PeriodicTable() {
-        // RDKit✔️✔️:   // it is assumed that the atomic atomData string constains atoms
-        // RDKit✔️✔️:   // in sequence and no atoms are missing in between
-        // RDKit✔️✔️:   byanum.clear();
-        // RDKit✔️✔️:   byname.clear();
-        // RDKit✔️✔️:   boost::char_separator<char> eolSep("\n");
-        // RDKit✔️✔️:   tokenizer tokens(periodicTableAtomData, eolSep);
-        // RDKit✔️✔️:   for (tokenizer::iterator token = tokens.begin(); token != tokens.end();
-        // RDKit✔️✔️:        ++token) {
-        // RDKit✔️✔️:     if (*token != " ") {
-        // RDKit✔️✔️:       atomicData adata(*token);
-        // RDKit✔️✔️:       std::string enam = adata.Symbol();
-        // RDKit✔️✔️:       byname[enam] = adata.AtomicNum();
-        // RDKit✔️✔️:       // there are, for backwards compatibility reasons, some duplicate rows for
-        // RDKit✔️✔️:       // atomic numbers in the atomic_data data structure. It's ok to have
-        // RDKit✔️✔️:       // multiple symbols map to the same atomic number (above), but we need to
-        // RDKit✔️✔️:       // be sure that we only store one entry per atomic number.
-        // RDKit✔️✔️:       // Note that this only works because the first atom in the adata list is
-        // RDKit✔️✔️:       // the dummy atom (atomic number 0). This was #2784
-        // RDKit✔️✔️:       if (rdcast<size_t>(adata.AtomicNum()) == byanum.size()) {
-        // RDKit✔️✔️:         byanum.push_back(adata);
-        // RDKit✔️✔️:       }
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:   }
+        // BEGIN RDKIT CPP FUNCTION PeriodicTable::PeriodicTable complete source
+        // RDKit✔️🔝: PeriodicTable::PeriodicTable() {
+        // RDKit✔️🔝:   // it is assumed that the atomic atomData string constains atoms
+        // RDKit✔️🔝:   // in sequence and no atoms are missing in between
+        // RDKit✔️🔝:   byanum.clear();
+        // RDKit✔️🔝:   byname.clear();
+        // RDKit✔️🔝:
+        // RDKit✔️🔝:   boost::char_separator<char> eolSep("\n");
+        // RDKit✔️🔝:   tokenizer tokens(periodicTableAtomData, eolSep);
+        // RDKit✔️🔝:   for (tokenizer::iterator token = tokens.begin(); token != tokens.end();
+        // RDKit✔️🔝:        ++token) {
+        // RDKit✔️🔝:     if (*token != " ") {
+        // RDKit✔️🔝:       atomicData adata(*token);
+        // RDKit✔️🔝:       std::string enam = adata.Symbol();
+        // RDKit✔️🔝:       byname[enam] = adata.AtomicNum();
+        // RDKit✔️🔝:       // there are, for backwards compatibility reasons, some duplicate rows for
+        // RDKit✔️🔝:       // atomic numbers in the atomic_data data structure. It's ok to have
+        // RDKit✔️🔝:       // multiple symbols map to the same atomic number (above), but we need to
+        // RDKit✔️🔝:       // be sure that we only store one entry per atomic number.
+        // RDKit✔️🔝:       // Note that this only works because the first atom in the adata list is
+        // RDKit✔️🔝:       // the dummy atom (atomic number 0). This was #2784
+        // RDKit✔️🔝:       if (rdcast<size_t>(adata.AtomicNum()) == byanum.size()) {
+        // RDKit✔️🔝:         byanum.push_back(adata);
+        // RDKit✔️🔝:       }
+        // RDKit✔️🔝:     }
+        // RDKit✔️🔝:   }
         // RDKit✔️🔝:
         // RDKit✔️🔝:   unsigned int lidx = 0;
         // RDKit✔️🔝:   std::istringstream istr;
@@ -134,14 +160,14 @@ fn rows() -> &'static [PeriodicRow] {
         // RDKit✔️🔝:       }
         // RDKit✔️🔝:     }
         // RDKit✔️🔝:   }
-        // RDKit✔️✔️: }
-        // END RDKIT CPP FUNCTION PeriodicTable::PeriodicTable
+        // RDKit✔️🔝: }
+        // END RDKIT CPP FUNCTION PeriodicTable::PeriodicTable complete source
         // The normalized data removes the source symbol column because the
         // source loader itself skips it. Appending already-sorted isotope rows
         // to contiguous slices is linear and allocation-coalesced, improving
         // on one tree-node allocation and O(log n) insertion per source row;
         // immutable binary-search lookup remains O(log n) with identical keys.
-        // BEGIN RDKIT CPP FUNCTION atomicData::atomicData
+        // BEGIN RDKIT CPP FUNCTION atomicData::atomicData complete source
         // RDKit✔️✔️: atomicData::atomicData(const std::string &dataLine) {
         // RDKit✔️✔️:   boost::char_separator<char> spaceSep(" \t");
         // RDKit✔️✔️:   tokenizer tokens(dataLine, spaceSep);
@@ -221,7 +247,7 @@ fn rows() -> &'static [PeriodicRow] {
         // RDKit✔️✔️:     ++token;
         // RDKit✔️✔️:   }
         // RDKit✔️✔️: }
-        // END RDKIT CPP FUNCTION atomicData::atomicData
+        // END RDKIT CPP FUNCTION atomicData::atomicData complete source
         let mut parsed = Vec::with_capacity(119);
         for line in PERIODIC_ROW_DATA.lines().filter(|line| !line.is_empty()) {
             let mut fields = line.split_whitespace();
@@ -378,7 +404,10 @@ pub fn van_der_waals_radius(atomic_number: u8) -> Option<f64> {
         .map(|row| row.van_der_waals_radius)
 }
 
-pub(crate) fn atomic_number_from_symbol(symbol: &str) -> Option<u8> {
+pub(crate) fn atomic_number_from_symbol(symbol: impl AsRef<[u8]>) -> Option<u8> {
+    // Every pinned byname key is ASCII. Non-UTF8 input cannot equal a key;
+    // reject exactly as a missing map entry, with no lossy decoding or trim.
+    let symbol = std::str::from_utf8(symbol.as_ref()).ok()?;
     Element::from_symbol(symbol).map(Element::atomic_number)
 }
 

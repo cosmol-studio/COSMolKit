@@ -172,6 +172,7 @@ pub enum HydrogenWarning {
 /// Errors raised by detached hydrogen algorithms.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HydrogenError {
+    StereoOrder(crate::StereoOrderError),
     BondProperty(cosmolkit_model::BondValueError),
     AtomProperty(cosmolkit_model::AtomPropertyError),
     InvalidTopology(TopologyValidationError),
@@ -233,6 +234,9 @@ pub enum HydrogenError {
 impl std::fmt::Display for HydrogenError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::StereoOrder(error) => {
+                write!(formatter, "hydrogen-removal stereo order failed: {error}")
+            }
             Self::AtomProperty(error) => {
                 write!(formatter, "atom property operation failed: {error}")
             }
@@ -335,6 +339,7 @@ impl std::fmt::Display for HydrogenError {
 impl std::error::Error for HydrogenError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::StereoOrder(source) => Some(source),
             Self::AtomProperty(source) => Some(source),
             Self::BondProperty(source) => Some(source),
             Self::InvalidProperty(source) => Some(source),
@@ -346,6 +351,11 @@ impl std::error::Error for HydrogenError {
 impl From<cosmolkit_model::AtomPropertyError> for HydrogenError {
     fn from(source: cosmolkit_model::AtomPropertyError) -> Self {
         Self::AtomProperty(source)
+    }
+}
+impl From<crate::StereoOrderError> for HydrogenError {
+    fn from(source: crate::StereoOrderError) -> Self {
+        Self::StereoOrder(source)
     }
 }
 impl From<cosmolkit_model::BondValueError> for HydrogenError {
@@ -644,7 +654,7 @@ fn assign_hydrogen_residue_info(topology: &mut TopologyBlock) -> Result<(), Hydr
         .filter(|serial| *serial > 0)
         .max()
         .unwrap_or(0);
-    let mut current_info: Option<(i32, String)> = None;
+    let mut current_info: Option<(i32, cosmolkit_model::PropertyText)> = None;
     let mut current_h_id = 0_i32;
 
     for atom_index in 0..stop_index {
@@ -2786,8 +2796,8 @@ pub(crate) mod remove_hs_ring_isotope_tests_helpers {
                     .collect(),
                 true,
             )],
-            source_conformer_order: None,
             source_coordinate_dim: None,
+            source_conformer_order: None,
         }
     }
 
@@ -2907,8 +2917,8 @@ mod remove_hs_ring_isotope_tests {
                     .collect(),
                 true,
             )],
-            source_conformer_order: None,
             source_coordinate_dim: None,
+            source_conformer_order: None,
         }
     }
 
@@ -3555,8 +3565,8 @@ mod remove_hs_ring_errors_tests {
                         true,
                     )]
                 },
-                source_conformer_order: None,
                 source_coordinate_dim: None,
+                source_conformer_order: None,
             };
             let properties = MoleculeProperties::default();
             let topology_snapshot = topology.clone();
@@ -4585,7 +4595,7 @@ fn update_removed_hydrogen_neighbor(
         probe.retain(|bond| *bond != removed_bond);
         probe.push(removed_bond);
         if perturbation_order(topology, neighbor, &probe, active_bonds) % 2 == 1 {
-            crate::stereo_order::invert_atom_chirality(&mut topology.atoms[neighbor.index()]);
+            crate::stereo_order::invert_atom_chirality(&mut topology.atoms[neighbor.index()])?;
         }
     }
 
@@ -5632,19 +5642,19 @@ mod tests {
         let first = topology.atoms[3]
             .pdb_residue_info()
             .expect("first hydrogen info");
-        assert_eq!(first.atom_name(), " H1 ");
+        assert_eq!(first.atom_name().as_bytes(), b" H1 ".as_slice());
         assert_eq!(first.serial_number(), 42);
-        assert_eq!(first.residue_name(), "NEG");
+        assert_eq!(first.residue_name().as_bytes(), b"NEG".as_slice());
         assert_eq!(first.residue_number(), 10);
-        assert_eq!(first.chain_id(), "A");
+        assert_eq!(first.chain_id().as_bytes(), b"A".as_slice());
         assert!(!first.is_hetero_atom());
-        assert_eq!(first.alt_loc(), "");
-        assert_eq!(first.insertion_code(), "");
+        assert_eq!(first.alt_loc().as_bytes(), b"".as_slice());
+        assert_eq!(first.insertion_code().as_bytes(), b"".as_slice());
         assert_eq!(first.occupancy(), 1.0);
         assert_eq!(first.temp_factor(), 0.0);
         assert_eq!(first.secondary_structure(), 0);
         assert_eq!(first.segment_number(), 0);
-        assert_eq!(first.monomer_class(), "");
+        assert_eq!(first.monomer_class().as_bytes(), b"".as_slice());
         assert_eq!(
             topology.atoms[4]
                 .pdb_residue_info()
@@ -5653,8 +5663,12 @@ mod tests {
             43
         );
         assert_eq!(
-            topology.atoms[4].pdb_residue_info().unwrap().atom_name(),
-            " H2 "
+            topology.atoms[4]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b" H2 ".as_slice()
         );
         assert_eq!(
             topology.atoms[5]
@@ -5664,8 +5678,12 @@ mod tests {
             44
         );
         assert_eq!(
-            topology.atoms[5].pdb_residue_info().unwrap().atom_name(),
-            " H1 "
+            topology.atoms[5]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b" H1 ".as_slice()
         );
         assert_eq!(topology.atoms[0].pdb_residue_info(), Some(&negative));
     }
@@ -5695,8 +5713,12 @@ mod tests {
         assign_hydrogen_residue_info(&mut topology).expect("ordered residue assignment");
 
         assert_eq!(
-            topology.atoms[4].pdb_residue_info().unwrap().atom_name(),
-            " H1 "
+            topology.atoms[4]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b" H1 ".as_slice()
         );
         assert_eq!(
             topology.atoms[4]
@@ -5707,8 +5729,12 @@ mod tests {
         );
         assert_eq!(topology.atoms[5].pdb_residue_info(), Some(&existing));
         assert_eq!(
-            topology.atoms[6].pdb_residue_info().unwrap().atom_name(),
-            " H3 "
+            topology.atoms[6]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b" H3 ".as_slice()
         );
         assert_eq!(
             topology.atoms[6]
@@ -5718,20 +5744,36 @@ mod tests {
             91
         );
         assert_eq!(
-            topology.atoms[7].pdb_residue_info().unwrap().atom_name(),
-            " H4 "
+            topology.atoms[7]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b" H4 ".as_slice()
         );
         assert_eq!(
-            topology.atoms[7].pdb_residue_info().unwrap().residue_name(),
-            "GLY"
+            topology.atoms[7]
+                .pdb_residue_info()
+                .unwrap()
+                .residue_name()
+                .as_bytes(),
+            b"GLY".as_slice()
         );
         assert_eq!(
-            topology.atoms[8].pdb_residue_info().unwrap().atom_name(),
-            " H1 "
+            topology.atoms[8]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b" H1 ".as_slice()
         );
         assert_eq!(
-            topology.atoms[9].pdb_residue_info().unwrap().atom_name(),
-            " H1 "
+            topology.atoms[9]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b" H1 ".as_slice()
         );
     }
 
@@ -5745,19 +5787,28 @@ mod tests {
         assign_hydrogen_residue_info(&mut topology).expect("large residue assignment");
 
         assert_eq!(
-            topology.atoms[1].pdb_residue_info().unwrap().atom_name(),
-            " H1 "
+            topology.atoms[1]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b" H1 ".as_slice()
         );
         assert_eq!(
-            topology.atoms[123].pdb_residue_info().unwrap().atom_name(),
-            "3H12"
+            topology.atoms[123]
+                .pdb_residue_info()
+                .unwrap()
+                .atom_name()
+                .as_bytes(),
+            b"3H12".as_slice()
         );
         assert_eq!(
             topology.atoms[1_000]
                 .pdb_residue_info()
                 .unwrap()
-                .atom_name(),
-            "0H00"
+                .atom_name()
+                .as_bytes(),
+            b"0H00".as_slice()
         );
         assert!(
             topology.atoms[1..].iter().all(|atom| atom
@@ -5791,11 +5842,11 @@ mod tests {
         .expect("residue-info stage");
 
         let hydrogen = output.topology.atoms[1].pdb_residue_info().unwrap();
-        assert_eq!(hydrogen.atom_name(), " H1 ");
+        assert_eq!(hydrogen.atom_name().as_bytes(), b" H1 ".as_slice());
         assert_eq!(hydrogen.serial_number(), 12);
-        assert_eq!(hydrogen.residue_name(), "LIG");
+        assert_eq!(hydrogen.residue_name().as_bytes(), b"LIG".as_slice());
         assert_eq!(hydrogen.residue_number(), 8);
-        assert_eq!(hydrogen.chain_id(), "Q");
+        assert_eq!(hydrogen.chain_id().as_bytes(), b"Q".as_slice());
         assert!(hydrogen.is_hetero_atom());
     }
 
@@ -5852,8 +5903,8 @@ mod tests {
                 Conformer3D::new(11, vec![[3.0, 4.0, 5.0]], true).with_prop("source", "three"),
                 Conformer3D::new(12, vec![[-1.0, 2.0, 0.0]], false).with_prop("flat", "yes"),
             ],
-            source_conformer_order: None,
             source_coordinate_dim: Some(cosmolkit_model::CoordinateDimension::ThreeD),
+            source_conformer_order: None,
         };
         let original = coordinates.clone();
         let output =
@@ -7007,6 +7058,15 @@ mod add_hs_computed_prelude_tests {
         }
         // Safely collect local diagnoses even when the whole returned graph differs.
         for (index, atom) in topology.atoms.iter().take(2).enumerate() {
+            check(
+                errors,
+                label,
+                "post native computed-list presence/tag/empty value",
+                atom.prop("__computedProps").cloned()
+                    == before.topology.atoms[index]
+                        .prop("__computedProps")
+                        .map(|_| PropertyValue::StringVector(vec![])),
+            );
             check(
                 errors,
                 label,

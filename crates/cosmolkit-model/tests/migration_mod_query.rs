@@ -561,7 +561,10 @@ fn query_atom_and_bond_cover_default_parts_access_and_mutation() {
     assert_eq!(atom.id(), AtomId::new(0));
     assert_eq!(atom.index(), 0);
     assert_eq!(atom.atom_map(), Some(8));
-    assert_eq!(string_atom_prop(atom.prop("a")), Some("b"));
+    assert_eq!(
+        string_atom_prop(atom.prop("a")).map(str::as_bytes),
+        Some(b"b".as_slice())
+    );
     assert_eq!(
         atom.predicate(),
         &QueryNode::predicate(AtomQueryPredicate::AtomicNumber(7))
@@ -601,7 +604,7 @@ fn query_atom_and_bond_cover_default_parts_access_and_mutation() {
 }
 
 #[test]
-fn recursive_query_covers_empty_graph_provenance_set_serial_and_deep_clone() {
+fn recursive_query_covers_empty_graph_provenance_set_serial_and_source_copy() {
     let empty = RecursiveStructureQuery::new();
     assert!(empty.query_graph().is_none());
     assert_eq!(empty.source_smarts().map(fixture_text), None);
@@ -617,22 +620,44 @@ fn recursive_query_covers_empty_graph_provenance_set_serial_and_deep_clone() {
     recursive
         .query_graph_mut()
         .unwrap()
-        .set_prop("changed", "first");
+        .set_prop("changed", "first")
+        .expect("original fixture graph property mutation succeeds");
 
-    let clone = recursive.clone();
+    let mut clone = recursive.clone();
     recursive
         .query_graph_mut()
         .unwrap()
-        .set_prop("changed", "second");
+        .set_prop("changed", "second")
+        .unwrap();
+    // QueryOps.h RecursiveStructureQuery::copy constructs
+    // new ROMol(*dp_queryMol, true): quickCopy omits molecule properties.
     assert_eq!(
         clone
             .query_graph()
             .unwrap()
             .prop("changed")
             .map(fixture_value),
-        Some("first")
+        None
     );
+    assert_eq!(clone.source_smarts().map(fixture_text), Some("[#6]"));
+    assert_eq!(clone.serial_number(), 17);
+    assert!(clone.contains_atom_index(3));
     assert_eq!(clone, clone.clone());
+    // The retained graph is independently owned despite quick-copy metadata.
+    clone.query_graph_mut().unwrap().atoms_mut()[0].set_formal_charge(1);
+    assert_eq!(clone.query_graph().unwrap().atoms()[0].formal_charge(), 1);
+    assert_eq!(
+        recursive.query_graph().unwrap().atoms()[0].formal_charge(),
+        0
+    );
+    assert_eq!(
+        recursive
+            .query_graph()
+            .unwrap()
+            .prop("changed")
+            .map(fixture_value),
+        Some("second")
+    );
 
     recursive.set_query_graph(graph(2, vec![single_bond(0, 0, 1)]));
     assert_eq!(recursive.query_graph().unwrap().num_bonds(), 1);
@@ -646,7 +671,9 @@ fn query_graph_covers_accessors_properties_coordinates_and_stereo_groups() {
         .unwrap()
         .with_2d_coordinate_block(vec![[0.0, 0.0], [1.0, 0.0]])
         .unwrap();
-    graph.set_prop("mutable", "yes");
+    graph
+        .set_prop("mutable", "yes")
+        .expect("original fixture graph property mutation succeeds");
     graph
         .add_conformer_3d(Conformer3D::new(
             4,
@@ -680,7 +707,9 @@ fn query_graph_covers_accessors_properties_coordinates_and_stereo_groups() {
     assert_eq!(graph.coordinates_2d().unwrap().len(), 2);
     assert_eq!(graph.conformers_3d()[0].id(), 4);
     assert_eq!(graph.stereo_groups().len(), 1);
-    graph.clear_prop("mutable");
+    graph
+        .clear_prop("mutable")
+        .expect("original fixture graph property mutation succeeds");
     assert_eq!(graph.prop("mutable"), None);
     assert_eq!(graph.validate(), Ok(()));
 }
@@ -1158,9 +1187,9 @@ fn query_atom_identity_change_clone_mapping_and_common_mutation_preserve_carrier
             .unwrap()
             .expect("computed list exists")
             .iter()
-            .map(fixture_text)
+            .map(cosmolkit_model::PropertyText::as_bytes)
             .collect::<Vec<_>>(),
-        ["computed"]
+        [b"computed".as_slice()]
     );
     assert_eq!(raw.pdb_residue_info(), element_carrier.pdb_residue_info());
     assert_eq!(raw.template_attachment_order(), Some(&attachment_order));
@@ -1192,7 +1221,10 @@ fn query_atom_identity_change_clone_mapping_and_common_mutation_preserve_carrier
     assert_eq!(raw.atomic_number(), 119);
     assert_eq!(raw.isotope(), Some(14));
     assert_eq!(raw.formal_charge(), -2);
-    assert_eq!(string_atom_prop(raw.prop("added")), Some("value"));
+    assert_eq!(
+        string_atom_prop(raw.prop("added")).map(str::as_bytes),
+        Some(b"value".as_slice())
+    );
     assert_eq!(raw.predicate(), &predicate);
     assert!(!raw.predicate_is_carrier_derived());
 

@@ -10,6 +10,23 @@ pub enum ReactionParseError {
         #[source]
         source: cosmolkit_search::SmartsParseError,
     },
+    #[error("{role:?} template {template} atom {atom} is outside {atom_count} atoms")]
+    TemplateAtomBounds {
+        role: ReactionRole,
+        template: usize,
+        atom: AtomId,
+        atom_count: usize,
+    },
+    #[error(
+        "source signed degree difference is undefined for reactant {reactant}, product {product}"
+    )]
+    StereoDegreeArithmetic { reactant: u32, product: u32 },
+    #[error("inconsistent molInversionFlag {flag:?} at product {product} atom {atom}")]
+    StereoInversionFlag {
+        product: usize,
+        atom: AtomId,
+        flag: Option<i32>,
+    },
     #[error("reaction template property read failed: {source}")]
     TemplateProperty {
         #[source]
@@ -27,7 +44,7 @@ pub enum ReactionParseError {
     Smarts {
         role: ReactionRole,
         template: usize,
-        text: String,
+        text: cosmolkit_model::PropertyText,
         #[source]
         source: cosmolkit_search::SmartsParseError,
     },
@@ -35,9 +52,19 @@ pub enum ReactionParseError {
     Smiles {
         role: ReactionRole,
         template: usize,
-        text: String,
+        text: cosmolkit_model::PropertyText,
         #[source]
         source: cosmolkit_smiles::SmilesParseError,
+    },
+    #[error(
+        "SMILES component bytes cannot pass the UTF8 parser boundary at {role:?} template {template}: {text:?}: {source}"
+    )]
+    ComponentEncoding {
+        role: ReactionRole,
+        template: usize,
+        text: cosmolkit_model::PropertyText,
+        #[source]
+        source: std::str::Utf8Error,
     },
     #[error("invalid {role:?} template {template}: {source}")]
     Model {

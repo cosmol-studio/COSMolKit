@@ -22,6 +22,13 @@ pub enum ReactionValidationError {
         property: &'static str,
         value: u32,
     },
+    #[error("{role:?} template {template} atom {atom} is outside {atom_count} atoms")]
+    AtomBounds {
+        role: ReactionRole,
+        template: usize,
+        atom: AtomId,
+        atom_count: usize,
+    },
     #[error("source invariant missing atom for product {template}, atom {atom}, map {map}")]
     MissingReactingAtom {
         template: usize,

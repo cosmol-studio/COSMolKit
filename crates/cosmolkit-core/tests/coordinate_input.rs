@@ -11,8 +11,8 @@ fn mixed() -> CoordinateBlock {
             Conformer3D::new(3, vec![[0.; 3]; 2], false).with_prop("kind", "original"),
             Conformer3D::new(7, vec![[1.; 3]; 2], true),
         ],
-        source_conformer_order: None,
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     }
 }
 

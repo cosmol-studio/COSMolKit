@@ -359,15 +359,31 @@ impl RecursiveStructureQuery {
 impl Clone for RecursiveStructureQuery {
     fn clone(&self) -> Self {
         // BEGIN RDKIT CPP FUNCTION RecursiveStructureQuery::copy
-        // RDKit✔️✔️: RecursiveStructureQuery *res = new RecursiveStructureQuery();
-        // RDKit✔️✔️: res->dp_queryMol.reset(new ROMol(*dp_queryMol, true));
-        // RDKit✔️✔️: for (i = d_set.begin(); i != d_set.end(); i++) {
-        // RDKit✔️✔️:   res->insert(*i);
-        // RDKit✔️✔️: }
-        // RDKit✔️✔️: res->d_serialNumber = d_serialNumber;
+        // RDKit❗✔️:   Queries::Query<int, Atom const *, true> *copy() const override {
+        // RDKit❗✔️:     RecursiveStructureQuery *res = new RecursiveStructureQuery();
+        // RDKit❗✔️:     res->dp_queryMol.reset(new ROMol(*dp_queryMol, true));
+        // RDKit❗✔️:
+        // RDKit❗✔️:     std::set<int>::const_iterator i;
+        // RDKit❗✔️:     for (i = d_set.begin(); i != d_set.end(); i++) {
+        // RDKit❗✔️:       res->insert(*i);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     res->setNegation(getNegation());
+        // RDKit❗✔️:     res->d_description = d_description;
+        // RDKit❗✔️:     res->d_serialNumber = d_serialNumber;
+        // RDKit❗✔️:     return res;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   unsigned int getSerialNumber() const { return d_serialNumber; }
+        // RDKit❗✔️:
         // END RDKIT CPP FUNCTION RecursiveStructureQuery::copy
+        // Native recursive copy calls the quick ROMol constructor. Keep the
+        // modeled null query graph absent; native dereferences that pointer in
+        // copy, an invalid-state boundary still requiring final reconciliation.
+        // No complete graph clone before removing metadata or coordinates.
         Self {
-            query_graph: self.query_graph.clone(),
+            query_graph: self
+                .query_graph
+                .as_ref()
+                .map(|graph| Box::new(graph.source_copy(true, -1))),
             source_smarts: self.source_smarts.clone(),
             atom_indices: self.atom_indices.clone(),
             serial_number: self.serial_number,
@@ -457,6 +473,19 @@ pub struct QueryAtom {
 }
 
 impl QueryAtom {
+    /// Return transported Atom member effects without changing query identity,
+    /// origin or predicate. This is detached common-field transport only.
+    #[doc(hidden)]
+    pub fn replace_source_carrier_members_from(&mut self, source: &Atom) {
+        assert_eq!(self.id(), source.id(), "source carrier row identity");
+        assert_eq!(
+            self.atomic_number(),
+            source.atomic_number(),
+            "source carrier atomic identity"
+        );
+        self.properties = source.source_common_properties().clone();
+    }
+
     /// Borrow property records using the source private/computed include flags.
     #[doc(hidden)]
     pub fn property_records(
@@ -598,6 +627,18 @@ impl QueryAtom {
     #[must_use]
     pub fn predicate(&self) -> &QueryNode<AtomQueryPredicate> {
         &self.predicate
+    }
+
+    /// Borrow a query and its detached ordered dictionary as disjoint fields.
+    #[doc(hidden)]
+    pub fn predicate_and_properties_mut(
+        &mut self,
+    ) -> (&QueryNode<AtomQueryPredicate>, &mut crate::PropertyStore) {
+        // RDKit❗✔️:   QUERYATOM_QUERY *getQuery() const override { return dp_query; }
+        // RDKit❗✔️:   Dict &getDict() { return d_props; }
+        // This only splits detached field borrows; it grants no live molecule,
+        // query mutation or commit authority, and performs no clone/allocation.
+        (&self.predicate, &mut self.properties.props)
     }
 
     #[doc(hidden)]
@@ -1406,7 +1447,7 @@ impl QueryBond {
 ///
 /// `PartialEq` compares stored representation, including atom/bond predicate
 /// origins and metadata. It is not graph isomorphism or matching equivalence.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct QueryGraph {
     atoms: Vec<QueryAtom>,
     bonds: Vec<QueryBond>,
@@ -1417,9 +1458,224 @@ pub struct QueryGraph {
     source_conformer_order: Option<Vec<crate::CoordinateDimension>>,
     stereo_groups: Vec<StereoGroup>,
     substance_groups: Vec<SubstanceGroup>,
+    source_ring_info: crate::SourceRingInfo,
+}
+
+impl Clone for QueryGraph {
+    fn clone(&self) -> Self {
+        // Default ROMol copy constructor supplies quickCopy=false, confId=-1.
+        // The unique copy implementation below also owns recursive quickCopy.
+        self.source_copy(false, -1)
+    }
 }
 
 impl QueryGraph {
+    /// Borrow the actual source cache without finding or normalizing rings.
+    #[doc(hidden)]
+    pub fn source_ring_info(&self) -> &crate::SourceRingInfo {
+        // RDKit❗✔️:   RingInfo *getRingInfo() const { return dp_ringInfo; }
+        &self.source_ring_info
+    }
+
+    /// Transport an explicit owner-produced source cache into this detached graph.
+    #[doc(hidden)]
+    pub fn replace_source_ring_info(&mut self, source: crate::SourceRingInfo) {
+        // RDKit❗✔️:   RingInfo &operator=(const RingInfo &other) = default;
+        // This move is the typed equivalent of transferring the supplied cache;
+        // no graph scan, finding, renumbering, validation repair or inference.
+        self.source_ring_info = source;
+    }
+
+    /// Exact ordered dictionary projection, including raw computed-list data.
+    #[doc(hidden)]
+    pub fn source_molecule_properties(&self) -> crate::MoleculeProperties {
+        crate::MoleculeProperties::from_source_dict(self.props.clone())
+    }
+    /// Return only source molecule property effects from a detached algorithm.
+    #[doc(hidden)]
+    pub fn replace_source_molecule_properties(&mut self, source: &crate::MoleculeProperties) {
+        self.props = source.source_dict().clone();
+    }
+
+    // Source copy options are an internal model prerequisite, not a new
+    // public molecule transform. RecursiveStructureQuery::copy uses quickCopy.
+    fn source_copy(&self, quick_copy: bool, conf_id: i32) -> Self {
+        // BEGIN RDKIT CPP FUNCTION ROMol::initFromOther
+        // RDKit❗✔️: void ROMol::initFromOther(const ROMol &other, bool quickCopy, int confId) {
+        // RDKit❗✔️:   if (this == &other) {
+        // RDKit❗✔️:     return;
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   numBonds = 0;
+        // RDKit❗✔️:   // std::cerr<<"    init from other: "<<this<<" "<<&other<<std::endl;
+        // RDKit❗✔️:   // copy over the atoms
+        // RDKit❗✔️:   for (const auto oatom : other.atoms()) {
+        // RDKit❗✔️:     constexpr bool updateLabel = false;
+        // RDKit❗✔️:     constexpr bool takeOwnership = true;
+        // RDKit❗✔️:     addAtom(oatom->copy(), updateLabel, takeOwnership);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // and the bonds:
+        // RDKit❗✔️:   for (const auto obond : other.bonds()) {
+        // RDKit❗✔️:     addBond(obond->copy(), true);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // ring information
+        // RDKit❗✔️:   delete dp_ringInfo;
+        // RDKit❗✔️:   if (other.dp_ringInfo) {
+        // RDKit❗✔️:     dp_ringInfo = new RingInfo(*(other.dp_ringInfo));
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     dp_ringInfo = new RingInfo();
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // enhanced stereochemical information
+        // RDKit❗✔️:   d_stereo_groups.clear();
+        // RDKit❗✔️:   for (auto &otherGroup : other.d_stereo_groups) {
+        // RDKit❗✔️:     std::vector<Atom *> atoms;
+        // RDKit❗✔️:     for (auto &otherAtom : otherGroup.getAtoms()) {
+        // RDKit❗✔️:       atoms.push_back(getAtomWithIdx(otherAtom->getIdx()));
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     std::vector<Bond *> bonds;
+        // RDKit❗✔️:     for (auto &otherBond : otherGroup.getBonds()) {
+        // RDKit❗✔️:       bonds.push_back(getBondWithIdx(otherBond->getIdx()));
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     d_stereo_groups.emplace_back(otherGroup.getGroupType(), std::move(atoms),
+        // RDKit❗✔️:                                  std::move(bonds), otherGroup.getReadId());
+        // RDKit❗✔️:     d_stereo_groups.back().setWriteId(otherGroup.getWriteId());
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (other.dp_delAtoms) {
+        // RDKit❗✔️:     dp_delAtoms.reset(new boost::dynamic_bitset<>(*other.dp_delAtoms));
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     dp_delAtoms.reset(nullptr);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:   if (other.dp_delBonds) {
+        // RDKit❗✔️:     dp_delBonds.reset(new boost::dynamic_bitset<>(*other.dp_delBonds));
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     dp_delBonds.reset(nullptr);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   if (!quickCopy) {
+        // RDKit❗✔️:     // copy conformations
+        // RDKit❗✔️:     for (const auto &conf : other.d_confs) {
+        // RDKit❗✔️:       if (confId < 0 || rdcast<int>(conf->getId()) == confId) {
+        // RDKit❗✔️:         this->addConformer(new Conformer(*conf));
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     // Copy sgroups
+        // RDKit❗✔️:     for (const auto &sg : getSubstanceGroups(other)) {
+        // RDKit❗✔️:       addSubstanceGroup(*this, sg);
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:
+        // RDKit❗✔️:     d_props = other.d_props;
+        // RDKit❗✔️:
+        // RDKit❗✔️:     // Bookmarks should be copied as well:
+        // RDKit❗✔️:     for (auto abmI : other.d_atomBookmarks) {
+        // RDKit❗✔️:       for (const auto *aptr : abmI.second) {
+        // RDKit❗✔️:         setAtomBookmark(getAtomWithIdx(aptr->getIdx()), abmI.first);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:     for (auto bbmI : other.d_bondBookmarks) {
+        // RDKit❗✔️:       for (const auto *bptr : bbmI.second) {
+        // RDKit❗✔️:         setBondBookmark(getBondWithIdx(bptr->getIdx()), bbmI.first);
+        // RDKit❗✔️:       }
+        // RDKit❗✔️:     }
+        // RDKit❗✔️:   } else {
+        // RDKit❗✔️:     d_props.reset();
+        // RDKit❗✔️:     STR_VECT computed;
+        // RDKit❗✔️:     d_props.setVal(RDKit::detail::computedPropName, computed);
+        // RDKit❗✔️:   }
+        // RDKit❗✔️:
+        // RDKit❗✔️:   // std::cerr<<"---------    done init from other: "<<this<<"
+        // RDKit❗✔️:   // "<<&other<<std::endl;
+        // RDKit❗✔️: }
+        // END RDKIT CPP FUNCTION ROMol::initFromOther
+        // Behavioral boundary: a newly returned detached graph has stable dense
+        // IDs instead of native owning pointers; self-aliasing assignment is
+        // unrepresentable. QueryGraph retains the represented RingInfo state; pending deletion masks and
+        // bookmark storage, so those independent source states remain unmodeled.
+        // Native conformer IDs are unsigned32; for nonnegative conf_id equality
+        // with that value is equivalent to release rdcast<int>(id)==confId.
+        // Wide model IDs, native debug cast checks and missing mixed-dimension
+        // append order are retained representation gaps, not fabricated state.
+        // Cost: linear deep copy of represented atoms, bonds, query trees,
+        // properties/groups and selected coordinate rows, like native copying.
+        // The existing adjacency cache and explicit conformer-order transport
+        // add O(V+E+C) scalar copies; no whole-graph clone followed by erasure,
+        // rank sorting, property conversion, validation or unselected coords copy.
+        let atoms = self.atoms.clone();
+        let bonds = self.bonds.clone();
+        let adjacency = self.adjacency.clone();
+        let stereo_groups = self.stereo_groups.clone();
+        let (conformers_2d, conformers_3d, source_conformer_order, substance_groups, props) =
+            if quick_copy {
+                (
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                    Vec::new(),
+                    crate::property_value::PropertyStore::from_records([(
+                        PropertyText::from("__computedProps"),
+                        crate::PropertyValue::StringVector(Vec::new()),
+                    )]),
+                )
+            } else {
+                let selected = |id: usize| conf_id < 0 || id == conf_id as usize;
+                let conformers_2d = self
+                    .conformers_2d
+                    .iter()
+                    .filter(|conf| selected(conf.id()))
+                    .cloned()
+                    .collect();
+                let conformers_3d = self
+                    .conformers_3d
+                    .iter()
+                    .filter(|conf| selected(conf.id()))
+                    .cloned()
+                    .collect();
+                let source_conformer_order = self.source_conformer_order.as_ref().map(|order| {
+                    let mut two_d = self.conformers_2d.iter();
+                    let mut three_d = self.conformers_3d.iter();
+                    order
+                        .iter()
+                        .copied()
+                        .filter(|dimension| {
+                            let id = match dimension {
+                                crate::CoordinateDimension::TwoD => two_d
+                                    .next()
+                                    .expect("stored conformer order indexes its 2D collection")
+                                    .id(),
+                                crate::CoordinateDimension::ThreeD => three_d
+                                    .next()
+                                    .expect("stored conformer order indexes its 3D collection")
+                                    .id(),
+                            };
+                            selected(id)
+                        })
+                        .collect()
+                });
+                (
+                    conformers_2d,
+                    conformers_3d,
+                    source_conformer_order,
+                    self.substance_groups.clone(),
+                    self.props.clone(),
+                )
+            };
+        Self {
+            atoms,
+            bonds,
+            adjacency,
+            props,
+            conformers_2d,
+            conformers_3d,
+            source_conformer_order,
+            stereo_groups,
+            substance_groups,
+            source_ring_info: self.source_ring_info.clone(),
+        }
+    }
+
     /// Borrow property records using the source private/computed include flags.
     #[doc(hidden)]
     pub fn property_records(
@@ -1464,6 +1720,7 @@ impl QueryGraph {
             source_conformer_order: None,
             stereo_groups,
             substance_groups: Vec::new(),
+            source_ring_info: crate::SourceRingInfo::default(),
         };
         graph.validate()?;
         Ok(graph)
@@ -1554,6 +1811,26 @@ impl QueryGraph {
             return Err(QueryGraphError::AdjacencyMismatch);
         }
         Ok(())
+    }
+
+    /// Source degree of an atom owned by this detached graph, if its row exists.
+    #[doc(hidden)]
+    pub fn try_atom_degree(&self, atom: AtomId) -> Option<u32> {
+        // RDKit❗✔️: unsigned int Atom::getDegree() const {
+        // RDKit❗✔️:   return dp_mol ? getOwningMol().getAtomDegree(this) : 0;
+        // RDKit❗✔️: }
+        // RDKit❗✔️: unsigned int ROMol::getAtomDegree(const Atom *at) const {
+        // RDKit❗✔️:   PRECONDITION(at, "no atom");
+        // RDKit❗✔️:   PRECONDITION(&at->getOwningMol() == this,
+        // RDKit❗✔️:                "atom not associated with this molecule");
+        // RDKit❗✔️:   return rdcast<unsigned int>(boost::out_degree(at->getIdx(), d_graph));
+        // RDKit❗✔️: };
+        // A QueryGraph always represents its attached atoms. Missing row data
+        // stays absent; callers propagate their own structural bounds context.
+        self.atoms.get(atom.index())?;
+        self.adjacency
+            .get(atom.index())
+            .map(|neighbors| neighbors.len() as u32)
     }
 
     #[must_use]
@@ -1712,6 +1989,77 @@ impl QueryGraph {
         &self.conformers_3d
     }
 
+    /// Borrow the actual source-front conformer through the sole MODEL selector.
+    #[doc(hidden)]
+    pub fn first_source_conformer(
+        &self,
+    ) -> Result<Option<crate::CoordinateSourceConformer<'_>>, crate::CoordinateValidationError>
+    {
+        crate::coordinates::first_source_conformer_from_parts(
+            &self.conformers_2d,
+            &self.conformers_3d,
+            self.source_conformer_order.as_deref(),
+        )
+    }
+
+    /// Borrow every actual source conformer in physical append order.
+    #[doc(hidden)]
+    pub fn source_conformers(
+        &self,
+    ) -> Result<Vec<crate::CoordinateSourceConformer<'_>>, crate::CoordinateValidationError> {
+        // RDKit❗❌:   inline ConstConformerIterator beginConformers() const {
+        // RDKit❗❌:     return d_confs.begin();
+        // RDKit❗❌:   }
+        // RDKit❗❌:   inline ConstConformerIterator endConformers() const { return d_confs.end(); }
+        // These are actual detached storage-order facts, not conformer ID,
+        // is3D, dimensional preference, import provenance or numerical checks.
+        // Cost ❌: the split dimensional carrier materializes C borrowed refs
+        // versus Native's O(1) begin/end iterator pair; no coordinates clone.
+        use crate::{
+            CoordinateDimension as Dim, CoordinateSourceConformer as Row,
+            CoordinateValidationError as Error,
+        };
+        let mut result = Vec::with_capacity(self.conformers_2d.len() + self.conformers_3d.len());
+        if let Some(order) = self.source_conformer_order.as_deref() {
+            let (mut two, mut three) = (0, 0);
+            for dim in order {
+                match dim {
+                    Dim::TwoD => {
+                        let row = self
+                            .conformers_2d
+                            .get(two)
+                            .ok_or(Error::MissingSourceConformerOrder)?;
+                        result.push(Row::TwoD(row));
+                        two += 1;
+                    }
+                    Dim::ThreeD => {
+                        let row = self
+                            .conformers_3d
+                            .get(three)
+                            .ok_or(Error::MissingSourceConformerOrder)?;
+                        result.push(Row::ThreeD(row));
+                        three += 1;
+                    }
+                }
+            }
+            if two != self.conformers_2d.len() || three != self.conformers_3d.len() {
+                return Err(Error::SourceConformerOrder {
+                    two_d: two,
+                    three_d: three,
+                    expected_two_d: self.conformers_2d.len(),
+                    expected_three_d: self.conformers_3d.len(),
+                });
+            }
+        } else if self.conformers_2d.is_empty() {
+            result.extend(self.conformers_3d.iter().map(Row::ThreeD));
+        } else if self.conformers_3d.is_empty() {
+            result.extend(self.conformers_2d.iter().map(Row::TwoD));
+        } else {
+            return Err(Error::MissingSourceConformerOrder);
+        }
+        Ok(result)
+    }
+
     /// Clone the complete detached coordinate carrier for a domain owner that
     /// must apply an index-changing transform and rebuild this query value.
     #[doc(hidden)]
@@ -1726,19 +2074,6 @@ impl QueryGraph {
             source_coordinate_dim,
             source_conformer_order: self.source_conformer_order.clone(),
         }
-    }
-
-    /// Borrow the source's first conformer through the sole coordinate selector.
-    #[doc(hidden)]
-    pub fn first_source_conformer(
-        &self,
-    ) -> Result<Option<crate::CoordinateSourceConformer<'_>>, crate::CoordinateValidationError>
-    {
-        crate::coordinates::first_source_conformer_from_parts(
-            &self.conformers_2d,
-            &self.conformers_3d,
-            self.source_conformer_order.as_deref(),
-        )
     }
 
     #[doc(hidden)]
@@ -1775,6 +2110,26 @@ impl QueryGraph {
 
     #[doc(hidden)]
     pub fn add_conformer_3d(&mut self, conformer: Conformer3D) -> Result<(), QueryGraphError> {
+        // RDKit❗❌: unsigned int ROMol::addConformer(Conformer *conf, bool assignId) {
+        // RDKit❗❌:   PRECONDITION(conf, "bad conformer");
+        // RDKit❗❌:   PRECONDITION(conf->getNumAtoms() == this->getNumAtoms(),
+        // RDKit❗❌:                "Number of atom mismatch");
+        // RDKit❗❌:   if (assignId) {
+        // RDKit❗❌:     int maxId = -1;
+        // RDKit❗❌:     for (auto cptr : d_confs) {
+        // RDKit❗❌:       maxId = std::max((int)(cptr->getId()), maxId);
+        // RDKit❗❌:     }
+        // RDKit❗❌:     maxId++;
+        // RDKit❗❌:     conf->setId((unsigned int)maxId);
+        // RDKit❗❌:   }
+        // RDKit❗❌:   conf->setOwningMol(this);
+        // RDKit❗❌:   CONFORMER_SPTR nConf(conf);
+        // RDKit❗❌:   d_confs.push_back(nConf);
+        // RDKit❗❌:   return conf->getId();
+        // RDKit❗❌: }
+        // This canonical detached boundary specializes assignId=false.
+        // Split dimensional storage additionally records actual append order.
+
         if conformer.coordinates().len() != self.num_atoms() {
             return Err(QueryGraphError::CoordinateValidation(
                 CoordinateValidationError::RowCount {
@@ -1879,6 +2234,18 @@ pub fn replace_query_stereo_groups(
 /// Borrow the ordered typed substance groups owned by a detached query graph.
 #[must_use]
 pub fn query_substance_groups(graph: &QueryGraph) -> &[SubstanceGroup] {
+    // RDKit✔️✔️: std::vector<SubstanceGroup> &getSubstanceGroups(ROMol &mol) {
+    // RDKit✔️✔️:   return mol.d_sgroups;
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: const std::vector<SubstanceGroup> &getSubstanceGroups(const ROMol &mol) {
+    // RDKit✔️✔️:   return mol.d_sgroups;
+    // RDKit✔️✔️: }
+    // Behavior: borrow the actual ordered collection, including every typed
+    // payload and sparse role record. Read consumers observe its identity and
+    // order without sorting, filtering, normalizing, or reconstructing groups.
+    // Detached mutation uses the existing validated replacement boundary;
+    // this read adapter does not expose a second mutable storage authority.
+    // Complexity: O(1) borrow, no allocation or group/property clone.
     &graph.substance_groups
 }
 
@@ -1887,6 +2254,30 @@ pub fn replace_query_substance_groups(
     graph: &mut QueryGraph,
     groups: Vec<SubstanceGroup>,
 ) -> Result<(), QueryGraphError> {
+    // RDKit✔️❌: unsigned int addSubstanceGroup(ROMol &mol, SubstanceGroup sgroup) {
+    // RDKit✔️❌:   sgroup.setOwningMol(&mol);
+    // RDKit✔️❌:
+    // RDKit✔️❌:   auto &&sgroups = getSubstanceGroups(mol);
+    // RDKit✔️❌:   unsigned int id = sgroups.size();
+    // RDKit✔️❌:
+    // RDKit✔️❌:   sgroups.push_back(std::move(sgroup));
+    // RDKit✔️❌:
+    // RDKit✔️❌:   return id;
+    // RDKit✔️❌: }
+    // RDKit✔️✔️: void SubstanceGroup::setOwningMol(ROMol *mol) {
+    // RDKit✔️✔️:   PRECONDITION(mol, "owning molecule is nullptr");
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   dp_mol = mol;
+    // RDKit✔️✔️: }
+    // Behavior: the existing detached append callers assign the pre-append
+    // collection length as dense identity, append the complete group, then
+    // transfer that ordered collection here. Installation preserves every
+    // payload; ownership is the graph containment, with no ROMol pointer.
+    // The source helper does not set an "index" property: that write remains
+    // in each source caller. Validate detached references before installation.
+    // Complexity: validation scans group references and existing append
+    // callers copy the prior SGroup collection, materially more work than
+    // source amortized O(1) append. No molecule-wide clone is performed.
     validate_substance_groups(&groups, graph.atoms.len(), graph.bonds.len())?;
     graph.substance_groups = groups;
     Ok(())
@@ -2626,6 +3017,7 @@ mod tests {
             source_conformer_order: None,
             stereo_groups: Vec::new(),
             substance_groups: Vec::new(),
+            source_ring_info: crate::SourceRingInfo::default(),
         };
 
         assert_eq!(graph.validate(), Err(QueryGraphError::AdjacencyMismatch));
@@ -2786,7 +3178,9 @@ mod tests {
         assert_eq!(explicit_roundtrip.temporary_flags(), u64::MAX);
 
         let mut derived = QueryAtom::from_carrier_parts(carrier, predicate);
-        derived.clear_computed_props();
+        derived
+            .clear_computed_props()
+            .expect("original fixture property clear succeeds");
         let derived_roundtrip = derived
             .try_to_atom()
             .expect("carrier-derived query converts to atom");
@@ -2824,8 +3218,364 @@ mod tests {
         assert_eq!(explicit.clone().bond().temporary_flags(), u64::MAX);
 
         let mut derived = QueryBond::from_carrier_parts(carrier, predicate);
-        derived.bond_mut().clear_computed_props();
+        derived
+            .bond_mut()
+            .clear_computed_props()
+            .expect("original fixture property clear succeeds");
         assert_eq!(derived.bond().temporary_flags(), u64::MAX);
         assert_eq!(derived.bond().prop("derived"), None);
+    }
+}
+
+#[cfg(test)]
+mod source_romol_copy_complete_tests {
+    use super::*;
+    use crate::{
+        AtomSpec, CoordinateDimension, PropertyValue, StereoGroupKind, SubstanceGroupId,
+        SubstanceGroupKind,
+    };
+
+    fn fixture() -> QueryGraph {
+        let atoms = vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))];
+        let mut graph = QueryGraph::from_parts(
+            atoms,
+            vec![],
+            [
+                (PropertyText::from("first"), PropertyValue::UInt(u32::MAX)),
+                (
+                    PropertyText::from_bytes(b"raw\0\xff"),
+                    PropertyValue::String(PropertyText::from_bytes(b"bytes\xff\0")),
+                ),
+            ],
+            vec![
+                Conformer2D::new(7, vec![[1.0, 2.0]]),
+                Conformer2D::new(8, vec![[3.0, 4.0]]),
+            ],
+            vec![
+                Conformer3D::new(7, vec![[5.0, 6.0, 7.0]], false),
+                Conformer3D::new(u32::MAX as usize, vec![[8.0, 9.0, 10.0]], true),
+            ],
+            vec![
+                StereoGroup::new(StereoGroupKind::And, vec![AtomId::new(0)], vec![])
+                    .with_id(19)
+                    .with_write_id(27),
+            ],
+        )
+        .unwrap();
+        graph.atoms[0]
+            .set_prop("atom-note", PropertyValue::UInt(13))
+            .unwrap();
+        graph
+            .set_source_conformer_order(Some(vec![
+                CoordinateDimension::ThreeD,
+                CoordinateDimension::TwoD,
+                CoordinateDimension::ThreeD,
+                CoordinateDimension::TwoD,
+            ]))
+            .unwrap();
+        replace_query_substance_groups(
+            &mut graph,
+            vec![
+                SubstanceGroup::new(SubstanceGroupId::new(0), SubstanceGroupKind::Data)
+                    .with_atoms(vec![AtomId::new(0)])
+                    .with_label("group"),
+            ],
+        )
+        .unwrap();
+        graph
+    }
+
+    #[test]
+    fn default_full_copy_preserves_ordered_payloads_and_detaches_storage() {
+        let graph = fixture();
+        let mut copy = graph.clone();
+        assert_eq!(copy, graph);
+        assert_eq!(
+            copy.property_records(true, true)
+                .unwrap()
+                .map(|(key, _)| key.as_bytes().to_vec())
+                .collect::<Vec<_>>(),
+            [b"first".to_vec(), b"raw\0\xff".to_vec()]
+        );
+        assert_eq!(copy.stereo_groups[0].id(), Some(19));
+        assert_eq!(copy.stereo_groups[0].write_id(), 27);
+        assert_ne!(copy.atoms.as_ptr(), graph.atoms.as_ptr());
+        assert_ne!(
+            copy.conformers_3d[0].coordinates().as_ptr(),
+            graph.conformers_3d[0].coordinates().as_ptr()
+        );
+        copy.atoms[0]
+            .set_prop("atom-note", PropertyValue::UInt(99))
+            .unwrap();
+        copy.conformers_3d[0].coordinates_mut()[0][0] = 123.0;
+        assert_eq!(
+            graph.atoms[0].prop("atom-note"),
+            Some(&PropertyValue::UInt(13))
+        );
+        assert_eq!(graph.conformers_3d[0].coordinates()[0][0], 5.0);
+    }
+
+    #[test]
+    fn quick_copy_retains_structure_and_enhanced_groups_but_resets_source_metadata() {
+        let graph = fixture();
+        let quick = graph.source_copy(true, 7);
+        assert_eq!(quick.atoms, graph.atoms);
+        assert_eq!(quick.bonds, graph.bonds);
+        assert_eq!(quick.adjacency, graph.adjacency);
+        assert_eq!(quick.stereo_groups, graph.stereo_groups);
+        assert!(quick.conformers_2d.is_empty());
+        assert!(quick.conformers_3d.is_empty());
+        assert!(quick.substance_groups.is_empty());
+        assert_eq!(quick.source_conformer_order, None);
+        assert_eq!(quick.props.values().len(), 1);
+        assert_eq!(
+            quick.prop("__computedProps"),
+            Some(&PropertyValue::StringVector(vec![]))
+        );
+        assert!(quick.prop("first").is_none());
+        assert!(quick.prop(b"raw\0\xff").is_none());
+        assert_eq!(
+            quick.atoms[0].prop("atom-note"),
+            Some(&PropertyValue::UInt(13))
+        );
+        assert_eq!(graph.conformers_2d.len(), 2);
+        assert_eq!(graph.substance_groups.len(), 1);
+    }
+
+    #[test]
+    fn selected_conformer_copy_keeps_all_matching_ids_and_native_append_order() {
+        let graph = fixture();
+        let selected = graph.source_copy(false, 7);
+        assert_eq!(selected.conformers_2d, vec![graph.conformers_2d[0].clone()]);
+        assert_eq!(selected.conformers_3d, vec![graph.conformers_3d[0].clone()]);
+        assert_eq!(
+            selected.source_conformer_order,
+            Some(vec![CoordinateDimension::ThreeD, CoordinateDimension::TwoD])
+        );
+        assert_eq!(selected.props, graph.props);
+        assert_eq!(selected.substance_groups, graph.substance_groups);
+        assert!(!selected.conformers_3d[0].is_3d());
+        for id in [0, 99, i32::MAX] {
+            let absent = graph.source_copy(false, id);
+            assert!(absent.conformers_2d.is_empty());
+            assert!(absent.conformers_3d.is_empty());
+            assert_eq!(absent.source_conformer_order, Some(vec![]));
+        }
+        for id in [-1, i32::MIN] {
+            assert_eq!(graph.source_copy(false, id), graph);
+        }
+    }
+
+    #[test]
+    fn recursive_copy_reaches_quick_graph_constructor_and_preserves_source_set() {
+        let mut query = RecursiveStructureQuery::from_query_graph(fixture(), u32::MAX);
+        query.insert_atom_index(-1);
+        query.insert_atom_index(0);
+        let mut copied = query.clone();
+        let inner = copied.query_graph().unwrap();
+        assert_eq!(inner, &query.query_graph().unwrap().source_copy(true, -1));
+        assert!(inner.conformers_2d.is_empty());
+        assert!(inner.conformers_3d.is_empty());
+        assert!(inner.substance_groups.is_empty());
+        assert_eq!(
+            inner.prop("__computedProps"),
+            Some(&PropertyValue::StringVector(vec![]))
+        );
+        assert_eq!(copied.serial_number(), u32::MAX);
+        assert!(copied.contains_atom_index(-1));
+        assert!(copied.contains_atom_index(0));
+        copied.query_graph_mut().unwrap().atoms[0]
+            .set_prop("atom-note", PropertyValue::UInt(99))
+            .unwrap();
+        assert_eq!(
+            query.query_graph().unwrap().atoms[0].prop("atom-note"),
+            Some(&PropertyValue::UInt(13))
+        );
+        assert_eq!(query.query_graph().unwrap().conformers_2d.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod source_ring_info_tests {
+    use super::*;
+    use crate::SourceRingInfo;
+    fn graph() -> QueryGraph {
+        QueryGraph::from_parts(
+            (0..3)
+                .map(|i| {
+                    QueryAtom::from_identity_parts(
+                        AtomId::new(i),
+                        QueryAtomIdentity::from_atomic_number(if i % 2 == 0 { 0 } else { 119 }),
+                        QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
+                    )
+                })
+                .collect(),
+            [(0, 1), (1, 2), (2, 0)]
+                .into_iter()
+                .enumerate()
+                .map(|(i, (a, b))| {
+                    QueryBond::new(
+                        BondId::new(i),
+                        crate::BondSpec::new(AtomId::new(a), AtomId::new(b), BondOrder::Single),
+                    )
+                })
+                .collect(),
+            [],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    fn cache() -> SourceRingInfo {
+        SourceRingInfo {
+            initialized: true,
+            find_type: 2,
+            atom_members: vec![vec![0]; 3],
+            bond_members: vec![vec![0]; 3],
+            atom_rings: vec![vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]],
+            bond_rings: vec![vec![BondId::new(0), BondId::new(1), BondId::new(2)]],
+            atom_ring_families: vec![vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]],
+            bond_ring_families: vec![vec![BondId::new(0), BondId::new(1), BondId::new(2)]],
+            relevant_cycle_count: Some(1),
+            fused_rings: vec![vec![false]],
+            num_fused_bonds: vec![0],
+        }
+    }
+    #[test]
+    fn newly_constructed_cyclic_query_keeps_native_uninitialized_ring_state() {
+        let q = graph();
+        assert_eq!(q.source_ring_info(), &SourceRingInfo::default());
+        assert!(!q.source_ring_info().initialized);
+        assert_eq!(q.source_ring_info().find_type, 3);
+        assert!(q.source_ring_info().atom_members.is_empty());
+    }
+    #[test]
+    fn ordinary_and_quick_source_copies_retain_all_actual_cache_fields() {
+        let mut q = graph();
+        q.set_prop("private-work", "value").unwrap();
+        q.replace_source_ring_info(cache());
+        let ordinary = q.source_copy(false, -1);
+        let quick = q.source_copy(true, -1);
+        assert_eq!(ordinary.source_ring_info(), &cache());
+        assert_eq!(quick.source_ring_info(), &cache());
+        assert!(ordinary.prop("private-work").is_some());
+        assert!(quick.prop("private-work").is_none());
+    }
+    #[test]
+    fn source_cache_storage_detaches_without_reconstructing_or_repairing_memberships() {
+        let mut q = graph();
+        q.replace_source_ring_info(cache());
+        let before = q.clone();
+        let mut copy = q.clone();
+        let mut state = copy.source_ring_info().clone();
+        state.atom_members.push(vec![]);
+        state.bond_members.push(vec![]);
+        state.relevant_cycle_count = Some(7);
+        copy.replace_source_ring_info(state);
+        assert_eq!(q, before);
+        assert_eq!(q.source_ring_info().atom_members.len(), 3);
+        assert_eq!(copy.source_ring_info().atom_members.len(), 4);
+        assert_eq!(copy.source_ring_info().relevant_cycle_count, Some(7));
+    }
+}
+#[cfg(test)]
+mod all_source_conformers_tests {
+    use super::*;
+    use crate::{CoordinateSourceConformer as Row, CoordinateValidationError as Error};
+    fn graph() -> QueryGraph {
+        QueryGraph::from_parts(
+            vec![QueryAtom::new(
+                AtomId::new(0),
+                crate::AtomSpec::new(crate::Element::C),
+            )],
+            vec![],
+            [],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    #[test]
+    fn empty_and_single_dimension_keep_duplicate_ids_and_append_order() {
+        let mut q = graph();
+        assert!(q.source_conformers().unwrap().is_empty());
+        for id in [9, 2, 9] {
+            q.add_conformer_3d(Conformer3D::new(id, vec![[id as f64, 0., 0.]], false))
+                .unwrap();
+        }
+        q.set_source_conformer_order(None).unwrap();
+        let rows = q.source_conformers().unwrap();
+        let ids: Vec<_> = rows
+            .iter()
+            .map(|r| match r {
+                Row::ThreeD(c) => c.id(),
+                _ => panic!(),
+            })
+            .collect();
+        assert_eq!(ids, [9, 2, 9]);
+        match rows[1] {
+            Row::ThreeD(c) => assert!(std::ptr::eq(c, &q.conformers_3d()[1])),
+            _ => panic!(),
+        }
+    }
+    #[test]
+    fn mixed_physical_order_preserves_flags_and_borrowed_rows() {
+        let mut q = graph();
+        q.add_conformer_3d(Conformer3D::new(7, vec![[1., 2., 3.]], false))
+            .unwrap();
+        q = q.with_2d_coordinate_block(vec![[4., 5.]]).unwrap();
+        q.add_conformer_3d(Conformer3D::new(7, vec![[6., 7., 8.]], true))
+            .unwrap();
+        let rows = q.source_conformers().unwrap();
+        assert_eq!(rows.len(), 3);
+        match rows[0] {
+            Row::ThreeD(c) => {
+                assert!(!c.is_3d());
+                assert!(std::ptr::eq(c, &q.conformers_3d()[0]));
+            }
+            _ => panic!(),
+        }
+        match rows[1] {
+            Row::TwoD(c) => assert!(std::ptr::eq(c, &q.conformers_2d()[0])),
+            _ => panic!(),
+        }
+        match rows[2] {
+            Row::ThreeD(c) => assert!(c.is_3d()),
+            _ => panic!(),
+        }
+    }
+    #[test]
+    fn absent_mixed_order_propagates_without_dimensional_preference() {
+        let mut q = graph().with_2d_coordinate_block(vec![[1., 2.]]).unwrap();
+        q.add_conformer_3d(Conformer3D::new(1, vec![[1., 2., 3.]], true))
+            .unwrap();
+        q.set_source_conformer_order(None).unwrap();
+        assert!(matches!(
+            q.source_conformers(),
+            Err(Error::MissingSourceConformerOrder)
+        ));
+        assert_eq!(q.conformers_2d().len(), 1);
+        assert_eq!(q.conformers_3d().len(), 1);
+    }
+    #[test]
+    fn raw_nonfinite_values_are_borrowed_without_validation_or_rewrite() {
+        let bits = 0x7ff8_0000_0000_0042;
+        let mut q = graph();
+        q.add_conformer_3d(Conformer3D::new(
+            3,
+            vec![[f64::from_bits(bits), f64::INFINITY, f64::NEG_INFINITY]],
+            false,
+        ))
+        .unwrap();
+        match q.source_conformers().unwrap()[0] {
+            Row::ThreeD(c) => {
+                assert_eq!(c.coordinates()[0][0].to_bits(), bits);
+                assert_eq!(c.coordinates()[0][1], f64::INFINITY);
+                assert_eq!(c.coordinates()[0][2], f64::NEG_INFINITY);
+            }
+            _ => panic!(),
+        }
     }
 }

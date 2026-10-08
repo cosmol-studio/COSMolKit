@@ -590,3 +590,45 @@ fn append_mapping_does_not_fabricate_a_source_identity_for_new_bonds() {
         })
     );
 }
+
+#[test]
+fn atom_perturbation_composition_preserves_encounter_order_and_source_index_bits() {
+    use cosmolkit_core::atom_perturbation_order;
+    assert_eq!(atom_perturbation_order(&[1, 0, 2, 3], [0, 1, 2, 3]), Ok(1));
+    assert_eq!(atom_perturbation_order(&[1, 2, 3, 0], [0, 1, 2, 3]), Ok(3));
+    assert_eq!(atom_perturbation_order(&[1, 2, 0, 3], [0, 1, 2, 3]), Ok(2));
+    // This identity case detects sorting the supplied physical encounter order.
+    assert_eq!(atom_perturbation_order(&[2, 0, 1], [2, 0, 1]), Ok(0));
+    assert_eq!(atom_perturbation_order(&[2, 1, 0], [2, 0, 1]), Ok(1));
+    assert_eq!(
+        atom_perturbation_order(&[i32::MIN, -1, 0], [0, u32::MAX as usize, 1_usize << 31]),
+        Ok(1)
+    );
+    assert_eq!(atom_perturbation_order(&[], []), Ok(0));
+    assert_eq!(atom_perturbation_order(&[1, 1, 2], [2, 1, 1]), Ok(2));
+}
+
+#[test]
+fn atom_perturbation_composition_preserves_typed_transport_and_invariant_failures() {
+    use cosmolkit_core::atom_perturbation_order;
+    assert_eq!(
+        atom_perturbation_order(&[0], []),
+        Err(StereoOrderError::PermutationLength {
+            reference: 1,
+            probe: 0
+        })
+    );
+    assert_eq!(
+        atom_perturbation_order(&[0, 1], [0, 2]),
+        Err(StereoOrderError::MissingProbeValue {
+            reference_position: 1
+        })
+    );
+    #[cfg(target_pointer_width = "64")]
+    assert_eq!(
+        atom_perturbation_order(&[0], [u32::MAX as usize + 1]),
+        Err(StereoOrderError::BondIndexSourceWidth {
+            bond_index: u32::MAX as usize + 1
+        })
+    );
+}

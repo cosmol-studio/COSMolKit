@@ -47,6 +47,8 @@ pub use query_behavior::{
 pub use query_fragments::query_graph_fragments;
 #[doc(hidden)]
 pub use query_graph_behavior::cleanup_query_graph_parser_state;
+#[doc(hidden)]
+pub use smarts_parse::trim_source_whitespace;
 pub use smarts_parse::{SmartsParseParams, compile_query_fixture, parse_smarts};
 #[cfg(feature = "smiles-integration")]
 #[doc(hidden)]

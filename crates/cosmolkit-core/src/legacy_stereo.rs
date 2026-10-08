@@ -751,6 +751,38 @@ fn assign_legacy_stereochemistry_impl(
     clean_it: bool,
     flag_possible_stereo_centers: bool,
 ) -> Result<LegacyStereoAssignment, LegacyStereoError> {
+    let mut ring_update = None;
+    assign_legacy_stereochemistry_source(
+        &mut topology,
+        valence,
+        rings,
+        query_state,
+        clean_it,
+        flag_possible_stereo_centers,
+        &mut ring_update,
+    )?;
+    Ok(LegacyStereoAssignment {
+        topology,
+        ring_update,
+    })
+}
+
+/// Borrow the actual detached graph for reached native source operations.
+/// Property/stereo mutations preceding an error remain observable to the caller;
+/// no empty replacement graph or copied working graph stands in for that state.
+/// The output ring preparation is retained even on a later property/stereo
+/// failure; a source caller moves that effect to its actual cache before
+/// propagating the error, while old owning APIs expose effects on success.
+#[doc(hidden)]
+pub fn assign_legacy_stereochemistry_source(
+    mut topology: &mut TopologyBlock,
+    valence: &ValenceAssignment,
+    rings: &RingInfo,
+    query_state: Option<QueryStateRef<'_>>,
+    clean_it: bool,
+    flag_possible_stereo_centers: bool,
+    ring_update: &mut Option<RingInfo>,
+) -> Result<(), LegacyStereoError> {
     if let Some(state) = query_state {
         state
             .validate_for_topology(&topology)
@@ -810,11 +842,9 @@ fn assign_legacy_stereochemistry_impl(
     // owner and keeps its result for every subsequent ring consumer; this
     // adds only the source-required O(V+E) search on that branch.
     let source_rings = rings;
-    let mut ring_update = if rings.is_find_fast_or_better() {
-        None
-    } else {
-        Some(crate::fast_find_rings(&topology)?)
-    };
+    if !rings.is_find_fast_or_better() {
+        *ring_update = Some(crate::fast_find_rings(&topology)?);
+    }
     let rings = ring_update.as_ref().unwrap_or(source_rings);
     for atom in &mut topology.atoms {
         if clean_it {
@@ -1026,11 +1056,10 @@ fn assign_legacy_stereochemistry_impl(
                 if ranks.is_empty() {
                     ranks = materialize_initial_ranks(&mut topology, valence, query_state)?;
                 }
-                let bond_assignment =
-                    assign_directional_double_bond_stereo(topology, &ranks, rings)?;
-                has_stereo_bonds = bond_assignment.has_unassigned;
-                changed_stereo_bonds = bond_assignment.assigned_any;
-                topology = bond_assignment.topology;
+                (has_stereo_bonds, changed_stereo_bonds) =
+                    crate::double_stereo::assign_directional_double_bond_stereo_source(
+                        topology, &ranks, rings,
+                    )?;
             }
         } else {
             changed_stereo_bonds = false;
@@ -1050,10 +1079,7 @@ fn assign_legacy_stereochemistry_impl(
     // existing cleanup passes and introduces no extra allocation or scan.
     if !clean_it {
         topology.validate()?;
-        return Ok(LegacyStereoAssignment {
-            topology,
-            ring_update,
-        });
+        return Ok(());
     }
 
     // RDKit✔️❌: boost::dynamic_bitset<> possibleSpecialCases(mol.getNumAtoms());
@@ -1069,7 +1095,7 @@ fn assign_legacy_stereochemistry_impl(
     // The existing detached symmetrization owner reconstructs its SSSR
     // context instead of reusing the source molecule's cached extra rings.
     if !rings.is_symm_sssr() {
-        ring_update = Some(crate::symmetrized_sssr(
+        *ring_update = Some(crate::symmetrized_sssr(
             &topology,
             &crate::RingSearchParams::default(),
         )?);
@@ -1148,10 +1174,7 @@ fn assign_legacy_stereochemistry_impl(
     }
     crate::structure_tags::cleanup_stereo_groups(&mut topology);
     topology.validate()?;
-    Ok(LegacyStereoAssignment {
-        topology,
-        ring_update,
-    })
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1660,5 +1683,91 @@ mod state_owner_tests {
             (24, 2, 24, 2)
         );
         assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+}
+
+#[cfg(test)]
+mod source590_borrow_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, Bond, BondId, BondSpec, Element, PropertyValue};
+    fn graph() -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            (0..2)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            vec![Bond::from_spec(
+                BondId::new(0),
+                BondSpec::new(AtomId::new(0), AtomId::new(1), BondOrder::Single),
+            )],
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    #[test]
+    fn source590_borrowed_legacy_is_same_owner_as_owning_entry_without_state_copy() {
+        let g = graph();
+        let v = crate::assign_valence_with_options_for_topology(
+            &g,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        for clean in [false, true] {
+            for flag in [false, true] {
+                let r = crate::symmetrized_sssr(&g, &crate::RingSearchParams::default()).unwrap();
+                let expected =
+                    assign_legacy_stereochemistry_with_assignments(g.clone(), &v, &r, clean, flag)
+                        .unwrap();
+                let mut actual = g.clone();
+                let atoms = actual.atoms.as_ptr();
+                let bonds = actual.bonds.as_ptr();
+                let mut update = None;
+                assign_legacy_stereochemistry_source(
+                    &mut actual,
+                    &v,
+                    &r,
+                    None,
+                    clean,
+                    flag,
+                    &mut update,
+                )
+                .unwrap();
+                assert_eq!(actual, expected.topology);
+                assert_eq!(update, expected.ring_update);
+                assert_eq!(actual.atoms.as_ptr(), atoms);
+                assert_eq!(actual.bonds.as_ptr(), bonds);
+            }
+        }
+    }
+    #[test]
+    fn source590_borrowed_legacy_error_preserves_prior_property_clear_and_ring_effect() {
+        let mut g = graph();
+        let v = crate::assign_valence_with_options_for_topology(
+            &g,
+            crate::ValenceModel::RdkitLike,
+            false,
+        )
+        .unwrap();
+        g.atoms[0].set_prop("_CIPCode", "old").unwrap();
+        g.atoms[1]
+            .set_prop("__computedProps", PropertyValue::Bool(false))
+            .unwrap();
+        let r = RingInfo::new(crate::RingFindType::OtherOrUnknown, 2, 1);
+        let mut update = None;
+        assert!(
+            assign_legacy_stereochemistry_source(&mut g, &v, &r, None, true, false, &mut update)
+                .is_err()
+        );
+        assert_eq!(g.atoms[0].prop("_CIPCode"), None);
+        assert_eq!(
+            g.atoms[1].prop("__computedProps"),
+            Some(&PropertyValue::Bool(false))
+        );
+        assert_eq!(
+            update.as_ref().unwrap().find_type(),
+            crate::RingFindType::Fast
+        );
+        assert_eq!(r.find_type(), crate::RingFindType::OtherOrUnknown);
     }
 }

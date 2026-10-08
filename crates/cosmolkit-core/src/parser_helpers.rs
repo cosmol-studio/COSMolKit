@@ -28,7 +28,10 @@ pub trait ParserAtom: sealed::AtomCarrier {
     fn atomic_number(&self) -> u8;
     fn prop(&self, key: &str) -> Option<&PropertyValue>;
     fn clear_prop(&mut self, key: &str) -> Result<(), cosmolkit_model::AtomPropertyError>;
-    fn set_attachment_point(&mut self, value: i32);
+    fn set_attachment_point(
+        &mut self,
+        value: i32,
+    ) -> Result<(), cosmolkit_model::AtomPropertyError>;
     fn set_chiral_tag(&mut self, value: ChiralTag);
     fn set_chiral_permutation(&mut self, value: Option<u32>);
 }
@@ -53,9 +56,11 @@ macro_rules! parser_atom_access {
             fn clear_prop(&mut self, key: &str) -> Result<(), cosmolkit_model::AtomPropertyError> {
                 <$ty>::clear_prop(self, key)
             }
-            fn set_attachment_point(&mut self, value: i32) {
+            fn set_attachment_point(
+                &mut self,
+                value: i32,
+            ) -> Result<(), cosmolkit_model::AtomPropertyError> {
                 <$ty>::set_prop(self, "_fromAttchpt", value)
-                    .expect("the internal attachment-point property key is non-empty");
             }
             fn set_chiral_tag(&mut self, value: ChiralTag) {
                 <$ty>::set_chiral_tag(self, value);
@@ -311,50 +316,50 @@ pub fn parser_chirality_assignments<
 }
 
 pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) -> Result<(), ParserCarrierError> {
-    // RDKit❗✔️: void CleanupAfterParsing(RWMol *mol) {
-    // RDKit❗✔️:   PRECONDITION(mol, "no molecule");
-    // RDKit❗✔️:   for (auto atom : mol->atoms()) {
-    // RDKit❗✔️:     atom->clearProp(common_properties::_RingClosures);
-    // RDKit❗✔️:     atom->clearProp(common_properties::_SmilesStart);
-    // RDKit❗✔️:     std::string label;
-    // RDKit❗✔️:     if (atom->getAtomicNum() == 0 &&
-    // RDKit❗✔️:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
-    // RDKit❗✔️:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
-    // RDKit❗✔️:       // aren't part of the MOL file spec so we don't treat them as attachment
-    // RDKit❗✔️:       // points
-    // RDKit❗✔️:       if (label == "_AP1") {
-    // RDKit❗✔️:         atom->setProp(common_properties::_fromAttachPoint, 1);
-    // RDKit❗✔️:       } else if (label == "_AP2") {
-    // RDKit❗✔️:         atom->setProp(common_properties::_fromAttachPoint, 2);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   for (auto bond : mol->bonds()) {
-    // RDKit❗✔️:     bond->clearProp(common_properties::_unspecifiedOrder);
-    // RDKit❗✔️:     bond->clearProp("_cxsmilesBondIdx");
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
-    // RDKit❗✔️:     sg.clearProp("_cxsmilesindex");
-    // RDKit❗✔️:   }
-    // RDKit❗✔️:   if (!Chirality::getAllowNontetrahedralChirality()) {
-    // RDKit❗✔️:     bool needWarn = false;
-    // RDKit❗✔️:     for (auto atom : mol->atoms()) {
-    // RDKit❗✔️:       if (atom->hasProp(common_properties::_chiralPermutation)) {
-    // RDKit❗✔️:         needWarn = true;
-    // RDKit❗✔️:         atom->clearProp(common_properties::_chiralPermutation);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:       if (atom->getChiralTag() > Atom::ChiralType::CHI_OTHER) {
-    // RDKit❗✔️:         needWarn = true;
-    // RDKit❗✔️:         atom->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
-    // RDKit❗✔️:       }
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:     if (needWarn) {
-    // RDKit❗✔️:       BOOST_LOG(rdWarningLog)
-    // RDKit❗✔️:           << "ignoring non-tetrahedral stereo specification since setAllowNontetrahedralChirality() is false."
-    // RDKit❗✔️:           << std::endl;
-    // RDKit❗✔️:     }
-    // RDKit❗✔️:   }
-    // RDKit❗✔️: }
+    // RDKit✔️✔️: void CleanupAfterParsing(RWMol *mol) {
+    // RDKit✔️✔️:   PRECONDITION(mol, "no molecule");
+    // RDKit✔️✔️:   for (auto atom : mol->atoms()) {
+    // RDKit✔️✔️:     atom->clearProp(common_properties::_RingClosures);
+    // RDKit✔️✔️:     atom->clearProp(common_properties::_SmilesStart);
+    // RDKit✔️✔️:     std::string label;
+    // RDKit✔️✔️:     if (atom->getAtomicNum() == 0 &&
+    // RDKit✔️✔️:         atom->getPropIfPresent(common_properties::atomLabel, label)) {
+    // RDKit✔️✔️:       // marvinsketch can output higher labels than _AP1 and _AP2, but they
+    // RDKit✔️✔️:       // aren't part of the MOL file spec so we don't treat them as attachment
+    // RDKit✔️✔️:       // points
+    // RDKit✔️✔️:       if (label == "_AP1") {
+    // RDKit✔️✔️:         atom->setProp(common_properties::_fromAttachPoint, 1);
+    // RDKit✔️✔️:       } else if (label == "_AP2") {
+    // RDKit✔️✔️:         atom->setProp(common_properties::_fromAttachPoint, 2);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   for (auto bond : mol->bonds()) {
+    // RDKit✔️✔️:     bond->clearProp(common_properties::_unspecifiedOrder);
+    // RDKit✔️✔️:     bond->clearProp("_cxsmilesBondIdx");
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   for (auto sg : RDKit::getSubstanceGroups(*mol)) {
+    // RDKit✔️✔️:     sg.clearProp("_cxsmilesindex");
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   if (!Chirality::getAllowNontetrahedralChirality()) {
+    // RDKit✔️✔️:     bool needWarn = false;
+    // RDKit✔️✔️:     for (auto atom : mol->atoms()) {
+    // RDKit✔️✔️:       if (atom->hasProp(common_properties::_chiralPermutation)) {
+    // RDKit✔️✔️:         needWarn = true;
+    // RDKit✔️✔️:         atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (atom->getChiralTag() > Atom::ChiralType::CHI_OTHER) {
+    // RDKit✔️✔️:         needWarn = true;
+    // RDKit✔️✔️:         atom->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (needWarn) {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:           << "ignoring non-tetrahedral stereo specification since setAllowNontetrahedralChirality() is false."
+    // RDKit✔️✔️:           << std::endl;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
     // Linear carrier passes and constant-sized property keys preserve source cost.
     for atom in atoms.iter_mut() {
         atom.clear_prop("_RingClosures")?;
@@ -365,25 +370,66 @@ pub fn cleanup_parser_atoms<A: ParserAtom>(atoms: &mut [A]) -> Result<(), Parser
                 .map(crate::property_value_to_string)
                 .transpose()?;
             match label.as_ref().map(|value| value.as_bytes()) {
-                Some(b"_AP1") => atom.set_attachment_point(1),
-                Some(b"_AP2") => atom.set_attachment_point(2),
+                Some(b"_AP1") => atom.set_attachment_point(1)?,
+                Some(b"_AP2") => atom.set_attachment_point(2)?,
                 _ => {}
             }
         }
     }
+    // This is the source first atom pass only. Both destination callers clean
+    // their actual bonds and copied SGroups before reaching the shared final
+    // non-tetrahedral pass; keeping it here reordered fallible property reads.
+    Ok(())
+}
+
+/// Final source cleanup pass, reached only after atom, bond and copied-group cleanup.
+#[doc(hidden)]
+pub fn cleanup_parser_nontetrahedral_atoms<A: ParserAtom>(
+    atoms: &mut [A],
+) -> Result<(), ParserCarrierError> {
+    // RDKit✔️✔️:   if (!Chirality::getAllowNontetrahedralChirality()) {
+    // RDKit✔️✔️:     bool needWarn = false;
+    // RDKit✔️✔️:     for (auto atom : mol->atoms()) {
+    // RDKit✔️✔️:       if (atom->hasProp(common_properties::_chiralPermutation)) {
+    // RDKit✔️✔️:         needWarn = true;
+    // RDKit✔️✔️:         atom->clearProp(common_properties::_chiralPermutation);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       if (atom->getChiralTag() > Atom::ChiralType::CHI_OTHER) {
+    // RDKit✔️✔️:         needWarn = true;
+    // RDKit✔️✔️:         atom->setChiralTag(Atom::ChiralType::CHI_UNSPECIFIED);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (needWarn) {
+    // RDKit✔️✔️:       BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:           << "ignoring non-tetrahedral stereo specification since setAllowNontetrahedralChirality() is false."
+    // RDKit✔️✔️:           << std::endl;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // Raw dictionary presence includes wrong tags, because hasProp does not
+    // cast. The existing typed permutation field is the parser's detached
+    // projection of that same native property and also requires clearing.
+    // Each reached clearProp retains canonical computed-entry errors before
+    // changing the tag; the one warning follows the entire successful pass.
+    // Cost: one borrowed atom pass, fixed property keys, O(1) temporary state;
+    // no buffering or full-graph clone. The environment policy is read here,
+    // after both caller bond and copied-SGroup loops, exactly source order.
     if !crate::nontetrahedral_enabled() {
-        for atom in atoms.iter_mut() {
-            atom.set_chiral_permutation(None);
-            if matches!(
-                atom.chiral_tag(),
-                ChiralTag::Tetrahedral
-                    | ChiralTag::Allene
-                    | ChiralTag::SquarePlanar
-                    | ChiralTag::TrigonalBipyramidal
-                    | ChiralTag::Octahedral
-            ) {
+        let mut need_warn = false;
+        for atom in atoms {
+            if atom.prop("_chiralPermutation").is_some() || atom.chiral_permutation().is_some() {
+                need_warn = true;
+                atom.clear_prop("_chiralPermutation")?;
+                atom.set_chiral_permutation(None);
+            }
+            if atom.chiral_tag().rdkit_code() > ChiralTag::Other.rdkit_code() {
+                need_warn = true;
                 atom.set_chiral_tag(ChiralTag::Unspecified);
             }
+        }
+        if need_warn {
+            eprintln!(
+                "ignoring non-tetrahedral stereo specification since setAllowNontetrahedralChirality() is false."
+            );
         }
     }
     Ok(())

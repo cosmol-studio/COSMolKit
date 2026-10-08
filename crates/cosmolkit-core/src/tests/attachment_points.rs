@@ -139,8 +139,8 @@ fn attachment_expansion_values_options_and_query_origins() {
                         Conformer3D::new(10, vec![[1.0, 2.0, -0.0]], false),
                         Conformer3D::new(11, vec![[2.0, 3.0, 0.5]], true),
                     ],
-                    source_conformer_order: None,
                     source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+                    source_conformer_order: None,
                 };
                 let original_snapshot = original.clone();
                 let result = expand_attachment_points(
@@ -397,8 +397,8 @@ fn attachment_coordinates_ck_coord_001_mixed_flags_preserve_xyz_and_order() {
             Conformer3D::new(11, vec![[2.0, 2.0, 0.0], [0.0; 3]], true),
             Conformer3D::new(12, vec![[4.0, 5.0, 7.0], [0.0; 3]], false),
         ],
-        source_conformer_order: None,
         source_coordinate_dim: Some(CoordinateDimension::ThreeD),
+        source_conformer_order: None,
     };
     let snapshot = original.clone();
     let result = place_terminal_attachment_coordinates(

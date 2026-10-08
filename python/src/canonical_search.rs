@@ -15,6 +15,9 @@ pyo3::create_exception!(cosmolkit, MatchError, PyValueError);
 pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr {
     use ck::SmartsParseError as E;
     let kind = match &source {
+        E::MissingRecursiveQueryGraph => "MissingRecursiveQueryGraph",
+        E::CxLowering(_) => "CxLowering",
+        E::QueryGraph(_) => "QueryGraph",
         E::ParserCarrier(_) => "ParserCarrier",
         E::AtomProperty(_) => "AtomProperty",
         E::BondProperty(_) => "BondProperty",
@@ -51,7 +54,7 @@ pub(crate) fn parse_pyerr(py: Python<'_>, source: ck::SmartsParseError) -> PyErr
                 context,
             } => {
                 value.setattr("position", position)?;
-                value.setattr("character", character.to_string())?;
+                value.setattr("character", char::from(character).to_string())?;
                 value.setattr("context", context)?;
             }
             E::InvalidAtomPrimitive { position, detail } => {
@@ -89,6 +92,33 @@ pub(crate) fn write_pyerr(py: Python<'_>, source: ck::SmartsWriteError) -> PyErr
     let kind = match &source {
         E::Traversal(_) => "Traversal",
         E::CxCoordinates(_) => "CxCoordinates",
+        E::CxRingInfo(_) => "CxRingInfo",
+        E::CxRingAtomOrderIndex { .. } => "CxRingAtomOrderIndex",
+        E::CxRingStereoReferenceMissing { .. } => "CxRingStereoReferenceMissing",
+        E::CxWedge(_) => "CxWedge",
+        E::CxBondConfigAtropMissingCarriers { .. } => "CxBondConfigAtropMissingCarriers",
+        E::CxAtomPropertyOutput(_) => "CxAtomPropertyOutput",
+        E::CxMissingConformer => "CxMissingConformer",
+        E::CxCoordinateSource(_) => "CxCoordinateSource",
+        E::CxCoordinateOutput(_) => "CxCoordinateOutput",
+        E::CxAtomPropertyWrite { .. } => "CxAtomPropertyWrite",
+        E::CxCoordinateStorage { .. } => "CxCoordinateStorage",
+        E::CxSourceBondOutOfRange { .. } => "CxSourceBondOutOfRange",
+        E::CxMoleculePropertyUInt { .. } => "CxMoleculePropertyUInt",
+        E::CxSgroupVectorCast { .. } => "CxSgroupVectorCast",
+        E::CxSgroupPropertyWrite { .. } => "CxSgroupPropertyWrite",
+        E::CxStereoGroup(_) => "CxStereoGroup",
+        E::CxSourceAtomOutOfRange { .. } => "CxSourceAtomOutOfRange",
+        E::MoleculePropertyWrite(_) => "MoleculePropertyWrite",
+        E::SourceAtomCount { .. } => "SourceAtomCount",
+        E::AtomPropertyWrite { .. } => "AtomPropertyWrite",
+        E::CanonicalTraversal(_) => "CanonicalTraversal",
+        E::UnwritableBondQuery { .. } => "UnwritableBondQuery",
+        E::SourceAtomToLeftIndex { .. } => "SourceAtomToLeftIndex",
+        E::SourceBondBeginIndex { .. } => "SourceBondBeginIndex",
+        E::AtomMapInt { .. } => "AtomMapInt",
+        E::AtomTypeAtomicNumber { .. } => "AtomTypeAtomicNumber",
+        E::ChargeMagnitudeOverflow { .. } => "ChargeMagnitudeOverflow",
         E::PropertyValue(_) => "PropertyValue",
         E::CxRequiredProperty { .. } => "CxRequiredProperty",
         E::CxPropertyList { .. } => "CxPropertyList",
@@ -112,7 +142,7 @@ pub(crate) fn write_pyerr(py: Python<'_>, source: ck::SmartsWriteError) -> PyErr
         E::OrAboveAndBelowAnd => "OrAboveAndBelowAnd",
         E::UnknownCombination { .. } => "UnknownCombination",
         E::MissingRecursiveQueryMolecule => "MissingRecursiveQueryMolecule",
-        E::UnsupportedBondDirection { .. } => "UnsupportedBondDirection",
+        E::SourceBondDirection { .. } => "SourceBondDirection",
         E::UnsupportedBondQuery { .. } => "UnsupportedBondQuery",
         E::UnsupportedAtomQuery { .. } => "UnsupportedAtomQuery",
         E::CompositeChildCount { .. } => "CompositeChildCount",
@@ -137,6 +167,12 @@ pub(crate) fn write_pyerr(py: Python<'_>, source: ck::SmartsWriteError) -> PyErr
 pub(crate) fn substruct_pyerr(py: Python<'_>, source: ck::SubstructMatchError) -> PyErr {
     let kind = match &source {
         ck::SubstructMatchError::Unsupported { .. } => "Unsupported",
+        ck::SubstructMatchError::FinalCheckMappingLength { .. } => "FinalCheckMappingLength",
+        ck::SubstructMatchError::FinalCheckMappingIndex { .. } => "FinalCheckMappingIndex",
+        ck::SubstructMatchError::FinalCheckInvariant { .. } => "FinalCheckInvariant",
+        ck::SubstructMatchError::FinalCheckBondEndpoint { .. } => "FinalCheckBondEndpoint",
+        ck::SubstructMatchError::FinalCheckMissingBond { .. } => "FinalCheckMissingBond",
+        ck::SubstructMatchError::StereoOrder(_) => "StereoOrder",
         ck::SubstructMatchError::PeriodicTable(_) => "PeriodicTable",
         ck::SubstructMatchError::PropertyString(_) => "PropertyString",
         ck::SubstructMatchError::PropertyInteger { .. } => "PropertyInteger",
@@ -330,7 +366,11 @@ impl SmartsParseParams {
                 merge_hs,
                 skip_cleanup,
                 debug_parse,
-                replacements: replacements.unwrap_or_default(),
+                replacements: replacements
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(key, value)| (key.into(), value.into()))
+                    .collect(),
             },
         }
     }
@@ -359,8 +399,18 @@ impl SmartsParseParams {
         self.inner.debug_parse
     }
     #[getter]
-    fn replacements(&self) -> BTreeMap<String, String> {
-        self.inner.replacements.clone()
+    fn replacements(&self) -> PyResult<BTreeMap<String, String>> {
+        self.inner
+            .replacements
+            .iter()
+            .map(|(key, value)| {
+                let key = std::str::from_utf8(key.as_bytes())
+                    .map_err(|error| PyValueError::new_err(error.to_string()))?;
+                let value = std::str::from_utf8(value.as_bytes())
+                    .map_err(|error| PyValueError::new_err(error.to_string()))?;
+                Ok((key.to_owned(), value.to_owned()))
+            })
+            .collect()
     }
     fn __repr__(&self) -> String {
         format!("SmartsParseParams({:?})", self.inner)

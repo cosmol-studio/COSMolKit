@@ -546,6 +546,182 @@ pub fn nontetrahedral_chiral_permutation(
     Ok(permutation)
 }
 
+/// Structured source failures at the internal CX stereo-group merge boundary.
+#[doc(hidden)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum CxStereoGroupMergeError {
+    #[error("_sgTracker requires the source unsigned-vector type, found {actual:?}")]
+    TrackerPropertyType {
+        actual: cosmolkit_model::PropertyValueKind,
+    },
+    #[error("source stereo group/tracker count invariant failed: {groups} != {hashes}")]
+    TrackerCount { groups: usize, hashes: usize },
+}
+
+/// Merge the completed CX member list using the source's transient hash state.
+/// The unsigned-vector source property is not a modeled native property tag;
+/// parser-local hashes carry that transient state and never masquerade as an
+/// IntVector. Every actually present modeled property tag is a type error.
+#[doc(hidden)]
+pub fn merge_cx_stereo_group(
+    groups: &[cosmolkit_model::StereoGroup],
+    hashes: &mut Vec<u32>,
+    tracker_property: Option<&cosmolkit_model::PropertyValue>,
+    kind: cosmolkit_model::StereoGroupKind,
+    read_id: u32,
+    atoms: Vec<cosmolkit_model::AtomId>,
+) -> Result<Option<Vec<cosmolkit_model::StereoGroup>>, CxStereoGroupMergeError> {
+    // BEGIN COMPLETE PINNED SF205 graph-effect projection
+    // RDKit❗✔️: bool parse_enhanced_stereo(Iterator &first, Iterator last, RDKit::RWMol &mol,
+    // RDKit❗✔️:                            unsigned int startAtomIdx) {
+    // RDKit❗✔️:   StereoGroupType group_type = StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗✔️:   if (*first == 'a') {
+    // RDKit❗✔️:     group_type = StereoGroupType::STEREO_ABSOLUTE;
+    // RDKit❗✔️:   } else if (*first == 'o') {
+    // RDKit❗✔️:     group_type = StereoGroupType::STEREO_OR;
+    // RDKit❗✔️:   } else if (*first == '&') {
+    // RDKit❗✔️:     group_type = StereoGroupType::STEREO_AND;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   // OR and AND groups carry a group number
+    // RDKit❗✔️:   unsigned int group_id = 0;
+    // RDKit❗✔️:   if (group_type != StereoGroupType::STEREO_ABSOLUTE) {
+    // RDKit❗✔️:     read_int(first, last, group_id);
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   if (first >= last || *first != ':') {
+    // RDKit❗✔️:     return false;
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   ++first;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   std::vector<Atom *> atoms;
+    // RDKit❗✔️:   std::vector<Bond *> bonds;
+    // RDKit❗✔️:
+    // RDKit❗✔️:   while (first <= last && *first >= '0' && *first <= '9') {
+    // RDKit❗✔️:     unsigned int aidx;
+    // RDKit❗✔️:     if (read_int(first, last, aidx)) {
+    // RDKit❗✔️:       if (VALID_ATIDX(aidx)) {
+    // RDKit❗✔️:         Atom *atom = mol.getAtomWithIdx(aidx - startAtomIdx);
+    // RDKit❗✔️:         if (!atom) {
+    // RDKit❗✔️:           BOOST_LOG(rdWarningLog)
+    // RDKit❗✔️:               << "Atom " << aidx << " not found!" << std::endl;
+    // RDKit❗✔️:           return false;
+    // RDKit❗✔️:         }
+    // RDKit❗✔️:         atoms.push_back(atom);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       return false;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     if (first < last && *first == ',') {
+    // RDKit❗✔️:       ++first;
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:   if (!atoms.empty()) {
+    // RDKit❗✔️:     // we need to do a bit of work to check whether or not we've already seen
+    // RDKit❗✔️:     // this particular StereoGroup (was Github #6050)
+    // RDKit❗✔️:     const auto group_hash =
+    // RDKit❗✔️:         10 * group_id + static_cast<unsigned int>(group_type);
+    // RDKit❗✔️:     std::vector<unsigned int> sgTracker;
+    // RDKit❗✔️:     mol.getPropIfPresent(cxsgTracker, sgTracker);
+    // RDKit❗✔️:     std::vector<StereoGroup> mol_stereo_groups(mol.getStereoGroups());
+    // RDKit❗✔️:     TEST_ASSERT(mol_stereo_groups.size() == sgTracker.size());
+    // RDKit❗✔️:
+    // RDKit❗✔️:     auto iter = std::find(sgTracker.begin(), sgTracker.end(), group_hash);
+    // RDKit❗✔️:     if (iter != sgTracker.end()) {
+    // RDKit❗✔️:       auto index = iter - sgTracker.begin();
+    // RDKit❗✔️:       auto gAtoms = mol_stereo_groups[index].getAtoms();
+    // RDKit❗✔️:       gAtoms.insert(gAtoms.end(), atoms.begin(), atoms.end());
+    // RDKit❗✔️:       mol_stereo_groups[index] =
+    // RDKit❗✔️:           StereoGroup(mol_stereo_groups[index].getGroupType(),
+    // RDKit❗✔️:                       std::move(gAtoms), std::move(bonds), group_id);
+    // RDKit❗✔️:     } else {
+    // RDKit❗✔️:       // not seen this before, create a new stereogroup
+    // RDKit❗✔️:       mol_stereo_groups.emplace_back(group_type, std::move(atoms),
+    // RDKit❗✔️:                                      std::move(bonds), group_id);
+    // RDKit❗✔️:       sgTracker.push_back(group_hash);
+    // RDKit❗✔️:       mol.setProp(cxsgTracker, sgTracker);
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:
+    // RDKit❗✔️:     mol.setStereoGroups(std::move(mol_stereo_groups));
+    // RDKit❗✔️:   }
+    // RDKit❗✔️:
+    // RDKit❗✔️:   return true;
+    // RDKit❗✔️: }
+    // END COMPLETE PINNED SF205 graph-effect projection
+    // BEGIN COMPLETE reached unsigned-vector cast
+    // RDKit✔️✔️: template <>
+    // RDKit✔️✔️: inline std::vector<unsigned int> rdvalue_cast<std::vector<unsigned int>>(
+    // RDKit✔️✔️:     RDValue_cast_t v) {
+    // RDKit✔️✔️:   if (rdvalue_is<std::vector<unsigned int>>(v)) {
+    // RDKit✔️✔️:     return *v.ptrCast<std::vector<unsigned int>>();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   throw std::bad_any_cast();
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️:
+    // END COMPLETE reached unsigned-vector cast
+    // BEGIN COMPLETE reached non-arithmetic conversion
+    // RDKit✔️✔️: template <class T>
+    // RDKit✔️✔️: typename boost::disable_if<boost::is_arithmetic<T>, T>::type from_rdvalue(
+    // RDKit✔️✔️:     RDValue_cast_t arg) {
+    // RDKit✔️✔️:   return rdvalue_cast<T>(arg);
+    // RDKit✔️✔️: }
+    // END COMPLETE reached non-arithmetic conversion
+    // BEGIN COMPLETE default source exception invariant
+    // RDKit✔️✔️: #define TEST_ASSERT(expr)                                                  \
+    // RDKit✔️✔️:   if (!(expr)) {                                                           \
+    // RDKit✔️✔️:     Invar::Invariant inv("Test Assert", "Expression Failed: ", #expr,      \
+    // RDKit✔️✔️:                          __FILE__, __LINE__);                              \
+    // RDKit✔️✔️:     BOOST_LOG(rdErrorLog) << "\n\n****\n" << inv << "****\n" << std::endl; \
+    // RDKit✔️✔️:     ;                                                                      \
+    // RDKit✔️✔️:     throw inv;                                                             \
+    // RDKit✔️✔️:   }
+    // END COMPLETE default source exception invariant
+    // Behavior: empty valid-member lists return before property conversion or
+    // count validation. All seven present modeled tags fail the reached
+    // unsigned-vector cast. Native unsigned hash wrapping, first match, group
+    // kind reuse, duplicate atom append, empty replacement bonds, incoming read
+    // ID and reset write ID follow the source. No preexisting-group offset is
+    // inferred. The tracker append precedes the caller's final group write.
+    // Complexity: one ordered O(G) hash scan, one source-equivalent group copy,
+    // and one matched atom copy/append; no alternate index or full graph clone.
+    if atoms.is_empty() {
+        return Ok(None);
+    }
+    if let Some(value) = tracker_property {
+        return Err(CxStereoGroupMergeError::TrackerPropertyType {
+            actual: value.kind(),
+        });
+    }
+    let mut copied_groups = groups.to_vec();
+    if copied_groups.len() != hashes.len() {
+        return Err(CxStereoGroupMergeError::TrackerCount {
+            groups: copied_groups.len(),
+            hashes: hashes.len(),
+        });
+    }
+    let kind_code = match kind {
+        cosmolkit_model::StereoGroupKind::Absolute => 0_u32,
+        cosmolkit_model::StereoGroupKind::Or => 1_u32,
+        cosmolkit_model::StereoGroupKind::And => 2_u32,
+    };
+    let hash = read_id.wrapping_mul(10).wrapping_add(kind_code);
+    if let Some(index) = hashes.iter().position(|value| *value == hash) {
+        let previous_kind = copied_groups[index].kind();
+        let mut merged_atoms = copied_groups[index].atoms().to_vec();
+        merged_atoms.extend(atoms);
+        copied_groups[index] =
+            cosmolkit_model::StereoGroup::new(previous_kind, merged_atoms, Vec::new())
+                .with_id(read_id);
+    } else {
+        copied_groups
+            .push(cosmolkit_model::StereoGroup::new(kind, atoms, Vec::new()).with_id(read_id));
+        hashes.push(hash);
+    }
+    Ok(Some(copied_groups))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

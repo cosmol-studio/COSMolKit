@@ -21,6 +21,8 @@ pub fn first_non_finite_coordinate<R: AsRef<[f64]>>(rows: &[R]) -> Option<(usize
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CoordinateValidationError {
+    #[error("atom index overflow: {atom}")]
+    AtomIndexOverflow { atom: usize },
     #[error("3D conformer id {id} does not exist")]
     Missing3DConformer { id: usize },
     #[error("3D conformer id overflow after {max_id}")]
@@ -68,6 +70,32 @@ pub struct Conformer2D {
 }
 
 impl Conformer2D {
+    pub(crate) fn source_remove_atom_position(
+        &mut self,
+        atom: usize,
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        if self.coords.len() < atom_count {
+            return Err(CoordinateValidationError::RowCount {
+                dimension: "2D",
+                conformer: self.id,
+                rows: self.coords.len(),
+                atom_count,
+            });
+        }
+        source_remove_atom_position(&mut self.coords, atom);
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn source_set_atom_position(
+        &mut self,
+        atom: usize,
+        position: [f64; 2],
+    ) -> Result<(), CoordinateValidationError> {
+        source_set_atom_position(&mut self.coords, atom, position)
+    }
+
     /// Validate explicit checked input, preserving shape-before-number errors.
     pub fn validate_checked_for_atom_count(
         &self,
@@ -172,6 +200,32 @@ pub struct Conformer3D {
 }
 
 impl Conformer3D {
+    pub(crate) fn source_remove_atom_position(
+        &mut self,
+        atom: usize,
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        if self.coords.len() < atom_count {
+            return Err(CoordinateValidationError::RowCount {
+                dimension: "3D",
+                conformer: self.id,
+                rows: self.coords.len(),
+                atom_count,
+            });
+        }
+        source_remove_atom_position(&mut self.coords, atom);
+        Ok(())
+    }
+
+    #[doc(hidden)]
+    pub fn source_set_atom_position(
+        &mut self,
+        atom: usize,
+        position: [f64; 3],
+    ) -> Result<(), CoordinateValidationError> {
+        source_set_atom_position(&mut self.coords, atom, position)
+    }
+
     /// Validate explicit checked input, preserving shape-before-number errors.
     pub fn validate_checked_for_atom_count(
         &self,
@@ -747,5 +801,301 @@ mod source_order_tests {
             block.validate_for_atom_count(1),
             Err(CoordinateValidationError::SourceConformerOrder { .. })
         ));
+    }
+}
+
+// One coordinate-storage owner for native setAtomPos used by detached source
+// composition. Dimension wrappers only select their existing coordinate Vec.
+/// Canonical source position-buffer write for detached reconstruction.
+#[doc(hidden)]
+pub fn source_set_atom_position<const DIM: usize>(
+    coordinates: &mut Vec<[f64; DIM]>,
+    atom: usize,
+    position: [f64; DIM],
+) -> Result<(), CoordinateValidationError> {
+    // BEGIN RDKIT REACHED FUNCTION Conformer::setAtomPos
+    // RDKit❗✔️:   inline void setAtomPos(unsigned int atomId, const RDGeom::Point3D &position) {
+    // RDKit❗✔️:     if (atomId == std::numeric_limits<unsigned int>::max()) {
+    // RDKit❗✔️:       throw ValueErrorException("atom index overflow");
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     if (atomId >= d_positions.size()) {
+    // RDKit❗✔️:       d_positions.resize(atomId + 1, RDGeom::Point3D(0.0, 0.0, 0.0));
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     d_positions[atomId] = position;
+    // RDKit❗✔️:   }
+    // END RDKIT REACHED FUNCTION Conformer::setAtomPos
+    // Native unsigned32 max throws before allocation or write. Wider model
+    // indices are not native input state and receive the same structural error.
+    // Resize fills every gap with zero; existing rows may be overwritten. One
+    // amortized Vec resize/write, no copy of conformer IDs/props/other vectors.
+    if atom >= u32::MAX as usize {
+        return Err(CoordinateValidationError::AtomIndexOverflow { atom });
+    }
+    if atom >= coordinates.len() {
+        coordinates.resize(atom + 1, [0.0; DIM]);
+    }
+    coordinates[atom] = position;
+    Ok(())
+}
+
+#[cfg(test)]
+mod source_set_atom_position_complete_tests {
+    use super::*;
+
+    #[test]
+    fn source_position_resize_fills_gaps_then_overwrites_existing_position() {
+        let mut conformer =
+            Conformer3D::new(9, vec![[1.0, 2.0, 3.0]], false).with_prop("note", "keep");
+        conformer
+            .source_set_atom_position(3, [-0.0, 5.0, 6.0])
+            .unwrap();
+        assert_eq!(
+            conformer.coordinates(),
+            [[1.0, 2.0, 3.0], [0.0; 3], [0.0; 3], [-0.0, 5.0, 6.0]]
+        );
+        conformer
+            .source_set_atom_position(0, [7.0, 8.0, 9.0])
+            .unwrap();
+        assert_eq!(conformer.coordinates()[0], [7.0, 8.0, 9.0]);
+        assert_eq!(conformer.id(), 9);
+        assert!(!conformer.is_3d());
+        let before = conformer.clone();
+        assert_eq!(
+            conformer.source_set_atom_position(u32::MAX as usize, [0.0; 3]),
+            Err(CoordinateValidationError::AtomIndexOverflow {
+                atom: u32::MAX as usize
+            })
+        );
+        assert_eq!(conformer, before);
+    }
+}
+
+fn source_remove_atom_position<const DIM: usize>(coordinates: &mut Vec<[f64; DIM]>, atom: usize) {
+    // RDKit❗❌:   for (auto conf : d_confs) {
+    // RDKit❗❌:     RDGeom::POINT3D_VECT &positions = conf->getPositions();
+    // RDKit❗❌:     auto pi = positions.begin();
+    // RDKit❗❌:     for (unsigned int i = 0; i < getNumAtoms() - 1; i++) {
+    // RDKit❗❌:       ++pi;
+    // RDKit❗❌:       if (i >= idx) {
+    // RDKit❗❌:         positions[i] = positions[i + 1];
+    // RDKit❗❌:       }
+    // RDKit❗❌:     }
+    // RDKit❗❌:     positions.erase(pi);
+    // RDKit❗❌:   }
+    // Vec::remove performs the same ordered shift/erase, retaining raw f64 bits.
+    coordinates.remove(atom);
+}
+
+impl CoordinateBlock {
+    pub(crate) fn source_batch_remove_atom_positions(
+        &mut self,
+        aliases: &[Option<crate::AtomId>],
+        atom_count: usize,
+    ) -> Result<(), CoordinateValidationError> {
+        // Actual source order is required for the observable per-frame swap
+        // before a later frame's Lost coordinates! invariant failure.
+        let order = match self.source_conformer_order.as_deref() {
+            Some(order) => order.to_vec(),
+            None if self.conformers_2d.is_empty() => {
+                vec![CoordinateDimension::ThreeD; self.conformers_3d.len()]
+            }
+            None if self.conformers_3d.is_empty() => {
+                vec![CoordinateDimension::TwoD; self.conformers_2d.len()]
+            }
+            None => return Err(CoordinateValidationError::MissingSourceConformerOrder),
+        };
+        let (mut two_d, mut three_d) = (0, 0);
+        for dimension in order {
+            match dimension {
+                CoordinateDimension::TwoD => {
+                    let frame = self
+                        .conformers_2d
+                        .get_mut(two_d)
+                        .ok_or(CoordinateValidationError::MissingSourceConformerOrder)?;
+                    source_batch_remove_atom_positions(
+                        &mut frame.coords,
+                        aliases,
+                        atom_count,
+                        "2D",
+                        frame.id,
+                    )?;
+                    two_d += 1;
+                }
+                CoordinateDimension::ThreeD => {
+                    let frame = self
+                        .conformers_3d
+                        .get_mut(three_d)
+                        .ok_or(CoordinateValidationError::MissingSourceConformerOrder)?;
+                    source_batch_remove_atom_positions(
+                        &mut frame.coords,
+                        aliases,
+                        atom_count,
+                        "3D",
+                        frame.id,
+                    )?;
+                    three_d += 1;
+                }
+            }
+        }
+        if two_d != self.conformers_2d.len() || three_d != self.conformers_3d.len() {
+            return Err(CoordinateValidationError::MissingSourceConformerOrder);
+        }
+        Ok(())
+    }
+}
+
+fn source_batch_remove_atom_positions<const DIM: usize>(
+    positions: &mut Vec<[f64; DIM]>,
+    aliases: &[Option<crate::AtomId>],
+    atom_count: usize,
+    dimension: &'static str,
+    conformer: usize,
+) -> Result<(), CoordinateValidationError> {
+    // RDKit❗✔️:   // do the same with the coordinates in the conformations
+    // RDKit❗✔️:   for (auto conf : d_confs) {
+    // RDKit❗✔️:     RDGeom::POINT3D_VECT &positions = conf->getPositions();
+    // RDKit❗✔️:     RDGeom::POINT3D_VECT newPositions;
+    // RDKit❗✔️:     newPositions.reserve(getNumAtoms());
+    // RDKit❗✔️:
+    // RDKit❗✔️:     for (RDGeom::POINT3D_VECT::size_type i = 0; i < positions.size(); ++i) {
+    // RDKit❗✔️:       if (oldIndices[i] != nullptr) {
+    // RDKit❗✔️:         newPositions.push_back(positions[i]);
+    // RDKit❗✔️:       }
+    // RDKit❗✔️:     }
+    // RDKit❗✔️:     CHECK_INVARIANT(newPositions.size() == getNumAtoms(), "Lost coordinates!");
+    // RDKit❗✔️:     positions.swap(newPositions);
+    // RDKit❗✔️:   }
+    // Preserve raw float bits and existing ID/is3D/properties. Source checks
+    // the filtered count before swapping; short input may still succeed when
+    // every missing original row belongs to a deleted atom. Out-of-range source
+    // indexing would be undefined and is translated to a structural row error.
+    let mut new_positions = Vec::with_capacity(atom_count);
+    for (index, position) in positions.iter().enumerate() {
+        let alias = aliases
+            .get(index)
+            .ok_or(CoordinateValidationError::RowCount {
+                dimension,
+                conformer,
+                rows: positions.len(),
+                atom_count: aliases.len(),
+            })?;
+        if alias.is_some() {
+            new_positions.push(*position);
+        }
+    }
+    if new_positions.len() != atom_count {
+        return Err(CoordinateValidationError::RowCount {
+            dimension,
+            conformer,
+            rows: new_positions.len(),
+            atom_count,
+        });
+    }
+    *positions = new_positions;
+    Ok(())
+}
+
+#[cfg(test)]
+mod query_source_conformer_front_tests {
+    use super::*;
+    use crate::{AtomId, AtomSpec, QueryAtom, QueryGraph};
+    use cosmolkit_types::Element;
+    fn graph(
+        two: Vec<Conformer2D>,
+        three: Vec<Conformer3D>,
+        order: Option<Vec<CoordinateDimension>>,
+    ) -> QueryGraph {
+        let mut q = QueryGraph::from_parts(
+            vec![QueryAtom::new(AtomId::new(0), AtomSpec::new(Element::C))],
+            vec![],
+            [],
+            two,
+            three,
+            vec![],
+        )
+        .unwrap();
+        q.set_source_conformer_order(order).unwrap();
+        q
+    }
+    fn two(id: usize) -> Conformer2D {
+        Conformer2D::new(id, vec![[1.0, 2.0]])
+    }
+    fn three(id: usize, is_3d: bool) -> Conformer3D {
+        Conformer3D::new(id, vec![[3.0, 4.0, 5.0]], is_3d)
+    }
+    #[test]
+    fn homogeneous_two_d_borrows_first_row_not_lowest_id() {
+        let q = graph(vec![two(100), two(1)], vec![], None);
+        let Some(CoordinateSourceConformer::TwoD(row)) = q.first_source_conformer().unwrap() else {
+            panic!("wrong source dimension")
+        };
+        assert_eq!(row.id(), 100);
+        assert!(std::ptr::eq(row, &q.conformers_2d()[0]));
+    }
+    #[test]
+    fn homogeneous_three_d_borrows_first_row_even_with_false_is3d() {
+        let q = graph(vec![], vec![three(100, false), three(1, true)], None);
+        let Some(CoordinateSourceConformer::ThreeD(row)) = q.first_source_conformer().unwrap()
+        else {
+            panic!("wrong source dimension")
+        };
+        assert_eq!(row.id(), 100);
+        assert!(!row.is_3d());
+        assert!(std::ptr::eq(row, &q.conformers_3d()[0]));
+    }
+    #[test]
+    fn mixed_two_d_front_uses_actual_order_and_shared_block_selector() {
+        let q = graph(
+            vec![two(900)],
+            vec![three(1, true)],
+            Some(vec![CoordinateDimension::TwoD, CoordinateDimension::ThreeD]),
+        );
+        let Some(CoordinateSourceConformer::TwoD(row)) = q.first_source_conformer().unwrap() else {
+            panic!("wrong source dimension")
+        };
+        assert_eq!(row.id(), 900);
+        assert!(std::ptr::eq(row, &q.conformers_2d()[0]));
+        let block = q.coordinate_block(None);
+        assert!(matches!(
+            block.first_source_conformer().unwrap(),
+            Some(CoordinateSourceConformer::TwoD(_))
+        ));
+    }
+    #[test]
+    fn mixed_three_d_front_uses_actual_order() {
+        let q = graph(
+            vec![two(900)],
+            vec![three(1, true)],
+            Some(vec![CoordinateDimension::ThreeD, CoordinateDimension::TwoD]),
+        );
+        let Some(CoordinateSourceConformer::ThreeD(row)) = q.first_source_conformer().unwrap()
+        else {
+            panic!("wrong source dimension")
+        };
+        assert_eq!(row.id(), 1);
+        assert!(std::ptr::eq(row, &q.conformers_3d()[0]));
+    }
+    #[test]
+    fn mixed_missing_order_errors_instead_of_guessing_dimension_or_id() {
+        let q = graph(vec![two(900)], vec![three(1, true)], None);
+        assert!(matches!(
+            q.first_source_conformer(),
+            Err(CoordinateValidationError::MissingSourceConformerOrder)
+        ));
+        assert!(matches!(
+            q.coordinate_block(None).first_source_conformer(),
+            Err(CoordinateValidationError::MissingSourceConformerOrder)
+        ));
+    }
+    #[test]
+    fn empty_sets_are_the_same_explicit_empty_projection() {
+        let q = graph(vec![], vec![], None);
+        assert!(q.first_source_conformer().unwrap().is_none());
+        assert!(
+            q.coordinate_block(None)
+                .first_source_conformer()
+                .unwrap()
+                .is_none()
+        );
     }
 }

@@ -38,7 +38,7 @@ fn counted_internal_bad_byte_has_scanner_offset_not_unicode_rejection() {
     let error = parse_smarts(b"C[\xff]", &SmartsParseParams::default()).unwrap_err();
     assert!(matches!(error, SmartsParseError::UnexpectedCharacter {
         position: 3, character, ..
-    } if character == char::from(0xff)));
+    } if character == 0xff));
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn counted_embedded_nul_is_a_lexer_byte_not_a_c_string_terminator() {
         error,
         SmartsParseError::UnexpectedCharacter {
             position: 2,
-            character: '\0',
+            character: b'\0',
             ..
         }
     ));
@@ -103,7 +103,7 @@ fn all_trimmed_nonempty_input_copies_the_source_c_string_nul_into_scanner_data()
             error,
             SmartsParseError::UnexpectedCharacter {
                 position: 1,
-                character: '\0',
+                character: b'\0',
                 ..
             }
         ));

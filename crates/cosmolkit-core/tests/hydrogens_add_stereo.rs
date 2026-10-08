@@ -449,9 +449,9 @@ fn coordinate_and_residue_options_are_composed_without_losing_mapping() {
         [0.0; 3]
     );
     let hydrogen_info = output.topology.atoms[1].pdb_residue_info().unwrap();
-    assert_eq!(hydrogen_info.atom_name(), " H1 ");
-    assert_eq!(hydrogen_info.residue_name(), "LIG");
-    assert_eq!(hydrogen_info.chain_id(), "Q");
+    assert_eq!(hydrogen_info.atom_name().as_bytes(), b" H1 ".as_slice());
+    assert_eq!(hydrogen_info.residue_name().as_bytes(), b"LIG".as_slice());
+    assert_eq!(hydrogen_info.chain_id().as_bytes(), b"Q".as_slice());
 }
 
 #[test]

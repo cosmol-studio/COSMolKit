@@ -71,10 +71,45 @@ pub enum StereoError {
     StereoOrder(#[from] StereoOrderError),
     #[error("atom property update failed: {0}")]
     AtomProperty(#[from] AtomPropertyError),
+    #[error("source hydrogen getter failed: {0}")]
+    HydrogenCount(crate::ValenceError),
 }
 
 #[derive(Clone, Copy)]
 pub(crate) struct Vec3([f64; 3]);
+
+pub(crate) fn normalize_vector_components(
+    mut value: [f64; 3],
+    center: AtomId,
+    neighbor: AtomId,
+) -> Result<[f64; 3], StereoError> {
+    // BEGIN RDKIT CPP FUNCTION Point3D::normalize complete source
+    // RDKit✔️✔️: constexpr void normalize() override {
+    // RDKit✔️✔️:     double l = this->length();
+    // RDKit✔️✔️:     if (l < zero_tolerance) {
+    // RDKit✔️✔️:       throw std::runtime_error("Cannot normalize a zero length vector");
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     x /= l;
+    // RDKit✔️✔️:     y /= l;
+    // RDKit✔️✔️:     z /= l;
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION Point3D::normalize complete source
+    // BEGIN RDKIT CPP FUNCTION Point3D::length complete source
+    // RDKit✔️✔️: double length() const override {
+    // RDKit✔️✔️:     double res = x * x + y * y + z * z;
+    // RDKit✔️✔️:     return sqrt(res);
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP FUNCTION Point3D::length complete source
+    let length = (value[0] * value[0] + value[1] * value[1] + value[2] * value[2]).sqrt();
+    if length < ZERO_VECTOR_TOLERANCE {
+        return Err(StereoError::ZeroLengthVector { center, neighbor });
+    }
+    value[0] /= length;
+    value[1] /= length;
+    value[2] /= length;
+    Ok(value)
+}
 
 impl Vec3 {
     fn between(from: [f64; 3], to: [f64; 3]) -> Self {
@@ -96,7 +131,7 @@ impl Vec3 {
         center: AtomId,
         neighbor: AtomId,
     ) -> Result<Self, StereoError> {
-        // BEGIN RDKIT CPP FUNCTION Point3D::directionVector/normalize
+        // BEGIN RDKIT CPP FUNCTION Point3D::directionVector
         // RDKit✔️✔️:   Point3D directionVector(const Point3D &other) const {
         // RDKit✔️✔️:     Point3D res;
         // RDKit✔️✔️:     res.x = other.x - x;
@@ -105,31 +140,11 @@ impl Vec3 {
         // RDKit✔️✔️:     res.normalize();
         // RDKit✔️✔️:     return res;
         // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   constexpr void normalize() override {
-        // RDKit✔️✔️:     double l = this->length();
-        // RDKit✔️✔️:     if (l < zero_tolerance) {
-        // RDKit✔️✔️:       throw std::runtime_error("Cannot normalize a zero length vector");
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:
-        // RDKit✔️✔️:     x /= l;
-        // RDKit✔️✔️:     y /= l;
-        // RDKit✔️✔️:     z /= l;
-        // RDKit✔️✔️:   }
-        // RDKit✔️✔️:   double length() const override {
-        // RDKit✔️✔️:     double res = x * x + y * y + z * z;
-        // RDKit✔️✔️:     return sqrt(res);
-        // RDKit✔️✔️:   }
-        // END RDKIT CPP FUNCTION Point3D::directionVector/normalize
-        let mut value = Self::between(from, to);
-        let length =
-            (value.0[0] * value.0[0] + value.0[1] * value.0[1] + value.0[2] * value.0[2]).sqrt();
-        if length < ZERO_VECTOR_TOLERANCE {
-            return Err(StereoError::ZeroLengthVector { center, neighbor });
-        }
-        value.0[0] /= length;
-        value.0[1] /= length;
-        value.0[2] /= length;
-        Ok(value)
+        // END RDKIT CPP FUNCTION Point3D::directionVector
+        let value = Self::between(from, to);
+        Ok(Self(normalize_vector_components(
+            value.0, center, neighbor,
+        )?))
     }
 
     fn dot(self, other: Self) -> f64 {
@@ -865,7 +880,7 @@ fn non_tetrahedral_assignment(
     Ok(result)
 }
 
-fn validate_valence(
+fn validate_valence_shape(
     topology: &TopologyBlock,
     valence: &ValenceAssignment,
 ) -> Result<(), StereoError> {
@@ -881,6 +896,19 @@ fn validate_valence(
                 atom_count,
             });
         }
+    }
+    Ok(())
+}
+
+fn validate_valence(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+) -> Result<(), StereoError> {
+    validate_valence_shape(topology, valence)?;
+    for (field, values) in [
+        ("explicit_valence", &valence.explicit_valence),
+        ("implicit_hydrogens", &valence.implicit_hydrogens),
+    ] {
         if let Some((index, value)) = values
             .iter()
             .copied()
@@ -1079,7 +1107,7 @@ pub fn cleanup_chirality(
             ChiralTag::SquarePlanar | ChiralTag::TrigonalBipyramidal | ChiralTag::Octahedral => {
                 let atom = AtomId::new(index);
                 let degree = result.adjacency.neighbors_of(index).len()
-                    + total_hydrogens(&result, valence, atom);
+                    + total_hydrogens(&result, valence, atom)?;
                 let (maximum_degree, maximum_permutation) = match tag {
                     ChiralTag::SquarePlanar => (4, 3),
                     ChiralTag::TrigonalBipyramidal => (5, 20),
@@ -1105,7 +1133,11 @@ pub fn cleanup_chirality(
     Ok(result)
 }
 
-fn total_hydrogens(topology: &TopologyBlock, valence: &ValenceAssignment, center: AtomId) -> usize {
+fn total_hydrogens(
+    topology: &TopologyBlock,
+    valence: &ValenceAssignment,
+    center: AtomId,
+) -> Result<usize, StereoError> {
     // BEGIN RDKIT CPP FUNCTION Atom::getTotalNumHs
     // RDKit✔️✔️: unsigned int Atom::getTotalNumHs(bool includeNeighbors) const {
     // RDKit✔️✔️:   int res = getNumExplicitHs() + getNumImplicitHs();
@@ -1118,13 +1150,22 @@ fn total_hydrogens(topology: &TopologyBlock, valence: &ValenceAssignment, center
     // RDKit✔️✔️:   return res;
     // RDKit✔️✔️: }
     // END RDKIT CPP FUNCTION Atom::getTotalNumHs
-    let atom = &topology.atoms[center.index()];
-    let implicit = if atom.no_implicit() {
-        0
-    } else {
-        valence.implicit_hydrogens[center.index()] as usize
-    };
-    usize::from(atom.explicit_hydrogens()) + implicit
+    // Delegate the source getter and total-H arithmetic to the one hcount
+    // implementation. Shape is checked by the caller; numeric preconditions
+    // occur only when this atom's getter is actually reached. noImplicit
+    // bypasses its stored implicit sentinel exactly as Atom.cpp specifies.
+    crate::hcount::total_hydrogen_count_from_validated(topology, valence, center, false)
+        .map(|value| value as usize)
+        .map_err(|error| match error {
+            crate::ValenceError::ImplicitValenceCacheNotInitialized { atom } => {
+                StereoError::InvalidValenceValue {
+                    field: "implicit_hydrogens",
+                    atom,
+                    value: valence.implicit_hydrogens[atom.index()],
+                }
+            }
+            error => StereoError::HydrogenCount(error),
+        })
 }
 
 fn nonzero_degree(topology: &TopologyBlock, center: AtomId) -> Result<usize, StereoError> {
@@ -1411,7 +1452,10 @@ pub fn assign_chiral_tags_from_structure(
             atom_count: topology.atoms.len(),
         });
     }
-    validate_valence(topology, valence)?;
+    // Native assignChiralTypesFrom3D never reads explicit cached valence.
+    // Keep detached row-shape validation, but defer implicit preconditions to
+    // each actual getTotalNumHs call after the existing-tag short circuit.
+    validate_valence_shape(topology, valence)?;
 
     let positions = conformer.coordinates();
     let allow_nontetrahedral = nontetrahedral_enabled();
@@ -1440,7 +1484,7 @@ pub fn assign_chiral_tags_from_structure(
         }
         working.atoms[index].set_chiral_tag(ChiralTag::Unspecified);
         let degree = nonzero_degree(&working, center)?;
-        let total_degree = degree + total_hydrogens(&working, valence, center);
+        let total_degree = degree + total_hydrogens(&working, valence, center)?;
         if degree < 3 || total_degree > 6 {
             continue;
         }
@@ -1653,6 +1697,7 @@ mod cf3d_sgids_core_3_tests {
                 stereo: BondStereo::AtropCw,
             }],
             diagnostics: vec![],
+            ..AtropisomerAssignment::default()
         };
 
         let result = cleanup_atropisomer_stereo_groups(&topology, &detected)

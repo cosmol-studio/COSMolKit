@@ -244,7 +244,9 @@ fn invalid_atom_and_topology_errors_preserve_exact_fields() {
 }
 
 #[test]
-fn signed_source_accumulator_overflow_is_structured() {
+fn source_unsigned_initial_sum_preserves_bits_through_native_signed_transport() {
+    // Atom.cpp:287 uses unsigned getter addition to initialize int, then
+    // returns unsigned int at295. There is no signed-add overflow at287.
     let input = topology(
         vec![atom_spec(Element::C).with_explicit_hydrogens(1)],
         vec![],

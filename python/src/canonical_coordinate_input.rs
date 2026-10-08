@@ -175,6 +175,10 @@ pub(crate) fn error_pyerr(py: Python<'_>, source: &ck::CoordinateInputError) -> 
             }
             E::ConformerIdOverflow { max_id } => value.setattr("max_id", *max_id)?,
             E::InvalidCoordinates(cause) => match cause {
+                ck::CoordinateValidationError::AtomIndexOverflow { atom } => {
+                    value.setattr("cause_kind", "AtomIndexOverflow")?;
+                    value.setattr("atom", *atom)?;
+                }
                 ck::CoordinateValidationError::MissingSourceConformerOrder => {
                     value.setattr("cause_kind", "MissingSourceConformerOrder")?;
                 }

@@ -35,7 +35,7 @@ jobs:
               run: cargo check -p cosmolkit --no-default-features
 
             - name: Test minimal facade
-              run: cargo test -p cosmolkit --no-default-features --release --features op-contracts-strict
+              run: cargo test -p cosmolkit --no-default-features --profile dev-test --features op-contracts-strict
 
             - name: Check leaf and composed features
               shell: bash

@@ -5,6 +5,7 @@ use std::process::Command;
 use cosmolkit_core::{
     StereoError, StructureTagParams, ValenceAssignment, assign_chiral_tags_from_structure,
 };
+use cosmolkit_model::PropertyValue;
 use cosmolkit_model::{
     AdjacencyList, Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer3D, CoordinateBlock,
     TopologyBlock, TopologyValidationError,
@@ -121,11 +122,18 @@ fn model_boundaries_return_precise_topology_valence_and_coordinate_errors() {
             },
             &StructureTagParams::default(),
         ),
-        Err(StereoError::InvalidValenceValue {
-            field: "explicit_valence",
-            atom: AtomId::new(2),
-            value: -1,
-        })
+        // Native assignChiralTypesFrom3D reads getTotalNumHs only; this
+        // original negative explicit cache is never read. Require the entire
+        // output to equal the same original graph with valid explicit rows.
+        assign_chiral_tags_from_structure(
+            &topology,
+            &coordinates,
+            &ValenceAssignment {
+                explicit_valence: vec![0; 4],
+                implicit_hydrogens: vec![0; 4]
+            },
+            &StructureTagParams::default(),
+        )
     );
     assert_eq!(
         assign_chiral_tags_from_structure(
@@ -240,6 +248,37 @@ fn structure_tags_numeric_extremes_child() {
     if std::env::var_os(NUMERIC_CHILD_ENV).is_none() {
         return;
     }
+    // Native one-opposite-pair T-shape: pair[0]==2 produces UInt permutation 2.
+    let platinum = simple_star(78, 0);
+    let t_shape = simple_coordinates(vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ]);
+    let result = assign_chiral_tags_from_structure(
+        &platinum,
+        &t_shape,
+        &ValenceAssignment {
+            explicit_valence: vec![0; 4],
+            implicit_hydrogens: vec![0; 4],
+        },
+        &StructureTagParams::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        result.topology.atoms[0].chiral_tag(),
+        ChiralTag::SquarePlanar
+    );
+    assert_eq!(result.topology.atoms[0].chiral_permutation(), Some(2));
+    assert_eq!(
+        result.topology.atoms[0].prop("_chiralPermutation"),
+        Some(&PropertyValue::UInt(2))
+    );
+    assert_eq!(
+        result.topology.atoms[0].prop("_NonExplicit3DChirality"),
+        Some(&PropertyValue::Int(1))
+    );
     let tetrahedral = simple_star(6, 1);
     let signed_zero = simple_coordinates(vec![
         [0.0, 0.0, 0.0],
@@ -300,4 +339,117 @@ fn structure_tags_numeric_extremes_child() {
         assignment.topology.atoms[0].chiral_tag(),
         ChiralTag::Unspecified
     );
+}
+
+#[test]
+fn no_implicit_short_circuit_accepts_uninitialized_cache_and_emits_native_int_marker() {
+    let mut topology = simple_star(6, 1);
+    for atom in &mut topology.atoms {
+        atom.set_no_implicit(true);
+    }
+    let before = topology.clone();
+    let coordinates = simple_coordinates(vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ]);
+    let assignment = assign_chiral_tags_from_structure(
+        &topology,
+        &coordinates,
+        &ValenceAssignment {
+            explicit_valence: vec![-1; 4],
+            implicit_hydrogens: vec![-1; 4],
+        },
+        &StructureTagParams::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        assignment.topology.atoms[0].chiral_tag(),
+        ChiralTag::TetrahedralCcw
+    );
+    assert_eq!(
+        assignment.topology.atoms[0].prop("_NonExplicit3DChirality"),
+        Some(&PropertyValue::Int(1))
+    );
+    assert!(assignment.clear_stereochem_done);
+    assert_eq!(topology, before);
+}
+
+#[test]
+fn existing_tags_skip_implicit_cache_reads_before_degree_checks() {
+    let mut topology = simple_star(6, 1);
+    for atom in &mut topology.atoms {
+        atom.set_chiral_tag(ChiralTag::TetrahedralCw);
+    }
+    let before = topology.clone();
+    let coordinates = simple_coordinates(vec![
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    ]);
+    let assignment = assign_chiral_tags_from_structure(
+        &topology,
+        &coordinates,
+        &ValenceAssignment {
+            explicit_valence: vec![-1; 4],
+            implicit_hydrogens: vec![-1; 4],
+        },
+        &StructureTagParams {
+            conformer_id: 0,
+            replace_existing_tags: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(assignment.topology, before);
+    assert!(assignment.clear_stereochem_done);
+    assert_eq!(topology, before);
+    // The first untagged leaf reads its cache before the native degree<3 skip.
+    topology.atoms[1].set_chiral_tag(ChiralTag::Unspecified);
+    let before_error = topology.clone();
+    assert_eq!(
+        assign_chiral_tags_from_structure(
+            &topology,
+            &coordinates,
+            &ValenceAssignment {
+                explicit_valence: vec![-1; 4],
+                implicit_hydrogens: vec![-1; 4]
+            },
+            &StructureTagParams {
+                conformer_id: 0,
+                replace_existing_tags: false
+            }
+        ),
+        Err(StereoError::InvalidValenceValue {
+            field: "implicit_hydrogens",
+            atom: AtomId::new(1),
+            value: -1
+        })
+    );
+    assert_eq!(topology, before_error);
+}
+
+#[test]
+fn false_is3d_xyz_row_returns_before_cache_and_coordinate_shape_reads() {
+    let topology = simple_star(6, 1);
+    let coordinates = CoordinateBlock {
+        conformers_3d: vec![Conformer3D::new(0, vec![[1.0, 2.0, 3.0]], false)],
+        ..Default::default()
+    };
+    let before = coordinates.clone();
+    let assignment = assign_chiral_tags_from_structure(
+        &topology,
+        &coordinates,
+        &ValenceAssignment {
+            explicit_valence: vec![],
+            implicit_hydrogens: vec![],
+        },
+        &StructureTagParams::default(),
+    )
+    .unwrap();
+    assert_eq!(assignment.topology, topology);
+    assert_eq!(assignment.selected_conformer_id, Some(0));
+    assert!(!assignment.clear_stereochem_done);
+    assert_eq!(coordinates, before);
 }

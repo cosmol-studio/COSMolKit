@@ -149,12 +149,18 @@ impl Element {
     /// Return the canonical element symbol (`*`, `H` through `Og`).
     #[must_use]
     pub fn symbol(self) -> &'static str {
-        // BEGIN RDKIT CPP FUNCTION PeriodicTable::getElementSymbol
-        // RDKit✔️✔️: std::string getElementSymbol(UINT atomicNumber) const {
-        // RDKit✔️✔️:   PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
-        // RDKit✔️✔️:   return byanum[atomicNumber].Symbol();
-        // RDKit✔️✔️: }
-        // END RDKIT CPP FUNCTION PeriodicTable::getElementSymbol
+        // BEGIN RDKIT CPP FUNCTION PeriodicTable::getElementSymbol complete source
+        // RDKit✔️✔️:   std::string getElementSymbol(UINT atomicNumber) const {
+        // RDKit✔️✔️:     PRECONDITION(atomicNumber < byanum.size(), "Atomic number not found");
+        // RDKit✔️✔️:     return byanum[atomicNumber].Symbol();
+        // RDKit✔️✔️:   }
+        // END RDKIT CPP FUNCTION PeriodicTable::getElementSymbol complete source
+        // RDKit✔️✔️: std::string Symbol() const { return symb; }
+        // Checked Element construction/serde preserves the native table bound.
+        // The 119 SYMBOLS entries exactly equal first source numeric-row symbols,
+        // including dummy and modern names behind Uut/Uup aliases. This type
+        // returns an immutable vocabulary borrow rather than a mutable table.
+
         SYMBOLS[usize::from(self.atomic_number)]
     }
 

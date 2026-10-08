@@ -65,6 +65,16 @@ impl SdfPropertyList {
 }
 
 impl MoleculeProperties {
+    pub(crate) fn source_dict(&self) -> &crate::property_value::PropertyStore {
+        &self.props
+    }
+    pub(crate) fn from_source_dict(props: crate::property_value::PropertyStore) -> Self {
+        Self {
+            props,
+            ..Self::default()
+        }
+    }
+
     /// Borrow property records using the source private/computed include flags.
     #[doc(hidden)]
     pub fn property_records(
@@ -195,6 +205,27 @@ impl MoleculeProperties {
     ) -> Result<(), MoleculePropertyError> {
         self.props
             .set_computed(key.into(), value.into())
+            .map_err(MoleculePropertyError::from)
+    }
+
+    /// Retain native computed-list bookkeeping for a typed transient value
+    /// owned by an algorithm and consumed before its detached result returns.
+    /// The caller must clear this name through clear_prop when consuming it.
+    #[doc(hidden)]
+    pub fn register_transient_computed_name(
+        &mut self,
+        key: impl Into<PropertyText>,
+    ) -> Result<(), MoleculePropertyError> {
+        // RDKit✔️❌:     if (computed) {
+        // RDKit✔️❌:       STR_VECT compLst;
+        // RDKit✔️❌:       getPropIfPresent(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️❌:       if (std::find(compLst.begin(), compLst.end(), key) == compLst.end()) {
+        // RDKit✔️❌:         compLst.emplace_back(key);
+        // RDKit✔️❌:         d_props.setVal(RDKit::detail::computedPropName, compLst);
+        // RDKit✔️❌:       }
+        // RDKit✔️❌:     }
+        self.props
+            .register_transient_computed_name(&key.into())
             .map_err(MoleculePropertyError::from)
     }
 

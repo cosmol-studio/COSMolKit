@@ -237,7 +237,7 @@ fn q03_parser_errors_use_trimmed_parser_byte_positions() {
         error,
         SmartsParseError::UnexpectedCharacter {
             position: 4,
-            character: char::from(0xe2),
+            character: 0xe2,
             context: "unexpected character in SMARTS string".to_owned(),
         }
     );
@@ -248,7 +248,7 @@ fn q03_parser_errors_use_trimmed_parser_byte_positions() {
         eof_error,
         SmartsParseError::UnexpectedCharacter {
             position: 2,
-            character: '?',
+            character: b'?',
             context: "expected atom expression".to_owned(),
         }
     );
@@ -259,7 +259,7 @@ fn q03_parser_errors_use_trimmed_parser_byte_positions() {
         missing_close,
         SmartsParseError::UnexpectedCharacter {
             position: 3,
-            character: 'E',
+            character: b'E',
             context: "expected close parenthesis".to_owned(),
         }
     );
@@ -323,7 +323,7 @@ fn q13_branch_stack_restores_attachment_and_rejects_invalid_branch_starts() {
                 .expect_err("invalid branch start must fail at its source token"),
             SmartsParseError::UnexpectedCharacter {
                 position,
-                character: '?',
+                character: b'?',
                 context: "expected atom expression".to_owned(),
             },
             "{smarts}"
@@ -380,7 +380,7 @@ fn q14_disconnected_components_keep_source_order_and_reject_dangling_tokens() {
         parse_smarts(" \t\r\n", &params).expect_err("nonempty whitespace is parsed"),
         SmartsParseError::UnexpectedCharacter {
             position: 1,
-            character: '\0',
+            character: b'\0',
             context: "unexpected character in SMARTS string".to_owned(),
         }
     );
@@ -696,8 +696,12 @@ fn q19_preprocessing_defaults_replacements_name_delimiter_and_malformed_input() 
         allow_cxsmiles: false,
         ..SmartsParseParams::default()
     };
-    params.replacements.insert("N".to_string(), "C".to_string());
-    params.replacements.insert("O".to_string(), "N".to_string());
+    params
+        .replacements
+        .insert("N".to_string().into(), "C".to_string().into());
+    params
+        .replacements
+        .insert("O".to_string().into(), "N".to_string().into());
     let graph = parse_smarts("O-O\tOriginal O\u{00a0}", &params)
         .expect("source replacement closure and name split");
     assert_eq!((graph.num_atoms(), graph.num_bonds()), (2, 1));
@@ -720,7 +724,7 @@ fn q19_preprocessing_defaults_replacements_name_delimiter_and_malformed_input() 
     malformed_replacement.replacements.clear();
     malformed_replacement
         .replacements
-        .insert("C".to_string(), "?".to_string());
+        .insert("C".to_string().into(), "?".to_string().into());
     assert!(parse_smarts("C", &malformed_replacement).is_err());
 }
 
@@ -884,13 +888,13 @@ fn q03_bad_character_dispatch_preserves_byte_position_and_parser_priority() {
     };
 
     for (input, character, position) in [
-        ("C C", ' ', 2),
-        ("C\tC", '\t', 2),
-        ("C\rC", '\r', 2),
-        ("C?C", '?', 2),
-        ("CC☃C", char::from(0xe2), 3),
-        ("[C?]", '?', 3),
-        ("C(C?C)", '?', 4),
+        ("C C", b' ', 2),
+        ("C\tC", b'\t', 2),
+        ("C\rC", b'\r', 2),
+        ("C?C", b'?', 2),
+        ("CC☃C", 0xe2, 3),
+        ("[C?]", b'?', 3),
+        ("C(C?C)", b'?', 4),
     ] {
         assert_eq!(
             parse_smarts(input, &raw_smarts).expect_err("BAD_CHARACTER dispatch"),
@@ -910,7 +914,7 @@ fn q03_bad_character_dispatch_preserves_byte_position_and_parser_priority() {
             .expect_err("extra close parenthesis precedes later BAD_CHARACTER"),
         SmartsParseError::UnexpectedCharacter {
             position: 2,
-            character: ')',
+            character: b')',
             context: "unexpected trailing token in molecule SMARTS".to_owned(),
         }
     );
@@ -1156,7 +1160,7 @@ fn q03_common_bond_token_width_sets_following_bad_character_byte_position() {
             parse_smarts(input, &raw_smarts).expect_err("internal BAD_CHARACTER after bond token"),
             SmartsParseError::UnexpectedCharacter {
                 position,
-                character: char::from(0xe2),
+                character: 0xe2,
                 context: "unexpected character in SMARTS string".to_owned(),
             },
             "{input:?}"
@@ -1203,7 +1207,7 @@ fn q04_percent_ring_numbers_follow_pinned_grammar_and_error_position() {
             "C%0",
             SmartsParseError::UnexpectedCharacter {
                 position: 3,
-                character: '0',
+                character: b'0',
                 context: "invalid ring closure number".to_owned(),
             },
         ),
@@ -1211,7 +1215,7 @@ fn q04_percent_ring_numbers_follow_pinned_grammar_and_error_position() {
             "C%00",
             SmartsParseError::UnexpectedCharacter {
                 position: 3,
-                character: '0',
+                character: b'0',
                 context: "invalid ring closure number".to_owned(),
             },
         ),
@@ -1219,7 +1223,7 @@ fn q04_percent_ring_numbers_follow_pinned_grammar_and_error_position() {
             "C%()",
             SmartsParseError::UnexpectedCharacter {
                 position: 4,
-                character: ')',
+                character: b')',
                 context: "invalid ring closure number".to_owned(),
             },
         ),
@@ -1227,7 +1231,7 @@ fn q04_percent_ring_numbers_follow_pinned_grammar_and_error_position() {
             "C%1C",
             SmartsParseError::UnexpectedCharacter {
                 position: 4,
-                character: 'C',
+                character: b'C',
                 context: "invalid ring closure number".to_owned(),
             },
         ),
@@ -1235,7 +1239,7 @@ fn q04_percent_ring_numbers_follow_pinned_grammar_and_error_position() {
             "C%(123456)CCCCC%(123456)",
             SmartsParseError::UnexpectedCharacter {
                 position: 9,
-                character: '6',
+                character: b'6',
                 context: "invalid ring closure number".to_owned(),
             },
         ),
@@ -1243,7 +1247,7 @@ fn q04_percent_ring_numbers_follow_pinned_grammar_and_error_position() {
             "C%☃C",
             SmartsParseError::UnexpectedCharacter {
                 position: 3,
-                character: char::from(0xe2),
+                character: 0xe2,
                 context: "unexpected character in SMARTS string".to_owned(),
             },
         ),

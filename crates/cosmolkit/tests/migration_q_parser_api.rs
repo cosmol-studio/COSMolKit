@@ -346,8 +346,8 @@ mod enabled {
             allow_cxsmiles: false,
             ..Default::default()
         };
-        params.replacements.insert("N".to_owned(), "C".to_owned());
-        params.replacements.insert("O".to_owned(), "N".to_owned());
+        params.replacements.insert("N".into(), "C".into());
+        params.replacements.insert("O".into(), "N".into());
         let before = params.clone();
         let graph = parse_smarts("O-O\tOriginal O\u{00a0}", &params).unwrap();
         assert_eq!(
@@ -644,7 +644,7 @@ mod enabled {
             parse_smarts("C?", &Default::default()),
             Err(SmartsParseError::UnexpectedCharacter {
                 position: 2,
-                character: '?',
+                character: b'?',
                 context: "unexpected character in SMARTS string".to_owned()
             })
         );

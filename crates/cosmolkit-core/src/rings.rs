@@ -1,10 +1,11 @@
+use crate::stereo_graph::{BondRows, GraphAdjacency, NeighborRows, StereoGraphAccess};
 // RDKit marker convention defined in dev/source_reproduction_protocol.md.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use cosmolkit_model::{
-    AdjacencyError, AdjacencyList, AtomId, Bond, BondId, NeighborRef, TopologyBlock,
-    TopologyValidationError,
+    AdjacencyError, AdjacencyList, AtomId, Bond, BondId, MoleculeProperties, MoleculePropertyError,
+    NeighborRef, TopologyBlock, TopologyValidationError,
 };
 use cosmolkit_types::BondOrder;
 
@@ -26,6 +27,11 @@ pub struct RingSearchParams {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RingFindingError {
+    #[error("source FIND_RING_TYPE value {tag} is outside the modeled enum")]
+    SourceRingFindType { tag: u32 },
+
+    #[error("molecule property lifecycle failed: {0}")]
+    MoleculeProperty(#[from] MoleculePropertyError),
     #[error("{message}")]
     Value { message: &'static str },
     #[error("expected bond not found between atom {begin} and atom {end}")]
@@ -64,6 +70,80 @@ pub struct RingInfo {
 }
 
 impl RingInfo {
+    /// Move all represented source cache fields into the detached MODEL value.
+    #[doc(hidden)]
+    pub fn into_source_snapshot(self) -> cosmolkit_model::SourceRingInfo {
+        // RDKit❗✔️:   RingInfo(RingInfo &&other) noexcept = default;
+        // RDKit❗✔️: typedef enum {
+        // RDKit❗✔️:   FIND_RING_TYPE_FAST,
+        // RDKit❗✔️:   FIND_RING_TYPE_SSSR,
+        // RDKit❗✔️:   FIND_RING_TYPE_SYMM_SSSR,
+        // RDKit❗✔️:   FIND_RING_TYPE_OTHER_OR_UNKNOWN
+        // RDKit❗✔️: } FIND_RING_TYPE;
+        // Canonical CORE computations remain here. Explicit field transport
+        // moves actual vectors, including membership order, preallocated rows,
+        // fused caches and represented URF count, without rebuilding any data.
+        // The source URF object remains an independent unmodeled capability.
+        // Constant-time moves, no cache recomputation or payload clone.
+        cosmolkit_model::SourceRingInfo {
+            initialized: self.initialized,
+            find_type: match self.find_type {
+                RingFindType::Fast => 0,
+                RingFindType::Sssr => 1,
+                RingFindType::SymmSssr => 2,
+                RingFindType::OtherOrUnknown => 3,
+            },
+            atom_members: self.atom_members,
+            bond_members: self.bond_members,
+            atom_rings: self.atom_rings,
+            bond_rings: self.bond_rings,
+            atom_ring_families: self.atom_ring_families,
+            bond_ring_families: self.bond_ring_families,
+            relevant_cycle_count: self.relevant_cycle_count,
+            fused_rings: self.fused_rings,
+            num_fused_bonds: self.num_fused_bonds,
+        }
+    }
+
+    /// Copy the actual detached cache, preserving initialized/empty/stale state.
+    #[doc(hidden)]
+    pub fn from_source_snapshot(
+        source: &cosmolkit_model::SourceRingInfo,
+    ) -> Result<Self, RingFindingError> {
+        // RDKit❗✔️:   RingInfo(const RingInfo &other) = default;
+        // RDKit❗✔️:   bool df_init{false};
+        // RDKit❗✔️:   FIND_RING_TYPE df_find_type_type{FIND_RING_TYPE_OTHER_OR_UNKNOWN};
+        // RDKit❗✔️:   DataType d_atomMembers, d_bondMembers;
+        // RDKit❗✔️:   VECT_INT_VECT d_atomRings, d_bondRings;
+        // RDKit❗✔️:   VECT_INT_VECT d_atomRingFamilies, d_bondRingFamilies;
+        // RDKit❗✔️:   std::vector<boost::dynamic_bitset<>> d_fusedRings;
+        // RDKit❗✔️:   std::vector<unsigned int> d_numFusedBonds;
+        // Do not run from_persisted_components: it reconstructs membership
+        // rows and cannot substitute for this source default copy. No ring
+        // finding, eager cache repair or atom/bond dictionary conversion.
+        // Linear deep vector copy, like the represented Native copy fields.
+        let find_type = match source.find_type {
+            0 => RingFindType::Fast,
+            1 => RingFindType::Sssr,
+            2 => RingFindType::SymmSssr,
+            3 => RingFindType::OtherOrUnknown,
+            tag => return Err(RingFindingError::SourceRingFindType { tag }),
+        };
+        Ok(Self {
+            initialized: source.initialized,
+            find_type,
+            atom_members: source.atom_members.clone(),
+            bond_members: source.bond_members.clone(),
+            atom_rings: source.atom_rings.clone(),
+            bond_rings: source.bond_rings.clone(),
+            atom_ring_families: source.atom_ring_families.clone(),
+            bond_ring_families: source.bond_ring_families.clone(),
+            relevant_cycle_count: source.relevant_cycle_count,
+            fused_rings: source.fused_rings.clone(),
+            num_fused_bonds: source.num_fused_bonds.clone(),
+        })
+    }
+
     #[must_use]
     pub fn new(find_type: RingFindType, atom_count: usize, bond_count: usize) -> Self {
         let mut info = Self {
@@ -241,7 +321,8 @@ impl RingInfo {
         })
     }
 
-    pub(crate) fn initialize(&mut self, find_type: RingFindType) {
+    #[doc(hidden)]
+    pub fn initialize(&mut self, find_type: RingFindType) {
         // BEGIN RDKIT CPP FUNCTION RingInfo::initialize
         // RDKit✔️✔️: void RingInfo::initialize(RDKit::FIND_RING_TYPE ringType) {
         // RDKit✔️✔️:   df_init = true;
@@ -252,8 +333,8 @@ impl RingInfo {
         // END RDKIT CPP FUNCTION RingInfo::initialize
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn reset(&mut self) {
+    #[doc(hidden)]
+    pub fn reset(&mut self) {
         // BEGIN RDKIT CPP FUNCTION RingInfo::reset
         // RDKit✔️✔️: void RingInfo::reset() {
         // RDKit✔️✔️:   if (!df_init) {
@@ -1058,23 +1139,31 @@ struct RingSearchResult {
     find_type: RingFindType,
     rings: Vec<Vec<usize>>,
     extra_rings: Vec<Vec<usize>>,
+    extra_rings_present: bool,
 }
 
 struct RingSearchContext<'a> {
     atom_count: usize,
-    bonds: &'a [Bond],
-    adjacency: &'a AdjacencyList,
+    bonds: BondRows<'a>,
+    adjacency: GraphAdjacency<'a>,
 }
 
 impl<'a> RingSearchContext<'a> {
     fn from_parts(atom_count: usize, bonds: &'a [Bond], adjacency: &'a AdjacencyList) -> Self {
         Self {
             atom_count,
-            bonds,
-            adjacency,
+            bonds: BondRows::Concrete(bonds),
+            adjacency: GraphAdjacency::Concrete(adjacency),
         }
     }
 
+    fn from_graph<G: StereoGraphAccess>(graph: &'a G) -> Self {
+        Self {
+            atom_count: graph.atoms().len(),
+            bonds: graph.bonds(),
+            adjacency: graph.adjacency(),
+        }
+    }
     fn atom_count(&self) -> usize {
         self.atom_count
     }
@@ -1083,11 +1172,11 @@ impl<'a> RingSearchContext<'a> {
         self.bonds.len()
     }
 
-    fn bonds(&self) -> &'a [Bond] {
+    fn bonds(&self) -> BondRows<'a> {
         self.bonds
     }
 
-    fn neighbors(&self, atom: usize) -> &[NeighborRef] {
+    fn neighbors(&self, atom: usize) -> NeighborRows<'a> {
         self.adjacency.neighbors_of(atom)
     }
 
@@ -1104,10 +1193,15 @@ impl crate::paths::NeighborSource for RingSearchContext<'_> {
         self.atom_count
     }
 
-    fn visit_neighbors(&self, atom: usize, visitor: &mut dyn FnMut(usize)) {
-        for neighbor in self.neighbors(atom) {
-            visitor(neighbor.atom_index);
-        }
+    fn neighbor_count(&self, atom: usize) -> usize {
+        self.neighbors(atom).len()
+    }
+
+    fn neighbor_at(&self, atom: usize, position: usize) -> usize {
+        self.neighbors(atom)
+            .get(position)
+            .expect("bounded source neighbor")
+            .atom_index
     }
 }
 
@@ -1116,6 +1210,41 @@ fn extra_ring_can_replace_sssr_ring(
     ring: &[usize],
     bond_counts: &[i32],
 ) -> bool {
+    // BEGIN RDKIT CPP INLINE BLOCK symmetrizeSSSR replacement predicate
+    // RDKit✔️✔️:     for (auto &ring : bondsssrs) {
+    // RDKit✔️✔️:       if (ring.size() != extraRing.size()) {
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       // If `ring` is the only provider of some bond, extraRing must also
+    // RDKit✔️✔️:       // provide that bond.
+    // RDKit✔️✔️:       bool shareBond = false;
+    // RDKit✔️✔️:       bool replacesAllUniqueBonds = true;
+    // RDKit✔️✔️:       for (auto &bondID : ring) {
+    // RDKit✔️✔️:         const int bondCount = bondCounts[bondID];
+    // RDKit✔️✔️:         if (bondCount == 1 || !shareBond) {
+    // RDKit✔️✔️:           auto position = find(extraRing.begin(), extraRing.end(), bondID);
+    // RDKit✔️✔️:           if (position != extraRing.end()) {
+    // RDKit✔️✔️:             shareBond = true;
+    // RDKit✔️✔️:           } else if (bondCount == 1) {
+    // RDKit✔️✔️:             // 1 means `ring` is the only ring in the SSSR to provide this
+    // RDKit✔️✔️:             // bond, and extraRing did not provide it (so extraRing is not an
+    // RDKit✔️✔️:             // acceptable substitution in the SSSR for ring)
+    // RDKit✔️✔️:             replacesAllUniqueBonds = false;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       if (shareBond && replacesAllUniqueBonds) {
+    // RDKit✔️✔️:         res.push_back(extraAtomRing);
+    // RDKit✔️✔️:         FindRings::storeRingInfo(mol, extraAtomRing);
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // END RDKIT CPP INLINE BLOCK symmetrizeSSSR replacement predicate
+    // A false result maps to the enclosing native candidate-loop continue;
+    // all bond checks retain source order and its non-shortened scan.
     if ring.len() != extra_ring.len() {
         return false;
     }
@@ -1213,66 +1342,173 @@ pub fn symmetrize_sssr_with_options_from_parts(
     include_dative_bonds: bool,
     include_hydrogen_bonds: bool,
 ) -> Result<RingInfo, RingFindingError> {
-    // BEGIN RDKIT CPP FUNCTION MolOps::symmetrizeSSSR
+    // BEGIN RDKIT CPP FUNCTION MolOps::symmetrizeSSSR without output vector
+    // RDKit✔️✔️: int symmetrizeSSSR(ROMol &mol, bool includeDativeBonds,
+    // RDKit✔️✔️:                    bool includeHydrogenBonds) {
+    // RDKit✔️✔️:   VECT_INT_VECT tmp;
+    // RDKit✔️✔️:   return symmetrizeSSSR(mol, tmp, includeDativeBonds, includeHydrogenBonds);
+    // RDKit✔️✔️: };
+    // END RDKIT CPP FUNCTION MolOps::symmetrizeSSSR without output vector
+    // The same canonical context implementation prepares the returned ring
+    // carrier and exposes its exact row count. No separate reaction body or
+    // temporary mutable output matrix is needed by this detached boundary.
+    // A graph-only detached value has the source's known-empty molecule
+    // property carrier. This path never substitutes for a supplied carrier.
+    let context = RingSearchContext::from_parts(atom_count, bonds, adjacency);
+    symmetrize_sssr_from_context(&context, include_dative_bonds, include_hydrogen_bonds, None)
+}
+
+fn symmetrize_sssr_from_context(
+    context: &RingSearchContext<'_>,
+    include_dative_bonds: bool,
+    include_hydrogen_bonds: bool,
+    mut properties: Option<&mut MoleculeProperties>,
+) -> Result<RingInfo, RingFindingError> {
+    // BEGIN RDKIT CPP FUNCTION MolOps::symmetrizeSSSR complete source
     // RDKit✔️✔️: int symmetrizeSSSR(ROMol &mol, VECT_INT_VECT &res, bool includeDativeBonds,
     // RDKit✔️✔️:                    bool includeHydrogenBonds) {
     // RDKit✔️✔️:   res.clear();
     // RDKit✔️✔️:   VECT_INT_VECT sssrs;
-    let context = RingSearchContext::from_parts(atom_count, bonds, adjacency);
-    // RDKit✔️✔️:   findSSSR(mol, sssrs, includeDativeBonds, includeHydrogenBonds);
-    let sssr = find_sssr_internal(&context, include_dative_bonds, include_hydrogen_bonds)?;
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // FIX: need to set flag here the symmetrization has been done in order to
+    // RDKit✔️✔️:   // avoid repeating this work
+    // RDKit✔️❌:   findSSSR(mol, sssrs, includeDativeBonds, includeHydrogenBonds);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // reinit as SYMM_SSSR
     // RDKit✔️✔️:   mol.getRingInfo()->initialize(FIND_RING_TYPE_SYMM_SSSR);
-    let mut info = RingInfo::new(
-        RingFindType::SymmSssr,
-        context.atom_count(),
-        context.bond_count(),
-    );
-    // RDKit✔️✔️:   res.reserve(sssrs.size());
-    // RDKit✔️✔️:   for (const auto &r : sssrs) {
-    // RDKit✔️✔️:     res.emplace_back(r);
+    // RDKit✔️✔️:
+    // RDKit✔️🔝:   res.reserve(sssrs.size());
+    // RDKit✔️🔝:   for (const auto &r : sssrs) {
+    // RDKit✔️🔝:     res.emplace_back(r);
     // RDKit✔️✔️:   }
-    let mut rings = sssr.rings.clone();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // now check if there are any extra rings on the molecule
     // RDKit✔️✔️:   if (!mol.hasProp(common_properties::extraRings)) {
+    // RDKit✔️✔️:     // no extra rings nothing to be done
     // RDKit✔️✔️:     return rdcast<int>(res.size());
     // RDKit✔️✔️:   }
-    if !sssr.extra_rings.is_empty() {
-        // RDKit✔️✔️:   VECT_INT_VECT bondsssrs;
-        // RDKit✔️✔️:   RingUtils::convertToBonds(sssrs, bondsssrs, mol);
+    // RDKit✔️✔️:   const VECT_INT_VECT &extras =
+    // RDKit✔️✔️:       mol.getProp<VECT_INT_VECT>(common_properties::extraRings);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // convert the rings to bond ids
+    // RDKit✔️✔️:   VECT_INT_VECT bondsssrs;
+    // RDKit✔️✔️:   RingUtils::convertToBonds(sssrs, bondsssrs, mol);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   // For each "extra" ring, figure out if it could replace a single
+    // RDKit✔️✔️:   // ring in the SSSR. A ring could be swapped out if:
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   // * They are the same size
+    // RDKit✔️✔️:   // * The replacement doesn't remove any bonds from the union of the bonds
+    // RDKit✔️✔️:   //   in the SSSR.
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   // The latter can be checked by determining if the SSSR ring is the unique
+    // RDKit✔️✔️:   // provider of any ring bond. If it is, the replacement ring must also
+    // RDKit✔️✔️:   // provide that bond.
+    // RDKit✔️✔️:   //
+    // RDKit✔️✔️:   // May miss extra rings that would need to swap two (or three...) rings
+    // RDKit✔️✔️:   // to be included.
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // counts of each bond
+    // RDKit✔️✔️:   std::vector<int> bondCounts(mol.getNumBonds(), 0);
+    // RDKit✔️✔️:   for (const auto &r : bondsssrs) {
+    // RDKit✔️✔️:     for (const auto &b : r) {
+    // RDKit✔️✔️:       bondCounts[b] += 1;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   INT_VECT extraRing;
+    // RDKit✔️✔️:   for (auto &extraAtomRing : extras) {
+    // RDKit✔️❌:     RingUtils::convertToBonds(extraAtomRing, extraRing, mol);
+    // RDKit✔️✔️:     for (auto &ring : bondsssrs) {
+    // RDKit✔️✔️:       if (ring.size() != extraRing.size()) {
+    // RDKit✔️✔️:         continue;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       // If `ring` is the only provider of some bond, extraRing must also
+    // RDKit✔️✔️:       // provide that bond.
+    // RDKit✔️✔️:       bool shareBond = false;
+    // RDKit✔️✔️:       bool replacesAllUniqueBonds = true;
+    // RDKit✔️✔️:       for (auto &bondID : ring) {
+    // RDKit✔️✔️:         const int bondCount = bondCounts[bondID];
+    // RDKit✔️✔️:         if (bondCount == 1 || !shareBond) {
+    // RDKit✔️✔️:           auto position = find(extraRing.begin(), extraRing.end(), bondID);
+    // RDKit✔️✔️:           if (position != extraRing.end()) {
+    // RDKit✔️✔️:             shareBond = true;
+    // RDKit✔️✔️:           } else if (bondCount == 1) {
+    // RDKit✔️✔️:             // 1 means `ring` is the only ring in the SSSR to provide this
+    // RDKit✔️✔️:             // bond, and extraRing did not provide it (so extraRing is not an
+    // RDKit✔️✔️:             // acceptable substitution in the SSSR for ring)
+    // RDKit✔️✔️:             replacesAllUniqueBonds = false;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       if (shareBond && replacesAllUniqueBonds) {
+    // RDKit✔️🔝:         res.push_back(extraAtomRing);
+    // RDKit✔️✔️:         FindRings::storeRingInfo(mol, extraAtomRing);
+    // RDKit✔️✔️:         break;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   if (mol.hasProp(common_properties::extraRings)) {
+    // RDKit✔️❌:     mol.clearProp(common_properties::extraRings);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   return rdcast<int>(res.size());
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION MolOps::symmetrizeSSSR complete source
+
+    let sssr = find_sssr_internal(
+        context,
+        include_dative_bonds,
+        include_hydrogen_bonds,
+        properties.as_deref_mut(),
+        None,
+        None,
+    )?;
+    let mut info = RingInfo::new(sssr.find_type, context.atom_count(), context.bond_count());
+    // findSSSR stores its original rows before Symm reinitializes the type.
+    // Reuse the canonical source conversion/storage, keeping memberships.
+    store_rings_info(context, &sssr.rings, &mut info)?;
+    info.initialize(RingFindType::SymmSssr);
+    // This detached carrier already owns the exact output ring rows. Returning
+    // it avoids the native separate res matrix copy without changing any row,
+    // membership, order or count. No res alias is exposed by this boundary.
+    if !sssr.extra_rings_present {
+        return Ok(info);
+    }
+    {
         let bond_sssrs = convert_rings_to_bonds(&context, &sssr.rings)?;
-        // RDKit✔️✔️:   std::vector<int> bondCounts(mol.getNumBonds(), 0);
-        // RDKit✔️✔️:   for (const auto &r : bondsssrs) {
-        // RDKit✔️✔️:     for (const auto &b : r) {
-        // RDKit✔️✔️:       bondCounts[b] += 1;
-        // RDKit✔️✔️:     }
-        // RDKit✔️✔️:   }
         let mut bond_counts = vec![0i32; context.bond_count()];
         for ring in &bond_sssrs {
             for &bond in ring {
                 bond_counts[bond] += 1;
             }
         }
-        // RDKit✔️✔️:   for (auto &extraAtomRing : extras) {
         for extra_atom_ring in &sssr.extra_rings {
-            // RDKit✔️✔️:     RingUtils::convertToBonds(extraAtomRing, extraRing, mol);
             let extra_ring =
                 convert_to_bonds(&context, extra_atom_ring, |atom| *atom, BondId::index)?;
-            // RDKit✔️✔️:     for (auto &ring : bondsssrs) {
             for ring in &bond_sssrs {
-                // RDKit✔️✔️:       if (shareBond && replacesAllUniqueBonds) {
-                // RDKit✔️✔️:         res.push_back(extraAtomRing);
-                // RDKit✔️✔️:         FindRings::storeRingInfo(mol, extraAtomRing);
-                // RDKit✔️✔️:         break;
-                // RDKit✔️✔️:       }
                 if extra_ring_can_replace_sssr_ring(&extra_ring, ring, &bond_counts) {
-                    rings.push(extra_atom_ring.clone());
+                    // Native stores each accepted extra immediately, before
+                    // the next candidate and final computed-cache clear.
+                    store_rings_info(context, std::slice::from_ref(extra_atom_ring), &mut info)?;
                     break;
                 }
             }
         }
     }
-    store_rings_info(&context, &rings, &mut info)?;
-    // RDKit✔️✔️:   return rdcast<int>(res.size());
-    // RDKit✔️✔️: }
+    // Native conversion reuses extraRing capacity across iterations. The
+    // current canonical converter returns a new vector per extra: retained
+    // as a known allocation cost rather than claiming full perf equivalence.
+    // Native symmetrizeSSSR erases its transient extraRings property after
+    // using the typed cache. No other dictionary read/write intervenes.
+    if sssr.extra_rings_present {
+        if let Some(properties) = properties {
+            properties.clear_prop("extraRings")?;
+        }
+    }
     Ok(info)
 }
 
@@ -1281,11 +1517,136 @@ pub fn find_sssr_from_parts(
     bonds: &[Bond],
     adjacency: &AdjacencyList,
 ) -> Result<RingInfo, RingFindingError> {
-    // BEGIN RDKIT CPP FUNCTION MolOps::findSSSR pointer overload
-    // RDKit✔️✔️: VECT_INT_VECT rings;
-    // RDKit✔️✔️: return findSSSR(mol, rings, includeDativeBonds, includeHydrogenBonds);
-    // END RDKIT CPP FUNCTION MolOps::findSSSR pointer overload
     find_sssr_with_options_from_parts(atom_count, bonds, adjacency, false, false)
+}
+
+/// Native pointer-output dispatch over detached graph parts and real source
+/// ring/property state. None means a local output matrix, never an empty cache
+/// or replacement dictionary for a supplied source value.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn find_sssr_with_source_outputs_from_parts(
+    atom_count: usize,
+    bonds: &[Bond],
+    adjacency: &AdjacencyList,
+    source_rings: &mut RingInfo,
+    properties: Option<&mut MoleculeProperties>,
+    output: Option<&mut Vec<Vec<usize>>>,
+    include_dative_bonds: bool,
+    include_hydrogen_bonds: bool,
+) -> Result<i32, RingFindingError> {
+    // RDKit❗❌: int findSSSR(const ROMol &mol, VECT_INT_VECT *res, bool includeDativeBonds,
+    // RDKit❗❌:              bool includeHydrogenBonds) {
+    // RDKit❗❌:   if (!res) {
+    // RDKit❗❌:     VECT_INT_VECT rings;
+    // RDKit❗❌:     return findSSSR(mol, rings, includeDativeBonds, includeHydrogenBonds);
+    // RDKit❗❌:   } else {
+    // RDKit❗❌:     return findSSSR(mol, (*res), includeDativeBonds, includeHydrogenBonds);
+    // RDKit❗❌:   }
+    // RDKit❗❌: }
+    // Both branches borrow the same reference kernel and preserve options,
+    // cache/property mutation and output prefixes. The native signed INT_VECT
+    // IDs use existing nonnegative usize graph IDs; allocator/pointer/build
+    // width and generic Any extraRings value remain unmodeled capabilities.
+    // The mirrored caller matrix costs an extra copy of completed ring rows;
+    // no graph or dictionary is cloned. Native None has one local matrix.
+    let context = RingSearchContext::from_parts(atom_count, bonds, adjacency);
+    find_sssr_source_context(
+        &context,
+        source_rings,
+        properties,
+        output,
+        include_dative_bonds,
+        include_hydrogen_bonds,
+    )
+}
+
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub fn find_sssr_with_source_outputs_from_graph<G: StereoGraphAccess>(
+    graph: &G,
+    source_rings: &mut RingInfo,
+    properties: Option<&mut MoleculeProperties>,
+    output: Option<&mut Vec<Vec<usize>>>,
+    include_dative_bonds: bool,
+    include_hydrogen_bonds: bool,
+) -> Result<i32, RingFindingError> {
+    let context = RingSearchContext::from_graph(graph);
+    find_sssr_source_context(
+        &context,
+        source_rings,
+        properties,
+        output,
+        include_dative_bonds,
+        include_hydrogen_bonds,
+    )
+}
+
+fn find_sssr_source_context(
+    context: &RingSearchContext<'_>,
+    source_rings: &mut RingInfo,
+    properties: Option<&mut MoleculeProperties>,
+    output: Option<&mut Vec<Vec<usize>>>,
+    include_dative_bonds: bool,
+    include_hydrogen_bonds: bool,
+) -> Result<i32, RingFindingError> {
+    if let Some(output) = output {
+        find_sssr_reference_from_context(
+            context,
+            source_rings,
+            properties,
+            output,
+            include_dative_bonds,
+            include_hydrogen_bonds,
+        )
+    } else {
+        let mut rings = Vec::new();
+        find_sssr_reference_from_context(
+            context,
+            source_rings,
+            properties,
+            &mut rings,
+            include_dative_bonds,
+            include_hydrogen_bonds,
+        )
+    }
+}
+
+fn find_sssr_reference_from_context(
+    context: &RingSearchContext<'_>,
+    source_rings: &mut RingInfo,
+    properties: Option<&mut MoleculeProperties>,
+    output: &mut Vec<Vec<usize>>,
+    include_dative_bonds: bool,
+    include_hydrogen_bonds: bool,
+) -> Result<i32, RingFindingError> {
+    // RDKit❗❌:   res.resize(0);
+    // RDKit❗❌:   if (mol.getRingInfo()->isInitialized()) {
+    // RDKit❗❌:     mol.getRingInfo()->reset();
+    // RDKit❗❌:   }
+    // RDKit❗❌:   mol.getRingInfo()->initialize(FIND_RING_TYPE_SSSR);
+    // RDKit❗❌:   FindRings::storeRingsInfo(mol, res);
+    // RDKit❗❌:   return rdcast<int>(res.size());
+    // The reference kernel's complete anchor lives in find_sssr_internal;
+    // source output/cache state is supplied there, not inferred at success.
+    output.clear();
+    if source_rings.is_initialized() {
+        source_rings.reset();
+    }
+    source_rings.initialize(RingFindType::Sssr);
+    let result = find_sssr_internal(
+        context,
+        include_dative_bonds,
+        include_hydrogen_bonds,
+        properties,
+        Some(output),
+        Some(source_rings),
+    )?;
+    if result.find_type != RingFindType::Fast {
+        store_rings_info(context, &result.rings, source_rings)?;
+    }
+    // Ordinary pinned rdcast is static_cast<int>, not checked/saturating.
+    Ok(output.len() as i32)
 }
 
 pub fn find_sssr_with_options_from_parts(
@@ -1313,6 +1674,38 @@ pub fn find_sssr(
     )
 }
 
+/// Source ring preparation consuming the caller's detached properties.
+/// Returns both prepared rings and properties only on successful completion.
+/// An error cannot expose a partially updated transient dictionary or cache.
+#[doc(hidden)]
+pub fn symmetrized_sssr_with_properties(
+    topology: &TopologyBlock,
+    mut properties: MoleculeProperties,
+    params: &RingSearchParams,
+) -> Result<(RingInfo, MoleculeProperties), RingFindingError> {
+    // RDKit❗✔️:   findSSSR(mol, sssrs, includeDativeBonds, includeHydrogenBonds);
+    // RDKit❗✔️:   mol.clearProp(common_properties::extraRings);
+    // RDKit❗✔️:   if (mol.hasProp(common_properties::extraRings)) {
+    // RDKit❗✔️:     mol.clearProp(common_properties::extraRings);
+    // RDKit❗✔️:   }
+    // The single source implementation below owns the actual clear order and
+    // private cache. Native computed insertion retains its computed-list effect; the transient
+    // key is erased before success, with no intervening generic property reads.
+    // Ordered retained keys and source computed-list creation are reproduced
+    // by representing that typed cache in RingSearchResult instead of adding
+    // a second dictionary or a generic Any value implementation.
+    topology.validate()?;
+    let context =
+        RingSearchContext::from_parts(topology.atoms.len(), &topology.bonds, &topology.adjacency);
+    let info = symmetrize_sssr_from_context(
+        &context,
+        params.include_dative_bonds,
+        params.include_hydrogen_bonds,
+        Some(&mut properties),
+    )?;
+    Ok((info, properties))
+}
+
 pub fn symmetrized_sssr(
     topology: &TopologyBlock,
     params: &RingSearchParams,
@@ -1332,7 +1725,14 @@ fn find_sssr_from_context(
     include_dative_bonds: bool,
     include_hydrogen_bonds: bool,
 ) -> Result<RingInfo, RingFindingError> {
-    let result = find_sssr_internal(context, include_dative_bonds, include_hydrogen_bonds)?;
+    let result = find_sssr_internal(
+        context,
+        include_dative_bonds,
+        include_hydrogen_bonds,
+        None,
+        None,
+        None,
+    )?;
     let mut info = RingInfo::new(result.find_type, context.atom_count(), context.bond_count());
     store_rings_info(&context, &result.rings, &mut info)?;
     Ok(info)
@@ -1355,12 +1755,49 @@ pub fn fast_find_rings(topology: &TopologyBlock) -> Result<RingInfo, RingFinding
 fn fast_find_rings_from_context(
     context: &RingSearchContext<'_>,
 ) -> Result<RingInfo, RingFindingError> {
-    let rings = fast_find_rings_internal(&context)?;
+    // BEGIN RDKIT CPP FUNCTION MolOps::fastFindRings complete detached result
+    // RDKit✔️✔️: void fastFindRings(const ROMol &mol) {
+    // RDKit✔️✔️:   if (mol.getRingInfo()->isInitialized()) {
+    // RDKit✔️✔️:     mol.getRingInfo()->reset();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   mol.getRingInfo()->initialize(FIND_RING_TYPE_FAST);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   VECT_INT_VECT res;
+    // RDKit✔️✔️:   res.resize(0);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   unsigned int nats = mol.getNumAtoms();
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   INT_VECT atomColors(nats, 0);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < nats; ++i) {
+    // RDKit✔️✔️:     if (atomColors[i]) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     if (mol.getAtomWithIdx(i)->getDegree() < 2) {
+    // RDKit✔️✔️:       atomColors[i] = 2;
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     std::vector<const Atom *> traversalOrder;
+    // RDKit✔️✔️:     _DFS(mol, mol.getAtomWithIdx(i), atomColors, traversalOrder, res);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   FindRings::storeRingsInfo(mol, res);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION MolOps::fastFindRings complete detached result
+    // A fresh returned RingInfo has the exact cleared atom/bond/family state
+    // of native reset+FAST initialize. Initialize before the DFS phase, then
+    // store cycles in discovery order in this one detached carrier. No old
+    // RingInfo input or live cache mutation belongs to this CORE boundary.
+    // Source coloring/traversal/cycle storage and bond lookup costs preserved;
+    // no topology/atom/property clone or second ring perception algorithm.
+
     let mut info = RingInfo::new(
         RingFindType::Fast,
         context.atom_count(),
         context.bond_count(),
     );
+    let rings = fast_find_rings_internal(&context)?;
     store_rings_info(&context, &rings, &mut info)?;
     Ok(info)
 }
@@ -1520,16 +1957,24 @@ fn find_sssr_internal(
     context: &RingSearchContext<'_>,
     include_dative_bonds: bool,
     include_hydrogen_bonds: bool,
+    mut properties: Option<&mut MoleculeProperties>,
+    mut source_output: Option<&mut Vec<Vec<usize>>>,
+    mut source_ring_state: Option<&mut RingInfo>,
 ) -> Result<RingSearchResult, RingFindingError> {
-    let trace_rings = std::env::var_os("COSMOLKIT_TRACE_RINGS").is_some();
-    // BEGIN RDKIT CPP FUNCTION MolOps::findSSSR
+    // BEGIN RDKIT CPP FUNCTION MolOps::findSSSR complete source
     // RDKit✔️✔️: int findSSSR(const ROMol &mol, VECT_INT_VECT &res, bool includeDativeBonds,
     // RDKit✔️✔️:              bool includeHydrogenBonds) {
     // RDKit✔️✔️:   res.resize(0);
-    let mut res = Vec::new();
-    // RDKit✔️✔️:   boost::dynamic_bitset<> activeBonds(nbnds);
+    // RDKit✔️✔️:   if (mol.getRingInfo()->isInitialized()) {
+    // RDKit✔️✔️:     mol.getRingInfo()->reset();
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   mol.getRingInfo()->initialize(FIND_RING_TYPE_SSSR);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // Zero-order bonds are not candidates for rings, and dative bonds and
+    // RDKit✔️✔️:   // hydrogen bonds may also be out
+    // RDKit✔️✔️:   const int nbnds = mol.getNumBonds();
+    // RDKit✔️❌:   boost::dynamic_bitset<> activeBonds(nbnds);
     // RDKit✔️✔️:   activeBonds.set();
-    let mut active_bonds = vec![true; context.bond_count()];
     // RDKit✔️✔️:   for (auto bond : mol.bonds()) {
     // RDKit✔️✔️:     if (auto bt = bond->getBondType();
     // RDKit✔️✔️:         bt == Bond::ZERO || (!includeDativeBonds && isDative(bt)) ||
@@ -1537,16 +1982,227 @@ fn find_sssr_internal(
     // RDKit✔️✔️:       activeBonds[bond->getIdx()] = 0;
     // RDKit✔️✔️:     }
     // RDKit✔️✔️:   }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   const unsigned int nats = mol.getNumAtoms();
+    // RDKit✔️✔️:   INT_VECT atomDegrees(nats);
+    // RDKit✔️✔️:   INT_VECT atomDegreesWithZeroOrderBonds(nats);
+    // RDKit✔️✔️:   for (unsigned int i = 0; i < nats; ++i) {
+    // RDKit✔️✔️:     const Atom *atom = mol.getAtomWithIdx(i);
+    // RDKit✔️✔️:     int deg = atom->getDegree();
+    // RDKit✔️✔️:     atomDegrees[i] = deg;
+    // RDKit✔️✔️:     atomDegreesWithZeroOrderBonds[i] = deg;
+    // RDKit✔️✔️:     for (const auto bond : mol.atomBonds(atom)) {
+    // RDKit✔️✔️:       auto bt = bond->getBondType();
+    // RDKit✔️✔️:       if (bt == Bond::ZERO || (!includeHydrogenBonds && bt == Bond::HYDROGEN) ||
+    // RDKit✔️✔️:           (!includeDativeBonds && isDative(bt))) {
+    // RDKit✔️✔️:         atomDegrees[i]--;
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️❌:   mol.clearProp(common_properties::extraRings);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // find the number of fragments in the molecule - we will loop over them
+    // RDKit✔️✔️:   RINGINVAR_SET invars;
+    // RDKit✔️✔️:   INT_VECT curFrag;
+    // RDKit✔️❌:   boost::dynamic_bitset<> ringAtoms(nats);
+    // RDKit✔️❌:   boost::dynamic_bitset<> ringBonds(nbnds);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   VECT_INT_VECT frags;
+    // RDKit✔️✔️:   getMolFrags(mol, frags);
+    // RDKit✔️✔️:   // loop over the fragments in a molecule
+    // RDKit✔️✔️:   for (const auto &curFrag : frags) {
+    // RDKit✔️✔️:     if (curFrag.size() < 3) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // the following is the list of atoms that are useful in the next round of
+    // RDKit✔️✔️:     // trimming basically atoms that become degree 0 or 1 because of bond
+    // RDKit✔️✔️:     // removals initialized with atoms of degrees 0 and 1
+    // RDKit✔️✔️:     std::queue<int> changed;
+    // RDKit✔️✔️:     int bndcnt_with_zero_order_bonds = 0;
+    // RDKit✔️✔️:     unsigned int nbnds = 0;
+    // RDKit✔️✔️:     for (auto atom_idx : curFrag) {
+    // RDKit✔️✔️:       bndcnt_with_zero_order_bonds += atomDegreesWithZeroOrderBonds[atom_idx];
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       int deg = atomDegrees[atom_idx];
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       nbnds += deg;
+    // RDKit✔️✔️:       if (deg < 2) {
+    // RDKit✔️✔️:         changed.push(atom_idx);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // check to see if this fragment can even have a possible ring
+    // RDKit✔️✔️:     CHECK_INVARIANT(bndcnt_with_zero_order_bonds % 2 == 0,
+    // RDKit✔️✔️:                     "fragment graph has a dangling degree");
+    // RDKit✔️✔️:     bndcnt_with_zero_order_bonds = bndcnt_with_zero_order_bonds / 2;
+    // RDKit✔️✔️:     int num_possible_rings = bndcnt_with_zero_order_bonds - curFrag.size() + 1;
+    // RDKit✔️✔️:     if (num_possible_rings < 1) {
+    // RDKit✔️✔️:       continue;
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     CHECK_INVARIANT(nbnds % 2 == 0,
+    // RDKit✔️✔️:                     "fragment graph problem when including zero-order bonds");
+    // RDKit✔️✔️:     nbnds = nbnds / 2;
+    // RDKit✔️✔️:
+    // RDKit✔️❌:     boost::dynamic_bitset<> doneAts(nats);
+    // RDKit✔️✔️:     unsigned int nAtomsDone = 0;
+    // RDKit✔️✔️:     VECT_INT_VECT fragRes;
+    // RDKit✔️✔️:     while (nAtomsDone <= curFrag.size() - 3) {
+    // RDKit✔️✔️:       // We can skip the 2 last atoms: if they were in a ring,
+    // RDKit✔️✔️:       // we'd have already seen it.
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       // trim all bonds that connect to degree 0 and 1 atoms
+    // RDKit✔️✔️:       while (!changed.empty()) {
+    // RDKit✔️✔️:         auto cand = changed.front();
+    // RDKit✔️✔️:         changed.pop();
+    // RDKit✔️✔️:         if (!doneAts[cand]) {
+    // RDKit✔️✔️:           doneAts.set(cand);
+    // RDKit✔️✔️:           ++nAtomsDone;
+    // RDKit✔️✔️:           FindRings::trimBonds(cand, mol, changed, atomDegrees, activeBonds);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:       // all atoms left in the fragment should at least have a degree >= 2
+    // RDKit✔️✔️:       // collect all the degree two nodes;
+    // RDKit✔️✔️:       INT_VECT d2nodes;
+    // RDKit✔️✔️:       FindRings::pickD2Nodes(mol, d2nodes, curFrag, atomDegrees, activeBonds);
+    // RDKit✔️✔️:       if (d2nodes.size() > 0) {  // deal with the current degree two nodes
+    // RDKit✔️✔️:         // place to record any duplicate rings discovered from the current d2
+    // RDKit✔️✔️:         // nodes
+    // RDKit✔️✔️:         FindRings::findRingsD2nodes(mol, fragRes, invars, d2nodes, atomDegrees,
+    // RDKit✔️✔️:                                     activeBonds, ringBonds, ringAtoms);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // trim after we have dealt with all the current d2 nodes,
+    // RDKit✔️✔️:         for (auto d2i : d2nodes) {
+    // RDKit✔️✔️:           doneAts.set(d2i);
+    // RDKit✔️✔️:           ++nAtomsDone;
+    // RDKit✔️✔️:           FindRings::trimBonds(d2i, mol, changed, atomDegrees, activeBonds);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         // end of degree two nodes
+    // RDKit✔️✔️:       } else if (nAtomsDone <= curFrag.size() - 3) {
+    // RDKit✔️✔️:         // now deal with higher degree nodes
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // this is brutal - we have no degree 2 nodes - find the first
+    // RDKit✔️✔️:         // possible degree 3 node
+    // RDKit✔️✔️:         int cand = -1;
+    // RDKit✔️✔️:         for (auto aidi : curFrag) {
+    // RDKit✔️✔️:           unsigned int deg = atomDegrees[aidi];
+    // RDKit✔️✔️:           if (deg == 3) {
+    // RDKit✔️✔️:             cand = (aidi);
+    // RDKit✔️✔️:             break;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:         // if we did not find a degree 3 node we are done
+    // RDKit✔️✔️:         // REVIEW:
+    // RDKit✔️✔️:         if (cand == -1) {
+    // RDKit✔️✔️:           break;
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         FindRings::findRingsD3Node(mol, fragRes, invars, cand, atomDegrees,
+    // RDKit✔️✔️:                                    activeBonds);
+    // RDKit✔️✔️:         doneAts.set(cand);
+    // RDKit✔️✔️:         ++nAtomsDone;
+    // RDKit✔️✔️:         FindRings::trimBonds(cand, mol, changed, atomDegrees, activeBonds);
+    // RDKit✔️✔️:       }  // done with degree 3 node
+    // RDKit✔️✔️:     }    // done finding rings in this fragment
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // calculate the cyclomatic number for the fragment:
+    // RDKit✔️✔️:     int nexpt = rdcast<int>((nbnds - curFrag.size() + 1));
+    // RDKit✔️✔️:     int ssiz = rdcast<int>(fragRes.size());
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     // first check that we got at least the number of expected rings
+    // RDKit✔️✔️:     if (ssiz < nexpt) {
+    // RDKit✔️✔️:       // Issue 3514824: in certain highly fused ring systems, the algorithm
+    // RDKit✔️✔️:       // above would miss rings.
+    // RDKit✔️✔️:       // for this fix to apply we have to have at least one non-ring bond
+    // RDKit✔️✔️:       // that terminates in ring atoms. Find those bonds:
+    // RDKit✔️✔️:       std::vector<const Bond *> possibleBonds;
+    // RDKit✔️✔️:       for (unsigned int i = 0; i < nbnds; ++i) {
+    // RDKit✔️✔️:         if (!ringBonds[i]) {
+    // RDKit✔️✔️:           const Bond *bnd = mol.getBondWithIdx(i);
+    // RDKit✔️✔️:           if (ringAtoms[bnd->getBeginAtomIdx()] &&
+    // RDKit✔️✔️:               ringAtoms[bnd->getEndAtomIdx()]) {
+    // RDKit✔️✔️:             possibleBonds.push_back(bnd);
+    // RDKit✔️✔️:             break;
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️❌:       boost::dynamic_bitset<> deadBonds(mol.getNumBonds());
+    // RDKit✔️✔️:       while (possibleBonds.size()) {
+    // RDKit✔️✔️:         bool ringFound = FindRings::findRingConnectingAtoms(
+    // RDKit✔️✔️:             mol, possibleBonds[0], fragRes, invars, ringBonds, ringAtoms);
+    // RDKit✔️✔️:         if (!ringFound) {
+    // RDKit✔️✔️:           deadBonds.set(possibleBonds[0]->getIdx(), 1);
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         possibleBonds.clear();
+    // RDKit✔️✔️:         // check if we need to repeat the process:
+    // RDKit✔️✔️:         for (unsigned int i = 0; i < nbnds; ++i) {
+    // RDKit✔️✔️:           if (!ringBonds[i]) {
+    // RDKit✔️✔️:             const Bond *bnd = mol.getBondWithIdx(i);
+    // RDKit✔️✔️:             if (!deadBonds[bnd->getIdx()] &&
+    // RDKit✔️✔️:                 ringAtoms[bnd->getBeginAtomIdx()] &&
+    // RDKit✔️✔️:                 ringAtoms[bnd->getEndAtomIdx()]) {
+    // RDKit✔️✔️:               possibleBonds.push_back(bnd);
+    // RDKit✔️✔️:               break;
+    // RDKit✔️✔️:             }
+    // RDKit✔️✔️:           }
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:       ssiz = rdcast<int>(fragRes.size());
+    // RDKit✔️✔️:       if (ssiz < nexpt) {
+    // RDKit✔️✔️:         BOOST_LOG(rdWarningLog)
+    // RDKit✔️✔️:             << "WARNING: could not find number of expected rings. Switching to "
+    // RDKit✔️✔️:                "an approximate ring finding algorithm."
+    // RDKit✔️✔️:             << std::endl;
+    // RDKit✔️✔️:         mol.getRingInfo()->reset();
+    // RDKit✔️✔️:         fastFindRings(mol);
+    // RDKit✔️✔️:         res.clear();
+    // RDKit✔️✔️:         res = mol.getRingInfo()->atomRings();
+    // RDKit✔️✔️:         return rdcast<int>(res.size());
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:     // if we have more than expected we need to do some cleanup
+    // RDKit✔️✔️:     // otherwise do som clean up work
+    // RDKit✔️✔️:     if (ssiz > nexpt) {
+    // RDKit✔️✔️:       FindRings::removeExtraRings(fragRes, nexpt, mol);
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:     res.insert(res.end(), fragRes.begin(), fragRes.end());
+    // RDKit✔️✔️:   }  // done with all fragments
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   FindRings::storeRingsInfo(mol, res);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   // update the ring memberships of atoms and bonds in the molecule:
+    // RDKit✔️✔️:   // store the SSSR rings on the molecule as a property
+    // RDKit✔️✔️:   // we will ignore any existing SSSRs on the molecule - simply overwrite
+    // RDKit✔️✔️:   return rdcast<int>(res.size());
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION MolOps::findSSSR complete source
+    // RingSearchResult owns the exact typed transient extraRings cache and
+    // presence bit, including a present empty value. Supplied molecule
+    // properties are cleared at the native point through their canonical
+    // carrier; a graph-only value has known-empty properties, never a fallback
+    // for a malformed supplied carrier. Symmetrization consumes and erases
+    // this transient cache before returning; generic AnyTag remains unmodeled.
+    // Canonical property clear/set bookkeeping uses the supplied carrier;
+    // computed cache registration survives final clear as the source empty
+    // computed-list value. Typed transient matrices remain owner-local.
+    // Vec<bool> uses byte flags rather than source packed bitsets, a known
+    // memory cost; cleanup BTreeSet operations have a known time/storage cost.
+    // Source root/component order, inactive-edge degrees, degree2/3 trimming,
+    // missing-ring search, fallback, extra-ring cleanup and append are retained.
+    // No trace environment or non-source diagnostic branch remains.
+
+    let mut res = Vec::new();
+    let mut active_bonds = vec![true; context.bond_count()];
     for bond in context.bonds() {
         if is_inactive_ring_bond(bond.order(), include_dative_bonds, include_hydrogen_bonds) {
             active_bonds[bond.id().index()] = false;
         }
     }
-    // RDKit✔️✔️:   INT_VECT atomDegrees(nats);
-    // RDKit✔️✔️:   INT_VECT atomDegreesWithZeroOrderBonds(nats);
     let mut atom_degrees = vec![0i32; context.atom_count()];
     let mut atom_degrees_with_zero_order_bonds = vec![0i32; context.atom_count()];
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < nats; ++i) {
     for atom_idx in 0..context.atom_count() {
         let deg = i32::try_from(context.neighbors(atom_idx).len()).map_err(|_| {
             RingFindingError::Value {
@@ -1562,25 +2218,18 @@ fn find_sssr_internal(
             }
         }
     }
-    // RDKit✔️✔️:   mol.clearProp(common_properties::extraRings);
+    // RDKit source clearProp occurs after active-bond/degree setup and before
+    // any component/BFS processing; wrong computed-list tags propagate here.
+    if let Some(properties) = properties.as_deref_mut() {
+        properties.clear_prop("extraRings")?;
+    }
     let mut extra_rings = Vec::new();
-    // RDKit✔️✔️:   RINGINVAR_SET invars;
-    // RDKit✔️✔️:   boost::dynamic_bitset<> ringAtoms(nats);
-    // RDKit✔️✔️:   boost::dynamic_bitset<> ringBonds(nbnds);
+    let mut extra_rings_present = false;
     let mut invars = BTreeSet::new();
     let mut ring_atoms = vec![false; context.atom_count()];
     let mut ring_bonds = vec![false; context.bond_count()];
-    // RDKit✔️✔️:   VECT_INT_VECT frags;
-    // RDKit✔️✔️:   getMolFrags(mol, frags);
     let frags = molecule_fragments(context);
-    // RDKit✔️✔️:   for (const auto &curFrag : frags) {
     for cur_frag in frags {
-        if trace_rings {
-            eprintln!("findSSSR frag={cur_frag:?}");
-        }
-        // RDKit✔️✔️:     if (curFrag.size() < 3) {
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
         if cur_frag.len() < 3 {
             continue;
         }
@@ -1620,9 +2269,7 @@ fn find_sssr_internal(
         let mut done_atoms = vec![false; context.atom_count()];
         let mut atoms_done = 0usize;
         let mut frag_res = Vec::new();
-        // RDKit✔️✔️:     while (nAtomsDone <= curFrag.size() - 3) {
-        while atoms_done <= cur_frag.len().saturating_sub(3) {
-            // RDKit✔️✔️:       while (!changed.empty()) {
+        while atoms_done <= (cur_frag.len() - 3) {
             while let Some(cand) = changed.pop_front() {
                 if !done_atoms[cand] {
                     done_atoms[cand] = true;
@@ -1637,9 +2284,6 @@ fn find_sssr_internal(
                 }
             }
             let d2nodes = pick_d2_nodes(context, &cur_frag, &atom_degrees, &active_bonds);
-            if trace_rings && !d2nodes.is_empty() {
-                eprintln!("findSSSR d2nodes={d2nodes:?}");
-            }
             if !d2nodes.is_empty() {
                 find_rings_d2_nodes(
                     context,
@@ -1662,7 +2306,7 @@ fn find_sssr_internal(
                         &mut active_bonds,
                     );
                 }
-            } else if atoms_done <= cur_frag.len().saturating_sub(3) {
+            } else if atoms_done <= (cur_frag.len() - 3) {
                 let cand = cur_frag
                     .iter()
                     .copied()
@@ -1670,9 +2314,6 @@ fn find_sssr_internal(
                 let Some(cand) = cand else {
                     break;
                 };
-                if trace_rings {
-                    eprintln!("findSSSR d3 cand={cand}");
-                }
                 find_rings_d3_node(context, &mut frag_res, &mut invars, cand, &active_bonds)?;
                 done_atoms[cand] = true;
                 atoms_done += 1;
@@ -1685,11 +2326,10 @@ fn find_sssr_internal(
                 );
             }
         }
-        // RDKit✔️✔️: int nexpt = rdcast<int>((nbnds - curFrag.size() + 1));
-        // Both source operands are 32-bit unsigned values. Inactive bonds can
+        // Native nbnds is unsigned int and curFrag.size() is size_t. Inactive bonds can
         // leave the full-topology fragment disconnected in the active graph,
         // so the subtraction intentionally wraps before the source cast
-        // reinterprets the same 32 bits as a negative `int`.
+        // retains the same low 32 bits when cast to the source 32-bit `int`.
         let source_nbnds = u32::try_from(nbnds).map_err(|_| RingFindingError::Value {
             message: "fragment bond count out of range",
         })?;
@@ -1725,30 +2365,57 @@ fn find_sssr_internal(
                 message: "ring count out of range",
             })?;
             if ssize < nexpt {
+                // This fallback and warning are present in pinned RDKit;
+                // preserve them exactly, without adding a local ring heuristic.
+                eprintln!(
+                    "WARNING: could not find number of expected rings. Switching to an approximate ring finding algorithm."
+                );
+                if let Some(state) = source_ring_state.as_deref_mut() {
+                    state.reset();
+                    state.initialize(RingFindType::Fast);
+                }
                 let fast = fast_find_rings_internal(context)?;
+                if let Some(state) = source_ring_state.as_deref_mut() {
+                    store_rings_info(context, &fast, state)?;
+                }
+                // Native replaces res only after fastFindRings succeeds.
+                if let Some(output) = source_output.as_deref_mut() {
+                    output.clear();
+                    output.extend(fast.iter().cloned());
+                }
                 return Ok(RingSearchResult {
                     find_type: RingFindType::Fast,
                     rings: fast,
-                    extra_rings: Vec::new(),
+                    // Native RingInfo reset/fastFindRings does not clear the
+                    // separate extraRings cache accumulated by prior fragments.
+                    extra_rings,
+                    extra_rings_present,
                 });
             }
         }
         if ssize > nexpt {
             let extras = remove_extra_rings(context, &mut frag_res)?;
             extra_rings.extend(extras);
+            // Native removeExtraRings uses computed=true, including for an
+            // empty extras matrix. Preserve actual computed-list creation and
+            // first membership insertion while the typed cache stays local.
+            if let Some(properties) = properties.as_deref_mut() {
+                properties.register_transient_computed_name("extraRings")?;
+            }
+            extra_rings_present = true;
         }
-        if trace_rings {
-            eprintln!("findSSSR frag_res={frag_res:?}");
+        // Native caller res appends each completed component immediately;
+        // later failures retain these rows, before final storeRingsInfo.
+        if let Some(output) = source_output.as_deref_mut() {
+            output.extend(frag_res.iter().cloned());
         }
         res.extend(frag_res);
     }
-    // RDKit✔️✔️:   FindRings::storeRingsInfo(mol, res);
-    // RDKit✔️✔️:   return rdcast<int>(res.size());
-    // RDKit✔️✔️: }
     Ok(RingSearchResult {
         find_type: RingFindType::Sssr,
         rings: res,
         extra_rings,
+        extra_rings_present,
     })
 }
 
@@ -2006,6 +2673,19 @@ fn store_rings_info(
     rings: &[Vec<usize>],
     info: &mut RingInfo,
 ) -> Result<(), RingFindingError> {
+    // BEGIN RDKIT CPP FUNCTION FindRings::storeRingsInfo and storeRingInfo
+    // RDKit✔️✔️: void storeRingsInfo(const ROMol &mol, const VECT_INT_VECT &rings) {
+    // RDKit✔️✔️:   for (const auto &ring : rings) {
+    // RDKit✔️✔️:     storeRingInfo(mol, ring);
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️: }
+    // RDKit✔️✔️: void storeRingInfo(const ROMol &mol, const INT_VECT &ring) {
+    // RDKit✔️✔️:   INT_VECT bondIndices;
+    // RDKit✔️✔️:   RingUtils::convertToBonds(ring, bondIndices, mol);
+    // RDKit✔️✔️:   mol.getRingInfo()->addRing(ring, bondIndices);
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION FindRings::storeRingsInfo and storeRingInfo
+
     for ring in rings {
         let bond_indices = convert_to_bonds(context, ring, |atom| *atom, BondId::index)?;
         info.add_ring(ring, &bond_indices)?;
@@ -2604,63 +3284,137 @@ fn remove_extra_rings(
     context: &RingSearchContext<'_>,
     res: &mut Vec<Vec<usize>>,
 ) -> Result<Vec<Vec<usize>>, RingFindingError> {
-    // BEGIN RDKIT CPP FUNCTION FindRings::removeExtraRings
-    // RDKit✔️✔️: void removeExtraRings(VECT_INT_VECT &res, unsigned int, const ROMol &mol) {
-    // RDKit✔️✔️:   std::sort(res.begin(), res.end(), compRingSize);
+    // BEGIN RDKIT CPP FUNCTION FindRings::removeExtraRings complete source
+    // RDKit✔️❌: void removeExtraRings(VECT_INT_VECT &res, unsigned int, const ROMol &mol) {
+    // RDKit✔️❌:   // sort on size
+    // RDKit✔️❌:   std::sort(res.begin(), res.end(), compRingSize);
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // change the rings from atom IDs to bondIds
+    // RDKit✔️❌:   VECT_INT_VECT brings;
+    // RDKit✔️❌:   RingUtils::convertToBonds(res, brings, mol);
+    // RDKit✔️❌:   std::vector<boost::dynamic_bitset<>> bitBrings;
+    // RDKit✔️❌:   bitBrings.reserve(brings.size());
+    // RDKit✔️❌:   for (const auto &vivi : brings) {
+    // RDKit✔️❌:     boost::dynamic_bitset<> lring(mol.getNumBonds());
+    // RDKit✔️❌:     for (int ivi : vivi) {
+    // RDKit✔️❌:       lring.set(ivi);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     bitBrings.push_back(lring);
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:
+    // RDKit✔️❌:   boost::dynamic_bitset<> availRings(res.size());
+    // RDKit✔️❌:   availRings.set();
+    // RDKit✔️❌:   boost::dynamic_bitset<> keepRings(res.size());
+    // RDKit✔️❌:   boost::dynamic_bitset<> munion(mol.getNumBonds());
+    // RDKit✔️❌:
+    // RDKit✔️❌:   // optimization - don't reallocate a new one each loop
+    // RDKit✔️❌:   boost::dynamic_bitset<> workspace(mol.getNumBonds());
+    // RDKit✔️❌:
+    // RDKit✔️❌:   for (unsigned int i = 0; i < res.size(); ++i) {
+    // RDKit✔️❌:     // skip this ring if we've already seen all of its bonds
+    // RDKit✔️❌:     if (bitBrings[i].is_subset_of(munion)) {
+    // RDKit✔️❌:       availRings.set(i, 0);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:     if (!availRings[i]) {
+    // RDKit✔️❌:       continue;
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     munion |= bitBrings[i];
+    // RDKit✔️❌:     keepRings.set(i);
+    // RDKit✔️❌:
+    // RDKit✔️❌:     // from this ring we consider all others that are still available and the
+    // RDKit✔️❌:     // same size
+    // RDKit✔️❌:     boost::dynamic_bitset<> consider(res.size());
+    // RDKit✔️❌:     for (unsigned int j = i + 1; j < res.size(); ++j) {
+    // RDKit✔️❌:       if (availRings[j] && (brings[j].size() == brings[i].size())) {
+    // RDKit✔️❌:         consider.set(j);
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:
+    // RDKit✔️❌:     while (consider.any()) {
+    // RDKit✔️❌:       unsigned int bestJ = i + 1;
+    // RDKit✔️❌:       int bestOverlap = -1;
+    // RDKit✔️❌:       // loop over the available other rings in consideration and pick the one
+    // RDKit✔️❌:       // that has the most overlapping bonds with what we've done so far.
+    // RDKit✔️❌:       // this is the fix to github #526
+    // RDKit✔️❌:       for (unsigned int j = i + 1;
+    // RDKit✔️❌:            j < res.size() && brings[j].size() == brings[i].size(); ++j) {
+    // RDKit✔️❌:         if (!consider[j] || !availRings[j]) {
+    // RDKit✔️❌:           continue;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:         workspace = bitBrings[j];
+    // RDKit✔️❌:         workspace &= munion;
+    // RDKit✔️❌:         int overlap = rdcast<int>(workspace.count());
+    // RDKit✔️❌:         if (overlap > bestOverlap) {
+    // RDKit✔️❌:           bestOverlap = overlap;
+    // RDKit✔️❌:           bestJ = j;
+    // RDKit✔️❌:         }
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:       consider.set(bestJ, 0);
+    // RDKit✔️❌:       if (bitBrings[bestJ].is_subset_of(munion)) {
+    // RDKit✔️❌:         availRings.set(bestJ, 0);
+    // RDKit✔️❌:       } else {
+    // RDKit✔️❌:         keepRings.set(bestJ);
+    // RDKit✔️❌:         availRings.set(bestJ, 0);
+    // RDKit✔️❌:         munion |= bitBrings[bestJ];
+    // RDKit✔️❌:       }
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   // remove the extra rings from res and store them on the molecule in case we
+    // RDKit✔️❌:   // wish symmetrize the SSSRs later
+    // RDKit✔️❌:   VECT_INT_VECT extras;
+    // RDKit✔️❌:   VECT_INT_VECT temp = res;
+    // RDKit✔️❌:   res.resize(0);
+    // RDKit✔️❌:   for (unsigned int i = 0; i < temp.size(); i++) {
+    // RDKit✔️❌:     if (keepRings[i]) {
+    // RDKit✔️❌:       res.push_back(temp[i]);
+    // RDKit✔️❌:     } else {
+    // RDKit✔️❌:       extras.push_back(temp[i]);
+    // RDKit✔️❌:     }
+    // RDKit✔️❌:   }
+    // RDKit✔️❌:   // add extra rings to the molecule (there could already be some from previous
+    // RDKit✔️❌:   // fragments)
+    // RDKit✔️❌:   VECT_INT_VECT molExtras;
+    // RDKit✔️❌:   mol.getPropIfPresent(common_properties::extraRings, molExtras);
+    // RDKit✔️❌:   molExtras.insert(molExtras.end(), extras.begin(), extras.end());
+    // RDKit✔️❌:   mol.setProp(common_properties::extraRings, molExtras, true);
+    // RDKit✔️❌: }
+    // END RDKIT CPP FUNCTION FindRings::removeExtraRings complete source
+    // Return the ordered extras once; the canonical caller extends its cache,
+    // matching native getPropIfPresent + insert of prior-fragment extras.
+    // The caller registers the computed name through the canonical MODEL
+    // setProp prefix after storing this exact owner-local typed matrix.
+    // Local performance review: BTreeSet bond membership is materially slower
+    // than native packed dynamic_bitset subset/intersection/union operations;
+    // the cost marker remains negative despite equivalent set/order semantics.
+
     rdkit_std_sort_rings_by_size(res);
-    // RDKit✔️✔️:   VECT_INT_VECT brings;
-    // RDKit✔️✔️:   RingUtils::convertToBonds(res, brings, mol);
     let bond_rings = convert_rings_to_bonds(context, res)?;
-    // RDKit✔️✔️:   std::vector<boost::dynamic_bitset<>> bitBrings;
-    // RDKit✔️✔️:   bitBrings.reserve(brings.size());
     let bit_bond_rings = bond_rings
         .iter()
         .map(|ring| ring.iter().copied().collect::<BTreeSet<_>>())
         .collect::<Vec<_>>();
-    // RDKit✔️✔️:   boost::dynamic_bitset<> availRings(res.size());
-    // RDKit✔️✔️:   availRings.set();
-    // RDKit✔️✔️:   boost::dynamic_bitset<> keepRings(res.size());
-    // RDKit✔️✔️:   boost::dynamic_bitset<> munion(mol.getNumBonds());
     let mut available = vec![true; res.len()];
     let mut keep = vec![false; res.len()];
     let mut union = BTreeSet::new();
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < res.size(); ++i) {
     for i in 0..res.len() {
-        // RDKit✔️✔️:     if (bitBrings[i].is_subset_of(munion)) {
-        // RDKit✔️✔️:       availRings.set(i, 0);
-        // RDKit✔️✔️:     }
         if bit_bond_rings[i].is_subset(&union) {
             available[i] = false;
         }
-        // RDKit✔️✔️:     if (!availRings[i]) {
-        // RDKit✔️✔️:       continue;
-        // RDKit✔️✔️:     }
         if !available[i] {
             continue;
         }
-        // RDKit✔️✔️:     munion |= bitBrings[i];
-        // RDKit✔️✔️:     keepRings.set(i);
         union.extend(bit_bond_rings[i].iter().copied());
         keep[i] = true;
-        // RDKit✔️✔️:     boost::dynamic_bitset<> consider(res.size());
         let mut consider = vec![false; res.len()];
-        // RDKit✔️✔️:     for (unsigned int j = i + 1; j < res.size(); ++j) {
         for j in i + 1..res.len() {
-            // RDKit✔️✔️:       if (availRings[j] && (brings[j].size() == brings[i].size())) {
-            // RDKit✔️✔️:         consider.set(j);
-            // RDKit✔️✔️:       }
             if available[j] && bond_rings[j].len() == bond_rings[i].len() {
                 consider[j] = true;
             }
         }
-        // RDKit✔️✔️:     while (consider.any()) {
         while consider.iter().any(|flag| *flag) {
-            // RDKit✔️✔️:       unsigned int bestJ = i + 1;
-            // RDKit✔️✔️:       int bestOverlap = -1;
             let mut best_j = i + 1;
             let mut best_overlap = -1isize;
-            // RDKit✔️✔️:       for (unsigned int j = i + 1;
-            // RDKit✔️✔️:            j < res.size() && brings[j].size() == brings[i].size(); ++j) {
             for j in i + 1..res.len() {
                 if bond_rings[j].len() != bond_rings[i].len() {
                     break;
@@ -2668,56 +3422,31 @@ fn remove_extra_rings(
                 if !consider[j] || !available[j] {
                     continue;
                 }
-                // RDKit✔️✔️:         workspace = bitBrings[j];
-                // RDKit✔️✔️:         workspace &= munion;
-                // RDKit✔️✔️:         int overlap = rdcast<int>(workspace.count());
                 let overlap = bit_bond_rings[j].intersection(&union).count() as isize;
-                // RDKit✔️✔️:         if (overlap > bestOverlap) {
-                // RDKit✔️✔️:           bestOverlap = overlap;
-                // RDKit✔️✔️:           bestJ = j;
-                // RDKit✔️✔️:         }
                 if overlap > best_overlap {
                     best_overlap = overlap;
                     best_j = j;
                 }
             }
-            // RDKit✔️✔️:       consider.set(bestJ, 0);
             consider[best_j] = false;
-            // RDKit✔️✔️:       if (bitBrings[bestJ].is_subset_of(munion)) {
             if bit_bond_rings[best_j].is_subset(&union) {
-                // RDKit✔️✔️:         availRings.set(bestJ, 0);
                 available[best_j] = false;
             } else {
-                // RDKit✔️✔️:       } else {
-                // RDKit✔️✔️:         keepRings.set(bestJ);
-                // RDKit✔️✔️:         availRings.set(bestJ, 0);
-                // RDKit✔️✔️:         munion |= bitBrings[bestJ];
                 keep[best_j] = true;
                 available[best_j] = false;
                 union.extend(bit_bond_rings[best_j].iter().copied());
             }
         }
     }
-    // RDKit✔️✔️:   VECT_INT_VECT extras;
-    // RDKit✔️✔️:   VECT_INT_VECT temp = res;
-    // RDKit✔️✔️:   res.resize(0);
     let old = std::mem::take(res);
     let mut extras = Vec::new();
-    // RDKit✔️✔️:   for (unsigned int i = 0; i < temp.size(); i++) {
     for (index, ring) in old.into_iter().enumerate() {
-        // RDKit✔️✔️:     if (keepRings[i]) {
         if keep[index] {
-            // RDKit✔️✔️:       res.push_back(temp[i]);
             res.push(ring);
         } else {
-            // RDKit✔️✔️:     } else {
-            // RDKit✔️✔️:       extras.push_back(temp[i]);
             extras.push(ring);
         }
     }
-    // RDKit✔️✔️:   molExtras.insert(molExtras.end(), extras.begin(), extras.end());
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION FindRings::removeExtraRings
     Ok(extras)
 }
 
@@ -2899,10 +3628,8 @@ fn molecule_fragments(context: &RingSearchContext<'_>) -> Vec<Vec<usize>> {
 fn fast_find_rings_internal(
     context: &RingSearchContext<'_>,
 ) -> Result<Vec<Vec<usize>>, RingFindingError> {
-    // BEGIN RDKIT CPP FUNCTION MolOps::fastFindRings
+    // Discovery phase of the complete source wrapper above.
     // RDKit✔️✔️: void fastFindRings(const ROMol &mol) {
-    // RDKit✔️✔️:   // COSMolKit does not cache RingInfo on the molecule object.
-    // RDKit✔️✔️:   // RingInfo reset/initialize is unnecessary — we compute fresh each call.
     // RDKit✔️✔️:   VECT_INT_VECT res;
     // RDKit✔️✔️:   res.resize(0);
     let mut result = Vec::new();
@@ -2937,9 +3664,8 @@ fn fast_find_rings_internal(
             None,
         );
     }
-    // RDKit✔️✔️:   // RingInfo is returned directly, not stored on the molecule.
     // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION MolOps::fastFindRings
+    // End source discovery phase.
     Ok(result)
 }
 
@@ -2951,7 +3677,7 @@ fn dfs_fast_find_rings(
     result: &mut Vec<Vec<usize>>,
     from_atom: Option<usize>,
 ) {
-    // BEGIN RDKIT CPP FUNCTION MolOps::_DFS
+    // BEGIN RDKIT CPP FUNCTION MolOps::_DFS complete source
     // RDKit✔️✔️: void _DFS(const ROMol &mol, const Atom *atom, INT_VECT &atomColors,
     // RDKit✔️✔️:           std::vector<const Atom *> &traversalOrder, VECT_INT_VECT &res,
     // RDKit✔️✔️:           const Atom *fromAtom = nullptr) {
@@ -2959,21 +3685,47 @@ fn dfs_fast_find_rings(
     // RDKit✔️✔️:   PRECONDITION(atomColors[atom->getIdx()] == 0, "bad color");
     // RDKit✔️✔️:   atomColors[atom->getIdx()] = 1;
     // RDKit✔️✔️:   traversalOrder.push_back(atom);
+    // RDKit✔️✔️:
+    // RDKit✔️✔️:   for (const auto nbr : mol.atomNeighbors(atom)) {
+    // RDKit✔️✔️:     unsigned int nbrIdx = nbr->getIdx();
+    // RDKit✔️✔️:     if (atomColors[nbrIdx] == 0) {
+    // RDKit✔️✔️:       if (nbr->getDegree() < 2) {
+    // RDKit✔️✔️:         atomColors[nbr->getIdx()] = 2;
+    // RDKit✔️✔️:       } else {
+    // RDKit✔️✔️:         _DFS(mol, nbr, atomColors, traversalOrder, res, atom);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     } else if (atomColors[nbrIdx] == 1) {
+    // RDKit✔️✔️:       if (fromAtom && nbrIdx != fromAtom->getIdx()) {
+    // RDKit✔️✔️:         INT_VECT cycle;
+    // RDKit✔️✔️:         auto lastElem =
+    // RDKit✔️✔️:             std::find(traversalOrder.rbegin(), traversalOrder.rend(), atom);
+    // RDKit✔️✔️:         for (auto rIt = lastElem;  // traversalOrder.rbegin();
+    // RDKit✔️✔️:              rIt != traversalOrder.rend() && (*rIt)->getIdx() != nbrIdx;
+    // RDKit✔️✔️:              ++rIt) {
+    // RDKit✔️✔️:           cycle.push_back((*rIt)->getIdx());
+    // RDKit✔️✔️:         }
+    // RDKit✔️✔️:         cycle.push_back(nbrIdx);
+    // RDKit✔️✔️:         res.push_back(cycle);
+    // RDKit✔️✔️:       }
+    // RDKit✔️✔️:     }
+    // RDKit✔️✔️:   }
+    // RDKit✔️✔️:   atomColors[atom->getIdx()] = 2;
+    // RDKit✔️✔️:   traversalOrder.pop_back();
+    // RDKit✔️✔️: }
+    // END RDKIT CPP FUNCTION MolOps::_DFS complete source
+    // Current atom is the back of traversalOrder after its own push and all
+    // recursive pushes/pops; native reverse find(atom) therefore starts here.
+    // Each cycle follows the same reverse traversal until the gray neighbor;
+    // source root-parent suppression and colors 0/1/2 preserve ring order.
+
     atom_colors[atom] = 1;
     traversal_order.push(atom);
-    // RDKit✔️✔️:   for (const auto nbr : mol.atomNeighbors(atom)) {
     for neighbor in context.neighbors(atom) {
-        // RDKit✔️✔️:     unsigned int nbrIdx = nbr->getIdx();
         let neighbor_idx = neighbor.atom_index;
-        // RDKit✔️✔️:     if (atomColors[nbrIdx] == 0) {
         if atom_colors[neighbor_idx] == 0 {
-            // RDKit✔️✔️:       if (nbr->getDegree() < 2) {
-            // RDKit✔️✔️:         atomColors[nbr->getIdx()] = 2;
-            // RDKit✔️✔️:       } else {
             if context.neighbors(neighbor_idx).len() < 2 {
                 atom_colors[neighbor_idx] = 2;
             } else {
-                // RDKit✔️✔️:         _DFS(mol, nbr, atomColors, traversalOrder, res, atom);
                 dfs_fast_find_rings(
                     context,
                     neighbor_idx,
@@ -2983,21 +3735,10 @@ fn dfs_fast_find_rings(
                     Some(atom),
                 );
             }
-            // RDKit✔️✔️:       }
-            // RDKit✔️✔️:     } else if (atomColors[nbrIdx] == 1) {
         } else if atom_colors[neighbor_idx] == 1
             && from_atom.is_some()
             && Some(neighbor_idx) != from_atom
         {
-            // RDKit✔️✔️:       if (fromAtom && nbrIdx != fromAtom->getIdx()) {
-            // RDKit✔️✔️:         INT_VECT cycle;
-            // RDKit✔️✔️:         auto lastElem =
-            // RDKit✔️✔️:             std::find(traversalOrder.rbegin(), traversalOrder.rend(), atom);
-            // RDKit✔️✔️:         for (auto rIt = lastElem;
-            // RDKit✔️✔️:              rIt != traversalOrder.rend() && (*rIt)->getIdx() != nbrIdx;
-            // RDKit✔️✔️:              ++rIt) {
-            // RDKit✔️✔️:           cycle.push_back((*rIt)->getIdx());
-            // RDKit✔️✔️:         }
             let mut cycle = Vec::new();
             for &path_atom in traversal_order.iter().rev() {
                 if path_atom == neighbor_idx {
@@ -3005,18 +3746,10 @@ fn dfs_fast_find_rings(
                 }
                 cycle.push(path_atom);
             }
-            // RDKit✔️✔️:         cycle.push_back(nbrIdx);
             cycle.push(neighbor_idx);
-            // RDKit✔️✔️:         res.push_back(cycle);
             result.push(cycle);
-            // RDKit✔️✔️:       }
         }
-        // RDKit✔️✔️:     }
     }
-    // RDKit✔️✔️:   atomColors[atom->getIdx()] = 2;
-    // RDKit✔️✔️:   traversalOrder.pop_back();
-    // RDKit✔️✔️: }
-    // END RDKIT CPP FUNCTION MolOps::_DFS
     atom_colors[atom] = 2;
     traversal_order.pop();
 }
@@ -3936,5 +4669,268 @@ mod preserved_terminal_hydrogen_prefix_tests {
                 limit: 0
             }
         );
+    }
+}
+
+#[cfg(test)]
+mod source586_sssr_tests {
+    use super::*;
+    use cosmolkit_model::{Atom, AtomSpec, BondSpec, Element, PropertyValue};
+    fn graph(n: usize, edges: &[(usize, usize, BondOrder)]) -> TopologyBlock {
+        TopologyBlock::try_from_parts(
+            (0..n)
+                .map(|i| Atom::from_spec(AtomId::new(i), AtomSpec::new(Element::C)))
+                .collect(),
+            edges
+                .iter()
+                .enumerate()
+                .map(|(i, &(a, b, o))| {
+                    Bond::from_spec(
+                        BondId::new(i),
+                        BondSpec::new(AtomId::new(a), AtomId::new(b), o),
+                    )
+                })
+                .collect(),
+            vec![],
+            vec![],
+        )
+        .unwrap()
+    }
+    fn triangle(order: BondOrder) -> TopologyBlock {
+        graph(
+            3,
+            &[
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Single),
+                (2, 0, order),
+            ],
+        )
+    }
+    fn old_state() -> RingInfo {
+        let mut r = RingInfo::new(RingFindType::SymmSssr, 3, 3);
+        r.add_ring(&[0, 1, 2], &[0, 1, 2]).unwrap();
+        r.atom_ring_families = vec![vec![AtomId::new(0)]];
+        r.relevant_cycle_count = Some(1);
+        r
+    }
+
+    #[test]
+    fn source586_none_and_actual_output_delegate_same_disconnected_ring_state() {
+        let g = graph(
+            6,
+            &[
+                (0, 1, BondOrder::Single),
+                (1, 2, BondOrder::Single),
+                (2, 0, BondOrder::Single),
+                (3, 4, BondOrder::Single),
+                (4, 5, BondOrder::Single),
+                (5, 3, BondOrder::Single),
+            ],
+        );
+        let mut a = old_state();
+        let mut b = old_state();
+        let mut output = vec![vec![90, 91]];
+        let n = find_sssr_with_source_outputs_from_parts(
+            6,
+            &g.bonds,
+            &g.adjacency,
+            &mut a,
+            None,
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        let m = find_sssr_with_source_outputs_from_parts(
+            6,
+            &g.bonds,
+            &g.adjacency,
+            &mut b,
+            None,
+            Some(&mut output),
+            false,
+            false,
+        )
+        .unwrap();
+        assert_eq!((n, m), (2, 2));
+        assert_eq!(a, b);
+        assert_eq!(a.find_type(), RingFindType::Sssr);
+        assert_eq!(
+            output,
+            a.atom_rings()
+                .iter()
+                .map(|r| r.iter().map(|i| i.index()).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(output.len(), 2);
+        assert!(output[0].iter().all(|i| *i < 3));
+        assert!(output[1].iter().all(|i| *i >= 3));
+        assert!(a.atom_ring_families.is_empty());
+        assert_eq!(a.relevant_cycle_count, None);
+    }
+
+    #[test]
+    fn source586_optional_flags_are_forwarded_without_changing_zero_policy() {
+        for order in [
+            BondOrder::Dative,
+            BondOrder::DativeOne,
+            BondOrder::DativeLeft,
+            BondOrder::DativeRight,
+            BondOrder::Hydrogen,
+            BondOrder::Zero,
+        ] {
+            let g = triangle(order);
+            for d in [false, true] {
+                for h in [false, true] {
+                    let mut r = old_state();
+                    let mut out = vec![vec![44]];
+                    let count = find_sssr_with_source_outputs_from_parts(
+                        3,
+                        &g.bonds,
+                        &g.adjacency,
+                        &mut r,
+                        None,
+                        Some(&mut out),
+                        d,
+                        h,
+                    )
+                    .unwrap();
+                    let expected = if order == BondOrder::Zero {
+                        0
+                    } else if order == BondOrder::Hydrogen {
+                        i32::from(h)
+                    } else {
+                        i32::from(d)
+                    };
+                    assert_eq!(count, expected, "{order:?},d={d},h={h}");
+                    assert_eq!(out.len(), expected as usize);
+                    assert_eq!(r.atom_rings().len(), expected as usize);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn source586_property_failure_follows_output_clear_cache_reset_and_sssr_initialize() {
+        let g = triangle(BondOrder::Single);
+        let mut r = old_state();
+        let mut output = vec![vec![70]];
+        let mut p = MoleculeProperties::default();
+        p.set_prop("extraRings", PropertyValue::UInt(77)).unwrap();
+        p.set_prop("__computedProps", PropertyValue::Bool(false))
+            .unwrap();
+        let before = p.clone();
+        assert!(matches!(
+            find_sssr_with_source_outputs_from_parts(
+                3,
+                &g.bonds,
+                &g.adjacency,
+                &mut r,
+                Some(&mut p),
+                Some(&mut output),
+                false,
+                false
+            ),
+            Err(RingFindingError::MoleculeProperty(_))
+        ));
+        assert!(output.is_empty());
+        assert!(r.is_initialized());
+        assert_eq!(r.find_type(), RingFindType::Sssr);
+        assert!(r.atom_rings().is_empty());
+        assert!(r.atom_ring_families.is_empty());
+        assert_eq!(r.relevant_cycle_count, None);
+        assert_eq!(p, before);
+    }
+
+    #[test]
+    fn source586_empty_acyclic_outputs_clear_old_rows_and_preserve_unrelated_properties() {
+        for g in [
+            graph(0, &[]),
+            graph(3, &[(0, 1, BondOrder::Single), (1, 2, BondOrder::Single)]),
+        ] {
+            let mut r = old_state();
+            let mut out = vec![vec![2]];
+            let mut p = MoleculeProperties::default();
+            p.set_prop("keep", "retained").unwrap();
+            p.set_prop("extraRings", PropertyValue::UInt(1)).unwrap();
+            assert_eq!(
+                find_sssr_with_source_outputs_from_parts(
+                    g.atoms.len(),
+                    &g.bonds,
+                    &g.adjacency,
+                    &mut r,
+                    Some(&mut p),
+                    Some(&mut out),
+                    false,
+                    false
+                )
+                .unwrap(),
+                0
+            );
+            assert!(out.is_empty());
+            assert!(r.atom_rings().is_empty());
+            assert!(r.is_initialized());
+            assert_eq!(r.find_type(), RingFindType::Sssr);
+            assert_eq!(p.prop("extraRings"), None);
+            assert_eq!(
+                p.prop("keep"),
+                Some(&PropertyValue::String("retained".into()))
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod source_ring_snapshot_tests {
+    use super::*;
+    #[test]
+    fn all_modeled_source_cache_metadata_roundtrips_without_reconstruction() {
+        let r = RingInfo::from_persisted_components(
+            true,
+            RingFindType::SymmSssr,
+            4,
+            4,
+            vec![vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]],
+            vec![vec![BondId::new(0), BondId::new(1), BondId::new(2)]],
+            vec![vec![AtomId::new(0), AtomId::new(1), AtomId::new(2)]],
+            vec![vec![BondId::new(0), BondId::new(1), BondId::new(2)]],
+            Some(1),
+            vec![vec![false]],
+            vec![0],
+        )
+        .unwrap();
+        let original = r.clone();
+        let state = r.into_source_snapshot();
+        assert_eq!(state.find_type, 2);
+        assert_eq!(state.relevant_cycle_count, Some(1));
+        assert_eq!(RingInfo::from_source_snapshot(&state).unwrap(), original);
+    }
+    #[test]
+    fn native_duplicate_memberships_and_preallocated_empty_rows_are_not_rebuilt() {
+        let mut r = RingInfo::new(RingFindType::Sssr, 4, 7);
+        r.add_ring(&[0, 0, 1], &[0, 0, 1]).unwrap();
+        let original = r.clone();
+        let state = r.into_source_snapshot();
+        assert_eq!(state.bond_members[0], vec![0, 0]);
+        assert_eq!(state.atom_members.len(), 4);
+        assert_eq!(state.bond_members.len(), 7);
+        assert_eq!(RingInfo::from_source_snapshot(&state).unwrap(), original);
+    }
+    #[test]
+    fn uninitialized_source_constructor_state_stays_uninitialized_and_empty() {
+        let source = cosmolkit_model::SourceRingInfo::default();
+        let r = RingInfo::from_source_snapshot(&source).unwrap();
+        assert!(!r.is_initialized());
+        assert_eq!(r.persisted_find_type(), RingFindType::OtherOrUnknown);
+        assert_eq!(r.into_source_snapshot(), source);
+    }
+    #[test]
+    fn unknown_source_enum_is_structural_error_instead_of_other_fallback() {
+        let mut source = cosmolkit_model::SourceRingInfo::default();
+        source.find_type = 17;
+        assert!(matches!(
+            RingInfo::from_source_snapshot(&source),
+            Err(RingFindingError::SourceRingFindType { tag: 17 })
+        ));
     }
 }

@@ -3868,6 +3868,12 @@ pub enum QueryConstructionError {
 /// Errors produced by SMARTS parsing.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SmartsParseError {
+    #[error("recursive structure query has no owned query graph")]
+    MissingRecursiveQueryGraph,
+    #[error("CX query lowering failed: {0}")]
+    CxLowering(#[from] crate::cx_lowering::CxQueryLoweringError),
+    #[error("query graph carrier validation failed: {0}")]
+    QueryGraph(#[from] cosmolkit_model::QueryGraphError),
     #[error("parser carrier cleanup failed: {0}")]
     ParserCarrier(#[from] cosmolkit_core::parser_helpers::ParserCarrierError),
     #[error("atom property operation failed: {0}")]
@@ -3878,10 +3884,10 @@ pub enum SmartsParseError {
     MoleculeProperty(#[from] cosmolkit_model::MoleculePropertyError),
     #[error("unclosed bracket at position {0}")]
     UnclosedBracket(usize),
-    #[error("unexpected character '{character}' at position {position}: {context}")]
+    #[error("unexpected source byte 0x{character:02x} at position {position}: {context}")]
     UnexpectedCharacter {
         position: usize,
-        character: char,
+        character: u8,
         context: String,
     },
     #[error("unexpected end of SMARTS: {0}")]
@@ -4482,7 +4488,7 @@ fn query_atom_num(at: &Atom) -> u8 {
 }
 
 #[inline]
-fn make_atom_type(atomic_num: i32, aromatic: bool) -> i32 {
+pub(crate) fn make_atom_type(atomic_num: i32, aromatic: bool) -> i32 {
     // RDKit✔️✔️: static inline int makeAtomType(int atomic_num, bool aromatic) {
     // RDKit✔️✔️:   return atomic_num + 1000 * static_cast<int>(aromatic);
     // RDKit✔️✔️: }
@@ -4493,7 +4499,7 @@ fn make_atom_type(atomic_num: i32, aromatic: bool) -> i32 {
 }
 
 #[inline]
-fn parse_atom_type(val: i32) -> (i32, bool) {
+pub(crate) fn parse_atom_type(val: i32) -> (i32, bool) {
     // RDKit✔️✔️: static inline void parseAtomType(int val, int &atomic_num, bool &aromatic) {
     // RDKit✔️✔️:   if (val > 1000) {
     // RDKit✔️✔️:     aromatic = true;
@@ -7595,7 +7601,7 @@ mod q41_query_query_tests {
             &target,
             &context,
         )
-        .expect("original fixed query bond evaluation succeeds")
+        .expect("original valid fixture constructor must succeed")
     }
 
     fn relation(

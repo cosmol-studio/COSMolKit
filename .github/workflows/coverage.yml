@@ -14,7 +14,7 @@ jobs:
     rust-coverage:
         runs-on: ubuntu-latest
         env:
-            # Use the workspace release profile unchanged for both test stages.
+            # Use the optimized development-test profile for all test stages.
             RUST_MIN_STACK: "8388608"
             PARITY_CACHE_SCHEMA: v2
             PARITY_DATA: target/parity-tests-ci
@@ -31,7 +31,7 @@ jobs:
                   components: llvm-tools-preview
             - uses: Swatinem/rust-cache@v2
               with:
-                  shared-key: unified-release-coverage-v2
+                  shared-key: unified-dev-test-coverage-v3
                   key: ${{ hashFiles('crates/**/*.rs', 'parity-tests/**/*.rs') }}
                   workspaces: |
                       . -> target/rust-build
@@ -61,7 +61,7 @@ jobs:
                   coverage_env="$(cargo llvm-cov show-env --sh)"
                   eval "$coverage_env"
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
-                  cargo build "${packages[@]}" --lib --release \
+                  cargo build "${packages[@]}" --lib --profile dev-test \
                       --features cosmolkit/op-contracts-strict
 
             - name: Fetch pinned test sources only after successful compilation
@@ -82,11 +82,11 @@ jobs:
                   eval "$coverage_env"
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
                   status=0
-                  cargo test "${packages[@]}" --release \
+                  cargo test "${packages[@]}" --profile dev-test \
                       --features cosmolkit/op-contracts-strict \
                       --no-fail-fast || status=$?
                   # The runner's corpus target belongs AFTER reference preparation.
-                  cargo test -p cosmolkit-parity-tests --lib --bins --release \
+                  cargo test -p cosmolkit-parity-tests --lib --bins --profile dev-test \
                       --features cosmolkit/op-contracts-strict \
                       --no-fail-fast || status=$?
                   exit "$status"
@@ -100,7 +100,7 @@ jobs:
                   export CARGO_TARGET_DIR=target/rust-build
                   packages=()
                   while IFS= read -r package; do packages+=(-p "$package"); done < "$RUNNER_TEMP/test-packages.txt"
-                  cargo test "${packages[@]}" --release --doc --no-fail-fast \
+                  cargo test "${packages[@]}" --profile dev-test --doc --no-fail-fast \
                       --features cosmolkit/op-contracts-strict
 
             - uses: actions/setup-python@v5
@@ -131,16 +131,16 @@ jobs:
               shell: bash
               run: |
                   set -euo pipefail
-                  # Reuse the same instrumented libraries and release/strict features.
+                  # Reuse the same instrumented libraries and dev-test/strict settings.
                   coverage_env="$(cargo llvm-cov show-env --sh)"
                   eval "$coverage_env"
                   export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
-                  cargo build -p cosmolkit-parity-tests --release \
+                  cargo build -p cosmolkit-parity-tests --profile dev-test \
                       --bin cosmolkit-parity-tests \
                       --features cosmolkit/op-contracts-strict
                   # Sequential generator calls; each Python function parallelizes cases.
                   set +e
-                  "$CARGO_TARGET_DIR/release/cosmolkit-parity-tests" prepare \
+                  "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" prepare \
                       --smiles testdata/smiles/corpus/smiles_5000.smi \
                       --data "$PARITY_DATA" --python .venv/bin/python --threads "$(nproc)" \
                       2>&1 | tee "$RUNNER_TEMP/parity-prepare.log"
@@ -153,7 +153,7 @@ jobs:
                       echo "regenerated=true" >> "$GITHUB_OUTPUT"
                   fi
                   if [[ "$status" == 0 ]]; then
-                      "$CARGO_TARGET_DIR/release/cosmolkit-parity-tests" preflight --data "$PARITY_DATA"
+                      "$CARGO_TARGET_DIR/dev-test/cosmolkit-parity-tests" preflight --data "$PARITY_DATA"
                   fi
                   exit "$status"
 
@@ -170,7 +170,7 @@ jobs:
                   # Discover all integration targets (corpus + special regressions).
                   # No handwritten per-test target list or workflow-specific recipe.
                   cargo test -p cosmolkit-parity-tests \
-                      --release --test '*' --no-fail-fast \
+                      --profile dev-test --test '*' --no-fail-fast \
                       --features cosmolkit/op-contracts-strict \
                       2>&1 | tee "$RUNNER_TEMP/parity-5000.log"
 
@@ -207,7 +207,7 @@ jobs:
                       report_log="$(mktemp)"
                       output=(--html --output-dir target/llvm-cov/html)
                       if [[ "$format" == lcov ]]; then output=(--lcov --output-path lcov.info); fi
-                      if ! cargo llvm-cov report "${packages[@]}" --release "${output[@]}" 2>"$report_log"; then
+                      if ! cargo llvm-cov report "${packages[@]}" --profile dev-test "${output[@]}" 2>"$report_log"; then
                           cat "$report_log" >&2
                           exit 1
                       fi

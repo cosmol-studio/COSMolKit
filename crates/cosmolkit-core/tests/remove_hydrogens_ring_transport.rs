@@ -10,7 +10,7 @@
 use cosmolkit_core::{RemoveHsParams, remove_hydrogens_with_params};
 use cosmolkit_model::{
     Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer2D, Conformer3D, CoordinateBlock,
-    MoleculeProperties, TopologyBlock,
+    MoleculeProperties, PropertyValue, TopologyBlock,
 };
 use cosmolkit_types::{BondOrder, Element};
 
@@ -113,8 +113,8 @@ fn coordinate_block(atom_count: usize) -> CoordinateBlock {
     CoordinateBlock {
         conformers_2d: vec![coordinates_2d(atom_count)],
         conformers_3d: vec![coordinates_3d(atom_count)],
-        source_conformer_order: None,
         source_coordinate_dim: None,
+        source_conformer_order: None,
     }
 }
 
