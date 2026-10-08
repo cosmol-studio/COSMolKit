@@ -52,6 +52,7 @@ jobs:
                       cap-serialization \
                       cap-descriptors \
                       cap-stereoisomers \
+                      cap-reaction \
                       cap-confseq \
                       fingerprints \
                       depict \

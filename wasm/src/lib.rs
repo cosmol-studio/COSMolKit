@@ -6,6 +6,21 @@
 //! from this small, stable surface without exposing operation internals or
 //! platform-specific Rust types.
 
+#[cfg(feature = "alignment")]
+mod alignment;
+#[cfg(feature = "aromaticity")]
+mod aromaticity;
+#[cfg(feature = "batch")]
+mod batch;
+#[cfg(feature = "batch")]
+pub use batch::{BatchRecord, MoleculeBatch};
+#[cfg(feature = "reaction")]
+mod reaction;
+#[cfg(feature = "smiles")]
+mod smiles;
+#[cfg(feature = "reaction")]
+pub use reaction::ReactionApplyResult;
+
 pub use cosmolkit as rust;
 /// Complete Rust facade re-export.
 ///
@@ -29,59 +44,128 @@ fn language_text(text: &cosmolkit::PropertyText) -> Result<String, String> {
         .map_err(|error| format!("binding text encoding: {error}"))
 }
 
+/// Immutable identity of an element from the canonical public facade.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Element {
+    inner: cosmolkit::Element,
+}
+
+impl Element {
+    /// Returns the source element for this atomic number, or no value.
+    pub fn from_atomic_number(atomic_number: u8) -> Option<Self> {
+        cosmolkit::Element::from_atomic_number(atomic_number).map(|inner| Self { inner })
+    }
+
+    /// Returns the source element for this symbol, including source aliases.
+    pub fn from_symbol(symbol: &str) -> Option<Self> {
+        cosmolkit::Element::from_symbol(symbol).map(|inner| Self { inner })
+    }
+
+    /// Reads the copied value identity without consuming the binding object.
+    pub fn atomic_number(&self) -> u8 {
+        self.inner.atomic_number()
+    }
+
+    /// Reads the canonical source symbol.
+    pub fn symbol(&self) -> String {
+        self.inner.symbol().to_owned()
+    }
+}
+
+/// Immutable projection of the public periodic-table result's eight fields.
+#[derive(Clone, Copy, Debug)]
+pub struct ElementInfo {
+    inner: cosmolkit::ElementInfo,
+}
+
+impl ElementInfo {
+    pub fn element(&self) -> Element {
+        Element {
+            inner: self.inner.element,
+        }
+    }
+
+    pub fn symbol(&self) -> String {
+        self.inner.symbol.to_owned()
+    }
+
+    pub fn atomic_number(&self) -> u8 {
+        self.inner.atomic_number
+    }
+
+    pub fn period(&self) -> u8 {
+        self.inner.period
+    }
+
+    pub fn outer_electrons(&self) -> i32 {
+        self.inner.outer_electrons
+    }
+
+    pub fn valences(&self) -> Vec<i32> {
+        self.inner.valences.to_vec()
+    }
+
+    pub fn rb0(&self) -> f64 {
+        self.inner.rb0
+    }
+
+    pub fn atomic_weight(&self) -> f64 {
+        self.inner.atomic_weight
+    }
+}
+
+/// Looks up table metadata through the public facade with source defaults.
+#[cfg(feature = "valence")]
+pub fn element_info(element: &Element) -> ElementInfo {
+    ElementInfo {
+        inner: cosmolkit::element_info(element.inner),
+    }
+}
+
 #[derive(Clone)]
 pub struct Molecule {
-    inner: cosmolkit::Molecule,
+    inner: std::cell::RefCell<cosmolkit::Molecule>,
 }
 
 impl Molecule {
     /// Creates an empty molecule.
     pub fn new() -> Self {
         Self {
-            inner: cosmolkit::Molecule::new(),
+            inner: cosmolkit::Molecule::new().into(),
         }
-    }
-
-    /// Parses a SMILES string into a binding-owned molecule value.
-    pub fn from_smiles(smiles: &str) -> Result<Self, String> {
-        cosmolkit::Molecule::from_smiles(smiles)
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
     }
 
     /// Parses SMILES while explicitly selecting the source sanitization path.
     ///
     /// All other parser options keep their pinned source defaults.
-    pub fn from_smiles_with_sanitize(smiles: &str, sanitize: bool) -> Result<Self, String> {
+    #[cfg(feature = "smiles")]
+    pub fn from_smiles_with_sanitize(
+        smiles: &str,
+        sanitize: bool,
+    ) -> Result<Self, cosmolkit::SmilesError> {
         let params = cosmolkit::SmilesParseParams {
             sanitize,
             ..cosmolkit::SmilesParseParams::default()
         };
-        cosmolkit::Molecule::from_smiles_with_params(smiles, &params)
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Reads the first SDF record using the default source policy.
-    pub fn from_sdf(text: &str) -> Result<Self, String> {
-        cosmolkit::Molecule::from_sdf(text)
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
+        cosmolkit::Molecule::from_smiles_with_params(smiles, &params).map(|inner| Self {
+            inner: inner.into(),
+        })
     }
 
     /// Number of atoms in the molecular graph.
     pub fn num_atoms(&self) -> u32 {
-        self.inner.num_atoms() as u32
+        self.inner.borrow().num_atoms() as u32
     }
 
     /// Number of bonds in the molecular graph.
     pub fn num_bonds(&self) -> u32 {
-        self.inner.num_bonds() as u32
+        self.inner.borrow().num_bonds() as u32
     }
 
     /// Returns the molecule name, or an empty string when no name is stored.
     pub fn name_or_empty(&self) -> Result<String, String> {
         self.inner
+            .borrow()
             .properties()
             .name()
             .map(language_text)
@@ -92,30 +176,39 @@ impl Molecule {
     /// Returns a molecule with its name replaced.
     pub fn with_name(&self, name: &str) -> Result<Self, String> {
         self.inner
+            .borrow()
             .to_builder()
             .with_name(name.to_owned())
             .build()
-            .map(|inner| Self { inner })
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
             .map_err(|error| error.to_string())
     }
 
     /// Returns a molecule with a string property replaced or inserted.
     pub fn with_property(&self, key: &str, value: &str) -> Result<Self, String> {
         self.inner
+            .borrow()
             .to_builder()
             .with_property(key.to_owned(), value.to_owned())
             .and_then(|builder| builder.build())
-            .map(|inner| Self { inner })
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
             .map_err(|error| error.to_string())
     }
 
     /// Returns a molecule with an SDF data field appended.
     pub fn with_sdf_data_field(&self, key: &str, value: &str) -> Result<Self, String> {
         self.inner
+            .borrow()
             .to_builder()
             .with_sdf_data_field(key.to_owned(), value.to_owned())
             .build()
-            .map(|inner| Self { inner })
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
             .map_err(|error| error.to_string())
     }
 
@@ -123,6 +216,7 @@ impl Molecule {
     /// Wrong value kinds and invalid UTF-8 propagate as binding errors.
     pub fn property_or_empty(&self, key: &str) -> Result<String, String> {
         self.inner
+            .borrow()
             .property(key)
             .map(|value| {
                 value
@@ -137,6 +231,7 @@ impl Molecule {
     /// Returns user/computed property names in stable source insertion order.
     pub fn property_keys(&self) -> Result<Vec<String>, String> {
         self.inner
+            .borrow()
             .properties()
             .ordered_props()
             .map(|(key, _)| language_text(key))
@@ -146,6 +241,7 @@ impl Molecule {
     /// Returns SDF data-field names in their source order, including duplicates.
     pub fn sdf_data_field_names(&self) -> Result<Vec<String>, String> {
         self.inner
+            .borrow()
             .properties()
             .sdf_data_fields()
             .iter()
@@ -156,6 +252,7 @@ impl Molecule {
     /// Returns the first SDF data-field value with `name`, or an empty string.
     pub fn sdf_data_field_or_empty(&self, name: &str) -> Result<String, String> {
         self.inner
+            .borrow()
             .properties()
             .sdf_data_fields()
             .iter()
@@ -168,6 +265,7 @@ impl Molecule {
     /// Returns atomic numbers in molecule atom order.
     pub fn atomic_numbers(&self) -> Vec<u8> {
         self.inner
+            .borrow()
             .atoms()
             .iter()
             .map(|atom| atom.atomic_number())
@@ -177,6 +275,7 @@ impl Molecule {
     /// Returns the first 2D conformer as a flattened `[x0, y0, ...]` array.
     pub fn coordinates_2d(&self) -> Vec<f64> {
         self.inner
+            .borrow()
             .coordinates_2d()
             .map(|coordinates| {
                 coordinates
@@ -189,12 +288,13 @@ impl Molecule {
 
     /// Returns the number of 3D conformers.
     pub fn num_conformers_3d(&self) -> u32 {
-        self.inner.conformers_3d().len() as u32
+        self.inner.borrow().conformers_3d().len() as u32
     }
 
     /// Returns a 3D conformer as a flattened `[x0, y0, z0, ...]` array.
     pub fn coordinates_3d(&self, conformer_id: u32) -> Vec<f64> {
         self.inner
+            .borrow()
             .conformers_3d()
             .get(conformer_id as usize)
             .map(|conformer| {
@@ -207,105 +307,44 @@ impl Molecule {
             .unwrap_or_default()
     }
 
-    /// Calculates the average molecular weight with pinned source defaults.
-    pub fn molecular_weight(&self) -> Result<f64, String> {
-        self.inner
-            .molecular_weight()
-            .map_err(|error| error.to_string())
-    }
-
-    /// Calculates the exact molecular weight with pinned source defaults.
-    pub fn exact_molecular_weight(&self) -> Result<f64, String> {
-        self.inner
-            .exact_molecular_weight()
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns the Hill-ordered molecular formula with source defaults.
-    pub fn molecular_formula(&self) -> Result<String, String> {
-        self.inner
-            .molecular_formula()
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns a molecule with explicit hydrogens added through the operation contract.
-    pub fn with_hydrogens(&self) -> Result<Self, String> {
-        self.inner
-            .with_hydrogens()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns a molecule with explicit hydrogens removed through the operation contract.
-    pub fn without_hydrogens(&self) -> Result<Self, String> {
-        self.inner
-            .without_hydrogens()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns a molecule with aromatic bonds kekulized under source defaults.
-    pub fn with_kekulized_bonds(&self) -> Result<Self, String> {
-        self.inner
-            .with_kekulized_bonds()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns a sanitized molecule using the default operation pipeline.
-    pub fn sanitize(&self) -> Result<Self, String> {
-        self.inner
-            .sanitize()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
-    }
-
     /// Returns a molecule with the default valence cache assigned.
-    pub fn with_assigned_valence(&self) -> Result<Self, String> {
+    #[cfg(feature = "valence")]
+    pub fn with_assigned_valence(&self) -> Result<Self, cosmolkit::OperationError> {
         self.inner
+            .borrow()
             .with_assigned_valence()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
     }
 
-    /// Returns a molecule with the default ring cache assigned.
-    pub fn with_assigned_rings(&self) -> Result<Self, String> {
+    /// Returns an independent value prepared with explicit valence policies.
+    #[cfg(feature = "valence")]
+    pub fn with_assigned_valence_with_params(
+        &self,
+        params: &cosmolkit::ValenceParams,
+    ) -> Result<Self, cosmolkit::OperationError> {
         self.inner
-            .with_assigned_rings()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
+            .borrow()
+            .with_assigned_valence_with_params(params)
+            .map(|inner| Self {
+                inner: inner.into(),
+            })
     }
 
-    /// Returns a molecule with ring-family data assigned.
-    pub fn with_assigned_ring_families(&self) -> Result<Self, String> {
-        self.inner
-            .with_assigned_ring_families()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
+    /// Prepares this value through the canonical in-place operation.
+    #[cfg(feature = "valence")]
+    pub fn assign_valence_(&self) -> Result<(), cosmolkit::OperationError> {
+        self.inner.borrow_mut().assign_valence_()
     }
 
-    /// Returns a molecule with default aromaticity assigned.
-    pub fn with_assigned_aromaticity(&self) -> Result<Self, String> {
-        self.inner
-            .with_assigned_aromaticity()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Returns a molecule with default radical assignments applied.
-    pub fn with_assigned_radicals(&self) -> Result<Self, String> {
-        self.inner
-            .with_assigned_radicals()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
-    }
-
-    /// Computes and returns a molecule with direct 2D coordinates.
-    pub fn with_2d_coordinates(&self) -> Result<Self, String> {
-        self.inner
-            .with_2d_coordinates()
-            .map(|inner| Self { inner })
-            .map_err(|error| error.to_string())
+    /// Prepares this value through the canonical explicit-policy operation.
+    #[cfg(feature = "valence")]
+    pub fn assign_valence_with_params_(
+        &self,
+        params: &cosmolkit::ValenceParams,
+    ) -> Result<(), cosmolkit::OperationError> {
+        self.inner.borrow_mut().assign_valence_with_params_(params)
     }
 }
 
@@ -318,6 +357,50 @@ impl Default for Molecule {
 #[cfg(all(test, feature = "full"))]
 mod tests {
     use super::Molecule;
+
+    #[test]
+    fn valence_projection_keeps_typed_failures_and_preparation_state() {
+        let raw = |text| {
+            Molecule::from_smiles_with_params(
+                text,
+                &cosmolkit::SmilesParseParams {
+                    sanitize: false,
+                    remove_hydrogens: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        };
+        let value = raw("CCO");
+        assert!(value.atom_pair_fingerprint().is_err());
+        let prepared = value.with_assigned_valence().unwrap();
+        assert!(prepared.atom_pair_fingerprint().is_ok());
+        assert!(value.atom_pair_fingerprint().is_err());
+        value.assign_valence_().unwrap();
+        assert!(value.atom_pair_fingerprint().is_ok());
+
+        let invalid = raw("C(F)(F)(F)(F)F");
+        let before = invalid.to_smiles().unwrap();
+        assert!(matches!(
+            invalid.with_assigned_valence(),
+            Err(cosmolkit::OperationError::Valence(_))
+        ));
+        assert!(matches!(
+            invalid.assign_valence_(),
+            Err(cosmolkit::OperationError::Valence(_))
+        ));
+        assert_eq!(invalid.to_smiles().unwrap(), before);
+        assert!(invalid.atom_pair_fingerprint().is_err());
+        let params = cosmolkit::ValenceParams {
+            strict: false,
+            ..Default::default()
+        };
+        let relaxed = invalid.with_assigned_valence_with_params(&params).unwrap();
+        assert!(relaxed.atom_pair_fingerprint().is_ok());
+        assert!(invalid.atom_pair_fingerprint().is_err());
+        invalid.assign_valence_with_params_(&params).unwrap();
+        assert!(invalid.atom_pair_fingerprint().is_ok());
+    }
 
     const ETHANOL_SDF: &str = "\
 ethanol
@@ -447,7 +530,8 @@ $$$$
             inner: MoleculeBuilder::new()
                 .with_properties(props)
                 .build()
-                .unwrap(),
+                .unwrap()
+                .into(),
         };
         assert_eq!(molecule.name_or_empty().unwrap(), "na\0mé");
         assert_eq!(molecule.property_or_empty("z").unwrap(), "v\0é");
@@ -479,7 +563,9 @@ $$$$
             .build()
             .unwrap();
         let before = inner.clone();
-        let molecule = Molecule { inner };
+        let molecule = Molecule {
+            inner: inner.into(),
+        };
         assert!(
             molecule
                 .name_or_empty()
@@ -497,6 +583,144 @@ $$$$
         assert!(molecule.sdf_data_field_names().is_err());
         assert!(molecule.sdf_data_field_or_empty("ID").is_err());
         assert_eq!(molecule.property_or_empty("absent").unwrap(), "");
-        assert_eq!(molecule.inner, before);
+        assert_eq!(*molecule.inner.borrow(), before);
     }
 }
+
+#[cfg(all(test, feature = "full"))]
+mod bio_read_tests;
+
+#[cfg(all(test, feature = "full"))]
+mod bio_hierarchy_tests;
+
+#[cfg(all(test, feature = "full"))]
+mod bio_parts_tests;
+
+#[cfg(all(test, feature = "full"))]
+mod bio_selection_tests;
+
+#[cfg(all(test, feature = "full"))]
+mod bio_writers_tests;
+
+#[cfg(all(test, feature = "full"))]
+mod bio_protein_tests;
+
+#[cfg(feature = "conformer")]
+mod conformer;
+#[cfg(feature = "conformer")]
+pub use conformer::{EmbedMoleculeResult, EmbedMultipleConfsResult};
+
+#[cfg(all(test, feature = "conformer"))]
+mod conformer_tests;
+
+#[cfg(feature = "depict")]
+mod depict;
+
+#[cfg(feature = "descriptors")]
+mod descriptors;
+
+#[cfg(feature = "fingerprints")]
+mod path_codes;
+#[cfg(feature = "fingerprints")]
+pub use path_codes::AtomPairAtomCodeResult;
+
+#[cfg(feature = "fingerprints")]
+mod atom_pair;
+
+#[cfg(feature = "fingerprints")]
+mod morgan;
+#[cfg(feature = "fingerprints")]
+pub use morgan::{
+    morgan_generator_counts, morgan_generator_fingerprints, morgan_generator_sparse_counts,
+    morgan_generator_sparse_fingerprints,
+};
+
+#[cfg(feature = "fingerprints")]
+mod topological_torsion;
+#[cfg(feature = "fingerprints")]
+pub use topological_torsion::{
+    topological_torsion_generator_counts, topological_torsion_generator_fingerprints,
+    topological_torsion_generator_sparse_counts, topological_torsion_generator_sparse_fingerprints,
+};
+
+#[cfg(feature = "fingerprints")]
+mod maccs;
+
+#[cfg(feature = "fingerprints")]
+mod layered_pattern;
+
+#[cfg(feature = "fingerprints")]
+mod topological;
+
+#[cfg(feature = "forcefields")]
+mod forcefield_properties;
+
+#[cfg(feature = "forcefields")]
+mod uff;
+#[cfg(feature = "forcefields")]
+pub use uff::{UffConformerOptimizationResult, UffOptimizationResult};
+
+#[cfg(feature = "forcefields")]
+mod mmff;
+#[cfg(feature = "forcefields")]
+pub use mmff::{MmffOptimizeMoleculeConfsResult, MmffOptimizeMoleculeResult};
+
+#[cfg(feature = "hashing")]
+mod hashing;
+
+#[cfg(feature = "hydrogens")]
+mod hydrogens;
+
+#[cfg(all(feature = "bio", feature = "io"))]
+mod bio_conversion;
+#[cfg(all(feature = "bio", feature = "io"))]
+pub use bio_conversion::{
+    bio_structure_to_molecule, bio_structure_to_molecule_with_params, protein_to_molecule,
+    protein_to_molecule_with_params,
+};
+
+#[cfg(feature = "io")]
+mod sdf_reading;
+#[cfg(feature = "io")]
+pub use sdf_reading::{SdfGraph, SdfRecord};
+
+#[cfg(feature = "io")]
+mod property_strings;
+
+#[cfg(feature = "io")]
+mod xyz_mol2;
+
+#[cfg(feature = "io")]
+mod mol_sdf_writing;
+
+#[cfg(feature = "io")]
+mod sdf_datasets;
+#[cfg(feature = "io")]
+pub use sdf_datasets::{SdfDataset, SdfDatasetIterator, SdfReader, SdfRecordStream};
+
+#[cfg(all(feature = "io", feature = "batch"))]
+mod sdf_batches;
+#[cfg(all(feature = "io", feature = "batch"))]
+pub use sdf_batches::{SdfBatchIterator, SdfReaderBatchIterator};
+
+#[cfg(feature = "kekulize")]
+mod kekulize;
+
+#[cfg(feature = "matrices")]
+mod matrices;
+
+#[cfg(feature = "radicals")]
+mod radicals;
+
+#[cfg(feature = "rings")]
+mod rings;
+
+#[cfg(feature = "sanitize")]
+mod sanitize;
+
+#[cfg(feature = "search")]
+#[path = "search.rs"]
+mod search_projection;
+
+#[cfg(feature = "serialization")]
+mod serialization;

@@ -1521,7 +1521,9 @@ fn source_reset_interrupt() -> Result<(), GenerationError> {
             source_signal_handler as *const () as libc::sighandler_t,
         )
     };
-    if previous == libc::SIG_ERR {
+    // Windows declares SIG_ERR as c_int, while signal() returns sighandler_t.
+    // Convert the -1 sentinel to the return type without narrowing its bits.
+    if previous == libc::SIG_ERR as libc::sighandler_t {
         return Err(GenerationError::Input(
             "cannot install embedding SIGINT handler",
         ));

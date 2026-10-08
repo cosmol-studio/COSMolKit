@@ -11,8 +11,8 @@ use cosmolkit_core::{
     StereoError, StructureTagParams, ValenceAssignment, assign_chiral_tags_from_structure,
 };
 use cosmolkit_model::{
-    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer3D, CoordinateBlock, TopologyBlock,
-    ordered_atom_properties,
+    Atom, AtomId, AtomSpec, Bond, BondId, BondSpec, Conformer3D, CoordinateBlock, PropertyValue,
+    TopologyBlock, ordered_atom_properties,
 };
 use cosmolkit_types::{BondDirection, BondOrder, ChiralTag, Element};
 use serde::{Deserialize, Serialize};
@@ -129,6 +129,27 @@ fn property_string(value: &Value) -> String {
     }
 }
 
+fn atom_or_bond_property(key: &str, value: &Value) -> PropertyValue {
+    // The reference uses SetIntProp for numeric fixture fields. Pinned
+    // Chirality.cpp:3430/3497 writes _NonExplicit3DChirality as int, and its
+    // non-tetrahedral branches write unsigned int perm as _chiralPermutation.
+    // The fixture generator likewise calls SetUnsignedProp for that key.
+    // JSON strings remain strings; do not stringify the native typed values.
+    match value {
+        Value::String(value) => PropertyValue::String(value.as_str().into()),
+        Value::Number(value) if key == "_chiralPermutation" => PropertyValue::UInt(
+            u32::try_from(value.as_u64().expect("reference unsigned integer"))
+                .expect("reference source unsigned int range"),
+        ),
+        Value::Number(value) => PropertyValue::Int(
+            i32::try_from(value.as_i64().expect("reference signed integer"))
+                .expect("reference source int range"),
+        ),
+        Value::Bool(value) => PropertyValue::Bool(*value),
+        other => panic!("unsupported fixture property value {other:?}"),
+    }
+}
+
 fn chiral_tag(name: &str) -> ChiralTag {
     ChiralTag::from_rdkit_name(name).unwrap_or_else(|| panic!("unknown chiral tag {name}"))
 }
@@ -164,11 +185,13 @@ fn topology_from_snapshot(
                 let predecessor = &predecessor.atoms[row.index];
                 let mut inserted = BTreeSet::new();
                 for (key, _) in ordered_atom_properties(predecessor) {
+                    let key = std::str::from_utf8(key.as_bytes())
+                        .expect("structure-tag reference property key must be UTF-8");
                     let value = row.props.get(key).unwrap_or_else(|| {
                         panic!("atom {} lost predecessor property {key}", row.index)
                     });
                     spec = spec
-                        .with_prop(key, property_string(value))
+                        .with_prop(key, atom_or_bond_property(key, value))
                         .expect("non-empty oracle atom property key");
                     inserted.insert(key.to_owned());
                 }
@@ -183,7 +206,7 @@ fn topology_from_snapshot(
                     }
                     if let Some(value) = row.props.get(key) {
                         spec = spec
-                            .with_prop(key, property_string(value))
+                            .with_prop(key, atom_or_bond_property(key, value))
                             .expect("non-empty generated atom property key");
                         inserted.insert(key.to_owned());
                     }
@@ -197,7 +220,7 @@ fn topology_from_snapshot(
             } else {
                 for (key, value) in &row.props {
                     spec = spec
-                        .with_prop(key, property_string(value))
+                        .with_prop(key, atom_or_bond_property(key, value))
                         .expect("non-empty fixture atom property key");
                 }
             }
@@ -226,7 +249,7 @@ fn topology_from_snapshot(
             .with_unknown_stereo(row.unknown_stereo.is_some_and(|value| value != 0));
             for (key, value) in &row.props {
                 spec = spec
-                    .with_prop(key, property_string(value))
+                    .with_prop(key, atom_or_bond_property(key, value))
                     .expect("non-empty fixture bond property key");
             }
             let prop_value = row.props.get("_UnknownStereo").and_then(Value::as_i64);

@@ -198,7 +198,11 @@ mod prepared_property_tests {
                                 DerivedState::STEREO.union(DerivedState::DRAWING);
                             // clear_cache_runtime leaves an absent-state clear shared:
                             // no cache payload changed. Existing valid rows must detach.
-                            if cache.valid_states().intersection(allowed_invalidations).is_empty() {
+                            if cache
+                                .valid_states()
+                                .intersection(allowed_invalidations)
+                                .is_empty()
+                            {
                                 assert_eq!(output_ids[3], ids[3]);
                             } else {
                                 assert_ne!(output_ids[3], ids[3]);

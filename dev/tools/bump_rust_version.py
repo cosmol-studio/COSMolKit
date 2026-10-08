@@ -14,7 +14,7 @@ DEPENDENCIES = [
      "cosmolkit-model cosmolkit-macros cosmolkit-core cosmolkit-descriptors "
      "cosmolkit-alignment cosmolkit-batch cosmolkit-bio cosmolkit-conformer "
      "cosmolkit-depict cosmolkit-fingerprints cosmolkit-forcefields cosmolkit-inchi "
-     "cosmolkit-io cosmolkit-search cosmolkit-smiles cosmolkit-stereo cosmolkit-tautomer"),
+     "cosmolkit-io cosmolkit-reaction cosmolkit-search cosmolkit-smiles cosmolkit-stereo cosmolkit-tautomer"),
     ("crates/cosmolkit-alignment/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-search"),
     ("crates/cosmolkit-batch/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-io"),
     ("crates/cosmolkit-bio/Cargo.toml", "dependencies", "cosmolkit-model cosmolkit-types"),

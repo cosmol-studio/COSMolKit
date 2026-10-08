@@ -6,7 +6,10 @@ mod local_params;
 mod management;
 mod model_error;
 mod product;
+mod public_api;
 mod reaction;
+pub use cosmolkit_search::SubstructMatchParams;
+pub use cosmolkit_smiles::CxSmilesFields;
 
 pub use local_params::ReactionTemplateRemovalParams;
 pub use management::ReactionTemplateRemoval;

@@ -7,7 +7,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
 #[pyclass(module = "cosmolkit", frozen)]
 pub(crate) struct CxSmilesFields {
-    inner: ck::CxSmilesFields,
+    pub(crate) inner: ck::CxSmilesFields,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]

@@ -1,0 +1,76 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { pathToFileURL } from "node:url";
+const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);
+b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
+
+test("all transform parameter fields preserve defaults, checked numbers, frozen values and copied collections",()=>{
+    const add=new b.AddHsParams();
+    for(const key of ["explicitOnly","addCoords","addResidueInfo","skipQueries"])assert.equal(add[key],false);
+    assert.equal(add.onlyOnAtoms,null);
+    const atoms=new Uint32Array([0,2]), selected=new b.AddHsParams(false,true,true,true,atoms);
+    atoms[0]=1;assert.deepEqual(selected.onlyOnAtoms,[0,2]);const copy=selected.onlyOnAtoms;copy[0]=99;assert.deepEqual(selected.onlyOnAtoms,[0,2]);
+    assert.deepEqual(new b.AddHsParams(false,false,false,false,[]).onlyOnAtoms,[]);
+    assert.throws(()=>new b.AddHsParams(false,false,false,false,[-1]),RangeError);
+    assert.throws(()=>new b.AddHsParams("false"),TypeError);
+    const remove=new b.RemoveHsParams();
+    const fields=["removeDegreeZero","removeHigherDegrees","removeOnlyHNeighbors","removeIsotopes","removeAndTrackIsotopes","removeDummyNeighbors","removeDefiningBondStereo","removeWithWedgedBond","removeWithQuery","removeMapped","removeInSgroups","showWarnings","removeNonimplicit","updateExplicitCount","removeHydrides","removeNontetrahedralNeighbors","sanitize"];
+    const defaults=[false,false,false,false,false,false,false,true,false,true,true,true,true,false,false,false,true];
+    fields.forEach((key,i)=>assert.equal(remove[key],defaults[i]));
+    const inverse=new b.RemoveHsParams(...defaults.map(v=>!v));fields.forEach((key,i)=>assert.equal(inverse[key],!defaults[i]));
+    const kek=new b.KekulizeParams();assert.equal(kek.markAtomsBonds,true);assert.equal(kek.canonical,true);assert.equal(kek.maxBacktracks,100);
+    assert.equal(new b.KekulizeParams(false,false,0).maxBacktracks,0);
+    for(const n of [-1,1.5,4294967296,NaN,Infinity])assert.throws(()=>new b.KekulizeParams(true,true,n),RangeError);
+    const coords=new b.Coordinate2DParams();assert.deepEqual([...coords.coordinateMap],[]);
+    assert.equal(coords.canonicalOrientation,false);assert.equal(coords.clearExisting2d,true);assert.equal(coords.flipsPerSample,0);assert.equal(coords.samples,0);assert.equal(coords.sampleSeed,0);
+    for(const key of ["permuteDegreeFour","forceRdkit","useRingTemplates"])assert.equal(coords[key],false);
+    const point=[3,4],map=new Map([[0,point]]);const custom=new b.Coordinate2DParams(map,true,false,2,3,-7,true,true,true);
+    point[0]=99;map.clear();assert.deepEqual([...custom.coordinateMap],[[0,[3,4]]]);
+    const result=custom.coordinateMap;result.get(0)[0]=99;assert.deepEqual([...custom.coordinateMap],[[0,[3,4]]]);
+    assert.equal(custom.sampleSeed,-7);assert.equal(custom.samples,3);assert.equal(custom.flipsPerSample,2);
+    assert.throws(()=>new b.Coordinate2DParams(new Map([[-1,[0,0]]])),RangeError);
+    assert.throws(()=>new b.Coordinate2DParams(new Map([[0,[0]]])),TypeError);
+    assert.throws(()=>new b.Coordinate2DParams(null,false,true,0,0,2147483648),RangeError);
+    for(const value of [add,remove,kek,coords])assert.throws(()=>{value[Object.keys(Object.getOwnPropertyDescriptors(Object.getPrototypeOf(value))).find(k=>Object.getOwnPropertyDescriptor(Object.getPrototypeOf(value),k).get)]=1;},TypeError);
+    const all=b.SanitizeOperations.ALL,none=b.SanitizeOperations.NONE,cleanup=b.SanitizeOperations.CLEANUP,properties=b.SanitizeOperations.PROPERTIES;
+    assert.equal(all.bits(),0x0fffffff);assert.equal(none.isEmpty(),true);assert.equal(all.contains(none),false);
+    const combined=cleanup.or(properties);assert.equal(combined.bits(),3);assert.equal(combined.and(properties).bits(),2);assert.equal(all.contains(combined),true);
+    const sanitize=new b.SanitizeParams(combined);assert.equal(sanitize.operations.bits(),3);assert.equal(combined.bits(),3);
+    assert.equal(new b.SanitizeParams().operations.bits(),all.bits());assert.equal(new b.SanitizeParams(null).operations.bits(),all.bits());
+    const constants=["NONE","CLEANUP","PROPERTIES","SYMM_RINGS","KEKULIZE","FIND_RADICALS","SET_AROMATICITY","SET_CONJUGATION","SET_HYBRIDIZATION","CLEANUP_CHIRALITY","ADJUST_HS","CLEANUP_ORGANOMETALLICS","CLEANUP_ATROPISOMERS","ALL"];
+    for(const name of constants)assert.ok(b.SanitizeOperations[name] instanceof b.SanitizeOperations);
+    assert.equal(b.SanitizeStage.Properties,2);assert.equal(b.SanitizeStage.CleanupAtropisomers,0x800);
+    assert.throws(()=>b.SanitizeOperations.fromBits(0x1000),e=>e.domain==="sanitize"&&e.kind==="InvalidOperations"&&e.bits===0x1000&&e.unknownBits===0x1000&&e.detail instanceof b.SanitizeError);
+    assert.throws(()=>b.SanitizeOperations.fromBits(1.5),RangeError);
+    assert.throws(()=>new b.SanitizeParams({}),TypeError);
+});
+
+test("all ten batch transforms preserve value semantics and complete record error causes",()=>{
+    const batch=b.MoleculeBatch.fromSmilesList(["CCO","c1ccccc1"]);
+    const execution=new b.BatchParams(),keep=new b.BatchParams(b.BatchErrorMode.KeepErrors);
+    const before=batch.toList().map(v=>v.toSmiles());
+    const calls=[["sanitize",new b.SanitizeParams()],["withHydrogens",new b.AddHsParams()],["withoutHydrogens",new b.RemoveHsParams()],["withKekulizedBonds",new b.KekulizeParams()],["with2dCoordinates",new b.Coordinate2DParams()]];
+    for(const [name,params] of calls){
+        const standard=batch[name](),explicit=batch[name+"WithParams"](params,execution);
+        assert.deepEqual(standard.validMask(),[true,true]);assert.deepEqual(explicit.validMask(),[true,true]);
+        assert.deepEqual(standard.toList().map(v=>v.toSmiles()),explicit.toList().map(v=>v.toSmiles()));
+        assert.deepEqual(batch.toList().map(v=>v.toSmiles()),before);
+    }
+    assert.deepEqual(batch.withHydrogens().toList().map(v=>v.numAtoms()),[9,12]);
+    assert.deepEqual(batch.withHydrogens().withoutHydrogens().toList().map(v=>v.numAtoms()),[3,6]);
+    assert.equal(batch.with2dCoordinates().toList()[0].coordinates2d().length,6);
+    assert.equal(batch.toList()[0].coordinates2d().length,0);
+    const bad=new b.AddHsParams(false,false,false,false,[99]);
+    assert.throws(()=>batch.withHydrogensWithParams(bad,execution),e=>{
+        assert.equal(e.domain,"batch");assert.equal(e.errors,2);assert.deepEqual(e.recordErrors.map(v=>v.index()),[0,1]);
+        assert.equal(e.cause.operation,"batch.with_hydrogens");assert.equal(e.cause.cause.domain,"operation");
+        const cause=e.cause.cause.cause;assert.equal(cause.domain,"hydrogens");assert.equal(cause.kind,"OnlyOnAtomOutOfRange");assert.equal(cause.atom,99);assert.equal(cause.atomCount,3);assert.ok(cause.detail instanceof b.HydrogenError);return true;
+    });
+    assert.deepEqual(batch.withHydrogensWithParams(bad,keep).validMask(),[false,false]);assert.deepEqual(batch.toList().map(v=>v.toSmiles()),before);
+    const partial=b.MoleculeBatch.fromSmilesListWithParams(["C","["],new b.SmilesParseParams(),keep);
+    const kept=partial.withHydrogensWithParams(new b.AddHsParams(),keep);assert.deepEqual(kept.validMask(),[true,false]);assert.equal(kept.errors()[0].operation(),"batch.from_smiles_list");
+    assert.throws(()=>partial.withHydrogens(),e=>e.errors===1);
+    assert.throws(()=>batch.withHydrogensWithParams(new b.AddHsParams(),new b.BatchParams(b.BatchErrorMode.Strict,0)),e=>e.recordErrors[0].operation()==="n_jobs");
+    assert.equal(b.MoleculeBatch.fromSmilesList([]).sanitize().isEmpty(),true);
+});

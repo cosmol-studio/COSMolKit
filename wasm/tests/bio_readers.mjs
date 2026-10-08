@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
+const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
+const pdb='ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00 20.00           C  \nEND\n';
+const incompleteCif='data_test\n_entry.id test\nloop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.occupancy\n_atom_site.B_iso_or_equiv\nATOM 1 C CA ALA A 1 1.000 2.000 3.000 1.00 20.00\n';
+const cif='data_test\n_entry.id test\nloop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_alt_id\n_atom_site.label_asym_id\n_atom_site.auth_asym_id\n_atom_site.auth_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\n_atom_site.occupancy\n_atom_site.B_iso_or_equiv\nATOM 1 C CA ALA . A A 1 1.000 2.000 3.000 1.00 20.00\n';
+test('BIO complete read options preserve defaults, source context and checked flag/width boundaries',()=>{
+ const p=new b.BioPdbReadParams();assert.deepEqual([p.maxLineLength,p.checkNonAscii,p.ignoreTer,p.splitChainOnTer,p.skipRemarks],[0,false,false,false,false]);const configured=new b.BioPdbReadParams(-7,true,true,true,true);assert.deepEqual([configured.maxLineLength,configured.checkNonAscii,configured.ignoreTer,configured.splitChainOnTer,configured.skipRemarks],[-7,true,true,true,true]);const read=new b.BioReadParams();assert.equal(read.format,b.BioCoordinateFormat.Unknown);assert.equal(read.sourceName,'<string>');const custom=new b.BioReadParams(b.BioCoordinateFormat.Mmcif,'named.cif');assert.equal(custom.sourceName,'named.cif');assert.equal(custom.format,b.BioCoordinateFormat.Mmcif);
+ assert.throws(()=>new b.BioReadParams(6),RangeError);assert.throws(()=>new b.BioReadParams(-1),RangeError);assert.throws(()=>new b.BioReadParams(undefined,3),TypeError);assert.throws(()=>new b.BioPdbReadParams(2147483648),RangeError);assert.throws(()=>new b.BioPdbReadParams(undefined,'false'),TypeError);assert.throws(()=>{p.maxLineLength=3;},TypeError);
+});
+test('BIO five text constructor routes preserve hierarchy counts and canonical format values',()=>{
+ const values=[b.BioStructure.fromPdb(pdb),b.BioStructure.fromPdbWithParams(pdb,new b.BioPdbReadParams()),b.BioStructure.fromMmcif(cif),b.BioStructure.fromText(pdb),b.BioStructure.fromTextWithParams(cif,new b.BioReadParams(b.BioCoordinateFormat.Mmcif,'named.cif'))];
+ for(const v of values){assert.ok(v instanceof b.BioStructure);assert.deepEqual([v.numModels(),v.numChains(),v.numResidues(),v.numAtoms()],[1,1,1,1]);assert.equal(typeof v.numEntities(),'number');assert.equal(typeof v.name(),'string');}
+ assert.deepEqual(values.map(v=>v.inputFormat()),[b.BioCoordinateFormat.Pdb,b.BioCoordinateFormat.Pdb,b.BioCoordinateFormat.Mmcif,b.BioCoordinateFormat.Pdb,b.BioCoordinateFormat.Mmcif]);
+ assert.equal(b.BioStructure.fromPdb('{"not":"pdb"}').numAtoms(),0);assert.equal(b.BioStructure.fromMmcif(incompleteCif).numAtoms(),0);
+});
+test('BIO malformed input preserves public stage, line and detached record bytes through nested read errors',()=>{
+ let seen;assert.throws(()=>b.BioStructure.fromPdb('ATOM  \n'),e=>{seen=e;assert.equal(e.kind,'Pdb');assert.equal(e.domain,'bio');assert.ok(e.detail instanceof b.BioPdbReadError);assert.equal(e.detail.stage(),b.BioPdbReadStage.Record);assert.equal(e.detail.lineNumber(),1);assert.deepEqual(Array.from(e.detail.recordTag()),[65,84,79,77]);assert.ok(e.cause instanceof Error);return true;});const bytes=seen.detail.recordTag();bytes[0]=0;assert.equal(seen.detail.recordTag()[0],65);
+ assert.throws(()=>b.BioStructure.fromTextWithParams('ATOM  \n',new b.BioReadParams(b.BioCoordinateFormat.Pdb)),e=>e.detail instanceof b.BioReadError&&e.kind==='Pdb'&&e.cause.detail instanceof b.BioPdbReadError&&e.cause.detail.lineNumber()===1);
+ assert.throws(()=>b.BioStructure.fromMmcif('not a cif'),e=>e.detail instanceof b.BioMmcifReadError&&e.detail.stage()===b.BioMmcifReadStage.CifDocument&&e.cause instanceof Error);
+ assert.throws(()=>b.BioStructure.fromTextWithParams('data_demo\n_entry.id DEMO\n',new b.BioReadParams(b.BioCoordinateFormat.ChemComp,'special')),e=>e.kind==='WrongFormat'&&e.sourceName==='special'&&e.format===b.BioCoordinateFormat.ChemComp);
+});
+test('BIO file routes preserve real WASM filesystem unsupported errors and requested paths',()=>{
+ for(const call of [()=>b.BioStructure.read('/bio-fixture.pdb'),()=>b.BioStructure.readWithFormat('/bio-fixture.pdb',b.BioCoordinateFormat.Pdb)])assert.throws(call,e=>e.kind==='Io'&&e.path==='/bio-fixture.pdb'&&e.cause.kind==='Unsupported'&&e.detail instanceof b.BioReadError);
+ assert.throws(()=>b.BioStructure.readWithFormat('/bio-fixture.pdb',99),RangeError);
+});

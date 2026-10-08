@@ -98,6 +98,8 @@ pub(crate) fn operation_pyerr(
     let source = source.borrow();
     use ck::OperationError as E;
     let kind = match source {
+        E::ReactionRun(..) => "ReactionRun",
+        E::ReactionApply(..) => "ReactionApply",
         E::Alignment(..) => "Alignment",
         E::Enumeration(..) => "Enumeration",
         E::UnsupportedFeature { .. } => "UnsupportedFeature",
@@ -157,6 +159,8 @@ pub(crate) fn operation_pyerr(
     error.set_cause(
         py,
         match source {
+            E::ReactionRun(cause) => Some(crate::canonical_reaction::run_error(py, cause)),
+            E::ReactionApply(cause) => Some(crate::canonical_reaction::apply_error(py, cause)),
             E::UffOptimization(cause) => Some(crate::uff_binding::optimization_pyerr(py, cause)),
             E::MmffOptimization(cause) => Some(crate::mmff_binding::optimization_pyerr(py, cause)),
             E::Tautomer(cause) => Some(crate::tautomer_binding::run_pyerr(py, cause)),
@@ -364,6 +368,83 @@ impl Molecule {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl Molecule {
+    fn reaction_products(
+        &self,
+        py: Python<'_>,
+        mut reaction: PyRefMut<'_, crate::canonical_reaction::Reaction>,
+        reactant_template: usize,
+    ) -> PyResult<Vec<Vec<Molecule>>> {
+        self.inner
+            .reaction_products(&mut reaction.inner, reactant_template)
+            .map(crate::canonical_reaction::product_sets)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn reaction_products_with_params(
+        &self,
+        py: Python<'_>,
+        mut reaction: PyRefMut<'_, crate::canonical_reaction::Reaction>,
+        reactant_template: usize,
+        params: &crate::canonical_reaction::ReactionSingleRunParams,
+    ) -> PyResult<Vec<Vec<Molecule>>> {
+        self.inner
+            .reaction_products_with_params(&mut reaction.inner, reactant_template, &params.inner)
+            .map(crate::canonical_reaction::product_sets)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn reaction_products_from_inputs(
+        &self,
+        py: Python<'_>,
+        mut reaction: PyRefMut<'_, crate::canonical_reaction::Reaction>,
+        reactants: Vec<PyRef<'_, Molecule>>,
+        params: &crate::canonical_reaction::ReactionRunParams,
+    ) -> PyResult<Vec<Vec<Molecule>>> {
+        let inputs: Vec<_> = reactants.iter().map(|m| &m.inner).collect();
+        self.inner
+            .reaction_products_from_inputs(&mut reaction.inner, &inputs, &params.inner)
+            .map(crate::canonical_reaction::product_sets)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn apply_reaction(
+        &self,
+        py: Python<'_>,
+        mut reaction: PyRefMut<'_, crate::canonical_reaction::Reaction>,
+    ) -> PyResult<crate::canonical_reaction::ReactionApplyResult> {
+        self.inner
+            .apply_reaction(&mut reaction.inner)
+            .map(crate::canonical_reaction::apply_result)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn apply_reaction_with_params(
+        &self,
+        py: Python<'_>,
+        mut reaction: PyRefMut<'_, crate::canonical_reaction::Reaction>,
+        params: &crate::canonical_reaction::ReactionApplyParams,
+    ) -> PyResult<crate::canonical_reaction::ReactionApplyResult> {
+        self.inner
+            .apply_reaction_with_params(&mut reaction.inner, &params.inner)
+            .map(crate::canonical_reaction::apply_result)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn apply_reaction_(
+        &mut self,
+        py: Python<'_>,
+        mut reaction: PyRefMut<'_, crate::canonical_reaction::Reaction>,
+    ) -> PyResult<bool> {
+        self.inner
+            .apply_reaction_(&mut reaction.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+    fn apply_reaction_with_params_(
+        &mut self,
+        py: Python<'_>,
+        mut reaction: PyRefMut<'_, crate::canonical_reaction::Reaction>,
+        params: &crate::canonical_reaction::ReactionApplyParams,
+    ) -> PyResult<bool> {
+        self.inner
+            .apply_reaction_with_params_(&mut reaction.inner, &params.inner)
+            .map_err(|e| operation_pyerr(py, e))
+    }
+
     fn atom_property_string(
         &self,
         py: Python<'_>,
@@ -3160,6 +3241,18 @@ impl Molecule {
             .map_err(|error| operation_pyerr(py, error))
     }
 
+    /// Copy RDKit graph fields and 3D conformers, as in COSMolKit 0.3.0.
+    /// None prepares valence only; True sanitizes; False leaves caches unset.
+    #[classmethod]
+    #[pyo3(signature = (rdmol, sanitize=None))]
+    fn from_rdkit(
+        _cls: &Bound<'_, pyo3::types::PyType>,
+        rdmol: &Bound<'_, PyAny>,
+        sanitize: Option<bool>,
+    ) -> PyResult<Self> {
+        crate::rdkit_binding::from_rdkit(rdmol, sanitize)
+    }
+
     fn compute_2d_coordinates_with_params_(
         &mut self,
         py: Python<'_>,
@@ -4094,6 +4187,7 @@ fn cosmolkit(module: &Bound<'_, PyModule>) -> PyResult<()> {
     crate::persistent_forcefields::register(module)?;
     crate::alignment_binding::register(module)?;
     crate::canonical_search::register(module)?;
+    crate::canonical_reaction::register(module)?;
     crate::canonical_sdf::register(module)?;
     crate::canonical_batch::register(module)?;
     crate::canonical_batch_params::register(module)?;

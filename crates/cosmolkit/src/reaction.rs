@@ -3,11 +3,19 @@
 use crate::Molecule;
 
 /// The source bool and the molecule finalized by the sole operation runtime.
-/// Kept private until canonical public registration and integration review.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ReactionApplyResult {
+pub struct ReactionApplyResult {
     pub(crate) molecule: Molecule,
     pub(crate) changed: bool,
+}
+
+impl ReactionApplyResult {
+    pub fn molecule(&self) -> &Molecule {
+        &self.molecule
+    }
+    pub fn changed(&self) -> bool {
+        self.changed
+    }
 }
 
 impl From<(Molecule, bool)> for ReactionApplyResult {

@@ -47,9 +47,21 @@ struct MoleculeState {
     runtime_constructions: usize,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Molecule {
     state: Arc<MoleculeState>,
+}
+
+impl PartialEq for Molecule {
+    fn eq(&self, other: &Self) -> bool {
+        // Construction instrumentation is not molecular state. Keep every
+        // modeled block (including synthetic derived-cache bits) in equality;
+        // tests assert construction counts independently of value preservation.
+        self.state.topology == other.state.topology
+            && self.state.coordinates == other.state.coordinates
+            && self.state.properties == other.state.properties
+            && self.state.derived_cache == other.state.derived_cache
+    }
 }
 
 impl Molecule {

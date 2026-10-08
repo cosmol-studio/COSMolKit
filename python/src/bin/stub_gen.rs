@@ -33,6 +33,9 @@ fn main() -> pyo3_stub_gen::Result<()> {
         "BioMmcifReadStage",
         "UffParameterErrorKind",
         "MolecularForceFieldErrorKind",
+        "ReactionRole",
+        "ReactionValidationSeverity",
+        "ReactionValidationIssueKind",
     ] {
         let prefix = format!("class {name}(enum.Enum):\n");
         assert_eq!(
@@ -128,11 +131,51 @@ _binding_profile: builtins.str
         "ChemistryProblemError",
         "KekulizeError",
         "SdfError",
+        "ReactionModelError",
+        "ReactionParseError",
+        "ReactionRunError",
+        "ReactionApplyError",
+        "ReactionProductError",
+        "ReactionWriteError",
+        "ReactionValidationError",
+        "ReactionInitializationError",
     ] {
         text.push_str(&format!("\nclass {name}(builtins.ValueError):\n    domain: builtins.str\n    kind: builtins.str\n"));
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
     for (name, fields) in [
+        (
+            "ReactionModelError",
+            "    role: ReactionRole\n    template: builtins.int\n    index: builtins.int\n    count: builtins.int\n",
+        ),
+        (
+            "ReactionParseError",
+            "    role: ReactionRole\n    template: builtins.int\n    atom: builtins.int\n    atom_count: builtins.int\n    reactant: builtins.int\n    product: builtins.int\n    flag: typing.Optional[builtins.int]\n    count: builtins.int\n    start: builtins.int\n    end: builtins.int\n    text: builtins.str\n    start_atom: builtins.int\n    start_bond: builtins.int\n",
+        ),
+        (
+            "ReactionRunError",
+            "    set: builtins.int\n    template: builtins.int\n    expected: builtins.int\n    actual: builtins.int\n    index: builtins.int\n    count: builtins.int\n    reactant: builtins.int\n    atom: builtins.int\n    atom_count: builtins.int\n    level: builtins.int\n",
+        ),
+        (
+            "ReactionApplyError",
+            "    reactants: builtins.int\n    products: builtins.int\n    atom: builtins.int\n",
+        ),
+        (
+            "ReactionProductError",
+            "    atom: builtins.int\n    key: builtins.str\n    stage: builtins.str\n    detail: builtins.str\n    reactant_atom: typing.Optional[builtins.int]\n    product_atom: typing.Optional[builtins.int]\n    bond: typing.Optional[builtins.int]\n    row_kind: builtins.str\n    index: builtins.int\n",
+        ),
+        (
+            "ReactionWriteError",
+            "    role: ReactionRole\n    template: builtins.int\n    expected: builtins.int\n    actual: builtins.int\n",
+        ),
+        (
+            "ReactionValidationError",
+            "    role: ReactionRole\n    template: builtins.int\n    atom: builtins.int\n    property: builtins.str\n    value: builtins.int\n    atom_count: builtins.int\n    map: builtins.int\n",
+        ),
+        (
+            "ReactionInitializationError",
+            "    report: ReactionValidationReport\n",
+        ),
         (
             "SdfError",
             "    # WrongGraphKind retains the exact expected and actual payload tags.\n    expected: builtins.str\n    actual: builtins.str\n",
@@ -362,7 +405,7 @@ fn check_registered_python_callables(text: &str) -> pyo3_stub_gen::Result<()> {
 
     // The linked registry already applies the facade's actual cfg gates.
     // Neither Experimental status nor a missing binding exempts an enabled row.
-    let entries = BINDING_CONTRACT
+    let mut entries = BINDING_CONTRACT
         .iter()
         .map(|entry| {
             serde_json::json!({
@@ -386,6 +429,22 @@ fn check_registered_python_callables(text: &str) -> pyo3_stub_gen::Result<()> {
             })
         })
         .collect::<Vec<_>>();
+    // Python-object ingress has no fictitious Rust/PyAny signature. Its
+    // declaration on the canonical value type names real checked Rust targets.
+    for adapter in ::cosmolkit::BINDING_CONTRACT_PYTHON_ADAPTERS {
+        let owner = BINDING_CONTRACT
+            .iter()
+            .find(|row| row.semantic_id == adapter.type_semantic_id)
+            .expect("macro-validated adapter owner");
+        entries.push(serde_json::json!({
+            "semantic_id": format!("{}.{}", owner.python_name, adapter.name),
+            "python_name": adapter.name,
+            "python_property": null,
+            "feature": owner.feature,
+            "item": "callable",
+            "owner": "type",
+        }));
+    }
     let contract = serde_json::to_string(&entries)?;
     let code = std::ffi::CString::new(include_str!(
         "../../../dev/tools/check_python_stub_contract.py"
@@ -411,11 +470,12 @@ fn check_registered_python_callables(text: &str) -> pyo3_stub_gen::Result<()> {
         )).into());
     }
     eprintln!(
-        "Python binding contract: all {} enabled registered callables present",
+        "Python binding contract: all {} enabled registered callables and {} object adapters present",
         BINDING_CONTRACT
             .iter()
             .filter(|entry| entry.item == BindingItem::Callable)
-            .count()
+            .count(),
+        ::cosmolkit::BINDING_CONTRACT_PYTHON_ADAPTERS.len()
     );
     Ok(())
 }

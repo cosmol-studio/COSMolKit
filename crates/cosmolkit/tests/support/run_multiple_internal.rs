@@ -685,6 +685,7 @@ fn lazy_prefix_pulls_exactly_requested_candidates_and_keeps_unchanged_blocks_sha
         assert_eq!(pulls.load(Ordering::SeqCst), expected);
         assert_eq!(outputs.yielded_count(), expected);
         assert_eq!(output, source);
+        assert_eq!(output.runtime_constructions(), 1);
         assert!(Arc::ptr_eq(
             &output.topology_arc_runtime(),
             &source.topology_arc_runtime()
@@ -729,6 +730,7 @@ fn lazy_snapshot_outlives_input_and_remains_independent_of_later_replacement() {
     drop(source);
     let output = outputs.next().unwrap().unwrap();
     assert_eq!(output, before);
+    assert_eq!(output.runtime_constructions(), 1);
     assert!(Arc::ptr_eq(
         &output.coordinates_arc_runtime(),
         &expected_coordinates
@@ -760,7 +762,9 @@ fn lazy_callback_error_is_deferred_retains_success_count_and_fuses() {
     parts.emit_lazy_runtime(stream).unwrap();
     let mut outputs = parts.finish_lazy().unwrap();
     assert_eq!(calls.load(Ordering::SeqCst), 0);
-    assert_eq!(outputs.next().unwrap().unwrap(), source);
+    let output = outputs.next().unwrap().unwrap();
+    assert_eq!(output, source);
+    assert_eq!(output.runtime_constructions(), 1);
     assert_eq!(outputs.yielded_count(), 1);
     assert_eq!(
         outputs.next(),

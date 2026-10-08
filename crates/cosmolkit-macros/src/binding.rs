@@ -204,6 +204,46 @@ struct BindingEntry {
     type_role: Option<TypeRole>,
     properties: Vec<BindingProperty>,
     python_keywords: Option<BindingKeywordProjection>,
+    python_adapters: Vec<PythonAdapter>,
+}
+
+/// Language-object ingress composes registered Rust APIs; it is not a fake
+/// Rust callable accepting a Python object or a second chemistry registry.
+struct PythonAdapter {
+    name: Ident,
+    targets: Vec<LitStr>,
+}
+impl Parse for PythonAdapter {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let content;
+        braced!(content in input);
+        let mut name = None;
+        let mut targets = None;
+        while !content.is_empty() {
+            let key = content.call(Ident::parse_any)?;
+            content.parse::<Token![:]>()?;
+            match key.to_string().as_str() {
+                "name" => set_once(&mut name, content.parse()?, &key)?,
+                "targets" => {
+                    let values;
+                    bracketed!(values in content);
+                    set_once(
+                        &mut targets,
+                        Punctuated::<LitStr, Token![,]>::parse_terminated(&values)?
+                            .into_iter()
+                            .collect(),
+                        &key,
+                    )?;
+                }
+                other => return Err(unknown_field(&key, "Python adapter", other)),
+            }
+            consume_comma(&content)?;
+        }
+        Ok(Self {
+            name: required(name, "adapter.name")?,
+            targets: required(targets, "adapter.targets")?,
+        })
+    }
 }
 
 struct CallablePayload {
@@ -240,6 +280,7 @@ struct BindingEntryDraft {
     role: Option<Ident>,
     properties: Option<Vec<BindingProperty>>,
     python_keywords: Option<BindingKeywordProjection>,
+    python_adapters: Option<Vec<PythonAdapter>>,
 }
 
 impl Parse for BindingRegistry {
@@ -334,6 +375,17 @@ fn parse_binding_entry(
                 )?;
             }
             "python_keywords" => set_once(&mut draft.python_keywords, input.parse()?, &key)?,
+            "python_adapters" => {
+                let values;
+                bracketed!(values in input);
+                set_once(
+                    &mut draft.python_adapters,
+                    Punctuated::<PythonAdapter, Token![,]>::parse_terminated(&values)?
+                        .into_iter()
+                        .collect(),
+                    &key,
+                )?;
+            }
             other => return Err(unknown_field(&key, "binding entry", other)),
         }
         consume_comma(input)?;
@@ -459,11 +511,62 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         type_role,
         properties: draft.properties.unwrap_or_default(),
         python_keywords: draft.python_keywords,
+        python_adapters: draft.python_adapters.unwrap_or_default(),
     })
 }
 
 fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
     for entry in entries {
+        if !entry.python_adapters.is_empty() && entry.item != ItemClass::Type {
+            return Err(syn::Error::new_spanned(
+                &entry.semantic_id,
+                "Python adapters require a type declaration",
+            ));
+        }
+        let mut adapter_names = HashSet::new();
+        let type_name = rust_last_name(&entry.rust)?;
+        for adapter in &entry.python_adapters {
+            let name = adapter.name.to_string();
+            if !adapter_names.insert(name.clone()) {
+                return Err(syn::Error::new_spanned(
+                    &adapter.name,
+                    "duplicate Python adapter",
+                ));
+            }
+            if entries.iter().any(|candidate| {
+                candidate.item == ItemClass::Callable
+                    && candidate.semantic_id.value() == format!("{}.{}", type_name, name)
+            }) {
+                return Err(syn::Error::new_spanned(
+                    &adapter.name,
+                    "Python adapter duplicates a canonical Rust callable",
+                ));
+            }
+            if adapter.targets.is_empty() {
+                return Err(syn::Error::new_spanned(
+                    &adapter.name,
+                    "Python adapter requires registered Rust targets",
+                ));
+            }
+            let mut targets = HashSet::new();
+            for target in &adapter.targets {
+                if !targets.insert(target.value()) {
+                    return Err(syn::Error::new_spanned(
+                        target,
+                        "duplicate Python adapter target",
+                    ));
+                }
+                if !entries.iter().any(|candidate| {
+                    candidate.item == ItemClass::Callable
+                        && candidate.semantic_id.value() == target.value()
+                }) {
+                    return Err(syn::Error::new_spanned(
+                        target,
+                        "Python adapter target is not a registered Rust callable",
+                    ));
+                }
+            }
+        }
         if !entry.properties.is_empty() && entry.item != ItemClass::Type {
             return Err(syn::Error::new_spanned(
                 &entry.semantic_id,
@@ -1118,6 +1221,7 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
     let mut assertions = Vec::new();
     let mut property_values = Vec::new();
     let mut keyword_values = Vec::new();
+    let mut adapter_values = Vec::new();
     for (index, entry) in entries.iter().enumerate() {
         // The effective gate is generated once from the owning declaration;
         // registry rows and every signature/type assertion use the same value.
@@ -1129,6 +1233,27 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             vec![syn::parse_quote!(#[cfg(all(feature = #owner, #(feature = #requires),*))])]
         };
         let semantic_id = &entry.semantic_id;
+        for adapter in &entry.python_adapters {
+            let name = adapter.name.to_string();
+            let targets = &adapter.targets;
+            let mut adapter_cfg = cfg.clone();
+            for target in targets {
+                let target = entries
+                    .iter()
+                    .find(|row| row.semantic_id.value() == target.value())
+                    .expect("validated adapter target");
+                adapter_cfg.extend(target.cfg_attrs.clone());
+                if !target.requires.is_empty() {
+                    let requires = &target.requires;
+                    adapter_cfg.push(syn::parse_quote!(#[cfg(all(#(feature = #requires),*))]));
+                }
+            }
+            adapter_values.push(
+                quote! { #(#adapter_cfg)* crate::BindingPythonAdapterContract {
+                    type_semantic_id: #semantic_id, name: #name, targets: &[#(#targets),*],
+                }},
+            );
+        }
         for property in &entry.properties {
             let property_name = property.name.to_string();
             let getter = &property.rust;
@@ -1267,6 +1392,12 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
     }
     let properties_name = format_ident!("{}_PROPERTIES", name);
     let keywords_name = format_ident!("{}_KEYWORDS", name);
+    let adapters_name = format_ident!("{}_PYTHON_ADAPTERS", name);
+    let adapters = if adapter_values.is_empty() {
+        quote! {}
+    } else {
+        quote! { #visibility static #adapters_name: &[crate::BindingPythonAdapterContract] = &[#(#adapter_values),*]; }
+    };
     let properties = if property_values.is_empty() {
         quote! {}
     } else {
@@ -1280,6 +1411,7 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
     Ok(quote! {
         #properties
         #keywords
+        #adapters
         #visibility static #name: &[crate::BindingContractEntry] = &[#(#values),*];
         #(#assertions)*
     })

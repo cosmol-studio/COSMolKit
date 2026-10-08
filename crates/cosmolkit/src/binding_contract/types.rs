@@ -20,6 +20,15 @@ pub enum BindingKind {
     Module,
 }
 
+/// A Python-object adapter on a registered value type. Target IDs resolve to
+/// compiler-checked canonical Rust callables; adapters own no chemistry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BindingPythonAdapterContract {
+    pub type_semantic_id: &'static str,
+    pub name: &'static str,
+    pub targets: &'static [&'static str],
+}
+
 /// Ownership of an instance callable's receiver, independent of its output.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BindingReceiver {

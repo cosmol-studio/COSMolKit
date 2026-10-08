@@ -76,7 +76,7 @@ fn bundle_and_capability_declarations_have_exact_membership() {
     let all: BTreeSet<_> = BUNDLES
         .iter()
         .flat_map(|(_, caps)| caps.iter().copied())
-        .chain(["cap-stereoisomers"])
+        .chain(["cap-stereoisomers", "cap-reaction"])
         .collect();
     let declared: BTreeSet<_> = manifest["features"]
         .as_table()
@@ -85,9 +85,8 @@ fn bundle_and_capability_declarations_have_exact_membership() {
         .filter(|name| name.starts_with("cap-"))
         .map(String::as_str)
         .collect();
-    // Reaction is currently an explicit, private integration capability;
-    // it is deliberately not part of the public full bundle yet.
-    assert_eq!(declared, all.iter().copied().chain(["cap-reaction"]).collect());
+    // Public reaction bindings enable the same capability in the full bundle.
+    assert_eq!(declared, all);
     let mut cases = vec![
         (true, vec![], all.clone()),
         (false, vec!["full"], all.clone()),
@@ -104,7 +103,6 @@ fn bundle_and_capability_declarations_have_exact_membership() {
     for &cap in &all {
         cases.push((false, vec![cap], [cap].into_iter().collect()));
     }
-    cases.push((false, vec!["cap-reaction"], ["cap-reaction"].into_iter().collect()));
     for mask in 0_u8..16 {
         if !matches!(mask.count_ones(), 2 | 3) {
             continue;
@@ -228,6 +226,7 @@ fn enabled_registry_rows_use_capability_names_not_bundle_names() {
     let enabled = [
         ("cap-alignment", cfg!(feature = "cap-alignment")),
         ("cap-batch", cfg!(feature = "cap-batch")),
+        ("cap-reaction", cfg!(feature = "cap-reaction")),
         ("cap-bio", cfg!(feature = "cap-bio")),
         ("cap-conformer", cfg!(feature = "cap-conformer")),
         ("cap-confseq", cfg!(feature = "cap-confseq")),

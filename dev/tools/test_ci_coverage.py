@@ -115,7 +115,7 @@ class CoverageWorkflowTests(unittest.TestCase):
         self.assertEqual(profiles["dev-test"]["inherits"], "release")
         self.assertEqual(profiles["dev-test"]["lto"], "off")
         self.assertEqual(profiles["dev-test"]["codegen-units"], 16)
-        workflow = (ROOT / ".github/workflows/python-publish.yml").read_text()
+        workflow = (ROOT / ".github/workflows/publish.yml").read_text()
         self.assertEqual(workflow.count("--release"), 5)
         self.assertNotIn("--profile dist", workflow)
         self.assertNotIn("--profile dev-test", workflow)

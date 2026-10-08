@@ -92,9 +92,19 @@ fn score(molecule: &Molecule) -> Result<Score, String> {
         total: score.total(),
     })
 }
+fn smiles(molecule: &Molecule) -> Result<String, String> {
+    String::from_utf8(
+        molecule
+            .to_smiles()
+            .map_err(|e| e.to_string())?
+            .into_bytes(),
+    )
+    .map_err(|e| e.to_string())
+}
+
 fn state(molecule: &Molecule) -> Result<MoleculeState, String> {
     Ok(MoleculeState {
-        isomeric_smiles: molecule.to_smiles().map_err(|e| e.to_string())?,
+        isomeric_smiles: smiles(molecule)?,
         atoms: molecule
             .atoms()
             .iter()
@@ -111,9 +121,13 @@ fn state(molecule: &Molecule) -> Result<MoleculeState, String> {
                     hybridization: a.hybridization().rdkit_name().into(),
                     cip_code: a
                         .prop("_CIPCode")
-                        .map(|v| v.as_string().map(str::to_owned))
-                        .transpose()
-                        .map_err(|e| e.to_string())?,
+                        .map(|v| {
+                            let text = v.as_string().map_err(|e| e.to_string())?;
+                            std::str::from_utf8(text.as_bytes())
+                                .map(str::to_owned)
+                                .map_err(|e| e.to_string())
+                        })
+                        .transpose()?,
                 })
             })
             .collect::<Result<_, String>>()?,
@@ -151,8 +165,9 @@ pub fn enumerate(molecule: &Molecule, profile: TautomerProfile) -> Result<Outcom
         ordered_smiles: result
             .canonical_smiles()
             .into_iter()
-            .map(str::to_owned)
-            .collect(),
+            .map(|text| std::str::from_utf8(text.as_bytes()).map(str::to_owned))
+            .collect::<Result<_, _>>()
+            .map_err(|e| e.to_string())?,
         status: match result.status() {
             cosmolkit::TautomerEnumerationStatus::Completed => Status::Completed,
             cosmolkit::TautomerEnumerationStatus::MaxTautomersReached => {
@@ -175,7 +190,7 @@ pub fn enumerate(molecule: &Molecule, profile: TautomerProfile) -> Result<Outcom
             .collect(),
         scores: result.iter().map(score).collect::<Result<_, _>>()?,
         molecule_states: result.iter().map(state).collect::<Result<_, _>>()?,
-        canonical_smiles: canonical.to_smiles().map_err(|e| e.to_string())?,
+        canonical_smiles: smiles(&canonical)?,
         canonical_state: state(&canonical)?,
     };
     if *molecule != before {
@@ -189,7 +204,7 @@ pub fn canonicalize(molecule: &Molecule, profile: TautomerProfile) -> Result<Out
         .canonical_tautomer_with_params(&parameters(profile)?)
         .map_err(|e| e.to_string())?;
     let value = Canonicalization {
-        canonical_smiles: canonical.to_smiles().map_err(|e| e.to_string())?,
+        canonical_smiles: smiles(&canonical)?,
         canonical_state: state(&canonical)?,
         canonical_score: score(&canonical)?,
     };

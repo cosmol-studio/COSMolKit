@@ -89,6 +89,18 @@ fn detect_original_and_source_cached_geometry_control(
         "source degree gate precedes geometry diagnostics"
     );
     assert_eq!(topology, &before);
+    let control = source_zero_implicit_cache_control(topology)?;
+    let result = detect_atropisomer_chirality(&control, conformer);
+    assert_eq!(topology, &before);
+    result
+}
+
+fn source_zero_implicit_cache_control(
+    topology: &TopologyBlock,
+) -> Result<TopologyBlock, AtropisomerError> {
+    // Atom.h: setNoImplicit changes only df_noImplicit. Atom.cpp:736-738
+    // updatePropertyCache(false) computes both caches; restoring the flag
+    // therefore retains a genuine initialized zero implicit-H cache.
     let mut control = topology.clone();
     for atom in &mut control.atoms {
         atom.set_no_implicit(true);
@@ -112,7 +124,30 @@ fn detect_original_and_source_cached_geometry_control(
         atom.set_source_valence_facts(original.source_valence_facts());
     }
     assert_eq!(identity, *topology);
-    let result = detect_atropisomer_chirality(&control, conformer);
+    Ok(control)
+}
+
+fn wedge_original_and_source_cached_geometry_control(
+    topology: &TopologyBlock,
+    rings: &RingInfo,
+    conformer: Option<AtropisomerConformer<'_>>,
+    occupied: &BTreeSet<BondId>,
+) -> Result<cosmolkit_core::AtropisomerWedgeAssignment, AtropisomerError> {
+    // Atropisomers.cpp:1218 reads getTotalDegree BEFORE carrier/wedge checks.
+    // Atom.cpp:297-305 requires the actual implicit cache. Keep this original
+    // negative as well as every original exact geometry assertion below.
+    let before = topology.clone();
+    assert_eq!(
+        wedge_bonds_from_atropisomers(topology, rings, conformer, occupied),
+        Err(AtropisomerError::Valence(
+            cosmolkit_core::ValenceError::ImplicitValenceCacheNotInitialized {
+                atom: AtomId::new(1),
+            }
+        ))
+    );
+    assert_eq!(topology, &before);
+    let control = source_zero_implicit_cache_control(topology)?;
+    let result = wedge_bonds_from_atropisomers(&control, rings, conformer, occupied);
     assert_eq!(topology, &before);
     result
 }
@@ -777,8 +812,13 @@ fn stereo_group_atom_expansion_uses_existing_and_generated_wedges_once() {
         BondStereo::AtropCw,
     );
     let group = StereoGroup::new(StereoGroupKind::Absolute, vec![], vec![BondId::new(1)]);
-    let wedges =
-        wedge_bonds_from_atropisomers(&topology, &sssr(&topology), None, &BTreeSet::new()).unwrap();
+    let wedges = wedge_original_and_source_cached_geometry_control(
+        &topology,
+        &sssr(&topology),
+        None,
+        &BTreeSet::new(),
+    )
+    .unwrap();
     let ids = stereo_group_atom_ids(&topology, &group, &wedges).unwrap();
     assert_eq!(ids.len(), 1);
     assert!(ids[0] == AtomId::new(1) || ids[0] == AtomId::new(2));
@@ -792,13 +832,19 @@ fn wedge_generation_covers_no_conformer_2d_and_3d_direction_rules() {
         BondStereo::AtropCw,
     );
     let rings = sssr(&topology);
-    let no_conf = wedge_bonds_from_atropisomers(&topology, &rings, None, &BTreeSet::new()).unwrap();
+    let no_conf = wedge_original_and_source_cached_geometry_control(
+        &topology,
+        &rings,
+        None,
+        &BTreeSet::new(),
+    )
+    .unwrap();
     assert_eq!(no_conf.bond_updates.len(), 1);
     assert_eq!(no_conf.bond_updates[0].direction, BondDirection::BeginWedge);
     assert_eq!(no_conf.bond_updates[0].begin, AtomId::new(2));
 
     let two_d = Conformer2D::new(0, vec![[0.0, 1.0], [0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]);
-    let result = wedge_bonds_from_atropisomers(
+    let result = wedge_original_and_source_cached_geometry_control(
         &topology,
         &rings,
         Some(AtropisomerConformer::TwoD(&two_d)),
@@ -817,7 +863,7 @@ fn wedge_generation_covers_no_conformer_2d_and_3d_direction_rules() {
         ],
         true,
     );
-    let result = wedge_bonds_from_atropisomers(
+    let result = wedge_original_and_source_cached_geometry_control(
         &topology,
         &rings,
         Some(AtropisomerConformer::ThreeD(&three_d)),
@@ -908,7 +954,7 @@ fn two_dimensional_wedge_selection_prefers_ring_carriers_over_nonring() {
             [-1.0, -0.5],
         ],
     );
-    let result = wedge_bonds_from_atropisomers(
+    let result = wedge_original_and_source_cached_geometry_control(
         &topology,
         &rings,
         Some(AtropisomerConformer::TwoD(&coordinates)),
@@ -928,7 +974,9 @@ fn occupied_conflicting_and_unknown_carriers_fail_closed() {
     );
     let rings = sssr(&topology);
     let occupied = BTreeSet::from([BondId::new(0), BondId::new(2)]);
-    let result = wedge_bonds_from_atropisomers(&topology, &rings, None, &occupied).unwrap();
+    let result =
+        wedge_original_and_source_cached_geometry_control(&topology, &rings, None, &occupied)
+            .unwrap();
     assert!(result.bond_updates.is_empty());
     assert_eq!(
         result.diagnostics[0].kind,
@@ -940,8 +988,13 @@ fn occupied_conflicting_and_unknown_carriers_fail_closed() {
         BondDirection::None,
         BondStereo::AtropCcw,
     );
-    let result =
-        wedge_bonds_from_atropisomers(&conflict, &sssr(&conflict), None, &BTreeSet::new()).unwrap();
+    let result = wedge_original_and_source_cached_geometry_control(
+        &conflict,
+        &sssr(&conflict),
+        None,
+        &BTreeSet::new(),
+    )
+    .unwrap();
     assert_eq!(
         result.diagnostics[0].kind,
         AtropisomerRejectionKind::DirectionConflict
@@ -952,8 +1005,13 @@ fn occupied_conflicting_and_unknown_carriers_fail_closed() {
         BondDirection::None,
         BondStereo::AtropCcw,
     );
-    let result =
-        wedge_bonds_from_atropisomers(&unknown, &sssr(&unknown), None, &BTreeSet::new()).unwrap();
+    let result = wedge_original_and_source_cached_geometry_control(
+        &unknown,
+        &sssr(&unknown),
+        None,
+        &BTreeSet::new(),
+    )
+    .unwrap();
     assert_eq!(
         result.diagnostics[0].kind,
         AtropisomerRejectionKind::UnknownCarrierDirection

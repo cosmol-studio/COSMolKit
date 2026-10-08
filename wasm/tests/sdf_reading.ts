@@ -1,0 +1,10 @@
+import {Molecule,SdfRecord,SdfGraph,SdfReadParams,SdfCoordinateMode,CoordinateDimension,SdfError,MolecularIoError,MoleculeProperties,SdfPropertyList,SdfPropertyListTarget,PropertyValue,PropertyValueKind,PropertyValueError,SubstanceGroup,SubstanceGroupId,SubstanceGroupKind,SGroupBracket,SGroupCState,SGroupDisplay,QueryGraph} from 'cosmolkit-generated';
+const p=new SdfReadParams(false,false,false,true,false,SdfCoordinateMode.Require3D),r=SdfRecord.fromSdfWithParams('',p),graph:SdfGraph=r.graph(),kind:string=graph.kind,m:Molecule|null=graph.molecule,q:QueryGraph|null=graph.queryGraph,props:MoleculeProperties=r.properties(),fields:[string,string][]=r.dataFields(),dim:CoordinateDimension|null=r.sourceCoordinateDim(),title:string|null=r.title(),index:number=r.index(),field:string|null=r.dataField('x');const lists:SdfPropertyList[]=props.sdfPropertyLists(),target:SdfPropertyListTarget=lists[0].target(),values:(PropertyValue|null)[]=lists[0].values();declare const v:PropertyValue;const vk:PropertyValueKind=v.kind(),a:string=v.asString(),b:number=v.asInt(),u:number=v.asUint(),vector:number[]=v.asIntVector(),d:number=v.asDouble(),flag:boolean=v.asBool();declare const e:PropertyValueError;const expected:PropertyValueKind=e.expected(),actual:PropertyValueKind=e.actual();const map:Map<string,PropertyValue>=props.props();
+const group=SubstanceGroup.new(SubstanceGroupId.new(1),SubstanceGroupKind.Generic('X')),sg:SubstanceGroup[]=r.substanceGroups(),display:SGroupDisplay|null=group.display(),bracket:SGroupBracket=SGroupBracket.new([[1,2,3],[4,5,6],[7,8,9]]),cs:SGroupCState=SGroupCState.new(1,[1,2,3]);
+for(const value of [Molecule.fromSdf(''),Molecule.fromSdfWithParams('',p),Molecule.fromMol(''),Molecule.fromMolWithParams('',p),Molecule.readMol(''),Molecule.readMolWithParams('',p),Molecule.readSdf(''),Molecule.readSdfWithParams('',p)]){const m:Molecule=value;}
+// @ts-expect-error params require canonical typed object
+Molecule.fromSdfWithParams('',{});
+// @ts-expect-error graph variants remain nullable
+const concrete:Molecule=graph.molecule;
+// @ts-expect-error stored unsigned property is a number
+const unsigned:bigint=v.asUint();

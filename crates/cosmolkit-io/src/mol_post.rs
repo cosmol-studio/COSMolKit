@@ -1152,7 +1152,7 @@ fn apply_stereo_and_sanitize(
         // Complexity review: one ordered-map property update matches the
         // source computed-property write and adds no graph traversal.
         properties
-            .set_computed_prop("_StereochemDone", "1")
+            .set_computed_prop("_StereochemDone", 1_i32)
             .map_err(|error| MolPostError::Processing(MolProcessingError::from(error)))?;
     } else {
         topology = detect_double_bond_stereochemistry(topology, &coordinates, &mut properties)?;

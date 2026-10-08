@@ -253,11 +253,8 @@ fn q03_parser_errors_use_trimmed_parser_byte_positions() {
         .expect_err("a populated branch reaches EOS without GROUP_CLOSE_TOKEN");
     assert_eq!(
         missing_close,
-        SmartsParseError::UnexpectedCharacter {
-            position: 3,
-            character: b'E',
-            context: "expected close parenthesis".to_owned(),
-        }
+        // smarts.ll emits EOS_TOKEN, not a byte 'E' from its display name.
+        SmartsParseError::UnexpectedEnd("expected close parenthesis".to_owned())
     );
 }
 
@@ -307,12 +304,12 @@ fn q13_branch_stack_restores_attachment_and_rejects_invalid_branch_starts() {
     // smarts.yy requires atomd or bond_expr atomd immediately after the
     // opening parenthesis. YY_USER_ACTION reports the ending byte of the
     // offending token, including EOS for the missing first branch atom.
-    for (smarts, position) in [
-        ("C(", 2),
-        ("C()", 3),
-        ("C(.O)", 3),
-        ("C(1)1", 3),
-        ("C((O))", 3),
+    for (smarts, position, character) in [
+        ("C(", 2, None),
+        ("C()", 3, Some(b')')),
+        ("C(.O)", 3, Some(b'.')),
+        ("C(1)1", 3, Some(b'1')),
+        ("C((O))", 3, Some(b'(')),
     ] {
         assert_eq!(
             parse_smarts(smarts, &SmartsParseParams::default())
@@ -322,7 +319,7 @@ fn q13_branch_stack_restores_attachment_and_rejects_invalid_branch_starts() {
             } else {
                 SmartsParseError::UnexpectedCharacter {
                     position,
-                    character: b'?',
+                    character: character.expect("non-EOS source token byte"),
                     context: "expected atom expression".to_owned(),
                 }
             },
@@ -873,10 +870,14 @@ fn q20_lenient_cx_lowering_failure_retains_record_effects_and_cursor() {
 
 #[test]
 fn q20_strict_cx_lowering_failure_returns_cx_error() {
-    assert!(matches!(
-        parse_smarts("C-C |wU:0.0,1.0| ignored", &SmartsParseParams::default()),
-        Err(SmartsParseError::CxSmiles(_))
-    ));
+    // CXSmilesOps.cpp::parse_wedged_bonds rejects repeated cfg writes;
+    // SmilesParse.cpp::handleCXPartAndName rethrows that strict failure.
+    assert_eq!(
+        parse_smarts("C-C |wU:0.0,1.0| ignored", &SmartsParseParams::default()).unwrap_err(),
+        SmartsParseError::CxLowering(cosmolkit_search::CxQueryLoweringError::InvalidGraph(
+            "w block attempts to set wedging on bond 0 more than once.".to_owned()
+        ))
+    );
 }
 
 #[test]
@@ -2699,7 +2700,11 @@ fn q25_chiral_permutation_boundaries_are_query_native_and_source_ordered() {
         // SmilesParseOps.cpp::CheckChiralitySpecifications throws this exact
         // text after the per-class range check, for every nonzero excess.
         let _ = expected_error;
-        assert_eq!(error, SmartsParseError::Parse("Invalid chiral specification on atom 0".to_owned()), "{smarts}");
+        assert_eq!(
+            error,
+            SmartsParseError::Parse("Invalid chiral specification on atom 0".to_owned()),
+            "{smarts}"
+        );
     }
 
     let explicit_zero = parse_smarts("[C@SP0]", &SmartsParseParams::default())
@@ -2711,21 +2716,15 @@ fn q25_chiral_permutation_boundaries_are_query_native_and_source_ordered() {
         "{explicit_zero}"
     );
 
-    for (smarts, expected_error) in [
-        (
-            "[C@SP4][C@TB21]",
-            "invalid chiral permutation 4 for CHI_SQUAREPLANAR",
-        ),
-        (
-            "[C@TB21][C@SP4]",
-            "invalid chiral permutation 21 for CHI_TRIGONALBIPYRAMIDAL",
-        ),
-    ] {
+    for smarts in ["[C@SP4][C@TB21]", "[C@TB21][C@SP4]"] {
         let error = parse_smarts(smarts, &SmartsParseParams::default())
             .expect_err("the first invalid source atom determines the error");
-        assert!(
-            error.to_string().contains(expected_error),
-            "{smarts}: {error}"
+        // SmilesParseOps.cpp:425-428 reports the first offending atom index,
+        // not a class-specific invented error string. Native rejects both.
+        assert_eq!(
+            error,
+            SmartsParseError::Parse("Invalid chiral specification on atom 0".to_owned()),
+            "{smarts}"
         );
     }
 }
@@ -3230,7 +3229,9 @@ fn q01_a_missing_valid_index_errors_and_out_of_window_skips() {
         assert!(
             matches!(
                 parse_smarts(&format!("C-1CC-1O |{record}|"), &Default::default()),
-                Err(SmartsParseError::CxSmiles(_))
+                Err(SmartsParseError::CxLowering(
+                    cosmolkit_search::CxQueryLoweringError::BondIndex { index: 0 }
+                ))
             ),
             "valid source index hole: {record}"
         );
@@ -3306,7 +3307,9 @@ fn q01_a_lenient_records_keep_prefix_commits_and_cursor() {
         assert!(
             matches!(
                 parse_smarts(&text, &Default::default()),
-                Err(SmartsParseError::CxSmiles(_))
+                Err(SmartsParseError::CxLowering(
+                    cosmolkit_search::CxQueryLoweringError::BondIndex { index: 0 }
+                ))
             ),
             "{record}"
         );

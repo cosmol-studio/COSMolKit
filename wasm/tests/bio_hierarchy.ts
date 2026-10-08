@@ -1,0 +1,7 @@
+import {BioStructure,BioModelRow,BioChainRow,BioResidueRow,BioAtomRow,BioEntityRow,BioCoordinateBlock,AtomName,AltLocLabel,AltLocRequest,Element,BioStructureError,ResidueKind,EntityKind,BioRowSpan,BioAtomId} from 'cosmolkit-generated';
+const s=BioStructure.fromPdb('END'),models:BioModelRow[]=s.models(),chains:BioChainRow[]=s.chains(),residues:BioResidueRow[]=s.residues(),atoms:BioAtomRow[]=s.atoms(),entities:BioEntityRow[]=s.entities(),coordinates:BioCoordinateBlock=s.coordinates();const p:number[][]=coordinates.positions,position:number[]|null=s.atomPosition(0),rows:BioAtomRow[]|null=s.residueAtoms(0),name:AtomName|null=AtomName.fromAscii(new Uint8Array([67,65])),label=new AltLocLabel(65),request=AltLocRequest.Exact(label);if(name){const hit:[number,BioAtomRow]|null=s.findAtom(0,name,request,Element.fromSymbol('C')),exact:[number,BioAtomRow]=s.atomByAltloc(0,name,null);void [hit,exact];}const entity:[number,BioEntityRow]|null=s.findEntity('1');declare const e:BioStructureError;const field:number|null=e.start;declare const residue:BioResidueRow;const kind:ResidueKind=residue.kind(),ekind:EntityKind=residue.entityKind();const id=new BioAtomId(3),span=new BioRowSpan(0,1);
+// @ts-expect-error explicit nullable atom position
+const bad:number[]=s.atomPosition(99);
+// @ts-expect-error immutable coordinate snapshot
+coordinates.positions=[];
+void [models,chains,residues,atoms,entities,p,position,rows,entity,field,kind,ekind,id,span,bad];

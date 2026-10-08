@@ -1284,6 +1284,13 @@ pub fn finalize_smiles_stereo(
     prepared_valence: &mut Option<ValenceAssignment>,
     prepared_rings: &mut Option<RingInfo>,
 ) -> Result<SmilesRecord, SmilesStereoError> {
+    // RDKit❗✔️:   if (res && res->getNumConformers() > 0) {
+    // RDKit❗✔️:       auto *testConf = &res->getConformer(confId);
+    // The detached adapter requires the modeled source order before choosing
+    // among mixed coordinate tables. Reuse MODEL's checked source boundary;
+    // do not silently guess the missing order from storage dimensionality.
+    // O(1), borrowed check; no coordinate allocation or copy.
+    record.coordinates.first_source_conformer()?;
     let selected = record
         .coordinates
         .conformers_2d

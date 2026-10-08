@@ -938,7 +938,8 @@ fn mol_post_legacy_closure_sets_stereochem_done_only_in_sanitize_branch() {
             };
             assert_eq!(
                 properties.prop("_StereochemDone"),
-                sanitize.then_some(&PropertyValue::String("1".into())),
+                // Chirality.cpp:2904 sets the computed property from integer 1.
+                sanitize.then_some(&PropertyValue::Int(1)),
                 "query_record={query_record}, sanitize={sanitize}"
             );
             assert_eq!(

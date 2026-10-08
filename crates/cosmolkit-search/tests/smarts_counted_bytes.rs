@@ -89,7 +89,12 @@ fn recursive_source_provenance_uses_one_canonical_byte_value_and_deep_clone() {
     // QueryOps.h::copy uses quickCopy=true; ROMol.cpp initializes the empty
     // __computedProps entry even when the original has no molecule props.
     let mut expected = recursive.query_graph().unwrap().clone();
-    expected.set_prop("__computedProps", cosmolkit_model::PropertyValue::StringVector(vec![])).unwrap();
+    expected
+        .set_prop(
+            "__computedProps",
+            cosmolkit_model::PropertyValue::StringVector(vec![]),
+        )
+        .unwrap();
     assert_eq!(copied.query_graph(), Some(&expected));
     copied.set_query_graph(parse_smarts("N", &SmartsParseParams::default()).unwrap());
     assert_eq!(recursive.serial_number(), 17);

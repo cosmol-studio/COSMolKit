@@ -64,15 +64,25 @@ mod matrices;
 mod molecule;
 mod molecule_builder;
 mod reaction;
+#[cfg(all(feature = "cap-reaction", not(feature = "cap-smiles")))]
+pub use cosmolkit_reaction::CxSmilesFields;
+#[cfg(all(feature = "cap-reaction", not(feature = "cap-search")))]
+pub use cosmolkit_reaction::SubstructMatchParams;
 #[cfg(feature = "cap-reaction")]
-pub(crate) use cosmolkit_reaction::{
-    Reaction, ReactionApplyParams, ReactionRunParams, ReactionSingleRunParams,
+pub use cosmolkit_reaction::{
+    Reaction, ReactionApplyError, ReactionApplyParams, ReactionCoordinateSelection,
+    ReactionInitializationError, ReactionModelError, ReactionParseError, ReactionParseParams,
+    ReactionProductError, ReactionRole, ReactionRunError, ReactionRunParams,
+    ReactionSingleRunParams, ReactionTemplateRemoval, ReactionTemplateRemovalParams,
+    ReactionValidationError, ReactionValidationIssue, ReactionValidationIssueKind,
+    ReactionValidationParams, ReactionValidationReport, ReactionValidationSeverity,
+    ReactionWriteError, ReactionWriteParams, parse_smirks, parse_smirks_with_params,
 };
 #[cfg(feature = "cap-reaction")]
 pub(crate) use ops::{
     ApplyReactionAccess, ReactionProductsAccess, ReactionProductsFromInputsAccess,
 };
-pub(crate) use reaction::ReactionApplyResult;
+pub use reaction::ReactionApplyResult;
 #[cfg(feature = "cap-fingerprints")]
 mod morgan;
 #[cfg(feature = "cap-fingerprints")]
@@ -121,10 +131,10 @@ pub use cosmolkit_search::{
 #[doc(hidden)]
 pub use binding_contract::{
     BINDING_CONTRACT, BINDING_CONTRACT_KEYWORDS, BINDING_CONTRACT_PROPERTIES,
-    BindingCallableContract, BindingContractEntry, BindingDefault, BindingItem,
-    BindingKeywordContract, BindingKind, BindingOwner, BindingParameterContract,
-    BindingPropertyAccess, BindingPropertyContract, BindingReceiver, BindingTypeRole,
-    FunctionStatus, StateModel,
+    BINDING_CONTRACT_PYTHON_ADAPTERS, BindingCallableContract, BindingContractEntry,
+    BindingDefault, BindingItem, BindingKeywordContract, BindingKind, BindingOwner,
+    BindingParameterContract, BindingPropertyAccess, BindingPropertyContract,
+    BindingPythonAdapterContract, BindingReceiver, BindingTypeRole, FunctionStatus, StateModel,
 };
 #[cfg(feature = "cap-bio")]
 mod bio;

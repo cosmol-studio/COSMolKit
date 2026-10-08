@@ -311,7 +311,7 @@ fn q94_recursive_serialization_uses_owned_graph_root_and_map_options() {
 }
 
 #[test]
-fn q95_atom_recursion_dispatch_reuses_children_and_rejects_unwritten_leaves() {
+fn q95_atom_recursion_dispatch_reuses_children_and_source_defined_wildcard() {
     let recursive = QueryNode::predicate(AtomQueryPredicate::RecursiveSmarts(
         RecursiveStructureQuery::from_query_graph(mapped_carbon_oxygen_query(), 5),
     ));
@@ -335,16 +335,16 @@ fn q95_atom_recursion_dispatch_reuses_children_and_rejects_unwritten_leaves() {
             predicate: unsupported,
         }
     );
-    let nested_unsupported = AtomQueryPredicate::HasProperty("probe".to_owned());
+    // SmartsWrite.cpp::getAtomSmarts falls through to res << "*" for
+    // HasProp; RDKit 2026.03.1 emits exactly [#6&*], with a warning.
+    let property_query = AtomQueryPredicate::HasProperty("probe".to_owned());
     assert_eq!(
         write_atom_node(QueryNode::and(vec![
             QueryNode::predicate(AtomQueryPredicate::AtomicNumber(6)),
-            QueryNode::predicate(nested_unsupported.clone()),
+            QueryNode::predicate(property_query),
         ]))
-        .unwrap_err(),
-        SmartsWriteError::UnsupportedAtomQuery {
-            predicate: nested_unsupported,
-        }
+        .unwrap(),
+        "[#6&*]"
     );
     let invalid_type = AtomQueryPredicate::AtomType {
         atomic_number: u8::MAX,
@@ -352,9 +352,9 @@ fn q95_atom_recursion_dispatch_reuses_children_and_rejects_unwritten_leaves() {
     };
     assert_eq!(
         write_atom_node(QueryNode::predicate(invalid_type.clone())).unwrap_err(),
-        SmartsWriteError::UnsupportedAtomQuery {
-            predicate: invalid_type,
-        }
+        // SmartsWrite.cpp calls getElementSymbol; PeriodicTable.h:54
+        // throws "Atomic number not found" for this exact invalid number.
+        SmartsWriteError::AtomTypeAtomicNumber { atomic_number: 255 }
     );
 
     let mut symbol_atom = QueryAtom::from_parts(
@@ -1036,7 +1036,9 @@ fn source_cx_missing_mixed_conformer_order_is_a_typed_failure() {
     let error = query_graph_to_cx_smarts(&query, &Default::default()).unwrap_err();
     assert!(matches!(
         error,
-        SmartsWriteError::CxCoordinates(CoordinateValidationError::MissingSourceConformerOrder)
+        SmartsWriteError::CxCoordinateSource(
+            CoordinateValidationError::MissingSourceConformerOrder
+        )
     ));
     assert!(
         std::error::Error::source(&error)
@@ -1062,14 +1064,16 @@ fn concrete_smarts_valence_failure_keeps_native_cause_and_input() {
         false,
     )
     .unwrap_err();
-    let SmartsWriteError::Traversal(ref traversal) = error else {
+    // SmartsWrite.cpp::MolToSmarts calls updatePropertyCache(false) before
+    // Canon traversal: retain the concrete cause at that earlier boundary.
+    let SmartsWriteError::Valence(ref valence) = error else {
         panic!("wrong error: {error:?}");
     };
     assert!(
-        matches!(traversal, cosmolkit_smiles::SmartsTraversalError::Valence(ValenceError::BadBondType { bond: Some(bond), order: BondOrder::Other }) if *bond == BondId::new(0))
+        matches!(valence, ValenceError::BadBondType { bond: Some(bond), order: BondOrder::Other } if *bond == BondId::new(0))
     );
     assert!(matches!(
-        traversal.source().unwrap().downcast_ref::<ValenceError>(),
+        error.source().unwrap().downcast_ref::<ValenceError>(),
         Some(ValenceError::BadBondType { .. })
     ));
     assert_eq!(topology, before);

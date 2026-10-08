@@ -17,6 +17,39 @@ pyo3::create_exception!(cosmolkit, FingerprintError, PyValueError);
 pyo3::create_exception!(cosmolkit, FingerprintJsonError, PyValueError);
 
 pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'static)) -> PyErr {
+    if let Some(error) = source.downcast_ref::<ck::SmartsParseError>() {
+        return crate::canonical_search::parse_pyerr(py, error.clone());
+    }
+    if let Some(error) = source.downcast_ref::<ck::SmartsWriteError>() {
+        return crate::canonical_search::write_pyerr(py, error.clone());
+    }
+    if let Some(error) = source.downcast_ref::<ck::SubstructMatchError>() {
+        return crate::canonical_search::substruct_pyerr(py, error.clone());
+    }
+    if let Some(error) = source.downcast_ref::<ck::ReactionModelError>() {
+        return crate::canonical_reaction::model_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::ReactionParseError>() {
+        return crate::canonical_reaction::parse_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::ReactionRunError>() {
+        return crate::canonical_reaction::run_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::ReactionApplyError>() {
+        return crate::canonical_reaction::apply_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::ReactionProductError>() {
+        return crate::canonical_reaction::product_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::ReactionWriteError>() {
+        return crate::canonical_reaction::write_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::ReactionValidationError>() {
+        return crate::canonical_reaction::validation_error(py, error);
+    }
+    if let Some(error) = source.downcast_ref::<ck::ReactionInitializationError>() {
+        return crate::canonical_reaction::initialization_error(py, error);
+    }
     // Preserve each batch row's typed scalar cause through the same canonical
     // mapper as a direct scalar call, without copying or reconstructing errors.
     if let Some(error) = source.downcast_ref::<ck::SmilesError>() {

@@ -7,7 +7,7 @@ repository = "https://github.com/cosmol-studio/COSMolKit"
 homepage = "https://tools.cosmol.org/"
 documentation = "https://docs.rs/cosmolkit-wasm"
 license.workspace = true
-version = "0.5.0-rc.13"
+version = "0.5.0-rc.14"
 edition.workspace = true
 publish = false
 
@@ -19,29 +19,52 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = ["full"]
 full = [
+    "cosmolkit/full",
+    "alignment",
+    "batch",
+    "bio",
+    "conformer",
+    "fingerprints",
+    "forcefields",
+    "hashing",
     "aromaticity",
     "depict",
     "descriptors",
     "hydrogens",
     "io",
     "kekulize",
+    "matrices",
     "radicals",
+    "reaction",
     "rings",
     "sanitize",
+    "search",
+    "serialization",
     "smiles",
     "valence",
 ]
+alignment = ["cosmolkit/cap-alignment"]
+batch = ["cosmolkit/cap-batch"]
+bio = ["cosmolkit/cap-bio"]
+conformer = ["cosmolkit/cap-conformer"]
+fingerprints = ["cosmolkit/cap-fingerprints"]
+forcefields = ["cosmolkit/cap-forcefields"]
+hashing = ["cosmolkit/cap-hashing"]
 aromaticity = ["cosmolkit/cap-aromaticity"]
 depict = ["cosmolkit/cap-depict"]
 descriptors = ["cosmolkit/cap-descriptors"]
 hydrogens = ["cosmolkit/cap-hydrogens"]
 io = ["cosmolkit/cap-io"]
 kekulize = ["cosmolkit/cap-kekulize"]
+matrices = ["cosmolkit/cap-matrices"]
 radicals = ["cosmolkit/cap-radicals"]
+reaction = ["cosmolkit/cap-reaction"]
 rings = ["cosmolkit/cap-rings"]
 sanitize = ["cosmolkit/cap-sanitize"]
+search = ["cosmolkit/cap-search"]
+serialization = ["cosmolkit/cap-serialization"]
 smiles = ["cosmolkit/cap-smiles"]
 valence = ["cosmolkit/cap-valence"]
 
 [dependencies]
-cosmolkit = { version = "0.5.0-rc.13", path = "../crates/cosmolkit", default-features = false }
+cosmolkit = { version = "0.5.0-rc.14", path = "../crates/cosmolkit", default-features = false }

@@ -1,0 +1,143 @@
+"""Fixed public reaction boundary regressions; no corpus or external oracle."""
+import pytest
+import cosmolkit as ck
+
+
+def test_reaction_values_writers_and_initialization():
+    rxn = ck.Reaction.from_smirks("[C:1]>O>[N:1]")
+    assert (rxn.num_reactant_templates(), rxn.num_product_templates(), rxn.num_agent_templates()) == (1, 1, 1)
+    assert rxn.reactant_template(0).num_atoms() == 1
+    assert len(rxn.reactant_templates()) == len(rxn.product_templates()) == len(rxn.agent_templates()) == 1
+    assert not rxn.is_initialized()
+    report = rxn.validate_with_params(ck.ReactionValidationParams(silent=True))
+    assert report.is_valid and report.num_errors == 0 and report.errors == []
+    assert rxn.with_initialized().is_initialized()
+    assert not rxn.is_initialized()
+    assert rxn.with_initialized_with_params(ck.ReactionValidationParams(silent=True)).is_initialized()
+    for text in [rxn.to_smirks(), rxn.to_smirks_with_params(ck.ReactionWriteParams()),
+                 rxn.to_cx_smirks(), rxn.to_cx_smirks_with_params(ck.ReactionWriteParams())]:
+        assert isinstance(text, str)
+        assert ck.parse_smirks(text).num_agent_templates() == 1
+
+
+def test_reaction_templates_are_owned_values():
+    query = ck.QueryGraph.from_smarts("[C:1]")
+    rxn = ck.Reaction.from_templates([query], [query], [])
+    extended = rxn.with_agent_template(query).with_reactant_template(query).with_product_template(query)
+    assert (rxn.num_reactant_templates(), rxn.num_agent_templates(), rxn.num_product_templates()) == (1, 0, 1)
+    assert (extended.num_reactant_templates(), extended.num_agent_templates(), extended.num_product_templates()) == (2, 1, 2)
+    removed = extended.without_agents()
+    assert len(removed.removed_templates) == 1
+    assert removed.reaction.num_agent_templates() == 0
+    assert extended.num_agent_templates() == 1
+    for name in ["without_unmapped_reactants", "without_unmapped_products"]:
+        assert isinstance(getattr(rxn, name)(), ck.ReactionTemplateRemoval)
+        assert isinstance(getattr(rxn, name + "_with_params")(ck.ReactionTemplateRemovalParams()), ck.ReactionTemplateRemoval)
+    # Reaction.h:376 defaults manual ChemicalReaction templates to false.
+    changed = rxn.with_implicit_properties(True)
+    assert changed.implicit_properties() and not rxn.implicit_properties()
+    assert rxn.with_match_params(ck.SubstructMatchParams(max_matches=7)).match_params().max_matches == 7
+
+
+def test_reaction_parameter_defaults_and_coordinate_payloads():
+    params = ck.ReactionParseParams()
+    assert (params.use_smiles, params.sanitize, params.replacements, params.allow_cxsmiles, params.strict_cxsmiles) == (False, False, {}, True, True)
+    assert ck.ReactionRunParams().max_products == 1000
+    assert ck.ReactionRunParams().coordinate_selections == []
+    assert ck.ReactionApplyParams().remove_unmatched_atoms
+    assert ck.ReactionTemplateRemovalParams().threshold_unmapped_atoms == 0.2
+    auto = ck.ReactionCoordinateSelection.auto()
+    two = ck.ReactionCoordinateSelection.two_d(7)
+    three = ck.ReactionCoordinateSelection.three_d(42)
+    assert auto.is_auto and auto.id is None
+    assert two.is_2d and two.id == 7 and not two.is_3d
+    assert three.is_3d and three.id == 42
+    assert ck.ReactionSingleRunParams(coordinate_selection=three).coordinate_selection.id == 42
+    selections = ck.ReactionRunParams(max_products=3, coordinate_selections=[two, three]).coordinate_selections
+    assert [s.id for s in selections] == [7, 42]
+    write = ck.ReactionWriteParams(cx_fields=ck.CxSmilesFields.NONE, rooted_at_atom=0, coordinate_selections=[two])
+    assert write.cx_fields.bits() == 0 and write.rooted_at_atom == 0
+    assert write.coordinate_selections[0].id == 7
+    with pytest.raises(AttributeError):
+        setattr(params, "sanitize", True)
+    with pytest.raises(TypeError):
+        _ = ck.ReactionSingleRunParams(coordinate_selection="Auto")  # pyright: ignore[reportArgumentType]
+    assert ck.parse_smirks_with_params("{C}>>[N:1]", ck.ReactionParseParams(replacements={"{C}": "[C:1]"})).num_reactant_templates() == 1
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_product_groups_mutate_reaction_initialization_not_input(explicit: bool):
+    source = ck.Molecule.from_smiles("C")
+    original = source.to_smiles()
+    rxn = ck.Reaction.from_smirks("[C:1]>>[N:1]")
+    assert not rxn.is_initialized()
+    sets = (source.reaction_products_with_params(rxn, 0, ck.ReactionSingleRunParams())
+            if explicit else source.reaction_products(rxn, 0))
+    assert rxn.is_initialized()
+    assert len(sets) == len(sets[0]) == 1
+    assert sets[0][0].to_smiles() == "N"
+    assert source.to_smiles() == original
+    assert ck.Molecule.from_smiles("O").reaction_products(rxn, 0) == []
+    pair = ck.Reaction.from_smirks("[C:1].[C:2]>>[C:1].[C:2]")
+    sets = source.reaction_products_from_inputs(pair, [source, source], ck.ReactionRunParams())
+    assert len(sets) == 1 and len(sets[0]) == 2
+    assert [m.to_smiles() for m in sets[0]] == ["C", "C"]
+    assert source.to_smiles() == original
+
+
+@pytest.mark.parametrize("explicit", [False, True])
+def test_apply_value_inplace_and_failure_atomicity(explicit: bool):
+    source = ck.Molecule.from_smiles("C")
+    rxn = ck.Reaction.from_smirks("[C:1]>>[N:1]")
+    result = (source.apply_reaction_with_params(rxn, ck.ReactionApplyParams())
+              if explicit else source.apply_reaction(rxn))
+    assert result.changed and result.molecule.to_smiles() == "N"
+    assert source.to_smiles() == "C"
+    changed = (source.apply_reaction_with_params_(rxn, ck.ReactionApplyParams())
+               if explicit else source.apply_reaction_(rxn))
+    assert changed is True and source.to_smiles() == "N"
+    assert source.apply_reaction_(rxn) is False
+    with pytest.raises(ck.OperationError) as caught:
+        _ = source.apply_reaction_(ck.Reaction.from_smirks("[N:1]>>[N:1]C"))
+    assert caught.value.kind == "ReactionApply"
+    assert isinstance(caught.value.__cause__, ck.ReactionApplyError)
+    assert caught.value.__cause__.kind == "AddsProductAtom"
+    assert caught.value.__cause__.atom == 1
+    assert source.to_smiles() == "N"
+
+
+def test_typed_parse_validation_model_and_execution_errors():
+    with pytest.raises(ck.ReactionParseError) as caught:
+        _ = ck.Reaction.from_smirks("CC")
+    assert (caught.value.kind, caught.value.count) == ("Separators", 0)
+    rxn = ck.Reaction.from_smirks("[C:1]>>[N:1]")
+    with pytest.raises(ck.ReactionModelError) as caught:
+        _ = rxn.reactant_template(9)
+    assert caught.value.kind == "TemplateIndex" and caught.value.index == 9 and caught.value.count == 1
+    assert caught.value.role == ck.ReactionRole.Reactant
+    with pytest.raises(ck.OperationError) as caught:
+        _ = ck.Molecule.from_smiles("C").reaction_products(rxn, 99)
+    assert caught.value.kind == "ReactionRun"
+    assert isinstance(caught.value.__cause__, ck.ReactionRunError)
+    assert caught.value.__cause__.kind == "ReactantTemplateIndex" and caught.value.__cause__.index == 99
+    empty = ck.Reaction()
+    report = empty.validate_with_params(ck.ReactionValidationParams(silent=True))
+    assert not report.is_valid and report.num_errors == 2
+    assert report.errors[0].kind == ck.ReactionValidationIssueKind.MissingReactants
+    assert report.errors[0].severity == ck.ReactionValidationSeverity.Error
+    assert report.errors[0].role == ck.ReactionRole.Reactant
+    assert report.errors[0].atom is None
+    assert isinstance(report.errors[0].detail, str)
+    with pytest.raises(ck.ReactionInitializationError) as caught:
+        _ = empty.with_initialized_with_params(ck.ReactionValidationParams(silent=True))
+    assert caught.value.kind == "Invalid" and caught.value.report.num_errors == 2
+
+
+def test_reaction_template_parse_errors_keep_concrete_search_cause():
+    with pytest.raises(ck.ReactionParseError) as caught:
+        _ = ck.Reaction.from_smirks("[C:1]>>[")
+    assert caught.value.kind == "Smarts"
+    assert caught.value.role == ck.ReactionRole.Product
+    assert caught.value.template == 0 and caught.value.text == "["
+    assert isinstance(caught.value.__cause__, ck.SmartsParseError)
+    assert caught.value.__cause__.kind == "UnclosedBracket"

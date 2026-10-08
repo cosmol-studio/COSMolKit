@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -14,111 +16,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 TEST_DIR = ROOT / "wasm" / "tests"
 CONFIG = ROOT / "wasm" / "tools" / "wasm_binding" / "alef.toml"
-
-# These are the stable, ABI-safe operations promised by the binding-facing
-# projection.  The Rust facade remains a complete re-export; this list covers
-# the methods that must survive the Alef -> wasm-bindgen projection.  Optional
-# source results have explicit `*_or_error` counterparts and are checked
-# through those counterparts instead of being silently dropped by a generator.
-EXPECTED_METHODS = {
-    "new",
-    "from_smiles",
-    "from_smiles_with_sanitize",
-    "from_mol_block",
-    "from_xyz_block",
-    "from_pdb_block",
-    "from_mmcif_block",
-    "from_protein_sequence",
-    "from_nucleic_sequence",
-    "from_mol2_or_error",
-    "from_inchi_or_error",
-    "from_binary",
-    "to_smiles",
-    "to_smiles_with_isomeric",
-    "to_mol_block_v2000",
-    "to_mol_block_v3000",
-    "to_sdf_record_v2000",
-    "to_sdf_record_v3000",
-    "to_smarts",
-    "to_cx_smarts",
-    "to_inchi",
-    "to_inchi_key",
-    "num_atoms",
-    "num_bonds",
-    "name_or_empty",
-    "with_name",
-    "with_property",
-    "with_sdf_data_field",
-    "property_or_empty",
-    "property_keys",
-    "sdf_data_field_names",
-    "sdf_data_field_or_empty",
-    "source_coordinate_dimension_or_empty",
-    "atomic_numbers",
-    "coordinates_2d",
-    "num_conformers_3d",
-    "coordinates_3d",
-    "to_svg",
-    "to_png",
-    "molecular_weight",
-    "exact_molecular_weight",
-    "crippen_log_p",
-    "crippen_molar_refractivity",
-    "tpsa",
-    "h_bond_acceptors",
-    "h_bond_donors",
-    "formula",
-    "fraction_csp3",
-    "num_heavy_atoms",
-    "num_rings",
-    "num_aromatic_rings",
-    "num_rotatable_bonds",
-    "qed",
-    "hall_kier_alpha",
-    "kappa_1",
-    "kappa_2",
-    "kappa_3",
-    "chi",
-    "chi_0",
-    "chi_1",
-    "phi",
-    "num_spiro_atoms",
-    "num_bridgehead_atoms",
-    "labute_asa",
-    "num_atom_stereo_centers",
-    "num_unspecified_atom_stereo_centers",
-    "pattern_fingerprint",
-    "morgan_fingerprint",
-    "atom_pair_fingerprint",
-    "layered_fingerprint",
-    "topological_fingerprint",
-    "maccs_fingerprint",
-    "avalon_fingerprint",
-    "topological_torsion_fingerprint",
-    "with_hydrogens",
-    "without_hydrogens",
-    "with_kekulized_bonds",
-    "sanitize",
-    "with_assigned_valence",
-    "with_assigned_rings",
-    "with_assigned_ring_families",
-    "with_assigned_aromaticity",
-    "with_assigned_radicals",
-    "with_2d_coordinates",
-    "with_3d_conformer",
-    "perceive_stereochemistry",
-    "stereoisomer_count",
-    "stereoisomer_count_with_options",
-    "hash",
-    "to_binary",
-    "to_pdb_block",
-    "dg_bounds_matrix",
-    "fragments",
-    "largest_fragment",
-    "murcko_scaffold",
-    "net_scaffold",
-    "has_substruct_match",
-}
 
 
 def command(name: str, environment_name: str) -> str:
@@ -137,13 +34,27 @@ def run(*args: str, cwd: Path, env: dict[str, str] | None = None) -> None:
     subprocess.run(args, cwd=cwd, env=env, check=True)
 
 
-def check_generated_surface(source: Path) -> None:
-    generated_methods = {
-        line.strip().split("(", 1)[0].removeprefix("pub fn ")
-        for line in source.read_text(encoding="utf-8").splitlines()
-        if line.strip().startswith("pub fn ")
+def molecule_methods(sources) -> set[str]:
+    return {
+        name
+        for source in sources
+        for body in re.findall(
+            r"^impl (?:crate::)?Molecule \{\n(.*?)^\}",
+            source.read_text(encoding="utf-8"),
+            re.MULTILINE | re.DOTALL,
+        )
+        for name in re.findall(r"pub fn (\w+)\s*\(", body)
     }
-    missing = sorted(EXPECTED_METHODS - generated_methods)
+
+
+def check_generated_surface(source: Path) -> None:
+    # Check every current binding-facing Molecule method, including custom
+    # modules. Historical names and future APIs are not this projection's ABI.
+    expected = molecule_methods((ROOT / "wasm" / "src").glob("*.rs"))
+    if not expected:
+        raise SystemExit("No binding-facing Molecule methods found")
+    generated_methods = molecule_methods(source.parent.glob("*.rs"))
+    missing = sorted(expected - generated_methods)
     if missing:
         raise SystemExit(
             "Alef omitted required ABI-safe Molecule methods: "
@@ -151,7 +62,36 @@ def check_generated_surface(source: Path) -> None:
         )
 
 
+def prepare_package(package: Path, library_name: str, metadata: dict) -> None:
+    module = f"{library_name}.js"
+    declaration = f"{library_name}.d.ts"
+    (package / "package.json").write_text(
+        json.dumps({
+            "name": "@cosmol-studio/cosmolkit",
+            "version": metadata["version"],
+            "description": "WebAssembly bindings for COSMolKit",
+            "type": "module",
+            "main": module,
+            "module": module,
+            "types": declaration,
+            "exports": {
+                ".": {"types": f"./{declaration}", "default": f"./{module}"},
+                "./*": "./*",
+            },
+            "files": ["*.js", "*.d.ts", "*.wasm", "snippets", "README.md", "LICENSE"],
+            "license": metadata["license"],
+            "repository": {"type": "git", "url": metadata["repository"]},
+        }, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    shutil.copy2(ROOT / "wasm" / "README.md", package / "README.md")
+    shutil.copy2(ROOT / "LICENSE", package / "LICENSE")
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out-dir", type=Path, help="Export the tested npm package to a new directory")
+    args = parser.parse_args()
     alef = command("alef", "ALEF_BIN")
     wasm_bindgen = command("wasm-bindgen", "WASM_BINDGEN_BIN")
     bun = os.environ.get("BUN_BIN") or shutil.which("bun")
@@ -159,10 +99,36 @@ def main() -> None:
 
     with tempfile.TemporaryDirectory(prefix="cosmolkit-wasm-") as temporary:
         workspace = Path(temporary)
-        (workspace / "crates").symlink_to(ROOT / "crates", target_is_directory=True)
-        (workspace / "wasm").symlink_to(ROOT / "wasm", target_is_directory=True)
-        (workspace / "Cargo.toml").symlink_to(ROOT / "Cargo.toml")
+        api_root = Path(os.environ.get("COSMOLKIT_API_ROOT", ROOT)).resolve()
+        # Alef synchronizes versions. Only disposable input copies may be
+        # writable through its workspace; source manifests must never be links.
+        shutil.copytree(ROOT / "wasm" / "src", workspace / "wasm" / "src")
+        manifest_text = (ROOT / "wasm" / "Cargo.toml").read_text(encoding="utf-8")
+        manifest_text = manifest_text.replace(
+            'path = "../crates/cosmolkit"',
+            "path = " + json.dumps(str(api_root / "crates" / "cosmolkit")),
+        )
+        (workspace / "wasm" / "Cargo.toml").write_text(manifest_text, encoding="utf-8")
+        with (api_root / "Cargo.toml").open("rb") as source_manifest:
+            package_metadata = tomllib.load(source_manifest)["workspace"]["package"]
+        (workspace / "Cargo.toml").write_text(
+            '[workspace]\nmembers = ["wasm", "tmp/alef/wasm"]\nresolver = "2"\n'
+            "[workspace.package]\n"
+            + "\n".join(f"{key} = {json.dumps(package_metadata[key])}" for key in ("version", "edition", "license"))
+            + "\n",
+            encoding="utf-8",
+        )
         (workspace / "alef.toml").write_text(CONFIG.read_text(encoding="utf-8"), encoding="utf-8")
+
+        private_bin = workspace / "private-bin"
+        private_bin.mkdir()
+        git_guard = private_bin / "git"
+        git_guard.write_text("#!/bin/sh\nexit 127\n", encoding="utf-8")
+        git_guard.chmod(0o755)
+        build_env = os.environ.copy()
+        build_env["PATH"] = str(private_bin) + os.pathsep + build_env.get("PATH", "")
+        target = Path(build_env.get("CARGO_TARGET_DIR", workspace / "target")).resolve()
+        build_env["CARGO_TARGET_DIR"] = str(target)
 
         generated = workspace / "tmp" / "alef" / "wasm"
         run(
@@ -176,7 +142,15 @@ def main() -> None:
             "wasm",
             "--clean",
             cwd=workspace,
+            env=build_env,
         )
+        with CONFIG.open("rb") as config_file:
+            custom_modules = tomllib.load(config_file)["crates"][0]["wasm"].get("custom_rust_modules", [])
+        for module_name in custom_modules:
+            shutil.copy2(
+                ROOT / "wasm" / "src" / "js" / f"{module_name}.rs",
+                generated / "src" / f"{module_name}.rs",
+            )
         check_generated_surface(generated / "src" / "lib.rs")
         manifest = generated / "Cargo.toml"
         run(
@@ -188,6 +162,7 @@ def main() -> None:
             "wasm32-unknown-unknown",
             "--release",
             cwd=workspace,
+            env=build_env,
         )
 
         with manifest.open("rb") as generated_manifest:
@@ -196,8 +171,7 @@ def main() -> None:
             "name", manifest_data["package"]["name"]
         ).replace("-", "_")
         wasm_binary = (
-            generated
-            / "target"
+            target
             / "wasm32-unknown-unknown"
             / "release"
             / f"{library_name}.wasm"
@@ -220,18 +194,24 @@ def main() -> None:
         for path in (module, declaration, background_binary):
             if not path.is_file():
                 raise SystemExit(f"wasm-bindgen did not produce expected file: {path}")
+        prepare_package(package, library_name, package_metadata)
 
-        runtime_env = os.environ.copy()
+        runtime_env = build_env.copy()
         runtime_env.update(
             {
                 "COSMOLKIT_WASM_MODULE": str(module),
                 "COSMOLKIT_WASM_BINARY": str(background_binary),
             }
         )
-        if bun:
-            run(bun, "test", str(TEST_DIR / "binding_surface.mjs"), cwd=ROOT, env=runtime_env)
-        else:
-            run(node, "--test", str(TEST_DIR / "binding_surface.mjs"), cwd=ROOT, env=runtime_env)
+        runtime_failure = None
+        try:
+            if bun:
+                run(bun, "test", *map(str, sorted(TEST_DIR.glob("*.mjs"))), cwd=ROOT, env=runtime_env)
+            else:
+                run(node, "--test", *map(str, sorted(TEST_DIR.glob("*.mjs"))), cwd=ROOT, env=runtime_env)
+        except subprocess.CalledProcessError as error:
+            # Still check TypeScript when runtime tests fail; retain failure.
+            runtime_failure = error
 
         shim = workspace / "wasm-generated.d.ts"
         # Import the generated module without its `.d.ts` suffix so TypeScript
@@ -254,16 +234,22 @@ def main() -> None:
                         "baseUrl": str(TEST_DIR),
                         "paths": {"cosmolkit-generated": [str(shim)]},
                     },
-                    "files": [str(TEST_DIR / "binding_surface.ts")],
+                    "files": list(map(str, sorted(TEST_DIR.glob("*.ts")))),
                 }
             ),
             encoding="utf-8",
         )
-        tsc = shutil.which("tsc")
+        tsc = os.environ.get("TSC_BIN") or shutil.which("tsc")
         if tsc:
             run(tsc, "--project", str(type_config), cwd=ROOT)
         else:
             run("npx", "--yes", "--package", "typescript@5.8.3", "tsc", "--project", str(type_config), cwd=ROOT)
+        print("TypeScript declaration checks passed", flush=True)
+        if runtime_failure is not None:
+            raise runtime_failure
+        if args.out_dir is not None:
+            shutil.copytree(package, args.out_dir.resolve())
+            print(f"Tested npm package exported to {args.out_dir}", flush=True)
 
     print("WASM JavaScript runtime and TypeScript declaration checks passed")
 

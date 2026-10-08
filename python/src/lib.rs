@@ -24,6 +24,7 @@ mod canonical_group_values;
 mod canonical_molecular_hash;
 mod canonical_operation_metadata;
 mod canonical_potential_stereo;
+mod canonical_reaction;
 mod canonical_sdf;
 mod canonical_search;
 mod canonical_smiles_writer;
@@ -60,3 +61,4 @@ mod canonical_sdf_supplier;
 mod canonical_stereoisomers;
 
 mod persistent_forcefields;
+mod rdkit_binding;

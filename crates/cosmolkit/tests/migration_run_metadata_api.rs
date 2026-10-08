@@ -25,6 +25,9 @@ fn expected_feature_names() -> Vec<&'static str> {
     if cfg!(feature = "cap-stereoisomers") {
         expected.push("cap-stereoisomers");
     }
+    if cfg!(feature = "cap-reaction") {
+        expected.push("cap-reaction");
+    }
     if cfg!(feature = "cap-alignment") {
         expected.push("cap-alignment");
     }
@@ -79,6 +82,13 @@ fn expected_operation_methods() -> Vec<&'static str> {
         expected.extend([
             "enumerate_stereoisomers_with_options",
             "enumerate_stereoisomers_with_random_bits",
+        ]);
+    }
+    if cfg!(feature = "cap-reaction") {
+        expected.extend([
+            "reaction_products_with_params",
+            "reaction_products_from_inputs",
+            "apply_reaction_with_params",
         ]);
     }
     if cfg!(feature = "cap-alignment") {

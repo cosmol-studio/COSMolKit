@@ -134,7 +134,7 @@ pub(crate) static STEREOISOMERS_FEATURE: FeatureSpec = FeatureSpec {
 pub(crate) static REACTION_FEATURE: FeatureSpec = FeatureSpec {
     name: "cap-reaction",
     category: "chemistry",
-    docs: "Private reaction pipeline pending canonical public registration and review.",
+    docs: "Source-backed reaction products and restricted in-place application.",
 };
 
 molecule_ops! {
@@ -171,7 +171,7 @@ molecule_ops! {
     #[cfg(feature = "cap-reaction")]
     op reaction_products(reaction: &mut crate::Reaction, reactant_template: usize, params: &crate::ReactionSingleRunParams) {
         method: reaction_products_with_params,
-        method_visibility: pub(crate),
+        method_visibility: pub,
         impl_fn: crate::ops::reaction::reaction_products_impl,
         output: multiple,
         result_type: Vec<Vec<crate::Molecule>>,
@@ -190,7 +190,7 @@ molecule_ops! {
     #[cfg(feature = "cap-reaction")]
     op reaction_products_from_inputs(reaction: &mut crate::Reaction, reactants: &[&crate::Molecule], params: &crate::ReactionRunParams) {
         method: reaction_products_from_inputs,
-        method_visibility: pub(crate),
+        method_visibility: pub,
         impl_fn: crate::ops::reaction::reaction_products_from_inputs_impl,
         output: multiple,
         result_type: Vec<Vec<crate::Molecule>>,
@@ -208,7 +208,7 @@ molecule_ops! {
     #[cfg(feature = "cap-reaction")]
     op apply_reaction(reaction: &mut crate::Reaction, params: &crate::ReactionApplyParams) {
         method: apply_reaction_with_params,
-        method_visibility: pub(crate),
+        method_visibility: pub,
         impl_fn: crate::ops::reaction::apply_reaction_impl,
         report_type: bool,
         report_result_type: crate::ReactionApplyResult,
