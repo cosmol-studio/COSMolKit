@@ -10,7 +10,7 @@ test('All dataset/stream opens preserve real WASM file errors and reusable read 
 test('Reusable reader stores source path and full detached params without touching filesystem',()=>{
  const path='/missing-is-allowed.sdf',defaults=b.SdfReader.open(path);assert.equal(defaults.path(),path);assert.equal(defaults.params().sanitize,true);assert.equal(defaults.params().coordinateMode,b.SdfCoordinateMode.Preserve);
  const p=new b.SdfReadParams(false,false,false,true,false,b.SdfCoordinateMode.Require3D),reader=b.SdfReader.openWithParams(path,p);assert.equal(reader.path(),path);
- for(let repeat=0;repeat<2;repeat++){const value=reader.params();assert.equal(value.sanitize,false);assert.equal(value.removeHydrogens,false);assert.equal(value.strictParsing,false);assert.equal(value.expandAttachmentPoints,true);assert.equal(value.processPropertyLists,false);assert.equal(value.coordinateMode,b.SdfCoordinateMode.Require3D);value.free();}
+ for(let repeat=0;repeat<2;repeat++){const value=reader.params();assert.equal(value.sanitize,false);assert.equal(value.removeHs,false);assert.equal(value.strictParsing,false);assert.equal(value.expandAttachmentPoints,true);assert.equal(value.processPropertyLists,false);assert.equal(value.coordinateMode,b.SdfCoordinateMode.Require3D);value.free();}
  p.free();assert.equal(reader.params().coordinateMode,b.SdfCoordinateMode.Require3D);assert.equal(reader.path(),path);
 });
 test('Supplier exports retain complete registry methods and class boundary validation',()=>{

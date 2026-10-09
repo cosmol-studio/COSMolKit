@@ -135,30 +135,30 @@ fn error(e: ck::MaccsFingerprintError) -> JsValue {
 }
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=maccsFingerprint)]
-    pub fn maccs_fingerprint(&self) -> Result<Fingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintMaccs)]
+    pub fn fingerprint_maccs(&self) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .maccs_fingerprint()
         self.inner
-            .maccs_fingerprint()
+            .fingerprint_maccs()
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=maccsFingerprintRaw)]
-    pub fn maccs_fingerprint_raw(&self) -> Result<Fingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintMaccsRaw)]
+    pub fn fingerprint_maccs_raw(&self) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .maccs_fingerprint_raw()
         self.inner
-            .maccs_fingerprint_raw()
+            .fingerprint_maccs_raw()
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=maccsFingerprintWithParams)]
-    pub fn maccs_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintMaccsWithParams)]
+    pub fn fingerprint_maccs_with_params(
         &self,
         params: &MaccsFingerprintParams,
     ) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .maccs_fingerprint_with_params(&params.inner)
         self.inner
-            .maccs_fingerprint_with_params(&params.inner)
+            .fingerprint_maccs_with_params(&params.inner)
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }

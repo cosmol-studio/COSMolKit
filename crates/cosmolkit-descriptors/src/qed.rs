@@ -874,7 +874,7 @@ mod original_qed_source_conditions {
                     let actual = cosmolkit_smiles::write_smiles_with_params(
                         output,
                         &cosmolkit_smiles::SmilesWriteParams {
-                            do_isomeric_smiles: true,
+                            isomeric_smiles: true,
                             canonical: true,
                             ..Default::default()
                         },

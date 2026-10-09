@@ -182,7 +182,7 @@ impl Molecule {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Mol2ReadParams {
     pub sanitize: bool,
-    pub remove_hydrogens: bool,
+    pub remove_hs: bool,
     pub variant: Mol2Type,
     pub cleanup_substructures: bool,
 }
@@ -190,7 +190,7 @@ impl Default for Mol2ReadParams {
     fn default() -> Self {
         Self {
             sanitize: true,
-            remove_hydrogens: true,
+            remove_hs: true,
             variant: Mol2Type::Corina,
             cleanup_substructures: true,
         }
@@ -273,7 +273,7 @@ impl Molecule {
         .map_err(MolecularIoError::Mol2Read)?
         .ok_or(MolecularIoError::NoRecord { format: "MOL2" })?;
         let mut record =
-            cosmolkit_io::finish_mol2_record(record, params.sanitize, params.remove_hydrogens)
+            cosmolkit_io::finish_mol2_record(record, params.sanitize, params.remove_hs)
                 .map_err(MolecularIoError::Mol2Post)?;
         let state = record.take_post_state();
         Self::from_parsed_parts_with_derived_state(

@@ -354,22 +354,22 @@ impl Molecule {
             .map(|inner| MmffOptimizeMoleculeResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=withMmffOptimizedConfs)]
-    pub fn with_mmff_optimized_confs(&self) -> Result<MmffOptimizeMoleculeConfsResult, JsValue> {
+    #[wasm_bindgen(js_name=withMmffOptimizedConformers)]
+    pub fn with_mmff_optimized_conformers(&self) -> Result<MmffOptimizeMoleculeConfsResult, JsValue> {
         // COSMolKit❗✔️: self.inner.with_mmff_optimized_confs()
         self.inner
-            .with_mmff_optimized_confs()
+            .with_mmff_optimized_conformers()
             .map(|inner| MmffOptimizeMoleculeConfsResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=withMmffOptimizedConfsWithParams)]
-    pub fn with_mmff_optimized_confs_with_params(
+    #[wasm_bindgen(js_name=withMmffOptimizedConformersWithParams)]
+    pub fn with_mmff_optimized_conformers_with_params(
         &self,
         params: &MmffConformerOptimizationParams,
     ) -> Result<MmffOptimizeMoleculeConfsResult, JsValue> {
         // COSMolKit❗✔️: self.inner.with_mmff_optimized_confs_with_params(&params.inner)
         self.inner
-            .with_mmff_optimized_confs_with_params(&params.inner)
+            .with_mmff_optimized_conformers_with_params(&params.inner)
             .map(|inner| MmffOptimizeMoleculeConfsResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }

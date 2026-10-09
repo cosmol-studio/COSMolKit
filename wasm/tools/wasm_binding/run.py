@@ -14,6 +14,7 @@ from pathlib import Path
 
 from presets import PRESETS, MODULE_GROUPS, TEST_GROUPS, active_features, npm_release, selected_names, source_modules
 from features import sync_manifest
+from contract import compiled_contract, typescript_probe
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -95,7 +96,7 @@ def prepare_package(package: Path, library_name: str, metadata: dict, preset: st
     shutil.copy2(ROOT / "LICENSE", package / "LICENSE")
 
 
-def check_typescript(workspace: Path, declaration: Path, active: set[str] | None = None) -> None:
+def check_typescript(workspace: Path, declaration: Path, active: set[str] | None = None, contract: dict | None = None) -> None:
     shim = workspace / "wasm-generated.d.ts"
     # Resolve the generated public declaration without depending on baseUrl.
     shim.write_text(
@@ -103,6 +104,11 @@ def check_typescript(workspace: Path, declaration: Path, active: set[str] | None
         encoding="utf-8",
     )
     type_config = workspace / "tsconfig.json"
+    contract_tests = []
+    if contract is not None:
+        probe = workspace / "binding-contract.ts"
+        probe.write_text(typescript_probe(contract), encoding="utf-8")
+        contract_tests.append(str(probe))
     type_config.write_text(
         json.dumps({
             "compilerOptions": {
@@ -114,7 +120,7 @@ def check_typescript(workspace: Path, declaration: Path, active: set[str] | None
                 "noEmit": True,
                 "paths": {"cosmolkit-generated": [str(shim)]},
             },
-            "files": list(map(str, selected_tests(".ts", active or active_features("full")))),
+            "files": list(map(str, selected_tests(".ts", active or active_features("full")))) + contract_tests,
         }),
         encoding="utf-8",
     )
@@ -143,6 +149,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, help="Export the tested npm package to a new directory")
     parser.add_argument("--preset", choices=PRESETS, default="full", help="Fixed distribution preset (default: full)")
+    parser.add_argument(
+        "--skip-binding-contract", action="store_true",
+        help="Temporarily skip registry contract gates for publication-pipeline testing; keep compilation and JS/TS tests",
+    )
     args = parser.parse_args()
     active = active_features(args.preset)
     print(f"WASM preset: {args.preset}; features: {', '.join(sorted(active))}", flush=True)
@@ -158,10 +168,11 @@ def main() -> None:
         # writable through its workspace; source manifests must never be links.
         shutil.copytree(ROOT / "wasm" / "src", workspace / "wasm" / "src")
         manifest_text = (ROOT / "wasm" / "Cargo.toml").read_text(encoding="utf-8")
-        manifest_text = manifest_text.replace(
-            'path = "../crates/cosmolkit"',
-            "path = " + json.dumps(str(api_root / "crates" / "cosmolkit")),
-        )
+        for dependency in ("cosmolkit", "cosmolkit-macros"):
+            manifest_text = manifest_text.replace(
+                f'path = "../crates/{dependency}"',
+                "path = " + json.dumps(str(api_root / "crates" / dependency)),
+            )
         (workspace / "wasm" / "Cargo.toml").write_text(manifest_text, encoding="utf-8")
         with (api_root / "Cargo.toml").open("rb") as source_manifest:
             package_metadata = tomllib.load(source_manifest)["workspace"]["package"]
@@ -281,7 +292,15 @@ def main() -> None:
             }
         )
         runtime_failure = None
+        contract_path = workspace / "binding-contract.json"
+        contract = None
+        if args.skip_binding_contract:
+            print("WARNING: registry binding contract gates skipped for publication-pipeline testing; binding completeness is NOT validated", flush=True)
+        else:
+            contract = compiled_contract(api_root, active, contract_path)
         try:
+            if contract is not None:
+                run(bun or node, str(ROOT / "wasm/tools/wasm_binding/contract.mjs"), str(module), str(background_binary), str(contract_path), cwd=ROOT, env=runtime_env)
             if bun:
                 run(bun, "test", *map(str, selected_tests(".mjs", active)), cwd=ROOT, env=runtime_env)
             else:
@@ -290,7 +309,7 @@ def main() -> None:
             # Still check TypeScript when runtime tests fail; retain failure.
             runtime_failure = error
 
-        check_typescript(workspace, declaration, active)
+        check_typescript(workspace, declaration, active, contract)
         if runtime_failure is not None:
             raise runtime_failure
         if args.out_dir is not None:
@@ -299,6 +318,8 @@ def main() -> None:
         print(f"WASM binary bytes ({args.preset}): {background_binary.stat().st_size}", flush=True)
 
     print("WASM JavaScript runtime and TypeScript declaration checks passed")
+    if args.skip_binding_contract:
+        print("Registry binding contract gates were NOT run")
 
 
 if __name__ == "__main__":

@@ -50,10 +50,11 @@ pub(crate) fn maccs_pyerr(py: Python<'_>, source: ck::MaccsFingerprintError) -> 
     err
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct MaccsFingerprintParams {
     pub(crate) inner: ck::MaccsFingerprintParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MaccsFingerprintParams {

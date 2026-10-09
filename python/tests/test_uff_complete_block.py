@@ -15,7 +15,7 @@ def coordinates(molecule):
 
 
 BASELINE_ROWS = [
-    "Molecule.has_uff_params", "Molecule.with_uff_optimized", "Molecule.with_uff_optimized_confs",
+    "Molecule.has_uff_params", "Molecule.with_uff_optimized", "Molecule.with_uff_optimized_conformers",
     "UffOptimizeMoleculeConfResult", "UffOptimizeMoleculeConfResult.__repr__",
     "UffOptimizeMoleculeConfResult.energy", "UffOptimizeMoleculeConfResult.needs_more", "UffOptimizeMoleculeConfResult.status_code",
     "UffOptimizeMoleculeConfsResult", "UffOptimizeMoleculeConfsResult.__repr__", "UffOptimizeMoleculeConfsResult.conformer_results", "UffOptimizeMoleculeConfsResult.molecule",
@@ -40,7 +40,7 @@ def test_uff_original_21_rows_canonical_native_behavior(original_row):
         assert coordinates(result.molecule()) != before
         assert "UffOptimizationResult(needs_more=0, energy=" in repr(result)
     else:
-        multi = molecule.with_uff_optimized_confs()
+        multi = molecule.with_uff_optimized_conformers()
         assert isinstance(multi, ck.UffConformerOptimizationResult)
         assert multi.molecule().num_atoms() == 2
         assert coordinates(multi.molecule()) != before
@@ -55,7 +55,7 @@ def test_uff_original_21_rows_canonical_native_behavior(original_row):
     assert coordinates(molecule) == before
 
 
-def test_uff_source_defaults_immutable_parameter_values():
+def test_uff_source_defaults_and_writable_parameter_values():
     single = ck.UffOptimizationParams()
     multi = ck.UffConformerOptimizationParams()
     evaluation = ck.UffEvaluationParams()
@@ -63,8 +63,8 @@ def test_uff_source_defaults_immutable_parameter_values():
     assert (multi.num_threads, multi.max_iterations, multi.vdw_threshold, multi.ignore_interfragment_interactions) == (1, 1000, 10., True)
     assert (evaluation.vdw_threshold, evaluation.conformer_id, evaluation.ignore_interfragment_interactions) == (10., None, True)
     for value in [single, multi, evaluation]:
-        with pytest.raises(AttributeError):
-            setattr(value, "vdw_threshold", 1.)
+        value.vdw_threshold = 1.
+        assert value.vdw_threshold == 1.
 
 
 @pytest.mark.parametrize("selector", [-1, -2, -3, -2**31])
@@ -98,8 +98,8 @@ def test_uff_existing_source_dispatch_preserves_order_rows_and_source(threads):
     builder.add_3d_conformer([[0., 0., 0.], [2.4, 0., 0.]])
     molecule = builder.build().with_assigned_valence()
     before = coordinates(molecule)
-    serial = molecule.with_uff_optimized_confs_with_params(ck.UffConformerOptimizationParams(num_threads=1, max_iterations=25))
-    actual = molecule.with_uff_optimized_confs_with_params(ck.UffConformerOptimizationParams(num_threads=threads, max_iterations=25))
+    serial = molecule.with_uff_optimized_conformers_with_params(ck.UffConformerOptimizationParams(num_threads=1, max_iterations=25))
+    actual = molecule.with_uff_optimized_conformers_with_params(ck.UffConformerOptimizationParams(num_threads=threads, max_iterations=25))
     assert [r.conformer_id() for r in actual.conformer_results()] == [r.id() for r in molecule.conformers_3d()]
     assert [(r.status_code(), r.energy()) for r in actual.conformer_results()] == [(r.status_code(), r.energy()) for r in serial.conformer_results()]
     assert coordinates(actual.molecule()) == coordinates(serial.molecule())
@@ -110,7 +110,7 @@ def test_uff_source_undefined_thread_signed_negation_is_typed_atomic():
     molecule = make_molecule()
     before = coordinates(molecule)
     with pytest.raises(ck.OperationError) as error:
-        molecule.with_uff_optimized_confs_with_params(ck.UffConformerOptimizationParams(num_threads=-2**31))
+        molecule.with_uff_optimized_conformers_with_params(ck.UffConformerOptimizationParams(num_threads=-2**31))
     assert error.value.kind == "UffOptimization"
     assert isinstance(error.value.__cause__, ck.UffOptimizationError)
     assert "UndefinedSignedNegation" in str(error.value)
@@ -128,8 +128,10 @@ def test_uff_missing_selected_geometry_has_canonical_source_cause(query):
             molecule.with_uff_optimized_with_params(ck.UffOptimizationParams(conformer_id=999))
     assert error.value.kind == "UffOptimization"
     assert isinstance(error.value.__cause__, ck.UffOptimizationError)
-    assert error.value.__cause__.kind == "MissingConformer"
-    assert error.value.__cause__.requested == 999
+    cause_kind = error.value.__cause__.kind()
+    assert isinstance(cause_kind, ck.UffOptimizationErrorKind)
+    assert cause_kind.variant == "MissingConformer"
+    assert cause_kind.requested == 999
     assert coordinates(molecule) == before
 
 
@@ -137,6 +139,10 @@ def test_uff_parameter_missing_cache_has_original_typed_borrowed_cause():
     molecule = ck.Molecule.new().to_builder().build()
     assert molecule.uff_has_all_molecule_params() is True
     molecule = ck.Molecule.from_smiles("CC").with_hydrogens()
+    assert molecule.uff_has_all_molecule_params() is True
+    # Rebuilding clears derived cache while preserving the prepared atom
+    # metadata; normal parsing/hydrogen addition are no longer uncached.
+    molecule = ck.Molecule.from_smiles("CC").to_builder().build()
     with pytest.raises(ck.UffParameterQueryError) as error:
         molecule.uff_has_all_molecule_params()
     assert error.value.kind == "Cache"
@@ -151,7 +157,7 @@ def test_uff_default_and_configured_single_multi_protocols_equal():
     assert default.energy() == explicit.energy()
     assert default.status_code() == explicit.status_code()
     assert coordinates(default.molecule()) == coordinates(explicit.molecule())
-    default = molecule.with_uff_optimized_confs()
-    explicit = molecule.with_uff_optimized_confs_with_params(ck.UffConformerOptimizationParams())
+    default = molecule.with_uff_optimized_conformers()
+    explicit = molecule.with_uff_optimized_conformers_with_params(ck.UffConformerOptimizationParams())
     assert [(r.status_code(),r.energy()) for r in default.conformer_results()] == [(r.status_code(),r.energy()) for r in explicit.conformer_results()]
     assert coordinates(default.molecule()) == coordinates(explicit.molecule())

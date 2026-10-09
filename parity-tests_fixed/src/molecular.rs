@@ -638,38 +638,38 @@ pub fn run(input: &Input) -> Result<Record, String> {
     };
     let mut stage = Stage::Parse;
     let result = (|| -> Result<Outcome, String> {
-        let (sanitize, remove_hydrogens) = match profile {
+        let (sanitize, remove_hs) = match profile {
             Profile::SmilesRead {
                 sanitize,
-                remove_hydrogens,
-            } => (*sanitize, *remove_hydrogens),
+                remove_hs,
+            } => (*sanitize, *remove_hs),
             Profile::SanitizeAll => (false, false),
-            Profile::NumHeavyAtoms { remove_hydrogens } => (true, *remove_hydrogens),
-            Profile::TotalAtomCount { remove_hydrogens } => (true, *remove_hydrogens),
-            Profile::LipinskiHBA { remove_hydrogens }
-            | Profile::LipinskiHBD { remove_hydrogens }
-            | Profile::FractionCSP3 { remove_hydrogens }
-            | Profile::NumHeteroatoms { remove_hydrogens }
-            | Profile::NumHba { remove_hydrogens }
-            | Profile::NumHbd { remove_hydrogens }
-            | Profile::NumRings { remove_hydrogens }
-            | Profile::NumHeterocycles { remove_hydrogens }
-            | Profile::NumAromaticRings { remove_hydrogens }
-            | Profile::NumSaturatedRings { remove_hydrogens }
-            | Profile::NumAliphaticRings { remove_hydrogens }
-            | Profile::NumAromaticHeterocycles { remove_hydrogens }
-            | Profile::NumAromaticCarbocycles { remove_hydrogens }
-            | Profile::NumAliphaticHeterocycles { remove_hydrogens }
-            | Profile::NumAliphaticCarbocycles { remove_hydrogens }
-            | Profile::NumSaturatedHeterocycles { remove_hydrogens }
-            | Profile::NumSaturatedCarbocycles { remove_hydrogens } => (true, *remove_hydrogens),
+            Profile::NumHeavyAtoms { remove_hs } => (true, *remove_hs),
+            Profile::TotalAtomCount { remove_hs } => (true, *remove_hs),
+            Profile::LipinskiHBA { remove_hs }
+            | Profile::LipinskiHBD { remove_hs }
+            | Profile::FractionCSP3 { remove_hs }
+            | Profile::NumHeteroatoms { remove_hs }
+            | Profile::NumHba { remove_hs }
+            | Profile::NumHbd { remove_hs }
+            | Profile::NumRings { remove_hs }
+            | Profile::NumHeterocycles { remove_hs }
+            | Profile::NumAromaticRings { remove_hs }
+            | Profile::NumSaturatedRings { remove_hs }
+            | Profile::NumAliphaticRings { remove_hs }
+            | Profile::NumAromaticHeterocycles { remove_hs }
+            | Profile::NumAromaticCarbocycles { remove_hs }
+            | Profile::NumAliphaticHeterocycles { remove_hs }
+            | Profile::NumAliphaticCarbocycles { remove_hs }
+            | Profile::NumSaturatedHeterocycles { remove_hs }
+            | Profile::NumSaturatedCarbocycles { remove_hs } => (true, *remove_hs),
             _ => (true, true),
         };
         let mol = Molecule::from_smiles_with_params(
             &case.smiles,
             &SmilesParseParams {
                 sanitize,
-                remove_hydrogens,
+                remove_hs,
                 allow_cxsmiles: true,
                 strict_cxsmiles: true,
                 parse_name: true,
@@ -1485,7 +1485,7 @@ fn run_morgan(
     match output_kind {
         MorganOutputKind::DenseBits => {
             let fingerprint = molecule
-                .morgan_fingerprint_with_params(&params, Some(&mut additional_output))
+                .fingerprint_morgan_with_params(&params, Some(&mut additional_output))
                 .map_err(|error| error.to_string())?;
             Ok(Outcome::MorganDenseBits(MorganDenseBitsOutput {
                 length: fingerprint.n_bits(),
@@ -1495,7 +1495,7 @@ fn run_morgan(
         }
         MorganOutputKind::SparseBits => {
             let fingerprint = molecule
-                .morgan_sparse_fingerprint_with_params(&params, Some(&mut additional_output))
+                .fingerprint_morgan_sparse_with_params(&params, Some(&mut additional_output))
                 .map_err(|error| error.to_string())?;
             Ok(Outcome::MorganSparseBits(MorganSparseBitsOutput {
                 length: fingerprint.n_bits(),
@@ -1505,7 +1505,7 @@ fn run_morgan(
         }
         MorganOutputKind::HashedCounts => {
             let fingerprint = molecule
-                .morgan_count_fingerprint_with_params(&params, Some(&mut additional_output))
+                .fingerprint_morgan_count_with_params(&params, Some(&mut additional_output))
                 .map_err(|error| error.to_string())?;
             Ok(Outcome::MorganHashedCounts(MorganHashedCountsOutput {
                 length: fingerprint.length(),
@@ -1519,7 +1519,7 @@ fn run_morgan(
         }
         MorganOutputKind::SparseCounts => {
             let fingerprint = molecule
-                .morgan_sparse_count_fingerprint_with_params(&params, Some(&mut additional_output))
+                .fingerprint_morgan_sparse_count_with_params(&params, Some(&mut additional_output))
                 .map_err(|error| error.to_string())?;
             Ok(Outcome::MorganSparseCounts(MorganSparseCountsOutput {
                 length: fingerprint.length(),

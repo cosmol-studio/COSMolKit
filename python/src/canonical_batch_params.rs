@@ -1,4 +1,4 @@
-//! Frozen transport values for the canonical typed batch API.
+//! Writable configuration values for the canonical typed batch API.
 use ::cosmolkit as ck;
 use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
@@ -6,16 +6,25 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::sync::{Arc, Mutex};
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", eq)]
 pub(crate) struct BatchParams {
     pub(crate) inner: ck::BatchParams,
 }
 
+impl PartialEq for BatchParams {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner.errors == other.inner.errors
+            && self.inner.n_jobs == other.inner.n_jobs
+            && self.inner.progress_bar == other.inner.progress_bar
+    }
+}
+
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct BatchExportParams {
     pub(crate) inner: ck::BatchExportParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchExportParams {
@@ -63,6 +72,7 @@ impl BatchExportParams {
         self.inner.progress_bar
     }
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchParams {
@@ -104,12 +114,13 @@ impl BatchParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct BatchQueryParams {
     n_jobs: Option<usize>,
     progress_bar: Option<bool>,
     progress_callback: Option<Py<PyAny>>,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchQueryParams {
@@ -193,10 +204,11 @@ impl BatchQueryParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct BatchImageParams {
     pub(crate) inner: ck::BatchImageParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BatchImageParams {

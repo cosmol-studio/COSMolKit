@@ -82,12 +82,12 @@ fn with_legacy_input<T>(
         .map_err(TopologicalTorsionReadError::Generator)
 }
 impl Molecule {
-    pub fn legacy_topological_torsion_sparse_count_fingerprint(
+    pub fn fingerprint_topological_torsion_sparse_count_legacy(
         &self,
     ) -> Result<SparseCountFingerprint, TopologicalTorsionReadError> {
-        self.legacy_topological_torsion_sparse_count_fingerprint_with_params(&Default::default())
+        self.fingerprint_topological_torsion_sparse_count_legacy_with_params(&Default::default())
     }
-    pub fn legacy_topological_torsion_sparse_count_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_sparse_count_legacy_with_params(
         &self,
         params: &LegacyTopologicalTorsionParams,
     ) -> Result<SparseCountFingerprint, TopologicalTorsionReadError> {
@@ -97,12 +97,12 @@ impl Molecule {
             cosmolkit_fingerprints::legacy_topological_torsion_sparse_count,
         )
     }
-    pub fn legacy_topological_torsion_count_fingerprint(
+    pub fn fingerprint_topological_torsion_count_legacy(
         &self,
     ) -> Result<SparseCountFingerprint, TopologicalTorsionReadError> {
-        self.legacy_topological_torsion_count_fingerprint_with_params(&Default::default())
+        self.fingerprint_topological_torsion_count_legacy_with_params(&Default::default())
     }
-    pub fn legacy_topological_torsion_count_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_count_legacy_with_params(
         &self,
         params: &LegacyTopologicalTorsionParams,
     ) -> Result<SparseCountFingerprint, TopologicalTorsionReadError> {
@@ -112,12 +112,12 @@ impl Molecule {
             cosmolkit_fingerprints::legacy_topological_torsion_count,
         )
     }
-    pub fn legacy_topological_torsion_fingerprint(
+    pub fn fingerprint_topological_torsion_legacy(
         &self,
     ) -> Result<Fingerprint, TopologicalTorsionReadError> {
-        self.legacy_topological_torsion_fingerprint_with_params(&Default::default())
+        self.fingerprint_topological_torsion_legacy_with_params(&Default::default())
     }
-    pub fn legacy_topological_torsion_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_legacy_with_params(
         &self,
         params: &LegacyTopologicalTorsionParams,
     ) -> Result<Fingerprint, TopologicalTorsionReadError> {

@@ -1,10 +1,10 @@
 //! Thin Pattern API over detached concrete/query inputs.
 use crate::{Fingerprint, Molecule, PatternFingerprintError, PatternFingerprintParams, QueryGraph};
 impl Molecule {
-    pub fn pattern_fingerprint(&self) -> Result<Fingerprint, PatternFingerprintError> {
-        self.pattern_fingerprint_with_params(&PatternFingerprintParams::default())
+    pub fn fingerprint_pattern(&self) -> Result<Fingerprint, PatternFingerprintError> {
+        self.fingerprint_pattern_with_params(&PatternFingerprintParams::default())
     }
-    pub fn pattern_fingerprint_with_params(
+    pub fn fingerprint_pattern_with_params(
         &self,
         params: &PatternFingerprintParams,
     ) -> Result<Fingerprint, PatternFingerprintError> {
@@ -15,12 +15,12 @@ impl Molecule {
         )
     }
 }
-pub fn pattern_query_fingerprint(
+pub fn fingerprint_pattern_query(
     query: &QueryGraph,
 ) -> Result<Fingerprint, PatternFingerprintError> {
-    pattern_query_fingerprint_with_params(query, &PatternFingerprintParams::default())
+    fingerprint_pattern_query_with_params(query, &PatternFingerprintParams::default())
 }
-pub fn pattern_query_fingerprint_with_params(
+pub fn fingerprint_pattern_query_with_params(
     query: &QueryGraph,
     params: &PatternFingerprintParams,
 ) -> Result<Fingerprint, PatternFingerprintError> {

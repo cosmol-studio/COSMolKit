@@ -55,15 +55,18 @@ def test_potential_stereo_default_canonical_cleanup_option_and_ordered_values():
     copied.append(99)
     assert record.controlling_atoms==[0,2,3]
     assert molecule.to_smiles()==before
-    for object_,field in [(params,"clean"),(record,"permutation"),(record.centered_on,"index"),(result,"stereo")]:
+    params.clean = True
+    assert params.clean is True
+    for object_,field in [(record,"permutation"),(record.centered_on,"index"),(result,"stereo")]:
         with pytest.raises(AttributeError):setattr(object_,field,1)
 
 
 def test_complete_potential_stereo_vocabulary_projection():
     for cls,values in [
-        (cosmolkit.PotentialStereoType,["atom_tetrahedral","atom_squareplanar","atom_trigonalbipyramidal","atom_octahedral","bond_double","bond_cumulene_even"]),
+        # Pinned RDKit Chirality.h StereoType includes Bond_Atropisomer.
+        (cosmolkit.PotentialStereoType,["atom_tetrahedral","atom_squareplanar","atom_trigonalbipyramidal","atom_octahedral","bond_double","bond_cumulene_even","bond_atropisomer"]),
         (cosmolkit.PotentialStereoSpecified,["unspecified","specified","unknown"]),
-        (cosmolkit.PotentialStereoDescriptor,["none","tetrahedral_clockwise","tetrahedral_counterclockwise","bond_cis","bond_trans"]),
+        (cosmolkit.PotentialStereoDescriptor,["none","tetrahedral_clockwise","tetrahedral_counterclockwise","bond_cis","bond_trans","bond_atrop_cw","bond_atrop_ccw"]),
     ]:
         assert issubclass(cls, str)
         assert issubclass(cls, enum.Enum)
@@ -84,7 +87,7 @@ def test_potential_stereo_public_error_retains_property_kind_and_source_atomicit
     # read. A malformed present property must remain a typed failure.
     molecule = cosmolkit.Molecule.from_smiles_with_params(
         ring + " |atomProp:1._ringStereochemCand.malformed|",
-        cosmolkit.SmilesParseParams(sanitize=False, remove_hydrogens=False, skip_cleanup=True),
+        cosmolkit.SmilesParseParams(sanitize=False, remove_hs=False, skip_cleanup=True),
     )
     params = cosmolkit.SmilesWriteParams(clean_stereo=False)
     before = molecule.to_smiles_with_params(params)

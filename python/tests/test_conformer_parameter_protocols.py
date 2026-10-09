@@ -8,7 +8,7 @@ def test_all_parameter_fields_construct_distinct_values_and_preserve_source_snap
     snapshot = params.to_json()
     scalar = {
         "max_iterations": 19, "num_threads": 4, "random_seed": 123,
-        "clear_confs": False, "use_random_coords": True, "box_size_mult": 3.25,
+        "clear_conformers": False, "use_random_coords": True, "box_size_mult": 3.25,
         "rand_neg_eig": False, "num_zero_fail": 2, "optimizer_force_tol": 0.125,
         "ignore_smoothing_failures": True, "enforce_chirality": False,
         "use_exp_torsion_angle_prefs": True, "use_basic_knowledge": True,
@@ -39,7 +39,7 @@ def test_all_parameter_fields_construct_distinct_values_and_preserve_source_snap
     cpci[(0, 1)] = -8.0
     assert params.cpci == {(0, 1): 0.125}
     assert ck.EmbedParams().to_json() == snapshot
-    assert repr(params) == "EmbedParams(random_seed=123, num_threads=4, prune_rms_thresh=0.25, clear_confs=false)"
+    assert repr(params) == "EmbedParams(random_seed=123, num_threads=4, prune_rms_thresh=0.25, clear_conformers=false)"
     assert params.failures == []
     with pytest.raises(AttributeError):
         params.failures = [1]
@@ -70,6 +70,6 @@ def test_result_types_reprs_and_returned_molecule_params_are_detached_snapshots(
 
 
 def configured(params, **changes):
-    values = {field: getattr(params, field) for field in ['max_iterations', 'num_threads', 'random_seed', 'clear_confs', 'use_random_coords', 'box_size_mult', 'rand_neg_eig', 'num_zero_fail', 'coord_map', 'optimizer_force_tol', 'ignore_smoothing_failures', 'enforce_chirality', 'use_exp_torsion_angle_prefs', 'use_basic_knowledge', 'verbose', 'basin_thresh', 'prune_rms_thresh', 'only_heavy_atoms_for_rms', 'et_version', 'embed_fragments_separately', 'use_small_ring_torsions', 'use_macrocycle_torsions', 'use_macrocycle14config', 'timeout', 'cpci', 'force_trans_amides', 'use_symmetry_for_pruning', 'bounds_mat_force_scaling', 'track_failures', 'enable_sequential_random_seeds', 'symmetrize_conjugated_terminal_groups_for_pruning']}
+    values = {field: getattr(params, field) for field in ['max_iterations', 'num_threads', 'random_seed', 'clear_conformers', 'use_random_coords', 'box_size_mult', 'rand_neg_eig', 'num_zero_fail', 'coord_map', 'optimizer_force_tol', 'ignore_smoothing_failures', 'enforce_chirality', 'use_exp_torsion_angle_prefs', 'use_basic_knowledge', 'verbose', 'basin_thresh', 'prune_rms_thresh', 'only_heavy_atoms_for_rms', 'et_version', 'embed_fragments_separately', 'use_small_ring_torsions', 'use_macrocycle_torsions', 'use_macrocycle14config', 'timeout', 'cpci', 'force_trans_amides', 'use_symmetry_for_pruning', 'bounds_mat_force_scaling', 'track_failures', 'enable_sequential_random_seeds', 'symmetrize_conjugated_terminal_groups_for_pruning']}
     values.update(changes)
     return ck.EmbedParams(**values)

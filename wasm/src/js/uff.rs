@@ -370,22 +370,22 @@ impl Molecule {
             .map(|inner| UffOptimizationResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=withUffOptimizedConfs)]
-    pub fn with_uff_optimized_confs(&self) -> Result<UffConformerOptimizationResult, JsValue> {
+    #[wasm_bindgen(js_name=withUffOptimizedConformers)]
+    pub fn with_uff_optimized_conformers(&self) -> Result<UffConformerOptimizationResult, JsValue> {
         // COSMolKit❗✔️: self.inner.with_uff_optimized_confs()
         self.inner
-            .with_uff_optimized_confs()
+            .with_uff_optimized_conformers()
             .map(|inner| UffConformerOptimizationResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=withUffOptimizedConfsWithParams)]
-    pub fn with_uff_optimized_confs_with_params(
+    #[wasm_bindgen(js_name=withUffOptimizedConformersWithParams)]
+    pub fn with_uff_optimized_conformers_with_params(
         &self,
         params: &UffConformerOptimizationParams,
     ) -> Result<UffConformerOptimizationResult, JsValue> {
         // COSMolKit❗✔️: self.inner.with_uff_optimized_confs_with_params(&params.inner)
         self.inner
-            .with_uff_optimized_confs_with_params(&params.inner)
+            .with_uff_optimized_conformers_with_params(&params.inner)
             .map(|inner| UffConformerOptimizationResult { inner })
             .map_err(|e| operation_error(&e).unwrap_or_else(|e| e))
     }

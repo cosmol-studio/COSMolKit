@@ -43,10 +43,11 @@ pub(crate) fn topological_pyerr(py: Python<'_>, source: ck::TopologicalFingerpri
     err
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct TopologicalFingerprintParams {
     pub(crate) inner: ck::TopologicalFingerprintParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TopologicalFingerprintParams {
@@ -127,10 +128,11 @@ impl TopologicalFingerprintParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct TopologicalFingerprintOutputRequest {
     pub(crate) inner: ck::TopologicalFingerprintOutputRequest,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TopologicalFingerprintOutputRequest {
@@ -230,24 +232,24 @@ impl TopologicalFingerprintResult {
 }
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
-fn topological_query_fingerprint_with_params(
+fn fingerprint_topological_query_with_params(
     py: Python<'_>,
     query: &crate::canonical_search::QueryGraph,
     params: &TopologicalFingerprintParams,
 ) -> PyResult<Fingerprint> {
-    ck::topological_query_fingerprint_with_params(&query.inner, &params.inner)
+    ck::fingerprint_topological_query_with_params(&query.inner, &params.inner)
         .map(|inner| Fingerprint { inner })
         .map_err(|e| topological_pyerr(py, e))
 }
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
-fn topological_query_fingerprint_with_output_with_params(
+fn fingerprint_topological_query_with_output_with_params(
     py: Python<'_>,
     query: &crate::canonical_search::QueryGraph,
     params: &TopologicalFingerprintParams,
     request: &TopologicalFingerprintOutputRequest,
 ) -> PyResult<TopologicalFingerprintResult> {
-    ck::topological_query_fingerprint_with_output_with_params(
+    ck::fingerprint_topological_query_with_output_with_params(
         &query.inner,
         &params.inner,
         request.inner,
@@ -265,11 +267,11 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.py().get_type::<TopologicalFingerprintError>(),
     )?;
     module.add_function(wrap_pyfunction!(
-        topological_query_fingerprint_with_params,
+        fingerprint_topological_query_with_params,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
-        topological_query_fingerprint_with_output_with_params,
+        fingerprint_topological_query_with_output_with_params,
         module
     )?)?;
     Ok(())

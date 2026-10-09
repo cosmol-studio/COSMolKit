@@ -1004,10 +1004,21 @@ impl Molecule {
         )
     }
 
-    /// Return the original project tag labels, optionally including unspecified atoms.
+    /// Find tetrahedral stereocenters with modern CIP labels (including `r`/`s`).
+    ///
+    /// Matches pinned RDKit's modern `FindMolChiralCenters` path with CIP labels
+    /// enabled. With `include_unassigned`, potential unassigned centers are also
+    /// returned. The molecule and its cached/assigned stereo state are unchanged.
     #[cfg(feature = "cap-stereo")]
-    pub fn find_chiral_centers(&self, include_unassigned: bool) -> Vec<(usize, String)> {
-        cosmolkit_stereo::find_chiral_centers(self.topology(), include_unassigned)
+    pub fn find_chiral_centers(
+        &self,
+        include_unassigned: bool,
+    ) -> Result<Vec<(usize, String)>, crate::StereoReadError> {
+        cosmolkit_stereo::find_chiral_centers(
+            self.topology(),
+            self.properties(),
+            include_unassigned,
+        )
     }
 
     /// Returns detached semantic blocks for checked construction of a new value.
@@ -1217,7 +1228,7 @@ mod ring_live_constructor_tests {
     fn ring_live_constructor_state_move_and_valence_independence() {
         let mut calls = 0usize;
         for input in ["", "CC", "c1ccccc1", "[H]C1CCCCC1", "[2H]C1CCCCC1"] {
-            for (profile, sanitize, remove_hydrogens) in [
+            for (profile, sanitize, remove_hs) in [
                 ("bothfalse", false, false),
                 ("remove-only", false, true),
                 ("sanitize-only", true, false),
@@ -1226,7 +1237,7 @@ mod ring_live_constructor_tests {
                 let label = format!("{profile}/{input:?}");
                 let params = cosmolkit_smiles::SmilesParseParams {
                     sanitize,
-                    remove_hydrogens,
+                    remove_hs,
                     ..cosmolkit_smiles::SmilesParseParams::default()
                 };
                 let probe_before = ring_install_probe::len();
@@ -1243,7 +1254,7 @@ mod ring_live_constructor_tests {
                     "c1ccccc1" => (6, 6, false),
                     _ if deuterium => (7, 7, true),
                     _ => {
-                        if remove_hydrogens {
+                        if remove_hs {
                             (6, 6, false)
                         } else {
                             (7, 7, true)
@@ -1404,7 +1415,7 @@ mod ring_live_constructor_tests {
 
                 // Ordinary computed metadata and coordinates are preserved
                 // by the transport seam.
-                if sanitize || remove_hydrogens {
+                if sanitize || remove_hs {
                     assert_eq!(
                         molecule.properties().prop("_StereochemDone"),
                         Some(&crate::PropertyValue::Int(1)),
@@ -1655,12 +1666,12 @@ mod valence_cache_tests {
             ("", "", 0.0),
         ] {
             for sanitize in [false, true] {
-                for remove_hydrogens in [false, true] {
+                for remove_hs in [false, true] {
                     let molecule = Molecule::from_smiles_with_params(
                         smiles,
                         &cosmolkit_smiles::SmilesParseParams {
                             sanitize,
-                            remove_hydrogens,
+                            remove_hs,
                             ..Default::default()
                         },
                     )
@@ -1668,10 +1679,10 @@ mod valence_cache_tests {
                     let cache = molecule.derived_cache_arc_runtime();
                     assert_eq!(
                         cache.valid_states().contains(DerivedState::VALENCE),
-                        sanitize || remove_hydrogens,
-                        "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens}"
+                        sanitize || remove_hs,
+                        "{smiles} sanitize={sanitize} remove_hs={remove_hs}"
                     );
-                    if sanitize || remove_hydrogens {
+                    if sanitize || remove_hs {
                         let expected = cosmolkit_core::assign_valence_with_options_for_topology(
                             molecule.topology(),
                             cosmolkit_core::ValenceModel::RdkitLike,
@@ -1683,7 +1694,7 @@ mod valence_cache_tests {
                             assert_eq!(
                                 molecule.molecular_formula().unwrap(),
                                 formula,
-                                "{smiles} sanitize={sanitize} remove_hydrogens={remove_hydrogens} atoms={:?}",
+                                "{smiles} sanitize={sanitize} remove_hs={remove_hs} atoms={:?}",
                                 molecule.atoms()
                             );
                             assert!((molecule.molecular_weight().unwrap() - mass).abs() < 1e-9);

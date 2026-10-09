@@ -50,10 +50,13 @@ def test_generated_stub_covers_every_public_runtime_function_once() -> None:
         for node in module.body
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     ]
-    duplicate_declarations = {
-        name for name, count in Counter(declarations).items() if count != 1
-    }
-    assert not duplicate_declarations
+    for name, count in Counter(declarations).items():
+        if count == 1:
+            continue
+        overloads = [node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == name]
+        assert count == 3  # default, parameter instance, keyword fields
+        assert all("typing.overload" in [ast.unparse(value) for value in node.decorator_list] for node in overloads)
+        assert hasattr(getattr(cosmolkit, name), "_configuration_contract")
 
     runtime_functions = {
         name
@@ -75,8 +78,14 @@ def _assert_registered_method_surface(
         node for node in _stub_class(module, class_name).body
         if isinstance(node, ast.FunctionDef) and node.name == name
     ]
-    assert len(declarations) == 1
-    method = declarations[0]
+    if len(declarations) > 1:
+        assert len(declarations) == 3
+        assert all("typing.overload" in [ast.unparse(value) for value in node.decorator_list] for node in declarations)
+    defaults = [node for node in declarations
+                if [arg.arg for arg in node.args.posonlyargs + node.args.args] == arguments
+                and not node.args.kwonlyargs]
+    assert len(defaults) == 1
+    method = defaults[0]
     assert [arg.arg for arg in method.args.posonlyargs + method.args.args] == arguments
     assert not method.args.defaults and not method.args.kwonlyargs
     assert method.returns is not None and ast.unparse(method.returns) == result
@@ -102,10 +111,10 @@ def test_assign_chiral_tags_methods_match_generated_stub_and_runtime_surface() -
 def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() -> None:
     module = _stub_module()
     for class_name, name, arguments, result in [
-        ("Molecule", "layered_fingerprint", ["self"], "Fingerprint"),
-        ("Molecule", "layered_fingerprint_with_params", ["self", "params"], "Fingerprint"),
-        ("Molecule", "layered_fingerprint_with_output", ["self"], "LayeredFingerprintResult"),
-        ("Molecule", "layered_fingerprint_with_output_with_params", ["self", "params"], "LayeredFingerprintResult"),
+        ("Molecule", "fingerprint_layered", ["self"], "Fingerprint"),
+        ("Molecule", "fingerprint_layered_with_params", ["self", "params"], "Fingerprint"),
+        ("Molecule", "fingerprint_layered_with_output", ["self"], "LayeredFingerprintResult"),
+        ("Molecule", "fingerprint_layered_with_output_with_params", ["self", "params"], "LayeredFingerprintResult"),
         ("MoleculeBatch", "fingerprint_layered_list", ["self"], "builtins.list[typing.Optional[Fingerprint]]"),
         ("MoleculeBatch", "fingerprint_layered_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[Fingerprint]]"),
         ("MoleculeBatch", "fingerprint_layered_with_output_list", ["self"], "builtins.list[typing.Optional[LayeredFingerprintResult]]"),
@@ -120,10 +129,10 @@ def test_layered_fingerprint_methods_match_generated_stub_and_runtime_surface() 
 def test_pattern_fingerprint_methods_match_generated_stub_and_runtime_surface() -> None:
     module = _stub_module()
     for class_name, name, arguments, result in [
-        ("Molecule", "pattern_fingerprint", ["self"], "Fingerprint"),
-        ("Molecule", "pattern_fingerprint_with_params", ["self", "params"], "Fingerprint"),
-        ("MoleculeBatch", "pattern_fingerprint_list", ["self"], "builtins.list[typing.Optional[Fingerprint]]"),
-        ("MoleculeBatch", "pattern_fingerprint_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[Fingerprint]]"),
+        ("Molecule", "fingerprint_pattern", ["self"], "Fingerprint"),
+        ("Molecule", "fingerprint_pattern_with_params", ["self", "params"], "Fingerprint"),
+        ("MoleculeBatch", "fingerprint_pattern_list", ["self"], "builtins.list[typing.Optional[Fingerprint]]"),
+        ("MoleculeBatch", "fingerprint_pattern_list_with_params", ["self", "options", "params"], "builtins.list[typing.Optional[Fingerprint]]"),
     ]:
         _assert_registered_method_surface(module, class_name, name, arguments, result)
 

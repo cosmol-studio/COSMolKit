@@ -544,17 +544,17 @@ mod tests {
         // inputs and cover the entire two-flag product without dropping rows.
         let mut calls = 0;
         for sanitize in [false, true] {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 let molecule = Molecule::from_smiles_with_params(
                     "C",
                     &crate::SmilesParseParams {
                         sanitize,
-                        remove_hydrogens,
+                        remove_hs,
                         ..Default::default()
                     },
                 )
                 .expect("fixed carbon parses under both constructor policies");
-                if sanitize || remove_hydrogens {
+                if sanitize || remove_hs {
                     assert_eq!(
                         molecule.derived_cache_runtime().valence_assignment(),
                         Some(&ValenceAssignment {

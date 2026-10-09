@@ -13,8 +13,8 @@ fn detached(molecule: &ck::Molecule) -> owner::SmilesRecord {
 
 fn options(bits: u16) -> ck::SmilesWriteParams {
     ck::SmilesWriteParams {
-        do_isomeric_smiles: bits & 1 != 0,
-        do_kekule: bits & 2 != 0,
+        isomeric_smiles: bits & 1 != 0,
+        kekule: bits & 2 != 0,
         canonical: bits & 4 != 0,
         clean_stereo: bits & 8 != 0,
         all_bonds_explicit: bits & 16 != 0,
@@ -194,8 +194,8 @@ fn random_vector_all_boolean_options_counts_and_seeds() {
     let mut cases = 0;
     for bits in 0..16 {
         let params = ck::RandomSmilesWriteParams {
-            do_isomeric_smiles: bits & 1 != 0,
-            do_kekule: bits & 2 != 0,
+            isomeric_smiles: bits & 1 != 0,
+            kekule: bits & 2 != 0,
             all_bonds_explicit: bits & 4 != 0,
             all_hydrogens_explicit: bits & 8 != 0,
         };

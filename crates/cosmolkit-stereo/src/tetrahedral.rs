@@ -5,10 +5,26 @@ use cosmolkit_model::{
 };
 use cosmolkit_types::{BondOrder, ChiralTag};
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum StereoReadError {
     #[error(transparent)]
     InvalidTopology(#[from] TopologyValidationError),
+    #[error("valence preparation failed: {0}")]
+    Valence(#[from] cosmolkit_core::ValenceError),
+    #[error("ring preparation failed: {0}")]
+    Rings(#[from] cosmolkit_core::RingFindingError),
+    #[error("potential stereo perception failed: {0}")]
+    PotentialStereo(#[from] cosmolkit_core::PotentialStereoError),
+    #[error("CIP label assignment failed: {0}")]
+    CipLabeler(#[from] crate::CipLabelerError),
+    #[error("CIP label property conversion failed: {0}")]
+    PropertyString(#[from] cosmolkit_core::PropertyStringError),
+    #[error("CIP label at {atom:?} is not UTF-8: {source}")]
+    CipLabelEncoding {
+        atom: AtomId,
+        #[source]
+        source: std::string::FromUtf8Error,
+    },
 }
 
 pub fn tetrahedral_stereo(
@@ -200,32 +216,6 @@ pub fn perceive_stereochemistry(
         let _ = should_detect_double_bond_stereo(topology, rings, bond.id());
     }
     Ok(())
-}
-
-pub fn find_chiral_centers(
-    topology: &TopologyBlock,
-    include_unassigned: bool,
-) -> Vec<(usize, String)> {
-    // COSMolKit-native source: preserved Python find_chiral_centers filter.
-    // Retain all unspecified atoms when requested and the original tag labels;
-    // this query does not claim to calculate CIP labels or potential centers.
-    topology
-        .atoms
-        .iter()
-        .filter_map(|atom| match atom.chiral_tag() {
-            ChiralTag::Unspecified if include_unassigned => {
-                Some((atom.id().index(), "?".to_owned()))
-            }
-            ChiralTag::TetrahedralCw => Some((atom.id().index(), "CHI_TETRAHEDRAL_CW".to_owned())),
-            ChiralTag::TetrahedralCcw => {
-                Some((atom.id().index(), "CHI_TETRAHEDRAL_CCW".to_owned()))
-            }
-            ChiralTag::TrigonalBipyramidal => {
-                Some((atom.id().index(), "CHI_TRIGONALBIPYRAMIDAL".to_owned()))
-            }
-            _ => None,
-        })
-        .collect()
 }
 
 #[cfg(test)]

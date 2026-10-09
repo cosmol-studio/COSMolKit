@@ -145,6 +145,9 @@ pub(crate) fn source_pyerr(py: Python<'_>, source: &(dyn std::error::Error + 'st
             preparation,
         );
     }
+    if let Some(error) = crate::canonical_registered_errors::convert(py, source) {
+        return error;
+    }
     let error = PyValueError::new_err(source.to_string());
     error.set_cause(py, source.source().map(|cause| source_pyerr(py, cause)));
     error
@@ -330,22 +333,23 @@ fn fingerprint_pyerr(
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct SmilesParseParams {
     pub(crate) inner: ck::SmilesParseParams,
 }
 
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SmilesParseParams {
     #[new]
-    #[pyo3(signature = (*, sanitize=true, allow_cxsmiles=true, strict_cxsmiles=true, parse_name=true, remove_hydrogens=true, skip_cleanup=false, debug_parse=false, replacements=None))]
+    #[pyo3(signature = (*, sanitize=true, allow_cxsmiles=true, strict_cxsmiles=true, parse_name=true, remove_hs=true, skip_cleanup=false, debug_parse=false, replacements=None))]
     fn new(
         sanitize: bool,
         allow_cxsmiles: bool,
         strict_cxsmiles: bool,
         parse_name: bool,
-        remove_hydrogens: bool,
+        remove_hs: bool,
         skip_cleanup: bool,
         debug_parse: bool,
         replacements: Option<BTreeMap<String, String>>,
@@ -357,7 +361,7 @@ impl SmilesParseParams {
                 allow_cxsmiles,
                 strict_cxsmiles,
                 parse_name,
-                remove_hydrogens,
+                remove_hs,
                 skip_cleanup,
                 debug_parse,
                 replacements: replacements.unwrap_or_default(),
@@ -381,8 +385,8 @@ impl SmilesParseParams {
         self.inner.parse_name
     }
     #[getter]
-    fn remove_hydrogens(&self) -> bool {
-        self.inner.remove_hydrogens
+    fn remove_hs(&self) -> bool {
+        self.inner.remove_hs
     }
     #[getter]
     fn skip_cleanup(&self) -> bool {
@@ -399,19 +403,20 @@ impl SmilesParseParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct SmilesWriteParams {
     pub(crate) inner: ck::SmilesWriteParams,
 }
 
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SmilesWriteParams {
     #[new]
-    #[pyo3(signature = (*, do_isomeric_smiles=true, do_kekule=false, canonical=true, clean_stereo=true, rooted_at_atom=None, all_bonds_explicit=false, all_hydrogens_explicit=false, include_dative_bonds=true, ignore_atom_map_numbers=false))]
+    #[pyo3(signature = (*, isomeric_smiles=true, kekule=false, canonical=true, clean_stereo=true, rooted_at_atom=None, all_bonds_explicit=false, all_hydrogens_explicit=false, include_dative_bonds=true, ignore_atom_map_numbers=false))]
     fn new(
-        do_isomeric_smiles: bool,
-        do_kekule: bool,
+        isomeric_smiles: bool,
+        kekule: bool,
         canonical: bool,
         clean_stereo: bool,
         rooted_at_atom: Option<usize>,
@@ -422,8 +427,8 @@ impl SmilesWriteParams {
     ) -> Self {
         Self {
             inner: ck::SmilesWriteParams {
-                do_isomeric_smiles,
-                do_kekule,
+                isomeric_smiles,
+                kekule,
                 canonical,
                 clean_stereo,
                 rooted_at_atom: rooted_at_atom.map(ck::AtomId::new),
@@ -435,12 +440,12 @@ impl SmilesWriteParams {
         }
     }
     #[getter]
-    fn do_isomeric_smiles(&self) -> bool {
-        self.inner.do_isomeric_smiles
+    fn isomeric_smiles(&self) -> bool {
+        self.inner.isomeric_smiles
     }
     #[getter]
-    fn do_kekule(&self) -> bool {
-        self.inner.do_kekule
+    fn kekule(&self) -> bool {
+        self.inner.kekule
     }
     #[getter]
     fn canonical(&self) -> bool {

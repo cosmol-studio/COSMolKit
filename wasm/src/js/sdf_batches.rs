@@ -211,51 +211,51 @@ impl MoleculeBatch {
             .map(|inner| BatchRecord { inner })
             .collect()
     }
-    #[wasm_bindgen(js_name=toSdf)]
-    pub fn to_sdf(&self, path: &str) -> Result<BatchExportReport, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_sdf(path)
+    #[wasm_bindgen(js_name=writeSdf)]
+    pub fn write_sdf(&self, path: &str) -> Result<BatchExportReport, JsValue> {
+        // COSMolKit❗✔️: self.inner.write_sdf(path)
         self.inner
-            .to_sdf(path)
+            .write_sdf(path)
             .map(|inner| BatchExportReport { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=toSdfFiles)]
-    pub fn to_sdf_files(&self, path: &str) -> Result<BatchExportReport, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_sdf_files(path)
+    #[wasm_bindgen(js_name=writeSdfFiles)]
+    pub fn write_sdf_files(&self, path: &str) -> Result<BatchExportReport, JsValue> {
+        // COSMolKit❗✔️: self.inner.write_sdf_files(path)
         self.inner
-            .to_sdf_files(path)
+            .write_sdf_files(path)
             .map(|inner| BatchExportReport { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=toSdfWithParams)]
-    pub fn to_sdf_with_params(
+    #[wasm_bindgen(js_name=writeSdfWithParams)]
+    pub fn write_sdf_with_params(
         &self,
         path: &str,
         #[wasm_bindgen(unchecked_param_type = "BatchExportParams")] params: JsValue,
         #[wasm_bindgen(unchecked_param_type = "string | null")] report_path: JsValue,
     ) -> Result<BatchExportReport, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_sdf_with_params(path,&p.inner,report_path.as_deref())
+        // COSMolKit❗✔️: self.inner.write_sdf_with_params(path,&p.inner,report_path.as_deref())
         let report_path = optional_string(&report_path)?;
         let mut result = None;
         visit_export(&params, &mut |p: &BatchExportParams| {
             result = Some(
                 self.inner
-                    .to_sdf_with_params(path, &p.inner, report_path.as_deref())
+                    .write_sdf_with_params(path, &p.inner, report_path.as_deref())
                     .map(|inner| BatchExportReport { inner })
                     .map_err(error),
             );
         })?;
         result.ok_or_else(|| type_error("params"))?
     }
-    #[wasm_bindgen(js_name=toSdfFilesWithParams)]
-    pub fn to_sdf_files_with_params(
+    #[wasm_bindgen(js_name=writeSdfFilesWithParams)]
+    pub fn write_sdf_files_with_params(
         &self,
         directory: &str,
         #[wasm_bindgen(unchecked_param_type = "BatchExportParams")] params: JsValue,
         #[wasm_bindgen(unchecked_param_type = "(string | null)[] | null")] filenames: JsValue,
         #[wasm_bindgen(unchecked_param_type = "string | null")] report_path: JsValue,
     ) -> Result<BatchExportReport, JsValue> {
-        // COSMolKit❗✔️: self.inner.to_sdf_files_with_params(directory,&p.inner,filenames.as_deref(),report_path.as_deref())
+        // COSMolKit❗✔️: self.inner.write_sdf_files_with_params(directory,&p.inner,filenames.as_deref(),report_path.as_deref())
         let report_path = optional_string(&report_path)?;
         let filenames = if filenames.is_null() {
             None
@@ -279,7 +279,7 @@ impl MoleculeBatch {
         visit_export(&params, &mut |p: &BatchExportParams| {
             result = Some(
                 self.inner
-                    .to_sdf_files_with_params(
+                    .write_sdf_files_with_params(
                         directory,
                         &p.inner,
                         filenames.as_deref(),

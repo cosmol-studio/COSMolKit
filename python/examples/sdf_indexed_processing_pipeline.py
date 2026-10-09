@@ -43,7 +43,7 @@ def build_seed_sdf(path: Path) -> None:
 
 build_seed_sdf(SDF_PATH)
 
-dataset = ck.SdfDataset.open(str(SDF_PATH), coordinate_dim="2d")
+dataset = ck.SdfDataset.open(str(SDF_PATH), coordinate_mode="require_2d")
 print("dataset path:", dataset.path())
 print("records:", len(dataset))
 
@@ -82,7 +82,7 @@ for chunk in dataset.batches(size=2, errors=ck.BatchErrorMode.KEEP, n_jobs=2):
     all_chunks.append(prepared)
     print("chunk:", len(prepared), prepared.to_smiles_list())
 
-report = selected.to_images(
+report = selected.write_images(
     str(OUTPUT_DIR / "selected_images"),
     format="png",
     size=(320, 240),
@@ -91,7 +91,7 @@ report = selected.to_images(
 )
 print("selected image export:", report)
 
-sdf_report = selected.to_sdf_files(
+sdf_report = selected.write_sdf_files(
     str(OUTPUT_DIR / "selected_sdf"),
     format="v2000",
     filenames=["ethanol", "benzene", "benzonitrile"],

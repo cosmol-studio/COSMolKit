@@ -39,7 +39,7 @@ saved_path = mol.write_sdf_to_directory(
 )
 print("Saved:", saved_path)
 
-lig = ck.Molecule.read_sdf(saved_path, sanitize=True, coordinate_dim="2d")
+lig = ck.Molecule.read_sdf(saved_path, sanitize=True, coordinate_mode="require_2d")
 print("Loaded:", lig)
 lig_coords = lig.coordinates_2d()
 print("loaded coords shape:", lig_coords.shape)
@@ -47,7 +47,7 @@ print("max coordinate delta after SDF roundtrip:", np.abs(coords - lig_coords).m
 
 raw_benzene = ck.Molecule.read_mol_from_str(
     KEKULE_BENZENE_MOL,
-    coordinate_dim="2d",
+    coordinate_mode="require_2d",
     sanitize=False,
 )
 sanitized_benzene = raw_benzene.sanitize()
@@ -58,7 +58,7 @@ explicit_h_mol = ck.Molecule.from_smiles("CCO").with_hydrogens().with_2d_coordin
 explicit_h_sdf = explicit_h_mol.to_2d_sdf_string(format="v2000")
 kept_h = ck.Molecule.read_sdf_from_str(
     explicit_h_sdf,
-    coordinate_dim="2d",
+    coordinate_mode="require_2d",
     remove_hs=False,
 )
 heavy_atoms = kept_h.without_hydrogens()

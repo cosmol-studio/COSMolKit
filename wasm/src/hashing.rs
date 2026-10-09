@@ -45,7 +45,7 @@ mod tests {
             "CCO",
             &ck::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             },
         )

@@ -108,7 +108,7 @@ class ProgressTests(unittest.TestCase):
 
     def test_rdkit_progress_does_not_change_rows_or_order(self):
         cases = [{"id": str(i), "smiles": s} for i, s in enumerate(("CCO", "CC", "C"))]
-        parameters = [{"SmilesRead": {"sanitize": True, "remove_hydrogens": True}}]
+        parameters = [{"SmilesRead": {"sanitize": True, "remove_hs": True}}]
         expected = oracle.generate_smiles_read(cases, parameters, 1)
         for threads in (1, 2):
             updates = []
@@ -119,7 +119,7 @@ class ProgressTests(unittest.TestCase):
 
     def test_real_generator_keeps_json_stdout_and_visible_task_progress(self):
         cases = [{"id": "ethanol", "smiles": "CCO"}]
-        parameters = [{"SmilesRead": {"sanitize": True, "remove_hydrogens": True}}]
+        parameters = [{"SmilesRead": {"sanitize": True, "remove_hs": True}}]
         result = subprocess.run(
             [sys.executable, str(Path(reference.__file__))],
             input=json.dumps({"kind": "corpus", "task": "smiles_read_smiles",

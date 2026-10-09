@@ -240,6 +240,22 @@ RDKit atoms:
 
    print(mol.find_chiral_centers(include_unassigned=False))
 
+``find_chiral_centers()`` follows the pinned RDKit modern perception path
+(``useLegacyImplementation=False``, CIP labels enabled). It returns only
+potential tetrahedral centers, with ``R``/``S`` or lowercase ``r``/``s`` labels.
+The default ``include_unassigned=False`` omits unspecified centers; pass
+``True`` to include their ``?`` labels. Unknown stereo without a CIP label uses
+the source descriptor ``NoValue``. Existing ``_CIPCode`` values use the source
+property-to-string conversion, including empty strings. Invalid UTF-8 label
+text raises a structured error rather than losing bytes. Non-tetrahedral and double-bond stereo do
+not appear in this list. This query leaves molecule state unchanged and raises
+``StereoReadError`` if perception, CIP assignment, or label conversion fails.
+The API remains experimental and exposes the modern path with CIP enabled;
+legacy perception and an ``includeCIP=False`` mode are not exposed.
+
+This replaces the former raw-tag output and its ``include_unassigned=True``
+default. Code needing raw tags should read ``atom.chiral_tag()`` directly.
+
 Atom and bond enum-valued fields return Python ``IntEnum`` members, so callers
 can compare or match against ``ChiralTag``, ``BondOrder``, ``BondDirection``,
 and ``BondStereo`` instead of spelling chemistry states as strings. Read-only

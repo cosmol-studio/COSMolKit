@@ -47,7 +47,7 @@ fn drawing_svg_boundary_constructor_product() {
             case.smiles,
             &SmilesParseParams {
                 sanitize: true,
-                remove_hydrogens: true,
+                remove_hs: true,
                 allow_cxsmiles: true,
                 strict_cxsmiles: true,
                 parse_name: true,

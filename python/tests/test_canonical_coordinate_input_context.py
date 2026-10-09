@@ -2,10 +2,12 @@ import cosmolkit as ck
 import numpy as np
 import pytest
 
-def test_parameter_objects_keep_original_defaults_and_are_frozen():
+def test_parameter_objects_keep_original_defaults_and_are_writable():
     for value, name, expected in [(ck.Coordinate2DInputParams(), 'z_policy', ck.CoordinateZPolicy.Ignore), (ck.Coordinate3DInputParams(), 'is_3d', True), (ck.Replace3DCoordinatesParams(), 'conformer_id', 0)]:
         assert getattr(value, name) == expected
-        with pytest.raises(AttributeError): setattr(value, name, None)
+        setattr(value, name, expected)
+        assert getattr(value, name) == expected
+        with pytest.raises(TypeError): setattr(value, name, None)
     assert ck.CoordinateZPolicy.from_name('ReQuIrE_ZeRo') == ck.CoordinateZPolicy.RequireZero
     with pytest.raises(ck.CoordinateInputError) as caught: ck.CoordinateZPolicy.from_name('unknown')
     assert (caught.value.domain, caught.value.kind, caught.value.value) == ('coordinate_input', 'UnknownZPolicy', 'unknown')

@@ -139,11 +139,13 @@ pub(crate) fn with_mmff_optimized_impl(
     })
 }
 
-#[mol_op_body(with_mmff_optimized_confs, parts)]
-pub(crate) fn with_mmff_optimized_confs_impl(
+#[mol_op_body(with_mmff_optimized_conformers, parts)]
+pub(crate) fn with_mmff_optimized_conformers_impl(
     params: &MmffConformerOptimizationParams,
 ) -> Result<
-    MmffOptimizeMoleculeConfsResult<crate::PendingMolecule<super::WithMmffOptimizedConfsAccess>>,
+    MmffOptimizeMoleculeConfsResult<
+        crate::PendingMolecule<super::WithMmffOptimizedConformersAccess>,
+    >,
     OperationError,
 > {
     // Source wrappers delegate properties/builder/minimization to the owner.
@@ -320,7 +322,7 @@ mod original_public_optimization_tests {
         threshold: f64,
         ignore: bool,
     ) -> Result<MmffOptimizeMoleculeConfsResult, OperationError> {
-        input.with_mmff_optimized_confs_with_params(&MmffConformerOptimizationParams {
+        input.with_mmff_optimized_conformers_with_params(&MmffConformerOptimizationParams {
             num_threads: threads,
             max_iterations: iters,
             mmff_variant: variant.into(),

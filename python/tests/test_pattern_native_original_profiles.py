@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILES = {
-    "pattern_focused": (18, "COSMOLKIT_PATTERN_ORIGINAL_FOCUSED_GOLDEN", "0e5a58bc9cf7ce07836f71fc32dca80b25ae8b3cc038f4e729cf976b8528cd74", "testdata/fingerprint/fixtures/rdkit/pattern_fingerprint_focused.smi"),
+    "pattern_focused": (18, "COSMOLKIT_PATTERN_ORIGINAL_FOCUSED_GOLDEN", "0e5a58bc9cf7ce07836f71fc32dca80b25ae8b3cc038f4e729cf976b8528cd74", "testdata/fingerprint/fixtures/rdkit/fingerprint_pattern_focused.smi"),
 }
 
 
@@ -83,11 +83,11 @@ def test_original_pattern_all_rows_all11_complete_results(profile, row, original
             params = ck.PatternFingerprintParams(n_bits=p["fpSize"], tautomeric=p["tautomericFingerprint"])
             result = {"parameters": p, "atom_counts_before": branch["atom_counts_before"], "atom_counts_after": branch["atom_counts_after"], "set_only_bits": branch["set_only_bits"], "source_inert_arguments_omitted": True}
             try:
-                fp = (value.pattern_fingerprint_with_params(params) if expected["input_kind"] == "smiles" else ck.pattern_query_fingerprint_with_params(value, params))
+                fp = (value.fingerprint_pattern_with_params(params) if expected["input_kind"] == "smiles" else ck.fingerprint_pattern_query_with_params(value, params))
                 result.update(ok=True, n_bits=fp.n_bits(), on_bits=fp.on_bits(), error=None)
                 assert (params.n_bits, params.tautomeric) == (p["fpSize"], p["tautomericFingerprint"])
                 if name == "default":
-                    default = value.pattern_fingerprint() if expected["input_kind"] == "smiles" else ck.pattern_query_fingerprint(value)
+                    default = value.fingerprint_pattern() if expected["input_kind"] == "smiles" else ck.fingerprint_pattern_query(value)
                     assert (default.n_bits(), default.on_bits()) == (fp.n_bits(), fp.on_bits())
             except Exception as error:
                 result.update(ok=False, n_bits=None, on_bits=None, error={"type": type(error).__name__, "message": str(error), "domain": getattr(error, "domain", None), "kind": getattr(error, "kind", None)})

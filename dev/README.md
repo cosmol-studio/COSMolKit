@@ -73,6 +73,12 @@ Test the freshly built Python extension, not an older installation. Rerun
 affected checks after further changes. This checklist does not authorize Git
 operations.
 
+Stub generation and WASM packaging enforce the compiled binding registry:
+configuration records require writable fields, consistent configuration call
+forms/defaults, and complete enabled language projections. A failed gate does
+not write a replacement stub or export an npm distribution. Do not bypass it
+with handwritten declarations or a second API inventory.
+
 ## Domain designs and protocols
 
 - [Double formatting](./double_formatting_contract.md): approved Boost-compatible pure-Rust binary64 string conversion and its validation boundary.

@@ -37,19 +37,19 @@ HETATM   14  C1  LIG C   1      18.500  11.000   8.500  1.00 10.00           C
 """
 
 
-def atom_position(atom: ck.ProteinAtom) -> tuple[float, float, float]:
+def atom_position(atom: ck.ProteinAtomRef) -> tuple[float, float, float]:
     position = atom.position()
     if position is None:
         raise ValueError(f"atom {atom.name()} has no coordinates")
     return position
 
 
-def residue_centroid(residue: ck.ProteinResidue) -> npt.NDArray[np.float64]:
+def residue_centroid(residue: ck.ProteinResidueRef) -> npt.NDArray[np.float64]:
     coords = np.array([atom_position(atom) for atom in residue.atoms()])
     return cast(npt.NDArray[np.float64], coords.mean(axis=0))
 
 
-protein = ck.Protein.from_pdb_str(PDB)
+protein = ck.Protein.from_pdb(PDB)
 
 print("models:", protein.num_models())
 print("chains:", protein.num_chains())
@@ -58,13 +58,13 @@ print("atoms:", protein.num_atoms())
 
 for chain in protein.chains():
     residues = chain.residues()
-    print("chain:", chain.index(), chain.kind(), "residues=", len(residues))
+    print("chain:", chain.id(), chain.kind(), "residues=", len(residues))
     for residue in residues:
         centroid = residue_centroid(residue)
         atom_names = [atom.name() for atom in residue.atoms()]
         print(
             "  residue:",
-            residue.index(),
+            residue.id(),
             residue.name(),
             residue.kind(),
             "atoms=",
@@ -82,6 +82,6 @@ for left_index, left in enumerate(all_residues):
         if distance <= 6.0:
             right = all_residues[right_index]
             print(
-                f"  {left.name()}#{left.index()} - "
-                f"{right.name()}#{right.index()}: {distance:.2f} A"
+                f"  {left.name()}#{left.id()} - "
+                f"{right.name()}#{right.id()}: {distance:.2f} A"
             )

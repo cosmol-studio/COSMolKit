@@ -10,6 +10,7 @@ use pyo3_stub_gen::derive::{
 };
 
 pyo3::create_exception!(cosmolkit, InchiError, PyValueError);
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -56,10 +57,10 @@ pub(crate) struct InchiReadParams {
 #[pymethods]
 impl InchiReadParams {
     #[new]
-    #[pyo3(signature=(sanitize=true, remove_hydrogens=true))]
-    fn new(sanitize: bool, remove_hydrogens: bool) -> Self {
+    #[pyo3(signature=(sanitize=true, remove_hs=true))]
+    fn new(sanitize: bool, remove_hs: bool) -> Self {
         Self {
-            inner: ck::InchiReadParams::new(sanitize, remove_hydrogens),
+            inner: ck::InchiReadParams::new(sanitize, remove_hs),
         }
     }
     #[getter]
@@ -71,12 +72,12 @@ impl InchiReadParams {
         self.inner.sanitize = value;
     }
     #[getter]
-    fn remove_hydrogens(&self) -> bool {
-        self.inner.remove_hydrogens
+    fn remove_hs(&self) -> bool {
+        self.inner.remove_hs
     }
     #[setter]
-    fn set_remove_hydrogens(&mut self, value: bool) {
-        self.inner.remove_hydrogens = value;
+    fn set_remove_hs(&mut self, value: bool) {
+        self.inner.remove_hs = value;
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
@@ -121,14 +122,14 @@ pub(crate) fn write_params(
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyfunction)]
 #[pyfunction]
-fn inchi_to_inchi_key(py: Python<'_>, inchi: &str) -> PyResult<String> {
-    ck::inchi_to_inchi_key(inchi).map_err(|e| error(py, e))
+fn inchi_to_key(py: Python<'_>, inchi: &str) -> PyResult<String> {
+    ck::inchi_to_key(inchi).map_err(|e| error(py, e))
 }
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<InchiReadParams>()?;
     module.add_class::<InchiWriteParams>()?;
     module.add_class::<InchiErrorKind>()?;
     module.add("InchiError", module.py().get_type::<InchiError>())?;
-    module.add_function(wrap_pyfunction!(inchi_to_inchi_key, module)?)?;
+    module.add_function(wrap_pyfunction!(inchi_to_key, module)?)?;
     Ok(())
 }

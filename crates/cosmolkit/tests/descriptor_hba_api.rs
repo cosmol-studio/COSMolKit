@@ -8,7 +8,7 @@ use cosmolkit::{DescriptorReadError, Molecule, SmilesParseParams};
 /// pinned RDKit 351f8f3 behavior (including the test.cpp:2227-2234
 /// #8997 discriminators `c1cccn1C` -> 0 and `c1cccc(=O)n1C` -> 1).
 /// The same expected value holds under BOTH constructor policies
-/// (sanitize=true, remove_hydrogens=false and true); counts never
+/// (sanitize=true, remove_hs=false and true); counts never
 /// depend on this frozen table being derived from the SUT.
 const HBA_CASES: [(&str, u32); 15] = [
     ("", 0),
@@ -28,10 +28,10 @@ const HBA_CASES: [(&str, u32); 15] = [
     ("CC(=O)OCC", 2),
 ];
 
-fn sanitized(smiles: &str, remove_hydrogens: bool) -> Molecule {
+fn sanitized(smiles: &str, remove_hs: bool) -> Molecule {
     let params = SmilesParseParams {
         sanitize: true,
-        remove_hydrogens,
+        remove_hs,
         ..Default::default()
     };
     Molecule::from_smiles_with_params(smiles, &params).unwrap()
@@ -46,9 +46,9 @@ fn sanitized(smiles: &str, remove_hydrogens: bool) -> Molecule {
 fn descriptor_hba_public_literal_product() {
     let mut calls = 0usize;
     for (smiles, expected) in HBA_CASES {
-        for remove_hydrogens in [false, true] {
-            let label = format!("{smiles}/rh={remove_hydrogens}");
-            let original = sanitized(smiles, remove_hydrogens);
+        for remove_hs in [false, true] {
+            let label = format!("{smiles}/rh={remove_hs}");
+            let original = sanitized(smiles, remove_hs);
             let peer = original.clone();
             // Actual fixture facts captured from the real constructor.
             let rows = original.num_atoms();
@@ -97,14 +97,14 @@ fn descriptor_hba_public_literal_product() {
 #[test]
 fn descriptor_hba_public_supplementary_general_vs_lipinski() {
     let mut calls = 0usize;
-    for remove_hydrogens in [false, true] {
-        let label = format!("rh={remove_hydrogens}");
-        let acid = sanitized("CC(=O)O", remove_hydrogens);
+    for remove_hs in [false, true] {
+        let label = format!("rh={remove_hs}");
+        let acid = sanitized("CC(=O)O", remove_hs);
         assert_eq!(acid.num_hba().unwrap(), 1, "acid general {label}");
         calls += 1;
         assert_eq!(acid.lipinski_hba().unwrap(), 2, "acid direct {label}");
         calls += 1;
-        let thiophene = sanitized("c1ccsc1", remove_hydrogens);
+        let thiophene = sanitized("c1ccsc1", remove_hs);
         assert_eq!(thiophene.num_hba().unwrap(), 1, "thiophene general {label}");
         calls += 1;
         assert_eq!(
@@ -129,7 +129,7 @@ fn descriptor_hba_public_missing_prepared_valence() {
     for (label, smiles) in [("raw-cco", "CCO"), ("pentavalent", "C(C)(C)(C)(C)C")] {
         let params = SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         let molecule = Molecule::from_smiles_with_params(smiles, &params).unwrap();

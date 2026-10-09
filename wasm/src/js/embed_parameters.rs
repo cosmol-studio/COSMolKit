@@ -59,7 +59,7 @@ impl EmbedParams {
         #[wasm_bindgen(unchecked_optional_param_type = "number")] max_iterations: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] num_threads: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] random_seed: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] clear_confs: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] clear_conformers: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] use_random_coords: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number")] box_size_mult: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] rand_neg_eig: JsValue,
@@ -115,8 +115,8 @@ impl EmbedParams {
             inner.random_seed = i32_value(&random_seed, "randomSeed")?;
         }
         // COSMolKit❗✔️: inner.clear_confs = clear_confs;
-        if !clear_confs.is_undefined() {
-            inner.clear_confs = bool_value(&clear_confs, "clearConfs")?;
+        if !clear_conformers.is_undefined() {
+            inner.clear_conformers = bool_value(&clear_conformers, "clearConformers")?;
         }
         // COSMolKit❗✔️: inner.use_random_coords = use_random_coords;
         if !use_random_coords.is_undefined() {
@@ -314,9 +314,9 @@ impl EmbedParams {
     pub fn random_seed(&self) -> i32 {
         self.inner.random_seed()
     }
-    #[wasm_bindgen(js_name=clearConfs)]
-    pub fn clear_confs(&self) -> bool {
-        self.inner.clear_confs()
+    #[wasm_bindgen(js_name=clearConformers)]
+    pub fn clear_conformers(&self) -> bool {
+        self.inner.clear_conformers()
     }
     #[wasm_bindgen(js_name=useRandomCoords)]
     pub fn use_random_coords(&self) -> bool {

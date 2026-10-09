@@ -84,11 +84,12 @@ pub(crate) fn parameter_query_pyerr(py: Python<'_>, source: ck::UffParameterQuer
     error
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct UffOptimizationParams {
     pub(crate) inner: ck::UffOptimizationParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -133,11 +134,12 @@ impl UffOptimizationParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct UffConformerOptimizationParams {
     pub(crate) inner: ck::UffConformerOptimizationParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -306,11 +308,12 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct UffEvaluationParams {
     pub(crate) inner: ck::UffEvaluationParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]

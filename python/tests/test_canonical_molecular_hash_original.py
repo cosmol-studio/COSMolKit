@@ -37,12 +37,12 @@ def test_full_original_chembl_hash_morgan_2d_and_binary_pickle_condition():
     molecule = cosmolkit.Molecule.from_smiles("CNC(=O)[C@H](CCCNC(=O)OC(C)(C)C)NC(=O)[C@H](CCCc1ccccc1)[C@@](C)(O)C(=O)NO").with_2d_coordinates()
     before = molecule.to_binary()
     expected_hash = molecule.molecular_hash()
-    expected_morgan = molecule.morgan_fingerprint()
+    expected_morgan = molecule.fingerprint_morgan()
     restored = pickle.loads(pickle.dumps(molecule))
     assert restored.to_binary() == before
     assert restored.coordinates_2d() == molecule.coordinates_2d()
     assert restored.molecular_hash() == expected_hash
-    actual_morgan = restored.morgan_fingerprint()
+    actual_morgan = restored.fingerprint_morgan()
     assert actual_morgan.n_bits() == expected_morgan.n_bits()
     assert actual_morgan.on_bits() == expected_morgan.on_bits()
     assert molecule.to_binary() == before

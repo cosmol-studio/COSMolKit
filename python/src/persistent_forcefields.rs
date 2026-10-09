@@ -9,6 +9,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, types::PyTuple};
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int, skip_from_py_object)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -284,11 +285,12 @@ fn default_force_tolerance() -> f64 {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct MmffForceFieldParams {
     pub(crate) inner: ck::MmffForceFieldParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -328,11 +330,12 @@ impl MmffForceFieldParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct UffForceFieldParams {
     pub(crate) inner: ck::UffForceFieldParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -366,11 +369,12 @@ impl UffForceFieldParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct ForceFieldMinimizeParams {
     pub(crate) inner: ck::ForceFieldMinimizeParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]

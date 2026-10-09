@@ -9,7 +9,7 @@ fn params(params: &SdfReadParams) -> cosmolkit_batch::BatchReadParams {
         data: crate::sdf_supplier::data_params(params),
         post: cosmolkit_io::MolPostParams {
             sanitize: params.sanitize,
-            remove_hs: params.remove_hydrogens,
+            remove_hs: params.remove_hs,
             expand_attachment_points: params.expand_attachment_points,
         },
     }
@@ -260,10 +260,10 @@ impl MoleculeBatch {
             })
             .collect()
     }
-    pub fn to_sdf(&self, path: &str) -> Result<BatchExportReport, BatchValidationError> {
-        self.to_sdf_with_params(path, &BatchExportParams::default(), None)
+    pub fn write_sdf(&self, path: &str) -> Result<BatchExportReport, BatchValidationError> {
+        self.write_sdf_with_params(path, &BatchExportParams::default(), None)
     }
-    pub fn to_sdf_with_params(
+    pub fn write_sdf_with_params(
         &self,
         path: &str,
         params: &BatchExportParams,
@@ -285,10 +285,13 @@ impl MoleculeBatch {
         Self::write_report(&report, report_path)?;
         Ok(report)
     }
-    pub fn to_sdf_files(&self, directory: &str) -> Result<BatchExportReport, BatchValidationError> {
-        self.to_sdf_files_with_params(directory, &BatchExportParams::default(), None, None)
+    pub fn write_sdf_files(
+        &self,
+        directory: &str,
+    ) -> Result<BatchExportReport, BatchValidationError> {
+        self.write_sdf_files_with_params(directory, &BatchExportParams::default(), None, None)
     }
-    pub fn to_sdf_files_with_params(
+    pub fn write_sdf_files_with_params(
         &self,
         directory: &str,
         params: &BatchExportParams,

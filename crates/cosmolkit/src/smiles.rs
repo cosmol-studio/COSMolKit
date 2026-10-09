@@ -328,7 +328,7 @@ impl Molecule {
         // the source quality guards, and the final carrier is MOVED into the
         // constructor seam below for validated live installation.
         let mut final_rings = None;
-        if params.remove_hydrogens {
+        if params.remove_hs {
             let remove_params = cosmolkit_core::RemoveHsParams {
                 update_explicit_count: true,
                 sanitize: params.sanitize,

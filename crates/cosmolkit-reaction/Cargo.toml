@@ -8,10 +8,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-cosmolkit-types = { version = "0.5.0-rc.16", path = "../cosmolkit-types" }
-cosmolkit-model = { version = "0.5.0-rc.16", path = "../cosmolkit-model" }
-cosmolkit-core = { version = "0.5.0-rc.16", path = "../cosmolkit-core" }
-cosmolkit-search = { version = "0.5.0-rc.16", path = "../cosmolkit-search" }
-cosmolkit-smiles = { version = "0.5.0-rc.16", path = "../cosmolkit-smiles" }
-cosmolkit-cx = { version = "0.5.0-rc.16", path = "../cosmolkit-cx" }
+cosmolkit-types = { version = "0.5.0-rc.17", path = "../cosmolkit-types" }
+cosmolkit-model = { version = "0.5.0-rc.17", path = "../cosmolkit-model" }
+cosmolkit-core = { version = "0.5.0-rc.17", path = "../cosmolkit-core" }
+cosmolkit-search = { version = "0.5.0-rc.17", path = "../cosmolkit-search" }
+cosmolkit-smiles = { version = "0.5.0-rc.17", path = "../cosmolkit-smiles" }
+cosmolkit-cx = { version = "0.5.0-rc.17", path = "../cosmolkit-cx" }
 thiserror = "2"

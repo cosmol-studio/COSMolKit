@@ -40,6 +40,7 @@ pub(crate) fn sdf_pyerr(py: Python<'_>, source: ck::SdfError) -> PyErr {
     error
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -57,6 +58,7 @@ impl From<ck::CoordinateDimension> for CoordinateDimension {
     }
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -87,21 +89,22 @@ impl From<ck::SdfCoordinateMode> for SdfCoordinateMode {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct SdfReadParams {
     pub(crate) inner: ck::SdfReadParams,
 }
 
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SdfReadParams {
     #[new]
-    #[pyo3(signature = (*, sanitize=true, remove_hydrogens=true, strict_parsing=true,
+    #[pyo3(signature = (*, sanitize=true, remove_hs=true, strict_parsing=true,
         expand_attachment_points=false, process_property_lists=true,
         coordinate_mode=SdfCoordinateMode::Preserve))]
     fn new(
         sanitize: bool,
-        remove_hydrogens: bool,
+        remove_hs: bool,
         strict_parsing: bool,
         expand_attachment_points: bool,
         process_property_lists: bool,
@@ -110,7 +113,7 @@ impl SdfReadParams {
         Self {
             inner: ck::SdfReadParams {
                 sanitize,
-                remove_hydrogens,
+                remove_hs,
                 strict_parsing,
                 expand_attachment_points,
                 process_property_lists,
@@ -124,8 +127,8 @@ impl SdfReadParams {
         self.inner.sanitize
     }
     #[getter]
-    fn remove_hydrogens(&self) -> bool {
-        self.inner.remove_hydrogens
+    fn remove_hs(&self) -> bool {
+        self.inner.remove_hs
     }
     #[getter]
     fn strict_parsing(&self) -> bool {

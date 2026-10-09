@@ -1496,7 +1496,7 @@ mod ring_live_public_q1_tests {
             input,
             &cosmolkit_smiles::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..cosmolkit_smiles::SmilesParseParams::default()
             },
         )
@@ -2167,13 +2167,13 @@ mod descriptor_public_storage_tests {
 
         let mut calls = 0usize;
         for (smiles, literal) in FIXTURES {
-            for remove_hydrogens in [false, true] {
-                let label = format!("{smiles:?}/rh={remove_hydrogens}");
+            for remove_hs in [false, true] {
+                let label = format!("{smiles:?}/rh={remove_hs}");
                 let original = Molecule::from_smiles_with_params(
                     smiles,
                     &crate::SmilesParseParams {
                         sanitize: true,
-                        remove_hydrogens,
+                        remove_hs,
                         ..Default::default()
                     },
                 )
@@ -2392,7 +2392,7 @@ mod descriptor_public_storage_tests {
         // valence gate reports first.
         let raw_params = crate::SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         let raw = Molecule::from_smiles_with_params("CCO", &raw_params).unwrap();
@@ -2440,13 +2440,13 @@ mod descriptor_public_storage_tests {
 
         let mut calls = 0usize;
         for (smiles, literal) in FIXTURES {
-            for remove_hydrogens in [false, true] {
-                let label = format!("{smiles:?}/rh={remove_hydrogens}");
+            for remove_hs in [false, true] {
+                let label = format!("{smiles:?}/rh={remove_hs}");
                 let original = Molecule::from_smiles_with_params(
                     smiles,
                     &crate::SmilesParseParams {
                         sanitize: true,
-                        remove_hydrogens,
+                        remove_hs,
                         ..Default::default()
                     },
                 )
@@ -2876,7 +2876,7 @@ mod d02_query_storage_tests {
                 smiles,
                 &crate::SmilesParseParams {
                     sanitize: false,
-                    remove_hydrogens: false,
+                    remove_hs: false,
                     ..Default::default()
                 },
             )
@@ -3767,7 +3767,7 @@ mod original_runtime_descriptor_conditions {
             "C1CC2CCC1C2",
             &crate::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             },
         )

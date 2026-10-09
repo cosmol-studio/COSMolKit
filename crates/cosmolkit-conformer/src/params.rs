@@ -142,7 +142,7 @@ pub struct EmbedParams {
     pub max_iterations: u32,
     pub num_threads: i32,
     pub random_seed: i32,
-    pub clear_confs: bool,
+    pub clear_conformers: bool,
     pub use_random_coords: bool,
     pub box_size_mult: f64,
     pub rand_neg_eig: bool,
@@ -182,7 +182,7 @@ impl Default for EmbedParams {
             max_iterations: 0,
             num_threads: 1,
             random_seed: -1,
-            clear_confs: true,
+            clear_conformers: true,
             use_random_coords: false,
             box_size_mult: 2.0,
             rand_neg_eig: true,
@@ -256,7 +256,7 @@ impl EmbedParams {
         max_iterations: u32,
         num_threads: i32,
         random_seed: i32,
-        clear_confs: bool,
+        clear_conformers: bool,
         use_random_coords: bool,
         box_size_mult: f64,
         rand_neg_eig: bool,
@@ -312,7 +312,7 @@ impl EmbedParams {
             max_iterations,
             num_threads,
             random_seed,
-            clear_confs,
+            clear_conformers,
             use_random_coords,
             box_size_mult,
             rand_neg_eig,
@@ -636,7 +636,7 @@ impl EmbedParams {
             &mut self.bounds_mat_force_scaling,
         )?;
         update_f64_field(&value, "boxSizeMult", &mut self.box_size_mult)?;
-        update_bool_field(&value, "clearConfs", &mut self.clear_confs)?;
+        update_bool_field(&value, "clearConfs", &mut self.clear_conformers)?;
         update_bool_field(
             &value,
             "embedFragmentsSeparately",
@@ -776,7 +776,7 @@ impl EmbedParams {
             self.bounds_mat_force_scaling,
         );
         push_json_field(&mut fields, "boxSizeMult", self.box_size_mult);
-        push_json_field(&mut fields, "clearConfs", self.clear_confs);
+        push_json_field(&mut fields, "clearConfs", self.clear_conformers);
         push_json_field(
             &mut fields,
             "embedFragmentsSeparately",
@@ -1151,7 +1151,7 @@ mod tests {
         assert_eq!(params.max_iterations, 0);
         assert_eq!(params.num_threads, 1);
         assert_eq!(params.random_seed, -1);
-        assert!(params.clear_confs);
+        assert!(params.clear_conformers);
         assert!(!params.use_random_coords);
         assert_eq!(params.box_size_mult, 2.0);
         assert!(params.rand_neg_eig);
@@ -1192,7 +1192,7 @@ mod tests {
         assert_eq!(from_new.max_iterations, from_default.max_iterations);
         assert_eq!(from_new.num_threads, from_default.num_threads);
         assert_eq!(from_new.random_seed, from_default.random_seed);
-        assert_eq!(from_new.clear_confs, from_default.clear_confs);
+        assert_eq!(from_new.clear_conformers, from_default.clear_conformers);
         assert_eq!(from_new.use_random_coords, from_default.use_random_coords);
         assert_eq!(from_new.box_size_mult, from_default.box_size_mult);
         assert_eq!(from_new.rand_neg_eig, from_default.rand_neg_eig);
@@ -1265,7 +1265,7 @@ mod tests {
         max_iterations: u32,
         num_threads: i32,
         random_seed: i32,
-        clear_confs: bool,
+        clear_conformers: bool,
         use_random_coords: bool,
         box_size_mult: f64,
         rand_neg_eig: bool,
@@ -1289,7 +1289,7 @@ mod tests {
         assert_eq!(params.max_iterations, max_iterations);
         assert_eq!(params.num_threads, num_threads);
         assert_eq!(params.random_seed, random_seed);
-        assert_eq!(params.clear_confs, clear_confs);
+        assert_eq!(params.clear_conformers, clear_conformers);
         assert_eq!(params.use_random_coords, use_random_coords);
         assert_eq!(params.box_size_mult, box_size_mult);
         assert_eq!(params.rand_neg_eig, rand_neg_eig);
@@ -1553,7 +1553,7 @@ mod tests {
         assert_eq!(params.optimizer_force_tol, 0.25);
         assert!(params.use_macrocycle_torsions);
         assert_eq!(params.num_threads, 1);
-        assert!(params.clear_confs);
+        assert!(params.clear_conformers);
         assert!(!params.use_macrocycle14config);
     }
 
@@ -1600,7 +1600,7 @@ mod tests {
         assert_eq!(params.basin_thresh, 1.25);
         assert_eq!(params.bounds_mat_force_scaling, 2.5);
         assert_eq!(params.box_size_mult, 3.5);
-        assert!(!params.clear_confs);
+        assert!(!params.clear_conformers);
         assert!(!params.embed_fragments_separately);
         assert!(params.enable_sequential_random_seeds);
         assert!(!params.enforce_chirality);
@@ -1729,8 +1729,8 @@ impl EmbedParams {
     pub fn random_seed(&self) -> i32 {
         self.random_seed
     }
-    pub fn clear_confs(&self) -> bool {
-        self.clear_confs
+    pub fn clear_conformers(&self) -> bool {
+        self.clear_conformers
     }
     pub fn use_random_coords(&self) -> bool {
         self.use_random_coords

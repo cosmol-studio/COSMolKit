@@ -545,19 +545,19 @@ mod query_tests {
 
 #[cfg(feature = "cap-depict")]
 impl MoleculeBatch {
-    pub fn to_images(
+    pub fn write_images(
         &self,
         directory: &str,
     ) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
-        self.inner.to_images(std::path::Path::new(directory))
+        self.inner.write_images(std::path::Path::new(directory))
     }
-    pub fn to_images_with_params(
+    pub fn write_images_with_params(
         &self,
         directory: &str,
         options: &ck::BatchImageParams,
     ) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
         self.inner
-            .to_images_with_params(std::path::Path::new(directory), options)
+            .write_images_with_params(std::path::Path::new(directory), options)
     }
 }
 
@@ -576,7 +576,7 @@ mod image_tests {
         assert!(!base.exists());
         let valid = MoleculeBatch::from_smiles_list(&["CCO".into()]).unwrap();
         let report = valid
-            .to_images(base.join("default").to_str().unwrap())
+            .write_images(base.join("default").to_str().unwrap())
             .unwrap();
         assert_eq!(report.total(), 1);
         assert_eq!(report.success(), 1);
@@ -606,7 +606,7 @@ mod image_tests {
             report_path: Some(base.join("counts.json")),
         };
         let report = partial
-            .to_images_with_params(base.join("custom").to_str().unwrap(), &options)
+            .write_images_with_params(base.join("custom").to_str().unwrap(), &options)
             .unwrap();
         assert_eq!(
             (
@@ -646,7 +646,7 @@ mod image_tests {
             ..Default::default()
         };
         let failure = partial
-            .to_images_with_params(base.join("bad-format").to_str().unwrap(), &invalid)
+            .write_images_with_params(base.join("bad-format").to_str().unwrap(), &invalid)
             .unwrap();
         assert_eq!(
             (failure.written, failure.skipped, failure.failed),
@@ -660,7 +660,7 @@ mod image_tests {
         );
         assert_eq!(
             partial
-                .to_images(base.join("strict").to_str().unwrap())
+                .write_images(base.join("strict").to_str().unwrap())
                 .err()
                 .unwrap()
                 .errors,
@@ -675,7 +675,7 @@ mod image_tests {
         };
         assert!(
             valid
-                .to_images_with_params(base.join("zero").to_str().unwrap(), &invalid)
+                .write_images_with_params(base.join("zero").to_str().unwrap(), &invalid)
                 .is_err()
         );
         assert!(!base.join("zero").exists());
@@ -685,7 +685,7 @@ mod image_tests {
         };
         assert!(
             valid
-                .to_images_with_params(base.join("wrong-names").to_str().unwrap(), &invalid)
+                .write_images_with_params(base.join("wrong-names").to_str().unwrap(), &invalid)
                 .is_err()
         );
     }
@@ -789,7 +789,7 @@ mod atom_pair_tests {
         let bits = batch.fingerprint_atom_pair_list().unwrap();
         assert_eq!(
             bits[0].as_ref().unwrap(),
-            &scalar.atom_pair_fingerprint().unwrap()
+            &scalar.fingerprint_atom_pair().unwrap()
         );
         assert!(bits[1].is_none());
         assert_eq!(
@@ -801,7 +801,7 @@ mod atom_pair_tests {
         let sparse = batch.fingerprint_atom_pair_sparse_count_list().unwrap();
         assert_eq!(
             sparse[0].as_ref().unwrap(),
-            &scalar.atom_pair_sparse_count_fingerprint().unwrap()
+            &scalar.fingerprint_atom_pair_sparse_count().unwrap()
         );
         assert_eq!(
             sparse,
@@ -890,18 +890,18 @@ impl MoleculeBatch {
         self.inner
             .fingerprint_layered_with_output_list_with_params(options, params)
     }
-    pub fn pattern_fingerprint_list(
+    pub fn fingerprint_pattern_list(
         &self,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
-        self.inner.pattern_fingerprint_list()
+        self.inner.fingerprint_pattern_list()
     }
-    pub fn pattern_fingerprint_list_with_params(
+    pub fn fingerprint_pattern_list_with_params(
         &self,
         options: &ck::PatternFingerprintParams,
         params: &ck::BatchQueryParams,
     ) -> Result<Vec<Option<ck::Fingerprint>>, ck::BatchValidationError> {
         self.inner
-            .pattern_fingerprint_list_with_params(options, params)
+            .fingerprint_pattern_list_with_params(options, params)
     }
 }
 
@@ -925,7 +925,7 @@ mod layered_pattern_tests {
         let dense = batch.fingerprint_layered_list().unwrap();
         assert_eq!(
             dense[0].as_ref().unwrap(),
-            &scalar.layered_fingerprint().unwrap()
+            &scalar.fingerprint_layered().unwrap()
         );
         assert!(dense[1].is_none());
         assert_eq!(
@@ -937,7 +937,7 @@ mod layered_pattern_tests {
         let output = batch.fingerprint_layered_with_output_list().unwrap();
         assert_eq!(
             output[0].as_ref().unwrap(),
-            &scalar.layered_fingerprint_with_output().unwrap()
+            &scalar.fingerprint_layered_with_output().unwrap()
         );
         assert_eq!(
             output,
@@ -946,15 +946,15 @@ mod layered_pattern_tests {
                 .unwrap()
         );
         assert!(output[0].as_ref().unwrap().atom_counts().is_none());
-        let pattern = batch.pattern_fingerprint_list().unwrap();
+        let pattern = batch.fingerprint_pattern_list().unwrap();
         assert_eq!(
             pattern[0].as_ref().unwrap(),
-            &scalar.pattern_fingerprint().unwrap()
+            &scalar.fingerprint_pattern().unwrap()
         );
         assert_eq!(
             pattern,
             batch
-                .pattern_fingerprint_list_with_params(
+                .fingerprint_pattern_list_with_params(
                     &ck::PatternFingerprintParams::default(),
                     &query
                 )
@@ -972,7 +972,7 @@ mod layered_pattern_tests {
         assert_eq!(
             result[0].as_ref().unwrap(),
             &scalar
-                .layered_fingerprint_with_output_with_params(&seeded)
+                .fingerprint_layered_with_output_with_params(&seeded)
                 .unwrap()
         );
         assert_eq!(
@@ -1082,7 +1082,7 @@ mod morgan_tests {
         assert_eq!(
             dense[0].as_ref().unwrap(),
             &scalar
-                .morgan_fingerprint_with_params(&options, None)
+                .fingerprint_morgan_with_params(&options, None)
                 .unwrap()
         );
         assert!(dense[1].is_none());
@@ -1158,7 +1158,7 @@ mod morgan_tests {
         assert_eq!(
             values[0].as_ref().unwrap(),
             &scalar
-                .morgan_fingerprint_with_generator(&configured, Some(&call), None)
+                .fingerprint_morgan_with_generator(&configured, Some(&call), None)
                 .unwrap()
         );
         assert_eq!(batch.valid_mask(), [true, false, true]);

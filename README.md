@@ -133,16 +133,16 @@ print(mol_3d.coordinates_3d())
 svg = mol_2d.to_svg(width=400, height=300)
 mol_2d.write_png("phenol.png", width=400, height=300)
 
-fp = mol.morgan_fingerprint()
+fp = mol.fingerprint_morgan()
 print(fp.on_bits())
 
-atom_pair = mol.atom_pair_fingerprint()
+atom_pair = mol.fingerprint_atom_pair()
 print(atom_pair.on_bits())
 
-layered = mol.layered_fingerprint()
+layered = mol.fingerprint_layered()
 print(layered.on_bits())
 
-pattern = mol.pattern_fingerprint()
+pattern = mol.fingerprint_pattern()
 print(pattern.on_bits())
 
 stereoisomers = list(ck.Molecule.from_smiles("FC(Cl)Br").enumerate_stereoisomers())
@@ -160,7 +160,7 @@ prepared = batch.with_hydrogens().with_2d_coordinates()
 print(prepared.valid_mask())
 print(prepared.to_smiles_list())
 
-prepared.to_images("molecule_images")
+prepared.write_images("molecule_images")
 ```
 
 ## Protein Structures

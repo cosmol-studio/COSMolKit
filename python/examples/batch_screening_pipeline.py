@@ -80,7 +80,7 @@ hit_indices = [index for _, index, _ in ranked[:3]]
 hits = prepared[hit_indices]
 print("hit smiles:", hits.to_smiles_list())
 
-image_report = hits.to_images(
+image_report = hits.write_images(
     str(OUTPUT_DIR / "hits"),
     format="svg",
     size=(360, 260),
@@ -89,7 +89,7 @@ image_report = hits.to_images(
 )
 print("image export:", image_report)
 
-sdf_report = hits.to_sdf(
+sdf_report = hits.write_sdf(
     str(OUTPUT_DIR / "hits.sdf"),
     format="v2000",
     errors=ck.BatchErrorMode.KEEP,

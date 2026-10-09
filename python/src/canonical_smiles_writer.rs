@@ -5,7 +5,8 @@ use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, eq)]
+#[derive(PartialEq)]
 pub(crate) struct CxSmilesFields {
     pub(crate) inner: ck::CxSmilesFields,
 }
@@ -144,7 +145,8 @@ impl CxSmilesFields {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, eq)]
+#[derive(PartialEq)]
 pub(crate) struct CxCoordinateSelection {
     inner: ck::CxCoordinateSelection,
 }
@@ -171,10 +173,11 @@ impl CxCoordinateSelection {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct CxSmilesWriteParams {
     pub(crate) inner: ck::CxSmilesWriteParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl CxSmilesWriteParams {
@@ -215,37 +218,38 @@ impl CxSmilesWriteParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct RandomSmilesWriteParams {
     pub(crate) inner: ck::RandomSmilesWriteParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl RandomSmilesWriteParams {
     #[new]
-    #[pyo3(signature = (*, do_isomeric_smiles=true, do_kekule=false, all_bonds_explicit=false, all_hydrogens_explicit=false))]
+    #[pyo3(signature = (*, isomeric_smiles=true, kekule=false, all_bonds_explicit=false, all_hydrogens_explicit=false))]
     fn new(
-        do_isomeric_smiles: bool,
-        do_kekule: bool,
+        isomeric_smiles: bool,
+        kekule: bool,
         all_bonds_explicit: bool,
         all_hydrogens_explicit: bool,
     ) -> Self {
         Self {
             inner: ck::RandomSmilesWriteParams {
-                do_isomeric_smiles,
-                do_kekule,
+                isomeric_smiles,
+                kekule,
                 all_bonds_explicit,
                 all_hydrogens_explicit,
             },
         }
     }
     #[getter]
-    fn do_isomeric_smiles(&self) -> bool {
-        self.inner.do_isomeric_smiles
+    fn isomeric_smiles(&self) -> bool {
+        self.inner.isomeric_smiles
     }
     #[getter]
-    fn do_kekule(&self) -> bool {
-        self.inner.do_kekule
+    fn kekule(&self) -> bool {
+        self.inner.kekule
     }
     #[getter]
     fn all_bonds_explicit(&self) -> bool {
@@ -257,10 +261,11 @@ impl RandomSmilesWriteParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct FragmentSmilesWriteParams {
     pub(crate) inner: ck::FragmentSmilesWriteParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl FragmentSmilesWriteParams {
@@ -310,10 +315,11 @@ impl FragmentSmilesWriteParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct FragmentCxSmilesWriteParams {
     pub(crate) inner: ck::FragmentCxSmilesWriteParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl FragmentCxSmilesWriteParams {

@@ -67,11 +67,11 @@ def test_score_term_factory_preserves_supplied_value():
 
 def test_generator_factories_pass_explicit_configuration_to_the_owner():
     morgan = ck.MorganFingerprintGenerator.new(params=ck.MorganParams(radius=3))
-    assert morgan.params().radius == 3
+    assert morgan.settings().params().radius == 3
     torsion = ck.TopologicalTorsionFingerprintGenerator.new(
         params=ck.TopologicalTorsionParams(torsion_atom_count=5)
     )
-    assert torsion.params().torsion_atom_count == 5
+    assert torsion.settings().params().torsion_atom_count == 5
     with pytest.raises(OverflowError):
         ck.LegacyTopologicalTorsionParams.new(torsion_atom_count=-1)
 

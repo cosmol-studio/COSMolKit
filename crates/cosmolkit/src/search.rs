@@ -193,6 +193,46 @@ impl Molecule {
         Ok(self.substruct_match(query)?.is_some())
     }
 
+    /// Return the first match with the complete configured matcher policy.
+    pub fn substruct_match_with_params(
+        &self,
+        query: &QueryGraph,
+        params: &SubstructMatchParams,
+    ) -> Result<Option<MatchResult>, SubstructMatchError> {
+        // RDKit✔️✔️: SubstructMatchParameters ps = params;
+        // RDKit✔️✔️: ps.maxMatches = 1;
+        // RDKit✔️✔️: std::vector<MatchVectType> matches;
+        // RDKit✔️✔️: pySubstructHelper(mol, query, params, matches);
+        // RDKit✔️✔️: MatchVectType match;
+        // RDKit✔️✔️: if (matches.size()) {
+        // RDKit✔️✔️:   match = matches[0];
+        // RDKit✔️✔️: }
+        // RDKit✔️✔️: return convertMatches(match);
+        // Wrap/substructmethods.h::helpGetSubstructMatch passes original params,
+        // not its unused ps copy. Preserve max_matches and callback visits by
+        // using the configured owner call, then its first ordered result.
+        // No additional molecule or unused parameter copy is needed.
+        Ok(self
+            .substruct_matches_with_params(query, params)?
+            .into_iter()
+            .next())
+    }
+
+    /// Test for a match with the same policy as the configured all-match query.
+    pub fn has_substruct_match_with_params(
+        &self,
+        query: &QueryGraph,
+        params: &SubstructMatchParams,
+    ) -> Result<bool, SubstructMatchError> {
+        // RDKit✔️✔️: SubstructMatchParameters ps = params;
+        // RDKit✔️✔️: ps.maxMatches = 1;
+        // RDKit✔️✔️: std::vector<MatchVectType> matches;
+        // RDKit✔️✔️: pySubstructHelper(mol, query, params, matches);
+        // RDKit✔️✔️: return matches.size() != 0;
+        // Same source helper policy; do not truncate callback visits.
+        Ok(self.substruct_match_with_params(query, params)?.is_some())
+    }
+
     /// Match a reusable compiled query without recompiling its execution plan.
     pub fn substruct_matches_compiled(
         &self,
@@ -232,6 +272,41 @@ mod original_smarts_public_regressions {
     use super::*;
     use cosmolkit_search::SearchTargetAccess;
     use std::sync::Arc;
+
+    #[test]
+    fn configured_single_and_boolean_matching_preserve_callback_policy_and_inputs() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let molecule = Molecule::from_smiles("CCC").unwrap();
+        let query = crate::parse_smarts("C").unwrap();
+        let topology = molecule.topology_arc_runtime();
+        let visits = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&visits);
+        let params = SubstructMatchParams {
+            max_matches: 2,
+            extra_final_check: Some(Arc::new(move |_, _| {
+                observed.fetch_add(1, Ordering::Relaxed);
+                true
+            })),
+            ..Default::default()
+        };
+        let first = molecule
+            .substruct_match_with_params(&query, &params)
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.atom_mapping, vec![0]);
+        // The pinned configured RDKit wrapper passes the original params,
+        // rather than its unused maxMatches=1 copy, to the matcher.
+        assert_eq!(visits.swap(0, Ordering::Relaxed), 2);
+        assert!(
+            molecule
+                .has_substruct_match_with_params(&query, &params)
+                .unwrap()
+        );
+        assert_eq!(visits.load(Ordering::Relaxed), 2);
+        assert_eq!(params.max_matches, 2);
+        assert!(Arc::ptr_eq(&topology, &molecule.topology_arc_runtime()));
+        assert_eq!(molecule.to_smiles().unwrap(), "CCC".into());
+    }
 
     #[test]
     fn original_smarts_prepared_rings_are_borrowed_unchanged() {

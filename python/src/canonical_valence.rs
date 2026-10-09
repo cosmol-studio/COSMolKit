@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -12,11 +13,12 @@ pub(crate) enum ValenceModel {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct ValenceParams {
     pub(crate) inner: ck::ValenceParams,
 }
 
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ValenceParams {

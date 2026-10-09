@@ -600,10 +600,10 @@ impl MoleculeBatch {
         // One immutable borrow per input; collection/error/tick costs are the
         // accepted shared batch mechanism below, with no chemistry duplication.
         self.collect(
-            "batch.topological_torsion_fingerprint",
+            "batch.fingerprint_topological_torsion",
             "Computing Topological Torsion fingerprints",
             params,
-            |m| m.topological_torsion_fingerprint_with_params(options, None),
+            |m| m.fingerprint_topological_torsion_with_params(options, None),
         )
     }
 
@@ -772,13 +772,13 @@ impl std::error::Error for BatchImageError {
 }
 #[cfg(feature = "cap-depict")]
 impl MoleculeBatch {
-    pub fn to_images(
+    pub fn write_images(
         &self,
         directory: &std::path::Path,
     ) -> Result<crate::BatchExportReport, BatchValidationError> {
-        self.to_images_with_params(directory, &BatchImageParams::default())
+        self.write_images_with_params(directory, &BatchImageParams::default())
     }
-    pub fn to_images_with_params(
+    pub fn write_images_with_params(
         &self,
         directory: &std::path::Path,
         options: &BatchImageParams,
@@ -997,9 +997,9 @@ impl MoleculeBatch {
         //             n_jobs,
         //         )
         //     }
-        let generator = Self::atom_pair_preflight(options, "batch.atom_pair_fingerprint")?;
+        let generator = Self::atom_pair_preflight(options, "batch.fingerprint_atom_pair")?;
         self.collect(
-            "batch.atom_pair_fingerprint",
+            "batch.fingerprint_atom_pair",
             "Computing AtomPair fingerprints",
             params,
             |m| {
@@ -1050,9 +1050,9 @@ impl MoleculeBatch {
         //         )
         //     }
         let generator =
-            Self::atom_pair_preflight(options, "batch.atom_pair_sparse_count_fingerprint")?;
+            Self::atom_pair_preflight(options, "batch.fingerprint_atom_pair_sparse_count")?;
         self.collect(
-            "batch.atom_pair_sparse_count_fingerprint",
+            "batch.fingerprint_atom_pair_sparse_count",
             "Computing AtomPair fingerprints",
             params,
             |m| {
@@ -1101,9 +1101,9 @@ impl MoleculeBatch {
         //             n_jobs,
         //         )
         //     }
-        let generator = Self::atom_pair_preflight(options, "batch.atom_pair_count_fingerprint")?;
+        let generator = Self::atom_pair_preflight(options, "batch.fingerprint_atom_pair_count")?;
         self.collect(
-            "batch.atom_pair_count_fingerprint",
+            "batch.fingerprint_atom_pair_count",
             "Computing AtomPair fingerprints",
             params,
             |m| {
@@ -1198,10 +1198,10 @@ impl MoleculeBatch {
         //         )
         //     }
         self.collect(
-            "batch.layered_fingerprint",
+            "batch.fingerprint_layered",
             "Computing Layered fingerprints",
             params,
-            |m| m.layered_fingerprint_with_params(options),
+            |m| m.fingerprint_layered_with_params(options),
         )
     }
     pub fn fingerprint_layered_with_output_list(
@@ -1236,21 +1236,21 @@ impl MoleculeBatch {
         //         )
         //     }
         self.collect(
-            "batch.layered_fingerprint_with_output",
+            "batch.fingerprint_layered_with_output",
             "Computing Layered fingerprints",
             params,
-            |m| m.layered_fingerprint_with_output_with_params(options),
+            |m| m.fingerprint_layered_with_output_with_params(options),
         )
     }
-    pub fn pattern_fingerprint_list(
+    pub fn fingerprint_pattern_list(
         &self,
     ) -> Result<Vec<Option<crate::Fingerprint>>, BatchValidationError> {
-        self.pattern_fingerprint_list_with_params(
+        self.fingerprint_pattern_list_with_params(
             &crate::PatternFingerprintParams::default(),
             &BatchQueryParams::default(),
         )
     }
-    pub fn pattern_fingerprint_list_with_params(
+    pub fn fingerprint_pattern_list_with_params(
         &self,
         options: &crate::PatternFingerprintParams,
         params: &BatchQueryParams,
@@ -1274,10 +1274,10 @@ impl MoleculeBatch {
         //         )
         //     }
         self.collect(
-            "batch.pattern_fingerprint",
+            "batch.fingerprint_pattern",
             "Computing Pattern fingerprints",
             params,
-            |m| m.pattern_fingerprint_with_params(options),
+            |m| m.fingerprint_pattern_with_params(options),
         )
     }
     pub fn fingerprint_morgan_list(
@@ -1401,9 +1401,9 @@ impl MoleculeBatch {
         //     }
 
         let generator =
-            Self::atom_pair_preflight(options, "batch.atom_pair_fingerprint_with_output")?;
+            Self::atom_pair_preflight(options, "batch.fingerprint_atom_pair_with_output")?;
         self.collect(
-            "batch.atom_pair_fingerprint_with_output",
+            "batch.fingerprint_atom_pair_with_output",
             "Computing AtomPair fingerprints",
             params,
             |m| {
@@ -1668,13 +1668,13 @@ impl MoleculeBatch {
         //     })
         // }
         self.collect(
-            "batch.morgan_fingerprint",
+            "batch.fingerprint_morgan",
             "Computing Morgan fingerprints",
             params,
             |m| {
                 let generator =
                     Self::morgan_batch_generator(options, atom_invariants, bond_invariants)?;
-                m.morgan_fingerprint_with_generator(&generator, Some(call), None)
+                m.fingerprint_morgan_with_generator(&generator, Some(call), None)
             },
         )
     }
@@ -1758,7 +1758,7 @@ impl MoleculeBatch {
         //     })
         // }
         self.collect(
-            "batch.morgan_fingerprint_with_output",
+            "batch.fingerprint_morgan_with_output",
             "Computing Morgan fingerprints",
             params,
             |m| {
@@ -1766,7 +1766,7 @@ impl MoleculeBatch {
                     Self::morgan_batch_generator(options, atom_invariants, bond_invariants)?;
                 let mut output = Self::additional_output(collect_additional_output);
                 let fingerprint =
-                    m.morgan_fingerprint_with_generator(&generator, Some(call), output.as_mut())?;
+                    m.fingerprint_morgan_with_generator(&generator, Some(call), output.as_mut())?;
                 Ok::<_, crate::MorganReadError>(cosmolkit_fingerprints::batch_fingerprint_output(
                     fingerprint,
                     output.as_ref(),

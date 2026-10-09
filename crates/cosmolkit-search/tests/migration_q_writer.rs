@@ -51,7 +51,7 @@ fn stereo_query_writes_accept_the_source_empty_ring_cache() {
     let profiles = [
         SmartsWriteParams::default(),
         SmartsWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..Default::default()
         },
         SmartsWriteParams {
@@ -528,7 +528,7 @@ fn q96_simple_bond_serialization_preserves_order_direction_ring_and_aromatic_spe
         "\\"
     );
     let non_isomeric = SmartsWriteParams {
-        do_isomeric_smiles: false,
+        isomeric_smiles: false,
         ..SmartsWriteParams::default()
     };
     assert_eq!(

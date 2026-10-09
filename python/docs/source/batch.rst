@@ -79,7 +79,7 @@ Export Images
 
 .. code-block:: python
 
-   report = prepared.to_images(
+   report = prepared.write_images(
        "molecule_images",
        format="png",
        size=(300, 300),
@@ -99,19 +99,19 @@ Export SDF
 
 .. code-block:: python
 
-   report = prepared.to_sdf(
+   report = prepared.write_sdf(
        "prepared.sdf",
        format="v2000",
        errors="keep",
        report_path="sdf_errors.csv",
    )
 
-Use ``to_sdf_files()`` when each valid record should be written to its own SDF
+Use ``write_sdf_files()`` when each valid record should be written to its own SDF
 file:
 
 .. code-block:: python
 
-   report = prepared.to_sdf_files(
+   report = prepared.write_sdf_files(
        "prepared_records",
        format="v2000",
        errors="keep",
@@ -132,7 +132,7 @@ Derived Outputs
    svgs = prepared.to_svg_list(width=300, height=300)
    bounds = prepared.dg_bounds_matrix_list()
    fingerprints = prepared.fingerprint_morgan_list(n_bits=2048)
-   patterns = prepared.pattern_fingerprint_list(n_bits=2048, tautomeric=False)
+   patterns = prepared.fingerprint_pattern_list(n_bits=2048, tautomeric=False)
    atom_pairs = prepared.fingerprint_atom_pair_list(n_bits=2048)
 
 Morgan, Pattern, and AtomPair batch APIs use the same source-backed cores as

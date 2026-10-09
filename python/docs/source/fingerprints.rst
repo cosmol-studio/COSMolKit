@@ -19,7 +19,7 @@ Topological Torsion fingerprints
 --------------------------------
 
 Topological Torsion is a separate fingerprint family from
-``Molecule.topological_fingerprint()``. The latter is RDKit's path/subgraph
+``Molecule.fingerprint_topological()``. The latter is RDKit's path/subgraph
 ``RDKFingerprintMol`` algorithm; Topological Torsion enumerates ordered atom
 paths of a configured length and encodes or hashes their atom invariants. The
 two names, parameters, and outputs are intentionally not interchangeable.
@@ -141,14 +141,14 @@ fingerprint families are implemented.
 Source-backed topological and Avalon fingerprints
 -------------------------------------------------
 
-``Molecule.topological_fingerprint()`` and
+``Molecule.fingerprint_topological()`` and
 ``Molecule.avalon_fingerprint()`` execute source-backed Rust implementations.
 The maintained topological matrix is exact across 5,000 rows and 14 profiles;
 the Avalon matrix is exact across 5,000 rows and 23 profiles.
 
 The two APIs are source-backed and return a fresh explicit bit vector:
 
-- ``topological_fingerprint()`` requires the complete RDKit
+- ``fingerprint_topological()`` requires the complete RDKit
   ``RDKFingerprintMol``/RDKitFP generator behavior, including branched-path
   enumeration, source random-bit generation, density folding, atom
   invariants, and the exposed path and atom-selection parameters.
@@ -165,7 +165,7 @@ replacement is not an acceptance condition.
 
    mol = ck.Molecule.from_smiles("c1ccccc1O")
 
-   topological = mol.topological_fingerprint(
+   topological = mol.fingerprint_topological(
        min_path=1,
        max_path=7,
        fp_size=2048,
@@ -277,7 +277,7 @@ process-safety compatibility difference, not a chemistry fallback.
 Pattern fingerprints
 --------------------
 
-``Molecule.pattern_fingerprint()`` reproduces RDKit's ordinary-molecule
+``Molecule.fingerprint_pattern()`` reproduces RDKit's ordinary-molecule
 Pattern fingerprint using the fixed, source-ordered table of 13 SMARTS
 queries. The default result has 2,048 bits. ``tautomeric=True`` enables the
 source's tautomer-aware structural hash for single, double, and aromatic bond
@@ -287,8 +287,8 @@ states:
 
    mol = ck.Molecule.from_smiles("c1ccccc1O")
 
-   pattern = mol.pattern_fingerprint()
-   tautomeric_pattern = mol.pattern_fingerprint(
+   pattern = mol.fingerprint_pattern()
+   tautomeric_pattern = mol.fingerprint_pattern(
        n_bits=2048,
        tautomeric=True,
    )
@@ -374,13 +374,13 @@ matrix remains the committed continuous regression gate.
 Topological provenance
 -----------------------
 
-``topological_fingerprint_with_output()`` returns a
+``fingerprint_topological_with_output()`` returns a
 ``TopologicalFingerprintResult``. Request ``atom_bits`` and/or ``bit_info`` to
 receive the matching source provenance outputs:
 
 .. code-block:: python
 
-   result = mol.topological_fingerprint_with_output(
+   result = mol.fingerprint_topological_with_output(
        fp_size=2048,
        atom_bits=True,
        bit_info=True,

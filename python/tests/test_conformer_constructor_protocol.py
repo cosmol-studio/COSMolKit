@@ -6,7 +6,7 @@ import pytest
 
 DEFAULTS = {
     'max_iterations':0, 'num_threads':1, 'random_seed':-1,
-    'clear_confs':True, 'use_random_coords':False, 'box_size_mult':2.0,
+    'clear_conformers':True, 'use_random_coords':False, 'box_size_mult':2.0,
     'rand_neg_eig':True, 'num_zero_fail':1, 'coord_map':None,
     'optimizer_force_tol':1e-3, 'ignore_smoothing_failures':False,
     'enforce_chirality':True, 'use_exp_torsion_angle_prefs':False,
@@ -22,7 +22,7 @@ DEFAULTS = {
 }
 DISTINCT = {
     'max_iterations':19, 'num_threads':4, 'random_seed':123,
-    'clear_confs':False, 'use_random_coords':True, 'box_size_mult':3.25,
+    'clear_conformers':False, 'use_random_coords':True, 'box_size_mult':3.25,
     'rand_neg_eig':False, 'num_zero_fail':2, 'coord_map':{0:[1.,2.,3.]},
     'optimizer_force_tol':0.125, 'ignore_smoothing_failures':True,
     'enforce_chirality':False, 'use_exp_torsion_angle_prefs':True,

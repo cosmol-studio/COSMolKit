@@ -18,7 +18,7 @@ impl SmilesParseParams {
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] allow_cxsmiles: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] strict_cxsmiles: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] parse_name: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] remove_hydrogens: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] remove_hs: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] skip_cleanup: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] debug_parse: JsValue,
         #[wasm_bindgen(
@@ -39,8 +39,8 @@ impl SmilesParseParams {
         if !parse_name.is_undefined() {
             inner.parse_name = bool_value(&parse_name, "parseName")?;
         }
-        if !remove_hydrogens.is_undefined() {
-            inner.remove_hydrogens = bool_value(&remove_hydrogens, "removeHydrogens")?;
+        if !remove_hs.is_undefined() {
+            inner.remove_hs = bool_value(&remove_hs, "removeHs")?;
         }
         if !skip_cleanup.is_undefined() {
             inner.skip_cleanup = bool_value(&skip_cleanup, "skipCleanup")?;
@@ -99,9 +99,9 @@ impl SmilesParseParams {
     pub fn parse_name(&self) -> bool {
         self.inner.parse_name
     }
-    #[wasm_bindgen(getter, js_name = removeHydrogens)]
-    pub fn remove_hydrogens(&self) -> bool {
-        self.inner.remove_hydrogens
+    #[wasm_bindgen(getter, js_name = removeHs)]
+    pub fn remove_hs(&self) -> bool {
+        self.inner.remove_hs
     }
     #[wasm_bindgen(getter, js_name = skipCleanup)]
     pub fn skip_cleanup(&self) -> bool {
@@ -129,8 +129,8 @@ pub struct SmilesWriteParams {
 impl SmilesWriteParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] do_isomeric_smiles: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] do_kekule: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] isomeric_smiles: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] kekule: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] canonical: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] clean_stereo: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number | null")] rooted_at_atom: JsValue,
@@ -142,15 +142,15 @@ impl SmilesWriteParams {
         let default = ck::SmilesWriteParams::default();
         Ok(Self {
             inner: ck::SmilesWriteParams {
-                do_isomeric_smiles: if do_isomeric_smiles.is_undefined() {
-                    default.do_isomeric_smiles
+                isomeric_smiles: if isomeric_smiles.is_undefined() {
+                    default.isomeric_smiles
                 } else {
-                    crate::host_values::bool_value(&do_isomeric_smiles, "doIsomericSmiles")?
+                    crate::host_values::bool_value(&isomeric_smiles, "isomericSmiles")?
                 },
-                do_kekule: if do_kekule.is_undefined() {
-                    default.do_kekule
+                kekule: if kekule.is_undefined() {
+                    default.kekule
                 } else {
-                    crate::host_values::bool_value(&do_kekule, "doKekule")?
+                    crate::host_values::bool_value(&kekule, "kekule")?
                 },
                 canonical: if canonical.is_undefined() {
                     default.canonical
@@ -196,13 +196,13 @@ impl SmilesWriteParams {
             },
         })
     }
-    #[wasm_bindgen(getter,js_name = doIsomericSmiles)]
-    pub fn do_isomeric_smiles(&self) -> bool {
-        self.inner.do_isomeric_smiles
+    #[wasm_bindgen(getter,js_name = isomericSmiles)]
+    pub fn isomeric_smiles(&self) -> bool {
+        self.inner.isomeric_smiles
     }
-    #[wasm_bindgen(getter,js_name = doKekule)]
-    pub fn do_kekule(&self) -> bool {
-        self.inner.do_kekule
+    #[wasm_bindgen(getter,js_name = kekule)]
+    pub fn kekule(&self) -> bool {
+        self.inner.kekule
     }
     #[wasm_bindgen(getter,js_name = canonical)]
     pub fn canonical(&self) -> bool {

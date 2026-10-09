@@ -107,14 +107,14 @@ fn expected_operation_methods() -> Vec<&'static str> {
     }
     if cfg!(feature = "cap-forcefields") {
         expected.push("with_mmff_optimized_with_params");
-        expected.push("with_mmff_optimized_confs_with_params");
+        expected.push("with_mmff_optimized_conformers_with_params");
     }
     if cfg!(feature = "cap-fingerprints") {
         expected.push("with_atom_pair_atom_code");
     }
     if cfg!(feature = "cap-forcefields") {
         expected.push("with_uff_optimized_with_params");
-        expected.push("with_uff_optimized_confs_with_params");
+        expected.push("with_uff_optimized_conformers_with_params");
     }
     if cfg!(feature = "cap-sanitize") {
         expected.push("sanitize_with_params");

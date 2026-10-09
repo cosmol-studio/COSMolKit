@@ -224,10 +224,10 @@ def test_from_rdkit_defaults_to_prepared_graph_for_3d_atom_pair_fingerprint():
     default = cosmolkit.Molecule.from_rdkit(rd_mol)
     explicit = cosmolkit.Molecule.from_rdkit(rd_mol, sanitize=True)
 
-    assert default.atom_pair_fingerprint_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None).on_bits() == [1432]
+    assert default.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None).on_bits() == [1432]
     assert (
-        default.atom_pair_fingerprint_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None).on_bits()
-        == explicit.atom_pair_fingerprint_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None).on_bits()
+        default.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None).on_bits()
+        == explicit.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None).on_bits()
     )
 
 
@@ -248,7 +248,7 @@ def test_from_rdkit_sanitize_false_preserves_unprepared_graph_state():
     assert error.value.kind == "ExplicitValenceCacheNotInitialized"
     assert error.value.atom == 0
     with pytest.raises(cosmolkit.AtomPairReadError, match="Fingerprint preparation requires a valid prepared valence assignment"):
-        raw.atom_pair_fingerprint_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None)
+        raw.fingerprint_atom_pair_with_params(cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None)
 
 
 def test_from_rdkit_copies_multiple_3d_conformers_and_skips_2d():

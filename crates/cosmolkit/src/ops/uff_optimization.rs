@@ -238,11 +238,11 @@ pub(crate) fn with_uff_optimized_impl(
     })
 }
 
-#[mol_op_body(with_uff_optimized_confs, parts)]
-pub(crate) fn with_uff_optimized_confs_impl(
+#[mol_op_body(with_uff_optimized_conformers, parts)]
+pub(crate) fn with_uff_optimized_conformers_impl(
     params: &UffConformerOptimizationParams,
 ) -> Result<
-    UffConformerOptimizationResult<crate::PendingMolecule<super::WithUffOptimizedConfsAccess>>,
+    UffConformerOptimizationResult<crate::PendingMolecule<super::WithUffOptimizedConformersAccess>>,
     OperationError,
 > {
     // BEGIN RDKIT CPP FUNCTION UFF::UFFOptimizeMoleculeConfs (UFF.h:69-78)

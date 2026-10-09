@@ -67,7 +67,7 @@ pub use potential_stereo::PotentialStereoResult;
 #[cfg(feature = "cap-forcefields")]
 pub(crate) use runtime::registry::WithUffOptimizedAccess;
 #[cfg(feature = "cap-forcefields")]
-pub(crate) use runtime::registry::WithUffOptimizedConfsAccess;
+pub(crate) use runtime::registry::WithUffOptimizedConformersAccess;
 pub use runtime::registry::{
     MOLECULE_OPS, OPERATION_INVARIANT_MATRIX, PARITY_MATRIX, SUPPORT_MATRIX,
 };
@@ -123,7 +123,7 @@ pub use mmff_optimization::{
     MmffOptimizeMoleculeConfResult, MmffOptimizeMoleculeConfsResult, MmffOptimizeMoleculeResult,
 };
 #[cfg(feature = "cap-forcefields")]
-pub(crate) use runtime::registry::{WithMmffOptimizedAccess, WithMmffOptimizedConfsAccess};
+pub(crate) use runtime::registry::{WithMmffOptimizedAccess, WithMmffOptimizedConformersAccess};
 
 #[cfg(feature = "cap-tautomer")]
 mod tautomer;

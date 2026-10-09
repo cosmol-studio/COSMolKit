@@ -12,7 +12,7 @@ impl Fixture {
         let parsed = cosmolkit_smiles::parse_smiles(
             smiles,
             &cosmolkit_smiles::SmilesParseParams {
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             },
         )

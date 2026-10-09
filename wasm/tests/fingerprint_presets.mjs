@@ -11,21 +11,21 @@ test("concrete fingerprints and configured providers do not require public searc
     const featureProvider = ck.MorganAtomInvariantsGenerator.features([]);
     const configured = new ck.MorganFingerprintGenerator(new ck.MorganParams(0), featureProvider);
     try {
-        assert.deepEqual(molecule.morganFingerprint().onBits(), molecule.morganFingerprintWithGenerator(generator).onBits());
-        assert.ok(molecule.morganFingerprintWithGenerator(configured) instanceof ck.Fingerprint);
+        assert.deepEqual(molecule.fingerprintMorgan().onBits(), molecule.fingerprintMorganWithGenerator(generator).onBits());
+        assert.ok(molecule.fingerprintMorganWithGenerator(configured) instanceof ck.Fingerprint);
         const params = new ck.TopologicalFingerprintParams();
         const request = new ck.TopologicalFingerprintOutputRequest(true, true);
-        const output = molecule.topologicalFingerprintWithOutputWithParams(params, request);
-        assert.deepEqual(output.fingerprint().onBits(), molecule.topologicalFingerprint().onBits());
+        const output = molecule.fingerprintTopologicalWithOutputWithParams(params, request);
+        assert.deepEqual(output.fingerprint().onBits(), molecule.fingerprintTopological().onBits());
         assert.equal(output.atomBits().length, 3);
         assert.ok(output.bitInfo().size > 0);
         const mask = ck.Fingerprint.fromOnBits(2048, [674]);
         const seed = new ck.LayeredFingerprintParams(undefined, undefined, undefined, undefined, [10, 20, 30], mask);
-        const layered = molecule.layeredFingerprintWithOutputWithParams(seed);
+        const layered = molecule.fingerprintLayeredWithOutputWithParams(seed);
         assert.deepEqual(layered.fingerprint().onBits(), [674]);
         assert.deepEqual(layered.atomCounts(), [11, 22, 31]);
-        assert.deepEqual(molecule.patternFingerprint().onBits(), molecule.patternFingerprintWithParams(new ck.PatternFingerprintParams()).onBits());
-        assert.throws(() => molecule.patternFingerprintWithParams(new ck.PatternFingerprintParams(0)), error => error.kind === "EmptyFingerprint");
+        assert.deepEqual(molecule.fingerprintPattern().onBits(), molecule.fingerprintPatternWithParams(new ck.PatternFingerprintParams()).onBits());
+        assert.throws(() => molecule.fingerprintPatternWithParams(new ck.PatternFingerprintParams(0)), error => error.kind === "EmptyFingerprint");
         assert.equal(molecule.toSmiles(), "CCO");
     } finally { configured.free(); featureProvider.free(); generator.free(); molecule.free(); }
 });

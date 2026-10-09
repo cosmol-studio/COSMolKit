@@ -11,6 +11,22 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pymethods};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+fn format_input(value: &Bound<'_, PyAny>) -> PyResult<u8> {
+    let code = crate::canonical_atom_bond::enum_code(value, "BioCoordinateFormat")?;
+    u8::try_from(code)
+        .map_err(|_| pyo3::exceptions::PyOverflowError::new_err("format code is out of range"))
+}
+
+fn kind_member<'py>(
+    py: Python<'py>,
+    name: &str,
+    value: impl std::fmt::Debug,
+) -> PyResult<Bound<'py, PyAny>> {
+    py.import("cosmolkit")?
+        .getattr(name)?
+        .call1((format!("{value:?}"),))
+}
+
 pyo3::create_exception!(cosmolkit, BioReadError, PyValueError);
 pyo3::create_exception!(cosmolkit, BioMoleculeError, PyValueError);
 pyo3::create_exception!(cosmolkit, BioMoleculeConversionError, PyValueError);
@@ -304,17 +320,25 @@ fn index(index: isize, len: usize, kind: &str) -> PyResult<usize> {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct BioReadParams {
     inner: ck::BioReadParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioReadParams {
     #[new]
     #[pyo3(signature=(*, format=0, source_name="<string>"))]
-    fn new(format: u8, source_name: &str) -> PyResult<Self> {
+    fn new(
+        #[pyo3(from_py_with = format_input)]
+        #[gen_stub(override_type(
+            type_repr = "BioCoordinateFormat | builtins.str | builtins.int"
+        ))]
+        format: u8,
+        source_name: &str,
+    ) -> PyResult<Self> {
         Ok(Self {
             inner: ck::BioReadParams {
                 format: format_from_code(format)?,
@@ -334,10 +358,11 @@ impl BioReadParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct BioPdbReadParams {
     inner: ck::BioPdbReadParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -506,269 +531,345 @@ impl BioMmcifWriteParams {
             },
         }
     }
+    /// Read/write the collective group switch without changing formatting.
+    /// A mixed selection reads false; assignment sets all 32 group flags.
+    #[getter]
+    fn all_groups(&self) -> bool {
+        [
+            self.inner.atoms,
+            self.inner.block_name,
+            self.inner.entry,
+            self.inner.database_status,
+            self.inner.author,
+            self.inner.cell,
+            self.inner.symmetry,
+            self.inner.entity,
+            self.inner.entity_poly,
+            self.inner.struct_ref,
+            self.inner.chem_comp,
+            self.inner.exptl,
+            self.inner.diffrn,
+            self.inner.reflns,
+            self.inner.refine,
+            self.inner.title_keywords,
+            self.inner.ncs,
+            self.inner.struct_asym,
+            self.inner.origx,
+            self.inner.struct_conf,
+            self.inner.struct_sheet,
+            self.inner.struct_biol,
+            self.inner.assembly,
+            self.inner.conn,
+            self.inner.cis,
+            self.inner.modres,
+            self.inner.scale,
+            self.inner.atom_type,
+            self.inner.entity_poly_seq,
+            self.inner.tls,
+            self.inner.software,
+            self.inner.group_pdb,
+        ]
+        .into_iter()
+        .all(|enabled| enabled)
+    }
+    #[setter]
+    fn set_all_groups(&mut self, value: bool) {
+        self.inner.atoms = value;
+        self.inner.block_name = value;
+        self.inner.entry = value;
+        self.inner.database_status = value;
+        self.inner.author = value;
+        self.inner.cell = value;
+        self.inner.symmetry = value;
+        self.inner.entity = value;
+        self.inner.entity_poly = value;
+        self.inner.struct_ref = value;
+        self.inner.chem_comp = value;
+        self.inner.exptl = value;
+        self.inner.diffrn = value;
+        self.inner.reflns = value;
+        self.inner.refine = value;
+        self.inner.title_keywords = value;
+        self.inner.ncs = value;
+        self.inner.struct_asym = value;
+        self.inner.origx = value;
+        self.inner.struct_conf = value;
+        self.inner.struct_sheet = value;
+        self.inner.struct_biol = value;
+        self.inner.assembly = value;
+        self.inner.conn = value;
+        self.inner.cis = value;
+        self.inner.modres = value;
+        self.inner.scale = value;
+        self.inner.atom_type = value;
+        self.inner.entity_poly_seq = value;
+        self.inner.tls = value;
+        self.inner.software = value;
+        self.inner.group_pdb = value;
+    }
     #[getter]
     fn atoms(&self) -> bool {
         self.inner.atoms
     }
     #[setter]
-    fn set_atoms(&mut self, value: bool) {
-        self.inner.atoms = value;
+    fn set_atoms(&mut self, value: Option<bool>) {
+        self.inner.atoms = value.unwrap_or(true);
     }
     #[getter]
     fn block_name(&self) -> bool {
         self.inner.block_name
     }
     #[setter]
-    fn set_block_name(&mut self, value: bool) {
-        self.inner.block_name = value;
+    fn set_block_name(&mut self, value: Option<bool>) {
+        self.inner.block_name = value.unwrap_or(true);
     }
     #[getter]
     fn entry(&self) -> bool {
         self.inner.entry
     }
     #[setter]
-    fn set_entry(&mut self, value: bool) {
-        self.inner.entry = value;
+    fn set_entry(&mut self, value: Option<bool>) {
+        self.inner.entry = value.unwrap_or(true);
     }
     #[getter]
     fn database_status(&self) -> bool {
         self.inner.database_status
     }
     #[setter]
-    fn set_database_status(&mut self, value: bool) {
-        self.inner.database_status = value;
+    fn set_database_status(&mut self, value: Option<bool>) {
+        self.inner.database_status = value.unwrap_or(true);
     }
     #[getter]
     fn author(&self) -> bool {
         self.inner.author
     }
     #[setter]
-    fn set_author(&mut self, value: bool) {
-        self.inner.author = value;
+    fn set_author(&mut self, value: Option<bool>) {
+        self.inner.author = value.unwrap_or(true);
     }
     #[getter]
     fn cell(&self) -> bool {
         self.inner.cell
     }
     #[setter]
-    fn set_cell(&mut self, value: bool) {
-        self.inner.cell = value;
+    fn set_cell(&mut self, value: Option<bool>) {
+        self.inner.cell = value.unwrap_or(true);
     }
     #[getter]
     fn symmetry(&self) -> bool {
         self.inner.symmetry
     }
     #[setter]
-    fn set_symmetry(&mut self, value: bool) {
-        self.inner.symmetry = value;
+    fn set_symmetry(&mut self, value: Option<bool>) {
+        self.inner.symmetry = value.unwrap_or(true);
     }
     #[getter]
     fn entity(&self) -> bool {
         self.inner.entity
     }
     #[setter]
-    fn set_entity(&mut self, value: bool) {
-        self.inner.entity = value;
+    fn set_entity(&mut self, value: Option<bool>) {
+        self.inner.entity = value.unwrap_or(true);
     }
     #[getter]
     fn entity_poly(&self) -> bool {
         self.inner.entity_poly
     }
     #[setter]
-    fn set_entity_poly(&mut self, value: bool) {
-        self.inner.entity_poly = value;
+    fn set_entity_poly(&mut self, value: Option<bool>) {
+        self.inner.entity_poly = value.unwrap_or(true);
     }
     #[getter]
     fn struct_ref(&self) -> bool {
         self.inner.struct_ref
     }
     #[setter]
-    fn set_struct_ref(&mut self, value: bool) {
-        self.inner.struct_ref = value;
+    fn set_struct_ref(&mut self, value: Option<bool>) {
+        self.inner.struct_ref = value.unwrap_or(true);
     }
     #[getter]
     fn chem_comp(&self) -> bool {
         self.inner.chem_comp
     }
     #[setter]
-    fn set_chem_comp(&mut self, value: bool) {
-        self.inner.chem_comp = value;
+    fn set_chem_comp(&mut self, value: Option<bool>) {
+        self.inner.chem_comp = value.unwrap_or(true);
     }
     #[getter]
     fn exptl(&self) -> bool {
         self.inner.exptl
     }
     #[setter]
-    fn set_exptl(&mut self, value: bool) {
-        self.inner.exptl = value;
+    fn set_exptl(&mut self, value: Option<bool>) {
+        self.inner.exptl = value.unwrap_or(true);
     }
     #[getter]
     fn diffrn(&self) -> bool {
         self.inner.diffrn
     }
     #[setter]
-    fn set_diffrn(&mut self, value: bool) {
-        self.inner.diffrn = value;
+    fn set_diffrn(&mut self, value: Option<bool>) {
+        self.inner.diffrn = value.unwrap_or(true);
     }
     #[getter]
     fn reflns(&self) -> bool {
         self.inner.reflns
     }
     #[setter]
-    fn set_reflns(&mut self, value: bool) {
-        self.inner.reflns = value;
+    fn set_reflns(&mut self, value: Option<bool>) {
+        self.inner.reflns = value.unwrap_or(true);
     }
     #[getter]
     fn refine(&self) -> bool {
         self.inner.refine
     }
     #[setter]
-    fn set_refine(&mut self, value: bool) {
-        self.inner.refine = value;
+    fn set_refine(&mut self, value: Option<bool>) {
+        self.inner.refine = value.unwrap_or(true);
     }
     #[getter]
     fn title_keywords(&self) -> bool {
         self.inner.title_keywords
     }
     #[setter]
-    fn set_title_keywords(&mut self, value: bool) {
-        self.inner.title_keywords = value;
+    fn set_title_keywords(&mut self, value: Option<bool>) {
+        self.inner.title_keywords = value.unwrap_or(true);
     }
     #[getter]
     fn ncs(&self) -> bool {
         self.inner.ncs
     }
     #[setter]
-    fn set_ncs(&mut self, value: bool) {
-        self.inner.ncs = value;
+    fn set_ncs(&mut self, value: Option<bool>) {
+        self.inner.ncs = value.unwrap_or(true);
     }
     #[getter]
     fn struct_asym(&self) -> bool {
         self.inner.struct_asym
     }
     #[setter]
-    fn set_struct_asym(&mut self, value: bool) {
-        self.inner.struct_asym = value;
+    fn set_struct_asym(&mut self, value: Option<bool>) {
+        self.inner.struct_asym = value.unwrap_or(true);
     }
     #[getter]
     fn origx(&self) -> bool {
         self.inner.origx
     }
     #[setter]
-    fn set_origx(&mut self, value: bool) {
-        self.inner.origx = value;
+    fn set_origx(&mut self, value: Option<bool>) {
+        self.inner.origx = value.unwrap_or(true);
     }
     #[getter]
     fn struct_conf(&self) -> bool {
         self.inner.struct_conf
     }
     #[setter]
-    fn set_struct_conf(&mut self, value: bool) {
-        self.inner.struct_conf = value;
+    fn set_struct_conf(&mut self, value: Option<bool>) {
+        self.inner.struct_conf = value.unwrap_or(true);
     }
     #[getter]
     fn struct_sheet(&self) -> bool {
         self.inner.struct_sheet
     }
     #[setter]
-    fn set_struct_sheet(&mut self, value: bool) {
-        self.inner.struct_sheet = value;
+    fn set_struct_sheet(&mut self, value: Option<bool>) {
+        self.inner.struct_sheet = value.unwrap_or(true);
     }
     #[getter]
     fn struct_biol(&self) -> bool {
         self.inner.struct_biol
     }
     #[setter]
-    fn set_struct_biol(&mut self, value: bool) {
-        self.inner.struct_biol = value;
+    fn set_struct_biol(&mut self, value: Option<bool>) {
+        self.inner.struct_biol = value.unwrap_or(true);
     }
     #[getter]
     fn assembly(&self) -> bool {
         self.inner.assembly
     }
     #[setter]
-    fn set_assembly(&mut self, value: bool) {
-        self.inner.assembly = value;
+    fn set_assembly(&mut self, value: Option<bool>) {
+        self.inner.assembly = value.unwrap_or(true);
     }
     #[getter]
     fn conn(&self) -> bool {
         self.inner.conn
     }
     #[setter]
-    fn set_conn(&mut self, value: bool) {
-        self.inner.conn = value;
+    fn set_conn(&mut self, value: Option<bool>) {
+        self.inner.conn = value.unwrap_or(true);
     }
     #[getter]
     fn cis(&self) -> bool {
         self.inner.cis
     }
     #[setter]
-    fn set_cis(&mut self, value: bool) {
-        self.inner.cis = value;
+    fn set_cis(&mut self, value: Option<bool>) {
+        self.inner.cis = value.unwrap_or(true);
     }
     #[getter]
     fn modres(&self) -> bool {
         self.inner.modres
     }
     #[setter]
-    fn set_modres(&mut self, value: bool) {
-        self.inner.modres = value;
+    fn set_modres(&mut self, value: Option<bool>) {
+        self.inner.modres = value.unwrap_or(true);
     }
     #[getter]
     fn scale(&self) -> bool {
         self.inner.scale
     }
     #[setter]
-    fn set_scale(&mut self, value: bool) {
-        self.inner.scale = value;
+    fn set_scale(&mut self, value: Option<bool>) {
+        self.inner.scale = value.unwrap_or(true);
     }
     #[getter]
     fn atom_type(&self) -> bool {
         self.inner.atom_type
     }
     #[setter]
-    fn set_atom_type(&mut self, value: bool) {
-        self.inner.atom_type = value;
+    fn set_atom_type(&mut self, value: Option<bool>) {
+        self.inner.atom_type = value.unwrap_or(true);
     }
     #[getter]
     fn entity_poly_seq(&self) -> bool {
         self.inner.entity_poly_seq
     }
     #[setter]
-    fn set_entity_poly_seq(&mut self, value: bool) {
-        self.inner.entity_poly_seq = value;
+    fn set_entity_poly_seq(&mut self, value: Option<bool>) {
+        self.inner.entity_poly_seq = value.unwrap_or(true);
     }
     #[getter]
     fn tls(&self) -> bool {
         self.inner.tls
     }
     #[setter]
-    fn set_tls(&mut self, value: bool) {
-        self.inner.tls = value;
+    fn set_tls(&mut self, value: Option<bool>) {
+        self.inner.tls = value.unwrap_or(true);
     }
     #[getter]
     fn software(&self) -> bool {
         self.inner.software
     }
     #[setter]
-    fn set_software(&mut self, value: bool) {
-        self.inner.software = value;
+    fn set_software(&mut self, value: Option<bool>) {
+        self.inner.software = value.unwrap_or(true);
     }
     #[getter]
     fn group_pdb(&self) -> bool {
         self.inner.group_pdb
     }
     #[setter]
-    fn set_group_pdb(&mut self, value: bool) {
-        self.inner.group_pdb = value;
+    fn set_group_pdb(&mut self, value: Option<bool>) {
+        self.inner.group_pdb = value.unwrap_or(true);
     }
     #[getter]
     fn auth_all(&self) -> bool {
         self.inner.auth_all
     }
     #[setter]
-    fn set_auth_all(&mut self, value: bool) {
-        self.inner.auth_all = value;
+    fn set_auth_all(&mut self, value: Option<bool>) {
+        self.inner.auth_all = value.unwrap_or(false);
     }
     #[getter]
     fn prefer_pairs(&self) -> bool {
@@ -998,6 +1099,11 @@ pub(crate) struct BioCrystalInfo {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl BioCrystalInfo {
+    fn cell(&self) -> crate::canonical_bio_values::BioCrystalCell {
+        crate::canonical_bio_values::BioCrystalCell {
+            inner: self.inner.crystal().expect("existing crystal view").cell(),
+        }
+    }
     fn space_group_number(&self) -> Option<i32> {
         self.inner
             .crystal()
@@ -1254,7 +1360,15 @@ impl BioStructure {
             .map_err(|e| read_error(py, e))
     }
     #[staticmethod]
-    fn read_with_format(py: Python<'_>, path: PathBuf, format: u8) -> PyResult<Self> {
+    fn read_with_format(
+        py: Python<'_>,
+        path: PathBuf,
+        #[pyo3(from_py_with = format_input)]
+        #[gen_stub(override_type(
+            type_repr = "BioCoordinateFormat | builtins.str | builtins.int"
+        ))]
+        format: u8,
+    ) -> PyResult<Self> {
         ck::BioStructure::read_with_format(&expand_path(py, path)?, format_from_code(format)?)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| read_error(py, e))
@@ -1388,7 +1502,9 @@ impl BioStructure {
             .map_err(|e| {
                 annotate(
                     py,
-                    ProteinReadError::new_err(e.to_string()),
+                    crate::canonical_registered_errors::ProteinProjectionError::new_err(
+                        e.to_string(),
+                    ),
                     "Projection",
                     &e,
                 )
@@ -1473,7 +1589,9 @@ impl BioStructure {
             .map_err(|e| {
                 annotate(
                     py,
-                    BioOperationError::new_err(e.to_string()),
+                    crate::canonical_registered_errors::BioSelectionMatchError::new_err(
+                        e.to_string(),
+                    ),
                     "SelectionMatch",
                     &e,
                 )
@@ -1554,8 +1672,9 @@ impl BioChainRow {
     fn entity_id(&self) -> Option<usize> {
         self.row().entity_id().map(|id| id.index())
     }
-    fn kind(&self) -> String {
-        format!("{:?}", self.row().kind())
+    #[gen_stub(override_return_type(type_repr = "ChainKind"))]
+    fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        kind_member(py, "ChainKind", self.row().kind())
     }
     fn source(&self) -> ChainSourceIds {
         ChainSourceIds {
@@ -1611,11 +1730,18 @@ impl BioResidueRow {
     fn name(&self) -> String {
         self.row().name().as_str().to_owned()
     }
-    fn kind(&self) -> String {
-        format!("{:?}", self.row().kind())
+    #[gen_stub(override_return_type(type_repr = "ResidueKind"))]
+    fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        kind_member(py, "ResidueKind", self.row().kind())
     }
-    fn entity_kind(&self) -> String {
-        format!("{:?}", self.row().entity_kind())
+    #[gen_stub(override_return_type(type_repr = "EntityKind"))]
+    fn entity_kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        kind_member(py, "EntityKind", self.row().entity_kind())
+    }
+    fn sifts_unp(&self) -> crate::canonical_bio_values::BioSiftsUnpResidue {
+        crate::canonical_bio_values::BioSiftsUnpResidue {
+            inner: self.row().sifts_unp(),
+        }
     }
     fn info(&self) -> ResidueInfo {
         ResidueInfo {
@@ -1664,6 +1790,10 @@ impl BioAtomRow {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BioAtomRow {
+    #[gen_stub(override_return_type(type_repr = "BioCalcFlag"))]
+    fn calc_flag<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        kind_member(py, "BioCalcFlag", self.row().calc_flag())
+    }
     fn id(&self) -> usize {
         self.index
     }
@@ -1728,11 +1858,21 @@ impl BioEntityRow {
             inner: self.row().source().clone(),
         }
     }
-    fn kind(&self) -> String {
-        format!("{:?}", self.row().kind())
+    #[gen_stub(override_return_type(type_repr = "EntityKind"))]
+    fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        kind_member(py, "EntityKind", self.row().kind())
     }
-    fn polymer_kind(&self) -> String {
-        format!("{:?}", self.row().polymer_kind())
+    #[gen_stub(override_return_type(type_repr = "PolymerKind"))]
+    fn polymer_kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        kind_member(py, "PolymerKind", self.row().polymer_kind())
+    }
+    fn dbrefs(&self) -> Vec<crate::canonical_bio_values::BioEntityDbRef> {
+        self.row()
+            .dbrefs()
+            .iter()
+            .cloned()
+            .map(|inner| crate::canonical_bio_values::BioEntityDbRef { inner })
+            .collect()
     }
     fn full_sequence(&self) -> Vec<String> {
         self.row().full_sequence().to_vec()
@@ -1796,6 +1936,13 @@ pub(crate) struct PdbSeqId {
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl PdbSeqId {
+    #[new]
+    #[pyo3(signature=(seq_num, ins_code=None))]
+    fn new(seq_num: i32, ins_code: Option<u8>) -> Self {
+        Self {
+            inner: ck::PdbSeqId::new(seq_num, ins_code),
+        }
+    }
     fn seq_num(&self) -> i32 {
         self.inner.seq_num()
     }
@@ -1948,7 +2095,15 @@ impl Protein {
             .map_err(|e| protein_error(py, e))
     }
     #[staticmethod]
-    fn read_with_format(py: Python<'_>, path: PathBuf, format: u8) -> PyResult<Self> {
+    fn read_with_format(
+        py: Python<'_>,
+        path: PathBuf,
+        #[pyo3(from_py_with = format_input)]
+        #[gen_stub(override_type(
+            type_repr = "BioCoordinateFormat | builtins.str | builtins.int"
+        ))]
+        format: u8,
+    ) -> PyResult<Self> {
         ck::Protein::read_with_format(&expand_path(py, path)?, format_from_code(format)?)
             .map(|x| Self { inner: Arc::new(x) })
             .map_err(|e| protein_error(py, e))
@@ -2024,7 +2179,9 @@ impl Protein {
             .map_err(|e| {
                 annotate(
                     py,
-                    BioOperationError::new_err(e.to_string()),
+                    crate::canonical_registered_errors::BioSelectionMatchError::new_err(
+                        e.to_string(),
+                    ),
                     "SelectionMatch",
                     &e,
                 )
@@ -2080,8 +2237,9 @@ impl ProteinChainRef {
     fn id(&self) -> usize {
         self.index
     }
-    fn kind(&self) -> String {
-        format!("{:?}", self.view().kind())
+    #[gen_stub(override_return_type(type_repr = "ChainKind"))]
+    fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        kind_member(py, "ChainKind", self.view().kind())
     }
     fn residues(&self) -> Vec<ProteinResidueRef> {
         self.view()
@@ -2142,8 +2300,9 @@ impl ProteinResidueRef {
     fn name(&self) -> String {
         self.view().name().as_str().to_owned()
     }
-    fn kind(&self) -> String {
-        format!("{:?}", self.view().kind())
+    #[gen_stub(override_return_type(type_repr = "ResidueKind"))]
+    fn kind<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        kind_member(py, "ResidueKind", self.view().kind())
     }
     fn info(&self) -> ResidueInfo {
         ResidueInfo {
@@ -2251,10 +2410,11 @@ impl ProteinAtomRef {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct BioMoleculeParams {
     inner: ck::BioMoleculeParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]

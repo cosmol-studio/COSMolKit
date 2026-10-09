@@ -144,7 +144,7 @@ impl InchiToMolToolkit for MethaneToolkit {
     }
 
     fn remove_hydrogens(&mut self, _molecule: &mut InchiMolecule) -> Result<(), InchiToolkitError> {
-        Err(unsupported("remove_hydrogens"))
+        Err(unsupported("remove_hs"))
     }
 
     fn sanitize_molecule(

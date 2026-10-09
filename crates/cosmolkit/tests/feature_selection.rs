@@ -393,7 +393,7 @@ fn selected_public_methods_are_available() {
     methods!("cap-depict"; with_2d_coordinates, to_svg, to_png);
     methods!("cap-forcefields";
         with_uff_optimized, with_uff_optimized_with_params,
-        with_uff_optimized_confs, with_uff_optimized_confs_with_params,
+        with_uff_optimized_conformers, with_uff_optimized_conformers_with_params,
         uff_has_all_molecule_params,
     );
     methods!("cap-descriptors";
@@ -513,7 +513,7 @@ fn io_query_records_require_search_instead_of_lowering_to_concrete_atoms() {
         mol,
         &cosmolkit::SdfReadParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         },
     );

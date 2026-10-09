@@ -2227,7 +2227,7 @@ impl PyEmbedParameters {
     }
 
     #[setter]
-    fn set_clear_confs(&mut self, value: bool) {
+    fn set_clear_conformers(&mut self, value: bool) {
         self.inner.clear_confs = value;
     }
 

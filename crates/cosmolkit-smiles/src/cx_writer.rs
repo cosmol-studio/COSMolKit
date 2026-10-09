@@ -283,14 +283,14 @@ pub fn write_cx_smiles_with_params<'record>(
     // the later fragment writer from repeating that phase after preparation.
     let mut writer_params = params.smiles;
     let mut prepared_record = record.to_owned_record();
-    if writer_params.do_kekule {
+    if writer_params.kekule {
         prepared_record.topology = cosmolkit_core::kekulize(
             &prepared_record.topology,
             &cosmolkit_core::KekulizeParams::default(),
         )
         .map_err(SmilesParseError::WriterKekulize)?
         .topology;
-        writer_params.do_kekule = false;
+        writer_params.kekule = false;
     }
     // RWMol's private copy above also retains RingInfo. Borrow that source
     // state alongside the prepared values instead of dropping it at the
@@ -364,7 +364,7 @@ pub fn write_cx_smiles_with_params<'record>(
     // RDKit❗✔️:   }
     // END RDKIT CPP FUNCTION SmilesWrite.cpp::MolToCXSmiles nonisomeric CX field mask
     let mut fields = params.fields;
-    if !writer_params.do_isomeric_smiles {
+    if !writer_params.isomeric_smiles {
         fields.0 &= !(CxSmilesFields::ENHANCED_STEREO.0 | CxSmilesFields::BOND_CFG.0);
     }
 
@@ -4197,7 +4197,7 @@ mod tests {
         CxSmilesWriteParams {
             smiles: SmilesWriteParams {
                 canonical: true,
-                do_isomeric_smiles: true,
+                isomeric_smiles: true,
                 clean_stereo: true,
                 ..Default::default()
             },
@@ -4924,7 +4924,7 @@ mod tests {
         // `strict || checkIt` validation gate and keeps explicit valence 5.
         let parser = SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         let record = parse_smiles("C(F)(F)(F)(F)F", &parser).expect("parse raw pentavalent C");
@@ -4939,7 +4939,7 @@ mod tests {
     fn cx_post_base_assignment_clears_pending_and_sets_computed_done_marker() {
         let parser = SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         let input = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).expect("parse raw ring CXSMILES");

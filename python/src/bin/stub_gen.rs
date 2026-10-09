@@ -8,6 +8,31 @@ fn main() -> pyo3_stub_gen::Result<()> {
     }
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("cosmolkit.pyi");
     let mut text = info.modules["cosmolkit"].format_with_config(info.config.use_type_statement);
+    if std::env::args().any(|arg| arg == "--configuration-schema") {
+        // Read-only registration aid from compiled PyO3 constructor metadata.
+        // This mode cannot write or replace the package stub.
+        use pyo3::{prelude::*, types::PyModule};
+        let code = std::ffi::CString::new(include_str!(
+            "../../../dev/tools/check_python_stub_contract.py"
+        ))?;
+        let contract = serde_json::to_string(&binding_manifest::manifest())?;
+        Python::initialize();
+        let schema = Python::attach(|py| -> PyResult<String> {
+            let checker = PyModule::from_code(
+                py,
+                &code,
+                c"check_python_stub_contract.py",
+                c"_stub_contract",
+            )?;
+            let document = py.import("json")?.getattr("loads")?.call1((contract,))?;
+            checker
+                .getattr("configuration_schema")?
+                .call1((&text, document))?
+                .extract()
+        })?;
+        println!("{schema}");
+        return Ok(());
+    }
     // PyO3 eq_int class enums expose typed variants and integer conversion,
     // not enum.Enum.name/value. Keep the generated TAU/property stubs faithful
     // to their actual native classes rather than promising nonexistent fields.
@@ -36,6 +61,9 @@ fn main() -> pyo3_stub_gen::Result<()> {
         "ReactionRole",
         "ReactionValidationSeverity",
         "ReactionValidationIssueKind",
+        "InchiErrorKind",
+        "MmffVariant",
+        "RotatableBondsOptions",
     ] {
         let prefix = format!("class {name}(enum.Enum):\n");
         assert_eq!(
@@ -47,6 +75,7 @@ fn main() -> pyo3_stub_gen::Result<()> {
         let end = start + text[start..].find("\n\n").expect("generated enum boundary");
         let members = text[start + prefix.len()..end]
             .lines()
+            .filter(|line| line.trim_end().ends_with(" = ..."))
             .map(|line| {
                 line.strip_prefix("    ")
                     .and_then(|member| member.strip_suffix(" = ..."))
@@ -123,6 +152,7 @@ _binding_profile: builtins.str
         "UffOptimizationError",
         "UffParameterQueryError",
         "StereoReadError",
+        "PotentialStereoError",
         "CoordinateInputError",
         "Coordinate3DReadError",
         "AlignmentError",
@@ -144,6 +174,10 @@ _binding_profile: builtins.str
         text = text.replace("__all__ = [\n", &format!("__all__ = [\n    \"{name}\",\n"));
     }
     for (name, fields) in [
+        (
+            "PotentialStereoError",
+            "    atom: builtins.int\n    property: builtins.str\n    property_kind: builtins.str\n    value: builtins.int\n    field: builtins.str\n    actual: builtins.int\n    atom_count: builtins.int\n    reason: builtins.str\n    row: builtins.int\n    limit: builtins.int\n    degree: builtins.int\n    bond: builtins.int\n    endpoint: builtins.str\n    order: BondOrder\n    permutation: builtins.int\n    iterations: builtins.int\n",
+        ),
         (
             "ReactionModelError",
             "    role: ReactionRole\n    template: builtins.int\n    index: builtins.int\n    count: builtins.int\n",
@@ -398,88 +432,62 @@ _binding_profile: builtins.str
         "__all__ = [\n",
         "__all__ = [\n    \"BatchValidationError\",\n",
     );
-    check_registered_python_callables(&text)?;
+    check_registered_python_callables(&mut text)?;
+    // PyO3's PathBuf extractor accepts text-valued os.PathLike values. Its
+    // upstream stub metadata omits the generic argument; make it explicit.
+    text = text.replace("os.PathLike", "os.PathLike[builtins.str]");
     std::fs::write(path, text)?;
     Ok(())
 }
 
-fn check_registered_python_callables(text: &str) -> pyo3_stub_gen::Result<()> {
-    use ::cosmolkit::{BINDING_CONTRACT, BindingItem, BindingOwner, BindingPropertyAccess};
-    use pyo3::{prelude::*, types::PyModule};
+#[path = "../../../crates/cosmolkit/examples/support/binding_contract_manifest.rs"]
+mod binding_manifest;
 
-    // The linked registry already applies the facade's actual cfg gates.
-    // Neither Experimental status nor a missing binding exempts an enabled row.
-    let mut entries = BINDING_CONTRACT
-        .iter()
-        .map(|entry| {
-            serde_json::json!({
-                "semantic_id": entry.semantic_id,
-                "python_name": entry.python_name,
-                "python_property": match entry.python_property {
-                    None => None,
-                    Some(BindingPropertyAccess::Getter) => Some("getter"),
-                    Some(BindingPropertyAccess::Setter) => Some("setter"),
-                },
-                "feature": entry.feature,
-                "item": match entry.item {
-                    BindingItem::Callable => "callable",
-                    BindingItem::Type => "type",
-                },
-                "owner": match entry.owner {
-                    BindingOwner::Module => "module",
-                    BindingOwner::Molecule => "molecule",
-                    BindingOwner::Type => "type",
-                },
-            })
-        })
-        .collect::<Vec<_>>();
-    // Python-object ingress has no fictitious Rust/PyAny signature. Its
-    // declaration on the canonical value type names real checked Rust targets.
-    for adapter in ::cosmolkit::BINDING_CONTRACT_PYTHON_ADAPTERS {
-        let owner = BINDING_CONTRACT
-            .iter()
-            .find(|row| row.semantic_id == adapter.type_semantic_id)
-            .expect("macro-validated adapter owner");
-        entries.push(serde_json::json!({
-            "semantic_id": format!("{}.{}", owner.python_name, adapter.name),
-            "python_name": adapter.name,
-            "python_property": null,
-            "feature": owner.feature,
-            "item": "callable",
-            "owner": "type",
-        }));
-    }
-    let contract = serde_json::to_string(&entries)?;
+fn check_registered_python_callables(text: &mut String) -> pyo3_stub_gen::Result<()> {
+    use pyo3::{prelude::*, types::PyModule};
+    let contract = serde_json::to_string(&binding_manifest::manifest())?;
     let code = std::ffi::CString::new(include_str!(
         "../../../dev/tools/check_python_stub_contract.py"
     ))?;
     Python::initialize();
-    let missing = Python::attach(|py| -> PyResult<Vec<String>> {
+    let errors = Python::attach(|py| -> PyResult<Vec<String>> {
         let checker = PyModule::from_code(
             py,
             &code,
             c"check_python_stub_contract.py",
             c"_stub_contract",
         )?;
-        checker
+        let module = cosmolkit_py::binding_contract_module(py)?;
+        let document = py.import("json")?.getattr("loads")?.call1((&contract,))?;
+        *text = module
+            .getattr("_configuration_declarations")?
+            .call1((&module, text.as_str(), &document))?
+            .extract()?;
+        let declarations: String = checker
+            .getattr("dynamic_type_declarations")?
+            .call1((&module, text.as_str(), &document))?
+            .extract()?;
+        text.push_str(&declarations);
+        let mut errors: Vec<String> = checker
             .getattr("check_contract")?
-            .call1((text, contract))?
-            .extract()
+            .call1((text.as_str(), &contract))?
+            .extract()?;
+        errors.extend(
+            checker
+                .getattr("check_runtime")?
+                .call1((module, document))?
+                .extract::<Vec<String>>()?,
+        );
+        Ok(errors)
     })?;
-    if !missing.is_empty() {
+    if !errors.is_empty() {
         return Err(std::io::Error::other(format!(
-            "Python binding contract failed: {} registered callables missing from generated stubs:\n{}\nImplement the registered Python projections; no stub was written.",
-            missing.len(),
-            missing.join("\n"),
+            "Python binding contract failed: {} violations:\n{}\nFix the bindings/registry; no stub was written.",
+            errors.len(), errors.join("\n"),
         )).into());
     }
     eprintln!(
-        "Python binding contract: all {} enabled registered callables and {} object adapters present",
-        BINDING_CONTRACT
-            .iter()
-            .filter(|entry| entry.item == BindingItem::Callable)
-            .count(),
-        ::cosmolkit::BINDING_CONTRACT_PYTHON_ADAPTERS.len()
+        "Python binding contract: declarations and actual exports/configuration setters passed"
     );
     Ok(())
 }
@@ -511,7 +519,7 @@ fn expose_bio_types(mut text: String) -> String {
     ] {
         definitions.push_str(&format!("    {} = {}\n", kind.name(), kind as u8));
     }
-    definitions.push_str("    def name(self) -> builtins.str: ...\n");
+    definitions.push_str("    @property\n    def name(self) -> builtins.str: ...\n");
     definitions.push_str("\nclass BioCoordinateFormat(enum.IntEnum):\n");
     for format in [
         ::cosmolkit::BioCoordinateFormat::Unknown,

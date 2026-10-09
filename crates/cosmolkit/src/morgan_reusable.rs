@@ -220,25 +220,25 @@ macro_rules! calculations {
 }
 calculations!(
     fingerprints,
-    morgan_fingerprint_with_generator,
+    fingerprint_morgan_with_generator,
     bits,
     Fingerprint
 );
 calculations!(
     counts,
-    morgan_count_fingerprint_with_generator,
+    fingerprint_morgan_count_with_generator,
     count,
     SparseCountFingerprint32
 );
 calculations!(
     sparse_fingerprints,
-    morgan_sparse_fingerprint_with_generator,
+    fingerprint_morgan_sparse_with_generator,
     sparse_bits,
     SparseBitFingerprint
 );
 calculations!(
     sparse_counts,
-    morgan_sparse_count_fingerprint_with_generator,
+    fingerprint_morgan_sparse_count_with_generator,
     sparse_count,
     SparseCountFingerprint
 );

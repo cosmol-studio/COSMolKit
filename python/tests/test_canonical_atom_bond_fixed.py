@@ -102,7 +102,7 @@ def test_bond_scalar_stereo_and_dynamic_vocabulary_records():
     assert all(b.order()==ck.BondOrder.AROMATIC and b.is_aromatic() for b in ck.Molecule.from_smiles("c1ccccc1").bonds())
 
 
-def test_read_values_and_cip_options_are_immutable():
+def test_read_values_are_immutable_and_cip_options_are_writable():
     molecule=ck.Molecule.from_smiles("CC")
     for value in (molecule.atoms()[0],molecule.bonds()[0],molecule.atom_metadata()[0]):
         with pytest.raises(AttributeError):value.id=8
@@ -115,7 +115,8 @@ def test_read_values_and_cip_options_are_immutable():
     copy=options.bonds
     copy.append(2)
     assert options.bonds==[1,0,1]
-    with pytest.raises(AttributeError):options.atoms=[0]
+    options.atoms=[0]
+    assert options.atoms == [0]
     with pytest.raises(OverflowError):ck.CipLabelOptions(atoms=[-1])
     with pytest.raises(OverflowError):ck.CipLabelOptions(max_recursive_iterations=-1)
 

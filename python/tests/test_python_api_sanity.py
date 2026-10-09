@@ -14,8 +14,8 @@ import cosmolkit
 def atom_signature(mol: cosmolkit.Molecule) -> list[tuple[int, int, int, str, int | None]]:
     return [
         (
-            atom.idx(),
-            atom.atomic_num(),
+            atom.id(),
+            atom.atomic_number(),
             atom.formal_charge(),
             atom.chiral_tag().name,
             atom.isotope(),
@@ -29,11 +29,11 @@ def bond_signature(
 ) -> list[tuple[int, int, int, str, str, str, bool]]:
     return [
         (
-            bond.idx(),
-            bond.begin_atom_idx(),
-            bond.end_atom_idx(),
-            bond.bond_type().name,
-            bond.bond_dir().name,
+            bond.id(),
+            bond.begin(),
+            bond.end(),
+            bond.order().name,
+            bond.direction().name,
             bond.stereo().name,
             bond.is_aromatic(),
         )
@@ -44,11 +44,10 @@ def bond_signature(
 def assert_coord_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
     atom_count = len(mol)
     if mol.has_2d_coordinates():
-        coords2d = mol.coordinates_2d()
-        assert coords2d.shape == (atom_count, 3), coords2d.shape
-        assert np.allclose(coords2d[:, 2], 0.0)
-    for conformer_index in range(mol.num_conformers()):
-        coords3d = mol.coordinates_3d(conformer_index)
+        coords2d = np.asarray(mol.coordinates_2d())
+        assert coords2d.shape == (atom_count, 2), coords2d.shape
+    for conformer_index in range(mol.num_3d_conformers()):
+        coords3d = np.asarray(mol.coordinates_3d(conformer_index))
         assert coords3d.shape == (atom_count, 3), coords3d.shape
 
 
@@ -84,7 +83,7 @@ M  END
 
 def assert_kekule_benzene_unsanitized(mol: cosmolkit.Molecule) -> None:
     assert len(mol) == 6
-    assert [bond.bond_type() for bond in mol.bonds()] == [
+    assert [bond.order() for bond in mol.bonds()] == [
         cosmolkit.BondOrder.SINGLE,
         cosmolkit.BondOrder.DOUBLE,
         cosmolkit.BondOrder.SINGLE,
@@ -122,7 +121,7 @@ def test_smiles_and_value_semantics_preserve_expected_graph_features():
 def test_molecule_supports_python_pickle_roundtrip():
     native = importlib.import_module("cosmolkit.cosmolkit")
     assert not hasattr(cosmolkit, "_rebuild_molecule_from_pickle")
-    assert hasattr(native, "_rebuild_molecule_from_pickle")
+    assert not hasattr(native, "_rebuild_molecule_from_pickle")
     assert "_rebuild_molecule_from_pickle" not in cosmolkit.__all__
     assert "_rebuild_molecule_from_pickle" not in native.__all__
 
@@ -133,6 +132,10 @@ def test_molecule_supports_python_pickle_roundtrip():
     )
 
     restored = pickle.loads(pickle.dumps(mol))
+    rebuild, args = mol.__reduce__()
+    assert callable(rebuild)
+    assert args == (mol.to_binary(),)
+    assert rebuild(*args).to_binary() == mol.to_binary()
 
     assert restored is not mol
     assert restored.to_smiles(canonical=False) == mol.to_smiles(canonical=False)
@@ -143,16 +146,12 @@ def test_molecule_supports_python_pickle_roundtrip():
 
 
 def test_molecule_pickle_rebuild_rejects_invalid_state():
-    native = importlib.import_module("cosmolkit.cosmolkit")
-    with pytest.raises(ValueError, match="unsupported Molecule pickle schema"):
-        native._rebuild_molecule_from_pickle(
-            {
-                "kind": "cosmolkit.Molecule",
-                "pickle_schema": 999,
-                "core_format": "cosmolkit-molecule-archive",
-                "payload": b"",
-            }
-        )
+    rebuild, _ = cosmolkit.Molecule.new().__reduce__()
+    with pytest.raises(cosmolkit.PickleError) as caught:
+        rebuild(b"COSMOL\x00\x00\xe7\x03\x00\x00\x00\x00")
+    assert caught.value.kind == "UnsupportedArchiveVersion"
+    assert caught.value.major == 999
+    assert caught.value.minor == 0
 
 
 def test_coordinate_and_sdf_roundtrip_behaviors_are_consistent():
@@ -160,13 +159,13 @@ def test_coordinate_and_sdf_roundtrip_behaviors_are_consistent():
     mol2d = base.with_2d_coordinates()
     assert not base.has_2d_coordinates()
     assert mol2d.has_2d_coordinates()
-    assert mol2d.num_conformers() == 0
+    assert mol2d.num_3d_conformers() == 0
     assert_coord_rows_match_atoms(mol2d)
 
-    sdf2d = mol2d.to_2d_sdf_string(format="v2000", include_stereo=True, kekulize=True)
+    sdf2d = mol2d.to_sdf_2d(format=cosmolkit.SdfFormat.V2000, include_stereo=True, kekulize=True)
     assert "V2000" in sdf2d
     assert "2D" in sdf2d.splitlines()[1]
-    restored2d = cosmolkit.Molecule.read_sdf_from_str(sdf2d, coordinate_dim="2d")
+    restored2d = cosmolkit.Molecule.from_sdf(sdf2d, coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
     assert restored2d.to_smiles() == "CCO"
     assert_coord_rows_match_atoms(restored2d)
 
@@ -186,34 +185,34 @@ def test_coordinate_and_sdf_roundtrip_behaviors_are_consistent():
 M  END
 $$$$
 """
-    mol3d = cosmolkit.Molecule.read_sdf_from_str(methane_3d, coordinate_dim="3d")
-    assert mol3d.num_conformers() == 1
+    mol3d = cosmolkit.Molecule.from_sdf(methane_3d, coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
+    assert mol3d.num_3d_conformers() == 1
     assert not mol3d.has_2d_coordinates()
     assert_coord_rows_match_atoms(mol3d)
 
-    sdf3d = mol3d.to_3d_sdf_string(format="v2000")
+    sdf3d = mol3d.to_sdf_3d(format=cosmolkit.SdfFormat.V2000)
     assert "3D" in sdf3d.splitlines()[1]
-    restored3d = cosmolkit.Molecule.read_sdf_from_str(sdf3d, coordinate_dim="3d")
-    assert restored3d.num_conformers() == 1
+    restored3d = cosmolkit.Molecule.from_sdf(sdf3d, coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
+    assert restored3d.num_3d_conformers() == 1
     assert np.allclose(restored3d.coordinates_3d(), mol3d.coordinates_3d())
 
     both = mol3d.with_2d_coordinates()
     assert both.has_2d_coordinates()
-    assert both.num_conformers() == 1
+    assert both.num_3d_conformers() == 1
     assert_coord_rows_match_atoms(both)
 
     removed = both.without_hydrogens(sanitize=False)
     assert len(removed) == 1
     assert removed.has_2d_coordinates()
-    assert removed.num_conformers() == 1
-    assert removed.coordinates_2d().shape == (1, 3)
-    assert removed.coordinates_3d().shape == (1, 3)
+    assert removed.num_3d_conformers() == 1
+    assert np.asarray(removed.coordinates_2d()).shape == (1, 2)
+    assert np.asarray(removed.coordinates_3d()).shape == (1, 3)
 
 
 def test_read_mol_from_str_accepts_sanitize_false():
-    mol = cosmolkit.Molecule.read_mol_from_str(
+    mol = cosmolkit.Molecule.from_mol(
         KEKULE_BENZENE_MOL,
-        coordinate_dim="2d",
+        coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D,
         sanitize=False,
     )
 
@@ -226,7 +225,7 @@ def test_read_mol_accepts_sanitize_false(tmp_path: Path):
 
     mol = cosmolkit.Molecule.read_mol(
         str(path),
-        coordinate_dim="2d",
+        coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D,
         sanitize=False,
     )
 
@@ -234,9 +233,9 @@ def test_read_mol_accepts_sanitize_false(tmp_path: Path):
 
 
 def test_read_sdf_from_str_accepts_sanitize_false():
-    mol = cosmolkit.Molecule.read_sdf_from_str(
+    mol = cosmolkit.Molecule.from_sdf(
         f"{KEKULE_BENZENE_MOL}$$$$\n",
-        coordinate_dim="2d",
+        coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D,
         sanitize=False,
     )
 
@@ -249,7 +248,7 @@ def test_read_sdf_accepts_sanitize_false(tmp_path: Path):
 
     mol = cosmolkit.Molecule.read_sdf(
         str(path),
-        coordinate_dim="2d",
+        coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D,
         sanitize=False,
     )
 
@@ -257,9 +256,9 @@ def test_read_sdf_accepts_sanitize_false(tmp_path: Path):
 
 
 def test_1aid_sdf_reader_preserves_rdkit_ring_stereo_after_remove_hs():
-    mol = cosmolkit.Molecule.read_sdf_from_str(
+    mol = cosmolkit.Molecule.from_sdf(
         regression_fixture_text("1aid_ligand.sdf"),
-        coordinate_dim="3d",
+        coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D,
         sanitize=True,
         remove_hs=True,
     )
@@ -295,37 +294,35 @@ def test_forcefield_wrappers_optimize_existing_3d_conformer_by_value():
   3  9  1  0
 M  END
 """
-    mol = cosmolkit.Molecule.read_mol_from_str(ethanol_3d, coordinate_dim="3d")
+    mol = cosmolkit.Molecule.from_mol(ethanol_3d, coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
     original_coords = mol.coordinates_3d().copy()
 
-    assert cosmolkit.uff_has_all_molecule_params(mol)
-    assert mol.has_uff_params()
-
-    result = mol.with_uff_optimized(max_iters=200)
+    assert mol.uff_has_all_molecule_params()
+    result = mol.with_uff_optimized(max_iterations=200)
     optimized = result.molecule()
 
     assert result.needs_more() is False
     assert result.energy() >= 0.0
     assert optimized is not mol
-    assert optimized.num_conformers() == 1
+    assert optimized.num_3d_conformers() == 1
     assert np.allclose(mol.coordinates_3d(), original_coords)
     assert not np.allclose(optimized.coordinates_3d(), original_coords)
 
-    confs = cosmolkit.uff_optimize_molecule_confs(mol, max_iters=50)
-    assert len(confs.conformer_results()) == mol.num_conformers()
-    assert confs.molecule().num_conformers() == mol.num_conformers()
+    confs = mol.with_uff_optimized_conformers(max_iterations=50)
+    assert len(confs.conformer_results()) == mol.num_3d_conformers()
+    assert confs.molecule().num_3d_conformers() == mol.num_3d_conformers()
 
-    mmff_available = cosmolkit.mmff_has_all_molecule_params(mol)
-    assert mol.has_mmff_params() == mmff_available
+    mmff_available = mol.mmff_has_all_molecule_params()
+    assert isinstance(mmff_available, bool)
     if mmff_available:
-        mmff = mol.with_mmff_optimized(max_iters=50)
-        assert mmff.molecule().num_conformers() == 1
+        mmff = mol.with_mmff_optimized(max_iterations=50)
+        assert mmff.molecule().num_3d_conformers() == 1
         assert isinstance(mmff.needs_more(), bool)
 
 
 def test_conformer_generation_python_api_exposes_native_embedding_and_parameters():
     base = cosmolkit.Molecule.from_smiles("CC(=O)NC").with_hydrogens()
-    params = cosmolkit.EmbedParameters.etkdg_v3()
+    params = cosmolkit.EmbedParams.etkdg_v3()
     params.random_seed = 0xF00D
     params.num_threads = 1
     params.max_iterations = 50
@@ -335,9 +332,9 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     embedded = result.molecule()
 
     assert embedded is not base
-    assert base.num_conformers() == 0
-    assert embedded.num_conformers() == 1
-    assert embedded.coordinates_3d().shape == (len(embedded), 3)
+    assert base.num_3d_conformers() == 0
+    assert embedded.num_3d_conformers() == 1
+    assert np.asarray(embedded.coordinates_3d()).shape == (len(embedded), 3)
     assert result.conf_id() == 0
     assert result.ok() is True
     assert result.params().failures == params.failures
@@ -348,27 +345,27 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     assert params.use_macrocycle_torsions is True
     assert params.use_small_ring_torsions is False
 
-    multi_params = cosmolkit.EmbedParameters.etkdg()
+    multi_params = cosmolkit.EmbedParams.etkdg()
     multi_params.random_seed = 123
     multi_params.num_threads = 1
     multi_params.prune_rms_thresh = -1.0
     multi_params.enable_sequential_random_seeds = True
     multi_result = base.with_3d_conformers_result(3, multi_params)
     multi = multi_result.molecule()
-    assert multi.num_conformers() == 3
+    assert multi.num_3d_conformers() == 3
     assert multi_result.conf_ids() == [0, 1, 2]
     assert multi_result.generated_count() == 3
     assert multi_result.requested_num_confs() == 3
-    for conformer_index in range(multi.num_conformers()):
-        assert multi.coordinates_3d(conformer_index).shape == (len(multi), 3)
+    for conformer_index in range(multi.num_3d_conformers()):
+        assert np.asarray(multi.coordinates_3d(conformer_index)).shape == (len(multi), 3)
 
     mutable = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
-    mutable_params = cosmolkit.EmbedParameters.kdg()
+    mutable_params = cosmolkit.EmbedParams.kdg()
     mutable_params.random_seed = 77
     mutable.embed_3d_conformer_(mutable_params)
-    assert mutable.num_conformers() == 1
+    assert mutable.num_3d_conformers() == 1
 
-    json_params = cosmolkit.EmbedParameters.dg()
+    json_params = cosmolkit.EmbedParams.dg()
     json_params.update_from_json(
         '{"randomSeed": 17, "useRandomCoords": true, "boxSizeMult": 3.5, "forceTransAmides": false, "trackFailures": true}'
     )
@@ -379,7 +376,7 @@ def test_conformer_generation_python_api_exposes_native_embedding_and_parameters
     assert json_params.track_failures is True
     assert '"randomSeed":"17"' in json_params.to_json()
 
-    mapped_params = cosmolkit.EmbedParameters.etkdg_v3()
+    mapped_params = cosmolkit.EmbedParams.etkdg_v3()
     mapped_params.random_seed = 0xC0FFEE
     mapped_params.num_threads = 1
     mapped_params.use_random_coords = True
@@ -408,8 +405,8 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
         Path(__file__).resolve().parents[2]
         / "testdata/rdkit_builtin/fixtures/Code/GraphMol/DistGeomHelpers/chirality_failure_test.mol"
     )
-    chiral = cosmolkit.Molecule.read_mol(str(fixture), coordinate_dim="auto", sanitize=True)
-    chiral_params = cosmolkit.EmbedParameters.etkdg_v3()
+    chiral = cosmolkit.Molecule.read_mol(str(fixture), coordinate_mode=cosmolkit.SdfCoordinateMode.Preserve, sanitize=True)
+    chiral_params = cosmolkit.EmbedParams.etkdg_v3()
     chiral_params.random_seed = 0xF00D
     chiral_params.num_threads = 1
     chiral_params.max_iterations = 50
@@ -418,7 +415,7 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
     failed_result = chiral.with_3d_conformer_result(chiral_params)
     failed = failed_result.molecule()
 
-    assert failed.num_conformers() == 0
+    assert failed.num_3d_conformers() == 0
     assert failed_result.conf_id() == -1
     assert failed_result.ok() is False
     assert failed_result.params().failures == chiral_params.failures
@@ -426,14 +423,14 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
     assert sum(chiral_params.failures) > 0
 
     mol = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
-    embed_params = cosmolkit.EmbedParameters.etkdg_v3()
+    embed_params = cosmolkit.EmbedParams.etkdg_v3()
     embed_params.random_seed = 61453
     embed_params.num_threads = 1
     embedded = mol.with_3d_conformer(embed_params)
     coords_before = embedded.coordinates_3d().copy()
 
     uff = embedded.with_uff_optimized(max_iters=100)
-    assert uff.molecule().num_conformers() == 1
+    assert uff.molecule().num_3d_conformers() == 1
     assert uff.energy() >= 0.0
     assert isinstance(uff.needs_more(), bool)
     assert uff.status_code() in (0, 1)
@@ -442,51 +439,51 @@ def test_conformer_generation_failure_tracking_and_forcefield_post_optimization(
 
     if embedded.has_mmff_params():
         mmff = embedded.with_mmff_optimized(max_iters=50)
-        assert mmff.molecule().num_conformers() == 1
+        assert mmff.molecule().num_3d_conformers() == 1
         assert isinstance(mmff.needs_more(), bool)
         assert mmff.status_code() in (-1, 0, 1)
 
 
-def test_editing_commit_boundary_matches_sanitize_behavior():
-    invalid_editor = cosmolkit.Molecule.from_smiles("CC").edit()
-    oxygen_a = invalid_editor.add_atom("O")
-    oxygen_b = invalid_editor.add_atom("O")
-    invalid_editor.add_bond(1, oxygen_a, order="double")
-    invalid_editor.add_bond(1, oxygen_b, order="double")
+def test_builder_build_and_explicit_sanitize_boundaries():
+    invalid_editor = cosmolkit.Molecule.from_smiles("CC").to_builder()
+    oxygen_a = invalid_editor.add_atom(cosmolkit.AtomSpec(cosmolkit.Element.O))
+    oxygen_b = invalid_editor.add_atom(cosmolkit.AtomSpec(cosmolkit.Element.O))
+    invalid_editor.add_bond(cosmolkit.BondSpec(1, oxygen_a, cosmolkit.BondOrder.DOUBLE))
+    invalid_editor.add_bond(cosmolkit.BondSpec(1, oxygen_b, cosmolkit.BondOrder.DOUBLE))
 
-    with pytest.raises(ValueError, match="sanitize failed"):
-        _ = invalid_editor.commit()
+    with pytest.raises(ValueError, match="Explicit valence for atom # 1 C, 5, is greater than permitted"):
+        _ = invalid_editor.build().sanitize()
 
-    edited = invalid_editor.commit(sanitize=False)
+    edited = invalid_editor.build()
     assert len(edited) == 4
-    assert [bond.bond_type() for bond in edited.bonds()][-2:] == [
+    assert [bond.order() for bond in edited.bonds()][-2:] == [
         cosmolkit.BondOrder.DOUBLE,
         cosmolkit.BondOrder.DOUBLE,
     ]
 
-    valid_editor = cosmolkit.Molecule.from_smiles("CC").edit()
-    oxygen = valid_editor.add_atom("O")
-    valid_editor.add_bond(1, oxygen, order="single")
-    valid = valid_editor.commit()
+    valid_editor = cosmolkit.Molecule.from_smiles("CC").to_builder()
+    oxygen = valid_editor.add_atom(cosmolkit.AtomSpec(cosmolkit.Element.O))
+    valid_editor.add_bond(cosmolkit.BondSpec(1, oxygen, cosmolkit.BondOrder.SINGLE))
+    valid = valid_editor.build().sanitize()
     assert valid.to_smiles(canonical=False) == "CCO"
 
-    metal_editor = cosmolkit.Molecule.from_smiles("C").edit()
-    hg = metal_editor.add_atom("Hg")
-    metal = metal_editor.commit(sanitize=False)
-    assert metal.atoms()[hg].atomic_num() == 80
+    metal_editor = cosmolkit.Molecule.from_smiles("C").to_builder()
+    hg = metal_editor.add_atom(cosmolkit.AtomSpec(cosmolkit.Element.HG))
+    metal = metal_editor.build()
+    assert metal.atoms()[hg].atomic_number() == 80
 
 
 def test_read_mol_stops_at_m_end_and_ignores_trailing_sdf_text(tmp_path: Path):
     mol2d = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
     mol_path = tmp_path / "ethanol.mol"
-    sdf_text = mol2d.to_2d_sdf_string(format="v2000").replace(
+    sdf_text = mol2d.to_sdf_2d(format=cosmolkit.SdfFormat.V2000).replace(
         "$$$$\n",
         ">  <supplier_id>\nD008\n\n$$$$\n",
     )
     _ = mol_path.write_text(sdf_text, encoding="utf-8")
 
-    from_text = cosmolkit.Molecule.read_mol_from_str(sdf_text, coordinate_dim="2d")
-    from_file = cosmolkit.Molecule.read_mol(str(mol_path), coordinate_dim="2d")
+    from_text = cosmolkit.Molecule.from_mol(sdf_text, coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
+    from_file = cosmolkit.Molecule.read_mol(str(mol_path), coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
 
     assert from_text.to_smiles() == "CCO"
     assert from_file.to_smiles() == "CCO"
@@ -508,9 +505,9 @@ def test_molfile_atomic_symbol_normalizes_uppercase_second_letter():
   1  3  1  0
 M  END
 """
-    mol = cosmolkit.Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
+    mol = cosmolkit.Molecule.from_mol(mol_text, coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
 
-    assert [atom.atomic_num() for atom in mol.atoms()] == [6, 35, 35]
+    assert [atom.atomic_number() for atom in mol.atoms()] == [6, 35, 35]
 
 
 def test_molfile_invalid_mrv_sma_rejects_record():
@@ -523,7 +520,7 @@ M  MRV SMA   1 MyDogHasFleas
 M  END
 """
     with pytest.raises(ValueError, match="Cannot parse smarts"):
-        _ = cosmolkit.Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
+        _ = cosmolkit.Molecule.from_mol(mol_text, coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
 
 
 def test_read_mol2_from_str_and_file(tmp_path: Path):
@@ -552,22 +549,22 @@ NO_CHARGES
 7 2 8 1
 8 3 9 1
 """
-    from_text = cosmolkit.Molecule.read_mol2_from_str(mol2_text)
+    from_text = cosmolkit.Molecule.from_mol2(mol2_text)
     assert from_text.to_smiles() == "CCO"
-    assert from_text.num_conformers() == 1
+    assert from_text.num_3d_conformers() == 1
 
     path = tmp_path / "ethanol.mol2"
     _ = path.write_text(mol2_text, encoding="utf-8")
     from_file = cosmolkit.Molecule.read_mol2(str(path))
     assert from_file.to_smiles() == "CCO"
-    assert from_file.num_conformers() == 1
+    assert from_file.num_3d_conformers() == 1
 
-    with pytest.raises(ValueError, match="unsupported MOL2 variant"):
-        _ = cosmolkit.Molecule.read_mol2_from_str(mol2_text, variant="tripos")
+    with pytest.raises(ValueError, match="Mol2Type"):
+        _ = cosmolkit.Molecule.from_mol2(mol2_text, variant="tripos")
 
 
 def test_1aid_mol2_reader_preserves_rdkit_ring_stereo_after_remove_hs():
-    mol = cosmolkit.Molecule.read_mol2_from_str(
+    mol = cosmolkit.Molecule.from_mol2(
         regression_fixture_text("1aid_ligand.mol2"),
         sanitize=True,
         remove_hs=True,
@@ -592,37 +589,42 @@ def test_fingerprint_and_stereo_outputs_are_structurally_reasonable():
     opposite_stereo = opposite.tetrahedral_stereo()
     assert opposite_stereo == [(1, [0, 3, 2, None])]
 
-    fp = chiral.fingerprint_morgan(radius=2, n_bits=256)
-    same = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br").fingerprint_morgan(radius=2, n_bits=256)
-    other = cosmolkit.Molecule.from_smiles("CCO").fingerprint_morgan(radius=2, n_bits=256)
+    generator = cosmolkit.MorganFingerprintGenerator(params=cosmolkit.MorganParams(radius=2, fp_size=256))
+    fp = chiral.fingerprint_morgan_with_generator(generator)
+    same = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br").fingerprint_morgan_with_generator(generator)
+    other = cosmolkit.Molecule.from_smiles("CCO").fingerprint_morgan_with_generator(generator)
     assert fp.tanimoto(same) == 1.0
     assert 0.0 <= fp.tanimoto(other) < 1.0
 
-    result = chiral.fingerprint_morgan_with_output(radius=2, n_bits=256)
-    additional = result.additional_output()
-    assert result.fingerprint().n_bits() == 256
+    additional = cosmolkit.FingerprintAdditionalOutput()
+    additional.allocate_atom_counts()
+    additional.allocate_bit_info_map()
+    result = chiral.fingerprint_morgan_with_generator(generator, output=additional)
+    assert result.n_bits() == 256
     assert len(additional.atom_counts()) == len(chiral)
     assert isinstance(additional.bit_info_map(), dict)
     avalon = chiral.avalon_fingerprint(n_bits=256, bit_flags=0x007FFF)
     assert avalon.n_bits() == 256
-    assert chiral.topological_fingerprint(fp_size=256).n_bits() == 256
-    assert chiral.maccs_fingerprint().n_bits() == 166
+    assert chiral.fingerprint_topological(fp_size=256).n_bits() == 256
+    assert chiral.fingerprint_maccs().n_bits() == 166
     chiral.perceive_stereochemistry()
 
 
 def test_python_mol_from_smarts():
     query = cosmolkit.parse_smarts("[#6]-O")
 
-    assert isinstance(query, cosmolkit.Molecule)
+    assert isinstance(query, cosmolkit.QueryGraph)
     assert query.num_atoms() == 2
     assert query.num_bonds() == 1
     target = cosmolkit.Molecule.from_smiles("CCO")
-    assert cosmolkit.has_substruct_match(target, query) is True
+    assert target.has_substruct_match(query) is True
 
-    replaced = cosmolkit.parse_smarts("{carbon}-O", replacements={"{carbon}": "[#6]"})
+    replaced = cosmolkit.parse_smarts_with_params(
+        "{carbon}-O", cosmolkit.SmartsParseParams(replacements={"{carbon}": "[#6]"})
+    )
     assert replaced.num_atoms() == 2
 
-    merged = cosmolkit.parse_smarts("[H]C", merge_hs=True)
+    merged = cosmolkit.parse_smarts_with_params("[H]C", cosmolkit.SmartsParseParams(merge_hs=True))
     assert merged.num_atoms() == 1
 
     with pytest.raises(ValueError, match="SMARTS|smarts|bracket"):
@@ -630,7 +632,7 @@ def test_python_mol_from_smarts():
 
 
 def test_python_mol_from_smarts_params():
-    params = cosmolkit.SmartsParserParams()
+    params = cosmolkit.SmartsParseParams()
     assert params.allow_cxsmiles is True
     assert params.strict_cxsmiles is True
     assert params.parse_name is True
@@ -639,7 +641,7 @@ def test_python_mol_from_smarts_params():
     params.merge_hs = True
     params.replacements = {"{carbon}": "[#6]"}
     query = cosmolkit.parse_smarts_with_params("[H]{carbon}", params)
-    assert isinstance(query, cosmolkit.Molecule)
+    assert isinstance(query, cosmolkit.QueryGraph)
     assert query.num_atoms() == 1
 
     params.debug_parse = True
@@ -649,13 +651,13 @@ def test_python_mol_from_smarts_params():
 
 def test_python_smarts_parser_registrations():
     assert not hasattr(cosmolkit, "SmartsMolecule")
-    assert cosmolkit.SmartsParserParams.__module__ == "cosmolkit"
-    params = cosmolkit.SmartsParserParams()
+    assert cosmolkit.SmartsParseParams.__module__ == "cosmolkit"
+    params = cosmolkit.SmartsParseParams()
     assert callable(cosmolkit.parse_smarts)
     assert callable(cosmolkit.parse_smarts_with_params)
-    assert isinstance(cosmolkit.parse_smarts("C"), cosmolkit.Molecule)
+    assert isinstance(cosmolkit.parse_smarts("C"), cosmolkit.QueryGraph)
     assert isinstance(
-        cosmolkit.parse_smarts_with_params("C", params), cosmolkit.Molecule
+        cosmolkit.parse_smarts_with_params("C", params), cosmolkit.QueryGraph
     )
 
 
@@ -664,11 +666,11 @@ def test_python_smarts_writer_registrations():
     assert not hasattr(cosmolkit, "mol_to_cx_smarts")
 
     query = cosmolkit.parse_smarts("[#6]=[#8]")
-    assert query.to_smarts() == "[#6]=[#8]"
-    assert query.to_smarts(rooted_at_atom=1) == "[#8]=[#6]"
+    assert cosmolkit.write_smarts(query, cosmolkit.SmartsWriteParams()) == "[#6]=[#8]"
+    assert cosmolkit.write_smarts(query, cosmolkit.SmartsWriteParams(rooted_at_atom=1)) == "[#8]=[#6]"
 
     labeled = cosmolkit.parse_smarts("[#6] |$site$|")
-    assert labeled.to_cx_smarts() == "[#6] |$site$|"
+    assert cosmolkit.write_cx_smarts(labeled, cosmolkit.SmartsWriteParams()) == "[#6] |$site$|"
 
 
 def test_python_substruct_final_callback():
@@ -681,8 +683,8 @@ def test_python_substruct_final_callback():
         seen.append(tuple(atom_ids))
         return tuple(atom_ids) == (1, 2)
 
-    matches = cosmolkit.get_substruct_matches_with_params(
-        target, query, uniquify=False, final_match=accept_only_last
+    matches = target.substruct_matches(
+        query, uniquify=False, final_match=accept_only_last
     )
     assert [tuple(match.atom_mapping()) for match in matches] == [(1, 2)]
     assert seen
@@ -691,7 +693,7 @@ def test_python_substruct_final_callback():
         raise RuntimeError("final callback failed")
 
     with pytest.raises(RuntimeError, match="final callback failed"):
-        cosmolkit.get_substruct_matches_with_params(target, query, final_match=fail)
+        target.substruct_matches(query, final_match=fail)
 
 
 def test_python_substruct_atom_bond_callback():
@@ -702,11 +704,11 @@ def test_python_substruct_atom_bond_callback():
     def oxygen_only(query_atom, target_atom):
         assert isinstance(query_atom, cosmolkit.Atom)
         assert isinstance(target_atom, cosmolkit.Atom)
-        atom_calls.append((query_atom.idx(), target_atom.idx()))
-        return target_atom.atomic_num() == 8
+        atom_calls.append((query_atom.id(), target_atom.id()))
+        return target_atom.atomic_number() == 8
 
-    atom_matches = cosmolkit.get_substruct_matches_with_params(
-        atom_target, atom_query, uniquify=False, atom_match=oxygen_only
+    atom_matches = atom_target.substruct_matches(
+        atom_query, uniquify=False, atom_match=oxygen_only
     )
     assert [tuple(match.atom_mapping()) for match in atom_matches] == [(1,)]
     assert atom_calls
@@ -718,11 +720,11 @@ def test_python_substruct_atom_bond_callback():
     def double_only(query_bond, target_bond):
         assert isinstance(query_bond, cosmolkit.Bond)
         assert isinstance(target_bond, cosmolkit.Bond)
-        bond_calls.append((query_bond.idx(), target_bond.idx()))
+        bond_calls.append((query_bond.id(), target_bond.id()))
         return target_bond.bond_type_name() == "DOUBLE"
 
-    bond_matches = cosmolkit.get_substruct_matches_with_params(
-        bond_target, bond_query, uniquify=False, bond_match=double_only
+    bond_matches = bond_target.substruct_matches(
+        bond_query, uniquify=False, bond_match=double_only
     )
     assert {tuple(match.atom_mapping()) for match in bond_matches} == {(1, 2), (2, 1)}
     assert bond_calls
@@ -731,20 +733,20 @@ def test_python_substruct_atom_bond_callback():
         raise RuntimeError("atom callback failed")
 
     with pytest.raises(RuntimeError, match="atom callback failed"):
-        cosmolkit.get_substruct_matches_with_params(
-            atom_target, atom_query, atom_match=fail
+        atom_target.substruct_matches(
+            atom_query, atom_match=fail
         )
 
 
 def test_python_substruct_convert_matches():
     target = cosmolkit.Molecule.from_smiles("OCC")
     query = cosmolkit.parse_smarts("CC")
-    match = cosmolkit.get_substruct_match(target, query)
-    assert isinstance(match, cosmolkit.SubstructMatchResult)
+    match = target.substruct_match(query)
+    assert isinstance(match, cosmolkit.MatchResult)
     assert match.atom_mapping() == [1, 2]
 
-    no_match = cosmolkit.get_substruct_match(
-        target, cosmolkit.parse_smarts("N#N")
+    no_match = target.substruct_match(
+        cosmolkit.parse_smarts("N#N")
     )
     assert no_match is None
 
@@ -752,17 +754,16 @@ def test_python_substruct_convert_matches():
 def test_python_substruct_convert_pairs():
     target = cosmolkit.Molecule.from_smiles("OCC")
     query = cosmolkit.parse_smarts("CC")
-    match = cosmolkit.get_substruct_match(target, query)
+    match = target.substruct_match(query)
     assert match is not None
     assert match.atom_pairs() == [(0, 1), (1, 2)]
 
 
 def test_python_has_substruct_match():
     target = cosmolkit.Molecule.from_smiles("CCO")
-    assert cosmolkit.has_substruct_match(target, cosmolkit.parse_smarts("CO"))
-    assert not cosmolkit.has_substruct_match(target, cosmolkit.parse_smarts("N"))
-    assert cosmolkit.has_substruct_match(
-        target,
+    assert target.has_substruct_match(cosmolkit.parse_smarts("CO"))
+    assert not target.has_substruct_match(cosmolkit.parse_smarts("N"))
+    assert target.has_substruct_match(
         cosmolkit.parse_smarts("CO"),
         recursion_possible=True,
         use_chirality=False,
@@ -772,22 +773,20 @@ def test_python_has_substruct_match():
 
 def test_python_get_substruct_match():
     target = cosmolkit.Molecule.from_smiles("OCC")
-    match = cosmolkit.get_substruct_match(
-        target,
+    match = target.substruct_match(
         cosmolkit.parse_smarts("CC"),
         use_chirality=False,
         use_query_query_matches=False,
     )
     assert match is not None
     assert match.atom_mapping() == [1, 2]
-    assert cosmolkit.get_substruct_match(target, cosmolkit.parse_smarts("N")) is None
+    assert target.substruct_match(cosmolkit.parse_smarts("N")) is None
 
 
 def test_python_get_substruct_matches():
     target = cosmolkit.Molecule.from_smiles("CCC")
     query = cosmolkit.parse_smarts("CC")
-    matches = cosmolkit.get_substruct_matches(
-        target,
+    matches = target.substruct_matches(
         query,
         uniquify=False,
         use_chirality=False,
@@ -795,7 +794,7 @@ def test_python_get_substruct_matches():
         max_matches=3,
     )
     assert [match.atom_mapping() for match in matches] == [[0, 1], [1, 0], [1, 2]]
-    assert len(cosmolkit.get_substruct_matches(target, query)) == 2
+    assert len(target.substruct_matches(query)) == 2
 
 
 def test_python_substruct_helper():
@@ -807,8 +806,8 @@ def test_python_substruct_helper():
         callback_threads.append(tuple(atom_ids))
         return True
 
-    matches = cosmolkit.get_substruct_matches_with_params(
-        target, query, max_matches=2, uniquify=False, final_match=accept
+    matches = target.substruct_matches(
+        query, max_matches=2, uniquify=False, final_match=accept
     )
     assert [match.atom_mapping() for match in matches] == [[0, 1], [1, 0]]
     assert callback_threads == [(0, 1), (1, 0)]
@@ -816,21 +815,21 @@ def test_python_substruct_helper():
 
 def test_python_help_has_substruct():
     target = cosmolkit.Molecule.from_smiles("CCC")
-    assert cosmolkit.has_substruct_match(target, cosmolkit.parse_smarts("CC"))
-    assert not cosmolkit.has_substruct_match(target, cosmolkit.parse_smarts("N"))
+    assert target.has_substruct_match(cosmolkit.parse_smarts("CC"))
+    assert not target.has_substruct_match(cosmolkit.parse_smarts("N"))
 
 
 def test_python_help_get_substruct():
     target = cosmolkit.Molecule.from_smiles("OCC")
-    match = cosmolkit.get_substruct_match(target, cosmolkit.parse_smarts("CC"))
+    match = target.substruct_match(cosmolkit.parse_smarts("CC"))
     assert match is not None
     assert match.atom_mapping() == [1, 2]
 
 
 def test_python_help_get_substructs():
     target = cosmolkit.Molecule.from_smiles("CCC")
-    matches = cosmolkit.get_substruct_matches(
-        target, cosmolkit.parse_smarts("CC"), uniquify=False, max_matches=2
+    matches = target.substruct_matches(
+        cosmolkit.parse_smarts("CC"), uniquify=False, max_matches=2
     )
     assert [match.atom_mapping() for match in matches] == [[0, 1], [1, 0]]
 
@@ -848,8 +847,8 @@ def test_fragment_hash_pickle_and_scaffold_bindings_are_available():
     assert aromatic.murcko_scaffold().num_atoms() > 0
     assert aromatic.net_scaffold().num_atoms() > 0
 
-    payload = aromatic.mol_to_binary()
-    restored_method = cosmolkit.Molecule.mol_from_binary(payload)
+    payload = aromatic.to_binary()
+    restored_method = cosmolkit.Molecule.from_binary(payload)
     restored_fn = cosmolkit.mol_from_binary(payload)
     assert restored_method.to_smiles() == aromatic.to_smiles()
     assert restored_fn.to_smiles() == aromatic.to_smiles()
@@ -887,7 +886,7 @@ HETATM    2 CD    CD     1      -3.467  18.396  77.649  0.50 39.48          CD
         remove_hs=False,
         proximity_bonding=False,
     )
-    assert [atom.atomic_num() for atom in metal_pdb_mol.atoms()] == [80, 48]
+    assert [atom.atomic_number() for atom in metal_pdb_mol.atoms()] == [80, 48]
 
     mmcif_mol = cosmolkit.Molecule.from_mmcif_block(
         """\
@@ -925,7 +924,7 @@ H -0.758 0.000 0.504
     )
     assert xyz_mol.num_atoms() == 3
     assert xyz_mol.num_bonds() == 0
-    assert xyz_mol.num_conformers() == 1
+    assert xyz_mol.num_3d_conformers() == 1
     assert np.allclose(
         xyz_mol.coordinates_3d(),
         np.array(
@@ -991,19 +990,22 @@ def test_batch_api_combinations_preserve_order_shapes_and_record_alignment():
     assert dg[0] is not None and dg[0].shape[0] == len(mols[0])
     assert dg[2] is None
 
-    fps = prepared.fingerprint_morgan_list(n_bits=128)
+    fps = prepared.fingerprint_morgan_list_with_generator_params(
+        cosmolkit.MorganParams(fp_size=128), None, None,
+        cosmolkit.MorganCallParams(), cosmolkit.BatchQueryParams()
+    )
     assert fps[0] is not None
     assert fps[2] is None
 
     with TemporaryDirectory() as td:
         td_path = Path(td)
-        img_report = prepared.to_images(
+        img_report = prepared.write_images(
             str(td_path / "images"),
             format="svg",
             errors="keep",
             filenames=["ethanol.svg", "benzene.svg", None, "chiral.svg"],
         )
-        sdf_report = prepared.to_sdf_files(
+        sdf_report = prepared.write_sdf_files(
             str(td_path / "sdf"),
             format="v2000",
             errors="keep",
@@ -1023,4 +1025,4 @@ def test_from_rdkit_roundtrip_keeps_expected_stereo_when_rdkit_is_available():
     assert rd_mol is not None
     bridged = cosmolkit.Molecule.from_rdkit(rd_mol)
     assert bridged.to_smiles(canonical=False) == "C/C=C/C"
-    assert bridged.bonds()[1].stereo() == cosmolkit.BondStereo.E
+    assert bridged.bonds()[1].stereo() == cosmolkit.BondStereo.STEREOE

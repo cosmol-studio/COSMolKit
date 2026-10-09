@@ -5,10 +5,10 @@ test('All four AtomPair batch outputs equal scalar outputs', () => {
  for (const text of ['CCO', 'c1ccncc1', 'F[C@](Cl)(Br)I']) {
   const molecule = b.Molecule.fromSmiles(text), values = b.MoleculeBatch.fromSmilesList([text]);
   for (const [scalar, batched, read] of [
-   ['atomPairFingerprint', 'fingerprintAtomPairList', 'onBits'],
-   ['atomPairSparseFingerprint', 'fingerprintAtomPairSparseBitsList', 'onBits'],
-   ['atomPairCountFingerprint', 'fingerprintAtomPairCountList', 'nonzeroElements'],
-   ['atomPairSparseCountFingerprint', 'fingerprintAtomPairSparseCountList', 'nonzeroElements'],
+   ['fingerprintAtomPair', 'fingerprintAtomPairList', 'onBits'],
+   ['fingerprintAtomPairSparse', 'fingerprintAtomPairSparseBitsList', 'onBits'],
+   ['fingerprintAtomPairCount', 'fingerprintAtomPairCountList', 'nonzeroElements'],
+   ['fingerprintAtomPairSparseCount', 'fingerprintAtomPairSparseCountList', 'nonzeroElements'],
   ]) assert.deepEqual(molecule[scalar]()[read](), values[batched]()[0][read]());
   molecule.free(); values.free();
  }

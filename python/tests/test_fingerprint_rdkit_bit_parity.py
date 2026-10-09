@@ -55,7 +55,10 @@ def test_morgan_fingerprint_is_rdkit_bit_identical(smiles):
     rd_mol = Chem.MolFromSmiles(smiles)
     generator = AllChem.GetMorganGenerator(radius=2, fpSize=2048)
 
-    assert _ck_bits(ck_mol.fingerprint_morgan(radius=2, n_bits=2048)) == _rdkit_bits(
+    ck_generator = cosmolkit.MorganFingerprintGenerator(
+        params=cosmolkit.MorganParams(radius=2, fp_size=2048)
+    )
+    assert _ck_bits(ck_mol.fingerprint_morgan_with_generator(ck_generator)) == _rdkit_bits(
         generator.GetFingerprint(rd_mol)
     )
 
@@ -72,11 +75,19 @@ def test_morgan_fingerprint_with_output_is_rdkit_bit_identical(smiles):
     additional_output.AllocateAtomsPerBit()
 
     rd_fp = generator.GetFingerprint(rd_mol, additionalOutput=additional_output)
-    ck_result = ck_mol.fingerprint_morgan_with_output(radius=2, n_bits=2048)
+    ck_generator = cosmolkit.MorganFingerprintGenerator(
+        params=cosmolkit.MorganParams(radius=2, fp_size=2048)
+    )
+    ck_output = cosmolkit.FingerprintAdditionalOutput()
+    ck_output.allocate_atom_counts()
+    ck_output.allocate_atom_to_bits()
+    ck_output.allocate_bit_info_map()
+    ck_output.allocate_atoms_per_bit()
+    ck_fp = ck_mol.fingerprint_morgan_with_generator(ck_generator, output=ck_output)
 
-    assert _ck_bits(ck_result.fingerprint()) == _rdkit_bits(rd_fp)
+    assert _ck_bits(ck_fp) == _rdkit_bits(rd_fp)
     assert _ck_additional_output_record(
-        ck_result.additional_output()
+        ck_output
     ) == _rdkit_additional_output_record(additional_output)
 
 
@@ -86,24 +97,24 @@ def test_maccs_fingerprint_is_rdkit_bit_identical(smiles):
     rd_mol = Chem.MolFromSmiles(smiles)
     rd_bits = {bit - 1 for bit in MACCSkeys.GenMACCSKeys(rd_mol).GetOnBits() if bit > 0}
 
-    assert _ck_bits(ck_mol.maccs_fingerprint(n_bits=166)) == rd_bits
+    assert _ck_bits(ck_mol.fingerprint_maccs(n_bits=166)) == rd_bits
 
 
 def test_maccs_fingerprint_rejects_non_rdkit_bit_length():
     ck_mol = cosmolkit.Molecule.from_smiles("NCCO")
 
     with pytest.raises(ValueError, match="MaccsFingerprintParams.n_bits"):
-        ck_mol.maccs_fingerprint(n_bits=64)
+        ck_mol.fingerprint_maccs(n_bits=64)
 
 
 def test_topological_fingerprint_matches_rdkit_exact_bits_and_is_deterministic():
     ck_mol = cosmolkit.Molecule.from_smiles("CCO")
     rd_mol = Chem.MolFromSmiles("CCO")
 
-    ck_fp = ck_mol.topological_fingerprint(fp_size=64, num_bits_per_feature=1)
+    ck_fp = ck_mol.fingerprint_topological(fp_size=64, num_bits_per_feature=1)
     rd_fp = Chem.RDKFingerprint(rd_mol, fpSize=64, nBitsPerHash=1)
     assert _ck_bits(ck_fp) == _rdkit_bits(rd_fp) == {0, 28, 59}
-    assert _ck_bits(ck_mol.topological_fingerprint(fp_size=64, num_bits_per_feature=1)) == _ck_bits(ck_fp)
+    assert _ck_bits(ck_mol.fingerprint_topological(fp_size=64, num_bits_per_feature=1)) == _ck_bits(ck_fp)
 
 
 def test_topological_fingerprint_with_output_matches_rdkit_provenance():
@@ -118,7 +129,7 @@ def test_topological_fingerprint_with_output_matches_rdkit_provenance():
         atomBits=atom_bits,
         bitInfo=bit_info,
     )
-    result = ck_mol.topological_fingerprint_with_output(
+    result = ck_mol.fingerprint_topological_with_output(
         fp_size=64,
         num_bits_per_feature=1,
         atom_bits=True,
@@ -132,7 +143,7 @@ def test_topological_fingerprint_with_output_matches_rdkit_provenance():
 def test_topological_fingerprint_rejects_source_precondition_ranges():
     ck_mol = cosmolkit.Molecule.from_smiles("CCO")
     with pytest.raises(ValueError, match="minPath==0"):
-        ck_mol.topological_fingerprint(min_path=0)
+        ck_mol.fingerprint_topological(min_path=0)
 
 
 def test_avalon_fingerprint_returns_source_backed_bits_without_mutating_molecule():

@@ -191,6 +191,33 @@ pub(crate) fn enum_member<'py>(
 ) -> PyResult<Bound<'py, PyAny>> {
     py.import("cosmolkit")?.getattr(name)?.call1((code,))
 }
+
+/// Dynamic IntEnum inputs use the already registered source vocabulary.
+/// Retain existing explicit integer-code calls; never guess an unknown name.
+pub(crate) fn enum_code(value: &Bound<'_, PyAny>, name: &str) -> PyResult<i64> {
+    use pyo3::exceptions::PyTypeError;
+    use pyo3::types::{PyInt, PyString};
+    let class = value.py().import("cosmolkit")?.getattr(name)?;
+    if value.is_instance_of::<PyString>() {
+        let text: String = value.extract()?;
+        let members = class.getattr("__members__")?;
+        for item in members.call_method0("items")?.try_iter()? {
+            let (member_name, member): (String, Bound<'_, PyAny>) = item?.extract()?;
+            if text == member_name.to_ascii_lowercase() {
+                return member.extract();
+            }
+        }
+        return Err(PyValueError::new_err(format!(
+            "invalid {name} string: {text:?}"
+        )));
+    }
+    if value.is_instance(&class)? || value.is_instance_of::<PyInt>() {
+        return value.extract();
+    }
+    Err(PyTypeError::new_err(format!(
+        "expected {name}, str or integer code"
+    )))
+}
 fn descriptor_member<'py>(
     py: Python<'py>,
     descriptor: Option<ck::CipDescriptor>,
@@ -450,10 +477,11 @@ impl Bond {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct CipLabelOptions {
     pub(crate) inner: ck::CipLabelOptions,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl CipLabelOptions {

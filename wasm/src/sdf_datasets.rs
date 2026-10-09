@@ -175,7 +175,7 @@ mod tests {
             assert_eq!(dataset.record(index).unwrap().index(), index);
             let params = ck::SdfReadParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             };
             assert_eq!(

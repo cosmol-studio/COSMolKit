@@ -1329,11 +1329,11 @@ mod tests {
 
     fn evaluate(
         smiles: &str,
-        remove_hydrogens: bool,
+        remove_hs: bool,
         include_ring_membership: bool,
     ) -> (SmilesRecord, Vec<u32>) {
         let mut parse_params = SmilesParseParams::default();
-        parse_params.remove_hydrogens = remove_hydrogens;
+        parse_params.remove_hs = remove_hs;
         let record = parse_smiles(smiles, &parse_params).expect("fixed SMILES parses");
         let valence = assign_valence(&record.topology, &ValenceParams::default())
             .expect("fixed topology has source-valid valence");

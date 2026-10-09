@@ -408,9 +408,9 @@ molecule_ops! {
         default_args: [&crate::MmffOptimizationParams::default()],
     }
     #[cfg(feature = "cap-forcefields")]
-    op with_mmff_optimized_confs(params: &crate::MmffConformerOptimizationParams) {
-        method: with_mmff_optimized_confs_with_params,
-        impl_fn: crate::ops::mmff_optimization::with_mmff_optimized_confs_impl,
+    op with_mmff_optimized_conformers(params: &crate::MmffConformerOptimizationParams) {
+        method: with_mmff_optimized_conformers_with_params,
+        impl_fn: crate::ops::mmff_optimization::with_mmff_optimized_conformers_impl,
         result_type: crate::MmffOptimizeMoleculeConfsResult,
         domain: topology,
         kind: weak,
@@ -426,7 +426,7 @@ molecule_ops! {
         parity_profile: "mmff_complete_optimization_rdkit",
         io_roundtrip: false,
         invariant_profile: "mmff_preparation_and_coordinates_value",
-        default_method: with_mmff_optimized_confs,
+        default_method: with_mmff_optimized_conformers,
         default_args: [&crate::MmffConformerOptimizationParams::default()],
     }
 
@@ -478,9 +478,9 @@ molecule_ops! {
         default_args: [&crate::UffOptimizationParams::default()],
     }
     #[cfg(feature = "cap-forcefields")]
-    op with_uff_optimized_confs(params: &crate::UffConformerOptimizationParams) {
-        method: with_uff_optimized_confs_with_params,
-        impl_fn: crate::ops::uff_optimization::with_uff_optimized_confs_impl,
+    op with_uff_optimized_conformers(params: &crate::UffConformerOptimizationParams) {
+        method: with_uff_optimized_conformers_with_params,
+        impl_fn: crate::ops::uff_optimization::with_uff_optimized_conformers_impl,
         result_type: crate::UffConformerOptimizationResult,
         domain: coordinate,
         kind: weak,
@@ -496,7 +496,7 @@ molecule_ops! {
         parity_profile: "uff_conformer_optimization_rdkit",
         io_roundtrip: false,
         invariant_profile: "uff_conformers_coordinate_only_prepared_value",
-        default_method: with_uff_optimized_confs,
+        default_method: with_uff_optimized_conformers,
         default_args: [&crate::UffConformerOptimizationParams::default()],
     }
     #[cfg(cosmolkit_runtime_privacy_probe)]

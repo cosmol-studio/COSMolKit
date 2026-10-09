@@ -47,7 +47,7 @@ pub(crate) fn layered_pyerr(
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct LayeredFingerprintLayers {
     inner: ck::LayeredFingerprintLayers,
 }
@@ -66,10 +66,11 @@ impl LayeredFingerprintLayers {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct LayeredFingerprintParams {
     pub(crate) inner: ck::LayeredFingerprintParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl LayeredFingerprintParams {
@@ -175,23 +176,23 @@ impl LayeredFingerprintResult {
 
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
-fn layered_query_fingerprint_with_params(
+fn fingerprint_layered_query_with_params(
     py: Python<'_>,
     query: &crate::canonical_search::QueryGraph,
     params: &LayeredFingerprintParams,
 ) -> PyResult<Fingerprint> {
-    ck::layered_query_fingerprint_with_params(&query.inner, &params.inner)
+    ck::fingerprint_layered_query_with_params(&query.inner, &params.inner)
         .map(|inner| Fingerprint { inner })
         .map_err(|e| layered_pyerr(py, e))
 }
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
-fn layered_query_fingerprint_with_output_with_params(
+fn fingerprint_layered_query_with_output_with_params(
     py: Python<'_>,
     query: &crate::canonical_search::QueryGraph,
     params: &LayeredFingerprintParams,
 ) -> PyResult<LayeredFingerprintResult> {
-    ck::layered_query_fingerprint_with_output_with_params(&query.inner, &params.inner)
+    ck::fingerprint_layered_query_with_output_with_params(&query.inner, &params.inner)
         .map(|inner| LayeredFingerprintResult { inner })
         .map_err(|e| layered_pyerr(py, e))
 }
@@ -204,11 +205,11 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         module.py().get_type::<LayeredFingerprintError>(),
     )?;
     module.add_function(wrap_pyfunction!(
-        layered_query_fingerprint_with_params,
+        fingerprint_layered_query_with_params,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
-        layered_query_fingerprint_with_output_with_params,
+        fingerprint_layered_query_with_output_with_params,
         module
     )?)?;
     Ok(())

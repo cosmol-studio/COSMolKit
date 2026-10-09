@@ -137,8 +137,8 @@ fn uff_remaining_source_error_matrix_() {
         Other(String),
     }
 
-    fn classify_error(error: &SmilesError, remove_hydrogens: bool) -> Outcome {
-        let sanitize_error = match (remove_hydrogens, error) {
+    fn classify_error(error: &SmilesError, remove_hs: bool) -> Outcome {
+        let sanitize_error = match (remove_hs, error) {
             (_, SmilesError::Parse(_)) => return Outcome::Parse,
             (true, SmilesError::Hydrogen(HydrogenError::Sanitize(error))) => error,
             (false, SmilesError::Sanitize(error)) => error,
@@ -164,7 +164,7 @@ fn uff_remaining_source_error_matrix_() {
                 }
                 match valence {
                     Some((atom, atomic_number, calculated)) => Outcome::Properties {
-                        hydrogen_wrapper: remove_hydrogens,
+                        hydrogen_wrapper: remove_hs,
                         stage: *stage,
                         atom,
                         atomic_number,
@@ -175,7 +175,7 @@ fn uff_remaining_source_error_matrix_() {
             }
             SanitizeError::Kekulize { stage, source } => match source {
                 KekulizeError::NotKekulizable { problem_atoms } => Outcome::Kekulize {
-                    hydrogen_wrapper: remove_hydrogens,
+                    hydrogen_wrapper: remove_hs,
                     stage: *stage,
                     problem_atoms: problem_atoms.iter().map(|atom| atom.index()).collect(),
                 },
@@ -191,7 +191,7 @@ fn uff_remaining_source_error_matrix_() {
                         ..
                     }),
             } => Outcome::AromaticityValence {
-                hydrogen_wrapper: remove_hydrogens,
+                hydrogen_wrapper: remove_hs,
                 stage: *stage,
                 atom: atom.index(),
                 atomic_number: *atomic_number,
@@ -263,10 +263,10 @@ fn uff_remaining_source_error_matrix_() {
     let mut mismatches = Vec::new();
     for (id, smiles, counts) in cases {
         for sanitize in [false, true] {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 let params = SmilesParseParams {
                     sanitize,
-                    remove_hydrogens,
+                    remove_hs,
                     ..SmilesParseParams::default()
                 };
                 let actual = match Molecule::from_smiles_with_params(smiles, &params) {
@@ -274,7 +274,7 @@ fn uff_remaining_source_error_matrix_() {
                         atoms: molecule.num_atoms(),
                         bonds: molecule.num_bonds(),
                     },
-                    Err(error) => classify_error(&error, remove_hydrogens),
+                    Err(error) => classify_error(&error, remove_hs),
                 };
                 let expected = if matches!(id, "line:112" | "line:144" | "line:149" | "line:150") {
                     Outcome::Parse
@@ -282,7 +282,7 @@ fn uff_remaining_source_error_matrix_() {
                     let (atoms, bonds) = counts.expect("accepted source row has frozen counts");
                     Outcome::Accepted { atoms, bonds }
                 } else {
-                    let hydrogen_wrapper = remove_hydrogens;
+                    let hydrogen_wrapper = remove_hs;
                     match id {
                         "line:128" => Outcome::Properties {
                             hydrogen_wrapper,
@@ -345,10 +345,10 @@ fn uff_remaining_source_error_matrix_() {
                 };
                 if actual != expected {
                     mismatches.push(format!(
-                        "{id}, sanitize={sanitize}, remove_hydrogens={remove_hydrogens}: expected {expected:?}, observed {actual:?}"
+                        "{id}, sanitize={sanitize}, remove_hs={remove_hs}: expected {expected:?}, observed {actual:?}"
                     ));
                 }
-                observations.push((id, sanitize, remove_hydrogens, actual));
+                observations.push((id, sanitize, remove_hs, actual));
             }
         }
     }
@@ -473,7 +473,7 @@ fn uff_remaining_all_product_() {
                                 vdw_threshold: threshold,
                                 ignore_interfragment_interactions,
                             };
-                            let result = source.with_uff_optimized_confs_with_params(&params);
+                            let result = source.with_uff_optimized_conformers_with_params(&params);
                             optimization_calls += 1;
 
                             assert_eq!(coordinate_bits(&source), source_coordinates);
@@ -730,7 +730,7 @@ fn uff_remaining_all_reference_() {
         );
 
         let result = source
-            .with_uff_optimized_confs_with_params(&UffConformerOptimizationParams {
+            .with_uff_optimized_conformers_with_params(&UffConformerOptimizationParams {
                 num_threads: 1,
                 max_iterations: iterations,
                 vdw_threshold: 10.0,
@@ -845,7 +845,7 @@ fn uff_remaining_all_errors_() {
         assert_eq!(source_coordinates, peer_coordinates);
 
         let error = source
-            .with_uff_optimized_confs_with_params(&UffConformerOptimizationParams {
+            .with_uff_optimized_conformers_with_params(&UffConformerOptimizationParams {
                 num_threads: 1,
                 max_iterations: 0,
                 vdw_threshold: 10.0,

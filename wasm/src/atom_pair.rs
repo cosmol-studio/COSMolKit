@@ -2,11 +2,11 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
-    pub fn atom_pair_fingerprint(&self) -> Result<ck::Fingerprint, ck::AtomPairReadError> {
+    pub fn fingerprint_atom_pair(&self) -> Result<ck::Fingerprint, ck::AtomPairReadError> {
         // COSMolKit❗✔️: .atom_pair_fingerprint(
-        self.inner.borrow().atom_pair_fingerprint()
+        self.inner.borrow().fingerprint_atom_pair()
     }
-    pub fn atom_pair_fingerprint_with_params(
+    pub fn fingerprint_atom_pair_with_params(
         &self,
         params: &ck::AtomPairFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -14,15 +14,15 @@ impl Molecule {
         // COSMolKit❗✔️: .atom_pair_fingerprint_with_params(
         self.inner
             .borrow()
-            .atom_pair_fingerprint_with_params(params, output)
+            .fingerprint_atom_pair_with_params(params, output)
     }
-    pub fn atom_pair_sparse_fingerprint(
+    pub fn fingerprint_atom_pair_sparse(
         &self,
     ) -> Result<ck::SparseBitFingerprint, ck::AtomPairReadError> {
         // COSMolKit❗✔️: .atom_pair_sparse_fingerprint(
-        self.inner.borrow().atom_pair_sparse_fingerprint()
+        self.inner.borrow().fingerprint_atom_pair_sparse()
     }
-    pub fn atom_pair_sparse_fingerprint_with_params(
+    pub fn fingerprint_atom_pair_sparse_with_params(
         &self,
         params: &ck::AtomPairFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -30,15 +30,15 @@ impl Molecule {
         // COSMolKit❗✔️: .atom_pair_sparse_fingerprint_with_params(
         self.inner
             .borrow()
-            .atom_pair_sparse_fingerprint_with_params(params, output)
+            .fingerprint_atom_pair_sparse_with_params(params, output)
     }
-    pub fn atom_pair_count_fingerprint(
+    pub fn fingerprint_atom_pair_count(
         &self,
     ) -> Result<ck::SparseCountFingerprint32, ck::AtomPairReadError> {
         // COSMolKit❗✔️: .atom_pair_count_fingerprint(
-        self.inner.borrow().atom_pair_count_fingerprint()
+        self.inner.borrow().fingerprint_atom_pair_count()
     }
-    pub fn atom_pair_count_fingerprint_with_params(
+    pub fn fingerprint_atom_pair_count_with_params(
         &self,
         params: &ck::AtomPairFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -46,15 +46,15 @@ impl Molecule {
         // COSMolKit❗✔️: .atom_pair_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .atom_pair_count_fingerprint_with_params(params, output)
+            .fingerprint_atom_pair_count_with_params(params, output)
     }
-    pub fn atom_pair_sparse_count_fingerprint(
+    pub fn fingerprint_atom_pair_sparse_count(
         &self,
     ) -> Result<ck::SparseCountFingerprint, ck::AtomPairReadError> {
         // COSMolKit❗✔️: .atom_pair_sparse_count_fingerprint(
-        self.inner.borrow().atom_pair_sparse_count_fingerprint()
+        self.inner.borrow().fingerprint_atom_pair_sparse_count()
     }
-    pub fn atom_pair_sparse_count_fingerprint_with_params(
+    pub fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         params: &ck::AtomPairFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -62,7 +62,7 @@ impl Molecule {
         // COSMolKit❗✔️: .atom_pair_sparse_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .atom_pair_sparse_count_fingerprint_with_params(params, output)
+            .fingerprint_atom_pair_sparse_count_with_params(params, output)
     }
 }
 #[cfg(test)]
@@ -75,20 +75,20 @@ mod tests {
             let core = ck::Molecule::from_smiles(text).unwrap();
             let before = m.to_smiles().unwrap();
             assert_eq!(
-                m.atom_pair_fingerprint().unwrap(),
-                core.atom_pair_fingerprint().unwrap()
+                m.fingerprint_atom_pair().unwrap(),
+                core.fingerprint_atom_pair().unwrap()
             );
             assert_eq!(
-                m.atom_pair_sparse_fingerprint().unwrap(),
-                core.atom_pair_sparse_fingerprint().unwrap()
+                m.fingerprint_atom_pair_sparse().unwrap(),
+                core.fingerprint_atom_pair_sparse().unwrap()
             );
             assert_eq!(
-                m.atom_pair_count_fingerprint().unwrap(),
-                core.atom_pair_count_fingerprint().unwrap()
+                m.fingerprint_atom_pair_count().unwrap(),
+                core.fingerprint_atom_pair_count().unwrap()
             );
             assert_eq!(
-                m.atom_pair_sparse_count_fingerprint().unwrap(),
-                core.atom_pair_sparse_count_fingerprint().unwrap()
+                m.fingerprint_atom_pair_sparse_count().unwrap(),
+                core.fingerprint_atom_pair_sparse_count().unwrap()
             );
             for params in [
                 ck::AtomPairFingerprintParams::default(),
@@ -118,30 +118,30 @@ mod tests {
                 b.allocate_bit_paths();
                 b.allocate_atoms_per_bit();
                 assert_eq!(
-                    m.atom_pair_fingerprint_with_params(&params, Some(&mut a))
+                    m.fingerprint_atom_pair_with_params(&params, Some(&mut a))
                         .unwrap(),
-                    core.atom_pair_fingerprint_with_params(&params, Some(&mut b))
+                    core.fingerprint_atom_pair_with_params(&params, Some(&mut b))
                         .unwrap()
                 );
                 assert_eq!(a, b);
                 assert_eq!(
-                    m.atom_pair_sparse_fingerprint_with_params(&params, Some(&mut a))
+                    m.fingerprint_atom_pair_sparse_with_params(&params, Some(&mut a))
                         .unwrap(),
-                    core.atom_pair_sparse_fingerprint_with_params(&params, Some(&mut b))
+                    core.fingerprint_atom_pair_sparse_with_params(&params, Some(&mut b))
                         .unwrap()
                 );
                 assert_eq!(a, b);
                 assert_eq!(
-                    m.atom_pair_count_fingerprint_with_params(&params, Some(&mut a))
+                    m.fingerprint_atom_pair_count_with_params(&params, Some(&mut a))
                         .unwrap(),
-                    core.atom_pair_count_fingerprint_with_params(&params, Some(&mut b))
+                    core.fingerprint_atom_pair_count_with_params(&params, Some(&mut b))
                         .unwrap()
                 );
                 assert_eq!(a, b);
                 assert_eq!(
-                    m.atom_pair_sparse_count_fingerprint_with_params(&params, Some(&mut a))
+                    m.fingerprint_atom_pair_sparse_count_with_params(&params, Some(&mut a))
                         .unwrap(),
-                    core.atom_pair_sparse_count_fingerprint_with_params(&params, Some(&mut b))
+                    core.fingerprint_atom_pair_sparse_count_with_params(&params, Some(&mut b))
                         .unwrap()
                 );
                 assert_eq!(a, b);
@@ -152,13 +152,13 @@ mod tests {
             "CC",
             &ck::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             },
         )
         .unwrap();
         assert!(matches!(
-            raw.atom_pair_fingerprint(),
+            raw.fingerprint_atom_pair(),
             Err(ck::AtomPairReadError::Preparation(
                 ck::FingerprintPreparationError::MissingPreparedValence
             ))
@@ -172,12 +172,12 @@ mod tests {
             ..Default::default()
         }] {
             assert!(matches!(
-                m.atom_pair_fingerprint_with_params(&p, None),
+                m.fingerprint_atom_pair_with_params(&p, None),
                 Err(ck::AtomPairReadError::Generator(_))
             ));
         }
         assert!(
-            m.atom_pair_fingerprint_with_params(
+            m.fingerprint_atom_pair_with_params(
                 &ck::AtomPairFingerprintParams {
                     from_atoms: Some(vec![99]),
                     ..Default::default()

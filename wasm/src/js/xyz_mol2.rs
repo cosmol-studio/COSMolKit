@@ -19,7 +19,7 @@ impl Mol2ReadParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] sanitize: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] remove_hydrogens: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] remove_hs: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "Mol2Type")] variant: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] cleanup_substructures: JsValue,
     ) -> Result<Self, JsValue> {
@@ -27,8 +27,8 @@ impl Mol2ReadParams {
         if !sanitize.is_undefined() {
             inner.sanitize = bool_value(&sanitize, "sanitize")?;
         }
-        if !remove_hydrogens.is_undefined() {
-            inner.remove_hydrogens = bool_value(&remove_hydrogens, "removeHydrogens")?;
+        if !remove_hs.is_undefined() {
+            inner.remove_hs = bool_value(&remove_hs, "removeHs")?;
         }
         if !cleanup_substructures.is_undefined() {
             inner.cleanup_substructures =
@@ -46,9 +46,9 @@ impl Mol2ReadParams {
     pub fn sanitize(&self) -> bool {
         self.inner.sanitize
     }
-    #[wasm_bindgen(getter,js_name=removeHydrogens)]
-    pub fn remove_hydrogens(&self) -> bool {
-        self.inner.remove_hydrogens
+    #[wasm_bindgen(getter,js_name=removeHs)]
+    pub fn remove_hs(&self) -> bool {
+        self.inner.remove_hs
     }
     #[wasm_bindgen(getter, unchecked_return_type = "Mol2Type")]
     pub fn variant(&self) -> u32 {

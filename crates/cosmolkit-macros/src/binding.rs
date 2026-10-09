@@ -51,6 +51,7 @@ enum StateModel {
 enum TypeRole {
     Value,
     Parameter,
+    ParameterSelector,
     Result,
     Error,
 }
@@ -195,6 +196,8 @@ struct BindingEntry {
     owner: Owner,
     rust: Path,
     python: LitStr,
+    python_native: Option<LitStr>,
+    python_configuration: Option<Vec<PythonConfigurationField>>,
     python_property: Option<PythonProperty>,
     javascript: LitStr,
     feature: LitStr,
@@ -205,6 +208,51 @@ struct BindingEntry {
     properties: Vec<BindingProperty>,
     python_keywords: Option<BindingKeywordProjection>,
     python_adapters: Vec<PythonAdapter>,
+}
+
+struct PythonConfigurationField {
+    name: Ident,
+    python_type: LitStr,
+    default: Option<LitStr>,
+}
+impl Parse for PythonConfigurationField {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let content;
+        braced!(content in input);
+        let mut name = None;
+        let mut python_type = None;
+        let mut default = None;
+        while !content.is_empty() {
+            let key = content.call(Ident::parse_any)?;
+            content.parse::<Token![:]>()?;
+            match key.to_string().as_str() {
+                "name" => set_once(&mut name, content.parse()?, &key)?,
+                "python_type" => set_once(&mut python_type, content.parse()?, &key)?,
+                "default" => {
+                    let value = if content.peek(LitStr) {
+                        Some(content.parse()?)
+                    } else {
+                        let value: Ident = content.parse()?;
+                        if value != "required" {
+                            return Err(syn::Error::new_spanned(
+                                value,
+                                "expected required or a Python default expression string",
+                            ));
+                        }
+                        None
+                    };
+                    set_once(&mut default, value, &key)?;
+                }
+                other => return Err(unknown_field(&key, "Python configuration field", other)),
+            }
+            consume_comma(&content)?;
+        }
+        Ok(Self {
+            name: required(name, "configuration.name")?,
+            python_type: required(python_type, "configuration.python_type")?,
+            default: required(default, "configuration.default")?,
+        })
+    }
 }
 
 /// Language-object ingress composes registered Rust APIs; it is not a fake
@@ -264,6 +312,8 @@ struct BindingEntryDraft {
     owner: Option<Ident>,
     rust: Option<Path>,
     python: Option<LitStr>,
+    python_native: Option<LitStr>,
+    python_configuration: Option<Vec<PythonConfigurationField>>,
     python_property: Option<Ident>,
     javascript: Option<LitStr>,
     feature: Option<LitStr>,
@@ -328,6 +378,18 @@ fn parse_binding_entry(
             "owner" => set_once(&mut draft.owner, input.parse()?, &key)?,
             "rust" => set_once(&mut draft.rust, input.parse()?, &key)?,
             "python" => set_once(&mut draft.python, input.parse()?, &key)?,
+            "python_native" => set_once(&mut draft.python_native, input.parse()?, &key)?,
+            "python_configuration" => {
+                let values;
+                bracketed!(values in input);
+                set_once(
+                    &mut draft.python_configuration,
+                    Punctuated::<PythonConfigurationField, Token![,]>::parse_terminated(&values)?
+                        .into_iter()
+                        .collect(),
+                    &key,
+                )?;
+            }
             "python_property" => set_once(&mut draft.python_property, input.parse()?, &key)?,
             "javascript" => set_once(&mut draft.javascript, input.parse()?, &key)?,
             "feature" => set_once(&mut draft.feature, input.parse()?, &key)?,
@@ -502,6 +564,8 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
         owner,
         rust,
         python,
+        python_native: draft.python_native,
+        python_configuration: draft.python_configuration,
         python_property,
         javascript,
         feature,
@@ -517,6 +581,61 @@ fn finish_entry(cfg_attrs: Vec<Attribute>, draft: BindingEntryDraft) -> syn::Res
 
 fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
     for entry in entries {
+        if let Some(fields) = &entry.python_configuration {
+            if entry.item != ItemClass::Type || entry.type_role != Some(TypeRole::Parameter) {
+                return Err(syn::Error::new_spanned(
+                    &entry.semantic_id,
+                    "python_configuration requires a parameter type",
+                ));
+            }
+            let mut names = HashSet::new();
+            for field in fields {
+                if !names.insert(field.name.to_string()) {
+                    return Err(syn::Error::new_spanned(
+                        &field.name,
+                        "duplicate configuration field",
+                    ));
+                }
+                require_nonempty(&field.python_type, "configuration.python_type")?;
+            }
+        }
+        if let Some(native) = &entry.python_native {
+            let projection = native.value();
+            let list = projection
+                .strip_prefix("list[")
+                .and_then(|value| value.strip_suffix(']'))
+                .is_some_and(|name| {
+                    entries.iter().any(|candidate| {
+                        candidate.item == ItemClass::Type && candidate.python.value() == name
+                    })
+                });
+            let union = projection.contains('|')
+                && projection.split('|').all(|name| {
+                    let name = name.trim();
+                    entries.iter().any(|candidate| {
+                        candidate.item == ItemClass::Type && candidate.python.value() == name
+                    })
+                });
+            if entry.item != ItemClass::Type
+                || entry.type_role != Some(TypeRole::Value)
+                || !entry.properties.is_empty()
+                || !entry.python_adapters.is_empty()
+                || !matches!(
+                    native.value().as_str(),
+                    "builtins.int"
+                        | "builtins.str"
+                        | "builtins.float"
+                        | "builtins.bool"
+                        | "builtins.bytes"
+                ) && !union
+                    && !list
+            {
+                return Err(syn::Error::new_spanned(
+                    native,
+                    "python_native requires a native value projection without properties or object adapters",
+                ));
+            }
+        }
         if !entry.python_adapters.is_empty() && entry.item != ItemClass::Type {
             return Err(syn::Error::new_spanned(
                 &entry.semantic_id,
@@ -571,6 +690,12 @@ fn validate_registry(entries: &[BindingEntry]) -> syn::Result<()> {
             return Err(syn::Error::new_spanned(
                 &entry.semantic_id,
                 "properties require a type declaration",
+            ));
+        }
+        if entry.type_role == Some(TypeRole::ParameterSelector) && !entry.properties.is_empty() {
+            return Err(syn::Error::new_spanned(
+                &entry.semantic_id,
+                "parameter_selector cannot declare configuration record properties; use parameter",
             ));
         }
         let mut property_names = HashSet::new();
@@ -839,13 +964,16 @@ fn validate_callable(
     let expected_python = match python_property {
         Some(PythonProperty::Getter) => {
             if payload.kind != CallableKind::Instance
-                || payload.receiver != Some(Receiver::Shared)
-                || payload.state != StateModel::ReadOnly
+                || !matches!(
+                    (payload.receiver, payload.state),
+                    (Some(Receiver::Shared), StateModel::ReadOnly)
+                        | (Some(Receiver::Owned), StateModel::ValueReturning)
+                )
                 || !payload.parameters.is_empty()
             {
                 return Err(syn::Error::new_spanned(
                     python,
-                    "Python getter requires a shared, zero-argument read-only accessor",
+                    "Python getter requires a shared or Copy-owned, zero-argument read-only accessor",
                 ));
             }
             rust_name.as_str()
@@ -1291,6 +1419,25 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
         let owner = owner_tokens(entry.owner);
         let rust = &entry.rust;
         let python = &entry.python;
+        let python_native = match &entry.python_native {
+            Some(value) => quote!(Some(#value)),
+            None => quote!(None),
+        };
+        let python_configuration = match &entry.python_configuration {
+            None => quote!(None),
+            Some(fields) => {
+                let fields = fields.iter().map(|field| {
+                    let name = field.name.to_string();
+                    let ty = &field.python_type;
+                    let default = match &field.default {
+                        Some(default) => quote!(crate::BindingDefault::Value(#default)),
+                        None => quote!(crate::BindingDefault::Required),
+                    };
+                    quote!(crate::BindingParameterContract {name: #name, type_name: #ty, default: #default})
+                });
+                quote!(Some(&[#(#fields),*]))
+            }
+        };
         let python_property = match entry.python_property {
             None => quote!(None),
             Some(PythonProperty::Getter) => quote!(Some(crate::BindingPropertyAccess::Getter)),
@@ -1372,7 +1519,7 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             #(#cfg)*
             crate::BindingContractEntry {
                 semantic_id: #semantic_id, item: #item, owner: #owner,
-                rust_path: stringify!(#rust), python_name: #python, python_property: #python_property, javascript_name: #javascript,
+                rust_path: stringify!(#rust), python_name: #python, python_native: #python_native, python_configuration: #python_configuration, python_property: #python_property, javascript_name: #javascript,
                 feature: #feature, required_capabilities: &[#(#requires),*], status: #status,
                 callable: #callable, type_role: #role,
             }
@@ -1381,6 +1528,16 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
             let assertion = format_ident!("__BINDING_ASSERT_{}_{}", name, index);
             if let Some(payload) = &entry.callable {
                 let signature = &payload.signature;
+                // By-value vocabulary accessors are valid properties only when
+                // the compiler proves reading cannot consume the Python value.
+                let copy_check = if entry.python_property == Some(PythonProperty::Getter)
+                    && payload.receiver == Some(Receiver::Owned)
+                {
+                    let receiver = &signature.inputs.first().expect("instance receiver").ty;
+                    quote! { fn assert_copy<T: Copy>() {} assert_copy::<#receiver>(); }
+                } else {
+                    quote! {}
+                };
                 if let Some(bound_lifetimes) = &signature.lifetimes {
                     let parameters = &bound_lifetimes.lifetimes;
                     let mut instantiated_signature = signature.clone();
@@ -1389,11 +1546,17 @@ fn expand_registry(registry: BindingRegistry) -> syn::Result<proc_macro2::TokenS
                         #(#cfg)* const #assertion: fn() = || {
                             fn assert_signature<#parameters>() {
                                 let _: #instantiated_signature = #rust;
+                                #copy_check
                             }
                         };
                     });
-                } else {
+                } else if copy_check.is_empty() {
                     assertions.push(quote! { #(#cfg)* const #assertion: #signature = #rust; });
+                } else {
+                    assertions.push(quote! { #(#cfg)* const #assertion: fn() = || {
+                        let _: #signature = #rust;
+                        #copy_check
+                    }; });
                 }
             } else {
                 assertions.push(quote! { #(#cfg)* const #assertion: fn() = || {
@@ -1508,14 +1671,21 @@ fn parse_state(v: &Ident) -> syn::Result<StateModel> {
 fn parse_type_role(v: &Ident) -> syn::Result<TypeRole> {
     parse_enum(
         v,
-        &["value", "parameter", "result", "error"],
+        &[
+            "value",
+            "parameter",
+            "parameter_selector",
+            "result",
+            "error",
+        ],
         |n| match n {
             "value" => TypeRole::Value,
             "parameter" => TypeRole::Parameter,
+            "parameter_selector" => TypeRole::ParameterSelector,
             "result" => TypeRole::Result,
             _ => TypeRole::Error,
         },
-        "role must be `value`, `parameter`, `result`, or `error`",
+        "role must be `value`, `parameter`, `parameter_selector`, `result`, or `error`",
     )
 }
 
@@ -1565,6 +1735,7 @@ fn type_role_tokens(v: TypeRole) -> proc_macro2::TokenStream {
     match v {
         TypeRole::Value => quote!(crate::BindingTypeRole::Value),
         TypeRole::Parameter => quote!(crate::BindingTypeRole::Parameter),
+        TypeRole::ParameterSelector => quote!(crate::BindingTypeRole::ParameterSelector),
         TypeRole::Result => quote!(crate::BindingTypeRole::Result),
         TypeRole::Error => quote!(crate::BindingTypeRole::Error),
     }

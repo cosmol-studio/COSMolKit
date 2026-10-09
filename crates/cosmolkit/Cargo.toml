@@ -90,24 +90,24 @@ cap-sanitize = ["dep:cosmolkit-core"]
 
 [dependencies]
 num-bigint = { version = "0.4.8", optional = true }
-cosmolkit-model = { version = "0.5.0-rc.16", path = "../cosmolkit-model" }
-cosmolkit-macros = { version = "0.5.0-rc.16", path = "../cosmolkit-macros" }
-cosmolkit-core = { version = "0.5.0-rc.16", path = "../cosmolkit-core", optional = true }
-cosmolkit-reaction = { version = "0.5.0-rc.16", path = "../cosmolkit-reaction", optional = true }
-cosmolkit-descriptors = { version = "0.5.0-rc.16", path = "../cosmolkit-descriptors", optional = true }
-cosmolkit-alignment = { version = "0.5.0-rc.16", path = "../cosmolkit-alignment", optional = true }
-cosmolkit-batch = { version = "0.5.0-rc.16", path = "../cosmolkit-batch", optional = true }
-cosmolkit-bio = { version = "0.5.0-rc.16", path = "../cosmolkit-bio", optional = true }
-cosmolkit-conformer = { version = "0.5.0-rc.16", path = "../cosmolkit-conformer", optional = true }
-cosmolkit-depict = { version = "0.5.0-rc.16", path = "../cosmolkit-depict", optional = true }
-cosmolkit-fingerprints = { version = "0.5.0-rc.16", path = "../cosmolkit-fingerprints", optional = true }
-cosmolkit-forcefields = { version = "0.5.0-rc.16", path = "../cosmolkit-forcefields", optional = true }
-cosmolkit-inchi = { version = "0.5.0-rc.16", path = "../cosmolkit-inchi", optional = true }
-cosmolkit-io = { version = "0.5.0-rc.16", path = "../cosmolkit-io", optional = true, default-features = false }
-cosmolkit-search = { version = "0.5.0-rc.16", path = "../cosmolkit-search", optional = true, default-features = false }
-cosmolkit-smiles = { version = "0.5.0-rc.16", path = "../cosmolkit-smiles", optional = true }
-cosmolkit-stereo = { version = "0.5.0-rc.16", path = "../cosmolkit-stereo", optional = true, default-features = false }
-cosmolkit-tautomer = { version = "0.5.0-rc.16", path = "../cosmolkit-tautomer", optional = true }
+cosmolkit-model = { version = "0.5.0-rc.17", path = "../cosmolkit-model" }
+cosmolkit-macros = { version = "0.5.0-rc.17", path = "../cosmolkit-macros" }
+cosmolkit-core = { version = "0.5.0-rc.17", path = "../cosmolkit-core", optional = true }
+cosmolkit-reaction = { version = "0.5.0-rc.17", path = "../cosmolkit-reaction", optional = true }
+cosmolkit-descriptors = { version = "0.5.0-rc.17", path = "../cosmolkit-descriptors", optional = true }
+cosmolkit-alignment = { version = "0.5.0-rc.17", path = "../cosmolkit-alignment", optional = true }
+cosmolkit-batch = { version = "0.5.0-rc.17", path = "../cosmolkit-batch", optional = true }
+cosmolkit-bio = { version = "0.5.0-rc.17", path = "../cosmolkit-bio", optional = true }
+cosmolkit-conformer = { version = "0.5.0-rc.17", path = "../cosmolkit-conformer", optional = true }
+cosmolkit-depict = { version = "0.5.0-rc.17", path = "../cosmolkit-depict", optional = true }
+cosmolkit-fingerprints = { version = "0.5.0-rc.17", path = "../cosmolkit-fingerprints", optional = true }
+cosmolkit-forcefields = { version = "0.5.0-rc.17", path = "../cosmolkit-forcefields", optional = true }
+cosmolkit-inchi = { version = "0.5.0-rc.17", path = "../cosmolkit-inchi", optional = true }
+cosmolkit-io = { version = "0.5.0-rc.17", path = "../cosmolkit-io", optional = true, default-features = false }
+cosmolkit-search = { version = "0.5.0-rc.17", path = "../cosmolkit-search", optional = true, default-features = false }
+cosmolkit-smiles = { version = "0.5.0-rc.17", path = "../cosmolkit-smiles", optional = true }
+cosmolkit-stereo = { version = "0.5.0-rc.17", path = "../cosmolkit-stereo", optional = true, default-features = false }
+cosmolkit-tautomer = { version = "0.5.0-rc.17", path = "../cosmolkit-tautomer", optional = true }
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["float_roundtrip"] }
@@ -117,6 +117,10 @@ toml = "1.1"
 
 # Registered examples use the same capability gates as their public API calls.
 # confseq_decode_backends and read_xyz remain unregistered until their APIs compile.
+[[example]]
+name = "binding_contract_manifest"
+path = "examples/binding_contract_manifest.rs"
+
 [[example]]
 name = "ciplabeler"
 required-features = ["cap-smiles", "cap-stereo"]

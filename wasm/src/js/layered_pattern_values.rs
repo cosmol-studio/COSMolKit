@@ -33,6 +33,7 @@ extern "C" {
 pub struct LayeredFingerprintParams {
     pub(crate) inner: ck::LayeredFingerprintParams,
 }
+#[cosmolkit_wasm::javascript_options("LayeredFingerprintOptions")]
 #[wasm_bindgen]
 impl LayeredFingerprintParams {
     #[wasm_bindgen(constructor)]

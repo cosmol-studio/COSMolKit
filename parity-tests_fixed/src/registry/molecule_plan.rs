@@ -99,7 +99,7 @@ impl TaskId {
             Self::ExactMolecularWeight => "exact_molecular_weight",
             Self::MolecularFormula => "molecular_formula",
             Self::AddHydrogens => "add_hydrogens",
-            Self::RemoveHydrogens => "remove_hydrogens",
+            Self::RemoveHydrogens => "remove_hs",
             Self::CipLabels => "cip_labels",
             Self::PotentialStereo => "potential_stereo",
             Self::Coordinates2d => "coordinates_2d",
@@ -125,10 +125,10 @@ impl TaskId {
             Self::NumAliphaticCarbocycles => "num_aliphatic_carbocycles",
             Self::NumSaturatedHeterocycles => "num_saturated_heterocycles",
             Self::NumSaturatedCarbocycles => "num_saturated_carbocycles",
-            Self::MorganFingerprint => "morgan_fingerprint",
-            Self::MorganSparseFingerprint => "morgan_sparse_fingerprint",
-            Self::MorganCountFingerprint => "morgan_count_fingerprint",
-            Self::MorganSparseCountFingerprint => "morgan_sparse_count_fingerprint",
+            Self::MorganFingerprint => "fingerprint_morgan",
+            Self::MorganSparseFingerprint => "fingerprint_morgan_sparse",
+            Self::MorganCountFingerprint => "fingerprint_morgan_count",
+            Self::MorganSparseCountFingerprint => "fingerprint_morgan_sparse_count",
         }
     }
     pub const fn category(self) -> Category {
@@ -347,10 +347,10 @@ pub enum MorganOutputKind {
 impl MorganOutputKind {
     pub const fn task_name(self) -> &'static str {
         match self {
-            Self::DenseBits => "morgan_fingerprint",
-            Self::SparseBits => "morgan_sparse_fingerprint",
-            Self::HashedCounts => "morgan_count_fingerprint",
-            Self::SparseCounts => "morgan_sparse_count_fingerprint",
+            Self::DenseBits => "fingerprint_morgan",
+            Self::SparseBits => "fingerprint_morgan_sparse",
+            Self::HashedCounts => "fingerprint_morgan_count",
+            Self::SparseCounts => "fingerprint_morgan_sparse_count",
         }
     }
 }
@@ -521,7 +521,7 @@ pub enum Profile {
     },
     SmilesRead {
         sanitize: bool,
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     SanitizeAll,
     Kekulize {
@@ -586,61 +586,61 @@ pub enum Profile {
         strict: bool,
     },
     NumHeavyAtoms {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     TotalAtomCount {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     LipinskiHBA {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     LipinskiHBD {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     FractionCSP3 {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumHeteroatoms {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumHba {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumHbd {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumRings {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumHeterocycles {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumAromaticRings {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumSaturatedRings {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumAliphaticRings {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumAromaticHeterocycles {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumAromaticCarbocycles {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumAliphaticHeterocycles {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumAliphaticCarbocycles {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumSaturatedHeterocycles {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     NumSaturatedCarbocycles {
-        remove_hydrogens: bool,
+        remove_hs: bool,
     },
     Morgan {
         output: MorganOutputKind,
@@ -1513,9 +1513,9 @@ impl TaskId {
             SmilesRead => booleans
                 .into_iter()
                 .flat_map(|sanitize| {
-                    booleans.map(move |remove_hydrogens| Profile::SmilesRead {
+                    booleans.map(move |remove_hs| Profile::SmilesRead {
                         sanitize,
-                        remove_hydrogens,
+                        remove_hs,
                     })
                 })
                 .collect(),
@@ -1580,61 +1580,61 @@ impl TaskId {
             Svg => vec![Profile::SvgDefault],
             Valence => booleans.map(|strict| Profile::Valence { strict }).into(),
             NumHeavyAtoms => booleans
-                .map(|remove_hydrogens| Profile::NumHeavyAtoms { remove_hydrogens })
+                .map(|remove_hs| Profile::NumHeavyAtoms { remove_hs })
                 .into(),
             TotalAtomCount => booleans
-                .map(|remove_hydrogens| Profile::TotalAtomCount { remove_hydrogens })
+                .map(|remove_hs| Profile::TotalAtomCount { remove_hs })
                 .into(),
             LipinskiHBA => booleans
-                .map(|remove_hydrogens| Profile::LipinskiHBA { remove_hydrogens })
+                .map(|remove_hs| Profile::LipinskiHBA { remove_hs })
                 .into(),
             LipinskiHBD => booleans
-                .map(|remove_hydrogens| Profile::LipinskiHBD { remove_hydrogens })
+                .map(|remove_hs| Profile::LipinskiHBD { remove_hs })
                 .into(),
             FractionCSP3 => booleans
-                .map(|remove_hydrogens| Profile::FractionCSP3 { remove_hydrogens })
+                .map(|remove_hs| Profile::FractionCSP3 { remove_hs })
                 .into(),
             NumHeteroatoms => booleans
-                .map(|remove_hydrogens| Profile::NumHeteroatoms { remove_hydrogens })
+                .map(|remove_hs| Profile::NumHeteroatoms { remove_hs })
                 .into(),
             NumHba => booleans
-                .map(|remove_hydrogens| Profile::NumHba { remove_hydrogens })
+                .map(|remove_hs| Profile::NumHba { remove_hs })
                 .into(),
             NumHbd => booleans
-                .map(|remove_hydrogens| Profile::NumHbd { remove_hydrogens })
+                .map(|remove_hs| Profile::NumHbd { remove_hs })
                 .into(),
             NumRings => booleans
-                .map(|remove_hydrogens| Profile::NumRings { remove_hydrogens })
+                .map(|remove_hs| Profile::NumRings { remove_hs })
                 .into(),
             NumHeterocycles => booleans
-                .map(|remove_hydrogens| Profile::NumHeterocycles { remove_hydrogens })
+                .map(|remove_hs| Profile::NumHeterocycles { remove_hs })
                 .into(),
             NumAromaticRings => booleans
-                .map(|remove_hydrogens| Profile::NumAromaticRings { remove_hydrogens })
+                .map(|remove_hs| Profile::NumAromaticRings { remove_hs })
                 .into(),
             NumSaturatedRings => booleans
-                .map(|remove_hydrogens| Profile::NumSaturatedRings { remove_hydrogens })
+                .map(|remove_hs| Profile::NumSaturatedRings { remove_hs })
                 .into(),
             NumAliphaticRings => booleans
-                .map(|remove_hydrogens| Profile::NumAliphaticRings { remove_hydrogens })
+                .map(|remove_hs| Profile::NumAliphaticRings { remove_hs })
                 .into(),
             NumAromaticHeterocycles => booleans
-                .map(|remove_hydrogens| Profile::NumAromaticHeterocycles { remove_hydrogens })
+                .map(|remove_hs| Profile::NumAromaticHeterocycles { remove_hs })
                 .into(),
             NumAromaticCarbocycles => booleans
-                .map(|remove_hydrogens| Profile::NumAromaticCarbocycles { remove_hydrogens })
+                .map(|remove_hs| Profile::NumAromaticCarbocycles { remove_hs })
                 .into(),
             NumAliphaticHeterocycles => booleans
-                .map(|remove_hydrogens| Profile::NumAliphaticHeterocycles { remove_hydrogens })
+                .map(|remove_hs| Profile::NumAliphaticHeterocycles { remove_hs })
                 .into(),
             NumAliphaticCarbocycles => booleans
-                .map(|remove_hydrogens| Profile::NumAliphaticCarbocycles { remove_hydrogens })
+                .map(|remove_hs| Profile::NumAliphaticCarbocycles { remove_hs })
                 .into(),
             NumSaturatedHeterocycles => booleans
-                .map(|remove_hydrogens| Profile::NumSaturatedHeterocycles { remove_hydrogens })
+                .map(|remove_hs| Profile::NumSaturatedHeterocycles { remove_hs })
                 .into(),
             NumSaturatedCarbocycles => booleans
-                .map(|remove_hydrogens| Profile::NumSaturatedCarbocycles { remove_hydrogens })
+                .map(|remove_hs| Profile::NumSaturatedCarbocycles { remove_hs })
                 .into(),
             MorganFingerprint
             | MorganSparseFingerprint

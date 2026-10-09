@@ -26,7 +26,7 @@ fn input() -> String {
 fn params() -> SdfReadParams {
     SdfReadParams {
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..SdfReadParams::default()
     }
 }

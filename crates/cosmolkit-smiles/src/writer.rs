@@ -94,8 +94,8 @@ struct WriterStereoFragment {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SmilesWriteParams {
-    pub do_isomeric_smiles: bool,
-    pub do_kekule: bool,
+    pub isomeric_smiles: bool,
+    pub kekule: bool,
     pub canonical: bool,
     pub clean_stereo: bool,
     pub rooted_at_atom: Option<AtomId>,
@@ -108,8 +108,8 @@ pub struct SmilesWriteParams {
 impl Default for SmilesWriteParams {
     fn default() -> Self {
         Self {
-            do_isomeric_smiles: true,
-            do_kekule: false,
+            isomeric_smiles: true,
+            kekule: false,
             canonical: true,
             clean_stereo: true,
             rooted_at_atom: None,
@@ -124,8 +124,8 @@ impl Default for SmilesWriteParams {
 /// Source options accepted by RDKit's random-SMILES vector writer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RandomSmilesWriteParams {
-    pub do_isomeric_smiles: bool,
-    pub do_kekule: bool,
+    pub isomeric_smiles: bool,
+    pub kekule: bool,
     pub all_bonds_explicit: bool,
     pub all_hydrogens_explicit: bool,
 }
@@ -133,8 +133,8 @@ pub struct RandomSmilesWriteParams {
 impl Default for RandomSmilesWriteParams {
     fn default() -> Self {
         Self {
-            do_isomeric_smiles: true,
-            do_kekule: false,
+            isomeric_smiles: true,
+            kekule: false,
             all_bonds_explicit: false,
             all_hydrogens_explicit: false,
         }
@@ -256,8 +256,8 @@ pub fn write_random_smiles_vector<'record>(
     let seed = random_seed as i32;
     cosmolkit_core::with_rdkit_random_generator(seed, |random_stream| {
         let writer_params = SmilesWriteParams {
-            do_isomeric_smiles: params.do_isomeric_smiles,
-            do_kekule: params.do_kekule,
+            isomeric_smiles: params.isomeric_smiles,
+            kekule: params.kekule,
             canonical: false,
             clean_stereo: true,
             rooted_at_atom: None,
@@ -589,7 +589,7 @@ pub fn write_fragment_smiles_output<'record>(
         // RDKit❗✔️:     }
         // RDKit❗✔️:   }
         // END RDKIT CPP FUNCTION SmilesWrite::FragmentSmilesConstruct selected kekulization
-        if params.do_kekule {
+        if params.kekule {
             topology = cosmolkit_core::kekulize_selected_fragment(
                 &topology,
                 &masks.atoms_in_play,
@@ -611,7 +611,7 @@ pub fn write_fragment_smiles_output<'record>(
         // Complexity review: the map stores one reference per nonempty atom
         // group; normalization copies/sorts only group members and does not
         // allocate a topology-sized marker array.
-        let stereo_group_references = if params.canonical && params.do_isomeric_smiles {
+        let stereo_group_references = if params.canonical && params.isomeric_smiles {
             canonicalize_enhanced_stereo(&mut topology, &ranks)?
         } else {
             BTreeMap::new()
@@ -654,7 +654,7 @@ pub fn write_fragment_smiles_output<'record>(
             bond_symbols.map(DfsBondSymbols::Utf8),
             None,
         )?;
-        let computed_valence = if params.do_kekule {
+        let computed_valence = if params.kekule {
             Some(
                 cosmolkit_core::assign_valence_with_options_for_topology(
                     &topology,
@@ -673,7 +673,7 @@ pub fn write_fragment_smiles_output<'record>(
             &mut topology,
             emitted_valence,
             prepared_rings,
-            params.do_isomeric_smiles,
+            params.isomeric_smiles,
             start,
             &ring_closures,
             &atom_traversal_bond_order,
@@ -1049,7 +1049,7 @@ fn write_smiles_output_with_random_stream<'record>(
     // Complexity review: policy propagation adds constant-time field assignments per
     // component. Fragment construction, rank refinement, allocations, loop nesting,
     // and component mapping are unchanged; no scan, clone, or lookup was added.
-    let mut kekulize_fragments = if params.do_kekule {
+    let mut kekulize_fragments = if params.kekule {
         // BEGIN RDKIT CPP FUNCTION MolOps::getTheFrags fragment copies before ranking
         // RDKit❗❌:   if (nFrags == 1) {
         // RDKit❗❌:     res.emplace_back(new RWMol(mol));
@@ -1102,9 +1102,9 @@ fn write_smiles_output_with_random_stream<'record>(
     for (component_index, component) in components.iter().enumerate() {
         component_ranks.push(if params.canonical {
             let mut policy = canonical_rank::CanonicalRankPolicy::default();
-            policy.include_chirality = params.do_isomeric_smiles;
-            policy.include_isotopes = params.do_isomeric_smiles;
-            policy.include_stereo_groups = params.do_isomeric_smiles;
+            policy.include_chirality = params.isomeric_smiles;
+            policy.include_isotopes = params.isomeric_smiles;
+            policy.include_stereo_groups = params.isomeric_smiles;
             canonical_rank::rank_component_atoms_with_policy(&ranking_topology, component, policy)
                 .map_err(|error| SmilesParseError::CanonicalRank(error.to_string()))?
                 .into_iter()
@@ -1132,7 +1132,7 @@ fn write_smiles_output_with_random_stream<'record>(
                 topology.atoms[*source_atom].set_atom_map(original_atom_maps[*source_atom]);
             }
         }
-        if params.do_kekule {
+        if params.kekule {
             // BEGIN RDKIT CPP FUNCTION FragmentSmilesConstruct Kekulize branch
             // RDKit❗❌:   if (params.doKekule) {
             // RDKit❗❌:     if (atomsInPlay && bondsInPlay) {
@@ -1176,7 +1176,7 @@ fn write_smiles_output_with_random_stream<'record>(
             }
         }
     }
-    if params.canonical && !params.do_isomeric_smiles {
+    if params.canonical && !params.isomeric_smiles {
         prepare_canonical_nonisomeric_stereo_fallback(
             &mut topology,
             stereochem_done_marker_is_computed,
@@ -1279,7 +1279,7 @@ fn write_smiles_output_with_random_stream<'record>(
         // optional fragment kekulization and before canonicalizeFragment.
         // The whole writer reaches the same shared source stage here; ordinary
         // SMILES has already removed stereo groups, so this is a no-op there.
-        let stereo_group_references = if params.canonical && params.do_isomeric_smiles {
+        let stereo_group_references = if params.canonical && params.isomeric_smiles {
             canonicalize_enhanced_stereo(&mut topology, &ranks)?
         } else {
             BTreeMap::new()
@@ -1325,7 +1325,7 @@ fn write_smiles_output_with_random_stream<'record>(
             &mut topology,
             &valence,
             Some(&rings),
-            params.do_isomeric_smiles,
+            params.isomeric_smiles,
             start,
             &ring_closures,
             &atom_traversal_bond_order,
@@ -1409,7 +1409,7 @@ fn prepare_writer_stereochemistry(
             parse_ring_stereo_atoms(encoded, topology.atoms.len())?;
         }
     }
-    if !params.do_isomeric_smiles {
+    if !params.isomeric_smiles {
         return Ok(());
     }
 
@@ -3491,7 +3491,7 @@ pub fn canonicalize_fragment_from_bond_mask_source(
     stack: &mut Vec<MolStackElem>,
     bonds_in_play: Option<&[bool]>,
     bond_symbols: Option<DfsBondSymbols<'_>>,
-    do_isomeric_smiles: bool,
+    isomeric_smiles: bool,
     random_stream: Option<&mut cosmolkit_core::RdkitRandomGenerator<'_>>,
     do_chiral_inversions: bool,
     groups: &BTreeMap<usize, usize>,
@@ -3559,7 +3559,7 @@ pub fn canonicalize_fragment_from_bond_mask_source(
         Some(&atoms_in_play),
         bonds_in_play,
         bond_symbols,
-        do_isomeric_smiles,
+        isomeric_smiles,
         random_stream,
         do_chiral_inversions,
         groups,
@@ -3583,7 +3583,7 @@ pub fn canonicalize_fragment_source(
     atoms_in_play: Option<&[bool]>,
     bonds_in_play: Option<&[bool]>,
     bond_symbols: Option<DfsBondSymbols<'_>>,
-    do_isomeric_smiles: bool,
+    isomeric_smiles: bool,
     random_stream: Option<&mut cosmolkit_core::RdkitRandomGenerator<'_>>,
     do_chiral_inversions: bool,
     stereo_group_references: &BTreeMap<usize, usize>,
@@ -3600,7 +3600,7 @@ pub fn canonicalize_fragment_source(
         atoms_in_play,
         bonds_in_play,
         bond_symbols,
-        do_isomeric_smiles,
+        isomeric_smiles,
         random_stream,
         do_chiral_inversions,
         stereo_group_references,
@@ -3621,7 +3621,7 @@ fn canonicalize_fragment_impl(
     atoms_in_play: Option<&[bool]>,
     bonds_in_play: Option<&[bool]>,
     bond_symbols: Option<DfsBondSymbols<'_>>,
-    do_isomeric_smiles: bool,
+    isomeric_smiles: bool,
     random_stream: Option<&mut cosmolkit_core::RdkitRandomGenerator<'_>>,
     do_chiral_inversions: bool,
     stereo_group_references: &BTreeMap<usize, usize>,
@@ -3968,7 +3968,7 @@ fn canonicalize_fragment_impl(
         &opened,
         atoms_in_play,
         bonds_in_play,
-        do_isomeric_smiles,
+        isomeric_smiles,
         do_chiral_inversions,
         stereo_group_references,
         source_queries,
@@ -4001,7 +4001,7 @@ fn canonicalize_source_stack(
     opened: &[bool],
     atoms_in_play: Option<&[bool]>,
     bonds_in_play: Option<&[bool]>,
-    do_isomeric_smiles: bool,
+    isomeric_smiles: bool,
     do_chiral_inversions: bool,
     stereo_group_references: &BTreeMap<usize, usize>,
     source_queries: Option<cosmolkit_model::QueryStateRef<'_>>,
@@ -4221,7 +4221,7 @@ fn canonicalize_source_stack(
     let m = topology.bonds.len();
     let mut swaps = vec![false; n];
     let mut permutations = vec![0i32; n];
-    if do_isomeric_smiles {
+    if isomeric_smiles {
         for i in 0..n {
             if atoms_in_play.is_some_and(|mask| !mask[i])
                 || topology.atoms[i].chiral_tag() == ChiralTag::Unspecified
@@ -4391,7 +4391,7 @@ fn canonicalize_source_stack(
         &mut atom_counts,
         stack,
     );
-    if do_isomeric_smiles {
+    if isomeric_smiles {
         let mut adjusted = vec![false; n];
         for item in stack {
             let MolStackElem::Atom(i) = *item else {
@@ -4518,7 +4518,7 @@ fn compute_chiral_adjustments(
     topology: &mut TopologyBlock,
     valence: &ValenceAssignment,
     rings: Option<&cosmolkit_core::RingInfo>,
-    do_isomeric_smiles: bool,
+    isomeric_smiles: bool,
     _start_atom: usize,
     closures: &[Vec<BondId>],
     orders: &[Vec<BondId>],
@@ -4538,7 +4538,7 @@ fn compute_chiral_adjustments(
         opened,
         atoms_in_play,
         bonds_in_play,
-        do_isomeric_smiles,
+        isomeric_smiles,
         true,
         groups,
         None,
@@ -4837,7 +4837,7 @@ fn atom_text(
         .map(PropertyText::as_bytes)
         .unwrap_or_else(|| atom.element().symbol().as_bytes());
     let mut symbol = raw_symbol.to_vec();
-    if !params.do_kekule
+    if !params.kekule
         && atom.is_aromatic()
         && raw_symbol.first().is_some_and(u8::is_ascii_uppercase)
         && matches!(
@@ -4857,7 +4857,7 @@ fn atom_text(
     // RDKit❗✔️:   }
     // END RDKIT CPP FUNCTION GetAtomSmiles chirality selection
     let mut chirality = String::new();
-    if params.do_isomeric_smiles && atom.prop("_brokenChirality").is_none() {
+    if params.isomeric_smiles && atom.prop("_brokenChirality").is_none() {
         let base_chiral_tag = chiral_adjustment
             .chiral_tag_override
             .unwrap_or(atom.chiral_tag());
@@ -4962,7 +4962,7 @@ fn atom_text(
             true
         } else if atom.formal_charge() != 0 {
             true
-        } else if params.do_isomeric_smiles && (atom.isotope().is_some() || !chirality.is_empty()) {
+        } else if params.isomeric_smiles && (atom.isotope().is_some() || !chirality.is_empty()) {
             true
         } else if atom.atom_map().is_some() {
             true
@@ -5012,7 +5012,7 @@ fn atom_text(
     }
 
     let mut output = PropertyText::from("[");
-    if params.do_isomeric_smiles {
+    if params.isomeric_smiles {
         if let Some(isotope) = atom.isotope() {
             output.extend_bytes((&isotope.to_string()).as_ref());
         }
@@ -5169,7 +5169,7 @@ fn bond_text(
     // RDKit❗✔️:   }
     // END RDKIT CPP FUNCTION GetBondSmiles direction selection
     let other = other_atom(bond, atom_to_left)?;
-    let aromatic_context = !params.do_kekule
+    let aromatic_context = !params.kekule
         && matches!(
             bond.order(),
             BondOrder::Single | BondOrder::Double | BondOrder::Aromatic
@@ -5185,12 +5185,12 @@ fn bond_text(
             if direction_is_specified {
                 Ok(match direction {
                     BondDirection::EndDownRight
-                        if params.all_bonds_explicit || params.do_isomeric_smiles =>
+                        if params.all_bonds_explicit || params.isomeric_smiles =>
                     {
                         "\\"
                     }
                     BondDirection::EndUpRight
-                        if params.all_bonds_explicit || params.do_isomeric_smiles =>
+                        if params.all_bonds_explicit || params.isomeric_smiles =>
                     {
                         "/"
                     }
@@ -5216,12 +5216,12 @@ fn bond_text(
             if direction_is_specified {
                 Ok(match direction {
                     BondDirection::EndDownRight
-                        if params.all_bonds_explicit || params.do_isomeric_smiles =>
+                        if params.all_bonds_explicit || params.isomeric_smiles =>
                     {
                         "\\"
                     }
                     BondDirection::EndUpRight
-                        if params.all_bonds_explicit || params.do_isomeric_smiles =>
+                        if params.all_bonds_explicit || params.isomeric_smiles =>
                     {
                         "/"
                     }
@@ -6366,7 +6366,7 @@ mod tests {
             record.topology.atoms[1].clear_prop(key);
         }
         let params = SmilesWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             canonical: true,
             ..Default::default()
         };
@@ -6419,8 +6419,8 @@ mod tests {
 
     fn s33_standard_params(isomeric: bool) -> SmilesWriteParams {
         SmilesWriteParams {
-            do_isomeric_smiles: isomeric,
-            do_kekule: false,
+            isomeric_smiles: isomeric,
+            kekule: false,
             canonical: true,
             clean_stereo: true,
             rooted_at_atom: None,
@@ -8176,7 +8176,7 @@ pub fn canonicalize_query_fragment_source(
     stack: &mut Vec<MolStackElem>,
     atoms_in_play: Option<&[bool]>,
     bonds_in_play: Option<&[bool]>,
-    do_isomeric_smiles: bool,
+    isomeric_smiles: bool,
 ) -> Result<(), SmilesParseError> {
     // Source cache update already ran on every actual carrier before this
     // boundary, including non-element identities. A failed table lookup never
@@ -8244,7 +8244,7 @@ pub fn canonicalize_query_fragment_source(
         atoms_in_play,
         bonds_in_play,
         None,
-        do_isomeric_smiles,
+        isomeric_smiles,
         None,
         true,
         &BTreeMap::new(),

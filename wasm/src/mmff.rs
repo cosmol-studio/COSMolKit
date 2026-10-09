@@ -64,23 +64,23 @@ impl Molecule {
             .with_mmff_optimized_with_params(params)
             .map(|inner| MmffOptimizeMoleculeResult { inner })
     }
-    pub fn with_mmff_optimized_confs(
+    pub fn with_mmff_optimized_conformers(
         &self,
     ) -> Result<MmffOptimizeMoleculeConfsResult, ck::OperationError> {
         // COSMolKit❗✔️: self.inner.with_mmff_optimized_confs()
         self.inner
             .borrow()
-            .with_mmff_optimized_confs()
+            .with_mmff_optimized_conformers()
             .map(|inner| MmffOptimizeMoleculeConfsResult { inner })
     }
-    pub fn with_mmff_optimized_confs_with_params(
+    pub fn with_mmff_optimized_conformers_with_params(
         &self,
         params: &ck::MmffConformerOptimizationParams,
     ) -> Result<MmffOptimizeMoleculeConfsResult, ck::OperationError> {
         // COSMolKit❗✔️: self.inner.with_mmff_optimized_confs_with_params(params)
         self.inner
             .borrow()
-            .with_mmff_optimized_confs_with_params(params)
+            .with_mmff_optimized_conformers_with_params(params)
             .map(|inner| MmffOptimizeMoleculeConfsResult { inner })
     }
 }
@@ -134,8 +134,8 @@ $$$$
                 max_iterations: 2,
                 ..Default::default()
             };
-            let a = m.with_mmff_optimized_confs_with_params(&p).unwrap();
-            let b = core.with_mmff_optimized_confs_with_params(&p).unwrap();
+            let a = m.with_mmff_optimized_conformers_with_params(&p).unwrap();
+            let b = core.with_mmff_optimized_conformers_with_params(&p).unwrap();
             assert_eq!(a.conformer_results(), b.conformer_results());
             assert_eq!(*a.molecule().inner.borrow(), *b.molecule());
         }
@@ -143,8 +143,8 @@ $$$$
         let b = core.with_mmff_optimized().unwrap();
         assert_eq!(a.status_code(), b.status_code());
         assert_eq!(*a.molecule().inner.borrow(), *b.molecule());
-        let a = m.with_mmff_optimized_confs().unwrap();
-        let b = core.with_mmff_optimized_confs().unwrap();
+        let a = m.with_mmff_optimized_conformers().unwrap();
+        let b = core.with_mmff_optimized_conformers().unwrap();
         assert_eq!(a.conformer_results(), b.conformer_results());
         assert_eq!(*m.inner.borrow(), core);
         let dummy = Molecule::from_smiles("*").unwrap();
@@ -152,7 +152,7 @@ $$$$
         assert_eq!(dummy.with_mmff_optimized().unwrap().status_code(), -1);
         assert!(
             dummy
-                .with_mmff_optimized_confs()
+                .with_mmff_optimized_conformers()
                 .unwrap()
                 .conformer_results()
                 .is_empty()
@@ -187,8 +187,8 @@ $$$$
                 max_iterations: 2,
                 ..Default::default()
             };
-            let a = m.with_mmff_optimized_confs_with_params(&p).unwrap();
-            let b = core.with_mmff_optimized_confs_with_params(&p).unwrap();
+            let a = m.with_mmff_optimized_conformers_with_params(&p).unwrap();
+            let b = core.with_mmff_optimized_conformers_with_params(&p).unwrap();
             assert_eq!(a.conformer_results(), b.conformer_results());
             assert_eq!(a.conformer_results().len(), 2);
             assert_eq!(*a.molecule().inner.borrow(), *b.molecule());

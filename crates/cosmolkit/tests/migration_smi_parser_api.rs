@@ -12,12 +12,12 @@ fn default_reader_sanitizes_kekule_benzene_without_explicit_hydrogens() {
     assert!(molecule.atoms().iter().all(|atom| atom.is_aromatic()));
     assert!(molecule.bonds().iter().all(|bond| bond.is_aromatic()));
     for sanitize in [false, true] {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             let molecule = Molecule::from_smiles_with_params(
                 "C1=CC=CC=C1",
                 &SmilesParseParams {
                     sanitize,
-                    remove_hydrogens,
+                    remove_hs,
                     ..Default::default()
                 },
             )
@@ -62,7 +62,7 @@ fn public_parameters_preserve_every_pinned_default() {
     assert!(params.allow_cxsmiles);
     assert!(params.strict_cxsmiles);
     assert!(params.parse_name);
-    assert!(params.remove_hydrogens);
+    assert!(params.remove_hs);
     assert!(!params.skip_cleanup);
     assert!(!params.debug_parse);
     assert!(params.replacements.is_empty());
@@ -76,7 +76,7 @@ fn public_zero_isotope_projects_to_absence_without_losing_nonzero_isotopes() {
                 input,
                 &SmilesParseParams {
                     sanitize,
-                    remove_hydrogens: false,
+                    remove_hs: false,
                     ..Default::default()
                 },
             )
@@ -120,14 +120,14 @@ fn public_cx_double_bond_stereo_finishes_after_sanitize_or_remove_hydrogens() {
     ];
     for (input, raw_stereo, final_stereo, final_directions) in cases {
         for sanitize in [false, true] {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 let params = SmilesParseParams {
                     sanitize,
-                    remove_hydrogens,
+                    remove_hs,
                     ..Default::default()
                 };
                 let molecule = Molecule::from_smiles_with_params(input, &params).unwrap();
-                let finalized = sanitize || remove_hydrogens;
+                let finalized = sanitize || remove_hs;
                 assert_eq!(
                     molecule.properties().prop("_needsDetectBondStereo"),
                     if finalized {
@@ -193,7 +193,7 @@ fn parameterized_constructor_applies_replacements_and_post_parse_policy() {
         "{W}",
         &SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             replacements: BTreeMap::from([("{W}".to_owned(), "[H]O[H]".to_owned())]),
             ..Default::default()
         },
@@ -212,7 +212,7 @@ fn public_constructor_preserves_cx_name_stereo_and_properties() {
         "F[C@](Cl)(Br)I |$fluoro;center;chloro;bromo;iodo$| sample name",
         &SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         },
     )

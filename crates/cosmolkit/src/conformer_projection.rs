@@ -328,7 +328,7 @@ mod tests {
         assert_eq!(first.conformers.len(), 1);
         molecule.coordinates.conformers_3d = first.conformers;
         let before = molecule.coordinates.clone();
-        params.clear_confs = false;
+        params.clear_conformers = false;
         let second = cosmolkit_conformer::generate_conformers(
             &molecule.topology,
             &molecule.coordinates,

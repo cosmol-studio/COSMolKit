@@ -2,8 +2,8 @@ use cosmolkit::{Molecule, PatternFingerprintParams};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let molecule = Molecule::from_smiles("c1ccccc1O")?;
-    let ordinary = molecule.pattern_fingerprint()?;
-    let tautomeric = molecule.pattern_fingerprint_with_params(&PatternFingerprintParams {
+    let ordinary = molecule.fingerprint_pattern()?;
+    let tautomeric = molecule.fingerprint_pattern_with_params(&PatternFingerprintParams {
         n_bits: 2048,
         tautomeric: true,
     })?;
@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (index, input) in inputs.iter().enumerate() {
         println!(
             "input {index}: {:?}",
-            input.pattern_fingerprint()?.on_bits()
+            input.fingerprint_pattern()?.on_bits()
         );
     }
 

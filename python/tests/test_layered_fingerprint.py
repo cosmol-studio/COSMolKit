@@ -21,12 +21,12 @@ def fingerprint_key(value) -> tuple[int, list[int]]:
 def every_fingerprint_family_key(molecule, torsion_generator):
     return {
         "morgan": fingerprint_key(molecule.fingerprint_morgan()),
-        "maccs": fingerprint_key(molecule.maccs_fingerprint()),
+        "maccs": fingerprint_key(molecule.fingerprint_maccs()),
         "avalon": fingerprint_key(molecule.avalon_fingerprint()),
-        "rdk": fingerprint_key(molecule.topological_fingerprint()),
+        "rdk": fingerprint_key(molecule.fingerprint_topological()),
         "atom_pair": fingerprint_key(molecule.fingerprint_atom_pair()),
         "topological_torsion": fingerprint_key(
-            torsion_generator.get_fingerprint(molecule)
+            molecule.fingerprint_topological_torsion_with_generator(torsion_generator)
         ),
         "layered": fingerprint_key(molecule.fingerprint_layered()),
     }
@@ -160,7 +160,7 @@ def test_layered_batch_thread_counts_repeats_errors_and_concurrency_are_stable()
     with pytest.raises(ValueError, match="n_jobs"):
         batch.fingerprint_layered_list(n_jobs=0)
     with pytest.raises(
-        cosmolkit.BatchValidationError, match="batch.layered_fingerprint"
+        cosmolkit.BatchValidationError, match="batch.fingerprint_layered"
     ):
         batch.fingerprint_layered_list(from_atoms=[99], n_jobs=2, progress_bar=False)
 
@@ -193,7 +193,7 @@ def test_layered_batch_thread_counts_repeats_errors_and_concurrency_are_stable()
 
 def test_layered_calls_compose_with_every_fingerprint_family_without_crosstalk():
     molecule = cosmolkit.Molecule.from_smiles("CC[C@H](F)Cl.c1ccncc1O")
-    torsion_generator = cosmolkit.get_topological_torsion_generator()
+    torsion_generator = cosmolkit.TopologicalTorsionFingerprintGenerator()
     before_smiles = molecule.to_smiles()
 
     family_baseline = every_fingerprint_family_key(molecule, torsion_generator)

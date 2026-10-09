@@ -186,7 +186,7 @@ fn manual_invalid_rows_nonfinite_and_id_overflow_are_atomic() {
 fn canonical_reports_append_ids_copy_params_and_commit_inplace_after_validation() {
     let source = fixture();
     let mut params = seeded();
-    params.clear_confs = false;
+    params.clear_conformers = false;
     let value = source
         .with_3d_conformer_result_with_params(&params)
         .unwrap();

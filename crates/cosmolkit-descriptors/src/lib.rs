@@ -137,7 +137,7 @@ pub struct DescriptorInput<'a> {
 /// RINGS-NARROW1-112 frozen detached ring-read boundary: shared test-only
 /// fixture preparation and the frozen 18-case literal table. Fixture setup
 /// happens OUTSIDE every counted descriptor invocation, through the existing
-/// real owners only (detached parser with `remove_hydrogens=false`, the
+/// real owners only (detached parser with `remove_hs=false`, the
 /// real RemoveHs owner with `update_explicit_count=true, sanitize=true`
 /// for the remove policy, `sanitize_topology` with ALL defaults for the
 /// keep policy, the existing non-strict RdkitLike assignment owner for the
@@ -209,14 +209,14 @@ mod ring_read_boundary_tests {
     /// non-strict RdkitLike assignment below also covers the empty-source
     /// RemoveHs branch that carries no final assignment — through the same
     /// real owner, never a fake default row.
-    fn ring_read_fixture(smiles: &str, remove_hydrogens: bool) -> RingReadFixture {
+    fn ring_read_fixture(smiles: &str, remove_hs: bool) -> RingReadFixture {
         let params = cosmolkit_smiles::SmilesParseParams {
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         let record =
             cosmolkit_smiles::parse_smiles(smiles, &params).expect("parse frozen ring SMILES");
-        let (topology, coordinates, properties) = if remove_hydrogens {
+        let (topology, coordinates, properties) = if remove_hs {
             let result = cosmolkit_core::remove_hydrogens_with_params(
                 record.topology,
                 record.coordinates,
@@ -433,22 +433,18 @@ mod ring_read_boundary_tests {
         // (narrow delegate + existing prepared) x 2 repeats = 144 calls.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 // Primary initialization prerequisite (unchanged site).
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 // Real H/deuterium row identity — never a bare count proof.
                 let hydrogen_rows: Vec<_> = fixture
@@ -457,7 +453,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -480,7 +476,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -503,8 +499,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -540,7 +535,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -676,22 +671,18 @@ mod ring_read_boundary_tests {
         // (narrow delegate + existing prepared) x 2 repeats = 144 calls.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 // Primary initialization prerequisite (unchanged site).
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -699,7 +690,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -722,7 +713,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -748,8 +739,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -785,7 +775,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -929,21 +919,17 @@ mod ring_read_boundary_tests {
         // verify against the SAME call.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -951,7 +937,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -972,7 +958,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -998,8 +984,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -1034,7 +1019,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -1173,21 +1158,17 @@ mod ring_read_boundary_tests {
         // verify against the SAME call.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -1195,7 +1176,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -1216,7 +1197,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -1242,8 +1223,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -1278,7 +1258,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -1417,21 +1397,17 @@ mod ring_read_boundary_tests {
         // verify against the SAME call.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -1439,7 +1415,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -1460,7 +1436,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -1486,8 +1462,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -1522,7 +1497,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -1659,21 +1634,17 @@ mod ring_read_boundary_tests {
         // baseline, full-value verify against the SAME call.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -1681,7 +1652,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -1702,7 +1673,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -1728,8 +1699,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -1765,7 +1735,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -1899,21 +1869,17 @@ mod ring_read_boundary_tests {
         // repeats = 144 calls. Corrected pattern throughout.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -1921,7 +1887,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -1942,7 +1908,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -1968,8 +1934,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2005,7 +1970,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -2138,21 +2103,17 @@ mod ring_read_boundary_tests {
         // repeats = 144 calls. Corrected pattern throughout.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -2160,7 +2121,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -2181,7 +2142,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2207,8 +2168,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2244,7 +2204,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -2386,21 +2346,17 @@ mod ring_read_boundary_tests {
         // repeats = 144 calls. Corrected pattern throughout.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -2408,7 +2364,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -2429,7 +2385,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2455,8 +2411,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2492,7 +2447,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -2634,21 +2589,17 @@ mod ring_read_boundary_tests {
         // repeats = 144 calls. Corrected pattern throughout.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -2656,7 +2607,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -2677,7 +2628,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2703,8 +2654,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2740,7 +2690,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -2882,21 +2832,17 @@ mod ring_read_boundary_tests {
         // repeats = 144 calls. Corrected pattern throughout.
         let mut calls = 0usize;
         for (smiles, rows_keep, rows_remove, literals) in RING_READ_CASES.iter() {
-            for remove_hydrogens in [false, true] {
-                let fixture = ring_read_fixture(smiles, remove_hydrogens);
-                let expected_rows = if remove_hydrogens {
-                    *rows_remove
-                } else {
-                    *rows_keep
-                };
+            for remove_hs in [false, true] {
+                let fixture = ring_read_fixture(smiles, remove_hs);
+                let expected_rows = if remove_hs { *rows_remove } else { *rows_keep };
                 assert_eq!(
                     fixture.topology.atoms.len(),
                     expected_rows,
-                    "atom-row census ({smiles}, remove={remove_hydrogens})"
+                    "atom-row census ({smiles}, remove={remove_hs})"
                 );
                 assert!(
                     fixture.ring_info.is_symm_sssr(),
-                    "initialized symmetrized rows ({smiles}, remove={remove_hydrogens})"
+                    "initialized symmetrized rows ({smiles}, remove={remove_hs})"
                 );
                 let hydrogen_rows: Vec<_> = fixture
                     .topology
@@ -2904,7 +2850,7 @@ mod ring_read_boundary_tests {
                     .iter()
                     .filter(|atom| atom.element() == Element::H)
                     .collect();
-                match (*smiles, remove_hydrogens) {
+                match (*smiles, remove_hs) {
                     ("[H]C1CCCCC1", false) => {
                         assert_eq!(hydrogen_rows.len(), 1, "kept neighbor H row");
                         assert_eq!(hydrogen_rows[0].isotope(), None, "protium identity");
@@ -2925,7 +2871,7 @@ mod ring_read_boundary_tests {
                 let properties_snapshot = fixture.properties.clone();
                 let assignment_snapshot = fixture.assignment.clone();
                 for repeat in 0..2 {
-                    let context = format!("{smiles}, remove={remove_hydrogens}, narrow, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, narrow, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2951,8 +2897,7 @@ mod ring_read_boundary_tests {
                     );
                     calls += 1;
 
-                    let context =
-                        format!("{smiles}, remove={remove_hydrogens}, prepared, {repeat}");
+                    let context = format!("{smiles}, remove={remove_hs}, prepared, {repeat}");
                     assert_membership_dimensions(&fixture.topology, &fixture.ring_info, &context);
                     let checkpoint = capture_call_checkpoint(
                         &fixture.topology,
@@ -2988,7 +2933,7 @@ mod ring_read_boundary_tests {
                         && fixture.coordinates == coordinates_snapshot
                         && fixture.properties == properties_snapshot
                         && fixture.assignment == assignment_snapshot,
-                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hydrogens})"
+                    "supplementary fixture-wide baselines ({smiles}, remove={remove_hs})"
                 );
             }
         }
@@ -3658,7 +3603,7 @@ mod descriptor_heteroatoms_domain_tests {
         label: &str,
         smiles: &str,
         topology: &TopologyBlock,
-        remove_hydrogens: bool,
+        remove_hs: bool,
     ) {
         let index = PREREQS
             .iter()
@@ -3671,7 +3616,7 @@ mod descriptor_heteroatoms_domain_tests {
         // its rows under both policies (DQ frozen rows table: [H][H] 2/2,
         // [2H]O[2H] 3/3, ammonia 4/1).
         let all_hydrogen = atomic_numbers.iter().all(|&z| z == 1);
-        let expected_numbers: Vec<u8> = if remove_hydrogens {
+        let expected_numbers: Vec<u8> = if remove_hs {
             atomic_numbers
                 .iter()
                 .zip(isotopes.iter())
@@ -3690,16 +3635,14 @@ mod descriptor_heteroatoms_domain_tests {
         let kept: Vec<(u8, Option<u16>)> = atomic_numbers
             .iter()
             .zip(isotopes.iter())
-            .filter(|(z, isotope)| {
-                !remove_hydrogens || **z != 1 || isotope.is_some() || all_hydrogen
-            })
+            .filter(|(z, isotope)| !remove_hs || **z != 1 || isotope.is_some() || all_hydrogen)
             .map(|(&z, &isotope)| (z, isotope))
             .collect();
         for (row, (expected_z, expected_isotope)) in topology.atoms.iter().zip(kept.iter()) {
             assert_eq!(row.atomic_number(), *expected_z, "{label}: atomic number");
             assert_eq!(row.isotope(), *expected_isotope, "{label}: isotope");
         }
-        if remove_hydrogens && smiles == "[H]N([H])[H]" {
+        if remove_hs && smiles == "[H]N([H])[H]" {
             assert_eq!(topology.atoms[0].atomic_number(), 7, "{label}: N kept");
             assert_eq!(topology.atoms[0].explicit_hydrogens(), 3, "{label}: N H=3");
         } else {
@@ -3723,7 +3666,7 @@ mod descriptor_heteroatoms_domain_tests {
             smiles,
             &cosmolkit_smiles::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..cosmolkit_smiles::SmilesParseParams::default()
             },
         )
@@ -3746,7 +3689,7 @@ mod descriptor_heteroatoms_domain_tests {
         // actual calls to the topology-only owner with frozen literals.
         let mut calls = 0usize;
         for (smiles, expected) in CASES {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 // remove-H policy changes the CONSTRUCTOR preparation
                 // (real RemoveHs) exactly like the ring fixtures; the
                 // literal count is IDENTICAL under both policies.
@@ -3754,12 +3697,12 @@ mod descriptor_heteroatoms_domain_tests {
                     smiles,
                     &cosmolkit_smiles::SmilesParseParams {
                         sanitize: false,
-                        remove_hydrogens: false,
+                        remove_hs: false,
                         ..cosmolkit_smiles::SmilesParseParams::default()
                     },
                 )
                 .expect("frozen case parses");
-                let topology = if remove_hydrogens {
+                let topology = if remove_hs {
                     let result = cosmolkit_core::remove_hydrogens_with_params(
                         parsed.topology,
                         parsed.coordinates,
@@ -3789,16 +3732,11 @@ mod descriptor_heteroatoms_domain_tests {
                         topology.clone()
                     };
                     for _repeat in 0..2 {
-                        let label = format!("{smiles}/rh={remove_hydrogens}/s={sanitized}");
+                        let label = format!("{smiles}/rh={remove_hs}/s={sanitized}");
                         // Constructor/element/H/isotope prerequisite BEFORE
                         // every invocation (frozen input identities, never
                         // SUT-derived).
-                        assert_input_prerequisites(
-                            &label,
-                            smiles,
-                            &final_topology,
-                            remove_hydrogens,
-                        );
+                        assert_input_prerequisites(&label, smiles, &final_topology, remove_hs);
                         // Per-call fresh topology baseline.
                         let baseline = final_topology.clone();
                         let helper_before = VALENCE_HELPER_ENTRIES.with(std::cell::Cell::get);
@@ -3859,7 +3797,7 @@ mod descriptor_heteroatoms_domain_tests {
             "C(C)(C)(C)(C)O",
             &cosmolkit_smiles::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..cosmolkit_smiles::SmilesParseParams::default()
             },
         )
@@ -3906,17 +3844,17 @@ mod descriptor_hbd_narrow_tests {
         // existing prepared) x 2 repeats = 104 real HBD calls.
         let mut calls = 0usize;
         for (smiles, expected) in CASES {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 let parsed = cosmolkit_smiles::parse_smiles(
                     smiles,
                     &cosmolkit_smiles::SmilesParseParams {
                         sanitize: false,
-                        remove_hydrogens: false,
+                        remove_hs: false,
                         ..cosmolkit_smiles::SmilesParseParams::default()
                     },
                 )
                 .expect("frozen case parses");
-                let topology = if remove_hydrogens {
+                let topology = if remove_hs {
                     let result = cosmolkit_core::remove_hydrogens_with_params(
                         parsed.topology,
                         parsed.coordinates,
@@ -3948,7 +3886,7 @@ mod descriptor_hbd_narrow_tests {
                 .expect("frozen case assignment");
                 for form in ["narrow", "prepared"] {
                     for repeat in 0..2 {
-                        let label = format!("{smiles}/rh={remove_hydrogens}/{form}#{repeat}");
+                        let label = format!("{smiles}/rh={remove_hs}/{form}#{repeat}");
                         // Fresh per-call input snapshots.
                         let topology_before = final_topology.clone();
                         let assignment_before = assignment.clone();
@@ -7192,7 +7130,7 @@ mod tests {
         // Default = 1, StrictLinkages = 13 (base `!$([D1&!#1])` does NOT
         // exclude degree-1 hydrogens: 10 C-H + 3 C-C).
         let mut keep_h = cosmolkit_smiles::SmilesParseParams::default();
-        keep_h.remove_hydrogens = false;
+        keep_h.remove_hs = false;
         let explicit_h_butane = cosmolkit_smiles::parse_smiles(
             "[H]C([H])([H])C([H])([H])C([H])([H])C([H])([H])[H]",
             &keep_h,
@@ -7212,7 +7150,7 @@ mod tests {
         // rejects arbitrary unknown-bit patterns such as ALL^KEKULIZE).
         let mut no_sanitize = cosmolkit_smiles::SmilesParseParams::default();
         no_sanitize.sanitize = false;
-        no_sanitize.remove_hydrogens = false;
+        no_sanitize.remove_hs = false;
         let raw = cosmolkit_smiles::parse_smiles("c1ccccc1c1ccc(CCC)cc1", &no_sanitize)
             .expect("parse unsanitized biphenyl fixture")
             .topology;
@@ -7597,7 +7535,7 @@ mod tests {
         // (atomic number 0); atomic-number0 satisfies getAtomicNum() != 6,
         // so the row counts. Raw parser rows with remove_hydrogens:false.
         let mut keep_h = cosmolkit_smiles::SmilesParseParams::default();
-        keep_h.remove_hydrogens = false;
+        keep_h.remove_hs = false;
         let dummy_ring = cosmolkit_smiles::parse_smiles("*1CCCC1", &keep_h)
             .expect("parse real dummy-member ring fixture")
             .topology;
@@ -18472,7 +18410,7 @@ mod tests {
     ];
 
     /// DQ fixture setup through the EXISTING detached owners: parse the
-    /// ORIGINAL frozen SMILES; for remove_hydrogens=true run the core
+    /// ORIGINAL frozen SMILES; for remove_hs=true run the core
     /// `remove_hydrogens_with_params` with `update_explicit_count=true`,
     /// `sanitize=true` on the parsed blocks; otherwise run the core
     /// `sanitize_topology` with default parameters. The final assignment is
@@ -18480,17 +18418,17 @@ mod tests {
     /// never recompute.
     fn dq_fixture(
         smiles: &str,
-        remove_hydrogens: bool,
+        remove_hs: bool,
     ) -> (
         cosmolkit_model::TopologyBlock,
         cosmolkit_core::ValenceAssignment,
     ) {
         let params = cosmolkit_smiles::SmilesParseParams {
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         let record = cosmolkit_smiles::parse_smiles(smiles, &params).expect("parse frozen SMILES");
-        if remove_hydrogens {
+        if remove_hs {
             let result = cosmolkit_core::remove_hydrogens_with_params(
                 record.topology,
                 record.coordinates,
@@ -18527,17 +18465,13 @@ mod tests {
         // asserts a ZERO valence-helper delta and unchanged borrowed inputs.
         let mut calls = 0usize;
         for (smiles, rows_false, rows_true, _, total, _, _, _) in PUBLIC_QUERY_CASES {
-            for remove_hydrogens in [false, true] {
-                let expected_rows = if remove_hydrogens {
-                    rows_true
-                } else {
-                    rows_false
-                };
-                let (topology, assignment) = dq_fixture(smiles, remove_hydrogens);
+            for remove_hs in [false, true] {
+                let expected_rows = if remove_hs { rows_true } else { rows_false };
+                let (topology, assignment) = dq_fixture(smiles, remove_hs);
                 assert_eq!(
                     topology.atoms.len(),
                     expected_rows,
-                    "{smiles} policy={remove_hydrogens} row count"
+                    "{smiles} policy={remove_hs} row count"
                 );
                 let topology_before = topology.clone();
                 let assignment_before = assignment.clone();
@@ -18547,14 +18481,14 @@ mod tests {
                 assert_eq!(
                     VALENCE_HELPER_ENTRIES.with(|c| c.get()),
                     helper_before,
-                    "{smiles} policy={remove_hydrogens}: adapter reassigns no valence"
+                    "{smiles} policy={remove_hs}: adapter reassigns no valence"
                 );
                 assert_eq!(topology, topology_before, "borrowed topology unchanged");
                 assert_eq!(
                     assignment, assignment_before,
                     "borrowed assignment unchanged"
                 );
-                assert_eq!(result, total, "{smiles} policy={remove_hydrogens}");
+                assert_eq!(result, total, "{smiles} policy={remove_hs}");
             }
         }
         assert_eq!(calls, 40, "exact 40-call census");
@@ -18618,17 +18552,13 @@ mod tests {
         // [NH4+]=4, [nH]1cccc1=1, C=O=0, [H]N([H])[H]=3 under BOTH policies.
         let mut calls = 0usize;
         for (smiles, rows_false, rows_true, _, _, _, hbd, _) in PUBLIC_QUERY_CASES {
-            for remove_hydrogens in [false, true] {
-                let expected_rows = if remove_hydrogens {
-                    rows_true
-                } else {
-                    rows_false
-                };
-                let (topology, assignment) = dq_fixture(smiles, remove_hydrogens);
+            for remove_hs in [false, true] {
+                let expected_rows = if remove_hs { rows_true } else { rows_false };
+                let (topology, assignment) = dq_fixture(smiles, remove_hs);
                 assert_eq!(
                     topology.atoms.len(),
                     expected_rows,
-                    "{smiles} policy={remove_hydrogens} row count"
+                    "{smiles} policy={remove_hs} row count"
                 );
                 let topology_before = topology.clone();
                 let assignment_before = assignment.clone();
@@ -18638,14 +18568,14 @@ mod tests {
                 assert_eq!(
                     VALENCE_HELPER_ENTRIES.with(|c| c.get()),
                     helper_before,
-                    "{smiles} policy={remove_hydrogens}: adapter reassigns no valence"
+                    "{smiles} policy={remove_hs}: adapter reassigns no valence"
                 );
                 assert_eq!(topology, topology_before, "borrowed topology unchanged");
                 assert_eq!(
                     assignment, assignment_before,
                     "borrowed assignment unchanged"
                 );
-                assert_eq!(result, hbd, "{smiles} policy={remove_hydrogens}");
+                assert_eq!(result, hbd, "{smiles} policy={remove_hs}");
             }
         }
         assert_eq!(calls, 40, "exact 40-call census");
@@ -18709,17 +18639,13 @@ mod tests {
         // (3/4), and CC#N yields 0x3fe0000000000000 (1/2).
         let mut calls = 0usize;
         for (smiles, rows_false, rows_true, _, _, _, _, csp3_bits) in PUBLIC_QUERY_CASES {
-            for remove_hydrogens in [false, true] {
-                let expected_rows = if remove_hydrogens {
-                    rows_true
-                } else {
-                    rows_false
-                };
-                let (topology, assignment) = dq_fixture(smiles, remove_hydrogens);
+            for remove_hs in [false, true] {
+                let expected_rows = if remove_hs { rows_true } else { rows_false };
+                let (topology, assignment) = dq_fixture(smiles, remove_hs);
                 assert_eq!(
                     topology.atoms.len(),
                     expected_rows,
-                    "{smiles} policy={remove_hydrogens} row count"
+                    "{smiles} policy={remove_hs} row count"
                 );
                 let topology_before = topology.clone();
                 let assignment_before = assignment.clone();
@@ -18729,7 +18655,7 @@ mod tests {
                 assert_eq!(
                     VALENCE_HELPER_ENTRIES.with(|c| c.get()),
                     helper_before,
-                    "{smiles} policy={remove_hydrogens}: adapter reassigns no valence"
+                    "{smiles} policy={remove_hs}: adapter reassigns no valence"
                 );
                 assert_eq!(topology, topology_before, "borrowed topology unchanged");
                 assert_eq!(
@@ -18739,7 +18665,7 @@ mod tests {
                 assert_eq!(
                     result.to_bits(),
                     csp3_bits,
-                    "{smiles} policy={remove_hydrogens} exact bits"
+                    "{smiles} policy={remove_hs} exact bits"
                 );
             }
         }

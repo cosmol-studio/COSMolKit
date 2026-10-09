@@ -437,7 +437,7 @@ impl ReactionWriteParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] canonical: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] do_isomeric_smiles: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] isomeric_smiles: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number | null")] rooted_at_atom: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] include_dative_bonds: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] include_cx: JsValue,
@@ -449,8 +449,8 @@ impl ReactionWriteParams {
         if !canonical.is_undefined() {
             inner.canonical = bool_value(&canonical, "canonical")?;
         }
-        if !do_isomeric_smiles.is_undefined() {
-            inner.do_isomeric_smiles = bool_value(&do_isomeric_smiles, "doIsomericSmiles")?;
+        if !isomeric_smiles.is_undefined() {
+            inner.isomeric_smiles = bool_value(&isomeric_smiles, "isomericSmiles")?;
         }
         if !rooted_at_atom.is_undefined() {
             inner.rooted_at_atom = if rooted_at_atom.is_null() {
@@ -483,9 +483,9 @@ impl ReactionWriteParams {
     pub fn canonical(&self) -> bool {
         self.inner.canonical()
     }
-    #[wasm_bindgen(getter,js_name=doIsomericSmiles)]
-    pub fn do_isomeric_smiles(&self) -> bool {
-        self.inner.do_isomeric_smiles()
+    #[wasm_bindgen(getter,js_name=isomericSmiles)]
+    pub fn isomeric_smiles(&self) -> bool {
+        self.inner.isomeric_smiles()
     }
     #[wasm_bindgen(getter,js_name=rootedAtAtom,unchecked_return_type="number | null")]
     pub fn rooted_at_atom(&self) -> JsValue {

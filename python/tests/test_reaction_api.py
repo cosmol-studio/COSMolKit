@@ -40,7 +40,7 @@ def test_sanitized_products_do_not_gain_nitrogen_stereo():
 
 def test_template_writer_clears_unpaired_directions():
     reaction = ck.Reaction.from_smirks("[C:1]>>[C:1]/C=C")
-    params = ck.ReactionWriteParams(do_isomeric_smiles=False)
+    params = ck.ReactionWriteParams(isomeric_smiles=False)
     for text in [reaction.to_smirks(), reaction.to_smirks_with_params(params),
                  reaction.to_cx_smirks(), reaction.to_cx_smirks_with_params(params)]:
         assert text == "[C:1]>>[C:1]C=C"
@@ -101,8 +101,8 @@ def test_reaction_parameter_defaults_and_coordinate_payloads():
     write = ck.ReactionWriteParams(cx_fields=ck.CxSmilesFields.NONE, rooted_at_atom=0, coordinate_selections=[two])
     assert write.cx_fields.bits() == 0 and write.rooted_at_atom == 0
     assert write.coordinate_selections[0].id == 7
-    with pytest.raises(AttributeError):
-        setattr(params, "sanitize", True)
+    params.sanitize = True
+    assert params.sanitize is True
     with pytest.raises(TypeError):
         _ = ck.ReactionSingleRunParams(coordinate_selection="Auto")  # pyright: ignore[reportArgumentType]
     assert ck.parse_smirks_with_params("{C}>>[N:1]", ck.ReactionParseParams(replacements={"{C}": "[C:1]"})).num_reactant_templates() == 1

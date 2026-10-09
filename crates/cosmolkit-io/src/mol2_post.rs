@@ -21,7 +21,7 @@ impl Mol2PostError {
 pub fn finish_mol2_record(
     mut record: Mol2Record,
     sanitize: bool,
-    remove_hydrogens: bool,
+    remove_hs: bool,
 ) -> Result<Mol2Record, Mol2PostError> {
     // RDKit❗❌:   // set chirality prior to sanitization since it happens from 3D and it's not
     // RDKit❗❌:   // possible anymore once the hydrogens are removed
@@ -113,7 +113,7 @@ pub fn finish_mol2_record(
         )
         .map_err(|e| Mol2PostError::stage("Cleanup", e))?
         .topology;
-        if remove_hydrogens {
+        if remove_hs {
             record.topology = cosmolkit_core::sanitize_topology(
                 &record.topology,
                 &SanitizeParams {

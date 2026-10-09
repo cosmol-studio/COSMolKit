@@ -6,10 +6,11 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_py
 
 pyo3::create_exception!(cosmolkit, MolecularIoError, PyValueError);
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct XyzWriteParams {
     pub(crate) inner: ck::XyzWriteParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl XyzWriteParams {
@@ -182,12 +183,14 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Mol2Type {
     Corina,
 }
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -212,18 +215,19 @@ impl From<ck::SdfFormat> for SdfFormat {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct Mol2ReadParams {
     pub(crate) inner: ck::Mol2ReadParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Mol2ReadParams {
     #[new]
-    #[pyo3(signature = (*, sanitize=true, remove_hydrogens=true, variant=Mol2Type::Corina, cleanup_substructures=true))]
+    #[pyo3(signature = (*, sanitize=true, remove_hs=true, variant=Mol2Type::Corina, cleanup_substructures=true))]
     fn new(
         sanitize: bool,
-        remove_hydrogens: bool,
+        remove_hs: bool,
         variant: Mol2Type,
         cleanup_substructures: bool,
     ) -> Self {
@@ -233,7 +237,7 @@ impl Mol2ReadParams {
         Self {
             inner: ck::Mol2ReadParams {
                 sanitize,
-                remove_hydrogens,
+                remove_hs,
                 variant,
                 cleanup_substructures,
             },
@@ -244,8 +248,8 @@ impl Mol2ReadParams {
         self.inner.sanitize
     }
     #[getter]
-    fn remove_hydrogens(&self) -> bool {
-        self.inner.remove_hydrogens
+    fn remove_hs(&self) -> bool {
+        self.inner.remove_hs
     }
     #[getter]
     fn variant(&self) -> Mol2Type {
@@ -259,7 +263,8 @@ impl Mol2ReadParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, eq)]
+#[derive(PartialEq)]
 pub(crate) struct MolCoordinateSelection {
     pub(crate) inner: ck::MolCoordinateSelection,
 }
@@ -311,10 +316,11 @@ impl MolCoordinateSelection {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct MolBlockWriteParams {
     pub(crate) inner: ck::MolBlockWriteParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl MolBlockWriteParams {

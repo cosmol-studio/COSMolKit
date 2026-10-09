@@ -1,11 +1,11 @@
 //! Detached stereochemistry and stereoisomer boundaries.
 
+mod chiral_centers;
 mod cip_graph;
 mod cip_labels;
 mod tetrahedral;
-pub use tetrahedral::{
-    StereoReadError, find_chiral_centers, perceive_stereochemistry, tetrahedral_stereo,
-};
+pub use chiral_centers::find_chiral_centers;
+pub use tetrahedral::{StereoReadError, perceive_stereochemistry, tetrahedral_stereo};
 
 pub use cip_graph::CipLabelerError;
 #[doc(hidden)]

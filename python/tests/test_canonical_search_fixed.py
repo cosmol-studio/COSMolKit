@@ -24,8 +24,8 @@ def test_flat_search_functions_and_query_factory_replace_the_domain_submodule():
 def test_parse_params_all_seven_defaults_are_original_source_defaults():
     p = ck.SmartsParseParams()
     assert (p.allow_cxsmiles,p.strict_cxsmiles,p.parse_name,p.merge_hs,p.skip_cleanup,p.debug_parse,p.replacements) == (True,True,True,False,False,False,{})
-    with pytest.raises(AttributeError):
-        p.merge_hs = True
+    p.merge_hs = True
+    assert p.merge_hs is True
 
 
 def test_parse_params_all_seven_explicit_fields_are_projected():
@@ -74,9 +74,9 @@ def test_parse_diagnostic_gap_is_typed_and_never_empty_query():
 
 def test_write_params_cover_every_field_and_out_of_range_is_structured():
     p = ck.SmartsWriteParams()
-    assert (p.include_atom_maps,p.do_isomeric_smiles,p.include_dative_bonds,p.rooted_at_atom) == (True,True,True,None)
-    p = ck.SmartsWriteParams(include_atom_maps=False,do_isomeric_smiles=False,include_dative_bonds=False,rooted_at_atom=9)
-    assert (p.include_atom_maps,p.do_isomeric_smiles,p.include_dative_bonds,p.rooted_at_atom) == (False,False,False,9)
+    assert (p.include_atom_maps,p.isomeric_smiles,p.include_dative_bonds,p.rooted_at_atom) == (True,True,True,None)
+    p = ck.SmartsWriteParams(include_atom_maps=False,isomeric_smiles=False,include_dative_bonds=False,rooted_at_atom=9)
+    assert (p.include_atom_maps,p.isomeric_smiles,p.include_dative_bonds,p.rooted_at_atom) == (False,False,False,9)
     with pytest.raises(ck.SmartsWriteError) as caught:
         ck.write_smarts(ck.parse_smarts('C'),p)
     assert caught.value.domain == 'search'
@@ -207,7 +207,10 @@ def test_flat_functions_and_class_factories_have_real_generated_signatures():
     stub = ast.parse((Path(__file__).resolve().parents[1] / 'cosmolkit.pyi').read_text())
     functions = {n.name: n for n in stub.body if isinstance(n, ast.FunctionDef)}
     query = next(n for n in stub.body if isinstance(n, ast.ClassDef) and n.name == 'QueryGraph')
-    methods = {n.name: n for n in query.body if isinstance(n, ast.FunctionDef)}
+    methods = {}
+    for node in query.body:
+        if isinstance(node, ast.FunctionDef):
+            methods.setdefault(node.name, node)
     for name in ('parse_smarts', 'parse_smarts_with_params', 'compile_query', 'write_smarts', 'write_cx_smarts'):
         assert name in functions
         assert callable(getattr(ck, name))
@@ -215,5 +218,8 @@ def test_flat_functions_and_class_factories_have_real_generated_signatures():
         assert list(inspect.signature(getattr(ck.QueryGraph, name)).parameters) == parameters
         method = methods[name]
         assert [a.arg for a in method.args.args] == parameters
-        assert [ast.unparse(d) for d in method.decorator_list] == ['staticmethod']
+        assert [ast.unparse(d) for d in method.decorator_list] == (
+            ['typing.overload', 'staticmethod'] if name == 'from_smarts' else ['staticmethod'])
+        if name == 'from_smarts':
+            assert len([node for node in query.body if isinstance(node, ast.FunctionDef) and node.name == name]) == 3
         assert ast.unparse(method.returns) == 'QueryGraph'

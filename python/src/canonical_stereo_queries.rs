@@ -9,14 +9,34 @@ pyo3::create_exception!(cosmolkit, StereoReadError, pyo3::exceptions::PyValueErr
 pub(crate) fn error_pyerr(py: Python<'_>, source: ck::StereoReadError) -> PyErr {
     let kind = match &source {
         ck::StereoReadError::InvalidTopology(_) => "InvalidTopology",
+        ck::StereoReadError::Valence(_) => "Valence",
+        ck::StereoReadError::Rings(_) => "Rings",
+        ck::StereoReadError::PotentialStereo(_) => "PotentialStereo",
+        ck::StereoReadError::CipLabeler(_) => "CipLabeler",
+        ck::StereoReadError::PropertyString(_) => "PropertyString",
+        ck::StereoReadError::CipLabelEncoding { .. } => "CipLabelEncoding",
     };
-    crate::canonical_values::annotate(
+    let error = crate::canonical_values::annotate(
         py,
         StereoReadError::new_err(source.to_string()),
         "stereo",
         kind,
         &source,
-    )
+    );
+    match source {
+        ck::StereoReadError::PotentialStereo(cause) => error.set_cause(
+            py,
+            Some(crate::canonical_potential_stereo::error_pyerr(py, &cause)),
+        ),
+        ck::StereoReadError::PropertyString(cause) => error.set_cause(
+            py,
+            Some(crate::canonical_property_values::property_string_pyerr(
+                py, cause,
+            )),
+        ),
+        _ => {}
+    }
+    error
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]

@@ -48,15 +48,15 @@ fn tetrahedral_stereo_places_implicit_hydrogen_as_fourth_ligand() {
 }
 
 #[test]
-fn native_perception_and_chiral_labels_retain_read_only_project_contract() {
+fn native_perception_and_modern_chiral_centers_retain_read_only_receivers() {
     let molecule = Molecule::from_smiles("F[C@H](Cl)Br").unwrap();
     let before = molecule.to_smiles().unwrap();
     molecule.perceive_stereochemistry().unwrap();
-    let labels = molecule.find_chiral_centers(true);
-    assert_eq!(labels.len(), 4);
-    assert_eq!(labels[0], (0, "?".to_owned()));
-    assert_eq!(labels[1], (1, "CHI_TETRAHEDRAL_CCW".to_owned()));
-    assert_eq!(molecule.find_chiral_centers(false), vec![labels[1].clone()]);
+    // Pinned RDKit 2026.03.1 FindMolChiralCenters modern branch returns
+    // actual tetrahedral centers and CIP labels, not every unspecified atom.
+    let labels = molecule.find_chiral_centers(true).unwrap();
+    assert_eq!(labels, vec![(1, "R".to_owned())]);
+    assert_eq!(molecule.find_chiral_centers(false).unwrap(), labels);
     assert_eq!(molecule.to_smiles().unwrap(), before);
     assert!(Molecule::new().tetrahedral_stereo().unwrap().is_empty());
     Molecule::new().perceive_stereochemistry().unwrap();

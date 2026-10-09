@@ -60,7 +60,11 @@ def stub_class(name: str) -> ast.ClassDef:
 
 
 def stub_methods(name: str) -> dict[str, ast.FunctionDef]:
-    return {node.name: node for node in stub_class(name).body if isinstance(node, ast.FunctionDef)}
+    methods = {}
+    for node in stub_class(name).body:
+        if isinstance(node, ast.FunctionDef):
+            methods.setdefault(node.name, node)
+    return methods
 
 
 def expression(node: ast.expr | None) -> str:
@@ -127,10 +131,10 @@ class TestMorganParams:
         assert cosmolkit.MorganParams().count_bounds == [1, 2, 4, 8]
 
     @pytest.mark.parametrize("field", list(DEFAULTS), ids=list(DEFAULTS))
-    def test_frozen(self, field: str):
+    def test_configuration_assignment_and_no_deletion(self, field: str):
         params = cosmolkit.MorganParams()
-        with pytest.raises(AttributeError):
-            setattr(params, field, DEFAULTS[field])
+        setattr(params, field, DEFAULTS[field])
+        assert getattr(params, field) == DEFAULTS[field]
         with pytest.raises(AttributeError):
             delattr(params, field)
         assert cast(object, getattr(params, field)) == DEFAULTS[field]
@@ -173,7 +177,7 @@ class TestMorganParams:
 
 
 OUTPUT_FIELDS = ("atom_counts", "atom_to_bits", "bit_info_map", "bit_paths", "atoms_per_bit")
-OUTPUT_METHODS = ("default", *("allocate_" + field for field in OUTPUT_FIELDS), *OUTPUT_FIELDS)
+OUTPUT_METHODS = ("default", "new", *("allocate_" + field for field in OUTPUT_FIELDS), *OUTPUT_FIELDS)
 MASK_IDS = [f"mask{mask:02d}" for mask in range(32)]
 
 
@@ -262,7 +266,7 @@ class TestAdditionalOutput:
             descriptor = cast(object, getattr(cosmolkit.FingerprintAdditionalOutput, name))
             assert callable(descriptor)
             signature = inspect.signature(descriptor)
-            assert list(signature.parameters) == ([] if name == "default" else ["self"])
+            assert list(signature.parameters) == ([] if name in ("default", "new") else ["self"])
             assert all(cast(object, param.default) is inspect.Parameter.empty for param in signature.parameters.values())
             assert all(param.kind is inspect.Parameter.POSITIONAL_ONLY for param in signature.parameters.values())
         assert isinstance(vars(cosmolkit.FingerprintAdditionalOutput)["default"], staticmethod)
@@ -291,7 +295,7 @@ class TestAdditionalOutput:
         for args, kwargs in [((0,), {}), ((), {"value": 0})]:
             with pytest.raises(TypeError):
                 _ = constructor(*args, **kwargs)
-        assert not hasattr(cosmolkit.FingerprintAdditionalOutput, "new")
+        assert output_state(cosmolkit.FingerprintAdditionalOutput.new()) == [None] * 5
         for field in OUTPUT_FIELDS:
             assert not hasattr(cosmolkit.FingerprintAdditionalOutput, "get_" + field)
         output = cosmolkit.FingerprintAdditionalOutput.default()
@@ -316,9 +320,9 @@ class TestAdditionalOutput:
             "atoms_per_bit": "typing.Optional[builtins.dict[builtins.int, builtins.list[builtins.list[builtins.int]]]]",
         }
         for name, method in methods.items():
-            assert [arg.arg for arg in method.args.args] == (["cls"] if name == "__new__" else ([] if name == "default" else ["self"]))
+            assert [arg.arg for arg in method.args.args] == (["cls"] if name == "__new__" else ([] if name in ("default", "new") else ["self"]))
             assert not method.args.defaults and not method.args.kwonlyargs
             assert not method.args.kw_defaults and method.args.vararg is None and method.args.kwarg is None
-            expected = "FingerprintAdditionalOutput" if name in ("default", "__new__") else ("builtins.str" if name == "__repr__" else ("None" if name.startswith("allocate_") else expected_returns[name]))
+            expected = "FingerprintAdditionalOutput" if name in ("default", "new", "__new__") else ("builtins.str" if name == "__repr__" else ("None" if name.startswith("allocate_") else expected_returns[name]))
             assert expression(method.returns) == expected
-            assert [ast.unparse(node) for node in method.decorator_list] == (["staticmethod"] if name == "default" else [])
+            assert [ast.unparse(node) for node in method.decorator_list] == (["staticmethod"] if name in ("default", "new") else [])

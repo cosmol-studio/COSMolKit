@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let before = molecule.clone();
-    let result = molecule.layered_fingerprint_with_output_with_params(&params)?;
+    let result = molecule.fingerprint_layered_with_output_with_params(&params)?;
     println!("bits: {:?}", result.fingerprint.on_bits());
     println!("seeded atom counts: {:?}", result.atom_counts);
     assert_eq!(molecule, before);
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let inputs = [molecule.clone(), Molecule::from_smiles("CCCO")?];
     let fingerprints = inputs
         .iter()
-        .map(|input| input.layered_fingerprint_with_params(&params))
+        .map(|input| input.fingerprint_layered_with_params(&params))
         .collect::<Result<Vec<_>, _>>()?;
     assert_eq!(fingerprints[0], result.fingerprint);
 

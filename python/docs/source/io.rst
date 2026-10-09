@@ -16,7 +16,7 @@ Use ``Molecule.read_sdf()`` when you only need the first record:
 
    import cosmolkit as ck
 
-   mol = ck.Molecule.read_sdf("input.sdf", coordinate_dim="auto")
+   mol = ck.Molecule.read_sdf("input.sdf", coordinate_mode="preserve")
 
 Use ``MoleculeBatch.read_sdf()`` when you intentionally want the entire file as
 one in-memory batch:
@@ -27,7 +27,7 @@ one in-memory batch:
 
    batch = ck.MoleculeBatch.read_sdf(
        "input.sdf",
-       coordinate_dim="auto",
+       coordinate_mode="preserve",
        errors="keep",
        progress_bar=True,
    )
@@ -43,7 +43,7 @@ random access, metadata inspection, or chunked processing:
 
    import cosmolkit as ck
 
-   dataset = ck.SdfDataset.open("large.sdf", coordinate_dim="auto")
+   dataset = ck.SdfDataset.open("large.sdf", coordinate_mode="preserve")
 
    print(len(dataset))
    print(dataset.metadata(0).title())
@@ -93,8 +93,8 @@ Read a single-record MDL molfile with the same CTAB parser:
 
 .. code-block:: python
 
-   mol = ck.Molecule.read_mol("input.mol", coordinate_dim="auto")
-   mol = ck.Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
+   mol = ck.Molecule.read_mol("input.mol", coordinate_mode="preserve")
+   mol = ck.Molecule.read_mol_from_str(mol_text, coordinate_mode="require_2d")
 
 ``Molecule.read_mol()`` and ``Molecule.read_mol_from_str()`` expose the same
 ``sanitize``, ``remove_hs``, and ``strict_parsing`` controls as RDKit
@@ -132,7 +132,7 @@ SDF Strings
 .. code-block:: python
 
    text = mol.to_2d_sdf_string(format="v2000", include_stereo=True, kekulize=True)
-   restored = ck.Molecule.read_sdf_from_str(text, coordinate_dim="2d")
+   restored = ck.Molecule.read_sdf_from_str(text, coordinate_mode="require_2d")
 
 ``Molecule.read_sdf_from_str()`` uses the SDF record parser and therefore
 validates and parses data fields after ``M  END``. For molfile-only string input
@@ -150,7 +150,7 @@ For multi-record strings, use the batch API:
 
 .. code-block:: python
 
-   batch = ck.MoleculeBatch.read_sdf_records_from_str(sdf_text, coordinate_dim="auto")
+   batch = ck.MoleculeBatch.read_sdf_records_from_str(sdf_text, coordinate_mode="preserve")
 
 MOL2 Files
 ----------

@@ -5,11 +5,11 @@ import pytest
 
 def test_pattern_scalar_defaults_options_type_and_exact_bits():
     molecule = cosmolkit.Molecule.from_smiles("CC")
-    default = molecule.pattern_fingerprint()
-    explicit = molecule.pattern_fingerprint_with_params(
+    default = molecule.fingerprint_pattern()
+    explicit = molecule.fingerprint_pattern_with_params(
         cosmolkit.PatternFingerprintParams(n_bits=2048, tautomeric=False)
     )
-    tautomeric = molecule.pattern_fingerprint_with_params(
+    tautomeric = molecule.fingerprint_pattern_with_params(
         cosmolkit.PatternFingerprintParams(n_bits=2048, tautomeric=True)
     )
     assert isinstance(default, cosmolkit.Fingerprint)
@@ -22,16 +22,16 @@ def test_pattern_scalar_defaults_options_type_and_exact_bits():
 def test_pattern_scalar_preserves_input_and_reports_argument_errors():
     molecule = cosmolkit.Molecule.from_smiles("c1ccccc1O")
     before = molecule.to_smiles()
-    first = molecule.pattern_fingerprint_with_params(
+    first = molecule.fingerprint_pattern_with_params(
         cosmolkit.PatternFingerprintParams(n_bits=127, tautomeric=True)
     )
-    second = molecule.pattern_fingerprint_with_params(
+    second = molecule.fingerprint_pattern_with_params(
         cosmolkit.PatternFingerprintParams(n_bits=127, tautomeric=True)
     )
     assert first.on_bits() == second.on_bits()
     assert molecule.to_smiles() == before
     with pytest.raises(ValueError, match="fingerprint requires n_bits > 0"):
-        molecule.pattern_fingerprint_with_params(cosmolkit.PatternFingerprintParams(n_bits=0))
+        molecule.fingerprint_pattern_with_params(cosmolkit.PatternFingerprintParams(n_bits=0))
     with pytest.raises(TypeError):
         cosmolkit.PatternFingerprintParams(n_bits="2048")
     with pytest.raises(TypeError):

@@ -242,7 +242,7 @@ fn repeated_composed_and_parallel_calls_match_scalar_results() {
         assert_eq!(canonical_isomeric_smiles(&roundtrip), *smiles);
         assert!(
             roundtrip
-                .morgan_fingerprint_with_params(&MorganFingerprintParams::default(), None)
+                .fingerprint_morgan_with_params(&MorganFingerprintParams::default(), None)
                 .expect("fingerprint composition")
                 .on_bits()
                 .len()

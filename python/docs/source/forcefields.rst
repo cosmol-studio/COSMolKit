@@ -97,7 +97,7 @@ MMFF single- and multiple-conformer optimization
        print(final_evaluation.energy())
 
    # Optimize every stored 3D conformer independently.
-   multiple = mol.with_mmff_optimized_confs_with_params(
+   multiple = mol.with_mmff_optimized_conformers_with_params(
        ck.MmffConformerOptimizationParams(
            num_threads=1,
            max_iterations=200,
@@ -139,14 +139,14 @@ UFF evaluation and optimization
    optimized = result.molecule()
    print(result.status_code(), result.needs_more(), result.energy())
 
-   multiple = mol.with_uff_optimized_confs_with_params(
+   multiple = mol.with_uff_optimized_conformers_with_params(
        ck.UffConformerOptimizationParams(num_threads=1, max_iterations=200)
    )
    for row in multiple.conformer_results():
        print(row.conformer_id(), row.status_code(), row.energy())
 
 The corresponding default calls are ``uff_energy_gradient()``,
-``with_uff_optimized()``, and ``with_uff_optimized_confs()``. Default UFF
+``with_uff_optimized()``, and ``with_uff_optimized_conformers()``. Default UFF
 optimization uses 1000 iterations; its van der Waals threshold is 10.0.
 Malformed inputs and evaluation failures propagate as Python exceptions;
 non-convergence is an optimization result, not an exception.

@@ -15,10 +15,10 @@ FIXTURE = ROOT / "testdata/fingerprints/morgan_reusable_provider_ring_native.jso
 RECORDS = [json.loads(line) for line in FIXTURE.read_text().splitlines()]
 assert len(RECORDS) == 26
 FORMS = [
-    ("bits", "morgan_fingerprint_with_generator", "fingerprints"),
-    ("count", "morgan_count_fingerprint_with_generator", "counts"),
-    ("sparse_bits", "morgan_sparse_fingerprint_with_generator", "sparse_fingerprints"),
-    ("sparse_count", "morgan_sparse_count_fingerprint_with_generator", "sparse_counts"),
+    ("bits", "fingerprint_morgan_with_generator", "fingerprints"),
+    ("count", "fingerprint_morgan_count_with_generator", "counts"),
+    ("sparse_bits", "fingerprint_morgan_sparse_with_generator", "sparse_fingerprints"),
+    ("sparse_count", "fingerprint_morgan_sparse_count_with_generator", "sparse_counts"),
 ]
 
 def allocated_output():
@@ -116,10 +116,12 @@ def test_frozen_call_params_own_every_list_and_preserve_none_empty():
         snapshot = getattr(params, name)
         snapshot.append(99)
         assert getattr(params, name) != snapshot
-        with pytest.raises(AttributeError):
-            setattr(params, name, [])
-    with pytest.raises(AttributeError):
-        params.conformer_id = 0
+        original = getattr(params, name)
+        setattr(params, name, [])
+        assert getattr(params, name) == []
+        setattr(params, name, original)
+    params.conformer_id = 0
+    assert params.conformer_id == 0
     assert ck.MorganCallParams().from_atoms is None
     assert ck.MorganCallParams(from_atoms=[]).from_atoms == []
 
@@ -141,12 +143,12 @@ def test_provider_query_copy_lifetime_none_empty_and_custom_precedence():
     generator = ck.MorganFingerprintGenerator(params=ck.MorganParams(radius=0), atom_invariants=provider)
     del provider
     molecule = ck.Molecule.from_smiles("CCO")
-    assert molecule.morgan_sparse_count_fingerprint_with_generator(generator).nonzero_elements() == {1: 2, 2: 1}
+    assert molecule.fingerprint_morgan_sparse_count_with_generator(generator).nonzero_elements() == {1: 2, 2: 1}
     assert json.loads(generator.to_json())["atomInvariantsGenerator"]["patternSMARTS"] == ["C", "O"]
     empty = ck.MorganFingerprintGenerator(params=ck.MorganParams(radius=0), atom_invariants=ck.MorganAtomInvariantsGenerator.features([]))
-    assert molecule.morgan_sparse_count_fingerprint_with_generator(empty).nonzero_elements() == {0: 3}
+    assert molecule.fingerprint_morgan_sparse_count_with_generator(empty).nonzero_elements() == {0: 3}
     params = ck.MorganCallParams(custom_atom_invariants=[11, 12, 13])
-    assert molecule.morgan_sparse_count_fingerprint_with_generator(empty, params=params).nonzero_elements() == {11: 1, 12: 1, 13: 1}
+    assert molecule.fingerprint_morgan_sparse_count_with_generator(empty, params=params).nonzero_elements() == {11: 1, 12: 1, 13: 1}
     default = ck.MorganFingerprintGenerator(atom_invariants=ck.MorganAtomInvariantsGenerator.features())
     assert "patternSMARTS" not in json.loads(default.to_json())["atomInvariantsGenerator"]
 
@@ -166,11 +168,11 @@ def test_source_null_provider_preconditions_json_fallback_and_live_error_recover
     del value["atomInvariantsGenerator"], value["bondInvariantsGenerator"]
     null = ck.MorganFingerprintGenerator.from_json(json.dumps(value))
     with pytest.raises(ck.MorganReadError, match="atom invariants") as caught:
-        molecule.morgan_sparse_count_fingerprint_with_generator(null)
+        molecule.fingerprint_morgan_sparse_count_with_generator(null)
     assert caught.value.kind == "Generator" and caught.value.__cause__ is not None
     with pytest.raises(ck.MorganReadError, match="bond invariants"):
-        molecule.morgan_sparse_count_fingerprint_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13]))
-    assert molecule.morgan_sparse_count_fingerprint_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13], custom_bond_invariants=[1, 1])).nonzero_elements()
+        molecule.fingerprint_morgan_sparse_count_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13]))
+    assert molecule.fingerprint_morgan_sparse_count_with_generator(null, params=ck.MorganCallParams(custom_atom_invariants=[11, 12, 13], custom_bond_invariants=[1, 1])).nonzero_elements()
     generator = ck.MorganFingerprintGenerator()
     settings = generator.settings()
     settings.count_simulation = True
@@ -192,7 +194,7 @@ def test_original_stub_projects_all_five_types_methods_and_settings():
     for name in ("MorganFingerprintGenerator", "MorganSettings", "MorganCallParams", "MorganAtomInvariantsGenerator", "MorganBondInvariantsGenerator"):
         assert name in classes
     methods = {node.name for node in classes["MorganFingerprintGenerator"].body if isinstance(node, ast.FunctionDef)}
-    assert methods == {"__new__", "from_json", "settings", "info_string", "to_json", "__repr__", "fingerprints", "counts", "sparse_fingerprints", "sparse_counts"}
+    assert methods == {"__new__", "new", "from_json", "settings", "info_string", "to_json", "__repr__", "fingerprints", "counts", "sparse_fingerprints", "sparse_counts"}
     names = [node.name for node in classes["MorganSettings"].body if isinstance(node, ast.FunctionDef)]
     for field in ("radius", "only_nonzero_invariants", "include_redundant_environments", "include_chirality", "count_simulation", "fp_size", "bits_per_feature", "count_bounds"):
         assert names.count(field) == 2

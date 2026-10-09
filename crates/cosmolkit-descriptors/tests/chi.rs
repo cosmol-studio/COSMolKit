@@ -577,7 +577,7 @@ fn chi_supplied_ring_coordinate_property_state_not_reprepared() {
 fn chi_original_upstream97_expected_values() {
     for &(smiles, order, is_v, expected) in UPSTREAM {
         let params = cosmolkit_smiles::SmilesParseParams {
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         let record = cosmolkit_smiles::parse_smiles(smiles, &params).unwrap();

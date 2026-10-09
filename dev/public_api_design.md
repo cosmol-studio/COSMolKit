@@ -166,6 +166,13 @@ mol.to_sdf(&params)
 `mol_to_*` is an internal source-port name only. It must not be
 the name of a new public method.
 
+Use `write_*` when the method writes a file or directory, rather than returning
+the serialized representation. In particular, `Molecule::to_sdf()` and
+`SdfRecord::to_sdf()` return text; `MoleculeBatch::write_sdf(path)` and
+`MoleculeBatch::write_sdf_files(directory)` write files and return an export
+report. Their explicit Rust configuration forms use `_with_params`; Python
+and JavaScript retain the same `write_*` / `write*` semantic names.
+
 ### 4.3 Queries and descriptors
 
 Use the domain term directly, without `calc_`, `mol_`, or redundant `get_`:
@@ -262,7 +269,7 @@ Canonical name:
 
 ```python
 output = ck.FingerprintAdditionalOutput()
-fp = mol.morgan_fingerprint_with_params(params, output)
+fp = mol.fingerprint_morgan_with_params(params, output)
 ```
 
 `FingerprintAdditionalOutput` names the optional fingerprint metadata collector
@@ -415,6 +422,53 @@ runtime implementation details. They remain private or `pub(crate)` and are
 never part of the Rust facade's public API, Python classes, or WASM exports.
 
 ## 6. Cross-Language Contract
+
+### Enforced projection boundary
+
+Binding delivery is gated by the compiled canonical registry, not a manually
+maintained list or an author's checklist. The stub generator and WASM package
+validator must reject a projection that violates any of these requirements:
+
+1. A `parameter` record has a registered configuration constructor schema.
+   Rust public-field records may use `Default` and struct construction; a
+   redundant Rust `new()` is not required. Language-specific constructor fields,
+   types and defaults are declared on that type in the canonical registry and
+   checked against compiled binding metadata and actual descriptors. Its constructor
+   inputs define the public configurable fields; each must be readable and
+   writable in Python and JavaScript declarations and actual descriptors.
+   Constructor, getter and setter types must agree. Computed output fields are
+   not configurable inputs. Enums, bit masks and opaque selectors use the
+   explicit `parameter_selector` role, not a name-based exemption.
+   A Python constructor is registered on its type, for example
+   `python_configuration: [{ name: max_matches, python_type: "builtins.int", default: "1000" }]`.
+   Defaults use Python expressions; `default: required` denotes a required
+   argument. This describes the language constructor, not a fictitious Rust
+   callable. The checker compares this schema with compiled constructor
+   declarations and exercises real properties, including nested configuration
+   preservation and failure atomicity.
+2. Canonical default/configured operation pairs expose the same language method
+   with parameter-object and field-based call forms. Field configuration uses
+   the constructor's field types and defaults. Python declares explicit
+   overloads and keyword-only configuration; TypeScript must accept the actual
+   parameter instance and the options object. Bindings reject mixed/unknown
+   configuration at runtime rather than discarding it.
+3. Every enabled registry type, callable and declared property exists in the
+   final language surface. Check the actual Python module and generated WASM
+   exports as well as `.pyi`/`.d.ts`. A binding source and its generated output
+   both omitting an API is a failure. Native binary archive exclusion on WASM
+   follows the platform contract; missing implementations and Experimental
+   status are not exemptions.
+   A scalar value may explicitly declare a native Python projection such as
+   `builtins.int`; this does not promise an independently exported wrapper class.
+   Configuration records and object adapters cannot use that scalar projection.
+
+`stub_gen` runs these checks before replacing the existing `.pyi`; the WASM
+build runs them before exporting a distribution. Neither gate may synthesize
+declarations for missing implementations. Existing violations remain failed
+delivery gates until the bindings or their incorrect registration are fixed.
+Author review supplements these structural constraints. Small actual-operation
+regressions still prove parameter forwarding and failed-assignment atomicity;
+declaration checks alone cannot prove either behavior.
 
 Each public API is one logical entry with three projections:
 
@@ -676,3 +730,192 @@ Before adding or revising a public API, verify:
 Examples illustrate API design, not an inventory of implemented functions.
 The registry describes the actual public Rust surface. Behavior declarations
 and validation results are distinct; neither substitutes for the other.
+
+## 10. Naming and usability corrections
+
+This section records approved, targeted corrections. Update the canonical Rust
+API, registry, Python/JavaScript projections, generated declarations,
+documentation and tests together. It does not authorize compatibility aliases
+or changes to chemical behavior and does not imply that a listed implementation
+gap has been completed.
+
+### 10.1 Specific configuration naming corrections
+
+The following are individual naming corrections, not a general cross-domain
+spelling rule. The preference for `remove_hs` and omission of `do_` apply to
+the listed cases only; do not extrapolate them to other APIs. These corrections
+do not rename value/in-place molecule operations such as `without_hydrogens()`
+and `remove_hydrogens_()`.
+
+| Counterexample | Proposed positive example | Reason |
+|---|---|---|
+| BIO uses `remove_hs`, but SMILES/SDF/Mol2/InChI use `remove_hydrogens` | All corresponding read/conversion options use `remove_hs`; JavaScript uses `removeHs` | Users should not relearn the same option for every format. |
+| A boolean is named `do_kekulize` | `kekulize=True` | `do_` adds no information. |
+| SMILES uses `do_kekule` and `do_isomeric_smiles` | `kekule=True`, `isomeric_smiles=True` | Name the requested representation directly. |
+| Related conformer APIs mix `confs` and `conformers` | `clear_conformers`, `with_uff_optimized_conformers`, `with_mmff_optimized_conformers` | Use the same term for the same object. |
+| SDF entry points mix `coordinate_dim="auto"` and a typed `coordinate_mode` | `coordinate_mode=ck.SdfCoordinateMode.Preserve` on all corresponding entry points | Share one typed policy and its defaults. |
+
+`kekulize` describes a preprocessing operation; `kekule` describes a requested
+SMILES representation. Removing `do_` does not make those two behaviors
+interchangeable. Likewise, do not rename a genuine coordinate dimension into a
+coordinate policy merely because the words look similar.
+
+### 10.2 Avoid redundant conversion names
+
+| Counterexample | Proposed positive example |
+|---|---|
+| `ck.inchi_to_inchi_key(inchi_text)` | `ck.inchi_to_key(inchi_text)` |
+| A generic top-level `ck.to_key(text)` | `ck.inchi_to_key(inchi_text)` |
+
+Keep `mol.to_inchi_key()` for conversion from a molecule. The free function's
+input is already InChI text; the molecule method's input is a molecule. A naming
+cleanup must preserve that distinction and must not add another chemical
+conversion to the text-to-key function.
+
+### 10.3 Fingerprint-first method families
+
+Put the shared functionality first, so typing `mol.fingerprint_` discovers the
+available algorithms. Use the order **fingerprint → algorithm → output form**.
+Apply it consistently to scalar, query and batch entry points.
+
+| Counterexample | Proposed positive example |
+|---|---|
+| `mol.layered_fingerprint()` | `mol.fingerprint_layered()` |
+| `mol.pattern_fingerprint()` | `mol.fingerprint_pattern()` |
+| `mol.morgan_fingerprint()` | `mol.fingerprint_morgan()` |
+| `mol.atom_pair_fingerprint()` | `mol.fingerprint_atom_pair()` |
+| `mol.topological_fingerprint()` | `mol.fingerprint_topological()` |
+| `mol.topological_torsion_fingerprint()` | `mol.fingerprint_topological_torsion()` |
+| `mol.maccs_fingerprint()` | `mol.fingerprint_maccs()` |
+| `mol.morgan_count_fingerprint()` | `mol.fingerprint_morgan_count()` |
+| `mol.morgan_sparse_fingerprint()` | `mol.fingerprint_morgan_sparse()` |
+| `mol.morgan_sparse_count_fingerprint()` | `mol.fingerprint_morgan_sparse_count()` |
+| Scalar `layered_fingerprint`, but batch `fingerprint_layered_list` | Scalar `fingerprint_layered`, batch `fingerprint_layered_list` |
+| `layered_query_fingerprint(...)` | `fingerprint_layered_query(...)` |
+
+This is a discoverability rule for entry points, not permission to collapse
+different algorithms, bit/count representations, sizes or legacy semantics.
+Do not apply redundant prefixes to a generator's own `fingerprint()` method
+when the receiver already identifies the functionality.
+
+### 10.4 File writes must read as file writes
+
+| Counterexample | Proposed positive example |
+|---|---|
+| `batch.to_images(directory)` creates directories and writes files | `batch.write_images(directory)` |
+| `batch.to_images_with_params(directory, params)` writes files | Rust `batch.write_images_with_params(directory, &params)`; Python `batch.write_images(directory, params)` |
+
+Keep `mol.to_svg()` for returned SVG text and `mol.write_svg(path)` for a file.
+The same conversion/write distinction already applies to SDF; images are not
+an exception.
+
+### 10.5 Configuration must not create a second Python API vocabulary
+
+Counterexample:
+
+```python
+mol.layered_fingerprint_with_output_with_params(params)
+# Users must discover a separate method name just to supply configuration.
+```
+
+Proposed positive examples:
+
+```python
+mol.fingerprint_layered_with_output()
+mol.fingerprint_layered_with_output(params)
+mol.fingerprint_layered_with_output(fp_size=1024)
+
+mol.substruct_match(query, use_chirality=True)
+mol.has_substruct_match(query, use_chirality=True)
+mol.substruct_matches(query, use_chirality=True)
+
+batch.write_images(
+    directory,
+    ck.BatchImageParams(execution=ck.BatchParams(errors="keep")),
+)
+```
+
+The last example preserves the distinction between image options and batch
+execution options; it does not invent a second error policy. Rust may retain
+explicit `_with_params` methods. Python/JavaScript expose the same operation
+through default, parameter-object and keyword/options-object forms, with the
+same defaults and errors. Do not make configurable single/boolean substructure
+queries default-only while the multiple-match query accepts configuration.
+Generated declarations must describe working calls, not desired overloads
+that the runtime binding rejects.
+
+### 10.6 Cache observation must be explicit
+
+Counterexample: document `mol.atoms()` as merely inspecting existing cached
+valence when it actually requests recalculation, or use it in a test intended
+to observe unsanitized cached values.
+
+Positive examples using the current explicit metadata API:
+
+```python
+cached = mol.atom_metadata(recalculate=False)  # Observe existing valid cache.
+fresh = mol.atom_metadata(recalculate=True)   # Request recalculation.
+```
+
+Document that `atoms()` currently requests recalculated metadata. A cache-only
+read must not silently recalculate, and a recalculating read must not be
+advertised as cache-only. This clarification does not approve changing cache
+validity, failure semantics or operation permissions.
+
+### 10.7 Review names separately from implementation gaps
+
+Counterexample: report a feature as missing solely because its previous public
+name raises `AttributeError`.
+
+Positive example: distinguish the old
+`ck.get_topological_torsion_fingerprint_as_ids(mol)` call from the existing
+`mol.topological_torsion_ids()` method, then verify the actual returned IDs.
+
+Classify findings as a naming/test update, a missing binding, missing facade
+integration, an incomplete algorithm branch, or an unresolved behavior
+difference. Do not solve an implementation gap with an alias, fabricate a stub,
+or change chemical expectations to match the implementation.
+
+
+### 10.8 Python: enum values and string inputs
+
+Every public Python input whose logical type is an enum must accept both an
+enum member and its documented string spelling. This applies to function and
+method arguments, configuration constructors, and writable configuration
+properties, not only to `coordinate_mode`.
+
+```python
+params = ck.SdfReadParams(coordinate_mode=ck.SdfCoordinateMode.Preserve)
+params = ck.SdfReadParams(coordinate_mode="preserve")
+params.coordinate_mode = "require_3d"
+params.coordinate_mode = ck.SdfCoordinateMode.Require3D
+
+mol = ck.Molecule.from_sdf(text, coordinate_mode="preserve")
+mol = ck.Molecule.from_sdf(text, coordinate_mode=ck.SdfCoordinateMode.Preserve)
+```
+
+For `SdfCoordinateMode`, the canonical string spellings are `"preserve"`,
+`"require_2d"` and `"require_3d"`. Define each enum's string vocabulary from
+its declared members and document it; do not guess values by fuzzy matching,
+silently fall back to a default, or introduce different vocabularies for
+different entry points. Equivalent enum and string inputs must normalize to
+the same Rust enum and use the same validation and algorithm.
+
+Native Python enum spellings are generated deterministically from declared
+variant names using lowercase snake case (`NonStrict` → `"non_strict"`,
+`Require3D` → `"require_3d"`, `V2000` → `"v2000"`). The same declaration
+generates extraction and the vocabulary consumed by binding checks; do not
+maintain separate per-function conversion tables.
+
+Unknown strings raise `ValueError`; values of an unrelated type raise
+`TypeError`. Failed property assignment leaves the previous value unchanged.
+An optional enum accepts `None` only when the underlying contract is optional.
+Getters and results retain their canonical enum type; accepting string inputs
+does not convert enum outputs into strings or change Rust signatures.
+
+Generate input annotations such as `SdfCoordinateMode | str` in `.pyi`, while
+keeping getter/result annotations as `SdfCoordinateMode`. Registry-backed
+binding checks and focused Python regressions must verify constructor,
+assignment and direct-call equivalence, invalid-input rejection and unchanged
+defaults. A stub advertising string support without an actual working binding
+does not satisfy this requirement.

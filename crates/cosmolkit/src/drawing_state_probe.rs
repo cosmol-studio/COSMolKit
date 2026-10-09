@@ -9,7 +9,7 @@ fn drawing_line22_probe_constructor() {
         "O[C@](C)(Cl)[C@@](O)(Cl)C",
         &SmilesParseParams {
             sanitize: true,
-            remove_hydrogens: true,
+            remove_hs: true,
             allow_cxsmiles: true,
             strict_cxsmiles: true,
             parse_name: true,

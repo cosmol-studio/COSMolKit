@@ -38,7 +38,7 @@ pub use forcefields::{
 #[cfg(feature = "cap-forcefields")]
 pub(crate) use ops::WithUffOptimizedAccess;
 #[cfg(feature = "cap-forcefields")]
-pub(crate) use ops::WithUffOptimizedConfsAccess;
+pub(crate) use ops::WithUffOptimizedConformersAccess;
 #[cfg(feature = "cap-forcefields")]
 pub use ops::{
     UffConformerOptimizationParams, UffConformerOptimizationResult, UffConformerResult,
@@ -72,7 +72,7 @@ mod molecule_builder;
 #[cfg(feature = "cap-inchi")]
 pub use cosmolkit_inchi::{InchiError, InchiErrorKind};
 #[cfg(feature = "cap-inchi")]
-pub use inchi::{InchiReadParams, InchiWriteParams, inchi_to_inchi_key};
+pub use inchi::{InchiReadParams, InchiWriteParams, inchi_to_key};
 #[cfg(feature = "cap-reaction")]
 mod reaction;
 #[cfg(all(feature = "cap-reaction", not(feature = "cap-smiles")))]
@@ -356,7 +356,7 @@ pub use ops::{
 };
 
 #[cfg(feature = "cap-forcefields")]
-pub(crate) use ops::{WithMmffOptimizedAccess, WithMmffOptimizedConfsAccess};
+pub(crate) use ops::{WithMmffOptimizedAccess, WithMmffOptimizedConformersAccess};
 
 #[cfg(feature = "cap-forcefields")]
 pub use forcefields::{MmffEnergyGradient, MmffEvaluationParams};
@@ -430,7 +430,7 @@ pub use cosmolkit_fingerprints::{
 pub use cosmolkit_fingerprints::{TopologicalTorsionPathScoreError, explain_path_score};
 #[cfg(feature = "cap-fingerprints")]
 pub use layered_fingerprint::{
-    layered_query_fingerprint_with_output_with_params, layered_query_fingerprint_with_params,
+    fingerprint_layered_query_with_output_with_params, fingerprint_layered_query_with_params,
 };
 
 #[cfg(feature = "cap-alignment")]
@@ -464,7 +464,7 @@ pub use cosmolkit_fingerprints::{
     PATTERN_FINGERPRINT_VERSION, PatternFingerprintError, PatternFingerprintParams,
 };
 #[cfg(feature = "cap-fingerprints")]
-pub use pattern_fingerprint::{pattern_query_fingerprint, pattern_query_fingerprint_with_params};
+pub use pattern_fingerprint::{fingerprint_pattern_query, fingerprint_pattern_query_with_params};
 
 #[cfg(feature = "cap-fingerprints")]
 mod topological_fingerprint;
@@ -475,8 +475,8 @@ pub use cosmolkit_fingerprints::{
 };
 #[cfg(feature = "cap-fingerprints")]
 pub use topological_fingerprint::{
-    topological_query_fingerprint_with_output_with_params,
-    topological_query_fingerprint_with_params,
+    fingerprint_topological_query_with_output_with_params,
+    fingerprint_topological_query_with_params,
 };
 
 #[cfg(all(feature = "cap-batch", feature = "cap-fingerprints"))]

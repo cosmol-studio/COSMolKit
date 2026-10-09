@@ -61,36 +61,36 @@ impl MoleculeBatch {
             .map(|inner| BatchRecord { inner })
             .collect()
     }
-    pub fn to_sdf(&self, path: &str) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
-        // COSMolKit❗✔️: self.inner.to_sdf(path)
-        self.inner.to_sdf(path)
+    pub fn write_sdf(&self, path: &str) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
+        // COSMolKit❗✔️: self.inner.write_sdf(path)
+        self.inner.write_sdf(path)
     }
-    pub fn to_sdf_files(
+    pub fn write_sdf_files(
         &self,
         path: &str,
     ) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
-        // COSMolKit❗✔️: self.inner.to_sdf_files(path)
-        self.inner.to_sdf_files(path)
+        // COSMolKit❗✔️: self.inner.write_sdf_files(path)
+        self.inner.write_sdf_files(path)
     }
-    pub fn to_sdf_with_params(
+    pub fn write_sdf_with_params(
         &self,
         path: &str,
         params: &ck::BatchExportParams,
         report_path: Option<&str>,
     ) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
-        // COSMolKit❗✔️: self.inner.to_sdf_with_params(path,params,report_path)
-        self.inner.to_sdf_with_params(path, params, report_path)
+        // COSMolKit❗✔️: self.inner.write_sdf_with_params(path,params,report_path)
+        self.inner.write_sdf_with_params(path, params, report_path)
     }
-    pub fn to_sdf_files_with_params(
+    pub fn write_sdf_files_with_params(
         &self,
         directory: &str,
         params: &ck::BatchExportParams,
         filenames: Option<&[Option<String>]>,
         report_path: Option<&str>,
     ) -> Result<ck::BatchExportReport, ck::BatchValidationError> {
-        // COSMolKit❗✔️: self.inner.to_sdf_files_with_params(directory,params,filenames,report_path)
+        // COSMolKit❗✔️: self.inner.write_sdf_files_with_params(directory,params,filenames,report_path)
         self.inner
-            .to_sdf_files_with_params(directory, params, filenames, report_path)
+            .write_sdf_files_with_params(directory, params, filenames, report_path)
     }
 }
 impl SdfDataset {
@@ -259,14 +259,17 @@ mod tests {
             std::env::temp_dir().join(format!("cosmolkit-sdf-batch-export-{}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
         let path = root.join("default.sdf");
-        let r = batch.to_sdf(path.to_str().unwrap()).unwrap();
+        let r = batch.write_sdf(path.to_str().unwrap()).unwrap();
         assert_eq!(
             (r.total(), r.success(), r.failed(), r.errors().len()),
             (2, 2, 0, 0)
         );
         let dir = root.join("default-files");
         assert_eq!(
-            batch.to_sdf_files(dir.to_str().unwrap()).unwrap().success(),
+            batch
+                .write_sdf_files(dir.to_str().unwrap())
+                .unwrap()
+                .success(),
             2
         );
         for (format, index) in [(ck::SdfFormat::V2000, 0), (ck::SdfFormat::V3000, 1)] {
@@ -279,7 +282,7 @@ mod tests {
             let output = root.join(format!("out-{index}.sdf"));
             let report = root.join(format!("report-{index}.json"));
             let r = batch
-                .to_sdf_with_params(output.to_str().unwrap(), &p, Some(report.to_str().unwrap()))
+                .write_sdf_with_params(output.to_str().unwrap(), &p, Some(report.to_str().unwrap()))
                 .unwrap();
             assert_eq!(r.success(), 2);
             assert!(
@@ -291,7 +294,7 @@ mod tests {
             let directory = root.join(format!("files-{index}"));
             let names = [Some("a.sdf".into()), Some("b.sdf".into())];
             let r = batch
-                .to_sdf_files_with_params(directory.to_str().unwrap(), &p, Some(&names), None)
+                .write_sdf_files_with_params(directory.to_str().unwrap(), &p, Some(&names), None)
                 .unwrap();
             assert_eq!(r.success(), 2);
             assert!(directory.join("a.sdf").exists());
@@ -304,14 +307,14 @@ mod tests {
         )
         .unwrap();
         let fail = root.join("strict-must-not-open.sdf");
-        assert!(mixed.to_sdf(fail.to_str().unwrap()).is_err());
+        assert!(mixed.write_sdf(fail.to_str().unwrap()).is_err());
         assert!(!fail.exists());
         let keep = ck::BatchExportParams {
             errors: ck::BatchErrorMode::KeepErrors,
             ..Default::default()
         };
         let r = mixed
-            .to_sdf_with_params(fail.to_str().unwrap(), &keep, None)
+            .write_sdf_with_params(fail.to_str().unwrap(), &keep, None)
             .unwrap();
         assert_eq!(
             (r.total(), r.success(), r.failed(), r.skipped),

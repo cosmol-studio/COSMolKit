@@ -31,23 +31,19 @@ fn ring_live_public_q1_literal_table_calls() {
     ];
     let mut calls = 0usize;
     for (smiles, keep_atoms, remove_atoms, literals) in cases {
-        for remove_hydrogens in [false, true] {
-            let label = format!("{smiles}/rh={remove_hydrogens}");
+        for remove_hs in [false, true] {
+            let label = format!("{smiles}/rh={remove_hs}");
             let molecule = Molecule::from_smiles_with_params(
                 smiles,
                 &cosmolkit_smiles::SmilesParseParams {
                     sanitize: true,
-                    remove_hydrogens,
+                    remove_hs,
                     ..cosmolkit_smiles::SmilesParseParams::default()
                 },
             )
             .unwrap();
             // The constructor really prepared the expected topology.
-            let expected = if remove_hydrogens {
-                remove_atoms
-            } else {
-                keep_atoms
-            };
+            let expected = if remove_hs { remove_atoms } else { keep_atoms };
             assert_eq!(molecule.num_atoms(), expected, "{label}: atoms");
             calls += 1;
             assert_eq!(molecule.num_rings().unwrap(), literals[0], "{label}");
@@ -86,22 +82,18 @@ fn ring_live_public_q2_literal_table_calls() {
     ];
     let mut calls = 0usize;
     for (smiles, keep_atoms, remove_atoms, literals) in cases {
-        for remove_hydrogens in [false, true] {
-            let label = format!("{smiles}/rh={remove_hydrogens}");
+        for remove_hs in [false, true] {
+            let label = format!("{smiles}/rh={remove_hs}");
             let molecule = Molecule::from_smiles_with_params(
                 smiles,
                 &cosmolkit_smiles::SmilesParseParams {
                     sanitize: true,
-                    remove_hydrogens,
+                    remove_hs,
                     ..cosmolkit_smiles::SmilesParseParams::default()
                 },
             )
             .unwrap();
-            let expected = if remove_hydrogens {
-                remove_atoms
-            } else {
-                keep_atoms
-            };
+            let expected = if remove_hs { remove_atoms } else { keep_atoms };
             assert_eq!(molecule.num_atoms(), expected, "{label}: atoms");
             calls += 1;
             assert_eq!(
@@ -153,22 +145,18 @@ fn ring_live_public_q3_literal_table_calls() {
     ];
     let mut calls = 0usize;
     for (smiles, keep_atoms, remove_atoms, literals) in cases {
-        for remove_hydrogens in [false, true] {
-            let label = format!("{smiles}/rh={remove_hydrogens}");
+        for remove_hs in [false, true] {
+            let label = format!("{smiles}/rh={remove_hs}");
             let molecule = Molecule::from_smiles_with_params(
                 smiles,
                 &cosmolkit_smiles::SmilesParseParams {
                     sanitize: true,
-                    remove_hydrogens,
+                    remove_hs,
                     ..cosmolkit_smiles::SmilesParseParams::default()
                 },
             )
             .unwrap();
-            let expected = if remove_hydrogens {
-                remove_atoms
-            } else {
-                keep_atoms
-            };
+            let expected = if remove_hs { remove_atoms } else { keep_atoms };
             assert_eq!(molecule.num_atoms(), expected, "{label}: atoms");
             calls += 1;
             assert_eq!(
@@ -228,7 +216,7 @@ fn ring_live_public_feature_parity_counts() {
         "c1ccccc1",
         &cosmolkit_smiles::SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..cosmolkit_smiles::SmilesParseParams::default()
         },
     )

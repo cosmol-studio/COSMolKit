@@ -240,7 +240,7 @@ pub struct SmilesParseParams {
     pub allow_cxsmiles: bool,
     pub strict_cxsmiles: bool,
     pub parse_name: bool,
-    pub remove_hydrogens: bool,
+    pub remove_hs: bool,
     pub skip_cleanup: bool,
     pub debug_parse: bool,
     pub replacements: BTreeMap<String, String>,
@@ -263,7 +263,7 @@ impl Default for SmilesParseParams {
             allow_cxsmiles: true,
             strict_cxsmiles: true,
             parse_name: true,
-            remove_hydrogens: true,
+            remove_hs: true,
             skip_cleanup: false,
             debug_parse: false,
             replacements: BTreeMap::new(),
@@ -1807,7 +1807,7 @@ fn parse_smiles_stages(
         });
         let mut final_valence = None;
         let mut final_rings = None;
-        if params.remove_hydrogens {
+        if params.remove_hs {
             let removed = cosmolkit_core::remove_hydrogens_with_params(
                 record.topology,
                 record.coordinates,
@@ -2967,7 +2967,7 @@ mod source_parser_conformer_tests {
                     &input,
                     &SmilesParseParams {
                         sanitize: false,
-                        remove_hydrogens: false,
+                        remove_hs: false,
                         ..Default::default()
                     },
                 )
@@ -3000,7 +3000,7 @@ mod source_parser_3d_tests {
     fn params() -> SmilesParseParams {
         SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         }
     }
@@ -3104,7 +3104,7 @@ mod source_parser_atrop_tests {
     fn params() -> SmilesParseParams {
         SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         }
     }
@@ -3222,27 +3222,24 @@ mod source_full_parser_composition_tests {
     #[test]
     fn source_flag_matrix_removes_hydrogens_and_finishes_stereo_at_the_actual_parser_boundary() {
         for sanitize in [false, true] {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 let params = SmilesParseParams {
                     sanitize,
-                    remove_hydrogens,
+                    remove_hs,
                     ..Default::default()
                 };
                 let record = parse_smiles("[H]C sample", &params).unwrap();
-                assert_eq!(
-                    record.topology.atoms.len(),
-                    if remove_hydrogens { 1 } else { 2 }
-                );
+                assert_eq!(record.topology.atoms.len(), if remove_hs { 1 } else { 2 });
                 assert_eq!(record.properties.name(), Some(&"sample".into()));
                 assert_eq!(
                     record.properties.prop("_StereochemDone"),
-                    if sanitize || remove_hydrogens {
+                    if sanitize || remove_hs {
                         Some(&PropertyValue::Int(1))
                     } else {
                         None
                     }
                 );
-                if sanitize || remove_hydrogens {
+                if sanitize || remove_hs {
                     assert!(
                         record
                             .properties
@@ -3263,7 +3260,7 @@ mod source_full_parser_composition_tests {
     fn source_sanitize_failures_propagate_from_the_reached_canonical_owner() {
         let raw = SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         assert_eq!(
@@ -3276,7 +3273,7 @@ mod source_full_parser_composition_tests {
         );
         let sanitize = SmilesParseParams {
             sanitize: true,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         assert!(matches!(
@@ -3321,11 +3318,11 @@ mod source_full_parser_composition_tests {
 
     #[test]
     fn source_aromatic_count_keeps_integral_type_on_both_sanitize_dispatches() {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             let record = parse_smiles(
                 "c1ccccc1",
                 &SmilesParseParams {
-                    remove_hydrogens,
+                    remove_hs,
                     ..Default::default()
                 },
             )

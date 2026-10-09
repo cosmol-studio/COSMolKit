@@ -79,7 +79,7 @@ def test_results_snapshots_all_generation_forms_and_atomic_typed_error():
     committed = inplace.embed_3d_conformer_result_(params)
     assert committed.conf_id() == 0 and committed.molecule().num_3d_conformers() == 1
     assert inplace.conformers_3d()[0].coordinates() == result.molecule().conformers_3d()[0].coordinates()
-    params = configured(params, clear_confs=False)
+    params = configured(params, clear_conformers=False)
     multiple = inplace.with_3d_conformers_result(3, params)
     assert multiple.conf_ids() == [1, 2, 3]
     assert multiple.requested_num_confs() == 3 and multiple.generated_count() == 3
@@ -111,12 +111,13 @@ def test_preset_scalar_fields_and_defaults_match_native_reference(factory, sourc
     actual = getattr(ck.EmbedParams, factory)()
     expected = getattr(rdDistGeom, source)()
     fields = {
-        "max_iterations":"maxIterations", "num_threads":"numThreads", "random_seed":"randomSeed", "clear_confs":"clearConfs", "use_random_coords":"useRandomCoords", "box_size_mult":"boxSizeMult", "rand_neg_eig":"randNegEig", "num_zero_fail":"numZeroFail", "optimizer_force_tol":"optimizerForceTol", "ignore_smoothing_failures":"ignoreSmoothingFailures", "enforce_chirality":"enforceChirality", "use_exp_torsion_angle_prefs":"useExpTorsionAnglePrefs", "use_basic_knowledge":"useBasicKnowledge", "verbose":"verbose", "basin_thresh":"basinThresh", "prune_rms_thresh":"pruneRmsThresh", "only_heavy_atoms_for_rms":"onlyHeavyAtomsForRMS", "et_version":"ETversion", "embed_fragments_separately":"embedFragmentsSeparately", "use_small_ring_torsions":"useSmallRingTorsions", "use_macrocycle_torsions":"useMacrocycleTorsions", "use_macrocycle14config":"useMacrocycle14config", "timeout":"timeout", "force_trans_amides":"forceTransAmides", "use_symmetry_for_pruning":"useSymmetryForPruning", "bounds_mat_force_scaling":"boundsMatForceScaling", "track_failures":"trackFailures", "enable_sequential_random_seeds":"enableSequentialRandomSeeds", "symmetrize_conjugated_terminal_groups_for_pruning":"symmetrizeConjugatedTerminalGroupsForPruning",
+        "max_iterations":"maxIterations", "num_threads":"numThreads", "random_seed":"randomSeed", "clear_conformers":"clearConfs", "use_random_coords":"useRandomCoords", "box_size_mult":"boxSizeMult", "rand_neg_eig":"randNegEig", "num_zero_fail":"numZeroFail", "optimizer_force_tol":"optimizerForceTol", "ignore_smoothing_failures":"ignoreSmoothingFailures", "enforce_chirality":"enforceChirality", "use_exp_torsion_angle_prefs":"useExpTorsionAnglePrefs", "use_basic_knowledge":"useBasicKnowledge", "verbose":"verbose", "basin_thresh":"basinThresh", "prune_rms_thresh":"pruneRmsThresh", "only_heavy_atoms_for_rms":"onlyHeavyAtomsForRMS", "et_version":"ETversion", "embed_fragments_separately":"embedFragmentsSeparately", "use_small_ring_torsions":"useSmallRingTorsions", "use_macrocycle_torsions":"useMacrocycleTorsions", "use_macrocycle14config":"useMacrocycle14config", "timeout":"timeout", "force_trans_amides":"forceTransAmides", "use_symmetry_for_pruning":"useSymmetryForPruning", "bounds_mat_force_scaling":"boundsMatForceScaling", "track_failures":"trackFailures", "enable_sequential_random_seeds":"enableSequentialRandomSeeds", "symmetrize_conjugated_terminal_groups_for_pruning":"symmetrizeConjugatedTerminalGroupsForPruning",
     }
     for field, native_field in fields.items():
         assert getattr(actual, field) == getattr(expected, native_field), field
-        with pytest.raises(AttributeError):
-            setattr(actual, field, getattr(actual, field))
+        previous = getattr(actual, field)
+        setattr(actual, field, previous)
+        assert getattr(actual, field) == previous
     assert actual.coord_map is None and actual.cpci is None and actual.failures == []
     with pytest.raises(AttributeError):
         actual.failures = []
@@ -131,8 +132,8 @@ def test_params_eight_factories_json_maps_and_roundtrip():
         assert json.loads(restored.to_json()) == json.loads(params.to_json())
     source = ck.EmbedParams()
     changed = source.with_json('{"randomSeed":42,"clearConfs":false,"maxIterations":3}')
-    assert source.random_seed == -1 and source.clear_confs
-    assert changed.random_seed == 42 and not changed.clear_confs and changed.max_iterations == 3
+    assert source.random_seed == -1 and source.clear_conformers
+    assert changed.random_seed == 42 and not changed.clear_conformers and changed.max_iterations == 3
     changed = configured(changed, coord_map={0: [1.25, 2.5, 3.75]})
     changed = configured(changed, cpci={(0, 1): -0.5})
     restored = changed.with_json(changed.to_json())
@@ -154,6 +155,6 @@ def test_bounds_array_is_numeric_readonly_query():
 
 
 def configured(params, **changes):
-    values = {field: getattr(params, field) for field in ['max_iterations', 'num_threads', 'random_seed', 'clear_confs', 'use_random_coords', 'box_size_mult', 'rand_neg_eig', 'num_zero_fail', 'coord_map', 'optimizer_force_tol', 'ignore_smoothing_failures', 'enforce_chirality', 'use_exp_torsion_angle_prefs', 'use_basic_knowledge', 'verbose', 'basin_thresh', 'prune_rms_thresh', 'only_heavy_atoms_for_rms', 'et_version', 'embed_fragments_separately', 'use_small_ring_torsions', 'use_macrocycle_torsions', 'use_macrocycle14config', 'timeout', 'cpci', 'force_trans_amides', 'use_symmetry_for_pruning', 'bounds_mat_force_scaling', 'track_failures', 'enable_sequential_random_seeds', 'symmetrize_conjugated_terminal_groups_for_pruning']}
+    values = {field: getattr(params, field) for field in ['max_iterations', 'num_threads', 'random_seed', 'clear_conformers', 'use_random_coords', 'box_size_mult', 'rand_neg_eig', 'num_zero_fail', 'coord_map', 'optimizer_force_tol', 'ignore_smoothing_failures', 'enforce_chirality', 'use_exp_torsion_angle_prefs', 'use_basic_knowledge', 'verbose', 'basin_thresh', 'prune_rms_thresh', 'only_heavy_atoms_for_rms', 'et_version', 'embed_fragments_separately', 'use_small_ring_torsions', 'use_macrocycle_torsions', 'use_macrocycle14config', 'timeout', 'cpci', 'force_trans_amides', 'use_symmetry_for_pruning', 'bounds_mat_force_scaling', 'track_failures', 'enable_sequential_random_seeds', 'symmetrize_conjugated_terminal_groups_for_pruning']}
     values.update(changes)
     return ck.EmbedParams(**values)

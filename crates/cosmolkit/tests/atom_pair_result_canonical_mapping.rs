@@ -63,7 +63,7 @@ fn collect() -> (Fingerprint, FingerprintAdditionalOutput) {
     output.allocate_atoms_per_bit();
     let fingerprint = Molecule::from_smiles("CCCO")
         .unwrap()
-        .atom_pair_fingerprint_with_params(&AtomPairFingerprintParams::default(), Some(&mut output))
+        .fingerprint_atom_pair_with_params(&AtomPairFingerprintParams::default(), Some(&mut output))
         .unwrap();
     (fingerprint, output)
 }
@@ -103,7 +103,7 @@ fn width_and_collection_information_is_observable_from_canonical_values() {
     );
     let plain = Molecule::from_smiles("CCCO")
         .unwrap()
-        .atom_pair_fingerprint_with_params(&AtomPairFingerprintParams::default(), None)
+        .fingerprint_atom_pair_with_params(&AtomPairFingerprintParams::default(), None)
         .unwrap();
     assert_eq!(plain.on_bits(), BITS);
 }
@@ -113,7 +113,7 @@ fn all_five_optional_fields_and_original_fingerprint_survive_output_reuse() {
     let detached = snapshot(&output);
     let second = Molecule::from_smiles("CCO")
         .unwrap()
-        .atom_pair_fingerprint_with_params(&AtomPairFingerprintParams::default(), Some(&mut output))
+        .fingerprint_atom_pair_with_params(&AtomPairFingerprintParams::default(), Some(&mut output))
         .unwrap();
     assert_eq!(output.atom_counts(), Some([2, 2, 2].as_slice()));
     assert_eq!(output.atom_to_bits().unwrap().len(), 3);

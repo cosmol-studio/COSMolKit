@@ -18,7 +18,7 @@ fn atom_property_params() -> CxSmilesWriteParams {
     CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::ATOM_PROPS,

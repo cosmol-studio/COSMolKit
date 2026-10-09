@@ -86,7 +86,7 @@ def test_missing_matrix_conformer_preserves_requested_id():
 )
 def test_chemistry_problem_preserves_typed_stage_and_domain_cause(smiles, stage, cause_type, kind, payload):
     molecule = ck.Molecule.from_smiles_with_params(
-        smiles, ck.SmilesParseParams(sanitize=False, remove_hydrogens=False)
+        smiles, ck.SmilesParseParams(sanitize=False, remove_hs=False)
     )
     report = molecule.detect_chemistry_problems()
     assert len(report.problems) == 1

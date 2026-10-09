@@ -5,9 +5,9 @@ import pytest
 import cosmolkit as ck
 
 def fields(value):
-    result = [value.symbol, value.branch_count, value.pi_electrons]
-    if value.chirality is not None:
-        result.append(value.chirality)
+    result = [value.symbol(), value.branch_count(), value.pi_electrons()]
+    if value.chirality() is not None:
+        result.append(value.chirality())
     return result
 
 @pytest.mark.parametrize("code,expected", [(41, ["C", 1, 1]), (42, ["C", 2, 1]), (43, ["C", 3, 1]), (105, ["O", 1, 1]), (97, ["O", 1, 0])])
@@ -31,7 +31,7 @@ def test_source_key_error_three_retains_class_arguments_and_fields():
         assert isinstance(error, KeyError)
         assert error.args == (3,) and str(error) == "3"
         assert (error.domain, error.kind, error.code) == ("Fingerprint", "UnknownChirality", 3)
-        assert ck.AtomCodeExplanation.from_code(code).chirality is None
+        assert ck.AtomCodeExplanation.from_code(code).chirality() is None
 
 def test_owned_frozen_value_and_conversion_failures():
     value = ck.AtomCodeExplanation.from_code(41)
@@ -60,4 +60,5 @@ def test_original_generated_stub_has_complete_error_and_value_protocols():
     assert [a.arg for a in constructor.args.args] == ["code", "branch_subtract", "include_chirality"]
     assert [ast.literal_eval(v) for v in constructor.args.defaults] == [0, False]
     for name in ["symbol", "branch_count", "pi_electrons", "chirality"]:
-        assert [ast.unparse(d) for d in methods[name].decorator_list] == ["property"]
+        assert methods[name].decorator_list == []
+        assert [arg.arg for arg in methods[name].args.args] == ["self"]

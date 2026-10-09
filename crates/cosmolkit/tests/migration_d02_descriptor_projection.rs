@@ -114,7 +114,7 @@ fn d02_raw_molecule_missing_valence_has_no_invented_cause() {
         "CCC",
         &SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         },
     )

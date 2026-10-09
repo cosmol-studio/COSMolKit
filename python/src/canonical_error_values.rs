@@ -3,6 +3,7 @@ use ::cosmolkit as ck;
 use pyo3::prelude::*;
 #[cfg(feature = "stubgen")]
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -20,6 +21,7 @@ impl From<ck::BioPdbReadStage> for BioPdbReadStage {
         }
     }
 }
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -79,6 +81,7 @@ impl From<ck::BioMmcifReadStage> for BioMmcifReadStage {
         }
     }
 }
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -121,8 +124,15 @@ impl UffOptimizationErrorKind {
             _ => None,
         }
     }
-    fn __eq__(&self, other: &Self) -> bool {
-        self.inner == other.inner
+    fn __eq__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        match other.extract::<PyRef<'_, Self>>() {
+            Ok(other) => Ok((self.inner == other.inner)
+                .into_pyobject(py)?
+                .to_owned()
+                .into_any()
+                .unbind()),
+            Err(_) => Ok(py.NotImplemented()),
+        }
     }
     fn __repr__(&self) -> String {
         format!("UffOptimizationErrorKind({:?})", self.inner)

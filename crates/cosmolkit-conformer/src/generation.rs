@@ -5439,7 +5439,7 @@ pub fn generate_conformers(
         cosmolkit_core::ValenceModel::RdkitLike,
     )?;
     let mut result = GeneratedConformers {
-        clear_existing: params.clear_confs,
+        clear_existing: params.clear_conformers,
         conformers: Vec::new(),
         conf_ids: Vec::new(),
         diagnostics: Vec::new(),
@@ -5466,7 +5466,7 @@ pub fn generate_conformers(
     // retained 2D values are borrowed by the fragment owner without clearing.
     let fragment_coordinates =
         cosmolkit_core::FragmentCoordinateView::from_coordinate_block(coordinates);
-    let fragment_coordinates = if params.clear_confs {
+    let fragment_coordinates = if params.clear_conformers {
         fragment_coordinates.without_3d_conformers()
     } else {
         fragment_coordinates
@@ -5679,7 +5679,7 @@ pub fn generate_conformers(
     } else {
         Vec::new()
     };
-    let retained = if params.clear_confs {
+    let retained = if params.clear_conformers {
         &[][..]
     } else {
         coordinates.conformers_3d.as_slice()
@@ -5872,7 +5872,7 @@ mod original_complete_generation_conditions {
         };
         let before = coordinates.clone();
         let mut params = random_embed_params(7, 1);
-        params.clear_confs = false;
+        params.clear_conformers = false;
         params.coord_map = Some(BTreeMap::from([(0, [0., 0., 0.]), (1, [1., 0., 0.])]));
         params.prune_rms_thresh = 0.5;
         let pruned = generate_conformers(
@@ -5902,7 +5902,7 @@ mod original_complete_generation_conditions {
             appended.conformers[0].coordinates(),
             coordinates.conformers_3d[0].coordinates()
         );
-        params.clear_confs = true;
+        params.clear_conformers = true;
         let cleared = generate_conformers(
             &mol,
             &coordinates,
@@ -6020,7 +6020,7 @@ mod original_complete_generation_conditions {
         };
         let mut params = random_embed_params(7, 1);
         params.max_iterations = 0;
-        params.clear_confs = false;
+        params.clear_conformers = false;
         let result = generate_conformers(
             &carbon(),
             &coordinates,

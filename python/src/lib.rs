@@ -11,6 +11,7 @@ mod canonical_binary;
 mod canonical_bio_binding;
 mod canonical_bio_metadata;
 mod canonical_bio_residue;
+mod canonical_bio_values;
 mod canonical_builder;
 mod canonical_chemistry_values;
 mod canonical_coordinate_input;
@@ -26,12 +27,14 @@ mod canonical_molecular_hash;
 mod canonical_operation_metadata;
 mod canonical_potential_stereo;
 mod canonical_reaction;
+mod canonical_registered_errors;
 mod canonical_sdf;
 mod canonical_search;
 mod canonical_smiles_writer;
 mod canonical_stereo_queries;
 mod canonical_valence;
 mod canonical_values;
+mod configuration_projection;
 mod drawing_binding;
 mod user_path;
 
@@ -62,4 +65,14 @@ mod canonical_sdf_supplier;
 mod canonical_stereoisomers;
 
 mod persistent_forcefields;
+
+/// Construct the real extension module for the development contract gate.
+#[cfg(feature = "stubgen")]
+pub fn binding_contract_module(
+    py: pyo3::Python<'_>,
+) -> pyo3::PyResult<pyo3::Bound<'_, pyo3::types::PyModule>> {
+    let module = pyo3::types::PyModule::new(py, "cosmolkit")?;
+    drawing_binding::cosmolkit(&module)?;
+    Ok(module)
+}
 mod rdkit_binding;

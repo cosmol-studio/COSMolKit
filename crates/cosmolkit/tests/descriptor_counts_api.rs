@@ -32,9 +32,9 @@ const CASES: [(&str, usize, usize, u32, u32, u32, u32, u64); 20] = [
     ("CC#N", 3, 3, 3, 6, 1, 0, 0x3fe0_0000_0000_0000),
 ];
 
-fn sanitized(smiles: &str, remove_hydrogens: bool) -> Molecule {
+fn sanitized(smiles: &str, remove_hs: bool) -> Molecule {
     let params = SmilesParseParams {
-        remove_hydrogens,
+        remove_hs,
         ..Default::default()
     };
     Molecule::from_smiles_with_params(smiles, &params).unwrap()
@@ -48,17 +48,13 @@ fn descriptor_query_dq04_num_heavy_atoms() {
     // call. The census increments only at an actual method invocation.
     let mut calls = 0usize;
     for (smiles, rows_false, rows_true, heavy, _, _, _, _) in CASES {
-        for remove_hydrogens in [false, true] {
-            let expected_rows = if remove_hydrogens {
-                rows_true
-            } else {
-                rows_false
-            };
-            let original = sanitized(smiles, remove_hydrogens);
+        for remove_hs in [false, true] {
+            let expected_rows = if remove_hs { rows_true } else { rows_false };
+            let original = sanitized(smiles, remove_hs);
             assert_eq!(
                 original.num_atoms(),
                 expected_rows,
-                "{smiles} policy={remove_hydrogens} row count"
+                "{smiles} policy={remove_hs} row count"
             );
             let peer = original.clone();
             for (label, receiver) in [("original", &original), ("peer", &peer)] {
@@ -70,7 +66,7 @@ fn descriptor_query_dq04_num_heavy_atoms() {
                     calls += 1;
                     assert_eq!(
                         result, heavy,
-                        "{smiles} policy={remove_hydrogens} {label} #{repeat}"
+                        "{smiles} policy={remove_hs} {label} #{repeat}"
                     );
                     assert_eq!(receiver.num_atoms(), atoms, "{label} atom snapshot");
                     assert_eq!(receiver.num_bonds(), bonds, "{label} bond snapshot");
@@ -90,17 +86,17 @@ fn descriptor_query_dq04_num_heavy_atoms() {
     // topology-only heavy query stays callable with the same literals.
     let mut raw_calls = 0usize;
     for (smiles, _, _, heavy, _, _, _, _) in CASES {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             let params = SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens,
+                remove_hs,
                 ..Default::default()
             };
             let raw = Molecule::from_smiles_with_params(smiles, &params).unwrap();
             assert_eq!(
                 raw.num_heavy_atoms().unwrap(),
                 heavy,
-                "raw {smiles} policy={remove_hydrogens}"
+                "raw {smiles} policy={remove_hs}"
             );
             raw_calls += 1;
         }
@@ -181,7 +177,7 @@ fn descriptor_heteroatoms_public_product() {
         label: &str,
         smiles: &str,
         atoms: &[cosmolkit_model::Atom],
-        remove_hydrogens: bool,
+        remove_hs: bool,
     ) {
         let index = PREREQS
             .iter()
@@ -192,9 +188,7 @@ fn descriptor_heteroatoms_public_product() {
         let kept: Vec<(u8, Option<u16>)> = atomic_numbers
             .iter()
             .zip(isotopes.iter())
-            .filter(|(z, isotope)| {
-                !remove_hydrogens || **z != 1 || isotope.is_some() || all_hydrogen
-            })
+            .filter(|(z, isotope)| !remove_hs || **z != 1 || isotope.is_some() || all_hydrogen)
             .map(|(z, isotope)| (*z, *isotope))
             .collect();
         assert_eq!(atoms.len(), kept.len(), "{label}: atom row count");
@@ -202,7 +196,7 @@ fn descriptor_heteroatoms_public_product() {
             assert_eq!(row.atomic_number(), *expected_z, "{label}: atomic number");
             assert_eq!(row.isotope(), *expected_isotope, "{label}: isotope");
         }
-        if remove_hydrogens && smiles == "[H]N([H])[H]" {
+        if remove_hs && smiles == "[H]N([H])[H]" {
             assert_eq!(atoms[0].atomic_number(), 7, "{label}: N kept");
             assert_eq!(atoms[0].explicit_hydrogens(), 3, "{label}: N H=3");
         } else {
@@ -220,7 +214,7 @@ fn descriptor_heteroatoms_public_product() {
 
     let mut calls = 0usize;
     for (smiles, expected) in HETERO_CASES {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             for sanitized_constructor in [false, true] {
                 // Truthful constructor-policy labeling: sanitize=false
                 // builds the raw graph EXCEPT that remove-H=true still
@@ -229,23 +223,17 @@ fn descriptor_heteroatoms_public_product() {
                 // assertion of a wholly unprepared graph.
                 let params = SmilesParseParams {
                     sanitize: sanitized_constructor,
-                    remove_hydrogens,
+                    remove_hs,
                     ..Default::default()
                 };
                 let original = Molecule::from_smiles_with_params(smiles, &params).unwrap();
                 let peer = original.clone();
                 for receiver in [&original, &peer] {
                     for _repeat in 0..2 {
-                        let label =
-                            format!("{smiles}/rh={remove_hydrogens}/s={sanitized_constructor}");
+                        let label = format!("{smiles}/rh={remove_hs}/s={sanitized_constructor}");
                         // BEFORE-call constructor/element/H/isotope
                         // prerequisite plus fresh public property clone.
-                        assert_input_prerequisites(
-                            &label,
-                            smiles,
-                            receiver.atoms(),
-                            remove_hydrogens,
-                        );
+                        assert_input_prerequisites(&label, smiles, receiver.atoms(), remove_hs);
                         let properties_before = receiver.properties().clone();
                         let atoms = receiver.num_atoms();
                         let bonds = receiver.num_bonds();
@@ -279,17 +267,13 @@ fn descriptor_query_dq05_total_atom_count() {
     // Molecule::num_atoms (row length) separately from the total.
     let mut calls = 0usize;
     for (smiles, rows_false, rows_true, _, total, _, _, _) in CASES {
-        for remove_hydrogens in [false, true] {
-            let expected_rows = if remove_hydrogens {
-                rows_true
-            } else {
-                rows_false
-            };
-            let original = sanitized(smiles, remove_hydrogens);
+        for remove_hs in [false, true] {
+            let expected_rows = if remove_hs { rows_true } else { rows_false };
+            let original = sanitized(smiles, remove_hs);
             assert_eq!(
                 original.num_atoms(),
                 expected_rows,
-                "{smiles} policy={remove_hydrogens} row count"
+                "{smiles} policy={remove_hs} row count"
             );
             let peer = original.clone();
             for (label, receiver) in [("original", &original), ("peer", &peer)] {
@@ -301,7 +285,7 @@ fn descriptor_query_dq05_total_atom_count() {
                     calls += 1;
                     assert_eq!(
                         result, total,
-                        "{smiles} policy={remove_hydrogens} {label} #{repeat}"
+                        "{smiles} policy={remove_hs} {label} #{repeat}"
                     );
                     assert_eq!(
                         receiver.num_atoms(),
@@ -316,11 +300,7 @@ fn descriptor_query_dq05_total_atom_count() {
                     // [2H]O[2H]).
                     assert_eq!(
                         u32::try_from(atoms).unwrap(),
-                        if remove_hydrogens {
-                            rows_true
-                        } else {
-                            rows_false
-                        } as u32,
+                        if remove_hs { rows_true } else { rows_false } as u32,
                         "{label} num_atoms stays the row-length accessor"
                     );
                     assert_eq!(receiver.num_bonds(), bonds, "{label} bond snapshot");
@@ -344,28 +324,28 @@ fn descriptor_query_dq05_total_atom_count() {
     let mut constructor_error_calls = 0usize;
     let mut error_calls = 0usize;
     for (smiles, _, _, _, expected, _, _, _) in CASES {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             let params = SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens,
+                remove_hs,
                 ..Default::default()
             };
             let raw = Molecule::from_smiles_with_params(smiles, &params).unwrap();
             let original = raw.to_builder();
             let result = raw.total_atom_count();
             constructor_calls += 1;
-            if remove_hydrogens {
+            if remove_hs {
                 assert_eq!(
                     result.unwrap(),
                     expected,
-                    "source-prepared raw {smiles} policy={remove_hydrogens}"
+                    "source-prepared raw {smiles} policy={remove_hs}"
                 );
                 prepared_calls += 1;
             } else {
                 let err = result.unwrap_err();
                 assert!(
                     matches!(err, DescriptorReadError::MissingPreparedValence),
-                    "raw {smiles} policy={remove_hydrogens}: {err:?}"
+                    "raw {smiles} policy={remove_hs}: {err:?}"
                 );
                 constructor_error_calls += 1;
             }
@@ -384,7 +364,7 @@ fn descriptor_query_dq05_total_atom_count() {
             error_calls += 1;
             assert!(
                 matches!(err, DescriptorReadError::MissingPreparedValence),
-                "uncached {smiles} policy={remove_hydrogens}: {err:?}"
+                "uncached {smiles} policy={remove_hs}: {err:?}"
             );
             assert_eq!(
                 unprepared.to_builder(),
@@ -420,17 +400,13 @@ fn descriptor_query_dq06_lipinski_hba() {
     // and pure hydrocarbons have 0.
     let mut calls = 0usize;
     for (smiles, rows_false, rows_true, _, _, hba, _, _) in CASES {
-        for remove_hydrogens in [false, true] {
-            let expected_rows = if remove_hydrogens {
-                rows_true
-            } else {
-                rows_false
-            };
-            let original = sanitized(smiles, remove_hydrogens);
+        for remove_hs in [false, true] {
+            let expected_rows = if remove_hs { rows_true } else { rows_false };
+            let original = sanitized(smiles, remove_hs);
             assert_eq!(
                 original.num_atoms(),
                 expected_rows,
-                "{smiles} policy={remove_hydrogens} row count"
+                "{smiles} policy={remove_hs} row count"
             );
             let peer = original.clone();
             for (label, receiver) in [("original", &original), ("peer", &peer)] {
@@ -440,10 +416,7 @@ fn descriptor_query_dq06_lipinski_hba() {
                     let properties = receiver.properties().clone();
                     let result = receiver.lipinski_hba().unwrap();
                     calls += 1;
-                    assert_eq!(
-                        result, hba,
-                        "{smiles} policy={remove_hydrogens} {label} #{repeat}"
-                    );
+                    assert_eq!(result, hba, "{smiles} policy={remove_hs} {label} #{repeat}");
                     assert_eq!(receiver.num_atoms(), atoms, "{label} atom snapshot");
                     assert_eq!(receiver.num_bonds(), bonds, "{label} bond snapshot");
                     assert_eq!(
@@ -461,17 +434,17 @@ fn descriptor_query_dq06_lipinski_hba() {
     // count stays callable on unsanitized states with the same literals.
     let mut raw_calls = 0usize;
     for (smiles, _, _, _, _, hba, _, _) in CASES {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             let params = SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens,
+                remove_hs,
                 ..Default::default()
             };
             let raw = Molecule::from_smiles_with_params(smiles, &params).unwrap();
             assert_eq!(
                 raw.lipinski_hba().unwrap(),
                 hba,
-                "raw {smiles} policy={remove_hydrogens}"
+                "raw {smiles} policy={remove_hs}"
             );
             raw_calls += 1;
         }
@@ -488,17 +461,13 @@ fn descriptor_query_dq07_lipinski_hbd() {
     // [nH]1cccc1=1, C=O=0.
     let mut calls = 0usize;
     for (smiles, rows_false, rows_true, _, _, _, hbd, _) in CASES {
-        for remove_hydrogens in [false, true] {
-            let expected_rows = if remove_hydrogens {
-                rows_true
-            } else {
-                rows_false
-            };
-            let original = sanitized(smiles, remove_hydrogens);
+        for remove_hs in [false, true] {
+            let expected_rows = if remove_hs { rows_true } else { rows_false };
+            let original = sanitized(smiles, remove_hs);
             assert_eq!(
                 original.num_atoms(),
                 expected_rows,
-                "{smiles} policy={remove_hydrogens} row count"
+                "{smiles} policy={remove_hs} row count"
             );
             let peer = original.clone();
             for (label, receiver) in [("original", &original), ("peer", &peer)] {
@@ -508,10 +477,7 @@ fn descriptor_query_dq07_lipinski_hbd() {
                     let properties = receiver.properties().clone();
                     let result = receiver.lipinski_hbd().unwrap();
                     calls += 1;
-                    assert_eq!(
-                        result, hbd,
-                        "{smiles} policy={remove_hydrogens} {label} #{repeat}"
-                    );
+                    assert_eq!(result, hbd, "{smiles} policy={remove_hs} {label} #{repeat}");
                     assert_eq!(receiver.num_atoms(), atoms, "{label} atom snapshot");
                     assert_eq!(receiver.num_bonds(), bonds, "{label} bond snapshot");
                     assert_eq!(
@@ -534,28 +500,28 @@ fn descriptor_query_dq07_lipinski_hbd() {
     let mut constructor_error_calls = 0usize;
     let mut error_calls = 0usize;
     for (smiles, _, _, _, _, _, expected, _) in CASES {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             let params = SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens,
+                remove_hs,
                 ..Default::default()
             };
             let raw = Molecule::from_smiles_with_params(smiles, &params).unwrap();
             let original = raw.to_builder();
             let result = raw.lipinski_hbd();
             constructor_calls += 1;
-            if remove_hydrogens {
+            if remove_hs {
                 assert_eq!(
                     result.unwrap(),
                     expected,
-                    "source-prepared raw {smiles} policy={remove_hydrogens}"
+                    "source-prepared raw {smiles} policy={remove_hs}"
                 );
                 prepared_calls += 1;
             } else {
                 let err = result.unwrap_err();
                 assert!(
                     matches!(err, DescriptorReadError::MissingPreparedValence),
-                    "raw {smiles} policy={remove_hydrogens}: {err:?}"
+                    "raw {smiles} policy={remove_hs}: {err:?}"
                 );
                 constructor_error_calls += 1;
             }
@@ -574,7 +540,7 @@ fn descriptor_query_dq07_lipinski_hbd() {
             error_calls += 1;
             assert!(
                 matches!(err, DescriptorReadError::MissingPreparedValence),
-                "uncached {smiles} policy={remove_hydrogens}: {err:?}"
+                "uncached {smiles} policy={remove_hs}: {err:?}"
             );
             assert_eq!(
                 unprepared.to_builder(),
@@ -610,17 +576,13 @@ fn descriptor_query_dq08_fraction_csp3() {
     // and the charged carbon C[C+](C)C yields 0x3fe8000000000000 (3/4).
     let mut calls = 0usize;
     for (smiles, rows_false, rows_true, _, _, _, _, csp3_bits) in CASES {
-        for remove_hydrogens in [false, true] {
-            let expected_rows = if remove_hydrogens {
-                rows_true
-            } else {
-                rows_false
-            };
-            let original = sanitized(smiles, remove_hydrogens);
+        for remove_hs in [false, true] {
+            let expected_rows = if remove_hs { rows_true } else { rows_false };
+            let original = sanitized(smiles, remove_hs);
             assert_eq!(
                 original.num_atoms(),
                 expected_rows,
-                "{smiles} policy={remove_hydrogens} row count"
+                "{smiles} policy={remove_hs} row count"
             );
             let peer = original.clone();
             for (label, receiver) in [("original", &original), ("peer", &peer)] {
@@ -633,7 +595,7 @@ fn descriptor_query_dq08_fraction_csp3() {
                     assert_eq!(
                         result.to_bits(),
                         csp3_bits,
-                        "{smiles} policy={remove_hydrogens} {label} #{repeat}"
+                        "{smiles} policy={remove_hs} {label} #{repeat}"
                     );
                     assert_eq!(receiver.num_atoms(), atoms, "{label} atom snapshot");
                     assert_eq!(receiver.num_bonds(), bonds, "{label} bond snapshot");
@@ -657,28 +619,28 @@ fn descriptor_query_dq08_fraction_csp3() {
     let mut constructor_error_calls = 0usize;
     let mut error_calls = 0usize;
     for (smiles, _, _, _, _, _, _, expected) in CASES {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             let params = SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens,
+                remove_hs,
                 ..Default::default()
             };
             let raw = Molecule::from_smiles_with_params(smiles, &params).unwrap();
             let original = raw.to_builder();
             let result = raw.fraction_csp3().map(f64::to_bits);
             constructor_calls += 1;
-            if remove_hydrogens {
+            if remove_hs {
                 assert_eq!(
                     result.unwrap(),
                     expected,
-                    "source-prepared raw {smiles} policy={remove_hydrogens}"
+                    "source-prepared raw {smiles} policy={remove_hs}"
                 );
                 prepared_calls += 1;
             } else {
                 let err = result.unwrap_err();
                 assert!(
                     matches!(err, DescriptorReadError::MissingPreparedValence),
-                    "raw {smiles} policy={remove_hydrogens}: {err:?}"
+                    "raw {smiles} policy={remove_hs}: {err:?}"
                 );
                 constructor_error_calls += 1;
             }
@@ -697,7 +659,7 @@ fn descriptor_query_dq08_fraction_csp3() {
             error_calls += 1;
             assert!(
                 matches!(err, DescriptorReadError::MissingPreparedValence),
-                "uncached {smiles} policy={remove_hydrogens}: {err:?}"
+                "uncached {smiles} policy={remove_hs}: {err:?}"
             );
             assert_eq!(
                 unprepared.to_builder(),

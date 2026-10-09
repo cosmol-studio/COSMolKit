@@ -154,7 +154,7 @@ def molecule(record):
         raw = (WORKSPACE / "testdata/conformer/fixtures" / identity["fixture"]).read_bytes()
         assert len(raw) == identity["bytes"]
         assert hashlib.sha256(raw).hexdigest() == identity["sha256"]
-        params = ck.SdfReadParams(sanitize=True, remove_hydrogens=False, process_property_lists=False)
+        params = ck.SdfReadParams(sanitize=True, remove_hs=False, process_property_lists=False)
         return ck.Molecule.from_sdf_with_params(raw.decode(), params)
     result = ck.Molecule.from_smiles(source)
     if kind == "smiles_with_hydrogens":
@@ -246,6 +246,6 @@ def test_original19_native(record):
 
 
 def configured(params, **changes):
-    values = {field: getattr(params, field) for field in ['max_iterations', 'num_threads', 'random_seed', 'clear_confs', 'use_random_coords', 'box_size_mult', 'rand_neg_eig', 'num_zero_fail', 'coord_map', 'optimizer_force_tol', 'ignore_smoothing_failures', 'enforce_chirality', 'use_exp_torsion_angle_prefs', 'use_basic_knowledge', 'verbose', 'basin_thresh', 'prune_rms_thresh', 'only_heavy_atoms_for_rms', 'et_version', 'embed_fragments_separately', 'use_small_ring_torsions', 'use_macrocycle_torsions', 'use_macrocycle14config', 'timeout', 'cpci', 'force_trans_amides', 'use_symmetry_for_pruning', 'bounds_mat_force_scaling', 'track_failures', 'enable_sequential_random_seeds', 'symmetrize_conjugated_terminal_groups_for_pruning']}
+    values = {field: getattr(params, field) for field in ['max_iterations', 'num_threads', 'random_seed', 'clear_conformers', 'use_random_coords', 'box_size_mult', 'rand_neg_eig', 'num_zero_fail', 'coord_map', 'optimizer_force_tol', 'ignore_smoothing_failures', 'enforce_chirality', 'use_exp_torsion_angle_prefs', 'use_basic_knowledge', 'verbose', 'basin_thresh', 'prune_rms_thresh', 'only_heavy_atoms_for_rms', 'et_version', 'embed_fragments_separately', 'use_small_ring_torsions', 'use_macrocycle_torsions', 'use_macrocycle14config', 'timeout', 'cpci', 'force_trans_amides', 'use_symmetry_for_pruning', 'bounds_mat_force_scaling', 'track_failures', 'enable_sequential_random_seeds', 'symmetrize_conjugated_terminal_groups_for_pruning']}
     values.update(changes)
     return ck.EmbedParams(**values)

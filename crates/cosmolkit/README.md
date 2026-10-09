@@ -64,7 +64,7 @@ plain-name bundles such as `core`, `bio`, or `fingerprints`:
 
 <!-- rust-install-version:start -->
 ```toml
-cosmolkit = { version = "0.5.0-rc.16", default-features = false, features = ["core", "bio"] }
+cosmolkit = { version = "0.5.0-rc.17", default-features = false, features = ["core", "bio"] }
 ```
 <!-- rust-install-version:end -->
 
@@ -276,13 +276,13 @@ Enable `inchi` alongside `core` (or use `full`) for molecule conversion and
 direct InChIKey generation:
 
 ```rust
-use cosmolkit::{Molecule, inchi_to_inchi_key};
+use cosmolkit::{Molecule, inchi_to_key};
 
 let molecule = Molecule::from_smiles("C")?;
 let identifier = molecule.to_inchi()?;
 assert_eq!(identifier, "InChI=1S/CH4/h1H4");
 
-let key = inchi_to_inchi_key(&identifier)?;
+let key = inchi_to_key(&identifier)?;
 assert_eq!(key, "VNWKTOKETHGBQD-UHFFFAOYSA-N");
 
 let parsed = Molecule::from_inchi(&identifier)?;
@@ -347,7 +347,7 @@ explicit-property hydrogens (`includeNeighbors=false`). `lipinski_hba` is the
 direct N/O count (not the general recursive `NumHBA`) and `lipinski_hbd` is
 the donor-hydrogen sum on N/O (not the donor-atom count). All five run in
 the parity pipeline over the 5000-record SMILES corpus under both
-`remove_hydrogens` parser policies (10000 observations per task).
+`remove_hs` parser policies (10000 observations per task).
 
 ## Fingerprints
 
@@ -364,15 +364,15 @@ use cosmolkit::{
     TopologicalFingerprintOutputRequest,
     TopologicalFingerprintParams, TopologicalTorsionFingerprintOutputRequest,
     TopologicalTorsionFingerprintParams, TopologicalTorsionFingerprintVector,
-    topological_torsion_fingerprint, topological_torsion_fingerprint_with_output,
-    topological_torsion_sparse_count_fingerprint,
+    fingerprint_topological_torsion, fingerprint_topological_torsion_with_output,
+    fingerprint_topological_torsion_sparse_count,
 };
 
 let molecule = Molecule::from_smiles("c1ccccc1O")?;
-let topological = molecule.topological_fingerprint(
+let topological = molecule.fingerprint_topological(
     &TopologicalFingerprintParams::default(),
 )?;
-let provenance = molecule.topological_fingerprint_with_output(
+let provenance = molecule.fingerprint_topological_with_output(
     &TopologicalFingerprintParams::default(),
     TopologicalFingerprintOutputRequest {
         atom_bits: true,
@@ -380,15 +380,15 @@ let provenance = molecule.topological_fingerprint_with_output(
     },
 )?;
 let avalon = molecule.avalon_fingerprint(&AvalonFingerprintParams::default())?;
-let atom_pair = molecule.atom_pair_fingerprint(&AtomPairFingerprintParams::default())?;
-let layered = molecule.layered_fingerprint(&LayeredFingerprintParams {
+let atom_pair = molecule.fingerprint_atom_pair(&AtomPairFingerprintParams::default())?;
+let layered = molecule.fingerprint_layered(&LayeredFingerprintParams {
     layers: LayeredFingerprintLayers::SUBSTRUCTURE,
     ..Default::default()
 })?;
 let torsion_params = TopologicalTorsionFingerprintParams::default();
-let torsion_ids = topological_torsion_sparse_count_fingerprint(&molecule, &torsion_params)?;
-let torsion_bits = topological_torsion_fingerprint(&molecule, &torsion_params)?;
-let torsion_provenance = topological_torsion_fingerprint_with_output(
+let torsion_ids = fingerprint_topological_torsion_sparse_count(&molecule, &torsion_params)?;
+let torsion_bits = fingerprint_topological_torsion(&molecule, &torsion_params)?;
+let torsion_provenance = fingerprint_topological_torsion_with_output(
     &molecule,
     &torsion_params,
     TopologicalTorsionFingerprintOutputRequest {

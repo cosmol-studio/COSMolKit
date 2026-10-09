@@ -19,12 +19,12 @@ def test_default_and_v1_parameter_factories():
     assert current.transform_count() == 37
     assert v1.transform_count() == 36
     for params in current, v1:
-        assert params.max_tautomers() == params.max_transforms() == 1000
-        assert params.remove_sp3_stereo()
-        assert params.remove_bond_stereo()
-        assert params.remove_isotopic_hydrogens()
-        assert params.reassign_stereo()
-        assert params.callback() is params.scorer() is None
+        assert params.max_tautomers == params.max_transforms == 1000
+        assert params.remove_sp3_stereo
+        assert params.remove_bond_stereo
+        assert params.remove_isotopic_hydrogens
+        assert params.reassign_stereo
+        assert params.callback is params.scorer is None
 
 
 @pytest.mark.parametrize("field,value", [
@@ -34,12 +34,14 @@ def test_default_and_v1_parameter_factories():
 ])
 def test_parameter_updates_preserve_value_semantics(field, value):
     params = ck.TautomerParams()
-    before = getattr(params, field)()
+    before = getattr(params, field)
     updated = getattr(params, "with_" + field)(value)
-    assert getattr(updated, field)() == value
-    assert getattr(params, field)() == before
+    assert getattr(updated, field) == value
+    assert getattr(params, field) == before
     getattr(params, "set_" + field)(value)
-    assert getattr(params, field)() == value
+    assert getattr(params, field) == value
+    setattr(params, field, before)
+    assert getattr(params, field) == before
 
 
 @pytest.mark.parametrize("field", ["max_tautomers", "max_transforms"])
@@ -84,7 +86,7 @@ def test_callback_pre_application_snapshot_survives_return_and_cancellation():
         assert isinstance(progress, ck.TautomerProgress)
         return False
     params = ck.TautomerParams(callback=cancel)
-    assert params.callback() is cancel
+    assert params.callback is cancel
     source = acetone()
     result = source.enumerate_tautomers_with_params(params)
     assert result.status() == ck.TautomerEnumerationStatus.Canceled
@@ -138,7 +140,7 @@ def test_custom_signed_scorer_exact_inputs_and_retention(entry):
         saved.append(molecule)
         return 100 if molecule.to_smiles() == "C=C(C)O" else -100
     params = ck.TautomerParams(scorer=score)
-    assert params.scorer() is score
+    assert params.scorer is score
     source = acetone()
     receiver = source if entry == "source" else source.enumerate_tautomers()
     selected = receiver.canonical_tautomer_with_params(params)
@@ -222,7 +224,7 @@ def test_noncallable_parameter_is_rejected_without_changing_configuration(field)
     params = ck.TautomerParams()
     with pytest.raises(TypeError, match="callable"):
         getattr(params, "set_" + field)(3)
-    assert getattr(params, field)() is None
+    assert getattr(params, field) is None
 
 
 def test_iterable_selection_preserves_input_order_duplicates_and_first_tie():
@@ -272,7 +274,9 @@ def test_callback_property_values_are_owned_read_only_and_keep_computed_state():
     props = captured[0]
     assert isinstance(props, ck.MoleculeProperties)
     assert props.name() == "original"
-    assert props.prop("_StereochemDone") == "1"
+    # Pinned Chirality.cpp:2904 writes an int, not a string property.
+    assert props.prop("_StereochemDone").kind() == ck.PropertyValueKind.Int
+    assert props.prop("_StereochemDone").as_int() == 1
     assert props.is_prop_computed("_StereochemDone")
     assert "_StereochemDone" in props.computed_prop_names()
     assert props.sdf_data_fields() == props.sdf_property_lists() == []
@@ -280,7 +284,7 @@ def test_callback_property_values_are_owned_read_only_and_keep_computed_state():
     returned["_StereochemDone"] = "changed copy"
     del source, captured
     gc.collect()
-    assert props.prop("_StereochemDone") == "1"
+    assert props.prop("_StereochemDone").as_int() == 1
     with pytest.raises(AttributeError):
         setattr(props, "name", "changed")
 

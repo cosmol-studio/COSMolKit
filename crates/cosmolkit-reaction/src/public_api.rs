@@ -231,7 +231,7 @@ impl ReactionTemplateRemovalParams {
 impl ReactionWriteParams {
     pub fn new(
         canonical: bool,
-        do_isomeric_smiles: bool,
+        isomeric_smiles: bool,
         rooted_at_atom: Option<usize>,
         include_dative_bonds: bool,
         include_cx: bool,
@@ -240,7 +240,7 @@ impl ReactionWriteParams {
     ) -> Self {
         Self {
             canonical,
-            do_isomeric_smiles,
+            isomeric_smiles,
             rooted_at_atom,
             include_dative_bonds,
             include_cx,
@@ -251,8 +251,8 @@ impl ReactionWriteParams {
     pub fn canonical(&self) -> bool {
         self.canonical
     }
-    pub fn do_isomeric_smiles(&self) -> bool {
-        self.do_isomeric_smiles
+    pub fn isomeric_smiles(&self) -> bool {
+        self.isomeric_smiles
     }
     pub fn rooted_at_atom(&self) -> Option<usize> {
         self.rooted_at_atom

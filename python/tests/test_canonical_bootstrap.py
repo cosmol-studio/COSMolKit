@@ -49,9 +49,9 @@ def test_smiles_constructor_and_default_writer(input: str, output: str, atoms: i
 
 
 PARSE_DEFAULTS: dict[str, object] = dict(sanitize=True, allow_cxsmiles=True,
-    strict_cxsmiles=True, parse_name=True, remove_hydrogens=True,
+    strict_cxsmiles=True, parse_name=True, remove_hs=True,
     skip_cleanup=False, debug_parse=False, replacements={})
-WRITE_DEFAULTS: dict[str, object] = dict(do_isomeric_smiles=True, do_kekule=False,
+WRITE_DEFAULTS: dict[str, object] = dict(isomeric_smiles=True, kekule=False,
     canonical=True, clean_stereo=True, rooted_at_atom=None, all_bonds_explicit=False,
     all_hydrogens_explicit=False, include_dative_bonds=True, ignore_atom_map_numbers=False)
 
@@ -59,15 +59,16 @@ WRITE_DEFAULTS: dict[str, object] = dict(do_isomeric_smiles=True, do_kekule=Fals
 @pytest.mark.parametrize("factory,defaults", [
     (ck.SmilesParseParams, PARSE_DEFAULTS), (ck.SmilesWriteParams, WRITE_DEFAULTS),
 ])
-def test_option_defaults_explicit_fields_and_immutability(factory: object, defaults: dict[str, object]):
+def test_option_defaults_explicit_fields_and_writable_configuration(factory: object, defaults: dict[str, object]):
     params = call(factory)()
     assert {key: cast(object, getattr(params, key)) for key in defaults} == defaults
     explicit = {key: not val if type(val) is bool else val for key, val in defaults.items()}
     configured = call(factory)(**explicit)
     assert {key: cast(object, getattr(configured, key)) for key in explicit} == explicit
     for key in defaults:
-        with pytest.raises(AttributeError):
-            setattr(params, key, defaults[key])
+        setattr(params, key, explicit[key])
+        assert getattr(params, key) == explicit[key]
+    assert {key: getattr(configured, key) for key in explicit} == explicit
     with pytest.raises(TypeError):
         _ = call(factory)(unknown_option=True)
     with pytest.raises(TypeError):
@@ -85,10 +86,10 @@ def test_replacements_are_copied_and_forwarded():
     assert mol.to_smiles() == "CCO"
 
 
-@pytest.mark.parametrize("remove_hydrogens,expected_atoms", [(True, 1), (False, 5)])
-def test_hydrogen_option_forwarding(remove_hydrogens: bool, expected_atoms: int):
+@pytest.mark.parametrize("remove_hs,expected_atoms", [(True, 1), (False, 5)])
+def test_hydrogen_option_forwarding(remove_hs: bool, expected_atoms: int):
     mol = ck.Molecule.from_smiles_with_params("[H]C([H])([H])[H]",
-        ck.SmilesParseParams(remove_hydrogens=remove_hydrogens))
+        ck.SmilesParseParams(remove_hs=remove_hs))
     assert mol.num_atoms() == expected_atoms
 
 
@@ -98,14 +99,14 @@ def test_hydrogen_option_forwarding(remove_hydrogens: bool, expected_atoms: int)
     ("topological_torsion", ck.TopologicalTorsionReadError, "Topological Torsion"),
 ])
 @pytest.mark.parametrize("suffix", [
-    "fingerprint", "sparse_fingerprint", "count_fingerprint", "sparse_count_fingerprint",
+    "", "_sparse", "_count", "_sparse_count",
 ])
 def test_unsanitized_read_reports_missing_preparation(family: str, error_type: type[Exception], label: str, suffix: str):
     mol = ck.Molecule.from_smiles_with_params("CCO",
-        ck.SmilesParseParams(sanitize=False, remove_hydrogens=False))
+        ck.SmilesParseParams(sanitize=False, remove_hs=False))
     before = state(mol)
     with pytest.raises(error_type) as caught:
-        _ = call(getattr(mol, f"{family}_{suffix}"))()
+        _ = call(getattr(mol, f"fingerprint_{family}{suffix}"))()
     assert (caught.value.domain, caught.value.kind) == ("fingerprints", "Preparation")
     preparation = caught.value.__cause__
     assert isinstance(preparation, ck.FingerprintPreparationError)
@@ -140,7 +141,7 @@ def test_writer_options_are_forwarded_and_root_errors_keep_cause():
     assert mol.to_smiles_with_params(ck.SmilesWriteParams(rooted_at_atom=2)) == "OCC"
     chiral = ck.Molecule.from_smiles("F[C@H](Cl)Br")
     assert "@" in chiral.to_smiles()
-    assert "@" not in chiral.to_smiles_with_params(ck.SmilesWriteParams(do_isomeric_smiles=False))
+    assert "@" not in chiral.to_smiles_with_params(ck.SmilesWriteParams(isomeric_smiles=False))
     with pytest.raises(ck.SmilesWriteError) as caught:
         _ = mol.to_smiles_with_params(ck.SmilesWriteParams(rooted_at_atom=99))
     error = caught.value
@@ -158,12 +159,12 @@ def test_root_usize_conversion(value: int):
 
 
 @pytest.mark.parametrize("method,result_type,width,values", [
-    ("morgan_fingerprint", ck.Fingerprint, 2048, [80, 222, 294, 807, 1057, 1410]),
-    ("morgan_sparse_fingerprint", ck.SparseBitFingerprint, 2**32-1,
+    ("fingerprint_morgan", ck.Fingerprint, 2048, [80, 222, 294, 807, 1057, 1410]),
+    ("fingerprint_morgan_sparse", ck.SparseBitFingerprint, 2**32-1,
         [-2049583024, -2048238559, -752510682, -276918910, 864662311, 1535166686]),
-    ("morgan_count_fingerprint", ck.SparseCountFingerprint32, 2048,
+    ("fingerprint_morgan_count", ck.SparseCountFingerprint32, 2048,
         {80: 1, 222: 1, 294: 1, 807: 1, 1057: 1, 1410: 1}),
-    ("morgan_sparse_count_fingerprint", ck.SparseCountFingerprint, 2**64-1,
+    ("fingerprint_morgan_sparse_count", ck.SparseCountFingerprint, 2**64-1,
         {864662311: 1, 1535166686: 1, 2245384272: 1, 2246728737: 1, 3542456614: 1, 4018048386: 1}),
 ])
 def test_four_morgan_results_and_owned_containers(method: str, result_type: type, width: int, values: object):
@@ -171,7 +172,7 @@ def test_four_morgan_results_and_owned_containers(method: str, result_type: type
     before = state(mol)
     result = call(cast(object, getattr(mol, method)))()
     assert type(result) is result_type
-    is_bits = method in ("morgan_fingerprint", "morgan_sparse_fingerprint")
+    is_bits = method in ("fingerprint_morgan", "fingerprint_morgan_sparse")
     accessor = "on_bits" if is_bits else "nonzero_elements"
     width_accessor = "n_bits" if is_bits else "length"
     assert call(cast(object, getattr(result, width_accessor)))() == width

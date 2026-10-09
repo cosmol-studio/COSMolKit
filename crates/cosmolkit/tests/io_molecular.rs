@@ -172,11 +172,11 @@ fn molecule_file_readers_preserve_first_record_and_real_io_source() {
 #[test]
 fn mol2_finalization_runs_all_public_sanitize_remove_hydrogens_branches() {
     for sanitize in [false, true] {
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             for cleanup_substructures in [false, true] {
                 let params = Mol2ReadParams {
                     sanitize,
-                    remove_hydrogens,
+                    remove_hs,
                     cleanup_substructures,
                     ..Default::default()
                 };

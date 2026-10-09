@@ -33,6 +33,24 @@ impl Molecule {
             .borrow()
             .substruct_matches_with_params(query, params)
     }
+    pub fn substruct_match_with_params(
+        &self,
+        query: &ck::QueryGraph,
+        params: &ck::SubstructMatchParams,
+    ) -> Result<Option<ck::MatchResult>, ck::SubstructMatchError> {
+        self.inner
+            .borrow()
+            .substruct_match_with_params(query, params)
+    }
+    pub fn has_substruct_match_with_params(
+        &self,
+        query: &ck::QueryGraph,
+        params: &ck::SubstructMatchParams,
+    ) -> Result<bool, ck::SubstructMatchError> {
+        self.inner
+            .borrow()
+            .has_substruct_match_with_params(query, params)
+    }
     pub fn substruct_matches_compiled(
         &self,
         query: &ck::CompiledQuery,

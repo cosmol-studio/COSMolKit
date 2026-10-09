@@ -5,10 +5,11 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct KekulizeParams {
     pub(crate) inner: ck::KekulizeParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl KekulizeParams {
@@ -38,10 +39,11 @@ impl KekulizeParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct RingSearchParams {
     pub(crate) inner: ck::RingSearchParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl RingSearchParams {
@@ -66,10 +68,11 @@ impl RingSearchParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct StructureTagParams {
     pub(crate) inner: ck::StructureTagParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl StructureTagParams {
@@ -94,10 +97,11 @@ impl StructureTagParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct DistanceMatrixParams {
     pub(crate) inner: ck::DistanceMatrixParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl DistanceMatrixParams {
@@ -122,10 +126,11 @@ impl DistanceMatrixParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct DistanceMatrix3dParams {
     pub(crate) inner: ck::DistanceMatrix3dParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl DistanceMatrix3dParams {
@@ -150,10 +155,11 @@ impl DistanceMatrix3dParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct AtomPositionParams {
     pub(crate) inner: ck::AtomPositionParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AtomPositionParams {
@@ -171,10 +177,11 @@ impl AtomPositionParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct RemoveHsParams {
     pub(crate) inner: ck::RemoveHsParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl RemoveHsParams {
@@ -291,6 +298,7 @@ impl RemoveHsParams {
     }
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -322,10 +330,11 @@ impl AromaticityModel {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct AromaticityParams {
     pub(crate) inner: ck::AromaticityParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AromaticityParams {
@@ -345,10 +354,11 @@ impl AromaticityParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct AddHsParams {
     pub(crate) inner: ck::AddHsParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl AddHsParams {
@@ -398,7 +408,7 @@ impl AddHsParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct DenseMatrix {
     pub(crate) inner: ck::DenseMatrix,
 }
@@ -605,6 +615,7 @@ pub(crate) fn matrix_pyerr(py: Python<'_>, source: ck::MatrixError) -> PyErr {
     }
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -755,7 +766,8 @@ impl From<ck::SanitizeStage> for SanitizeStage {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, eq)]
+#[derive(PartialEq)]
 pub(crate) struct SanitizeOperations {
     inner: ck::SanitizeOperations,
 }
@@ -887,10 +899,11 @@ impl SanitizeOperations {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct SanitizeParams {
     pub(crate) inner: ck::SanitizeParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SanitizeParams {

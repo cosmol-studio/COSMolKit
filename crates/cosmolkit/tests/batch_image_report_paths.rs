@@ -96,7 +96,7 @@ fn actual_image_output_precedes_report_home_lookup_and_uses_the_canonical_writer
                 Some(root.0.clone().into_os_string())
             },
             |directory| {
-                batch.to_images_with_params(
+                batch.write_images_with_params(
                     directory,
                     &BatchImageParams {
                         report_path: None,
@@ -141,7 +141,7 @@ fn missing_report_home_retains_actual_images_and_export_failure_never_reads_repo
             None
         },
         |directory| {
-            batch.to_images_with_params(
+            batch.write_images_with_params(
                 directory,
                 &BatchImageParams {
                     report_path: None,
@@ -164,7 +164,7 @@ fn missing_report_home_retains_actual_images_and_export_failure_never_reads_repo
         Some("~/report.json"),
         || panic!("export failure must precede report HOME access"),
         |directory| {
-            batch.to_images_with_params(
+            batch.write_images_with_params(
                 directory,
                 &BatchImageParams {
                     report_path: None,
@@ -199,7 +199,7 @@ fn report_io_failure_retains_real_cause_and_completed_images() {
             Some(root.0.clone().into_os_string())
         },
         |directory| {
-            batch.to_images_with_params(
+            batch.write_images_with_params(
                 directory,
                 &BatchImageParams {
                     report_path: None,

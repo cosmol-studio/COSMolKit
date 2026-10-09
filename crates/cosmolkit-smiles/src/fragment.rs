@@ -151,7 +151,7 @@ pub(super) fn prepare_fragment_stereo<'record, 'a>(
     let valence = prepare_fragment_valence(&topology, existing_valence)?;
     let mut stereochem_done = false;
     let mut ranking_rings = None;
-    if params.do_isomeric_smiles {
+    if params.isomeric_smiles {
         if record.properties.prop("_StereochemDone").is_none() {
             let absent_rings;
             let rings = if let Some(rings) = retained_rings.as_ref() {
@@ -228,8 +228,8 @@ pub(super) fn rank_prepared_fragment(
     }
     let mut rank_params = CanonicalRankParams::default();
     rank_params.break_ties = true;
-    rank_params.include_chirality = params.do_isomeric_smiles;
-    rank_params.include_isotopes = params.do_isomeric_smiles;
+    rank_params.include_chirality = params.isomeric_smiles;
+    rank_params.include_isotopes = params.isomeric_smiles;
     rank_params.include_atom_maps = !params.ignore_atom_map_numbers;
     rank_params.include_chiral_presence = false;
     rank_params.include_ring_stereo = true;
@@ -593,7 +593,7 @@ mod tests {
         record.topology.atoms[2].set_atom_map(Some(9));
         let selected = [AtomId::new(0), AtomId::new(1), AtomId::new(2)];
         let plain_params = SmilesWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..Default::default()
         };
         let masks =
@@ -646,7 +646,7 @@ mod tests {
             .map(AtomId::new)
             .collect::<Vec<_>>();
         let plain_params = SmilesWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..Default::default()
         };
         let masks =
@@ -806,7 +806,7 @@ mod tests {
             bonds_in_play: vec![true; 2],
         };
         let params = SmilesWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..Default::default()
         };
         let existing = cosmolkit_core::assign_valence_with_options_for_topology(
@@ -902,10 +902,10 @@ mod tests {
         let topology = topology("CCC");
         let before = topology.clone();
         let params = SmilesWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..Default::default()
         };
-        assert!(!params.do_isomeric_smiles);
+        assert!(!params.isomeric_smiles);
         let expected = cosmolkit_core::assign_valence_with_options_for_topology(
             &topology,
             ValenceModel::RdkitLike,

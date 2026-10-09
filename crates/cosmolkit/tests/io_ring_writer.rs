@@ -56,7 +56,7 @@ fn io44_sdf_row3500_equal_score_source_sort_controls_wedge_centers() {
     let mol = Molecule::from_mol_with_params(
         include_str!("../../../testdata/molblock/fixtures/io44-sdf-row3500.mol"),
         &SdfReadParams {
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         },
     )

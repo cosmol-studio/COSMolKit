@@ -277,7 +277,6 @@ impl PyAlignmentParameters {
     module = "cosmolkit",
     name = "BestAlignmentParameters",
     get_all,
-    set_all,
     from_py_object
 )]
 #[derive(Clone)]
@@ -348,6 +347,7 @@ impl PyBestAlignmentParameters {
     }
 }
 
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
@@ -415,7 +415,6 @@ impl PyBestAlignmentParameters {
     module = "cosmolkit",
     name = "AllConformerRmsdParameters",
     get_all,
-    set_all,
     from_py_object
 )]
 #[derive(Clone)]
@@ -478,6 +477,7 @@ impl PyAllConformerRmsdParameters {
     }
 }
 
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]
@@ -527,7 +527,6 @@ impl PyAllConformerRmsdParameters {
     module = "cosmolkit",
     name = "CoordinateRmsdParameters",
     get_all,
-    set_all,
     from_py_object
 )]
 #[derive(Clone)]
@@ -558,6 +557,7 @@ impl PyCoordinateRmsdParameters {
     }
 }
 
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), remove_gen_stub)]
 #[pymethods]

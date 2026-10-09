@@ -106,8 +106,8 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
             "types.MmffOptimizationError",
             "Molecule.with_mmff_optimized",
             "Molecule.with_mmff_optimized_with_params",
-            "Molecule.with_mmff_optimized_confs",
-            "Molecule.with_mmff_optimized_confs_with_params",
+            "Molecule.with_mmff_optimized_conformers",
+            "Molecule.with_mmff_optimized_conformers_with_params",
             "types.UffParameterQueryError",
             "types.UffParameterError",
             "types.UffParameterErrorKind",
@@ -131,8 +131,8 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
             "UffOptimizationError.kind",
             "Molecule.with_uff_optimized",
             "Molecule.with_uff_optimized_with_params",
-            "Molecule.with_uff_optimized_confs",
-            "Molecule.with_uff_optimized_confs_with_params",
+            "Molecule.with_uff_optimized_conformers",
+            "Molecule.with_uff_optimized_conformers_with_params",
         ]
         .into_iter()
         .chain(PERSISTENT_FORCEFIELD_IDS.iter().copied())
@@ -170,17 +170,17 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
 
     for (semantic_id, rust_name, python_name, javascript_name, parameter_count) in [
         (
-            "Molecule.with_uff_optimized_confs",
-            "with_uff_optimized_confs",
-            "with_uff_optimized_confs",
-            "withUffOptimizedConfs",
+            "Molecule.with_uff_optimized_conformers",
+            "with_uff_optimized_conformers",
+            "with_uff_optimized_conformers",
+            "withUffOptimizedConformers",
             0,
         ),
         (
-            "Molecule.with_uff_optimized_confs_with_params",
-            "with_uff_optimized_confs_with_params",
-            "with_uff_optimized_confs_with_params",
-            "withUffOptimizedConfsWithParams",
+            "Molecule.with_uff_optimized_conformers_with_params",
+            "with_uff_optimized_conformers_with_params",
+            "with_uff_optimized_conformers_with_params",
+            "withUffOptimizedConformersWithParams",
             1,
         ),
     ] {
@@ -223,12 +223,12 @@ fn uff_conformer_binding_schema_has_the_exact_order_and_compiled_shapes() {
     let _: fn(
         &cosmolkit::Molecule,
     ) -> Result<cosmolkit::UffConformerOptimizationResult, cosmolkit::OperationError> =
-        cosmolkit::Molecule::with_uff_optimized_confs;
+        cosmolkit::Molecule::with_uff_optimized_conformers;
     let _: fn(
         &cosmolkit::Molecule,
         &cosmolkit::UffConformerOptimizationParams,
     ) -> Result<cosmolkit::UffConformerOptimizationResult, cosmolkit::OperationError> =
-        cosmolkit::Molecule::with_uff_optimized_confs_with_params;
+        cosmolkit::Molecule::with_uff_optimized_conformers_with_params;
 
     let kind_name = |kind| match kind {
         cosmolkit::UffOptimizationErrorKind::MissingConformer { .. } => "MissingConformer",

@@ -7,7 +7,7 @@ const batch=()=>b.MoleculeBatch.fromSmilesListWithParams(["CCO","[","O"],new b.S
 
 test("full SMILES writer and query parameters retain frozen source defaults and checked values",()=>{
     const write=new b.SmilesWriteParams();
-    const fields=["doIsomericSmiles","doKekule","canonical","cleanStereo","allBondsExplicit","allHydrogensExplicit","includeDativeBonds","ignoreAtomMapNumbers"],defaults=[true,false,true,true,false,false,true,false];
+    const fields=["isomericSmiles","kekule","canonical","cleanStereo","allBondsExplicit","allHydrogensExplicit","includeDativeBonds","ignoreAtomMapNumbers"],defaults=[true,false,true,true,false,false,true,false];
     fields.forEach((key,i)=>assert.equal(write[key],defaults[i]));assert.equal(write.rootedAtAtom,null);
     const inverse=new b.SmilesWriteParams(false,true,false,false,1,true,true,false,true);fields.forEach((key,i)=>assert.equal(inverse[key],!defaults[i]));assert.equal(inverse.rootedAtAtom,1);
     assert.equal(new b.SmilesWriteParams(undefined,undefined,undefined,undefined,null).rootedAtAtom,null);

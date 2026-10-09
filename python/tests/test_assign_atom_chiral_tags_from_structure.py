@@ -42,14 +42,14 @@ def test_default_and_specific_conformer_selection_are_distinct() -> None:
     )
 
     default_result = molecule.with_chiral_tags_from_structure()
-    first_result = molecule.with_chiral_tags_from_structure(conf_id=0)
-    second_result = molecule.with_chiral_tags_from_structure(conf_id=1)
+    first_result = molecule.with_chiral_tags_from_structure(conformer_id=0)
+    second_result = molecule.with_chiral_tags_from_structure(conformer_id=1)
 
     assert _center_tag(default_result) == _center_tag(first_result)
     assert _center_tag(first_result) != cosmolkit.ChiralTag.CHI_UNSPECIFIED
     assert _center_tag(second_result) != cosmolkit.ChiralTag.CHI_UNSPECIFIED
     assert _center_tag(first_result) != _center_tag(second_result)
-    for conformer_index in range(molecule.num_conformers()):
+    for conformer_index in range(molecule.num_3d_conformers()):
         assert np.array_equal(
             default_result.coordinates_3d(conformer_index),
             molecule.coordinates_3d(conformer_index),
@@ -107,12 +107,12 @@ def test_non_3d_conformer_is_a_source_defined_noop() -> None:
 
 def test_no_conformer_is_a_source_defined_noop() -> None:
     molecule = _tetrahedral_molecule()
-    before = molecule.mol_to_binary()
+    before = molecule.to_binary()
 
     result = molecule.with_chiral_tags_from_structure()
 
-    assert molecule.mol_to_binary() == before
-    assert result.mol_to_binary() == before
+    assert molecule.to_binary() == before
+    assert result.to_binary() == before
 
 
 def test_assignment_survives_pickle_and_binary_workflow_boundaries() -> None:
@@ -124,10 +124,10 @@ def test_assignment_survives_pickle_and_binary_workflow_boundaries() -> None:
 
     restored_values = [
         pickle.loads(pickle.dumps(assigned, protocol=pickle.HIGHEST_PROTOCOL)),
-        cosmolkit.Molecule.mol_from_binary(assigned.mol_to_binary()),
+        cosmolkit.Molecule.from_binary(assigned.to_binary()),
     ]
     for restored in restored_values:
-        assert restored.mol_to_binary() == assigned.mol_to_binary()
+        assert restored.to_binary() == assigned.to_binary()
         assert restored.to_smiles() == assigned.to_smiles()
         assert np.array_equal(restored.coordinates_3d(), TETRAHEDRAL_COORDINATES)
 
@@ -150,12 +150,15 @@ def test_environment_exact_zero_disables_nontetrahedral_assignment(
 
 def test_missing_specific_conformer_is_a_structured_value_error() -> None:
     molecule = _tetrahedral_molecule().with_only_3d_conformer(TETRAHEDRAL_COORDINATES)
-    before = molecule.mol_to_binary()
+    before = molecule.to_binary()
 
     with pytest.raises(
-        ValueError,
-        match=r"^with_chiral_tags_from_structure: stereo error: Can't find conformation with ID: 17$",
-    ):
-        _ = molecule.with_chiral_tags_from_structure(conf_id=17)
+        cosmolkit.OperationError,
+        match=r"^structure-tag assignment failed: cannot find conformer with id 17$",
+    ) as raised:
+        _ = molecule.with_chiral_tags_from_structure(conformer_id=17)
 
-    assert molecule.mol_to_binary() == before
+    assert raised.value.domain == "operation"
+    assert raised.value.kind == "Stereo"
+    assert isinstance(raised.value.__cause__, cosmolkit.StereoError)
+    assert molecule.to_binary() == before

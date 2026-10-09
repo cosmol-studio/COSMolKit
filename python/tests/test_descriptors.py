@@ -85,10 +85,13 @@ def test_descriptor_binding_options_and_errors_are_explicit():
     assert deuterated_water.molecular_formula_with_params(True, True) == "HDO"
     assert deuterated_water.molecular_formula_with_params(True, False) == "H[2H]O"
 
-    # Canonical typed enum replaces the retired string-option boundary.
-    with pytest.raises(TypeError, match="RotatableBondsOptions"):
+    # Canonical enum spellings use the same selector as native enum inputs.
+    assert deuterated_water.num_rotatable_bonds_with_params("strict") == (
+        deuterated_water.num_rotatable_bonds_with_params(cosmolkit.RotatableBondsOptions.Strict)
+    )
+    with pytest.raises(ValueError, match="RotatableBondsOptions"):
         _ = deuterated_water.num_rotatable_bonds_with_params(
-            "unknown",  # pyright: ignore[reportArgumentType]
+            "unknown",
         )
 
 

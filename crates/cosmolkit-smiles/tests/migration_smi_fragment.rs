@@ -209,7 +209,7 @@ fn fragment_entry_matches_pinned_canonical_and_isomeric_profiles_with_original_m
     ] {
         let params = SmilesWriteParams {
             canonical,
-            do_isomeric_smiles: isomeric,
+            isomeric_smiles: isomeric,
             ..SmilesWriteParams::default()
         };
         let output = write_fragment(&record, &params, &atoms, None, None, None, None, None);
@@ -305,7 +305,7 @@ fn fragment_entry_matches_pinned_enhanced_atom_bond_and_mixed_groups() {
 
         let noncanonical_params = SmilesWriteParams {
             canonical: false,
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..SmilesWriteParams::default()
         };
         let noncanonical = write_fragment(
@@ -422,7 +422,7 @@ fn fragment_entry_kekulizes_full_and_partial_rings_at_source_masks() {
     let full_ring = finalized_record("c1ccccc1");
     let full_before = full_ring.clone();
     let full_params = SmilesWriteParams {
-        do_kekule: true,
+        kekule: true,
         ..SmilesWriteParams::default()
     };
     let full_output = write_fragment(
@@ -495,7 +495,7 @@ fn fragment_entry_transfers_s59_cache_ring_and_stereo_preparation_cases() {
     assert_eq!(legacy, legacy_before);
 
     let nonisomeric_params = SmilesWriteParams {
-        do_isomeric_smiles: false,
+        isomeric_smiles: false,
         ..SmilesWriteParams::default()
     };
     let nonisomeric = write_fragment(

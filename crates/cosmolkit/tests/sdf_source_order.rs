@@ -48,7 +48,7 @@ fn all_public_sdf_paths_receive_one_finalization_before_lists_and_metadata() {
     let unremoved = Molecule::from_mol_with_params(
         text,
         &SdfReadParams {
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         },
     )

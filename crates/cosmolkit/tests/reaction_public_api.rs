@@ -62,7 +62,7 @@ fn reaction_writer_clears_unpaired_template_bond_directions() {
         let reactant_before = reaction.reactant_template(0).unwrap().clone();
         let product_before = reaction.product_template(0).unwrap().clone();
         let nonisomeric = ReactionWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..Default::default()
         };
         for output in [

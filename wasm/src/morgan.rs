@@ -2,7 +2,7 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
-    pub fn morgan_fingerprint_with_generator(
+    pub fn fingerprint_morgan_with_generator(
         &self,
         generator: &ck::MorganFingerprintGenerator,
         params: Option<&ck::MorganCallParams>,
@@ -11,9 +11,9 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_fingerprint_with_generator(
         self.inner
             .borrow()
-            .morgan_fingerprint_with_generator(generator, params, output)
+            .fingerprint_morgan_with_generator(generator, params, output)
     }
-    pub fn morgan_count_fingerprint_with_generator(
+    pub fn fingerprint_morgan_count_with_generator(
         &self,
         generator: &ck::MorganFingerprintGenerator,
         params: Option<&ck::MorganCallParams>,
@@ -22,9 +22,9 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_count_fingerprint_with_generator(
         self.inner
             .borrow()
-            .morgan_count_fingerprint_with_generator(generator, params, output)
+            .fingerprint_morgan_count_with_generator(generator, params, output)
     }
-    pub fn morgan_sparse_fingerprint_with_generator(
+    pub fn fingerprint_morgan_sparse_with_generator(
         &self,
         generator: &ck::MorganFingerprintGenerator,
         params: Option<&ck::MorganCallParams>,
@@ -33,9 +33,9 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_sparse_fingerprint_with_generator(
         self.inner
             .borrow()
-            .morgan_sparse_fingerprint_with_generator(generator, params, output)
+            .fingerprint_morgan_sparse_with_generator(generator, params, output)
     }
-    pub fn morgan_sparse_count_fingerprint_with_generator(
+    pub fn fingerprint_morgan_sparse_count_with_generator(
         &self,
         generator: &ck::MorganFingerprintGenerator,
         params: Option<&ck::MorganCallParams>,
@@ -44,15 +44,15 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_sparse_count_fingerprint_with_generator(
         self.inner
             .borrow()
-            .morgan_sparse_count_fingerprint_with_generator(generator, params, output)
+            .fingerprint_morgan_sparse_count_with_generator(generator, params, output)
     }
-    pub fn morgan_sparse_count_fingerprint(
+    pub fn fingerprint_morgan_sparse_count(
         &self,
     ) -> Result<ck::SparseCountFingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_sparse_count_fingerprint(
-        self.inner.borrow().morgan_sparse_count_fingerprint()
+        self.inner.borrow().fingerprint_morgan_sparse_count()
     }
-    pub fn morgan_sparse_count_fingerprint_with_params(
+    pub fn fingerprint_morgan_sparse_count_with_params(
         &self,
         params: &ck::MorganFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -60,15 +60,15 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_sparse_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .morgan_sparse_count_fingerprint_with_params(params, output)
+            .fingerprint_morgan_sparse_count_with_params(params, output)
     }
-    pub fn morgan_sparse_fingerprint(
+    pub fn fingerprint_morgan_sparse(
         &self,
     ) -> Result<ck::SparseBitFingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_sparse_fingerprint(
-        self.inner.borrow().morgan_sparse_fingerprint()
+        self.inner.borrow().fingerprint_morgan_sparse()
     }
-    pub fn morgan_sparse_fingerprint_with_params(
+    pub fn fingerprint_morgan_sparse_with_params(
         &self,
         params: &ck::MorganFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -76,15 +76,15 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_sparse_fingerprint_with_params(
         self.inner
             .borrow()
-            .morgan_sparse_fingerprint_with_params(params, output)
+            .fingerprint_morgan_sparse_with_params(params, output)
     }
-    pub fn morgan_count_fingerprint(
+    pub fn fingerprint_morgan_count(
         &self,
     ) -> Result<ck::SparseCountFingerprint32, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_count_fingerprint(
-        self.inner.borrow().morgan_count_fingerprint()
+        self.inner.borrow().fingerprint_morgan_count()
     }
-    pub fn morgan_count_fingerprint_with_params(
+    pub fn fingerprint_morgan_count_with_params(
         &self,
         params: &ck::MorganFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -92,13 +92,13 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .morgan_count_fingerprint_with_params(params, output)
+            .fingerprint_morgan_count_with_params(params, output)
     }
-    pub fn morgan_fingerprint(&self) -> Result<ck::Fingerprint, ck::MorganReadError> {
+    pub fn fingerprint_morgan(&self) -> Result<ck::Fingerprint, ck::MorganReadError> {
         // COSMolKit❗✔️: .morgan_fingerprint(
-        self.inner.borrow().morgan_fingerprint()
+        self.inner.borrow().fingerprint_morgan()
     }
-    pub fn morgan_fingerprint_with_params(
+    pub fn fingerprint_morgan_with_params(
         &self,
         params: &ck::MorganFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -106,7 +106,7 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_fingerprint_with_params(
         self.inner
             .borrow()
-            .morgan_fingerprint_with_params(params, output)
+            .fingerprint_morgan_with_params(params, output)
     }
 }
 pub fn morgan_generator_fingerprints(
@@ -175,75 +175,75 @@ mod tests {
             let call = ck::MorganCallParams::default();
             let before = m.to_smiles().unwrap();
             assert_eq!(
-                m.morgan_fingerprint_with_generator(&generator, Some(&call), None)
+                m.fingerprint_morgan_with_generator(&generator, Some(&call), None)
                     .unwrap(),
-                core.morgan_fingerprint_with_generator(&generator, Some(&call), None)
+                core.fingerprint_morgan_with_generator(&generator, Some(&call), None)
                     .unwrap()
             );
             assert_eq!(
-                m.morgan_count_fingerprint_with_generator(&generator, Some(&call), None)
+                m.fingerprint_morgan_count_with_generator(&generator, Some(&call), None)
                     .unwrap(),
-                core.morgan_count_fingerprint_with_generator(&generator, Some(&call), None)
+                core.fingerprint_morgan_count_with_generator(&generator, Some(&call), None)
                     .unwrap()
             );
             assert_eq!(
-                m.morgan_sparse_fingerprint_with_generator(&generator, Some(&call), None)
+                m.fingerprint_morgan_sparse_with_generator(&generator, Some(&call), None)
                     .unwrap(),
-                core.morgan_sparse_fingerprint_with_generator(&generator, Some(&call), None)
+                core.fingerprint_morgan_sparse_with_generator(&generator, Some(&call), None)
                     .unwrap()
             );
             assert_eq!(
-                m.morgan_sparse_count_fingerprint_with_generator(&generator, Some(&call), None)
+                m.fingerprint_morgan_sparse_count_with_generator(&generator, Some(&call), None)
                     .unwrap(),
-                core.morgan_sparse_count_fingerprint_with_generator(&generator, Some(&call), None)
+                core.fingerprint_morgan_sparse_count_with_generator(&generator, Some(&call), None)
                     .unwrap()
             );
             assert_eq!(
-                m.morgan_sparse_count_fingerprint().unwrap(),
-                core.morgan_sparse_count_fingerprint().unwrap()
+                m.fingerprint_morgan_sparse_count().unwrap(),
+                core.fingerprint_morgan_sparse_count().unwrap()
             );
             assert_eq!(
-                m.morgan_sparse_count_fingerprint_with_params(&params, None)
+                m.fingerprint_morgan_sparse_count_with_params(&params, None)
                     .unwrap(),
-                core.morgan_sparse_count_fingerprint_with_params(&params, None)
+                core.fingerprint_morgan_sparse_count_with_params(&params, None)
                     .unwrap()
             );
             assert_eq!(
-                m.morgan_sparse_fingerprint().unwrap(),
-                core.morgan_sparse_fingerprint().unwrap()
+                m.fingerprint_morgan_sparse().unwrap(),
+                core.fingerprint_morgan_sparse().unwrap()
             );
             assert_eq!(
-                m.morgan_sparse_fingerprint_with_params(&params, None)
+                m.fingerprint_morgan_sparse_with_params(&params, None)
                     .unwrap(),
-                core.morgan_sparse_fingerprint_with_params(&params, None)
+                core.fingerprint_morgan_sparse_with_params(&params, None)
                     .unwrap()
             );
             assert_eq!(
-                m.morgan_count_fingerprint().unwrap(),
-                core.morgan_count_fingerprint().unwrap()
+                m.fingerprint_morgan_count().unwrap(),
+                core.fingerprint_morgan_count().unwrap()
             );
             assert_eq!(
-                m.morgan_count_fingerprint_with_params(&params, None)
+                m.fingerprint_morgan_count_with_params(&params, None)
                     .unwrap(),
-                core.morgan_count_fingerprint_with_params(&params, None)
+                core.fingerprint_morgan_count_with_params(&params, None)
                     .unwrap()
             );
             assert_eq!(
-                m.morgan_fingerprint().unwrap(),
-                core.morgan_fingerprint().unwrap()
+                m.fingerprint_morgan().unwrap(),
+                core.fingerprint_morgan().unwrap()
             );
             assert_eq!(
-                m.morgan_fingerprint_with_params(&params, None).unwrap(),
-                core.morgan_fingerprint_with_params(&params, None).unwrap()
+                m.fingerprint_morgan_with_params(&params, None).unwrap(),
+                core.fingerprint_morgan_with_params(&params, None).unwrap()
             );
             let mut a = ck::FingerprintAdditionalOutput::new();
             let mut b = ck::FingerprintAdditionalOutput::new();
             a.allocate_atom_counts();
             b.allocate_atom_counts();
             assert_eq!(
-                m.morgan_fingerprint_with_generator(&generator, None, Some(&mut a))
+                m.fingerprint_morgan_with_generator(&generator, None, Some(&mut a))
                     .unwrap(),
-                core.morgan_fingerprint_with_generator(&generator, None, Some(&mut b))
+                core.fingerprint_morgan_with_generator(&generator, None, Some(&mut b))
                     .unwrap()
             );
             assert_eq!(a, b);
@@ -308,13 +308,13 @@ mod tests {
             "CCO",
             &ck::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             },
         )
         .unwrap();
         assert!(matches!(
-            raw.morgan_fingerprint(),
+            raw.fingerprint_morgan(),
             Err(ck::MorganReadError::Preparation(_))
         ));
     }

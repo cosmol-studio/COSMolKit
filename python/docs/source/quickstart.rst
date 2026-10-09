@@ -124,7 +124,7 @@ Read and write the first SDF record:
 
 .. code-block:: python
 
-   mol = ck.Molecule.read_sdf("input.sdf", coordinate_dim="auto")
+   mol = ck.Molecule.read_sdf("input.sdf", coordinate_mode="preserve")
    mol.write_sdf("python/examples/output/output.sdf", format="v2000")
 
 Read MOL2 with the RDKit-style parser profile:
@@ -195,11 +195,16 @@ Generate multiple conformers with RMS pruning:
    conformers = mol.with_3d_conformers(5, params)
    print(conformers.num_conformers())
 
+Enum inputs accept either an enum member or its canonical snake-case string.
+For example, ``coordinate_mode="require_3d"`` and
+``coordinate_mode=ck.SdfCoordinateMode.Require3D`` are equivalent. Configuration
+assignment accepts both forms; getters continue to return enum members.
+
 Optimize an existing 3D conformer with UFF:
 
 .. code-block:: python
 
-   mol = ck.Molecule.read_sdf("input_3d.sdf", coordinate_dim="3d")
+   mol = ck.Molecule.read_sdf("input_3d.sdf", coordinate_mode="require_3d")
 
    if mol.has_uff_params():
        result = mol.with_uff_optimized(max_iters=200)
@@ -229,9 +234,9 @@ Generate source-backed fingerprints:
        radius=2,
        n_bits=2048,
    )
-   topological = mol.topological_fingerprint(fp_size=2048)
+   topological = mol.fingerprint_topological(fp_size=2048)
    avalon = mol.avalon_fingerprint(n_bits=512)
-   pattern = mol.pattern_fingerprint(n_bits=2048, tautomeric=False)
+   pattern = mol.fingerprint_pattern(n_bits=2048, tautomeric=False)
    atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
    torsion = ck.get_topological_torsion_generator(
        torsion_atom_count=4,

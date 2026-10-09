@@ -71,6 +71,7 @@ fn catalog_pyerr(py: Python<'_>, source: ck::TautomerCatalogError) -> PyErr {
     )
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -119,16 +120,24 @@ impl TautomerScoreTerm {
     fn score(&self) -> i32 {
         self.inner.score()
     }
-    fn __eq__(&self, other: &Self) -> bool {
-        self.inner == other.inner
+    fn __eq__(&self, py: Python<'_>, other: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        match other.extract::<PyRef<'_, Self>>() {
+            Ok(other) => Ok((self.inner == other.inner)
+                .into_pyobject(py)?
+                .to_owned()
+                .into_any()
+                .unbind()),
+            Err(_) => Ok(py.NotImplemented()),
+        }
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen, skip_from_py_object)]
+#[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
 pub(crate) struct TautomerScoreParams {
     pub(crate) inner: ck::TautomerScoreParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl TautomerScoreParams {
@@ -508,6 +517,7 @@ impl TautomerParams {
     fn transform_count(&self) -> usize {
         self.inner.transform_count()
     }
+    #[getter]
     fn callback(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.callback.as_ref().map(|x| x.clone_ref(py))
     }
@@ -515,6 +525,7 @@ impl TautomerParams {
         self.callback = callable(py, value)?;
         Ok(())
     }
+    #[getter]
     fn scorer(&self, py: Python<'_>) -> Option<Py<PyAny>> {
         self.scorer.as_ref().map(|x| x.clone_ref(py))
     }
@@ -529,9 +540,10 @@ impl TautomerParams {
         }
     }
     #[setter]
-    fn set_score_params(&mut self, value: &TautomerScoreParams) {
-        self.inner.score_params = value.inner.clone()
+    fn set_score_params(&mut self, value: Option<&TautomerScoreParams>) {
+        self.inner.score_params = value.map(|params| params.inner.clone()).unwrap_or_default()
     }
+    #[getter]
     fn max_tautomers(&self) -> u32 {
         self.inner.max_tautomers()
     }
@@ -543,6 +555,7 @@ impl TautomerParams {
         result.inner.set_max_tautomers(value);
         result
     }
+    #[getter]
     fn max_transforms(&self) -> u32 {
         self.inner.max_transforms()
     }
@@ -554,6 +567,7 @@ impl TautomerParams {
         result.inner.set_max_transforms(value);
         result
     }
+    #[getter]
     fn remove_sp3_stereo(&self) -> bool {
         self.inner.remove_sp3_stereo()
     }
@@ -565,6 +579,7 @@ impl TautomerParams {
         result.inner.set_remove_sp3_stereo(value);
         result
     }
+    #[getter]
     fn remove_bond_stereo(&self) -> bool {
         self.inner.remove_bond_stereo()
     }
@@ -576,6 +591,7 @@ impl TautomerParams {
         result.inner.set_remove_bond_stereo(value);
         result
     }
+    #[getter]
     fn remove_isotopic_hydrogens(&self) -> bool {
         self.inner.remove_isotopic_hydrogens()
     }
@@ -587,6 +603,7 @@ impl TautomerParams {
         result.inner.set_remove_isotopic_hydrogens(value);
         result
     }
+    #[getter]
     fn reassign_stereo(&self) -> bool {
         self.inner.reassign_stereo()
     }
@@ -597,6 +614,45 @@ impl TautomerParams {
         let mut result = self.cloned(py);
         result.inner.set_reassign_stereo(value);
         result
+    }
+
+    #[setter(max_tautomers)]
+    fn assign_max_tautomers(&mut self, value: u32) -> PyResult<()> {
+        self.set_max_tautomers(value);
+        Ok(())
+    }
+    #[setter(max_transforms)]
+    fn assign_max_transforms(&mut self, value: u32) -> PyResult<()> {
+        self.set_max_transforms(value);
+        Ok(())
+    }
+    #[setter(remove_sp3_stereo)]
+    fn assign_remove_sp3_stereo(&mut self, value: bool) -> PyResult<()> {
+        self.set_remove_sp3_stereo(value);
+        Ok(())
+    }
+    #[setter(remove_bond_stereo)]
+    fn assign_remove_bond_stereo(&mut self, value: bool) -> PyResult<()> {
+        self.set_remove_bond_stereo(value);
+        Ok(())
+    }
+    #[setter(remove_isotopic_hydrogens)]
+    fn assign_remove_isotopic_hydrogens(&mut self, value: bool) -> PyResult<()> {
+        self.set_remove_isotopic_hydrogens(value);
+        Ok(())
+    }
+    #[setter(reassign_stereo)]
+    fn assign_reassign_stereo(&mut self, value: bool) -> PyResult<()> {
+        self.set_reassign_stereo(value);
+        Ok(())
+    }
+    #[setter(callback)]
+    fn assign_callback(slf: &Bound<'_, Self>, value: Option<Py<PyAny>>) -> PyResult<()> {
+        slf.try_borrow_mut()?.set_callback(slf.py(), value)
+    }
+    #[setter(scorer)]
+    fn assign_scorer(slf: &Bound<'_, Self>, value: Option<Py<PyAny>>) -> PyResult<()> {
+        slf.try_borrow_mut()?.set_scorer(slf.py(), value)
     }
 }
 fn invocation(

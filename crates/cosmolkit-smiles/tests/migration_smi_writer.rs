@@ -56,7 +56,7 @@ fn writer_kekulization_error_preserves_typed_core_source() {
     let error = write_smiles_with_params(
         &record,
         &SmilesWriteParams {
-            do_kekule: true,
+            kekule: true,
             ..Default::default()
         },
     )
@@ -77,15 +77,15 @@ fn writer_kekulization_error_preserves_typed_core_source() {
 fn writer_disconnected_kekulization_error_preserves_fragment_local_source_and_input() {
     let parser = SmilesParseParams {
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let mut record = parse_smiles("c1ccccc1.C", &parser).expect("parse unsanitized fragments");
     record.topology.atoms[6].set_aromatic(true);
     let before = record.clone();
     let params = SmilesWriteParams {
-        do_isomeric_smiles: true,
-        do_kekule: true,
+        isomeric_smiles: true,
+        kekule: true,
         canonical: true,
         clean_stereo: true,
         ..Default::default()
@@ -226,7 +226,7 @@ fn writer_flags_control_isotope_direction_bond_hydrogen_and_kekule_tokens() {
         write(
             "[13CH4]",
             &SmilesWriteParams {
-                do_isomeric_smiles: false,
+                isomeric_smiles: false,
                 ..Default::default()
             }
         ),
@@ -236,7 +236,7 @@ fn writer_flags_control_isotope_direction_bond_hydrogen_and_kekule_tokens() {
         write(
             "C/C=C/C",
             &SmilesWriteParams {
-                do_isomeric_smiles: false,
+                isomeric_smiles: false,
                 ..Default::default()
             }
         ),
@@ -289,7 +289,7 @@ fn writer_flags_control_isotope_direction_bond_hydrogen_and_kekule_tokens() {
         write(
             "c1ccccc1",
             &SmilesWriteParams {
-                do_kekule: true,
+                kekule: true,
                 ..Default::default()
             }
         ),
@@ -299,7 +299,7 @@ fn writer_flags_control_isotope_direction_bond_hydrogen_and_kekule_tokens() {
         write(
             "c1cc[nH]c1",
             &SmilesWriteParams {
-                do_kekule: true,
+                kekule: true,
                 ..Default::default()
             }
         ),
@@ -429,9 +429,9 @@ fn atom_hydrogen_charge_and_isotope_fields_match_pinned_rdkit() {
     ] {
         let record = parse_smiles(input, &Default::default()).unwrap();
         let before = record.clone();
-        for do_isomeric_smiles in [true, false] {
+        for isomeric_smiles in [true, false] {
             let params = SmilesWriteParams {
-                do_isomeric_smiles,
+                isomeric_smiles,
                 ..Default::default()
             };
             assert_eq!(
@@ -439,7 +439,7 @@ fn atom_hydrogen_charge_and_isotope_fields_match_pinned_rdkit() {
                     .map(fixture_writer_text)
                     .unwrap(),
                 expected,
-                "charge formatting for {input}, isomeric={do_isomeric_smiles}"
+                "charge formatting for {input}, isomeric={isomeric_smiles}"
             );
         }
         assert_eq!(record, before, "writing preserves {input}");
@@ -451,14 +451,14 @@ fn atom_hydrogen_charge_and_isotope_fields_match_pinned_rdkit() {
         (default_params, "[13CH4]"),
         (
             SmilesWriteParams {
-                do_isomeric_smiles: false,
+                isomeric_smiles: false,
                 ..Default::default()
             },
             "C",
         ),
         (
             SmilesWriteParams {
-                do_isomeric_smiles: false,
+                isomeric_smiles: false,
                 all_hydrogens_explicit: true,
                 ..Default::default()
             },
@@ -486,9 +486,9 @@ fn aromatic_custom_symbols_and_bracket_labels_match_pinned_rdkit() {
         .set_prop("smilesSymbol", "X")
         .unwrap();
     let before = aromatic.clone();
-    for (do_kekule, expected) in [(false, "c1c[xH]ccc1"), (true, "C1=C[XH]=CC=C1")] {
+    for (kekule, expected) in [(false, "c1c[xH]ccc1"), (true, "C1=C[XH]=CC=C1")] {
         let params = SmilesWriteParams {
-            do_kekule,
+            kekule,
             ..Default::default()
         };
         assert_eq!(
@@ -496,7 +496,7 @@ fn aromatic_custom_symbols_and_bracket_labels_match_pinned_rdkit() {
                 .map(fixture_writer_text)
                 .unwrap(),
             expected,
-            "do_kekule={do_kekule}"
+            "kekule={kekule}"
         );
     }
     assert_eq!(aromatic, before, "writing preserves custom aromatic input");
@@ -599,11 +599,11 @@ fn writer_ring_label_tokens_match_pinned_rdkit_at_9_10_99_100() {
     // byte-for-byte unchanged; see S18_ring_labels.md for the oracle probe.
     let parser = SmilesParseParams {
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let params = SmilesWriteParams {
-        do_isomeric_smiles: false,
+        isomeric_smiles: false,
         canonical: false,
         rooted_at_atom: Some(cosmolkit_model::AtomId::new(0)),
         ..Default::default()
@@ -804,7 +804,7 @@ fn tetrahedral_writer_options_preserve_source_order_and_hydrogen_tokens() {
         write(
             input,
             &SmilesWriteParams {
-                do_isomeric_smiles: false,
+                isomeric_smiles: false,
                 ..Default::default()
             }
         ),
@@ -849,7 +849,7 @@ fn canonical_double_bond_directions_follow_ring_and_isomeric_options() {
         write_smiles_with_params(
             &record,
             &SmilesWriteParams {
-                do_isomeric_smiles: false,
+                isomeric_smiles: false,
                 ..Default::default()
             }
         )
@@ -861,7 +861,7 @@ fn canonical_double_bond_directions_follow_ring_and_isomeric_options() {
         write(
             "C/C=C/C",
             &SmilesWriteParams {
-                do_isomeric_smiles: false,
+                isomeric_smiles: false,
                 all_bonds_explicit: true,
                 ..Default::default()
             }
@@ -898,7 +898,7 @@ fn non_tetrahedral_writer_emits_sp_tb_and_oh_permutations() {
             write(
                 input,
                 &SmilesWriteParams {
-                    do_isomeric_smiles: false,
+                    isomeric_smiles: false,
                     ..Default::default()
                 }
             ),
@@ -990,7 +990,7 @@ fn rooted_writer_preflight_error_precedes_kekulization_failure() {
     let error = write_smiles_with_params(
         &record,
         &SmilesWriteParams {
-            do_kekule: true,
+            kekule: true,
             rooted_at_atom: Some(cosmolkit_model::AtomId::new(1)),
             ..Default::default()
         },
@@ -1141,7 +1141,7 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_isotope_and_is_renumbering_s
             write_smiles_with_params(
                 candidate,
                 &SmilesWriteParams {
-                    do_isomeric_smiles: false,
+                    isomeric_smiles: false,
                     ..Default::default()
                 }
             )
@@ -1177,7 +1177,7 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_tetrahedral_stereo() {
                 write_smiles_with_params(
                     candidate,
                     &SmilesWriteParams {
-                        do_isomeric_smiles: false,
+                        isomeric_smiles: false,
                         ..Default::default()
                     }
                 )
@@ -1213,7 +1213,7 @@ fn nonisomeric_canonical_ranking_ignores_suppressed_double_bond_stereo() {
                 write_smiles_with_params(
                     candidate,
                     &SmilesWriteParams {
-                        do_isomeric_smiles: false,
+                        isomeric_smiles: false,
                         ..Default::default()
                     }
                 )
@@ -1266,9 +1266,9 @@ fn nonisomeric_canonical_fallback_keeps_pinned_cx_output_maps() {
             let params = CxSmilesWriteParams {
                 smiles: SmilesWriteParams {
                     canonical,
-                    do_isomeric_smiles: false,
+                    isomeric_smiles: false,
                     clean_stereo: false,
-                    do_kekule: false,
+                    kekule: false,
                     ..Default::default()
                 },
                 fields: CxSmilesFields::ATOM_LABELS | CxSmilesFields::BOND_CFG,
@@ -1314,7 +1314,7 @@ fn ordinary_writer_removes_modeled_stereo_groups_before_canonical_ranking() {
 
     for (isomeric, expected) in [(true, "C[C@H](N)C[C@H](C)N"), (false, "CC(N)CC(C)N")] {
         let params = SmilesWriteParams {
-            do_isomeric_smiles: isomeric,
+            isomeric_smiles: isomeric,
             ..Default::default()
         };
         for candidate in [&record, &reversed] {
@@ -1477,7 +1477,7 @@ fn current_stereo_wrapper_candidates_preserve_pinned_large_ring_cx_output() {
     // or represented by a fabricated wrapper here.
     let parser = SmilesParseParams {
         sanitize: true,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let parsed = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).unwrap();
@@ -1568,7 +1568,7 @@ fn pending_cx_direction_phase_is_the_first_large_ring_writer_divergence() {
     // boundary case; it is not an expectation for this legacy finalized path.
     let parser = SmilesParseParams {
         sanitize: true,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let parsed = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).unwrap();
@@ -1739,7 +1739,7 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
     // fixed legacy source profile used by the detached writer core.
     let parser = SmilesParseParams {
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let record = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).unwrap();
@@ -1789,7 +1789,7 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
     // Both clean branches now use the exact possible=false core entrypoint.
     let clean_false_params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             canonical: true,
             clean_stereo: false,
             ..Default::default()
@@ -1806,7 +1806,7 @@ fn raw_pending_cx_writer_matches_the_unfinalized_source_boundary() {
 
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             canonical: true,
             clean_stereo: true,
             ..Default::default()
@@ -1833,7 +1833,7 @@ fn cx_write_after_sanitize_and_smiles_finalization_uses_finalized_state() {
     // match E4's post-finalizer source row for sanitize=true/removeHs=false.
     let parser = SmilesParseParams {
         sanitize: true,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let mut record = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).unwrap();
@@ -1901,7 +1901,7 @@ fn cx_write_after_sanitize_and_smiles_finalization_uses_finalized_state() {
 fn both_false_smiles_finalization_retains_pending_marker_and_clears_directions() {
     let parser = SmilesParseParams {
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let raw = parse_smiles("C/C=C/C |c:1|", &parser).unwrap();
@@ -1953,7 +1953,7 @@ fn both_false_smiles_finalization_retains_pending_marker_and_clears_directions()
 fn both_false_finalization_clears_begin_wedge_and_dash_flags() {
     let parser = SmilesParseParams {
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let mut raw = parse_smiles("CCC", &parser).unwrap();
@@ -1980,7 +1980,7 @@ fn both_false_finalization_clears_begin_wedge_and_dash_flags() {
 fn both_false_finalization_clears_unknown_direction_and_records_unknown_stereo() {
     let parser = SmilesParseParams {
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let mut raw = parse_smiles("CC", &parser).unwrap();

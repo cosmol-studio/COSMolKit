@@ -58,14 +58,26 @@ pub(crate) struct BondSpec {
     pub(crate) inner: ck::BondSpec,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl BondSpec {
     #[new]
-    fn py_new(begin: usize, end: usize, order: i64) -> PyResult<Self> {
+    fn py_new(
+        begin: usize,
+        end: usize,
+        #[gen_stub(override_type(type_repr = "BondOrder | builtins.str | builtins.int"))]
+        order: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
         Self::new(begin, end, order)
     }
     #[staticmethod]
-    fn new(begin: usize, end: usize, order: i64) -> PyResult<Self> {
+    fn new(
+        begin: usize,
+        end: usize,
+        #[gen_stub(override_type(type_repr = "BondOrder | builtins.str | builtins.int"))]
+        order: &Bound<'_, PyAny>,
+    ) -> PyResult<Self> {
+        let order = crate::canonical_atom_bond::enum_code(order, "BondOrder")?;
         let order = ck::BondOrder::from_rdkit_code(order)
             .ok_or_else(|| PyValueError::new_err(format!("invalid BondOrder code: {order}")))?;
         Ok(Self {
@@ -87,6 +99,7 @@ pub(crate) struct MoleculeBuilder {
     pub(crate) inner: ck::MoleculeBuilder,
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
+#[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
 impl MoleculeBuilder {
     #[staticmethod]
@@ -256,7 +269,14 @@ impl MoleculeBuilder {
             inner: self.inner.clone().with_properties(properties.inner.clone()),
         }
     }
-    fn set_bond_order(&mut self, py: Python<'_>, bond: usize, order: i64) -> PyResult<()> {
+    fn set_bond_order(
+        &mut self,
+        py: Python<'_>,
+        bond: usize,
+        #[gen_stub(override_type(type_repr = "BondOrder | builtins.str | builtins.int"))]
+        order: &Bound<'_, PyAny>,
+    ) -> PyResult<()> {
+        let order = crate::canonical_atom_bond::enum_code(order, "BondOrder")?;
         let order = ck::BondOrder::from_rdkit_code(order)
             .ok_or_else(|| PyValueError::new_err(format!("invalid BondOrder code: {order}")))?;
         self.inner

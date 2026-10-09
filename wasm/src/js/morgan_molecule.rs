@@ -19,8 +19,8 @@ fn error(e: ck::MorganReadError) -> JsValue {
 }
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=morganFingerprintWithGenerator)]
-    pub fn morgan_fingerprint_with_generator(
+    #[wasm_bindgen(js_name=fingerprintMorganWithGenerator)]
+    pub fn fingerprint_morgan_with_generator(
         &self,
         generator: &MorganFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganCallParams | null")] params: JsValue,
@@ -36,14 +36,14 @@ impl Molecule {
         with_call(&params, |params| {
             with_output(&output, |output| {
                 self.inner
-                    .morgan_fingerprint_with_generator(&generator.inner, params, output)
+                    .fingerprint_morgan_with_generator(&generator.inner, params, output)
                     .map(|inner| Fingerprint { inner })
                     .map_err(error)
             })
         })
     }
-    #[wasm_bindgen(js_name=morganCountFingerprintWithGenerator)]
-    pub fn morgan_count_fingerprint_with_generator(
+    #[wasm_bindgen(js_name=fingerprintMorganCountWithGenerator)]
+    pub fn fingerprint_morgan_count_with_generator(
         &self,
         generator: &MorganFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganCallParams | null")] params: JsValue,
@@ -59,14 +59,14 @@ impl Molecule {
         with_call(&params, |params| {
             with_output(&output, |output| {
                 self.inner
-                    .morgan_count_fingerprint_with_generator(&generator.inner, params, output)
+                    .fingerprint_morgan_count_with_generator(&generator.inner, params, output)
                     .map(|inner| SparseCountFingerprint32 { inner })
                     .map_err(error)
             })
         })
     }
-    #[wasm_bindgen(js_name=morganSparseFingerprintWithGenerator)]
-    pub fn morgan_sparse_fingerprint_with_generator(
+    #[wasm_bindgen(js_name=fingerprintMorganSparseWithGenerator)]
+    pub fn fingerprint_morgan_sparse_with_generator(
         &self,
         generator: &MorganFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganCallParams | null")] params: JsValue,
@@ -82,14 +82,14 @@ impl Molecule {
         with_call(&params, |params| {
             with_output(&output, |output| {
                 self.inner
-                    .morgan_sparse_fingerprint_with_generator(&generator.inner, params, output)
+                    .fingerprint_morgan_sparse_with_generator(&generator.inner, params, output)
                     .map(|inner| SparseBitFingerprint { inner })
                     .map_err(error)
             })
         })
     }
-    #[wasm_bindgen(js_name=morganSparseCountFingerprintWithGenerator)]
-    pub fn morgan_sparse_count_fingerprint_with_generator(
+    #[wasm_bindgen(js_name=fingerprintMorganSparseCountWithGenerator)]
+    pub fn fingerprint_morgan_sparse_count_with_generator(
         &self,
         generator: &MorganFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "MorganCallParams | null")] params: JsValue,
@@ -105,7 +105,7 @@ impl Molecule {
         with_call(&params, |params| {
             with_output(&output, |output| {
                 self.inner
-                    .morgan_sparse_count_fingerprint_with_generator(
+                    .fingerprint_morgan_sparse_count_with_generator(
                         &generator.inner,
                         params,
                         output,
@@ -115,16 +115,16 @@ impl Molecule {
             })
         })
     }
-    #[wasm_bindgen(js_name=morganSparseCountFingerprint)]
-    pub fn morgan_sparse_count_fingerprint(&self) -> Result<SparseCountFingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintMorganSparseCount)]
+    pub fn fingerprint_morgan_sparse_count(&self) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .morgan_sparse_count_fingerprint(
         self.inner
-            .morgan_sparse_count_fingerprint()
+            .fingerprint_morgan_sparse_count()
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=morganSparseCountFingerprintWithParams)]
-    pub fn morgan_sparse_count_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintMorganSparseCountWithParams)]
+    pub fn fingerprint_morgan_sparse_count_with_params(
         &self,
         params: &MorganFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
@@ -133,21 +133,21 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_sparse_count_fingerprint_with_params(
         with_output(&additional_output, |output| {
             self.inner
-                .morgan_sparse_count_fingerprint_with_params(&params.inner, output)
+                .fingerprint_morgan_sparse_count_with_params(&params.inner, output)
                 .map(|inner| SparseCountFingerprint { inner })
                 .map_err(error)
         })
     }
-    #[wasm_bindgen(js_name=morganSparseFingerprint)]
-    pub fn morgan_sparse_fingerprint(&self) -> Result<SparseBitFingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintMorganSparse)]
+    pub fn fingerprint_morgan_sparse(&self) -> Result<SparseBitFingerprint, JsValue> {
         // COSMolKit❗✔️: .morgan_sparse_fingerprint(
         self.inner
-            .morgan_sparse_fingerprint()
+            .fingerprint_morgan_sparse()
             .map(|inner| SparseBitFingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=morganSparseFingerprintWithParams)]
-    pub fn morgan_sparse_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintMorganSparseWithParams)]
+    pub fn fingerprint_morgan_sparse_with_params(
         &self,
         params: &MorganFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
@@ -156,21 +156,21 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_sparse_fingerprint_with_params(
         with_output(&additional_output, |output| {
             self.inner
-                .morgan_sparse_fingerprint_with_params(&params.inner, output)
+                .fingerprint_morgan_sparse_with_params(&params.inner, output)
                 .map(|inner| SparseBitFingerprint { inner })
                 .map_err(error)
         })
     }
-    #[wasm_bindgen(js_name=morganCountFingerprint)]
-    pub fn morgan_count_fingerprint(&self) -> Result<SparseCountFingerprint32, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintMorganCount)]
+    pub fn fingerprint_morgan_count(&self) -> Result<SparseCountFingerprint32, JsValue> {
         // COSMolKit❗✔️: .morgan_count_fingerprint(
         self.inner
-            .morgan_count_fingerprint()
+            .fingerprint_morgan_count()
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=morganCountFingerprintWithParams)]
-    pub fn morgan_count_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintMorganCountWithParams)]
+    pub fn fingerprint_morgan_count_with_params(
         &self,
         params: &MorganFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
@@ -179,21 +179,21 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_count_fingerprint_with_params(
         with_output(&additional_output, |output| {
             self.inner
-                .morgan_count_fingerprint_with_params(&params.inner, output)
+                .fingerprint_morgan_count_with_params(&params.inner, output)
                 .map(|inner| SparseCountFingerprint32 { inner })
                 .map_err(error)
         })
     }
-    #[wasm_bindgen(js_name=morganFingerprint)]
-    pub fn morgan_fingerprint(&self) -> Result<Fingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintMorgan)]
+    pub fn fingerprint_morgan(&self) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .morgan_fingerprint(
         self.inner
-            .morgan_fingerprint()
+            .fingerprint_morgan()
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=morganFingerprintWithParams)]
-    pub fn morgan_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintMorganWithParams)]
+    pub fn fingerprint_morgan_with_params(
         &self,
         params: &MorganFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
@@ -202,7 +202,7 @@ impl Molecule {
         // COSMolKit❗✔️: .morgan_fingerprint_with_params(
         with_output(&additional_output, |output| {
             self.inner
-                .morgan_fingerprint_with_params(&params.inner, output)
+                .fingerprint_morgan_with_params(&params.inner, output)
                 .map(|inner| Fingerprint { inner })
                 .map_err(error)
         })

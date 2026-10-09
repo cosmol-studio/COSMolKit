@@ -10,6 +10,7 @@ use pyo3_stub_gen::derive::{
     gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pyfunction, gen_stub_pymethods,
 };
 use std::collections::BTreeMap;
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int, frozen, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,7 @@ impl From<ck::ReactionRole> for ReactionRole {
         }
     }
 }
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int, frozen, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -42,6 +44,7 @@ impl From<ck::ReactionValidationSeverity> for ReactionValidationSeverity {
         }
     }
 }
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int, frozen, from_py_object)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -80,7 +83,8 @@ impl From<ck::ReactionValidationIssueKind> for ReactionValidationIssueKind {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit", frozen, eq)]
+#[derive(PartialEq)]
 pub(crate) struct ReactionCoordinateSelection {
     pub(crate) inner: ck::ReactionCoordinateSelection,
 }
@@ -123,10 +127,11 @@ impl ReactionCoordinateSelection {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct ReactionParseParams {
     pub(crate) inner: ck::ReactionParseParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionParseParams {
@@ -171,10 +176,11 @@ impl ReactionParseParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct ReactionValidationParams {
     pub(crate) inner: ck::ReactionValidationParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionValidationParams {
@@ -191,10 +197,11 @@ impl ReactionValidationParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct ReactionSingleRunParams {
     pub(crate) inner: ck::ReactionSingleRunParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionSingleRunParams {
@@ -215,10 +222,11 @@ impl ReactionSingleRunParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct ReactionRunParams {
     pub(crate) inner: ck::ReactionRunParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionRunParams {
@@ -253,10 +261,11 @@ impl ReactionRunParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct ReactionApplyParams {
     pub(crate) inner: ck::ReactionApplyParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionApplyParams {
@@ -273,10 +282,11 @@ impl ReactionApplyParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct ReactionTemplateRemovalParams {
     pub(crate) inner: ck::ReactionTemplateRemovalParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionTemplateRemovalParams {
@@ -300,18 +310,19 @@ impl ReactionTemplateRemovalParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct ReactionWriteParams {
     pub(crate) inner: ck::ReactionWriteParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl ReactionWriteParams {
     #[new]
-    #[pyo3(signature=(*,canonical=false,do_isomeric_smiles=true,rooted_at_atom=None,include_dative_bonds=true,include_cx=false,cx_fields=None,coordinate_selections=None))]
+    #[pyo3(signature=(*,canonical=false,isomeric_smiles=true,rooted_at_atom=None,include_dative_bonds=true,include_cx=false,cx_fields=None,coordinate_selections=None))]
     fn new(
         canonical: bool,
-        do_isomeric_smiles: bool,
+        isomeric_smiles: bool,
         rooted_at_atom: Option<usize>,
         include_dative_bonds: bool,
         include_cx: bool,
@@ -321,7 +332,7 @@ impl ReactionWriteParams {
         Self {
             inner: ck::ReactionWriteParams::new(
                 canonical,
-                do_isomeric_smiles,
+                isomeric_smiles,
                 rooted_at_atom,
                 include_dative_bonds,
                 include_cx,
@@ -339,8 +350,8 @@ impl ReactionWriteParams {
         self.inner.canonical()
     }
     #[getter]
-    fn do_isomeric_smiles(&self) -> bool {
-        self.inner.do_isomeric_smiles()
+    fn isomeric_smiles(&self) -> bool {
+        self.inner.isomeric_smiles()
     }
     #[getter]
     fn rooted_at_atom(&self) -> Option<usize> {

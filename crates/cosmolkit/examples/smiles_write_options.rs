@@ -4,8 +4,8 @@ use cosmolkit::{Molecule, SmilesWriteParams};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let molecule = Molecule::from_smiles("CCO")?;
     let params = SmilesWriteParams {
-        do_isomeric_smiles: false,
-        do_kekule: false,
+        isomeric_smiles: false,
+        kekule: false,
         canonical: false,
         clean_stereo: false,
         all_bonds_explicit: false,

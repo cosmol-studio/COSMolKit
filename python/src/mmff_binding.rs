@@ -72,6 +72,7 @@ pub(crate) fn source_conformer_id(id: i32) -> Option<usize> {
 pub(crate) struct MmffOptimizationParams {
     pub(crate) inner: ck::MmffOptimizationParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -123,6 +124,7 @@ impl MmffOptimizationParams {
 pub(crate) struct MmffConformerOptimizationParams {
     pub(crate) inner: ck::MmffConformerOptimizationParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -173,6 +175,7 @@ impl MmffConformerOptimizationParams {
 pub(crate) struct MmffPropertiesParams {
     pub(crate) inner: ck::MmffPropertiesParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]
@@ -373,6 +376,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<Conformer3D>()?;
     Ok(())
 }
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", skip_from_py_object)]
 #[derive(Clone)]
@@ -406,6 +410,7 @@ impl MmffAtomProperties {
 pub(crate) struct MmffEvaluationParams {
     pub(crate) inner: ck::MmffEvaluationParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[cfg_attr(not(feature = "stubgen"), pyo3_stub_gen_derive::remove_gen_stub)]
 #[pymethods]

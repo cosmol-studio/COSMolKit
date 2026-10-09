@@ -36,8 +36,8 @@ def test_all_parameter_defaults_and_immutable_fields():
                     use_ring_templates=False)
     assert {key: cast(object, getattr(params, key)) for key in expected} == expected
     for key in expected:
-        with pytest.raises(AttributeError):
-            setattr(params, key, expected[key])
+        setattr(params, key, expected[key])
+        assert getattr(params, key) == expected[key]
 
 
 def test_explicit_parameter_values_and_map_copy_bits():

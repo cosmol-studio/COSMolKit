@@ -86,10 +86,10 @@ impl Molecule {
         run(&input, &call).map_err(AtomPairReadError::Generator)
     }
 
-    pub fn atom_pair_fingerprint(&self) -> Result<Fingerprint, AtomPairReadError> {
-        self.atom_pair_fingerprint_with_params(&AtomPairFingerprintParams::default(), None)
+    pub fn fingerprint_atom_pair(&self) -> Result<Fingerprint, AtomPairReadError> {
+        self.fingerprint_atom_pair_with_params(&AtomPairFingerprintParams::default(), None)
     }
-    pub fn atom_pair_fingerprint_with_params(
+    pub fn fingerprint_atom_pair_with_params(
         &self,
         params: &AtomPairFingerprintParams,
         output: Option<&mut FingerprintAdditionalOutput>,
@@ -116,10 +116,10 @@ impl Molecule {
         atom_pair_bits(&input, &params.generator, &call, output)
             .map_err(AtomPairReadError::Generator)
     }
-    pub fn atom_pair_sparse_fingerprint(&self) -> Result<SparseBitFingerprint, AtomPairReadError> {
-        self.atom_pair_sparse_fingerprint_with_params(&AtomPairFingerprintParams::default(), None)
+    pub fn fingerprint_atom_pair_sparse(&self) -> Result<SparseBitFingerprint, AtomPairReadError> {
+        self.fingerprint_atom_pair_sparse_with_params(&AtomPairFingerprintParams::default(), None)
     }
-    pub fn atom_pair_sparse_fingerprint_with_params(
+    pub fn fingerprint_atom_pair_sparse_with_params(
         &self,
         params: &AtomPairFingerprintParams,
         output: Option<&mut FingerprintAdditionalOutput>,
@@ -146,12 +146,12 @@ impl Molecule {
         atom_pair_sparse_bits(&input, &params.generator, &call, output)
             .map_err(AtomPairReadError::Generator)
     }
-    pub fn atom_pair_count_fingerprint(
+    pub fn fingerprint_atom_pair_count(
         &self,
     ) -> Result<SparseCountFingerprint32, AtomPairReadError> {
-        self.atom_pair_count_fingerprint_with_params(&AtomPairFingerprintParams::default(), None)
+        self.fingerprint_atom_pair_count_with_params(&AtomPairFingerprintParams::default(), None)
     }
-    pub fn atom_pair_count_fingerprint_with_params(
+    pub fn fingerprint_atom_pair_count_with_params(
         &self,
         params: &AtomPairFingerprintParams,
         output: Option<&mut FingerprintAdditionalOutput>,
@@ -178,15 +178,15 @@ impl Molecule {
         atom_pair_count(&input, &params.generator, &call, output)
             .map_err(AtomPairReadError::Generator)
     }
-    pub fn atom_pair_sparse_count_fingerprint(
+    pub fn fingerprint_atom_pair_sparse_count(
         &self,
     ) -> Result<SparseCountFingerprint, AtomPairReadError> {
-        self.atom_pair_sparse_count_fingerprint_with_params(
+        self.fingerprint_atom_pair_sparse_count_with_params(
             &AtomPairFingerprintParams::default(),
             None,
         )
     }
-    pub fn atom_pair_sparse_count_fingerprint_with_params(
+    pub fn fingerprint_atom_pair_sparse_count_with_params(
         &self,
         params: &AtomPairFingerprintParams,
         output: Option<&mut FingerprintAdditionalOutput>,

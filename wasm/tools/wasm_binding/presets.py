@@ -22,6 +22,7 @@ PRESETS = {
 # Custom modules are language projections, not another chemistry API registry.
 # Each module is assigned to its existing binding-facing Cargo feature.
 MODULE_GROUPS = {
+    "cap-stereo": "stereo_queries",
     "core": "query_values valence_operations element_boundary aromaticity_boundary smiles_boundary host_values smiles_parameters transform_parameters transform_errors property_values group_values io_errors sdf_reading property_strings xyz_mol2 xyz_mol2_errors mol_sdf_writing mol_write_errors sdf_datasets kekulize matrices matrix_errors bond_order radicals rings sanitize valence_errors hydrogens",
     "cap-search": "query_construction search search_errors",
     "cap-alignment": "alignment_parameters alignment_operations",
@@ -40,6 +41,7 @@ MODULE_GROUPS = {
 }
 
 TEST_GROUPS = {
+    "cap-stereo": "stereo_queries",
     "core": "element_projection aromaticity_projection property_strings hydrogens xyz_mol2 kekulize matrices radicals sanitize preset_surface",
     "cap-search": "query_construction search",
     "cap-search+cap-depict": "sdf_reading sdf_datasets mol_sdf_writing",

@@ -114,7 +114,7 @@ fn random_writer_and_vector_match_pinned_sequences_and_shared_stream_semantics()
         ])
     );
     let nonisomeric = RandomSmilesWriteParams {
-        do_isomeric_smiles: false,
+        isomeric_smiles: false,
         ..RandomSmilesWriteParams::default()
     };
     assert_eq!(
@@ -124,7 +124,7 @@ fn random_writer_and_vector_match_pinned_sequences_and_shared_stream_semantics()
     let aromatic_record =
         parse_smiles("c1ccccc1", &SmilesParseParams::default()).expect("aromatic fixture");
     let kekule = RandomSmilesWriteParams {
-        do_kekule: true,
+        kekule: true,
         ..RandomSmilesWriteParams::default()
     };
     assert_eq!(
@@ -384,11 +384,10 @@ fn random_writer_and_vector_match_pinned_sequences_and_shared_stream_semantics()
         assert_eq!(distinct_tuples.len(), 16, "fixture={fixture}");
 
         for (options, expected_rows) in OPTION_TUPLES.iter().copied().zip(expected_matrix) {
-            let (do_isomeric_smiles, do_kekule, all_bonds_explicit, all_hydrogens_explicit) =
-                options;
+            let (isomeric_smiles, kekule, all_bonds_explicit, all_hydrogens_explicit) = options;
             let option_params = RandomSmilesWriteParams {
-                do_isomeric_smiles,
-                do_kekule,
+                isomeric_smiles,
+                kekule,
                 all_bonds_explicit,
                 all_hydrogens_explicit,
             };

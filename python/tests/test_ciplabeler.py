@@ -47,7 +47,7 @@ def test_recursion_limit_errors_are_structured_and_do_not_mutate_source() -> Non
     molecule = cosmolkit.Molecule.from_smiles(
         "Cc1ccc(S(=O)(=O)O)cc1.O=C(CNC1CC1)NC[C@H]1CC[C@]2(CC1)OO[C@]1(O2)C2CC3CC(C2)CC1C3"
     )
-    before = molecule.mol_to_binary()
+    before = molecule.to_binary()
     with pytest.raises(ValueError, match="Max Iterations Exceeded"):
         molecule.assign_cip_labels_(max_recursive_iterations=1)
-    assert molecule.mol_to_binary() == before
+    assert molecule.to_binary() == before

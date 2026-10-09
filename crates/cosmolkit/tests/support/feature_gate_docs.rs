@@ -44,7 +44,7 @@ absent_types!("cap-depict"; DrawingError);
 absent_types!("cap-reaction"; Reaction, ReactionRunParams, ReactionTemplateRemoval, ReactionApplyResult);
 absent_methods!("cap-forcefields";
     with_uff_optimized, with_uff_optimized_with_params,
-    with_uff_optimized_confs, with_uff_optimized_confs_with_params,
+    with_uff_optimized_conformers, with_uff_optimized_conformers_with_params,
     uff_has_all_molecule_params,
 );
 absent_types!("cap-forcefields";

@@ -3026,7 +3026,7 @@ mod original_binary_live_tests {
         .expect("generate the audited pre-archive 2D state");
         let hash_before = mol.molecular_hash().expect("hash before archive");
         let morgan_before = mol
-            .morgan_fingerprint_with_params(&crate::MorganFingerprintParams::default(), None)
+            .fingerprint_morgan_with_params(&crate::MorganFingerprintParams::default(), None)
             .expect("Morgan fingerprint before archive");
 
         let data = mol.to_binary().expect("encode molecule archive");
@@ -3049,7 +3049,7 @@ mod original_binary_live_tests {
         assert_eq!(
             morgan_before,
             restored
-                .morgan_fingerprint_with_params(&crate::MorganFingerprintParams::default(), None)
+                .fingerprint_morgan_with_params(&crate::MorganFingerprintParams::default(), None)
                 .expect("Morgan fingerprint after archive")
         );
         assert_eq!(

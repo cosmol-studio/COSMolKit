@@ -109,7 +109,7 @@ def test_d02_generic_zero_differs_from_fixed_zero_and_wraps(family: str):
 
 @pytest.mark.parametrize("name", PREPARED)
 def test_d02_raw_molecule_prepared_boundary_is_typed_and_preserving(name: str):
-    molecule = ck.Molecule.from_smiles_with_params("CCC", ck.SmilesParseParams(sanitize=False, remove_hydrogens=False))
+    molecule = ck.Molecule.from_smiles_with_params("CCC", ck.SmilesParseParams(sanitize=False, remove_hs=False))
     before = (molecule.num_atoms(), molecule.num_bonds(), molecule.coordinates_2d())
     with pytest.raises(ck.DescriptorReadError) as caught:
         if PARAMETERS[name] == "force":
@@ -130,7 +130,7 @@ def test_d02_raw_molecule_prepared_boundary_is_typed_and_preserving(name: str):
     ("kappa_1", 3.0), ("kappa_2", 2.0), ("kappa_3", 0.0), ("phi", 2.0),
 ])
 def test_d02_raw_topology_queries_do_not_prepare(name: str, expected: object):
-    molecule = ck.Molecule.from_smiles_with_params("CCC", ck.SmilesParseParams(sanitize=False, remove_hydrogens=False))
+    molecule = ck.Molecule.from_smiles_with_params("CCC", ck.SmilesParseParams(sanitize=False, remove_hs=False))
     assert query(molecule, name)() == expected
     with pytest.raises(ck.DescriptorReadError) as caught:
         _ = molecule.chi_0_v()

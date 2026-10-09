@@ -75,7 +75,10 @@ fn sdf_reader_contracts_distinguish_concrete_and_preserving_results() {
     for (id, role) in [
         ("types.SdfRecord", BindingTypeRole::Result),
         ("types.SdfGraph", BindingTypeRole::Result),
-        ("types.SdfCoordinateMode", BindingTypeRole::Parameter),
+        (
+            "types.SdfCoordinateMode",
+            BindingTypeRole::ParameterSelector,
+        ),
         ("types.SdfReadParams", BindingTypeRole::Parameter),
         ("types.SdfError", BindingTypeRole::Error),
     ] {
@@ -465,8 +468,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "UffOptimizationError.kind",
             "Molecule.with_uff_optimized",
             "Molecule.with_uff_optimized_with_params",
-            "Molecule.with_uff_optimized_confs",
-            "Molecule.with_uff_optimized_confs_with_params",
+            "Molecule.with_uff_optimized_conformers",
+            "Molecule.with_uff_optimized_conformers_with_params",
         ]);
     }
     if cfg!(feature = "cap-hydrogens") {
@@ -711,14 +714,14 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "types.SparseCountFingerprint",
                 "types.SparseCountFingerprint32",
                 "types.FingerprintError",
-                "Molecule.morgan_sparse_count_fingerprint",
-                "Molecule.morgan_sparse_count_fingerprint_with_params",
-                "Molecule.morgan_sparse_fingerprint",
-                "Molecule.morgan_sparse_fingerprint_with_params",
-                "Molecule.morgan_count_fingerprint",
-                "Molecule.morgan_count_fingerprint_with_params",
-                "Molecule.morgan_fingerprint",
-                "Molecule.morgan_fingerprint_with_params",
+                "Molecule.fingerprint_morgan_sparse_count",
+                "Molecule.fingerprint_morgan_sparse_count_with_params",
+                "Molecule.fingerprint_morgan_sparse",
+                "Molecule.fingerprint_morgan_sparse_with_params",
+                "Molecule.fingerprint_morgan_count",
+                "Molecule.fingerprint_morgan_count_with_params",
+                "Molecule.fingerprint_morgan",
+                "Molecule.fingerprint_morgan_with_params",
                 "FingerprintAdditionalOutput.new",
                 "FingerprintAdditionalOutput.default",
                 "FingerprintAdditionalOutput.allocate_atom_counts",
@@ -954,8 +957,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "types.MmffOptimizationError",
                 "Molecule.with_mmff_optimized",
                 "Molecule.with_mmff_optimized_with_params",
-                "Molecule.with_mmff_optimized_confs",
-                "Molecule.with_mmff_optimized_confs_with_params",
+                "Molecule.with_mmff_optimized_conformers",
+                "Molecule.with_mmff_optimized_conformers_with_params",
             ]);
         }
         if cfg!(feature = "cap-tautomer") {
@@ -1005,6 +1008,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "Molecule.substruct_matches",
                 "Molecule.has_substruct_match",
                 "Molecule.substruct_matches_with_params",
+                "Molecule.substruct_match_with_params",
+                "Molecule.has_substruct_match_with_params",
                 "Molecule.substruct_matches_compiled",
             ]);
         }
@@ -1024,27 +1029,27 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "types.AtomPairFingerprintParams",
                 "types.AtomPairAtomInvariantsGenerator",
                 "types.AtomPairReadError",
-                "Molecule.atom_pair_fingerprint",
-                "Molecule.atom_pair_fingerprint_with_params",
-                "Molecule.atom_pair_sparse_fingerprint",
-                "Molecule.atom_pair_sparse_fingerprint_with_params",
-                "Molecule.atom_pair_count_fingerprint",
-                "Molecule.atom_pair_count_fingerprint_with_params",
-                "Molecule.atom_pair_sparse_count_fingerprint",
-                "Molecule.atom_pair_sparse_count_fingerprint_with_params",
+                "Molecule.fingerprint_atom_pair",
+                "Molecule.fingerprint_atom_pair_with_params",
+                "Molecule.fingerprint_atom_pair_sparse",
+                "Molecule.fingerprint_atom_pair_sparse_with_params",
+                "Molecule.fingerprint_atom_pair_count",
+                "Molecule.fingerprint_atom_pair_count_with_params",
+                "Molecule.fingerprint_atom_pair_sparse_count",
+                "Molecule.fingerprint_atom_pair_sparse_count_with_params",
                 "AtomPairAtomInvariantsGenerator.info_string",
                 "AtomPairAtomInvariantsGenerator.to_json",
                 "types.TopologicalTorsionParams",
                 "types.TopologicalTorsionFingerprintParams",
                 "types.TopologicalTorsionReadError",
-                "Molecule.topological_torsion_fingerprint",
-                "Molecule.topological_torsion_fingerprint_with_params",
-                "Molecule.topological_torsion_sparse_fingerprint",
-                "Molecule.topological_torsion_sparse_fingerprint_with_params",
-                "Molecule.topological_torsion_count_fingerprint",
-                "Molecule.topological_torsion_count_fingerprint_with_params",
-                "Molecule.topological_torsion_sparse_count_fingerprint",
-                "Molecule.topological_torsion_sparse_count_fingerprint_with_params",
+                "Molecule.fingerprint_topological_torsion",
+                "Molecule.fingerprint_topological_torsion_with_params",
+                "Molecule.fingerprint_topological_torsion_sparse",
+                "Molecule.fingerprint_topological_torsion_sparse_with_params",
+                "Molecule.fingerprint_topological_torsion_count",
+                "Molecule.fingerprint_topological_torsion_count_with_params",
+                "Molecule.fingerprint_topological_torsion_sparse_count",
+                "Molecule.fingerprint_topological_torsion_sparse_count_with_params",
             ]);
         }
         if !additions.is_empty() {
@@ -1273,17 +1278,17 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "TopologicalTorsionSettings.count_bounds",
             "TopologicalTorsionSettings.set_count_bounds",
             "TopologicalTorsionSettings.params",
-            "Molecule.topological_torsion_fingerprint_with_generator",
-            "Molecule.topological_torsion_sparse_fingerprint_with_generator",
-            "Molecule.topological_torsion_count_fingerprint_with_generator",
-            "Molecule.topological_torsion_sparse_count_fingerprint_with_generator",
+            "Molecule.fingerprint_topological_torsion_with_generator",
+            "Molecule.fingerprint_topological_torsion_sparse_with_generator",
+            "Molecule.fingerprint_topological_torsion_count_with_generator",
+            "Molecule.fingerprint_topological_torsion_sparse_count_with_generator",
             "LegacyTopologicalTorsionParams.new",
-            "Molecule.legacy_topological_torsion_sparse_count_fingerprint",
-            "Molecule.legacy_topological_torsion_sparse_count_fingerprint_with_params",
-            "Molecule.legacy_topological_torsion_count_fingerprint",
-            "Molecule.legacy_topological_torsion_count_fingerprint_with_params",
-            "Molecule.legacy_topological_torsion_fingerprint",
-            "Molecule.legacy_topological_torsion_fingerprint_with_params",
+            "Molecule.fingerprint_topological_torsion_sparse_count_legacy",
+            "Molecule.fingerprint_topological_torsion_sparse_count_legacy_with_params",
+            "Molecule.fingerprint_topological_torsion_count_legacy",
+            "Molecule.fingerprint_topological_torsion_count_legacy_with_params",
+            "Molecule.fingerprint_topological_torsion_legacy",
+            "Molecule.fingerprint_topological_torsion_legacy_with_params",
         ]);
     }
     // Complete canonical feature blocks: literal identities preserve the original
@@ -1514,13 +1519,13 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "MorganFingerprintGenerator.info_string",
                 "MorganFingerprintGenerator.to_json",
                 "MorganFingerprintGenerator.fingerprints",
-                "Molecule.morgan_fingerprint_with_generator",
+                "Molecule.fingerprint_morgan_with_generator",
                 "MorganFingerprintGenerator.counts",
-                "Molecule.morgan_count_fingerprint_with_generator",
+                "Molecule.fingerprint_morgan_count_with_generator",
                 "MorganFingerprintGenerator.sparse_fingerprints",
-                "Molecule.morgan_sparse_fingerprint_with_generator",
+                "Molecule.fingerprint_morgan_sparse_with_generator",
                 "MorganFingerprintGenerator.sparse_counts",
-                "Molecule.morgan_sparse_count_fingerprint_with_generator",
+                "Molecule.fingerprint_morgan_sparse_count_with_generator",
                 "MorganSettings.radius",
                 "MorganSettings.set_radius",
                 "MorganSettings.only_nonzero_invariants",
@@ -1657,19 +1662,19 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         expected.extend([
             "types.MaccsFingerprintParams",
             "types.MaccsFingerprintError",
-            "Molecule.maccs_fingerprint",
-            "Molecule.maccs_fingerprint_raw",
-            "Molecule.maccs_fingerprint_with_params",
+            "Molecule.fingerprint_maccs",
+            "Molecule.fingerprint_maccs_raw",
+            "Molecule.fingerprint_maccs_with_params",
             "types.LayeredFingerprintParams",
             "types.LayeredFingerprintLayers",
             "types.LayeredFingerprintResult",
             "types.LayeredFingerprintError",
-            "Molecule.layered_fingerprint",
-            "Molecule.layered_fingerprint_with_params",
-            "Molecule.layered_fingerprint_with_output",
-            "Molecule.layered_fingerprint_with_output_with_params",
-            "layered_query_fingerprint_with_params",
-            "layered_query_fingerprint_with_output_with_params",
+            "Molecule.fingerprint_layered",
+            "Molecule.fingerprint_layered_with_params",
+            "Molecule.fingerprint_layered_with_output",
+            "Molecule.fingerprint_layered_with_output_with_params",
+            "fingerprint_layered_query_with_params",
+            "fingerprint_layered_query_with_output_with_params",
             "LayeredFingerprintResult.fingerprint",
             "LayeredFingerprintResult.atom_counts",
             "LayeredFingerprintLayers.bits",
@@ -1741,7 +1746,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "EmbedParams.max_iterations",
             "EmbedParams.num_threads",
             "EmbedParams.random_seed",
-            "EmbedParams.clear_confs",
+            "EmbedParams.clear_conformers",
             "EmbedParams.use_random_coords",
             "EmbedParams.box_size_mult",
             "EmbedParams.rand_neg_eig",
@@ -1790,21 +1795,21 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
         expected.extend([
             "types.PatternFingerprintParams",
             "types.PatternFingerprintError",
-            "Molecule.pattern_fingerprint",
-            "Molecule.pattern_fingerprint_with_params",
-            "pattern_query_fingerprint",
-            "pattern_query_fingerprint_with_params",
+            "Molecule.fingerprint_pattern",
+            "Molecule.fingerprint_pattern_with_params",
+            "fingerprint_pattern_query",
+            "fingerprint_pattern_query_with_params",
             "types.TopologicalFingerprintParams",
             "types.TopologicalFingerprintOutputRequest",
             "types.TopologicalFingerprintOutput",
             "types.TopologicalFingerprintResult",
             "types.TopologicalFingerprintError",
-            "Molecule.topological_fingerprint",
-            "Molecule.topological_fingerprint_with_params",
-            "Molecule.topological_fingerprint_with_output",
-            "Molecule.topological_fingerprint_with_output_with_params",
-            "topological_query_fingerprint_with_params",
-            "topological_query_fingerprint_with_output_with_params",
+            "Molecule.fingerprint_topological",
+            "Molecule.fingerprint_topological_with_params",
+            "Molecule.fingerprint_topological_with_output",
+            "Molecule.fingerprint_topological_with_output_with_params",
+            "fingerprint_topological_query_with_params",
+            "fingerprint_topological_query_with_output_with_params",
             "TopologicalFingerprintResult.fingerprint",
             "TopologicalFingerprintResult.atom_bits",
             "TopologicalFingerprintResult.bit_info",
@@ -1932,10 +1937,10 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
     if cfg!(feature = "cap-io") && cfg!(feature = "cap-batch") {
         expected.extend([
             "types.BatchExportParams",
-            "MoleculeBatch.to_sdf",
-            "MoleculeBatch.to_sdf_files",
-            "MoleculeBatch.to_sdf_with_params",
-            "MoleculeBatch.to_sdf_files_with_params",
+            "MoleculeBatch.write_sdf",
+            "MoleculeBatch.write_sdf_files",
+            "MoleculeBatch.write_sdf_with_params",
+            "MoleculeBatch.write_sdf_files_with_params",
             "BatchExportReport.total",
             "BatchExportReport.success",
             "BatchExportReport.failed",
@@ -2019,8 +2024,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "MoleculeBatch.to_svg_list_with_params",
                 "types.BatchImageParams",
                 "types.BatchImageError",
-                "MoleculeBatch.to_images",
-                "MoleculeBatch.to_images_with_params",
+                "MoleculeBatch.write_images",
+                "MoleculeBatch.write_images_with_params",
             ]);
         }
         if cfg!(feature = "cap-fingerprints") {
@@ -2037,8 +2042,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
                 "MoleculeBatch.fingerprint_layered_list_with_params",
                 "MoleculeBatch.fingerprint_layered_with_output_list",
                 "MoleculeBatch.fingerprint_layered_with_output_list_with_params",
-                "MoleculeBatch.pattern_fingerprint_list",
-                "MoleculeBatch.pattern_fingerprint_list_with_params",
+                "MoleculeBatch.fingerprint_pattern_list",
+                "MoleculeBatch.fingerprint_pattern_list_with_params",
                 "MoleculeBatch.fingerprint_morgan_list",
                 "MoleculeBatch.fingerprint_morgan_list_with_params",
                 "types.BatchFingerprintOutput",
@@ -2188,8 +2193,8 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "InchiWriteParams.new",
             "InchiReadParams.sanitize",
             "InchiReadParams.set_sanitize",
-            "InchiReadParams.remove_hydrogens",
-            "InchiReadParams.set_remove_hydrogens",
+            "InchiReadParams.remove_hs",
+            "InchiReadParams.set_remove_hs",
             "InchiWriteParams.options",
             "InchiWriteParams.set_options",
             "types.InchiError",
@@ -2202,7 +2207,7 @@ fn canonical_registry_preserves_order_and_feature_local_subsets() {
             "Molecule.to_inchi_with_params",
             "Molecule.to_inchi_key",
             "Molecule.to_inchi_key_with_params",
-            "module.inchi_to_inchi_key",
+            "module.inchi_to_key",
         ]);
     }
     assert_eq!(
@@ -2339,8 +2344,8 @@ fn uff_param_p10_registry_has_exact_read_only_query_contract() {
             "types.MmffOptimizationError",
             "Molecule.with_mmff_optimized",
             "Molecule.with_mmff_optimized_with_params",
-            "Molecule.with_mmff_optimized_confs",
-            "Molecule.with_mmff_optimized_confs_with_params",
+            "Molecule.with_mmff_optimized_conformers",
+            "Molecule.with_mmff_optimized_conformers_with_params",
             "types.UffParameterQueryError",
             "types.UffParameterError",
             "types.UffParameterErrorKind",
@@ -2364,8 +2369,8 @@ fn uff_param_p10_registry_has_exact_read_only_query_contract() {
             "UffOptimizationError.kind",
             "Molecule.with_uff_optimized",
             "Molecule.with_uff_optimized_with_params",
-            "Molecule.with_uff_optimized_confs",
-            "Molecule.with_uff_optimized_confs_with_params",
+            "Molecule.with_uff_optimized_conformers",
+            "Molecule.with_uff_optimized_conformers_with_params",
         ]
         .into_iter()
         .chain(PERSISTENT_FORCEFIELD_IDS.iter().copied())
@@ -2922,8 +2927,8 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "MoleculeBatch.to_svg_list_with_params"
                 | "types.BatchImageParams"
                 | "types.BatchImageError"
-                | "MoleculeBatch.to_images"
-                | "MoleculeBatch.to_images_with_params"
+                | "MoleculeBatch.write_images"
+                | "MoleculeBatch.write_images_with_params"
                 | "MoleculeBatch.fingerprint_atom_pair_list"
                 | "MoleculeBatch.fingerprint_atom_pair_list_with_params"
                 | "MoleculeBatch.fingerprint_atom_pair_sparse_count_list"
@@ -2936,8 +2941,8 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "MoleculeBatch.fingerprint_layered_list_with_params"
                 | "MoleculeBatch.fingerprint_layered_with_output_list"
                 | "MoleculeBatch.fingerprint_layered_with_output_list_with_params"
-                | "MoleculeBatch.pattern_fingerprint_list"
-                | "MoleculeBatch.pattern_fingerprint_list_with_params"
+                | "MoleculeBatch.fingerprint_pattern_list"
+                | "MoleculeBatch.fingerprint_pattern_list_with_params"
                 | "MoleculeBatch.fingerprint_morgan_list"
                 | "MoleculeBatch.fingerprint_morgan_list_with_params"
                 | "types.BatchFingerprintOutput"
@@ -2975,7 +2980,6 @@ fn status_commitments_are_per_function_and_shared_with_registered_operations() {
                 | "types.StereoReadError"
                 | "Molecule.tetrahedral_stereo"
                 | "Molecule.perceive_stereochemistry"
-                | "Molecule.find_chiral_centers"
         ) {
             FunctionStatus::Native
         } else {

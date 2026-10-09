@@ -13,7 +13,7 @@ test("InChI defaults, configurable calls, typed errors and reusable parameters",
     const write = new ck.InchiWriteParams();
     assert.equal(molecule.toInchi(), identifier);
     assert.equal(molecule.toInchiKey(), key);
-    assert.equal(ck.inchiToInchiKey(identifier), key);
+    assert.equal(ck.inchiToKey(identifier), key);
     write.options = "-AuxNone";
     for (const params of [write, {options: "-AuxNone"}]) {
         assert.equal(molecule.toInchi(params), identifier);
@@ -22,8 +22,8 @@ test("InChI defaults, configurable calls, typed errors and reusable parameters",
     assert.equal(molecule.toInchiWithParams(write), identifier);
     for (const sanitize of [false, true]) for (const remove of [false, true]) {
         read.sanitize = sanitize;
-        read.removeHydrogens = remove;
-        for (const params of [read, {sanitize, removeHydrogens: remove}]) {
+        read.removeHs = remove;
+        for (const params of [read, {sanitize, removeHs: remove}]) {
             const parsed = ck.Molecule.fromInchi(identifier, params);
             assert.equal(parsed.toInchi(), identifier);
             parsed.free();
@@ -32,7 +32,7 @@ test("InChI defaults, configurable calls, typed errors and reusable parameters",
         assert.equal(parsed.toInchi(), identifier);
         parsed.free();
     }
-    for (const call of [() => ck.Molecule.fromInchi("not InChI"), () => ck.inchiToInchiKey("not InChI")]) {
+    for (const call of [() => ck.Molecule.fromInchi("not InChI"), () => ck.inchiToKey("not InChI")]) {
         assert.throws(call, e => e instanceof Error && e.name === "InchiError"
             && typeof e.kind === "number" && e.domain === "inchi" && typeof e.operation === "string"
             && e.detail instanceof ck.InchiError);

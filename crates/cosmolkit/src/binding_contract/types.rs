@@ -72,6 +72,8 @@ pub struct BindingCallableContract {
 pub enum BindingTypeRole {
     Value,
     Parameter,
+    /// An enum, bit mask, or opaque selector, not a configuration record.
+    ParameterSelector,
     Result,
     Error,
 }
@@ -104,6 +106,12 @@ pub struct BindingContractEntry {
     pub owner: BindingOwner,
     pub rust_path: &'static str,
     pub python_name: &'static str,
+    /// Explicit native value projection, not an independently exported class.
+    /// Unions must name registered types; containers retain typed API elements.
+    pub python_native: Option<&'static str>,
+    /// Configuration constructor schema in Python's own projection vocabulary.
+    /// Rust public-field records need not grow a redundant `new` method.
+    pub python_configuration: Option<&'static [BindingParameterContract]>,
     pub python_property: Option<BindingPropertyAccess>,
     pub javascript_name: &'static str,
     pub feature: &'static str,

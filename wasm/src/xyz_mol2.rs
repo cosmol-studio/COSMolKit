@@ -145,11 +145,11 @@ mod tests {
             ck::Molecule::read_mol2(mol2.to_str().unwrap()).unwrap()
         );
         for sanitize in [false, true] {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 for cleanup_substructures in [false, true] {
                     let p = ck::Mol2ReadParams {
                         sanitize,
-                        remove_hydrogens,
+                        remove_hs,
                         cleanup_substructures,
                         variant: ck::Mol2Type::Corina,
                     };
@@ -170,7 +170,7 @@ mod tests {
                     );
                     assert_eq!(
                         expected.num_atoms(),
-                        if sanitize && remove_hydrogens { 2 } else { 3 }
+                        if sanitize && remove_hs { 2 } else { 3 }
                     );
                 }
             }

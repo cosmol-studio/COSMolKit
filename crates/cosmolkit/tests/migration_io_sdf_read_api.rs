@@ -23,7 +23,7 @@ fn v3000_one_atom(symbol: &str, z: &str, attachment: &str) -> String {
 fn sdf_public_defaults_concrete_both_versions_and_first_record() {
     let defaults = SdfReadParams::default();
     assert!(defaults.sanitize);
-    assert!(defaults.remove_hydrogens);
+    assert!(defaults.remove_hs);
     assert!(defaults.strict_parsing);
     assert!(!defaults.expand_attachment_points);
     assert!(defaults.process_property_lists);
@@ -110,7 +110,7 @@ fn sdf_public_query_preservation_wrong_kind_and_concrete_rejection() {
             &input,
             &SdfReadParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..SdfReadParams::default()
             },
         )
@@ -129,7 +129,7 @@ fn sdf_public_query_preservation_wrong_kind_and_concrete_rejection() {
                 &input,
                 &SdfReadParams {
                     sanitize: false,
-                    remove_hydrogens: false,
+                    remove_hs: false,
                     ..SdfReadParams::default()
                 }
             ),
@@ -153,7 +153,7 @@ fn sdf_public_attachment_promotion_and_noop_are_classified_after_post() {
     let params = SdfReadParams {
         expand_attachment_points: true,
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..SdfReadParams::default()
     };
     assert!(matches!(
@@ -178,7 +178,7 @@ fn sdf_public_sanitize_and_hydrogen_parameter_branches() {
         v2000_atom(0.0, 0.0, 0.0, "C"),
         v2000_atom(1.0, 0.0, 0.0, "H")
     );
-    for (sanitize, remove_hydrogens, expected_atoms) in [
+    for (sanitize, remove_hs, expected_atoms) in [
         (false, false, 2),
         (false, true, 2),
         (true, false, 2),
@@ -186,14 +186,14 @@ fn sdf_public_sanitize_and_hydrogen_parameter_branches() {
     ] {
         let params = SdfReadParams {
             sanitize,
-            remove_hydrogens,
+            remove_hs,
             ..SdfReadParams::default()
         };
         let molecule = Molecule::from_sdf_with_params(&input, &params).unwrap();
         assert_eq!(
             molecule.topology().atoms.len(),
             expected_atoms,
-            "sanitize={sanitize}, remove_hydrogens={remove_hydrogens}"
+            "sanitize={sanitize}, remove_hs={remove_hs}"
         );
         assert_eq!(molecule.coordinates_2d().unwrap().len(), expected_atoms);
     }

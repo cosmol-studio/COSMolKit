@@ -2,42 +2,42 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
-    pub fn layered_fingerprint(&self) -> Result<ck::Fingerprint, ck::LayeredFingerprintError> {
+    pub fn fingerprint_layered(&self) -> Result<ck::Fingerprint, ck::LayeredFingerprintError> {
         // COSMolKit❗✔️: .layered_fingerprint(
-        self.inner.borrow().layered_fingerprint()
+        self.inner.borrow().fingerprint_layered()
     }
-    pub fn layered_fingerprint_with_params(
+    pub fn fingerprint_layered_with_params(
         &self,
         params: &ck::LayeredFingerprintParams,
     ) -> Result<ck::Fingerprint, ck::LayeredFingerprintError> {
         // COSMolKit❗✔️: .layered_fingerprint_with_params(
-        self.inner.borrow().layered_fingerprint_with_params(params)
+        self.inner.borrow().fingerprint_layered_with_params(params)
     }
-    pub fn layered_fingerprint_with_output(
+    pub fn fingerprint_layered_with_output(
         &self,
     ) -> Result<ck::LayeredFingerprintResult, ck::LayeredFingerprintError> {
         // COSMolKit❗✔️: .layered_fingerprint_with_output(
-        self.inner.borrow().layered_fingerprint_with_output()
+        self.inner.borrow().fingerprint_layered_with_output()
     }
-    pub fn layered_fingerprint_with_output_with_params(
+    pub fn fingerprint_layered_with_output_with_params(
         &self,
         params: &ck::LayeredFingerprintParams,
     ) -> Result<ck::LayeredFingerprintResult, ck::LayeredFingerprintError> {
         // COSMolKit❗✔️: .layered_fingerprint_with_output_with_params(
         self.inner
             .borrow()
-            .layered_fingerprint_with_output_with_params(params)
+            .fingerprint_layered_with_output_with_params(params)
     }
-    pub fn pattern_fingerprint(&self) -> Result<ck::Fingerprint, ck::PatternFingerprintError> {
+    pub fn fingerprint_pattern(&self) -> Result<ck::Fingerprint, ck::PatternFingerprintError> {
         // COSMolKit❗✔️: .pattern_fingerprint(
-        self.inner.borrow().pattern_fingerprint()
+        self.inner.borrow().fingerprint_pattern()
     }
-    pub fn pattern_fingerprint_with_params(
+    pub fn fingerprint_pattern_with_params(
         &self,
         params: &ck::PatternFingerprintParams,
     ) -> Result<ck::Fingerprint, ck::PatternFingerprintError> {
         // COSMolKit❗✔️: .pattern_fingerprint_with_params(
-        self.inner.borrow().pattern_fingerprint_with_params(params)
+        self.inner.borrow().fingerprint_pattern_with_params(params)
     }
 }
 #[cfg(test)]
@@ -49,40 +49,40 @@ mod tests {
             let m = Molecule::from_smiles(text).unwrap();
             let canonical = ck::Molecule::from_smiles(text).unwrap();
             assert_eq!(
-                m.layered_fingerprint().unwrap(),
-                canonical.layered_fingerprint().unwrap()
+                m.fingerprint_layered().unwrap(),
+                canonical.fingerprint_layered().unwrap()
             );
             assert_eq!(
-                m.layered_fingerprint_with_params(&ck::LayeredFingerprintParams::default())
+                m.fingerprint_layered_with_params(&ck::LayeredFingerprintParams::default())
                     .unwrap(),
                 canonical
-                    .layered_fingerprint_with_params(&ck::LayeredFingerprintParams::default())
+                    .fingerprint_layered_with_params(&ck::LayeredFingerprintParams::default())
                     .unwrap()
             );
             assert_eq!(
-                m.layered_fingerprint_with_output().unwrap(),
-                canonical.layered_fingerprint_with_output().unwrap()
+                m.fingerprint_layered_with_output().unwrap(),
+                canonical.fingerprint_layered_with_output().unwrap()
             );
             assert_eq!(
-                m.layered_fingerprint_with_output_with_params(
+                m.fingerprint_layered_with_output_with_params(
                     &ck::LayeredFingerprintParams::default()
                 )
                 .unwrap(),
                 canonical
-                    .layered_fingerprint_with_output_with_params(
+                    .fingerprint_layered_with_output_with_params(
                         &ck::LayeredFingerprintParams::default()
                     )
                     .unwrap()
             );
             assert_eq!(
-                m.pattern_fingerprint().unwrap(),
-                canonical.pattern_fingerprint().unwrap()
+                m.fingerprint_pattern().unwrap(),
+                canonical.fingerprint_pattern().unwrap()
             );
             assert_eq!(
-                m.pattern_fingerprint_with_params(&ck::PatternFingerprintParams::default())
+                m.fingerprint_pattern_with_params(&ck::PatternFingerprintParams::default())
                     .unwrap(),
                 canonical
-                    .pattern_fingerprint_with_params(&ck::PatternFingerprintParams::default())
+                    .fingerprint_pattern_with_params(&ck::PatternFingerprintParams::default())
                     .unwrap()
             );
             let p = ck::LayeredFingerprintParams {
@@ -90,20 +90,20 @@ mod tests {
                 ..Default::default()
             };
             assert_eq!(
-                m.layered_fingerprint_with_output_with_params(&p).unwrap(),
+                m.fingerprint_layered_with_output_with_params(&p).unwrap(),
                 canonical
-                    .layered_fingerprint_with_output_with_params(&p)
+                    .fingerprint_layered_with_output_with_params(&p)
                     .unwrap()
             );
             assert!(matches!(
-                m.layered_fingerprint_with_params(&ck::LayeredFingerprintParams {
+                m.fingerprint_layered_with_params(&ck::LayeredFingerprintParams {
                     min_path: 0,
                     ..Default::default()
                 }),
                 Err(ck::LayeredFingerprintError::InvalidArguments { .. })
             ));
             assert!(matches!(
-                m.pattern_fingerprint_with_params(&ck::PatternFingerprintParams {
+                m.fingerprint_pattern_with_params(&ck::PatternFingerprintParams {
                     n_bits: 0,
                     ..Default::default()
                 }),

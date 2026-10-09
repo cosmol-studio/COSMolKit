@@ -197,7 +197,7 @@ mod ring_live_tests {
             input,
             &cosmolkit_smiles::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..cosmolkit_smiles::SmilesParseParams::default()
             },
         )

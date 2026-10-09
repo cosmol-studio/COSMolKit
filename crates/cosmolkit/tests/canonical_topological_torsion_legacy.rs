@@ -6,7 +6,7 @@ use cosmolkit::{LegacyTopologicalTorsionParams, Molecule};
 fn legacy_default_unfolded_and_hashed_source_values_are_distinct() {
     let molecule = Molecule::from_smiles("CCCCO").unwrap();
     let unfolded = molecule
-        .legacy_topological_torsion_sparse_count_fingerprint()
+        .fingerprint_topological_torsion_sparse_count_legacy()
         .unwrap();
     assert_eq!(unfolded.length(), (1_u64 << 36) - 1);
     assert_eq!(
@@ -22,7 +22,7 @@ fn legacy_default_unfolded_and_hashed_source_values_are_distinct() {
         ..Default::default()
     };
     let hashed = molecule
-        .legacy_topological_torsion_count_fingerprint_with_params(&params)
+        .fingerprint_topological_torsion_count_legacy_with_params(&params)
         .unwrap();
     assert_eq!(hashed.length(), 1000);
     assert_eq!(
@@ -36,22 +36,22 @@ fn legacy_default_unfolded_and_hashed_source_values_are_distinct() {
     let defaults = LegacyTopologicalTorsionParams::default();
     assert_eq!(
         molecule
-            .legacy_topological_torsion_count_fingerprint()
+            .fingerprint_topological_torsion_count_legacy()
             .unwrap(),
         molecule
-            .legacy_topological_torsion_count_fingerprint_with_params(&defaults)
+            .fingerprint_topological_torsion_count_legacy_with_params(&defaults)
             .unwrap()
     );
     assert_eq!(
-        molecule.legacy_topological_torsion_fingerprint().unwrap(),
+        molecule.fingerprint_topological_torsion_legacy().unwrap(),
         molecule
-            .legacy_topological_torsion_fingerprint_with_params(&defaults)
+            .fingerprint_topological_torsion_legacy_with_params(&defaults)
             .unwrap()
     );
     assert_eq!(
         unfolded,
         molecule
-            .legacy_topological_torsion_sparse_count_fingerprint_with_params(&defaults)
+            .fingerprint_topological_torsion_sparse_count_legacy_with_params(&defaults)
             .unwrap()
     );
 }
@@ -65,21 +65,21 @@ fn legacy_optional_roots_are_distinct_and_failure_keeps_input_usable() {
     };
     assert!(
         molecule
-            .legacy_topological_torsion_sparse_count_fingerprint_with_params(&empty)
+            .fingerprint_topological_torsion_sparse_count_legacy_with_params(&empty)
             .unwrap()
             .nonzero_elements()
             .is_empty()
     );
     assert!(
         molecule
-            .legacy_topological_torsion_count_fingerprint_with_params(&empty)
+            .fingerprint_topological_torsion_count_legacy_with_params(&empty)
             .unwrap()
             .nonzero_elements()
             .is_empty()
     );
     assert!(
         molecule
-            .legacy_topological_torsion_fingerprint_with_params(&empty)
+            .fingerprint_topological_torsion_legacy_with_params(&empty)
             .unwrap()
             .on_bits()
             .is_empty()
@@ -90,13 +90,13 @@ fn legacy_optional_roots_are_distinct_and_failure_keeps_input_usable() {
     };
     for error in [
         molecule
-            .legacy_topological_torsion_sparse_count_fingerprint_with_params(&invalid)
+            .fingerprint_topological_torsion_sparse_count_legacy_with_params(&invalid)
             .unwrap_err(),
         molecule
-            .legacy_topological_torsion_count_fingerprint_with_params(&invalid)
+            .fingerprint_topological_torsion_count_legacy_with_params(&invalid)
             .unwrap_err(),
         molecule
-            .legacy_topological_torsion_fingerprint_with_params(&invalid)
+            .fingerprint_topological_torsion_legacy_with_params(&invalid)
             .unwrap_err(),
     ] {
         assert!(error.to_string().contains("bad atomInvariants size"));
@@ -104,7 +104,7 @@ fn legacy_optional_roots_are_distinct_and_failure_keeps_input_usable() {
     }
     assert_eq!(
         molecule
-            .legacy_topological_torsion_sparse_count_fingerprint()
+            .fingerprint_topological_torsion_sparse_count_legacy()
             .unwrap()
             .nonzero_elements()
             .values()
@@ -131,13 +131,13 @@ fn source_four_and_nonfour_entry_thresholds_survive_public_transport() {
             ..params.clone()
         };
         let counts = molecule
-            .legacy_topological_torsion_count_fingerprint_with_params(&block_params)
+            .fingerprint_topological_torsion_count_legacy_with_params(&block_params)
             .unwrap();
         let (&block, &count) = counts.nonzero_elements().first_key_value().unwrap();
         assert_eq!(counts.nonzero_elements().len(), 1);
         assert_eq!(count, 9);
         let bit_vector = molecule
-            .legacy_topological_torsion_fingerprint_with_params(&params)
+            .fingerprint_topological_torsion_legacy_with_params(&params)
             .unwrap();
         assert_eq!(
             bit_vector.on_bits(),

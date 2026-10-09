@@ -150,14 +150,14 @@ impl Default for MorganFingerprintParams {
 
 impl Molecule {
     /// Computes a sparse Morgan count fingerprint with source defaults.
-    pub fn morgan_sparse_count_fingerprint(
+    pub fn fingerprint_morgan_sparse_count(
         &self,
     ) -> Result<SparseCountFingerprint, MorganReadError> {
-        self.morgan_sparse_count_fingerprint_with_params(&MorganFingerprintParams::default(), None)
+        self.fingerprint_morgan_sparse_count_with_params(&MorganFingerprintParams::default(), None)
     }
 
     /// Computes a sparse Morgan count fingerprint using explicit parameters.
-    pub fn morgan_sparse_count_fingerprint_with_params(
+    pub fn fingerprint_morgan_sparse_count_with_params(
         &self,
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
@@ -190,12 +190,12 @@ impl Molecule {
     }
 
     /// Computes a sparse Morgan presence fingerprint with source defaults.
-    pub fn morgan_sparse_fingerprint(&self) -> Result<SparseBitFingerprint, MorganReadError> {
-        self.morgan_sparse_fingerprint_with_params(&MorganFingerprintParams::default(), None)
+    pub fn fingerprint_morgan_sparse(&self) -> Result<SparseBitFingerprint, MorganReadError> {
+        self.fingerprint_morgan_sparse_with_params(&MorganFingerprintParams::default(), None)
     }
 
     /// Computes a sparse Morgan presence fingerprint using explicit parameters.
-    pub fn morgan_sparse_fingerprint_with_params(
+    pub fn fingerprint_morgan_sparse_with_params(
         &self,
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
@@ -228,12 +228,12 @@ impl Molecule {
     }
 
     /// Computes a hashed Morgan count fingerprint with source defaults.
-    pub fn morgan_count_fingerprint(&self) -> Result<SparseCountFingerprint32, MorganReadError> {
-        self.morgan_count_fingerprint_with_params(&MorganFingerprintParams::default(), None)
+    pub fn fingerprint_morgan_count(&self) -> Result<SparseCountFingerprint32, MorganReadError> {
+        self.fingerprint_morgan_count_with_params(&MorganFingerprintParams::default(), None)
     }
 
     /// Computes a hashed Morgan count fingerprint using explicit parameters.
-    pub fn morgan_count_fingerprint_with_params(
+    pub fn fingerprint_morgan_count_with_params(
         &self,
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
@@ -266,12 +266,12 @@ impl Molecule {
     }
 
     /// Computes a dense Morgan bit fingerprint with source defaults.
-    pub fn morgan_fingerprint(&self) -> Result<Fingerprint, MorganReadError> {
-        self.morgan_fingerprint_with_params(&MorganFingerprintParams::default(), None)
+    pub fn fingerprint_morgan(&self) -> Result<Fingerprint, MorganReadError> {
+        self.fingerprint_morgan_with_params(&MorganFingerprintParams::default(), None)
     }
 
     /// Computes a dense Morgan bit fingerprint using explicit parameters.
-    pub fn morgan_fingerprint_with_params(
+    pub fn fingerprint_morgan_with_params(
         &self,
         params: &MorganFingerprintParams,
         additional_output: Option<&mut FingerprintAdditionalOutput>,
@@ -703,28 +703,28 @@ mod tests {
 
         let molecule = Molecule::new();
         let errors: [Box<dyn std::error::Error>; 12] = [
-            Box::new(molecule.morgan_fingerprint().unwrap_err()),
-            Box::new(molecule.morgan_sparse_fingerprint().unwrap_err()),
-            Box::new(molecule.morgan_count_fingerprint().unwrap_err()),
-            Box::new(molecule.morgan_sparse_count_fingerprint().unwrap_err()),
-            Box::new(molecule.atom_pair_fingerprint().unwrap_err()),
-            Box::new(molecule.atom_pair_sparse_fingerprint().unwrap_err()),
-            Box::new(molecule.atom_pair_count_fingerprint().unwrap_err()),
-            Box::new(molecule.atom_pair_sparse_count_fingerprint().unwrap_err()),
-            Box::new(molecule.topological_torsion_fingerprint().unwrap_err()),
+            Box::new(molecule.fingerprint_morgan().unwrap_err()),
+            Box::new(molecule.fingerprint_morgan_sparse().unwrap_err()),
+            Box::new(molecule.fingerprint_morgan_count().unwrap_err()),
+            Box::new(molecule.fingerprint_morgan_sparse_count().unwrap_err()),
+            Box::new(molecule.fingerprint_atom_pair().unwrap_err()),
+            Box::new(molecule.fingerprint_atom_pair_sparse().unwrap_err()),
+            Box::new(molecule.fingerprint_atom_pair_count().unwrap_err()),
+            Box::new(molecule.fingerprint_atom_pair_sparse_count().unwrap_err()),
+            Box::new(molecule.fingerprint_topological_torsion().unwrap_err()),
             Box::new(
                 molecule
-                    .topological_torsion_sparse_fingerprint()
+                    .fingerprint_topological_torsion_sparse()
                     .unwrap_err(),
             ),
             Box::new(
                 molecule
-                    .topological_torsion_count_fingerprint()
+                    .fingerprint_topological_torsion_count()
                     .unwrap_err(),
             ),
             Box::new(
                 molecule
-                    .topological_torsion_sparse_count_fingerprint()
+                    .fingerprint_topological_torsion_sparse_count()
                     .unwrap_err(),
             ),
         ];
@@ -764,7 +764,7 @@ mod tests {
                 "crate::MorganInvariants",
                 "MorganInvariants",
                 "MorganInvariants",
-                BindingTypeRole::Parameter,
+                BindingTypeRole::ParameterSelector,
             ),
             (
                 "types.MorganFingerprintParams",
@@ -1179,10 +1179,10 @@ mod tests {
             let expected: BTreeMap<u64, i32> = expected_entries.iter().copied().collect();
             let params = MorganFingerprintParams::default();
             let configured = molecule
-                .morgan_sparse_count_fingerprint_with_params(&params, None)
+                .fingerprint_morgan_sparse_count_with_params(&params, None)
                 .expect("the fixed source-literal sparse-count call succeeds");
             let short = molecule
-                .morgan_sparse_count_fingerprint()
+                .fingerprint_morgan_sparse_count()
                 .expect("the short source-default sparse-count call succeeds");
 
             assert_eq!(configured.nonzero_elements(), &expected, "{smiles}");
@@ -1211,12 +1211,12 @@ mod tests {
 
             let mut complete_output = morgan_public_sparse_count_output_mask(0b1_1111);
             let complete = molecule
-                .morgan_sparse_count_fingerprint_with_params(&params, Some(&mut complete_output))
+                .fingerprint_morgan_sparse_count_with_params(&params, Some(&mut complete_output))
                 .expect("the all-channel source-literal call succeeds");
             assert_eq!(complete.nonzero_elements(), &expected, "{smiles}");
 
             let without_output = molecule
-                .morgan_sparse_count_fingerprint_with_params(&params, None)
+                .fingerprint_morgan_sparse_count_with_params(&params, None)
                 .expect("a null FingerprintAdditionalOutput remains valid");
             assert_eq!(without_output.nonzero_elements(), &expected, "{smiles}");
 
@@ -1224,7 +1224,7 @@ mod tests {
             for mask in 0_u8..32 {
                 let mut output = morgan_public_sparse_count_output_mask(mask);
                 let actual = molecule
-                    .morgan_sparse_count_fingerprint_with_params(&params, Some(&mut output))
+                    .fingerprint_morgan_sparse_count_with_params(&params, Some(&mut output))
                     .expect("each independent output-allocation mask succeeds");
                 assert_eq!(
                     actual.nonzero_elements(),
@@ -1267,7 +1267,7 @@ mod tests {
         let mut reused = morgan_public_sparse_count_output_mask(0b1_1111);
         let params = MorganFingerprintParams::default();
         let cco = morgan_public_sparse_count_molecule("CCO");
-        cco.morgan_sparse_count_fingerprint_with_params(&params, Some(&mut reused))
+        cco.fingerprint_morgan_sparse_count_with_params(&params, Some(&mut reused))
             .expect("the first reused-output call populates Morgan channels");
         let retained_atoms_per_bit = reused
             .atoms_per_bit()
@@ -1277,7 +1277,7 @@ mod tests {
 
         let empty = morgan_public_sparse_count_molecule("");
         let reset = empty
-            .morgan_sparse_count_fingerprint_with_params(&params, Some(&mut reused))
+            .fingerprint_morgan_sparse_count_with_params(&params, Some(&mut reused))
             .expect("the second reused-output call succeeds for the empty molecule");
         assert!(reset.nonzero_elements().is_empty());
         assert_eq!(reused.atom_counts(), Some(&[][..]));
@@ -1302,10 +1302,10 @@ mod tests {
         ]);
 
         let configured = molecule
-            .morgan_count_fingerprint_with_params(&params, None)
+            .fingerprint_morgan_count_with_params(&params, None)
             .expect("the fixed source-default hashed count call succeeds");
         let short = molecule
-            .morgan_count_fingerprint()
+            .fingerprint_morgan_count()
             .expect("the short source-default hashed count call succeeds");
         assert_eq!(configured.length(), 2048);
         assert_eq!(configured.nonzero_elements(), &expected_default);
@@ -1324,7 +1324,7 @@ mod tests {
             ..MorganFingerprintParams::default()
         };
         let size_one = molecule
-            .morgan_count_fingerprint_with_params(&size_one_params, None)
+            .fingerprint_morgan_count_with_params(&size_one_params, None)
             .expect("the fixed source size-one collision call succeeds");
         assert_eq!(size_one.length(), 1);
         assert_eq!(size_one.nonzero_elements(), &BTreeMap::from([(0, 6)]));
@@ -1339,7 +1339,7 @@ mod tests {
             ..MorganFingerprintParams::default()
         };
         let custom_collision = molecule
-            .morgan_count_fingerprint_with_params(&custom_collision_params, None)
+            .fingerprint_morgan_count_with_params(&custom_collision_params, None)
             .expect("the fixed source custom-invariant collision call succeeds");
         assert_eq!(custom_collision.length(), 1);
         assert_eq!(
@@ -1364,13 +1364,13 @@ mod tests {
 
         let mut complete_output = morgan_public_sparse_count_output_mask(0b1_1111);
         let complete = molecule
-            .morgan_count_fingerprint_with_params(&params, Some(&mut complete_output))
+            .fingerprint_morgan_count_with_params(&params, Some(&mut complete_output))
             .expect("the all-channel fixed source count call succeeds");
         assert_eq!(complete.length(), 2048);
         assert_eq!(complete.nonzero_elements(), &expected);
 
         let without_output = molecule
-            .morgan_count_fingerprint_with_params(&params, None)
+            .fingerprint_morgan_count_with_params(&params, None)
             .expect("a null FingerprintAdditionalOutput remains valid for hashed counts");
         assert_eq!(without_output.length(), 2048);
         assert_eq!(without_output.nonzero_elements(), &expected);
@@ -1379,7 +1379,7 @@ mod tests {
         for mask in 0_u8..32 {
             let mut output = morgan_public_sparse_count_output_mask(mask);
             let actual = molecule
-                .morgan_count_fingerprint_with_params(&params, Some(&mut output))
+                .fingerprint_morgan_count_with_params(&params, Some(&mut output))
                 .expect("each independent count-output allocation mask succeeds");
             assert_eq!(actual.length(), 2048, "mask={mask:#07b}");
             assert_eq!(actual.nonzero_elements(), &expected, "mask={mask:#07b}");
@@ -1435,10 +1435,10 @@ mod tests {
             let molecule = morgan_public_sparse_count_molecule(smiles);
             let params = MorganFingerprintParams::default();
             let configured = molecule
-                .morgan_sparse_fingerprint_with_params(&params, None)
+                .fingerprint_morgan_sparse_with_params(&params, None)
                 .expect("the fixed source-literal sparse-bit call succeeds");
             let short = molecule
-                .morgan_sparse_fingerprint()
+                .fingerprint_morgan_sparse()
                 .expect("the short source-default sparse-bit call succeeds");
 
             for (label, actual) in [("configured", &configured), ("short", &short)] {
@@ -1473,13 +1473,13 @@ mod tests {
 
             let mut complete_output = morgan_public_sparse_count_output_mask(0b1_1111);
             let complete = molecule
-                .morgan_sparse_fingerprint_with_params(&params, Some(&mut complete_output))
+                .fingerprint_morgan_sparse_with_params(&params, Some(&mut complete_output))
                 .expect("the all-channel source-literal sparse-bit call succeeds");
             assert_eq!(complete.n_bits(), u32::MAX, "{smiles}");
             assert_eq!(complete.on_bits().as_slice(), expected_bits, "{smiles}");
 
             let without_output = molecule
-                .morgan_sparse_fingerprint_with_params(&params, None)
+                .fingerprint_morgan_sparse_with_params(&params, None)
                 .expect("a null FingerprintAdditionalOutput remains valid for sparse bits");
             assert_eq!(without_output.n_bits(), u32::MAX, "{smiles}");
             assert_eq!(
@@ -1492,7 +1492,7 @@ mod tests {
             for mask in 0_u8..32 {
                 let mut output = morgan_public_sparse_count_output_mask(mask);
                 let actual = molecule
-                    .morgan_sparse_fingerprint_with_params(&params, Some(&mut output))
+                    .fingerprint_morgan_sparse_with_params(&params, Some(&mut output))
                     .expect("each independent sparse-bit output-allocation mask succeeds");
                 assert_eq!(actual.n_bits(), u32::MAX, "mask={mask:#07b}, {smiles}");
                 assert_eq!(
@@ -1542,10 +1542,10 @@ mod tests {
         let expected_default = [80_u32, 222, 294, 807, 1_057, 1_410];
 
         let configured = molecule
-            .morgan_fingerprint_with_params(&params, None)
+            .fingerprint_morgan_with_params(&params, None)
             .expect("the fixed source-default dense-bit call succeeds");
         let short = molecule
-            .morgan_fingerprint()
+            .fingerprint_morgan()
             .expect("the short source-default dense-bit call succeeds");
         assert_eq!(configured.n_bits(), 2048);
         assert_eq!(configured.on_bits().as_slice(), &expected_default);
@@ -1561,7 +1561,7 @@ mod tests {
             ..MorganFingerprintParams::default()
         };
         let collision = molecule
-            .morgan_fingerprint_with_params(&collision_params, None)
+            .fingerprint_morgan_with_params(&collision_params, None)
             .expect("the fixed source size-one dense collision call succeeds");
         assert_eq!(collision.n_bits(), 1);
         assert_eq!(collision.on_bits(), vec![0]);
@@ -1578,7 +1578,7 @@ mod tests {
             ..MorganFingerprintParams::default()
         };
         let simulated = molecule
-            .morgan_fingerprint_with_params(&count_simulation_params, None)
+            .fingerprint_morgan_with_params(&count_simulation_params, None)
             .expect("the fixed O04 dense count-simulation call succeeds");
         assert_eq!(simulated.n_bits(), 128);
         assert_eq!(simulated.on_bits(), vec![4, 5, 8]);
@@ -1603,7 +1603,7 @@ mod tests {
 
         let mut complete_output = morgan_public_sparse_count_output_mask(0b1_1111);
         let complete = molecule
-            .morgan_fingerprint_with_params(&params, Some(&mut complete_output))
+            .fingerprint_morgan_with_params(&params, Some(&mut complete_output))
             .expect("the all-channel fixed O04 dense call succeeds");
         assert_eq!(complete.n_bits(), 128);
         assert_eq!(complete.on_bits().as_slice(), &expected_bits);
@@ -1637,7 +1637,7 @@ mod tests {
         );
 
         let without_output = molecule
-            .morgan_fingerprint_with_params(&params, None)
+            .fingerprint_morgan_with_params(&params, None)
             .expect("a null FingerprintAdditionalOutput remains valid for dense bits");
         assert_eq!(without_output.n_bits(), 128);
         assert_eq!(without_output.on_bits().as_slice(), &expected_bits);
@@ -1646,7 +1646,7 @@ mod tests {
         for mask in 0_u8..32 {
             let mut output = morgan_public_sparse_count_output_mask(mask);
             let actual = molecule
-                .morgan_fingerprint_with_params(&params, Some(&mut output))
+                .fingerprint_morgan_with_params(&params, Some(&mut output))
                 .expect("each independent dense output-allocation mask succeeds");
             assert_eq!(actual.n_bits(), 128, "mask={mask:#07b}");
             assert_eq!(
@@ -1724,7 +1724,7 @@ mod tests {
 
         let assert_outputs = |params: &MorganFingerprintParams, expected: Expected, label: &str| {
             let sparse_counts = molecule
-                .morgan_sparse_count_fingerprint_with_params(params, None)
+                .fingerprint_morgan_sparse_count_with_params(params, None)
                 .unwrap_or_else(|error| panic!("{label}: sparse-count call failed: {error:?}"));
             assert_eq!(
                 sparse_counts.length(),
@@ -1743,7 +1743,7 @@ mod tests {
             assert_source_unchanged();
 
             let sparse_bits = molecule
-                .morgan_sparse_fingerprint_with_params(params, None)
+                .fingerprint_morgan_sparse_with_params(params, None)
                 .unwrap_or_else(|error| panic!("{label}: sparse-bit call failed: {error:?}"));
             assert_eq!(sparse_bits.n_bits(), u32::MAX, "{label}, sparse bit length");
             assert_eq!(
@@ -1754,7 +1754,7 @@ mod tests {
             assert_source_unchanged();
 
             let counts = molecule
-                .morgan_count_fingerprint_with_params(params, None)
+                .fingerprint_morgan_count_with_params(params, None)
                 .unwrap_or_else(|error| panic!("{label}: count call failed: {error:?}"));
             assert_eq!(counts.length(), 2048, "{label}, hashed count length");
             assert_eq!(
@@ -1765,7 +1765,7 @@ mod tests {
             assert_source_unchanged();
 
             let bits = molecule
-                .morgan_fingerprint_with_params(params, None)
+                .fingerprint_morgan_with_params(params, None)
                 .unwrap_or_else(|error| panic!("{label}: dense-bit call failed: {error:?}"));
             assert_eq!(bits.n_bits(), 2048, "{label}, dense bit length");
             assert_eq!(
@@ -1779,7 +1779,7 @@ mod tests {
         macro_rules! assert_all_four_preconditions {
             ($params:expr, $reason:expr, $label:expr) => {{
                 let error = match molecule
-                    .morgan_sparse_count_fingerprint_with_params($params, None)
+                    .fingerprint_morgan_sparse_count_with_params($params, None)
                 {
                     Err(error) => error,
                     Ok(_) => panic!("{}: sparse-count call unexpectedly succeeded", $label),
@@ -1792,7 +1792,7 @@ mod tests {
                 ), "{}: unexpected sparse-count error: {error:?}", $label);
                 assert_source_unchanged();
 
-                let error = match molecule.morgan_sparse_fingerprint_with_params($params, None) {
+                let error = match molecule.fingerprint_morgan_sparse_with_params($params, None) {
                     Err(error) => error,
                     Ok(_) => panic!("{}: sparse-bit call unexpectedly succeeded", $label),
                 };
@@ -1804,7 +1804,7 @@ mod tests {
                 ), "{}: unexpected sparse-bit error: {error:?}", $label);
                 assert_source_unchanged();
 
-                let error = match molecule.morgan_count_fingerprint_with_params($params, None) {
+                let error = match molecule.fingerprint_morgan_count_with_params($params, None) {
                     Err(error) => error,
                     Ok(_) => panic!("{}: count call unexpectedly succeeded", $label),
                 };
@@ -1816,7 +1816,7 @@ mod tests {
                 ), "{}: unexpected count error: {error:?}", $label);
                 assert_source_unchanged();
 
-                let error = match molecule.morgan_fingerprint_with_params($params, None) {
+                let error = match molecule.fingerprint_morgan_with_params($params, None) {
                     Err(error) => error,
                     Ok(_) => panic!("{}: dense-bit call unexpectedly succeeded", $label),
                 };

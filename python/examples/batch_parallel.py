@@ -54,7 +54,7 @@ print("valid smiles:", prepared[prepared.valid_mask()].to_smiles_list())
 svgs = prepared.to_svg_list(width=320, height=240, progress_bar=False)
 print("svg count:", sum(svg is not None for svg in svgs))
 
-image_report = prepared.to_images(
+image_report = prepared.write_images(
     str(output_dir / "images"),
     format="svg",
     size=(320, 240),
@@ -64,7 +64,7 @@ image_report = prepared.to_images(
 )
 print("image report:", image_report)
 
-sdf_report = prepared.to_sdf(
+sdf_report = prepared.write_sdf(
     str(output_dir / "molecules.sdf"),
     format="v2000",
     errors=ck.BatchErrorMode.KEEP,
@@ -72,7 +72,7 @@ sdf_report = prepared.to_sdf(
 )
 print("sdf report:", sdf_report)
 
-sdf_file_report = prepared.to_sdf_files(
+sdf_file_report = prepared.write_sdf_files(
     str(output_dir / "sdf_records"),
     format="v2000",
     errors=ck.BatchErrorMode.KEEP,

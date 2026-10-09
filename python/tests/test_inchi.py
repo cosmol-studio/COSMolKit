@@ -24,7 +24,7 @@ def test_inchi_python_four_entry_points_match_exact_methane_results() -> None:
     assert parsed is not None
     assert parsed.num_atoms() == 1
     assert parsed.num_bonds() == 0
-    assert parsed.atoms()[0].atomic_num() == 6
+    assert parsed.atoms()[0].atomic_number() == 6
     assert parsed.atoms()[0].explicit_hydrogens() == 4
 
     assert source.to_smiles() == before
@@ -38,7 +38,7 @@ def test_inchi_python_matches_source_stereo_cleanup_for_isotopic_center() -> Non
     assert parsed.num_atoms() == 4
     assert parsed.num_bonds() == 3
     carbon = parsed.atoms()[0]
-    assert carbon.atomic_num() == 6
+    assert carbon.atomic_number() == 6
     assert carbon.isotope() == 13
     assert carbon.chiral_tag_name() == "CHI_UNSPECIFIED"
 
@@ -46,10 +46,10 @@ def test_inchi_python_matches_source_stereo_cleanup_for_isotopic_center() -> Non
 def test_inchi_python_preserves_relative_and_racemic_stereo_options() -> None:
     source = cosmolkit.Molecule.from_smiles("F[C@H](Cl)Br")
 
-    assert source.to_inchi("-SRel") == (
+    assert source.to_inchi(options="-SRel") == (
         "InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s2"
     )
-    assert source.to_inchi("-SRac") == (
+    assert source.to_inchi(options="-SRac") == (
         "InChI=1/CHBrClF/c2-1(3)4/h1H/t1-/s3"
     )
 
@@ -60,7 +60,7 @@ def test_inchi_python_preserves_cationic_aromatic_nitrogen_charge() -> None:
 
     parsed = cosmolkit.Molecule.from_inchi(inchi, sanitize=False, remove_hs=False)
     assert parsed is not None
-    nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_num() == 7)
+    nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_number() == 7)
     assert nitrogen.formal_charge() == 1
 
 
@@ -73,65 +73,62 @@ def test_from_inchi_covers_all_sanitize_remove_hs_valence_branches() -> None:
                 inchi, sanitize=sanitize, remove_hs=remove_hs
             )
             assert parsed is not None
-            nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_num() == 7)
+            nitrogen = next(atom for atom in parsed.atoms() if atom.atomic_number() == 7)
+            cached_nitrogen = parsed.atom_metadata(recalculate=False)[nitrogen.id()]
             expected_valence = 4 if sanitize else 5
-            assert nitrogen.explicit_valence() == expected_valence
-            assert nitrogen.total_valence() == expected_valence
+            assert cached_nitrogen.explicit_valence() == expected_valence
+            assert cached_nitrogen.total_valence() == expected_valence
 
 
-def test_inchi_python_exposes_source_diagnostic_as_structured_warning() -> None:
-    with pytest.warns(cosmolkit.InchiDiagnosticWarning) as records:
-        key = cosmolkit.inchi_to_key("")
+def test_inchi_python_invalid_key_input_has_canonical_structured_error() -> None:
+    # The canonical Rust facade returns Result, projected as InchiError;
+    # rejected input is no longer transported as warning + None.
+    with pytest.raises(cosmolkit.InchiError) as captured:
+        cosmolkit.inchi_to_key("")
+    error = captured.value
+    assert error.domain == "inchi"
+    assert error.operation == "inchi_to_key"
+    assert error.kind == cosmolkit.InchiErrorKind.InvalidInput
+    assert error.detail == "the InChI engine returned no identifier"
 
-    assert key is None
-    assert len(records) == 1
-    diagnostic = records[0].message
-    assert isinstance(diagnostic, cosmolkit.InchiDiagnosticWarning)
-    assert diagnostic.level == "error"
-    assert diagnostic.message == "Invalid InChI prefix in generating InChI Key\n"
 
-
-def test_inchi_python_returns_none_for_rdkit_mol_sanitize_exception() -> None:
+def test_inchi_python_sanitize_rejection_has_canonical_structured_error() -> None:
     inchi = (
         "InChI=1S/C8H16O6S2/c9-5-8(14-16(11,12)13)7(10)6-15-3-1-2-4-15/"
         "h7-10H,1-6H2/t7-,8+/m0/s1"
     )
 
-    assert cosmolkit.Molecule.from_inchi(inchi) is None
+    with pytest.raises(cosmolkit.InchiError) as captured:
+        cosmolkit.Molecule.from_inchi(inchi)
+    assert captured.value.domain == "inchi"
+    assert captured.value.kind == cosmolkit.InchiErrorKind.Toolkit
+    assert captured.value.operation == "mol_from_inchi"
+    assert "hydrogen-removal sanitize failed" in captured.value.detail
+    assert "Explicit valence for atom # 15 S, 7" in captured.value.detail
 
 
-def test_inchi_python_rejects_unsupported_molecule_state_structurally() -> None:
+def test_inchi_python_supported_substance_group_input_matches_rdkit() -> None:
     fixture = (
         REPO_ROOT
         / "testdata/rdkit_builtin/fixtures/Code/GraphMol/FileParsers/Issue3432136_1.mol"
     )
-    molecule = cosmolkit.Molecule.read_mol_from_str(
+    molecule = cosmolkit.Molecule.from_mol(
         fixture.read_text(), sanitize=False, remove_hs=False
     )
 
-    with pytest.raises(cosmolkit.InchiUnsupportedStateError) as captured:
-        _ = molecule.to_inchi()
-
-    error = captured.value
-    assert isinstance(error, cosmolkit.InchiError)
-    assert error.operation == "mol_to_inchi"
-    assert error.kind == "unsupported_state"
-    assert error.detail == "InChI bridge does not model substance groups"
+    # Frozen from pyproject.toml's RDKit 2026.3.1 for this exact MOL fixture,
+    # with sanitize=False/removeHs=False. This input is no longer unsupported.
+    assert molecule.to_inchi() == "InChI=1S/C5H12/c1-4-5(2)3/h5H,4H2,1-3H3"
 
 
-def test_inchi_python_allocation_error_contract_is_deterministic_and_structured() -> None:
-    error = cosmolkit.InchiAllocationError(
-        "mol_to_inchi failed (AllocationFailed): AllocationFailed",
-        "mol_to_inchi",
-        "allocation_failed",
-        "AllocationFailed",
-    )
-
-    assert isinstance(error, cosmolkit.InchiError)
-    assert error.operation == "mol_to_inchi"
-    assert error.kind == "allocation_failed"
-    assert error.detail == "AllocationFailed"
-    assert str(error) == "mol_to_inchi failed (AllocationFailed): AllocationFailed"
+def test_inchi_python_error_kind_vocabulary_includes_allocation_failure() -> None:
+    # The facade uses one InchiError plus typed kinds, not Python exception
+    # subclasses. Constructing a fake exception never exercised allocation.
+    names = {"AllocationFailed", "UnsupportedState", "InvalidInput", "InvalidSourceOutput", "SanitizeFailed", "Toolkit", "SourcePort"}
+    assert {name for name in vars(cosmolkit.InchiErrorKind) if name[0].isupper()} == names
+    kinds = [getattr(cosmolkit.InchiErrorKind, name) for name in sorted(names)]
+    assert all(isinstance(kind, cosmolkit.InchiErrorKind) for kind in kinds)
+    assert all(left != right for i, left in enumerate(kinds) for right in kinds[i + 1:])
 
 
 def test_inchi_python_surface_uses_molecule_methods_and_project_naming() -> None:

@@ -86,7 +86,7 @@ impl InchiReadParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] sanitize: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] remove_hydrogens: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] remove_hs: JsValue,
     ) -> Result<Self, JsValue> {
         Ok(Self {
             inner: ck::InchiReadParams {
@@ -95,10 +95,10 @@ impl InchiReadParams {
                 } else {
                     bool_value(&sanitize, "sanitize")?
                 },
-                remove_hydrogens: if remove_hydrogens.is_undefined() {
+                remove_hs: if remove_hs.is_undefined() {
                     true
                 } else {
-                    bool_value(&remove_hydrogens, "removeHydrogens")?
+                    bool_value(&remove_hs, "removeHs")?
                 },
             },
         })
@@ -115,16 +115,16 @@ impl InchiReadParams {
         self.inner.sanitize = bool_value(&value, "sanitize")?;
         Ok(())
     }
-    #[wasm_bindgen(getter, js_name=removeHydrogens)]
-    pub fn remove_hydrogens(&self) -> bool {
-        self.inner.remove_hydrogens
+    #[wasm_bindgen(getter, js_name=removeHs)]
+    pub fn remove_hs(&self) -> bool {
+        self.inner.remove_hs
     }
-    #[wasm_bindgen(setter, js_name=removeHydrogens)]
-    pub fn set_remove_hydrogens(
+    #[wasm_bindgen(setter, js_name=removeHs)]
+    pub fn set_remove_hs(
         &mut self,
         #[wasm_bindgen(unchecked_param_type = "boolean")] value: JsValue,
     ) -> Result<(), JsValue> {
-        self.inner.remove_hydrogens = bool_value(&value, "removeHydrogens")?;
+        self.inner.remove_hs = bool_value(&value, "removeHs")?;
         Ok(())
     }
 }
@@ -204,15 +204,15 @@ fn read_params(value: &JsValue) -> Result<ck::InchiReadParams, JsValue> {
     {
         return Ok(result);
     }
-    options(value, &["sanitize", "removeHydrogens"])?;
+    options(value, &["sanitize", "removeHs"])?;
     let mut result = ck::InchiReadParams::default();
     let sanitize = js_sys::Reflect::get(value, &"sanitize".into())?;
-    let remove = js_sys::Reflect::get(value, &"removeHydrogens".into())?;
+    let remove = js_sys::Reflect::get(value, &"removeHs".into())?;
     if !sanitize.is_undefined() {
         result.sanitize = bool_value(&sanitize, "sanitize")?;
     }
     if !remove.is_undefined() {
-        result.remove_hydrogens = bool_value(&remove, "removeHydrogens")?;
+        result.remove_hs = bool_value(&remove, "removeHs")?;
     }
     Ok(result)
 }
@@ -240,9 +240,9 @@ fn write_params(value: &JsValue) -> Result<ck::InchiWriteParams, JsValue> {
     })
 }
 
-#[wasm_bindgen(js_name=inchiToInchiKey)]
-pub fn inchi_to_inchi_key(text: &str) -> Result<String, JsValue> {
-    ck::inchi_to_inchi_key(text).map_err(error)
+#[wasm_bindgen(js_name=inchiToKey)]
+pub fn inchi_to_key(text: &str) -> Result<String, JsValue> {
+    ck::inchi_to_key(text).map_err(error)
 }
 
 #[wasm_bindgen]
@@ -251,7 +251,7 @@ impl Molecule {
     pub fn from_inchi(
         text: &str,
         #[wasm_bindgen(
-            unchecked_optional_param_type = "InchiReadParams | { sanitize?: boolean; removeHydrogens?: boolean }"
+            unchecked_optional_param_type = "InchiReadParams | { sanitize?: boolean; removeHs?: boolean }"
         )]
         params: JsValue,
     ) -> Result<Self, JsValue> {

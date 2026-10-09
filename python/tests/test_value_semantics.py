@@ -8,9 +8,9 @@ import pytest
 def assert_coordinate_rows_match_atoms(mol: cosmolkit.Molecule) -> None:
     atom_count = len(mol)
     if mol.has_2d_coordinates():
-        assert mol.coordinates_2d().shape == (atom_count, 3)
-    for conformer_index in range(mol.num_conformers()):
-        assert mol.coordinates_3d(conformer_index).shape == (atom_count, 3)
+        assert np.asarray(mol.coordinates_2d()).shape == (atom_count, 2)
+    for conformer_index in range(mol.num_3d_conformers()):
+        assert np.asarray(mol.coordinates_3d(conformer_index)).shape == (atom_count, 3)
 
 
 def require_valid_molecules(batch: cosmolkit.MoleculeBatch) -> list[cosmolkit.Molecule]:
@@ -20,16 +20,18 @@ def require_valid_molecules(batch: cosmolkit.MoleculeBatch) -> list[cosmolkit.Mo
 
 
 def test_element_enum_lookup_metadata_and_atom_surface_are_consistent():
-    assert len(cosmolkit.Element) == 119
-    assert cosmolkit.Element.DUMMY == 0
-    assert cosmolkit.Element.H == 1
-    assert cosmolkit.Element.OG == 118
-    assert cosmolkit.element_from_symbol("Cl") == cosmolkit.Element.CL
-    assert cosmolkit.element_from_symbol("Uut") == cosmolkit.Element.NH
-    assert cosmolkit.ELEMENT_MAP["*"] == cosmolkit.Element.DUMMY
-    assert cosmolkit.ELEMENT_MAP["Og"] == cosmolkit.Element.OG
+    elements = [cosmolkit.Element.from_atomic_number(number) for number in range(119)]
+    assert all(element is not None for element in elements)
+    assert [element.atomic_number() for element in elements] == list(range(119))
+    assert cosmolkit.Element.DUMMY.atomic_number() == 0
+    assert cosmolkit.Element.H.atomic_number() == 1
+    assert cosmolkit.Element.OG.atomic_number() == 118
+    assert cosmolkit.Element.from_symbol("Cl") == cosmolkit.Element.CL
+    assert cosmolkit.Element.from_symbol("Uut") == cosmolkit.Element.NH
+    assert cosmolkit.Element.from_symbol("*") == cosmolkit.Element.DUMMY
+    assert cosmolkit.Element.from_symbol("Og") == cosmolkit.Element.OG
 
-    carbon = cosmolkit.get_element_info(cosmolkit.Element.C)
+    carbon = cosmolkit.element_info(cosmolkit.Element.C)
     assert carbon.element() == cosmolkit.Element.C
     assert carbon.symbol() == "C"
     assert carbon.atomic_number() == 6
@@ -44,10 +46,10 @@ def test_element_enum_lookup_metadata_and_atom_surface_are_consistent():
         cosmolkit.Element.CL,
     ]
 
-    with pytest.raises(ValueError, match="unknown element symbol"):
-        cosmolkit.element_from_symbol("cl")
-    with pytest.raises(ValueError, match="outside the Element domain"):
-        cosmolkit.get_element_info(119)
+    assert cosmolkit.Element.from_symbol("cl") is None
+    assert cosmolkit.Element.from_atomic_number(119) is None
+    with pytest.raises(TypeError):
+        cosmolkit.element_info(119)
 
 
 def test_with_2d_coordinates_returns_new_molecule_without_mutating_input():
@@ -60,9 +62,9 @@ def test_with_2d_coordinates_returns_new_molecule_without_mutating_input():
     mol_2d = mol.with_2d_coordinates()
 
     assert mol is not mol_2d
-    assert mol.num_conformers() == 0
+    assert mol.num_3d_conformers() == 0
     assert not mol.has_2d_coordinates()
-    assert mol_2d.num_conformers() == 0
+    assert mol_2d.num_3d_conformers() == 0
     assert mol_2d.has_2d_coordinates()
 
 
@@ -70,39 +72,39 @@ def test_setting_2d_coordinates_is_value_style_and_validates_input():
     mol = cosmolkit.Molecule.from_smiles("CCO")
     coords = np.array([[0.0, 0.0], [1.5, 0.0], [3.0, 0.0]], dtype=np.float32)
 
-    with_coords = mol.with_2d_coordinates(coords)
+    with_coords = mol.with_2d_coordinate_block(coords)
 
     assert with_coords is not mol
     assert not mol.has_2d_coordinates()
     assert with_coords.has_2d_coordinates()
-    assert np.allclose(with_coords.coordinates_2d(), np.column_stack([coords, np.zeros(3)]))
+    assert np.allclose(with_coords.coordinates_2d(), coords)
 
     with pytest.raises(ValueError, match="row count mismatch"):
-        mol.with_2d_coordinates([[0.0, 0.0]])
+        mol.with_2d_coordinate_block([[0.0, 0.0]])
 
     with pytest.raises(ValueError, match="non-finite"):
-        mol.with_2d_coordinates([[0.0, 0.0], [1.0, np.nan], [2.0, 0.0]])
+        mol.with_2d_coordinate_block([[0.0, 0.0], [1.0, np.nan], [2.0, 0.0]])
 
 
 def test_setting_2d_coordinates_z_policy_and_in_place_update():
     mol = cosmolkit.Molecule.from_smiles("CCO")
     coords3 = [[0.0, 0.0, 0.0], [1.0, 0.1, 0.0], [2.0, 0.2, 0.0]]
 
-    strict = mol.with_2d_coordinates(coords3, z_policy="require_zero")
-    assert np.allclose(strict.coordinates_2d()[:, :2], np.asarray(coords3)[:, :2])
+    strict = mol.with_2d_coordinate_block(coords3, z_policy=cosmolkit.CoordinateZPolicy.RequireZero)
+    assert np.allclose(strict.coordinates_2d(), np.asarray(coords3)[:, :2])
 
     with pytest.raises(ValueError, match="z_policy='error'"):
-        mol.with_2d_coordinates(coords3, z_policy="error")
+        mol.with_2d_coordinate_block(coords3, z_policy=cosmolkit.CoordinateZPolicy.from_name("error"))
 
     with pytest.raises(ValueError, match="require zero z"):
-        mol.with_2d_coordinates(
+        mol.with_2d_coordinate_block(
             [[0.0, 0.0, 0.0], [1.0, 0.1, 0.25], [2.0, 0.2, 0.0]],
-            z_policy="require_zero",
+            z_policy=cosmolkit.CoordinateZPolicy.RequireZero,
         )
 
     assert mol.set_2d_coordinates_(coords3) is None
     assert mol.has_2d_coordinates()
-    assert np.allclose(mol.coordinates_2d()[:, 2], 0.0)
+    assert np.allclose(mol.coordinates_2d(), np.asarray(coords3)[:, :2])
 
 
 def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
@@ -114,15 +116,15 @@ def test_adding_and_replacing_3d_coordinates_preserves_value_semantics():
     one_conf = mol.with_added_3d_conformer(first)
 
     assert one_conf is not mol
-    assert mol.num_conformers() == 0
-    assert one_conf.num_conformers() == 1
+    assert mol.num_3d_conformers() == 0
+    assert one_conf.num_3d_conformers() == 1
     assert np.allclose(one_conf.coordinates_3d(), first)
 
     two_confs = one_conf.with_added_3d_conformer(second.astype(np.float32))
-    replaced = two_confs.with_3d_coordinates(replacement, conformer_index=0)
+    replaced = two_confs.with_3d_coordinates(replacement, conformer_id=0)
 
-    assert two_confs.num_conformers() == 2
-    assert replaced.num_conformers() == 2
+    assert two_confs.num_3d_conformers() == 2
+    assert replaced.num_3d_conformers() == 2
     assert np.allclose(two_confs.coordinates_3d(0), first)
     assert np.allclose(replaced.coordinates_3d(0), replacement)
     assert np.allclose(replaced.coordinates_3d(1), second)
@@ -134,15 +136,20 @@ def test_3d_coordinate_in_place_api_returns_conformer_ids_and_validates_input():
     replacement = [[0.1, 0.2, 0.3], [1.5, 0.2, 0.3], [2.1, 1.2, 0.3]]
 
     assert mol.add_3d_conformer_(first) == 0
-    assert mol.num_conformers() == 1
+    assert mol.num_3d_conformers() == 1
     assert mol.set_3d_coordinates_(replacement) is None
     assert np.allclose(mol.coordinates_3d(), replacement)
 
     with pytest.raises(ValueError, match="ConformerRowCount|row count mismatch"):
         mol.add_3d_conformer_([[0.0, 0.0, 0.0]])
 
-    with pytest.raises(ValueError, match="out of range"):
-        mol.set_3d_coordinates_(replacement, conformer_index=7)
+    with pytest.raises(cosmolkit.OperationError) as caught:
+        mol.set_3d_coordinates_(replacement, conformer_id=7)
+    assert caught.value.kind == "CoordinateInput"
+    assert isinstance(caught.value.__cause__, cosmolkit.CoordinateInputError)
+    assert caught.value.__cause__.kind == "ConformerNotFound"
+    assert caught.value.__cause__.conformer_id == 7
+    assert caught.value.__cause__.count == 1
 
     with pytest.raises(ValueError, match="shape"):
         mol.with_added_3d_conformer([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]])
@@ -170,7 +177,7 @@ def test_coordinate_ingress_rejects_oversized_broadcast_views_before_copying():
         ValueError,
         match=r"^2D coordinates row count mismatch: expected 3, got 1000000$",
     ):
-        mol.with_2d_coordinates(oversized_2d)
+        mol.with_2d_coordinate_block(oversized_2d)
 
 
 def test_3d_conformer_clear_and_single_conformer_assignment_use_value_semantics():
@@ -183,9 +190,9 @@ def test_3d_conformer_clear_and_single_conformer_assignment_use_value_semantics(
     cleared = multi.with_cleared_3d_conformers()
     single = multi.with_only_3d_conformer(replacement)
 
-    assert multi.num_conformers() == 2
-    assert cleared.num_conformers() == 0
-    assert single.num_conformers() == 1
+    assert multi.num_3d_conformers() == 2
+    assert cleared.num_3d_conformers() == 0
+    assert single.num_3d_conformers() == 1
     assert np.allclose(single.coordinates_3d(), replacement)
 
     with pytest.raises(ValueError, match="no 3D conformer"):
@@ -199,13 +206,13 @@ def test_3d_conformer_clear_and_single_conformer_assignment_in_place():
 
     mol.add_3d_conformer_(first)
     mol.add_3d_conformer_(second)
-    assert mol.num_conformers() == 2
+    assert mol.num_3d_conformers() == 2
 
     assert mol.clear_3d_conformers_() is None
-    assert mol.num_conformers() == 0
+    assert mol.num_3d_conformers() == 0
 
     assert mol.set_only_3d_conformer_(second) == 0
-    assert mol.num_conformers() == 1
+    assert mol.num_3d_conformers() == 1
     assert np.allclose(mol.coordinates_3d(), second)
 
     with pytest.raises(ValueError, match="row count mismatch"):
@@ -253,17 +260,19 @@ def test_in_place_molecule_methods_preserve_shared_python_values():
 
 def test_remove_hydrogens_without_sanitize_retains_rdkit_atom_cache_state():
     source = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
-    source_before = source.mol_to_binary()
+    source_before = source.to_binary()
     value = source.without_hydrogens(sanitize=False)
     in_place = cosmolkit.Molecule.from_smiles("CCO").with_hydrogens()
 
     assert in_place.remove_hydrogens_(sanitize=False) is None
-    assert source.mol_to_binary() == source_before
+    assert source.to_binary() == source_before
     for molecule in (value, in_place):
-        atoms = molecule.atoms()
+        # atoms() recalculates metadata; this regression observes the retained
+        # source cache explicitly, without recalculation or cache installation.
+        atoms = molecule.atom_metadata(recalculate=False)
         assert [atom.explicit_valence() for atom in atoms] == [4, 4, 2]
         assert [atom.implicit_hydrogens() for atom in atoms] == [0, 0, 0]
-        assert [atom.total_num_hs() for atom in atoms] == [0, 0, 0]
+        assert [atom.total_hydrogens() for atom in atoms] == [0, 0, 0]
         assert [atom.total_valence() for atom in atoms] == [4, 4, 2]
 
 
@@ -276,9 +285,12 @@ def test_in_place_sanitize_and_kekulize_methods_match_value_methods():
     assert raw.to_smiles() == expected.to_smiles()
 
     benzene = cosmolkit.Molecule.from_smiles("c1ccccc1")
-    expected_kekule = benzene.with_kekulized_bonds(clear_aromatic_flags=False)
+    # RDKit Wrap/MolOps.cpp passes clearAromaticFlags to Kekulize's
+    # markAtomsBonds argument; the canonical parameter uses that owner name.
+    params = cosmolkit.KekulizeParams(mark_atoms_bonds=False)
+    expected_kekule = benzene.with_kekulized_bonds_with_params(params)
 
-    benzene.kekulize_(clear_aromatic_flags=False)
+    benzene.kekulize_bonds_with_params_(params)
 
     assert benzene.to_smiles(kekule=True) == expected_kekule.to_smiles(kekule=True)
 
@@ -294,16 +306,16 @@ def test_sdf_sanitize_false_is_supported_and_not_silently_sanitized():
 M  END
 $$$$
 """
-    mol = cosmolkit.Molecule.read_sdf_from_str(sdf, sanitize=False)
+    mol = cosmolkit.Molecule.from_sdf(sdf, sanitize=False)
 
     assert mol.num_atoms() == 2
     assert mol.num_bonds() == 1
 
 
-def test_sanitize_strict_false_is_not_silently_ignored():
+def test_sanitize_rejects_unknown_strict_keyword():
     mol = cosmolkit.Molecule.from_smiles("CCO")
 
-    with pytest.raises(ValueError, match="strict=False sanitization is not implemented"):
+    with pytest.raises(TypeError):
         mol.sanitize(strict=False)
 
 
@@ -323,32 +335,40 @@ def test_molecule_batch_sanitize_flag_and_transform_are_not_noops():
     assert sanitized == ["C[N+](=O)[O-]"]
 
 
-def test_structural_array_access_returns_numpy_arrays():
+def test_structural_array_access_returns_owned_lists_convertible_to_numpy():
     mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
 
     coords = mol.coordinates_2d()
     bounds = mol.dg_bounds_matrix()
 
-    assert isinstance(coords, np.ndarray)
-    assert coords.shape == (3, 3)
+    assert isinstance(coords, list)
+    assert np.asarray(coords).shape == (3, 2)
     assert isinstance(bounds, np.ndarray)
     assert bounds.shape == (3, 3)
+    coords[0][0] = -999.0
+    bounds[0][0] = -999.0
+    assert mol.coordinates_2d()[0][0] != -999.0
+    assert mol.dg_bounds_matrix()[0][0] == 0.0
 
 
 def test_sdf_string_export_is_explicit_about_2d_or_3d_coordinates():
     mol = cosmolkit.Molecule.from_smiles("CCO")
 
-    sdf_text = mol.to_2d_sdf_string(format="v2000")
+    sdf_text = mol.to_sdf_2d(format=cosmolkit.SdfFormat.V2000)
     assert "2D" in sdf_text.splitlines()[1]
     assert not mol.has_2d_coordinates()
-    assert "V2000" in mol.to_2d_sdf_string(format="v2000", include_stereo=False)
-    aromatic_sdf = cosmolkit.Molecule.from_smiles("c1ccccc1").to_2d_sdf_string(
-        format="v2000", kekulize=False
+    assert "V2000" in mol.to_sdf_2d(format=cosmolkit.SdfFormat.V2000, include_stereo=False)
+    aromatic_sdf = cosmolkit.Molecule.from_smiles("c1ccccc1").to_sdf_2d(
+        format=cosmolkit.SdfFormat.V2000, kekulize=False
     )
     assert "  4  0" in aromatic_sdf
 
-    with pytest.raises(ValueError, match="3D coordinates are required"):
-        mol.to_3d_sdf_string(format="v2000")
+    with pytest.raises(cosmolkit.MolecularIoError) as caught:
+        mol.to_sdf_3d(format=cosmolkit.SdfFormat.V2000)
+    assert caught.value.kind == "MolWrite"
+    assert caught.value.coordinate_kind == "MissingCoordinate"
+    assert caught.value.dimension == "3d"
+    assert caught.value.coordinate_id == 0
 
     methane_3d = """methane_3d
   COSMolKit      3D
@@ -366,24 +386,24 @@ def test_sdf_string_export_is_explicit_about_2d_or_3d_coordinates():
 M  END
 $$$$
 """
-    mol_3d = cosmolkit.Molecule.read_sdf_from_str(methane_3d, coordinate_dim="3d")
-    assert "3D" in mol_3d.to_3d_sdf_string(format="v2000").splitlines()[1]
-    assert "2D" in mol_3d.to_2d_sdf_string(format="v2000").splitlines()[1]
-    assert mol_3d.num_conformers() == 1
+    mol_3d = cosmolkit.Molecule.from_sdf(methane_3d, coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
+    assert "3D" in mol_3d.to_sdf_3d(format=cosmolkit.SdfFormat.V2000).splitlines()[1]
+    assert "2D" in mol_3d.to_sdf_2d(format=cosmolkit.SdfFormat.V2000).splitlines()[1]
+    assert mol_3d.num_3d_conformers() == 1
     assert not mol_3d.has_2d_coordinates()
 
 
 def test_molfile_read_matches_single_record_without_sdf_separator(tmp_path: Path):
     mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
-    mol_text = mol.to_2d_sdf_string(format="v2000").replace("$$$$\n", "")
+    mol_text = mol.to_sdf_2d(format=cosmolkit.SdfFormat.V2000).replace("$$$$\n", "")
 
-    parsed = cosmolkit.Molecule.read_mol_from_str(mol_text, coordinate_dim="2d")
+    parsed = cosmolkit.Molecule.from_mol(mol_text, coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
     assert parsed.to_smiles() == "CCO"
     assert parsed.has_2d_coordinates()
 
     path = tmp_path / "ethanol.mol"
     path.write_text(mol_text, encoding="utf-8")
-    from_file = cosmolkit.Molecule.read_mol(str(path), coordinate_dim="2d")
+    from_file = cosmolkit.Molecule.read_mol(str(path), coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
     assert from_file.to_smiles() == "CCO"
     assert from_file.has_2d_coordinates()
 
@@ -391,12 +411,12 @@ def test_molfile_read_matches_single_record_without_sdf_separator(tmp_path: Path
 def test_structural_array_access_supports_numpy_operations():
     mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
 
-    coords = mol.coordinates_2d()
-    bounds = mol.dg_bounds_matrix()
+    coords = np.asarray(mol.coordinates_2d())
+    bounds = np.asarray(mol.dg_bounds_matrix())
 
     centered = coords - coords.mean(axis=0)
     assert centered.shape == coords.shape
-    assert np.allclose(centered.mean(axis=0), np.zeros(3))
+    assert np.allclose(centered.mean(axis=0), np.zeros(2))
     assert np.asarray(coords) is coords
     assert np.asarray(bounds) is bounds
     assert np.isclose(bounds[0, 1], bounds[0][1])
@@ -407,9 +427,9 @@ def test_structural_array_access_can_bridge_to_torch_if_installed():
     torch = pytest.importorskip("torch")
     mol = cosmolkit.Molecule.from_smiles("CCO").with_2d_coordinates()
 
-    tensor = torch.from_numpy(mol.coordinates_2d())
+    tensor = torch.from_numpy(np.asarray(mol.coordinates_2d()))
 
-    assert tuple(tensor.shape) == (3, 3)
+    assert tuple(tensor.shape) == (3, 2)
     assert str(tensor.dtype) == "torch.float64"
 
 
@@ -417,12 +437,12 @@ def test_write_png_auto_prepares_drawing_without_mutating_input(tmp_path: Path):
     mol = cosmolkit.Molecule.from_smiles("CCO")
     output = tmp_path / "ethanol.png"
 
-    mol.write_png(str(output))
+    mol.write_png(str(output), width=300, height=300)
 
 
     assert output.exists()
     assert output.stat().st_size > 0
-    assert mol.num_conformers() == 0
+    assert mol.num_3d_conformers() == 0
 
 
 def test_read_sdf_from_str_helpers_return_molecules():
@@ -436,8 +456,8 @@ def test_read_sdf_from_str_helpers_return_molecules():
 M  END
 $$$$
 """
-    one = cosmolkit.Molecule.read_sdf_from_str(sdf)
-    many = cosmolkit.MoleculeBatch.read_sdf_records_from_str(sdf)
+    one = cosmolkit.Molecule.from_sdf(sdf)
+    many = cosmolkit.MoleculeBatch.from_sdf_records(sdf)
 
     assert len(one) == 2
     assert len(many) == 1
@@ -446,7 +466,7 @@ $$$$
     assert len(first_many) == 2
 
 
-def test_read_sdf_coordinate_dim_can_be_forced():
+def test_read_sdf_coordinate_mode_can_be_forced():
     sdf = """flat
      COSMolKit      2D
 
@@ -455,14 +475,14 @@ def test_read_sdf_coordinate_dim_can_be_forced():
 M  END
 $$$$
 """
-    mol_2d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="2d")
-    mol_3d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="3d")
+    mol_2d = cosmolkit.Molecule.from_sdf(sdf, coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
+    mol_3d = cosmolkit.Molecule.from_sdf(sdf, coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
 
-    assert mol_2d.coordinates_2d().shape == (1, 3)
+    assert np.asarray(mol_2d.coordinates_2d()).shape == (1, 2)
     assert np.allclose(mol_3d.coordinates_3d(), np.array([[0.0, 0.0, 0.0]]))
 
 
-def test_sdf_coordinate_dim_is_applied_to_file_dataset_reader_and_batch(tmp_path: Path):
+def test_sdf_coordinate_mode_is_applied_to_file_dataset_reader_and_batch(tmp_path: Path):
     sdf = """flat
      COSMolKit      2D
 
@@ -474,22 +494,22 @@ $$$$
     path = tmp_path / "flat.sdf"
     path.write_text(sdf)
 
-    single = cosmolkit.Molecule.read_sdf(str(path), coordinate_dim="3d")
+    single = cosmolkit.Molecule.read_sdf(str(path), coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
     from_file = cosmolkit.MoleculeBatch.read_sdf(
-        str(path), errors="raise", n_jobs=1, coordinate_dim="3d"
+        str(path), errors="raise", n_jobs=1, coordinate_mode="require_3d"
     )[0]
     from_file_progress = cosmolkit.MoleculeBatch.read_sdf(
-        str(path), errors="raise", progress_bar=True, coordinate_dim="3d"
+        str(path), errors="raise", progress_bar=True, coordinate_mode="require_3d"
     )[0]
-    from_text_batch = cosmolkit.MoleculeBatch.read_sdf_records_from_str(
-        sdf, errors="raise", n_jobs=1, coordinate_dim="3d"
+    from_text_batch = cosmolkit.MoleculeBatch.from_sdf_records(
+        sdf, errors="raise", n_jobs=1, coordinate_mode="require_3d"
     )[0]
-    dataset = cosmolkit.SdfDataset.open(str(path), coordinate_dim="3d")
+    dataset = cosmolkit.SdfDataset.open(str(path), coordinate_mode="require_3d")
     from_dataset_index = dataset[0].molecule()
     from_dataset_iter = next(iter(dataset)).molecule()
     from_dataset_batch = next(dataset.batches(size=1, errors="raise"))[0]
     from_reader_batch = next(
-        cosmolkit.SdfReader.open(str(path), coordinate_dim="3d").batches(
+        cosmolkit.SdfReader.open(str(path), coordinate_mode="require_3d").batches(
             size=1, errors="raise"
         )
     )[0]
@@ -506,7 +526,7 @@ $$$$
     ]
     for mol in molecules:
         assert mol is not None
-        assert mol.num_conformers() == 1
+        assert mol.num_3d_conformers() == 1
         assert np.allclose(mol.coordinates_3d(), np.array([[0.0, 0.0, 0.0]]))
 
 
@@ -639,7 +659,7 @@ ATOM      3  C   ALA A   1      13.470  13.079  10.413  1.00 20.00           C
 HETATM    4  O   HOH A   2      18.000  10.000   8.000  1.00 10.00           O
 HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
 """
-    protein = cosmolkit.Protein.from_pdb_str(pdb)
+    protein = cosmolkit.Protein.from_pdb(pdb)
 
     assert protein.num_chains() == 1
     assert protein.num_residues() == 1
@@ -660,28 +680,29 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
         cosmolkit.Element.C,
     ]
     assert [atom.element_symbol() for atom in residue.atoms()] == ["N", "C", "C"]
-    assert [atom.atomic_num() for atom in residue.atoms()] == [7, 6, 6]
-    assert cosmolkit.residue_code_from_name("TRY") == cosmolkit.ResidueCode.TRP
-    assert cosmolkit.find_tabulated_residue_idx("h2o") == 154
-    assert cosmolkit.get_residue_info(154).code() == cosmolkit.ResidueCode.HOH
-    mse = cosmolkit.find_tabulated_residue("MSE")
+    assert [atom.atomic_number() for atom in residue.atoms()] == [7, 6, 6]
+    assert cosmolkit.residue_code("TRY") == cosmolkit.ResidueCode.TRP
+    assert cosmolkit.find_residue_info_index("h2o") == 154
+    assert cosmolkit.residue_info(154).code() == cosmolkit.ResidueCode.HOH
+    mse = cosmolkit.find_residue_info("MSE")
     assert mse.fasta_code() == "X"
     assert mse.canonical_one_letter_code() == "M"
     assert mse.parent_standard_code() == cosmolkit.ResidueCode.MET
     assert mse.is_modified_amino_acid()
-    assert not cosmolkit.find_tabulated_residue("MET").is_modified_amino_acid()
-    assert cosmolkit.find_tabulated_residue("HYP").parent_standard_code() == (
+    assert not cosmolkit.find_residue_info("MET").is_modified_amino_acid()
+    assert cosmolkit.find_residue_info("HYP").parent_standard_code() == (
         cosmolkit.ResidueCode.PRO
     )
-    assert cosmolkit.find_tabulated_residue("SEP").parent_standard_code() == (
+    assert cosmolkit.find_residue_info("SEP").parent_standard_code() == (
         cosmolkit.ResidueCode.SER
     )
     assert cosmolkit.expand_one_letter("m", cosmolkit.ResidueInfoKind.AA) == "MET"
-    assert cosmolkit.expand_protein_one_letter("m") == "MET"
     assert cosmolkit.expand_one_letter_sequence(
         "ACD(MSE)", cosmolkit.ResidueInfoKind.AA
     ) == ["ALA", "CYS", "ASP", "MSE"]
-    assert cosmolkit.expand_protein_one_letter_string("m") == ["MET"]
+    assert cosmolkit.expand_one_letter_sequence(
+        "m", cosmolkit.ResidueInfoKind.AA
+    ) == ["MET"]
 
 
 def test_biostructure_keeps_complete_hierarchy_before_explicit_projection():
@@ -692,7 +713,7 @@ ATOM      3  C   ALA A   1      13.470  13.079  10.413  1.00 20.00           C
 HETATM    4  O   HOH A   2      18.000  10.000   8.000  1.00 10.00           O
 HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
 """
-    structure = cosmolkit.BioStructure.from_pdb_str(pdb)
+    structure = cosmolkit.BioStructure.from_pdb(pdb)
 
     assert repr(structure) == (
         "BioStructure(models=1, chains=2, residues=3, atoms=5, entities=0)"
@@ -714,8 +735,8 @@ HETATM    5  C1  LIG B   1      18.500  11.000   8.500  1.00 10.00           C
     assert structure.residues()[0].code() == cosmolkit.ResidueCode.ALA
     assert structure.residues()[1].code() == cosmolkit.ResidueCode.HOH
     assert structure.atoms()[0].element() == cosmolkit.Element.N
-    assert structure.atoms()[0].residue_index() == 0
-    assert structure.chains()[0].auth_chain_id() == "A"
+    assert structure.atoms()[0].residue_id() == 0
+    assert structure.chains()[0].source().auth_chain_id() == "A"
 
     protein = structure.protein()
     assert protein.num_chains() == 1
@@ -736,7 +757,7 @@ ATOM      1  N   ALA A   1      11.104  13.207   9.900  1.00 20.00           N
 HETATM    2 HG    HG     2      -2.213  10.563  24.265  1.00 32.73          HG
 HETATM    3 CD    CD     3      -3.467  18.396  77.649  0.50 39.48          CD
 """
-    protein = cosmolkit.Protein.from_pdb_str(pdb)
+    protein = cosmolkit.Protein.from_pdb(pdb)
 
     assert protein.num_atoms() == 1
 
@@ -765,7 +786,7 @@ $$$$
     assert kept.errors()[0].index() == 1
     assert kept.errors()[0].operation() == "read_sdf"
 
-    skipped = cosmolkit.MoleculeBatch.read_sdf(str(path), errors="keep", n_jobs=1).filter_valid()
+    skipped = cosmolkit.MoleculeBatch.read_sdf(str(path), errors="keep", n_jobs=1).with_valid_records()
     assert len(skipped) == 1
     assert skipped.valid_mask() == [True]
 
@@ -788,24 +809,24 @@ def test_without_hydrogens_filters_coordinate_rows_for_removed_atoms():
 M  END
 $$$$
 """
-    mol_3d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="3d")
+    mol_3d = cosmolkit.Molecule.from_sdf(sdf, coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
     removed_3d = mol_3d.without_hydrogens(sanitize=False)
 
     assert len(removed_3d) == 2
-    assert removed_3d.coordinates_3d().shape == (2, 3)
+    assert np.asarray(removed_3d.coordinates_3d()).shape == (2, 3)
     assert np.allclose(removed_3d.coordinates_3d(), np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]))
 
-    mol_2d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="2d")
+    mol_2d = cosmolkit.Molecule.from_sdf(sdf, coordinate_mode=cosmolkit.SdfCoordinateMode.Require2D)
     removed_2d = mol_2d.without_hydrogens(sanitize=False)
 
     assert len(removed_2d) == 2
-    assert removed_2d.coordinates_2d().shape == (2, 3)
-    assert np.allclose(removed_2d.coordinates_2d(), np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]]))
+    assert np.asarray(removed_2d.coordinates_2d()).shape == (2, 2)
+    assert np.allclose(removed_2d.coordinates_2d(), np.array([[0.0, 0.0], [2.0, 0.0]]))
 
     both = mol_3d.with_2d_coordinates().without_hydrogens(sanitize=False)
     assert len(both) == 2
-    assert both.coordinates_2d().shape == (2, 3)
-    assert both.coordinates_3d().shape == (2, 3)
+    assert np.asarray(both.coordinates_2d()).shape == (2, 2)
+    assert np.asarray(both.coordinates_3d()).shape == (2, 3)
 
 
 def test_public_transforms_keep_coordinate_rows_aligned_with_atoms():
@@ -815,7 +836,7 @@ def test_public_transforms_keep_coordinate_rows_aligned_with_atoms():
     assert_coordinate_rows_match_atoms(base_2d.sanitize())
 
     benzene = cosmolkit.Molecule.from_smiles("c1ccccc1").with_2d_coordinates()
-    assert_coordinate_rows_match_atoms(benzene.with_kekulized_bonds(clear_aromatic_flags=False))
+    assert_coordinate_rows_match_atoms(benzene.with_kekulized_bonds_with_params(cosmolkit.KekulizeParams(mark_atoms_bonds=False)))
 
     sdf = """interleaved_h
   COSMolKit  3D
@@ -831,7 +852,7 @@ def test_public_transforms_keep_coordinate_rows_aligned_with_atoms():
 M  END
 $$$$
 """
-    base_3d = cosmolkit.Molecule.read_sdf_from_str(sdf, coordinate_dim="3d")
+    base_3d = cosmolkit.Molecule.from_sdf(sdf, coordinate_mode=cosmolkit.SdfCoordinateMode.Require3D)
     assert_coordinate_rows_match_atoms(base_3d)
     assert_coordinate_rows_match_atoms(base_3d.without_hydrogens(sanitize=False))
 
@@ -839,8 +860,8 @@ $$$$
     assert_coordinate_rows_match_atoms(base_both)
     assert_coordinate_rows_match_atoms(base_both.without_hydrogens(sanitize=False))
 
-    batch = cosmolkit.MoleculeBatch.read_sdf_records_from_str(
-        sdf, coordinate_dim="3d", errors="raise", n_jobs=2
+    batch = cosmolkit.MoleculeBatch.from_sdf_records(
+        sdf, coordinate_mode="require_3d", errors="raise", n_jobs=2
     )
     batch_removed = batch.without_hydrogens(errors="raise", n_jobs=2)
     first_removed = batch_removed[0]
@@ -871,7 +892,7 @@ def test_molecule_to_smiles_exposes_writer_options():
 
     assert benzene.to_smiles(kekule=True) == "C1=CC=CC=C1"
     assert ethanol.to_smiles(all_bonds_explicit=True) == "C-C-O"
-    assert ethanol.to_smiles(all_hs_explicit=True) == "[CH3][CH2][OH]"
+    assert ethanol.to_smiles(all_hydrogens_explicit=True) == "[CH3][CH2][OH]"
     assert ethanol.to_smiles(canonical=False, rooted_at_atom=2) == "OCC"
     assert mapped.to_smiles(canonical=False) == "[CH3:7][OH:2]"
     assert mapped.to_smiles(canonical=False, ignore_atom_map_numbers=True) == "CO"
@@ -984,9 +1005,9 @@ def test_molecule_batch_keeps_errors_and_filters_valid_records(tmp_path: Path):
     assert batch.valid_count() == 1
     assert batch.invalid_count() == 1
     assert batch.errors()[0].index() == 1
-    assert batch.filter_valid().to_smiles_list() == ["CCO"]
+    assert batch.with_valid_records().to_smiles_list() == ["CCO"]
 
-    report = batch.with_2d_coordinates(errors="keep", n_jobs=2).to_sdf(
+    report = batch.with_2d_coordinates(errors="keep", n_jobs=2).write_sdf(
         str(tmp_path / "valid.sdf"), errors="keep", n_jobs=2
     )
     assert report.success() == 1
@@ -1001,17 +1022,17 @@ def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
         .with_2d_coordinates(errors="keep")
     )
 
-    image_report = batch.to_images(
+    image_report = batch.write_images(
         str(tmp_path / "images"),
         format="svg",
-        errors="keep",
+        execution=cosmolkit.BatchParams(errors="keep"),
         filenames=["ethanol", "bad.svg", None],
     )
     assert image_report.success() == 2
     assert (tmp_path / "images" / "ethanol.svg").exists()
     assert (tmp_path / "images" / "mol_2.svg").exists()
 
-    sdf_report = batch.to_sdf_files(
+    sdf_report = batch.write_sdf_files(
         str(tmp_path / "sdf"),
         format="v2000",
         errors="keep",
@@ -1022,7 +1043,7 @@ def test_molecule_batch_exports_use_custom_filenames(tmp_path: Path):
     assert (tmp_path / "sdf" / "mol_2.sdf").exists()
 
     with pytest.raises(cosmolkit.BatchValidationError, match="invalid filename"):
-        batch.to_images(str(tmp_path / "bad"), format="svg", filenames=["../x", None, None])
+        batch.write_images(str(tmp_path / "bad"), format="svg", filenames=["../x", None, None])
 
 
 def test_molecule_batch_parallel_smiles_writer_options():
@@ -1052,7 +1073,7 @@ def test_molecule_batch_parallel_smiles_writer_options():
         "[*:1]C",
         "[13CH3:7][C@H](F)Cl",
     ]
-    first_valid = batch.filter_valid()[0]
+    first_valid = batch.with_valid_records()[0]
     assert first_valid is not None
     assert first_valid.to_smiles(rooted_at_atom=0) == "[*:1]C"
 
@@ -1080,7 +1101,7 @@ def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
     errors = batch.errors()
     assert len(errors) == 1
     assert errors[0].operation() == "batch.from_smiles_list"
-    assert errors[0].message() == "unclosed ring"
+    assert errors[0].message() == "SMILES parsing failed: unclosed ring index 1"
     assert errors[0].as_dict() == [
         ("index", "1"),
         ("operation", "batch.from_smiles_list"),
@@ -1088,5 +1109,5 @@ def test_batch_errors_expose_intenum_types_and_mode_enum_is_accepted():
     ]
     assert cosmolkit.BATCH_ERROR_MODE_MAP["keep"] == cosmolkit.BatchErrorMode.KEEP
 
-    filtered = batch.filter_valid().with_2d_coordinates(errors=cosmolkit.BatchErrorMode.KEEP)
+    filtered = batch.with_valid_records().with_2d_coordinates(errors=cosmolkit.BatchErrorMode.KEEP)
     assert len(filtered) == 1

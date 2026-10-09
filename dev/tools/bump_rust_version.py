@@ -36,8 +36,8 @@ DEPENDENCIES = [
     ("crates/cosmolkit-smiles/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-cx cosmolkit-model cosmolkit-types"),
     ("crates/cosmolkit-stereo/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-types cosmolkit-smiles cosmolkit-conformer"),
     ("crates/cosmolkit-tautomer/Cargo.toml", "dependencies", "cosmolkit-core cosmolkit-model cosmolkit-search cosmolkit-smiles cosmolkit-types"),
-    ("python/Cargo.toml", "dependencies", "cosmolkit"),
-    ("wasm/Cargo.toml", "dependencies", "cosmolkit"),
+    ("python/Cargo.toml", "dependencies", "cosmolkit cosmolkit-macros"),
+    ("wasm/Cargo.toml", "dependencies", "cosmolkit cosmolkit-macros"),
 ]
 README = "crates/cosmolkit/README.md"
 # Binding crate package version is separate from its cosmolkit dependency.

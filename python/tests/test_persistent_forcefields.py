@@ -115,8 +115,9 @@ def test_params_explicit_factories_and_missing_conformer_errors():
     assert (mmff.conformer_id, mmff.mmff_variant, mmff.non_bonded_threshold) == (None, "MMFF94", 100.0)
     assert (uff.conformer_id, uff.vdw_threshold) == (None, 10.0)
     assert (minimize.max_iterations, minimize.force_tolerance, minimize.energy_tolerance) == (200, 1e-4, 1e-6)
-    with pytest.raises(AttributeError):
-        setattr(mmff, "mmff_variant", "MMFF94s")
+    mmff.mmff_variant = "MMFF94s"
+    assert mmff.mmff_variant == "MMFF94s"
+    mmff.mmff_variant = "MMFF94"
     mol = molecule()
     assert mol.mmff_force_field_with_params(mmff).energy() == mol.mmff_force_field().energy()
     assert mol.uff_force_field_with_params(uff).energy() == mol.uff_force_field().energy()

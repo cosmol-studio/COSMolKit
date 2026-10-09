@@ -421,7 +421,7 @@ fn emit_query_graph(
         .ok_or(SmartsWriteError::FragmentAtomOutOfRange { atom: atom.index() })?;
     let mut atom_params = *params;
     if query.prop("_doIsoSmiles").is_some() {
-        atom_params.do_isomeric_smiles = true;
+        atom_params.isomeric_smiles = true;
     }
     result
         .smarts

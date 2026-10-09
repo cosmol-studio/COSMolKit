@@ -22,10 +22,10 @@ pub enum Kind {
 impl Kind {
     pub fn name(self) -> &'static str {
         match self {
-            Self::Maccs => "maccs_fingerprint",
-            Self::Topological => "topological_fingerprint",
-            Self::Layered => "layered_fingerprint",
-            Self::Pattern => "pattern_fingerprint",
+            Self::Maccs => "fingerprint_maccs",
+            Self::Topological => "fingerprint_topological",
+            Self::Layered => "fingerprint_layered",
+            Self::Pattern => "fingerprint_pattern",
             Self::FuzzyAnd => "fuzzy_and",
             Self::FuzzyOr => "fuzzy_or",
         }
@@ -322,10 +322,10 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
     let observed = match row.params {
         Params::Maccs => Observation::Maccs {
             raw: mol
-                .maccs_fingerprint_raw()
+                .fingerprint_maccs_raw()
                 .map_err(|e| e.to_string())?
                 .into(),
-            public: mol.maccs_fingerprint().map_err(|e| e.to_string())?.into(),
+            public: mol.fingerprint_maccs().map_err(|e| e.to_string())?.into(),
         },
         Params::Topological {
             min_path,
@@ -355,7 +355,7 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
             };
             Observation::Bits {
                 fingerprint: mol
-                    .topological_fingerprint_with_params(&params)
+                    .fingerprint_topological_with_params(&params)
                     .map_err(|e| e.to_string())?
                     .into(),
                 atom_counts: None,
@@ -402,7 +402,7 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
             };
             let before = params.clone();
             let result = mol
-                .layered_fingerprint_with_output_with_params(&params)
+                .fingerprint_layered_with_output_with_params(&params)
                 .map_err(|e| e.to_string())?;
             if params != before {
                 return Err("Layered mutated input parameters".into());
@@ -417,7 +417,7 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
             tautomeric,
         } => Observation::Bits {
             fingerprint: mol
-                .pattern_fingerprint_with_params(&PatternFingerprintParams {
+                .fingerprint_pattern_with_params(&PatternFingerprintParams {
                     n_bits: fp_size as usize,
                     tautomeric,
                 })
@@ -443,10 +443,10 @@ pub fn run(row: &FingerprintInput) -> Result<Record, String> {
                 ..Default::default()
             };
             let left = mol
-                .morgan_count_fingerprint_with_params(&params, None)
+                .fingerprint_morgan_count_with_params(&params, None)
                 .map_err(|e| e.to_string())?;
             let right = other
-                .morgan_count_fingerprint_with_params(&params, None)
+                .fingerprint_morgan_count_with_params(&params, None)
                 .map_err(|e| e.to_string())?;
             fuzzy(left, right, union, wide, signed)?
         }

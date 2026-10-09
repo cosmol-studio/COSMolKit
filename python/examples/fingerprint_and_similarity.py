@@ -12,16 +12,16 @@ similarity = fp1.tanimoto(fp2)
 result = mol.fingerprint_morgan_with_output(radius=2, n_bits=2048)
 additional = result.additional_output()
 
-topological = mol.topological_fingerprint(fp_size=2048)
-topological_output = mol.topological_fingerprint_with_output(
+topological = mol.fingerprint_topological(fp_size=2048)
+topological_output = mol.fingerprint_topological_with_output(
     fp_size=2048,
     atom_bits=True,
     bit_info=True,
 )
 avalon = mol.avalon_fingerprint(n_bits=512)
-pattern = mol.pattern_fingerprint(n_bits=2048)
-tautomeric_pattern = mol.pattern_fingerprint(n_bits=2048, tautomeric=True)
-maccs = mol.maccs_fingerprint()
+pattern = mol.fingerprint_pattern(n_bits=2048)
+tautomeric_pattern = mol.fingerprint_pattern(n_bits=2048, tautomeric=True)
+maccs = mol.fingerprint_maccs()
 atom_pair = mol.fingerprint_atom_pair(n_bits=2048)
 atom_pair_sparse_count = mol.fingerprint_atom_pair_sparse_count()
 atom_pair_output = mol.fingerprint_atom_pair_with_output().additional_output()

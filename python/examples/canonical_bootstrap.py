@@ -8,7 +8,7 @@ import cosmolkit
 
 molecule = cosmolkit.Molecule.from_smiles("CCO")
 print(cosmolkit.version(), molecule.num_atoms(), molecule.to_smiles())
-print(molecule.morgan_fingerprint().on_bits())
+print(molecule.fingerprint_morgan().on_bits())
 params = cosmolkit.SmilesWriteParams(all_bonds_explicit=True)
 print(molecule.to_smiles_with_params(params))
 positioned = molecule.with_2d_coordinates()

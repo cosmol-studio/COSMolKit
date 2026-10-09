@@ -4,14 +4,14 @@ await init();
 
 const molecule = Molecule.fromSmiles("CCOc1ccc2nc(S(N)(=O)=O)sc2c1");
 for (const [name, bits] of Object.entries({
-  pattern: molecule.patternFingerprint(),
-  morgan: molecule.morganFingerprint(),
-  atomPair: molecule.atomPairFingerprint(),
-  layered: molecule.layeredFingerprint(),
-  topological: molecule.topologicalFingerprint(),
-  maccs: molecule.maccsFingerprint(),
+  pattern: molecule.fingerprintPattern(),
+  morgan: molecule.fingerprintMorgan(),
+  atomPair: molecule.fingerprintAtomPair(),
+  layered: molecule.fingerprintLayered(),
+  topological: molecule.fingerprintTopological(),
+  maccs: molecule.fingerprintMaccs(),
   avalon: molecule.avalonFingerprint(),
-  topologicalTorsion: molecule.topologicalTorsionFingerprint(),
+  topologicalTorsion: molecule.fingerprintTopologicalTorsion(),
 })) {
   console.log(`${name}: ${bits.length} set bits`, bits);
 }

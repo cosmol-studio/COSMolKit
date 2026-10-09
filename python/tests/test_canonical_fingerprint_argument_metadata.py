@@ -22,8 +22,10 @@ def test_immutable_update_owns_values_and_survives_receiver_lifetime(kind):
     bounds = updated.count_bounds
     bounds.append(99)
     assert updated.count_bounds == [1, 3, 7]
-    with pytest.raises(AttributeError):
-        updated.fp_size = 12
+    updated.fp_size = 12
+    assert updated.fp_size == 12
+    assert original.fp_size != 12
+    updated.fp_size = 1000
     del original
     gc.collect()
     assert updated.fp_size == 1000
@@ -110,8 +112,13 @@ def test_original_generated_stub_projects_value_update_and_structured_error():
         method = methods['with_json']
         assert [arg.arg for arg in method.args.args] == ['self', 'json']
         assert ast.unparse(method.returns) == name
-        assert not any(isinstance(decorator, ast.Attribute) and decorator.attr == 'setter'
-                       for node in methods.values() for decorator in node.decorator_list)
+        getters = {node.name for node in classes[name].body if isinstance(node, ast.FunctionDef)
+                   and [ast.unparse(d) for d in node.decorator_list] == ['property']}
+        setters = {node.name for node in classes[name].body if isinstance(node, ast.FunctionDef)
+                   and [ast.unparse(d) for d in node.decorator_list] == [node.name + '.setter']}
+        constructor = methods['__new__']
+        fields = {arg.arg for arg in constructor.args.kwonlyargs}
+        assert getters == setters == fields
     error = classes['FingerprintJsonError']
     assert ast.unparse(error.bases[0]) == 'builtins.ValueError'
     assert {node.target.id for node in error.body if isinstance(node, ast.AnnAssign)} >= {'domain', 'kind'}

@@ -18,7 +18,7 @@ def test_native_binary_and_all_python_pickle_protocols_preserve_exact_canonical_
         molecule = cosmolkit.Molecule.from_smiles(smiles)
     source = molecule.to_binary()
     assert isinstance(source, bytes)
-    assert source[:12] == b"CSMOLPKL\x01\x00\x02\x00"
+    assert source[:12] == b"COSMOL\x00\x00\x02\x00\x00\x00"
     restored = cosmolkit.Molecule.from_binary(source)
     assert restored is not molecule
     assert restored.to_binary() == source

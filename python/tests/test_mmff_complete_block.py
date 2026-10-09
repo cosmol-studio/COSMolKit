@@ -32,7 +32,7 @@ def test_mmff_value_results_and_original_protocols():
     assert result.molecule().num_atoms() == molecule.num_atoms()
     assert "MmffOptimizeMoleculeResult" in repr(result)
     assert coordinates(molecule) == original
-    multi = molecule.with_mmff_optimized_confs()
+    multi = molecule.with_mmff_optimized_conformers()
     assert isinstance(multi, ck.MmffOptimizeMoleculeConfsResult)
     assert len(multi.conformer_results()) == 1
     assert "MmffOptimizeMoleculeConfsResult" in repr(multi)
@@ -53,8 +53,8 @@ def test_mmff_zero_iterations_and_configured_calls():
     assert result.status_code() == configured.status_code() == 1
     assert result.needs_more() and configured.needs_more()
     assert coordinates(result.molecule()) == coordinates(configured.molecule()) == original
-    multi = molecule.with_mmff_optimized_confs_with_params(ck.MmffConformerOptimizationParams(max_iterations=0))
-    configured_multi = molecule.with_mmff_optimized_confs_with_params(ck.MmffConformerOptimizationParams(max_iterations=0))
+    multi = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(max_iterations=0))
+    configured_multi = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(max_iterations=0))
     assert multi.conformer_results()[0].status_code() == 1
     assert configured_multi.conformer_results()[0].status_code() == 1
     assert multi.conformer_results()[0].energy() == configured_multi.conformer_results()[0].energy()
@@ -66,7 +66,7 @@ def test_mmff_source_invalid_typing_sentinels():
     assert molecule.mmff_has_all_molecule_params() is False
     single = molecule.with_mmff_optimized()
     assert single.status_code() == -1 and single.needs_more() is False
-    multi = molecule.with_mmff_optimized_confs()
+    multi = molecule.with_mmff_optimized_conformers()
     row = multi.conformer_results()[0]
     assert row.status_code() == -1 and row.energy() == -1.0
     assert coordinates(single.molecule()) == coordinates(multi.molecule()) == coordinates(molecule)
@@ -154,20 +154,26 @@ def test_mmff_thread_dispatch_order_matches_serial():
     builder.add_3d_conformer([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]])
     molecule = builder.build()
     before = coordinates(molecule)
-    serial = molecule.with_mmff_optimized_confs_with_params(ck.MmffConformerOptimizationParams(num_threads=1,max_iterations=25))
-    threaded = molecule.with_mmff_optimized_confs_with_params(ck.MmffConformerOptimizationParams(num_threads=2,max_iterations=25))
+    serial = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(num_threads=1,max_iterations=25))
+    threaded = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(num_threads=2,max_iterations=25))
     assert [(r.status_code(), r.energy()) for r in serial.conformer_results()] == [(r.status_code(), r.energy()) for r in threaded.conformer_results()]
     assert coordinates(serial.molecule()) == coordinates(threaded.molecule())
     assert [r.id() for r in serial.molecule().conformers_3d()] == [0, 1]
     assert coordinates(molecule) == before
 
 
-def test_mmff_parameter_values_are_immutable_and_short_methods_are_default_only():
+def test_mmff_parameters_are_writable_and_unknown_keywords_are_rejected():
     params = ck.MmffOptimizationParams()
-    with pytest.raises(AttributeError):
-        setattr(params, "max_iterations", 0)
+    params.max_iterations = 0
+    assert params.max_iterations == 0
     molecule = make_molecule()
     with pytest.raises(TypeError):
         getattr(molecule, "with_mmff_optimized")(max_iters=0)
-    with pytest.raises(TypeError):
-        getattr(molecule, "with_mmff_optimized_confs")(num_threads=2)
+    configured = molecule.with_mmff_optimized_conformers(num_threads=2)
+    explicit = molecule.with_mmff_optimized_conformers_with_params(
+        ck.MmffConformerOptimizationParams(num_threads=2)
+    )
+    assert [(r.status_code(), r.energy()) for r in configured.conformer_results()] == [
+        (r.status_code(), r.energy()) for r in explicit.conformer_results()
+    ]
+    assert coordinates(configured.molecule()) == coordinates(explicit.molecule())

@@ -11,6 +11,19 @@ from run import check_typescript, prepare_package
 
 
 class TypeScriptRunnerTests(unittest.TestCase):
+    def test_contract_skip_keeps_real_typescript_tests_and_strict_compilation(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            with patch("run.run") as invoke, patch("run.typescript_probe") as probe:
+                check_typescript(workspace, workspace / "api.d.ts", contract=None)
+            probe.assert_not_called()
+            invoke.assert_called_once()
+            config = json.loads((workspace / "tsconfig.json").read_text())
+            self.assertTrue(config["compilerOptions"]["strict"])
+            self.assertTrue(config["files"])
+            self.assertTrue(all(Path(name).suffix == ".ts" for name in config["files"]))
+            self.assertNotIn(str(workspace / "binding-contract.ts"), config["files"])
+
     def test_default_compiler_is_pinned_and_config_has_no_base_url(self):
         with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary)

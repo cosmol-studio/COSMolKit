@@ -38,7 +38,7 @@ fn template_to_string(
     // Vec-backed short text versus Native SSO also costs extra allocations.
     let smarts_params = SmartsWriteParams {
         include_atom_maps: true,
-        do_isomeric_smiles: params.do_isomeric_smiles,
+        isomeric_smiles: params.isomeric_smiles,
         include_dative_bonds: params.include_dative_bonds,
         rooted_at_atom: params.rooted_at_atom,
     };
@@ -367,7 +367,7 @@ mod template_to_string_source_tests {
         q.set_prop("_StereochemDone", PropertyValue::Bool(false))
             .unwrap();
         let mut p = ReactionWriteParams::default();
-        p.do_isomeric_smiles = false;
+        p.isomeric_smiles = false;
         p.canonical = true;
         let out = template_to_string(&q, ReactionRole::Agent, 2, &p).unwrap();
         assert_eq!(out.text, PropertyText::from("([#8].[#6])"));

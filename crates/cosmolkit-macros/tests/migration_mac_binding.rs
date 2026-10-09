@@ -77,6 +77,7 @@ struct BindingCallableContract {
 enum BindingTypeRole {
     Value,
     Parameter,
+    ParameterSelector,
     Result,
     Error,
 }
@@ -106,6 +107,8 @@ struct BindingContractEntry {
     owner: BindingOwner,
     rust_path: &'static str,
     python_name: &'static str,
+    python_native: Option<&'static str>,
+    python_configuration: Option<&'static [BindingParameterContract]>,
     python_property: Option<BindingPropertyAccess>,
     javascript_name: &'static str,
     feature: &'static str,
@@ -408,7 +411,13 @@ fn instance_static_and_module_signatures_cover_parameters_defaults_and_direct_ou
 
 #[test]
 fn all_type_roles_and_four_function_statuses_are_structured() {
-    let roles = ["value", "parameter", "result", "error"];
+    let roles = [
+        "value",
+        "parameter",
+        "parameter_selector",
+        "result",
+        "error",
+    ];
     let statuses = [
         "parity(\"RDKit\")",
         "parity_with_differences(\"Gemmi\", \"Approved difference under explicitly documented conditions\")",
@@ -422,10 +431,10 @@ fn all_type_roles_and_four_function_statuses_are_structured() {
             entries.push(format!("{{semantic_id:\"types.Type{index}\",item:type,owner:type_,rust:crate::Type{index},python:\"Type{index}\",javascript:\"Type{index}\",feature:\"types\",status:{status},role:{role}}}"));
         }
     }
-    assert_eq!(entries.len(), 16);
+    assert_eq!(entries.len(), 20);
     let entries = entries.join(",");
     let generated = compact(expand_binding_contract(registry_with(&entries)).unwrap());
-    for variant in ["Value", "Parameter", "Result", "Error"] {
+    for variant in ["Value", "Parameter", "ParameterSelector", "Result", "Error"] {
         assert!(generated.contains(&format!("BindingTypeRole::{variant}")));
     }
     for variant in ["Parity", "ParityWithDifferences", "Native", "Experimental"] {
@@ -433,7 +442,7 @@ fn all_type_roles_and_four_function_statuses_are_structured() {
     }
     assert!(generated.contains("reference:\"RDKit\""));
     assert!(generated.contains("reference:\"Gemmi\""));
-    assert_eq!(generated.matches("assert_public_type::<").count(), 16);
+    assert_eq!(generated.matches("assert_public_type::<").count(), 20);
 }
 
 #[test]
@@ -964,6 +973,126 @@ fn persistent_property_entry(properties: proc_macro2::TokenStream) -> proc_macro
         } ];
     }
 }
+#[test]
+fn selector_role_cannot_hide_a_configuration_record() {
+    let declaration = persistent_property_entry(
+        quote! { {name: count, rust: crate::Params::count, signature: fn(&crate::Params)->u32} },
+    )
+    .to_string()
+    .replace("role : parameter", "role : parameter_selector");
+    let tokens: proc_macro2::TokenStream = declaration.parse().unwrap();
+    assert!(
+        expand_binding_contract(tokens)
+            .unwrap_err()
+            .to_string()
+            .contains("parameter_selector cannot declare configuration record properties")
+    );
+}
+
+#[test]
+fn native_python_projection_requires_an_explicit_scalar_value_contract() {
+    let declaration = quote! {
+        static NATIVE = [{
+            semantic_id: "types.RowId", item: type, owner: type_,
+            rust: crate::RowId, python: "RowId", python_native: "builtins.int",
+            javascript: "RowId", feature: "runtime", role: value,
+        }];
+    };
+    assert!(expand_binding_contract(declaration.clone()).is_ok());
+    for invalid in [
+        declaration
+            .to_string()
+            .replace("role : value", "role : parameter"),
+        declaration.to_string().replace("builtins.int", "object"),
+    ] {
+        assert!(
+            expand_binding_contract(invalid.parse().unwrap())
+                .unwrap_err()
+                .to_string()
+                .contains("python_native requires a native value projection")
+        );
+    }
+}
+
+#[test]
+fn configuration_schema_is_owned_by_a_parameter_type_without_requiring_rust_new() {
+    let declaration = quote! {
+        static CONFIG = [{
+            semantic_id: "types.Params", item: type, owner: type_,
+            rust: crate::Params, python: "Params", javascript: "Params",
+            feature: "runtime", role: parameter,
+            python_configuration: [{name: count, python_type: "builtins.int", default: "1000"}],
+        }];
+    };
+    assert!(expand_binding_contract(declaration.clone()).is_ok());
+    let invalid = declaration
+        .to_string()
+        .replace("role : parameter", "role : value");
+    assert!(
+        expand_binding_contract(invalid.parse().unwrap())
+            .unwrap_err()
+            .to_string()
+            .contains("python_configuration requires a parameter type")
+    );
+    let duplicate = quote! {
+        static CONFIG = [{
+            semantic_id: "types.Params", item: type, owner: type_,
+            rust: crate::Params, python: "Params", javascript: "Params",
+            feature: "runtime", role: parameter,
+            python_configuration: [
+                {name: count, python_type: "builtins.int", default: "1000"},
+                {name: count, python_type: "builtins.int", default: "1000"},
+            ],
+        }];
+    };
+    assert!(
+        expand_binding_contract(duplicate)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate configuration field")
+    );
+}
+
+#[test]
+fn native_python_container_and_union_require_registered_component_types() {
+    for projection in ["list[ValueA]", "ValueA | ValueB"] {
+        let declaration = quote! {
+            static NATIVE = [
+                { semantic_id:"types.ValueA", item:type, owner:type_, rust:crate::ValueA,
+                  python:"ValueA", javascript:"ValueA", feature:"runtime", role:value, },
+                { semantic_id:"types.ValueB", item:type, owner:type_, rust:crate::ValueB,
+                  python:"ValueB", javascript:"ValueB", feature:"runtime", role:value, },
+                { semantic_id:"types.Collection", item:type, owner:type_, rust:crate::Collection,
+                  python:"Collection", python_native:#projection, javascript:"Collection",
+                  feature:"runtime", role:value, },
+            ];
+        };
+        assert!(expand_binding_contract(declaration.clone()).is_ok());
+        let missing = declaration
+            .to_string()
+            .replace(projection, "list[Unregistered]");
+        assert!(expand_binding_contract(missing.parse().unwrap()).is_err());
+    }
+}
+
+#[test]
+fn owned_python_property_requires_a_compiler_checked_copy_receiver() {
+    let declaration = quote! {
+        static COPY_PROPERTY = [{
+            semantic_id: "BorrowedView.value", item: callable, owner: type_,
+            rust: crate::BorrowedView::value, python: "value", python_property: getter,
+            javascript: "value", feature: "runtime", kind: instance, receiver: owned,
+            parameters: [], output: &str, error: none, state: value_returning,
+            operation: none, signature: for<'a> fn(crate::BorrowedView<'a>) -> &'a str,
+        }];
+    };
+    let generated = compact(expand_binding_contract(declaration).unwrap());
+    assert!(
+        generated.contains("fnassert_copy<T:Copy>(){}assert_copy::<crate::BorrowedView<'a>>();")
+    );
+    assert!(generated.contains("fnassert_signature<'a>()"));
+}
+
 #[test]
 fn persistent_properties_preserve_shared_receiver_and_reject_duplicate_or_wrong_type() {
     let good =

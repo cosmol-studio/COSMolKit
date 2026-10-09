@@ -146,7 +146,7 @@ fn read_rdkit_mol_fixture(source: &str) -> Molecule {
         &text,
         &SdfReadParams {
             sanitize: true,
-            remove_hydrogens: false,
+            remove_hs: false,
             process_property_lists: false,
             ..Default::default()
         },

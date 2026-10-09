@@ -80,7 +80,7 @@ pub fn compare_rows(
             row["smiles"].as_str().unwrap(),
             &cosmolkit_smiles::SmilesParseParams {
                 sanitize: row["sanitize"].as_bool().unwrap(),
-                remove_hydrogens: row["remove_hs"].as_bool().unwrap(),
+                remove_hs: row["remove_hs"].as_bool().unwrap(),
                 ..Default::default()
             },
         );
@@ -91,13 +91,13 @@ pub fn compare_rows(
         let mut parsed = parsed.unwrap();
         let parse_params = cosmolkit_smiles::SmilesParseParams {
             sanitize: row["sanitize"].as_bool().unwrap(),
-            remove_hydrogens: row["remove_hs"].as_bool().unwrap(),
+            remove_hs: row["remove_hs"].as_bool().unwrap(),
             ..Default::default()
         };
         // Reuse the canonical facade's existing detached parse stage chain.
         let mut final_valence = None;
         let mut final_rings = None;
-        if parse_params.remove_hydrogens {
+        if parse_params.remove_hs {
             let assignment = cosmolkit_core::remove_hydrogens_with_params(
                 parsed.topology,
                 parsed.coordinates,

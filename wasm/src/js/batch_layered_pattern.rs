@@ -77,10 +77,10 @@ impl MoleculeBatch {
                     .collect()
             })
     }
-    #[wasm_bindgen(js_name=patternFingerprintList,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn pattern_fingerprint_list(&self) -> Result<Array, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintPatternList,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_pattern_list(&self) -> Result<Array, JsValue> {
         self.inner
-            .pattern_fingerprint_list()
+            .fingerprint_pattern_list()
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
             .map(|values| {
                 values
@@ -89,8 +89,8 @@ impl MoleculeBatch {
                     .collect()
             })
     }
-    #[wasm_bindgen(js_name=patternFingerprintListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
-    pub fn pattern_fingerprint_list_with_params(
+    #[wasm_bindgen(js_name=fingerprintPatternListWithParams,unchecked_return_type="(Fingerprint | null)[]")]
+    pub fn fingerprint_pattern_list_with_params(
         &self,
         options: &PatternFingerprintParams,
         params: &BatchQueryParams,
@@ -98,7 +98,7 @@ impl MoleculeBatch {
         params
             .execute(|p| {
                 self.inner
-                    .pattern_fingerprint_list_with_params(&options.inner, p)
+                    .fingerprint_pattern_list_with_params(&options.inner, p)
             })
             .map(|values| {
                 values

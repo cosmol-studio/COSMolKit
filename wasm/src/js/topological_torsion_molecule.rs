@@ -19,8 +19,8 @@ fn error(e: ck::TopologicalTorsionReadError) -> JsValue {
 }
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=topologicalTorsionFingerprintWithGenerator)]
-    pub fn topological_torsion_fingerprint_with_generator(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionWithGenerator)]
+    pub fn fingerprint_topological_torsion_with_generator(
         &self,
         generator: &TopologicalTorsionFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionCallParams | null")]
@@ -37,7 +37,7 @@ impl Molecule {
         with_call(&params, |params| {
             with_output(&output, |output| {
                 self.inner
-                    .topological_torsion_fingerprint_with_generator(
+                    .fingerprint_topological_torsion_with_generator(
                         &generator.inner,
                         params,
                         output,
@@ -47,8 +47,8 @@ impl Molecule {
             })
         })
     }
-    #[wasm_bindgen(js_name=topologicalTorsionCountFingerprintWithGenerator)]
-    pub fn topological_torsion_count_fingerprint_with_generator(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionCountWithGenerator)]
+    pub fn fingerprint_topological_torsion_count_with_generator(
         &self,
         generator: &TopologicalTorsionFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionCallParams | null")]
@@ -65,7 +65,7 @@ impl Molecule {
         with_call(&params, |params| {
             with_output(&output, |output| {
                 self.inner
-                    .topological_torsion_count_fingerprint_with_generator(
+                    .fingerprint_topological_torsion_count_with_generator(
                         &generator.inner,
                         params,
                         output,
@@ -75,8 +75,8 @@ impl Molecule {
             })
         })
     }
-    #[wasm_bindgen(js_name=topologicalTorsionSparseFingerprintWithGenerator)]
-    pub fn topological_torsion_sparse_fingerprint_with_generator(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionSparseWithGenerator)]
+    pub fn fingerprint_topological_torsion_sparse_with_generator(
         &self,
         generator: &TopologicalTorsionFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionCallParams | null")]
@@ -93,7 +93,7 @@ impl Molecule {
         with_call(&params, |params| {
             with_output(&output, |output| {
                 self.inner
-                    .topological_torsion_sparse_fingerprint_with_generator(
+                    .fingerprint_topological_torsion_sparse_with_generator(
                         &generator.inner,
                         params,
                         output,
@@ -103,8 +103,8 @@ impl Molecule {
             })
         })
     }
-    #[wasm_bindgen(js_name=topologicalTorsionSparseCountFingerprintWithGenerator)]
-    pub fn topological_torsion_sparse_count_fingerprint_with_generator(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionSparseCountWithGenerator)]
+    pub fn fingerprint_topological_torsion_sparse_count_with_generator(
         &self,
         generator: &TopologicalTorsionFingerprintGenerator,
         #[wasm_bindgen(unchecked_optional_param_type = "TopologicalTorsionCallParams | null")]
@@ -121,7 +121,7 @@ impl Molecule {
         with_call(&params, |params| {
             with_output(&output, |output| {
                 self.inner
-                    .topological_torsion_sparse_count_fingerprint_with_generator(
+                    .fingerprint_topological_torsion_sparse_count_with_generator(
                         &generator.inner,
                         params,
                         output,
@@ -131,18 +131,18 @@ impl Molecule {
             })
         })
     }
-    #[wasm_bindgen(js_name=topologicalTorsionSparseCountFingerprint)]
-    pub fn topological_torsion_sparse_count_fingerprint(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionSparseCount)]
+    pub fn fingerprint_topological_torsion_sparse_count(
         &self,
     ) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint(
         self.inner
-            .topological_torsion_sparse_count_fingerprint()
+            .fingerprint_topological_torsion_sparse_count()
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=topologicalTorsionSparseCountFingerprintWithParams)]
-    pub fn topological_torsion_sparse_count_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionSparseCountWithParams)]
+    pub fn fingerprint_topological_torsion_sparse_count_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
@@ -151,21 +151,21 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint_with_params(
         with_output(&additional_output, |output| {
             self.inner
-                .topological_torsion_sparse_count_fingerprint_with_params(&params.inner, output)
+                .fingerprint_topological_torsion_sparse_count_with_params(&params.inner, output)
                 .map(|inner| SparseCountFingerprint { inner })
                 .map_err(error)
         })
     }
-    #[wasm_bindgen(js_name=topologicalTorsionSparseFingerprint)]
-    pub fn topological_torsion_sparse_fingerprint(&self) -> Result<SparseBitFingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionSparse)]
+    pub fn fingerprint_topological_torsion_sparse(&self) -> Result<SparseBitFingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint(
         self.inner
-            .topological_torsion_sparse_fingerprint()
+            .fingerprint_topological_torsion_sparse()
             .map(|inner| SparseBitFingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=topologicalTorsionSparseFingerprintWithParams)]
-    pub fn topological_torsion_sparse_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionSparseWithParams)]
+    pub fn fingerprint_topological_torsion_sparse_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
@@ -174,23 +174,23 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint_with_params(
         with_output(&additional_output, |output| {
             self.inner
-                .topological_torsion_sparse_fingerprint_with_params(&params.inner, output)
+                .fingerprint_topological_torsion_sparse_with_params(&params.inner, output)
                 .map(|inner| SparseBitFingerprint { inner })
                 .map_err(error)
         })
     }
-    #[wasm_bindgen(js_name=topologicalTorsionCountFingerprint)]
-    pub fn topological_torsion_count_fingerprint(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionCount)]
+    pub fn fingerprint_topological_torsion_count(
         &self,
     ) -> Result<SparseCountFingerprint32, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint(
         self.inner
-            .topological_torsion_count_fingerprint()
+            .fingerprint_topological_torsion_count()
             .map(|inner| SparseCountFingerprint32 { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=topologicalTorsionCountFingerprintWithParams)]
-    pub fn topological_torsion_count_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionCountWithParams)]
+    pub fn fingerprint_topological_torsion_count_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
@@ -199,21 +199,21 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint_with_params(
         with_output(&additional_output, |output| {
             self.inner
-                .topological_torsion_count_fingerprint_with_params(&params.inner, output)
+                .fingerprint_topological_torsion_count_with_params(&params.inner, output)
                 .map(|inner| SparseCountFingerprint32 { inner })
                 .map_err(error)
         })
     }
-    #[wasm_bindgen(js_name=topologicalTorsionFingerprint)]
-    pub fn topological_torsion_fingerprint(&self) -> Result<Fingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsion)]
+    pub fn fingerprint_topological_torsion(&self) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_torsion_fingerprint(
         self.inner
-            .topological_torsion_fingerprint()
+            .fingerprint_topological_torsion()
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=topologicalTorsionFingerprintWithParams)]
-    pub fn topological_torsion_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionWithParams)]
+    pub fn fingerprint_topological_torsion_with_params(
         &self,
         params: &TopologicalTorsionFingerprintParams,
         #[wasm_bindgen(unchecked_param_type = "FingerprintAdditionalOutput | null")]
@@ -222,7 +222,7 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_fingerprint_with_params(
         with_output(&additional_output, |output| {
             self.inner
-                .topological_torsion_fingerprint_with_params(&params.inner, output)
+                .fingerprint_topological_torsion_with_params(&params.inner, output)
                 .map(|inner| Fingerprint { inner })
                 .map_err(error)
         })
@@ -677,64 +677,64 @@ use crate::topological_torsion_parameters::LegacyTopologicalTorsionParams;
 
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=legacyTopologicalTorsionSparseCountFingerprint)]
-    pub fn legacy_topological_torsion_sparse_count_fingerprint(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionSparseCountLegacy)]
+    pub fn fingerprint_topological_torsion_sparse_count_legacy(
         &self,
     ) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .legacy_topological_torsion_sparse_count_fingerprint(
         self.inner
-            .legacy_topological_torsion_sparse_count_fingerprint()
+            .fingerprint_topological_torsion_sparse_count_legacy()
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=legacyTopologicalTorsionSparseCountFingerprintWithParams)]
-    pub fn legacy_topological_torsion_sparse_count_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionSparseCountLegacyWithParams)]
+    pub fn fingerprint_topological_torsion_sparse_count_legacy_with_params(
         &self,
         params: &LegacyTopologicalTorsionParams,
     ) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .legacy_topological_torsion_sparse_count_fingerprint_with_params(
         self.inner
-            .legacy_topological_torsion_sparse_count_fingerprint_with_params(&params.inner)
+            .fingerprint_topological_torsion_sparse_count_legacy_with_params(&params.inner)
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=legacyTopologicalTorsionCountFingerprint)]
-    pub fn legacy_topological_torsion_count_fingerprint(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionCountLegacy)]
+    pub fn fingerprint_topological_torsion_count_legacy(
         &self,
     ) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .legacy_topological_torsion_count_fingerprint(
         self.inner
-            .legacy_topological_torsion_count_fingerprint()
+            .fingerprint_topological_torsion_count_legacy()
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=legacyTopologicalTorsionCountFingerprintWithParams)]
-    pub fn legacy_topological_torsion_count_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionCountLegacyWithParams)]
+    pub fn fingerprint_topological_torsion_count_legacy_with_params(
         &self,
         params: &LegacyTopologicalTorsionParams,
     ) -> Result<SparseCountFingerprint, JsValue> {
         // COSMolKit❗✔️: .legacy_topological_torsion_count_fingerprint_with_params(
         self.inner
-            .legacy_topological_torsion_count_fingerprint_with_params(&params.inner)
+            .fingerprint_topological_torsion_count_legacy_with_params(&params.inner)
             .map(|inner| SparseCountFingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=legacyTopologicalTorsionFingerprint)]
-    pub fn legacy_topological_torsion_fingerprint(&self) -> Result<Fingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionLegacy)]
+    pub fn fingerprint_topological_torsion_legacy(&self) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .legacy_topological_torsion_fingerprint(
         self.inner
-            .legacy_topological_torsion_fingerprint()
+            .fingerprint_topological_torsion_legacy()
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }
-    #[wasm_bindgen(js_name=legacyTopologicalTorsionFingerprintWithParams)]
-    pub fn legacy_topological_torsion_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalTorsionLegacyWithParams)]
+    pub fn fingerprint_topological_torsion_legacy_with_params(
         &self,
         params: &LegacyTopologicalTorsionParams,
     ) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .legacy_topological_torsion_fingerprint_with_params(
         self.inner
-            .legacy_topological_torsion_fingerprint_with_params(&params.inner)
+            .fingerprint_topological_torsion_legacy_with_params(&params.inner)
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }

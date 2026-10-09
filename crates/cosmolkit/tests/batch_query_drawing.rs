@@ -108,7 +108,7 @@ fn image_exports_preserve_original_filename_rules_complete_bytes_and_reports() {
             report_path: Some(report_path.clone()),
             ..Default::default()
         };
-        let report = batch.to_images_with_params(&out, &params).unwrap();
+        let report = batch.write_images_with_params(&out, &params).unwrap();
         assert_eq!(
             (
                 report.total(),
@@ -146,7 +146,7 @@ fn image_exports_preserve_original_filename_rules_complete_bytes_and_reports() {
     ] {
         assert!(
             batch
-                .to_images_with_params(
+                .write_images_with_params(
                     &directory.0.join("invalid"),
                     &BatchImageParams {
                         format: "svg".into(),
@@ -165,7 +165,7 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
     let directory = Directory::new();
     let out = directory.0.join("strict-svg");
     let strict = batch
-        .to_images_with_params(
+        .write_images_with_params(
             &out,
             &BatchImageParams {
                 format: "svg".into(),
@@ -184,7 +184,7 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
     assert!(out.join("mol_0.svg").exists());
     assert!(out.join("mol_2.svg").exists());
     let strict = batch
-        .to_images_with_params(
+        .write_images_with_params(
             &directory.0.join("bad-format"),
             &BatchImageParams {
                 format: "SVG".into(),
@@ -213,7 +213,7 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
         ]
     );
     let kept = batch
-        .to_images_with_params(
+        .write_images_with_params(
             &directory.0.join("keep-format"),
             &BatchImageParams {
                 format: "SVG".into(),
@@ -228,7 +228,7 @@ fn strict_export_finishes_valid_records_and_orders_new_failures_before_existing_
     assert_eq!((kept.written, kept.skipped, kept.failed), (0, 1, 2));
     let file = directory.0.join("file");
     std::fs::write(&file, "cannot create directory over file").unwrap();
-    let error = batch.to_images(&file).unwrap_err();
+    let error = batch.write_images(&file).unwrap_err();
     assert!(
         std::error::Error::source(&error.record_errors[0])
             .unwrap()

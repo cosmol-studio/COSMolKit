@@ -29,19 +29,19 @@ fn source_four_bulk_forms_preserve_none_order_and_independent_workers() {
             assert_eq!(
                 sparse[index],
                 molecule.map(|m| m
-                    .topological_torsion_sparse_fingerprint_with_generator(&generator, None, None)
+                    .fingerprint_topological_torsion_sparse_with_generator(&generator, None, None)
                     .unwrap())
             );
             assert_eq!(
                 counts[index],
                 molecule.map(|m| m
-                    .topological_torsion_count_fingerprint_with_generator(&generator, None, None)
+                    .fingerprint_topological_torsion_count_with_generator(&generator, None, None)
                     .unwrap())
             );
             assert_eq!(
                 unfolded[index],
                 molecule.map(|m| m
-                    .topological_torsion_sparse_count_fingerprint_with_generator(
+                    .fingerprint_topological_torsion_sparse_count_with_generator(
                         &generator, None, None
                     )
                     .unwrap())
@@ -73,10 +73,10 @@ fn bound_settings_alias_snapshot_and_lifetime_are_canonical() {
     let molecule = Molecule::from_smiles("CCCCO").unwrap();
     assert_eq!(
         molecule
-            .topological_torsion_count_fingerprint_with_generator(&generator, None, None)
+            .fingerprint_topological_torsion_count_with_generator(&generator, None, None)
             .unwrap(),
         molecule
-            .topological_torsion_count_fingerprint_with_generator(&clone, None, None)
+            .fingerprint_topological_torsion_count_with_generator(&clone, None, None)
             .unwrap()
     );
     settings.set_include_chirality(true).unwrap();
@@ -106,10 +106,10 @@ fn source_json_restoration_and_empty_call_roots_reset_owned_output() {
     };
     assert_eq!(
         molecule
-            .topological_torsion_count_fingerprint_with_generator(&generator, Some(&call), None)
+            .fingerprint_topological_torsion_count_with_generator(&generator, Some(&call), None)
             .unwrap(),
         molecule
-            .topological_torsion_count_fingerprint_with_generator(&restored, Some(&call), None)
+            .fingerprint_topological_torsion_count_with_generator(&restored, Some(&call), None)
             .unwrap()
     );
     let mut output = FingerprintAdditionalOutput::new();
@@ -117,7 +117,7 @@ fn source_json_restoration_and_empty_call_roots_reset_owned_output() {
     output.allocate_atom_to_bits();
     output.allocate_bit_paths();
     molecule
-        .topological_torsion_sparse_count_fingerprint_with_generator(
+        .fingerprint_topological_torsion_sparse_count_with_generator(
             &generator,
             None,
             Some(&mut output),
@@ -137,7 +137,7 @@ fn source_json_restoration_and_empty_call_roots_reset_owned_output() {
         ..Default::default()
     };
     molecule
-        .topological_torsion_sparse_count_fingerprint_with_generator(
+        .fingerprint_topological_torsion_sparse_count_with_generator(
             &generator,
             Some(&empty),
             Some(&mut output),

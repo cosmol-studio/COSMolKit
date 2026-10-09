@@ -65,23 +65,23 @@ impl Molecule {
             .with_uff_optimized_with_params(params)
             .map(|inner| UffOptimizationResult { inner })
     }
-    pub fn with_uff_optimized_confs(
+    pub fn with_uff_optimized_conformers(
         &self,
     ) -> Result<UffConformerOptimizationResult, ck::OperationError> {
         // COSMolKit❗✔️: self.inner.with_uff_optimized_confs()
         self.inner
             .borrow()
-            .with_uff_optimized_confs()
+            .with_uff_optimized_conformers()
             .map(|inner| UffConformerOptimizationResult { inner })
     }
-    pub fn with_uff_optimized_confs_with_params(
+    pub fn with_uff_optimized_conformers_with_params(
         &self,
         params: &ck::UffConformerOptimizationParams,
     ) -> Result<UffConformerOptimizationResult, ck::OperationError> {
         // COSMolKit❗✔️: self.inner.with_uff_optimized_confs_with_params(params)
         self.inner
             .borrow()
-            .with_uff_optimized_confs_with_params(params)
+            .with_uff_optimized_conformers_with_params(params)
             .map(|inner| UffConformerOptimizationResult { inner })
     }
 }
@@ -136,16 +136,16 @@ $$$$
         let b = core.with_uff_optimized_with_params(&p).unwrap();
         assert_eq!(a.energy().to_bits(), b.energy().to_bits());
         assert_eq!(a.status_code(), b.status_code());
-        let a = m.with_uff_optimized_confs().unwrap();
-        let b = core.with_uff_optimized_confs().unwrap();
+        let a = m.with_uff_optimized_conformers().unwrap();
+        let b = core.with_uff_optimized_conformers().unwrap();
         assert_eq!(a.conformer_results(), b.conformer_results());
         assert_eq!(*a.molecule().inner.borrow(), *b.molecule());
         let p = ck::UffConformerOptimizationParams {
             max_iterations: 2,
             ..Default::default()
         };
-        let a = m.with_uff_optimized_confs_with_params(&p).unwrap();
-        let b = core.with_uff_optimized_confs_with_params(&p).unwrap();
+        let a = m.with_uff_optimized_conformers_with_params(&p).unwrap();
+        let b = core.with_uff_optimized_conformers_with_params(&p).unwrap();
         assert_eq!(a.conformer_results(), b.conformer_results());
         assert_eq!(a.conformer_results().len(), 1);
         assert_eq!(*m.inner.borrow(), core);
@@ -194,8 +194,8 @@ mod multiple_conformer_tests {
                 ignore_interfragment_interactions: false,
                 ..Default::default()
             };
-            let a = m.with_uff_optimized_confs_with_params(&p).unwrap();
-            let b = core.with_uff_optimized_confs_with_params(&p).unwrap();
+            let a = m.with_uff_optimized_conformers_with_params(&p).unwrap();
+            let b = core.with_uff_optimized_conformers_with_params(&p).unwrap();
             assert_eq!(a.conformer_results(), b.conformer_results());
             assert_eq!(
                 a.conformer_results()

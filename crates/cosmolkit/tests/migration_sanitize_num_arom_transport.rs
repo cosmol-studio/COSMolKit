@@ -23,11 +23,11 @@ fn sanitize_num_arom_constructor_and_operation_transport() {
             155 => "0",
             _ => panic!("unexpected source row"),
         };
-        for remove_hydrogens in [false, true] {
+        for remove_hs in [false, true] {
             let output = Molecule::from_smiles_with_params(
                 input,
                 &SmilesParseParams {
-                    remove_hydrogens,
+                    remove_hs,
                     ..SmilesParseParams::default()
                 },
             )
@@ -35,7 +35,7 @@ fn sanitize_num_arom_constructor_and_operation_transport() {
             assert_eq!(
                 output.properties().prop("numArom"),
                 Some(&cosmolkit::PropertyValue::Int(expected.parse().unwrap())),
-                "line {line}, remove_hydrogens={remove_hydrogens}"
+                "line {line}, remove_hs={remove_hs}"
             );
             assert!(output.properties().is_prop_computed("numArom").unwrap());
         }
@@ -43,7 +43,7 @@ fn sanitize_num_arom_constructor_and_operation_transport() {
             input,
             &SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..SmilesParseParams::default()
             },
         )

@@ -15,17 +15,13 @@ fn kekule_cx_params(fields: CxSmilesFields) -> CxSmilesWriteParams {
     cx_params(fields, true, true)
 }
 
-fn cx_params(
-    fields: CxSmilesFields,
-    do_isomeric_smiles: bool,
-    do_kekule: bool,
-) -> CxSmilesWriteParams {
+fn cx_params(fields: CxSmilesFields, isomeric_smiles: bool, kekule: bool) -> CxSmilesWriteParams {
     CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical: true,
-            do_isomeric_smiles,
+            isomeric_smiles,
             clean_stereo: true,
-            do_kekule,
+            kekule,
             ..Default::default()
         },
         fields,
@@ -88,9 +84,9 @@ fn cx_data_sgroup_params(canonical: bool) -> CxSmilesWriteParams {
     CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             clean_stereo: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::SGROUPS,
@@ -102,9 +98,9 @@ fn cx_polymer_params(canonical: bool) -> CxSmilesWriteParams {
     CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             clean_stereo: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::POLYMER,
@@ -354,9 +350,9 @@ fn ring_stereo_params(canonical: bool) -> CxSmilesWriteParams {
     CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             clean_stereo: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::BOND_CFG,
@@ -513,7 +509,7 @@ fn cx_writer_clean_stereo_guard_and_group_cleanup_match_legacy_oracle() {
         let params = CxSmilesWriteParams {
             smiles: SmilesWriteParams {
                 canonical: true,
-                do_isomeric_smiles: true,
+                isomeric_smiles: true,
                 clean_stereo,
                 ..Default::default()
             },
@@ -567,9 +563,9 @@ fn cx_writer_stereo_group_ids_keep_type_namespaces_holes_and_tie_order() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical: false,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             clean_stereo: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::ENHANCED_STEREO,
@@ -623,9 +619,9 @@ fn cx_writer_enhanced_stereo_maps_atom_and_atrop_bond_members_in_group_order() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical: true,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             clean_stereo: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::BOND_ATROPISOMER | CxSmilesFields::ENHANCED_STEREO,
@@ -697,9 +693,9 @@ fn cx_writer_enhanced_stereo_preserves_overlapping_groups_with_atrop_wedge_map()
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical: true,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             clean_stereo: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::BOND_ATROPISOMER | CxSmilesFields::ENHANCED_STEREO,
@@ -737,7 +733,7 @@ fn cx_writer_nonisomeric_mask_removes_stereo_extensions_but_keeps_base_write() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical: true,
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             clean_stereo: true,
             ..Default::default()
         },
@@ -767,7 +763,7 @@ fn cx_writer_clean_stereo_matches_pinned_raw_large_ring_cis_output() {
     // assignment, not by a serializer special case.
     let parser = cosmolkit_smiles::SmilesParseParams {
         sanitize: false,
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let record = parse_smiles("C1CCCCC=CCCC1 |c:5|", &parser).expect("parse raw ring CXSMILES");
@@ -790,7 +786,7 @@ fn cx_writer_clean_stereo_matches_pinned_raw_large_ring_cis_output() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical: true,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             clean_stereo: true,
             ..Default::default()
         },
@@ -1125,9 +1121,9 @@ fn cx_writer_link_nodes_apply_source_validation_and_degree_shapes() {
     let params = CxSmilesWriteParams {
         smiles: SmilesWriteParams {
             canonical: false,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             clean_stereo: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::LINKNODES,
@@ -1210,7 +1206,7 @@ fn cx_writer_link_nodes_propagate_source_range_failures() {
         smiles: SmilesWriteParams {
             canonical: false,
             clean_stereo: false,
-            do_kekule: false,
+            kekule: false,
             ..Default::default()
         },
         fields: CxSmilesFields::LINKNODES,

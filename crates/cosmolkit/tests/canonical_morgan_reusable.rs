@@ -24,7 +24,7 @@ fn fixed_source_cco_full_four_outputs_and_complete_metadata() {
     let generator = default_generator();
     assert_eq!(
         molecule
-            .morgan_sparse_count_fingerprint_with_generator(&generator, None, None)
+            .fingerprint_morgan_sparse_count_with_generator(&generator, None, None)
             .unwrap()
             .nonzero_elements(),
         &BTreeMap::from([
@@ -38,7 +38,7 @@ fn fixed_source_cco_full_four_outputs_and_complete_metadata() {
     );
     assert_eq!(
         molecule
-            .morgan_sparse_fingerprint_with_generator(&generator, None, None)
+            .fingerprint_morgan_sparse_with_generator(&generator, None, None)
             .unwrap()
             .on_bits(),
         [
@@ -52,14 +52,14 @@ fn fixed_source_cco_full_four_outputs_and_complete_metadata() {
     );
     assert_eq!(
         molecule
-            .morgan_count_fingerprint_with_generator(&generator, None, None)
+            .fingerprint_morgan_count_with_generator(&generator, None, None)
             .unwrap()
             .nonzero_elements(),
         &BTreeMap::from([(80, 1), (222, 1), (294, 1), (807, 1), (1057, 1), (1410, 1)])
     );
     assert_eq!(
         molecule
-            .morgan_fingerprint_with_generator(&generator, None, None)
+            .fingerprint_morgan_with_generator(&generator, None, None)
             .unwrap()
             .on_bits(),
         [80, 222, 294, 807, 1057, 1410]
@@ -131,9 +131,9 @@ fn explicit_source_provider_precedence_and_independent_query_copy_lifetime() {
     assert_eq!(value["bondInvariantsGenerator"]["useBondTypes"], "false");
     assert_eq!(value["bondInvariantsGenerator"]["useChirality"], "true");
     assert_ne!(
-        ring.morgan_sparse_count_fingerprint_with_generator(&default_false, None, None)
+        ring.fingerprint_morgan_sparse_count_with_generator(&default_false, None, None)
             .unwrap(),
-        ring.morgan_sparse_count_fingerprint_with_generator(&explicit, None, None)
+        ring.fingerprint_morgan_sparse_count_with_generator(&explicit, None, None)
             .unwrap()
     );
     let molecule = Molecule::from_smiles("CCO").unwrap();
@@ -150,7 +150,7 @@ fn explicit_source_provider_precedence_and_independent_query_copy_lifetime() {
     drop(provider);
     assert_eq!(
         molecule
-            .morgan_sparse_count_fingerprint_with_generator(&generator, None, None)
+            .fingerprint_morgan_sparse_count_with_generator(&generator, None, None)
             .unwrap()
             .nonzero_elements(),
         &BTreeMap::from([(1, 2), (2, 1)])
@@ -159,7 +159,7 @@ fn explicit_source_provider_precedence_and_independent_query_copy_lifetime() {
     let generator = MorganFingerprintGenerator::new(Some(&params), Some(&empty), None).unwrap();
     assert_eq!(
         molecule
-            .morgan_sparse_count_fingerprint_with_generator(&generator, None, None)
+            .fingerprint_morgan_sparse_count_with_generator(&generator, None, None)
             .unwrap()
             .nonzero_elements(),
         &BTreeMap::from([(0, 3)])
@@ -170,7 +170,7 @@ fn explicit_source_provider_precedence_and_independent_query_copy_lifetime() {
     };
     assert_eq!(
         molecule
-            .morgan_sparse_count_fingerprint_with_generator(&generator, Some(&call), None)
+            .fingerprint_morgan_sparse_count_with_generator(&generator, Some(&call), None)
             .unwrap()
             .nonzero_elements(),
         &BTreeMap::from([(11, 1), (12, 1), (13, 1)])
@@ -182,7 +182,7 @@ fn full_raw_additional_output_and_present_empty_roots_reinitialize_owner_values(
     let generator = default_generator();
     let mut output = complete_output();
     molecule
-        .morgan_sparse_count_fingerprint_with_generator(&generator, None, Some(&mut output))
+        .fingerprint_morgan_sparse_count_with_generator(&generator, None, Some(&mut output))
         .unwrap();
     assert_eq!(output.atom_counts().unwrap(), [2, 2, 2]);
     assert_eq!(
@@ -210,7 +210,7 @@ fn full_raw_additional_output_and_present_empty_roots_reinitialize_owner_values(
         ..Default::default()
     };
     molecule
-        .morgan_sparse_count_fingerprint_with_generator(&generator, Some(&empty), Some(&mut output))
+        .fingerprint_morgan_sparse_count_with_generator(&generator, Some(&empty), Some(&mut output))
         .unwrap();
     assert_eq!(output.atom_counts().unwrap(), [0; 3]);
     assert!(output.atom_to_bits().unwrap().iter().all(Vec::is_empty));
@@ -233,7 +233,7 @@ fn source_json_missing_providers_keep_null_preconditions_and_custom_precedence()
     let restored = MorganFingerprintGenerator::from_json(&value.to_string()).unwrap();
     let molecule = Molecule::from_smiles("CCO").unwrap();
     let error = molecule
-        .morgan_sparse_count_fingerprint_with_generator(&restored, None, None)
+        .fingerprint_morgan_sparse_count_with_generator(&restored, None, None)
         .unwrap_err();
     assert!(error.to_string().contains("atom invariants"));
     assert!(std::error::Error::source(&error).is_some());
@@ -242,7 +242,7 @@ fn source_json_missing_providers_keep_null_preconditions_and_custom_precedence()
         ..Default::default()
     };
     let error = molecule
-        .morgan_sparse_count_fingerprint_with_generator(&restored, Some(&atoms), None)
+        .fingerprint_morgan_sparse_count_with_generator(&restored, Some(&atoms), None)
         .unwrap_err();
     assert!(error.to_string().contains("bond invariants"));
     let full = MorganCallParams {
@@ -251,7 +251,7 @@ fn source_json_missing_providers_keep_null_preconditions_and_custom_precedence()
     };
     assert!(
         molecule
-            .morgan_sparse_count_fingerprint_with_generator(&restored, Some(&full), None)
+            .fingerprint_morgan_sparse_count_with_generator(&restored, Some(&full), None)
             .is_ok()
     );
     assert!(restored.sparse_counts(&[None, Some(&molecule)], 3).is_err());
@@ -281,7 +281,7 @@ fn source_json_arguments_and_provider_flags_survive_restore_without_factory_vali
     let molecule = Molecule::from_smiles("CCO").unwrap();
     assert_eq!(
         molecule
-            .morgan_sparse_count_fingerprint_with_generator(&restored, None, None)
+            .fingerprint_morgan_sparse_count_with_generator(&restored, None, None)
             .unwrap()
             .nonzero_elements()
             .len(),
@@ -319,25 +319,25 @@ fn bulk_four_forms_preserve_source_order_none_slots_and_empty_input() {
             assert_eq!(
                 bits[i],
                 m.map(|m| m
-                    .morgan_fingerprint_with_generator(&generator, None, None)
+                    .fingerprint_morgan_with_generator(&generator, None, None)
                     .unwrap())
             );
             assert_eq!(
                 counts[i],
                 m.map(|m| m
-                    .morgan_count_fingerprint_with_generator(&generator, None, None)
+                    .fingerprint_morgan_count_with_generator(&generator, None, None)
                     .unwrap())
             );
             assert_eq!(
                 sparse[i],
                 m.map(|m| m
-                    .morgan_sparse_fingerprint_with_generator(&generator, None, None)
+                    .fingerprint_morgan_sparse_with_generator(&generator, None, None)
                     .unwrap())
             );
             assert_eq!(
                 raw[i],
                 m.map(|m| m
-                    .morgan_sparse_count_fingerprint_with_generator(&generator, None, None)
+                    .fingerprint_morgan_sparse_count_with_generator(&generator, None, None)
                     .unwrap())
             );
         }
@@ -359,7 +359,7 @@ fn bulk_four_forms_preserve_source_order_none_slots_and_empty_input() {
 fn shared_preparation_category_and_registry_cover_the_canonical_boundary() {
     let generator = default_generator();
     let error = Molecule::new()
-        .morgan_fingerprint_with_generator(&generator, None, None)
+        .fingerprint_morgan_with_generator(&generator, None, None)
         .unwrap_err();
     assert!(matches!(
         error,
@@ -377,10 +377,10 @@ fn shared_preparation_category_and_registry_cover_the_canonical_boundary() {
         "types.MorganFingerprintGenerator",
         "types.MorganSettings",
         "types.MorganCallParams",
-        "Molecule.morgan_fingerprint_with_generator",
-        "Molecule.morgan_sparse_fingerprint_with_generator",
-        "Molecule.morgan_count_fingerprint_with_generator",
-        "Molecule.morgan_sparse_count_fingerprint_with_generator",
+        "Molecule.fingerprint_morgan_with_generator",
+        "Molecule.fingerprint_morgan_sparse_with_generator",
+        "Molecule.fingerprint_morgan_count_with_generator",
+        "Molecule.fingerprint_morgan_sparse_count_with_generator",
     ] {
         assert!(
             cosmolkit::binding_contract::BINDING_CONTRACT

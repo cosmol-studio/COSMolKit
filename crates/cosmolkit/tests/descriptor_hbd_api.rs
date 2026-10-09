@@ -23,10 +23,10 @@ const HBD_CASES: [(&str, u32); 13] = [
     ("COC", 0),
 ];
 
-fn sanitized(smiles: &str, remove_hydrogens: bool) -> Molecule {
+fn sanitized(smiles: &str, remove_hs: bool) -> Molecule {
     let params = SmilesParseParams {
         sanitize: true,
-        remove_hydrogens,
+        remove_hs,
         ..Default::default()
     };
     Molecule::from_smiles_with_params(smiles, &params).unwrap()
@@ -41,9 +41,9 @@ fn sanitized(smiles: &str, remove_hydrogens: bool) -> Molecule {
 fn descriptor_hbd_public_literal_product() {
     let mut calls = 0usize;
     for (smiles, expected) in HBD_CASES {
-        for remove_hydrogens in [false, true] {
-            let label = format!("{smiles}/rh={remove_hydrogens}");
-            let original = sanitized(smiles, remove_hydrogens);
+        for remove_hs in [false, true] {
+            let label = format!("{smiles}/rh={remove_hs}");
+            let original = sanitized(smiles, remove_hs);
             let peer = original.clone();
             let rows = original.num_atoms();
             let bonds = original.num_bonds();
@@ -90,14 +90,14 @@ fn descriptor_hbd_public_literal_product() {
 #[test]
 fn descriptor_hbd_public_supplementary_general_vs_lipinski() {
     let mut calls = 0usize;
-    for remove_hydrogens in [false, true] {
-        let label = format!("rh={remove_hydrogens}");
-        let thioether = sanitized("CS", remove_hydrogens);
+    for remove_hs in [false, true] {
+        let label = format!("rh={remove_hs}");
+        let thioether = sanitized("CS", remove_hs);
         assert_eq!(thioether.num_hbd().unwrap(), 1, "CS general {label}");
         calls += 1;
         assert_eq!(thioether.lipinski_hbd().unwrap(), 0, "CS direct {label}");
         calls += 1;
-        let ammonium = sanitized("[NH4+]", remove_hydrogens);
+        let ammonium = sanitized("[NH4+]", remove_hs);
         assert_eq!(ammonium.num_hbd().unwrap(), 1, "ammonium general {label}");
         calls += 1;
         assert_eq!(
@@ -121,7 +121,7 @@ fn descriptor_hbd_public_missing_prepared_valence() {
     for (label, smiles) in [("raw-cco", "CCO"), ("pentavalent", "C(C)(C)(C)(C)C")] {
         let params = SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         };
         let molecule = Molecule::from_smiles_with_params(smiles, &params).unwrap();

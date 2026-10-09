@@ -279,27 +279,27 @@ mod tests {
     }
     #[test]
     fn libtest_default_substring_exact_and_multiple_filters_select_same_tasks() {
-        assert!(filter(&[]).matches("morgan_fingerprint_smiles"));
+        assert!(filter(&[]).matches("fingerprint_morgan_smiles"));
         let partial = filter(&["morgan_"]);
-        assert!(partial.matches("morgan_fingerprint_smiles"));
-        assert!(partial.matches("morgan_count_fingerprint_smiles"));
+        assert!(partial.matches("fingerprint_morgan_smiles"));
+        assert!(partial.matches("fingerprint_morgan_count_smiles"));
         assert!(!partial.matches("smiles_read_smiles"));
-        let exact = filter(&["morgan_fingerprint_smiles", "--exact"]);
-        assert!(exact.matches("morgan_fingerprint_smiles"));
-        assert!(!exact.matches("morgan_fingerprint_smiles_extra"));
+        let exact = filter(&["fingerprint_morgan_smiles", "--exact"]);
+        assert!(exact.matches("fingerprint_morgan_smiles"));
+        assert!(!exact.matches("fingerprint_morgan_smiles_extra"));
         let multiple = filter(&["morgan_", "smiles_read"]);
         assert!(multiple.matches("smiles_read_smiles"));
-        assert!(multiple.matches("morgan_count_fingerprint_smiles"));
+        assert!(multiple.matches("fingerprint_morgan_count_smiles"));
         assert!(!multiple.matches("num_heavy_atoms_smiles"));
     }
     #[test]
     fn libtest_skip_respects_exact_and_option_values_are_not_filters() {
         let partial = filter(&["morgan_", "--skip", "count", "--skip=sparse"]);
-        assert!(partial.matches("morgan_fingerprint_smiles"));
-        assert!(!partial.matches("morgan_count_fingerprint_smiles"));
-        assert!(!partial.matches("morgan_sparse_fingerprint_smiles"));
+        assert!(partial.matches("fingerprint_morgan_smiles"));
+        assert!(!partial.matches("fingerprint_morgan_count_smiles"));
+        assert!(!partial.matches("fingerprint_morgan_sparse_smiles"));
         let exact = filter(&["--exact", "--skip", "morgan_"]);
-        assert!(exact.matches("morgan_fingerprint_smiles"));
+        assert!(exact.matches("fingerprint_morgan_smiles"));
         let options = filter(&[
             "--test-threads",
             "4",
@@ -316,7 +316,7 @@ mod tests {
             "--show-output",
         ]);
         assert!(options.matches("smiles_read_smiles"));
-        assert!(options.matches("morgan_fingerprint_smiles"));
+        assert!(options.matches("fingerprint_morgan_smiles"));
         assert!(TestFilter::parse(["--skip".to_owned()]).is_err());
     }
     #[test]
@@ -327,9 +327,7 @@ mod tests {
                     id: "a".into(),
                     smiles: "CCO".into(),
                 },
-                profile: registry::molecule_plan::Profile::NumHeavyAtoms {
-                    remove_hydrogens: true,
-                },
+                profile: registry::molecule_plan::Profile::NumHeavyAtoms { remove_hs: true },
             },
             output: registry::Value::Molecular(crate::molecular::Outcome::Unsigned(3)),
         };

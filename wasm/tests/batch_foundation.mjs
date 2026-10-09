@@ -7,7 +7,7 @@ b.initSync({ module: readFileSync(process.env.COSMOLKIT_WASM_BINARY) });
 
 test("complete SMILES parser fields remain frozen and string maps are copied", () => {
     const defaults = new b.SmilesParseParams();
-    for (const field of ["sanitize","allowCxsmiles","strictCxsmiles","parseName","removeHydrogens"]) assert.equal(defaults[field],true);
+    for (const field of ["sanitize","allowCxsmiles","strictCxsmiles","parseName","removeHs"]) assert.equal(defaults[field],true);
     assert.equal(defaults.skipCleanup,false);assert.equal(defaults.debugParse,false);
     assert.deepEqual([...defaults.replacements],[]);
     const replacements = new Map([["{R}","C"],["__proto__","N"]]);

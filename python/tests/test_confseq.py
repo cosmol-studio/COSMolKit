@@ -26,7 +26,7 @@ def test_confseq_decode_returns_cosmolkit_molecule():
 
     assert isinstance(mol, cosmolkit.Molecule)
     assert mol.num_atoms() == 2
-    assert mol.num_conformers() == 1
+    assert mol.num_3d_conformers() == 1
 
 
 def test_confseq_decode_can_disable_uff_optimization():
@@ -34,7 +34,7 @@ def test_confseq_decode_can_disable_uff_optimization():
 
     assert isinstance(mol, cosmolkit.Molecule)
     assert mol.num_atoms() == 2
-    assert mol.num_conformers() == 1
+    assert mol.num_3d_conformers() == 1
 
 
 def test_confseq_decode_accepts_explicit_template_backend():
@@ -53,8 +53,8 @@ def test_confseq_decode_accepts_explicit_template_backend():
     assert isinstance(fast, cosmolkit.Molecule)
     assert dg.num_atoms() == 26
     assert fast.num_atoms() == 26
-    assert dg.num_conformers() == 1
-    assert fast.num_conformers() == 1
+    assert dg.num_3d_conformers() == 1
+    assert fast.num_3d_conformers() == 1
 
 
 def test_confseq_decode_rejects_unknown_template_backend():
@@ -86,7 +86,7 @@ def test_confseq_decode_batch_preserves_order_and_uses_local_cache():
     assert all(isinstance(mol, cosmolkit.Molecule) for mol in mols)
     concrete_mols = [mol for mol in mols if mol is not None]
     assert [mol.num_atoms() for mol in concrete_mols] == [2, 2]
-    assert [mol.num_conformers() for mol in concrete_mols] == [1, 1]
+    assert [mol.num_3d_conformers() for mol in concrete_mols] == [1, 1]
 
 
 def test_confseq_decode_batch_can_keep_errors():

@@ -249,7 +249,7 @@ fn molecule(geometry: &Geometry) -> Result<Molecule, String> {
         &geometry.molblock,
         &SdfReadParams {
             sanitize: true,
-            remove_hydrogens: false,
+            remove_hs: false,
             coordinate_mode: SdfCoordinateMode::Require3D,
             ..Default::default()
         },
@@ -366,7 +366,7 @@ pub fn run(row: &MmffInput) -> Result<Record, String> {
                 conformer_count,
             } => {
                 let result = mol
-                    .with_mmff_optimized_confs_with_params(&MmffConformerOptimizationParams {
+                    .with_mmff_optimized_conformers_with_params(&MmffConformerOptimizationParams {
                         mmff_variant: variant.name().into(),
                         max_iterations,
                         non_bonded_threshold: 100.,

@@ -220,7 +220,7 @@ pub(crate) fn match_pyerr(py: Python<'_>, source: ck::MatchError) -> PyErr {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct QueryGraph {
     pub(crate) inner: ck::QueryGraph,
 }
@@ -271,7 +271,7 @@ impl QueryGraph {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct CompiledQuery {
     pub(crate) inner: ck::CompiledQuery,
 }
@@ -302,7 +302,7 @@ impl CompiledQuery {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct MatchResult {
     pub(crate) inner: ck::MatchResult,
 }
@@ -340,10 +340,11 @@ impl MatchResult {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct SmartsParseParams {
     pub(crate) inner: ck::SmartsParseParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SmartsParseParams {
@@ -418,25 +419,26 @@ impl SmartsParseParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct SmartsWriteParams {
     pub(crate) inner: ck::SmartsWriteParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SmartsWriteParams {
     #[new]
-    #[pyo3(signature = (*, include_atom_maps=true, do_isomeric_smiles=true, include_dative_bonds=true, rooted_at_atom=None))]
+    #[pyo3(signature = (*, include_atom_maps=true, isomeric_smiles=true, include_dative_bonds=true, rooted_at_atom=None))]
     fn new(
         include_atom_maps: bool,
-        do_isomeric_smiles: bool,
+        isomeric_smiles: bool,
         include_dative_bonds: bool,
         rooted_at_atom: Option<usize>,
     ) -> Self {
         Self {
             inner: ck::SmartsWriteParams {
                 include_atom_maps,
-                do_isomeric_smiles,
+                isomeric_smiles,
                 include_dative_bonds,
                 rooted_at_atom,
             },
@@ -447,8 +449,8 @@ impl SmartsWriteParams {
         self.inner.include_atom_maps
     }
     #[getter]
-    fn do_isomeric_smiles(&self) -> bool {
-        self.inner.do_isomeric_smiles
+    fn isomeric_smiles(&self) -> bool {
+        self.inner.isomeric_smiles
     }
     #[getter]
     fn include_dative_bonds(&self) -> bool {
@@ -464,10 +466,11 @@ impl SmartsWriteParams {
 }
 
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct SubstructMatchParams {
     pub(crate) inner: ck::SubstructMatchParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl SubstructMatchParams {

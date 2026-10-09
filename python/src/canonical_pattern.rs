@@ -55,10 +55,11 @@ pub(crate) fn pattern_pyerr(
     err
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct PatternFingerprintParams {
     pub(crate) inner: ck::PatternFingerprintParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl PatternFingerprintParams {
@@ -80,22 +81,22 @@ impl PatternFingerprintParams {
 }
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
-fn pattern_query_fingerprint(
+fn fingerprint_pattern_query(
     py: Python<'_>,
     query: &crate::canonical_search::QueryGraph,
 ) -> PyResult<crate::canonical_values::Fingerprint> {
-    ck::pattern_query_fingerprint(&query.inner)
+    ck::fingerprint_pattern_query(&query.inner)
         .map(|inner| crate::canonical_values::Fingerprint { inner })
         .map_err(|e| pattern_pyerr(py, e))
 }
 #[cfg_attr(feature = "stubgen", pyo3_stub_gen::derive::gen_stub_pyfunction)]
 #[pyfunction]
-fn pattern_query_fingerprint_with_params(
+fn fingerprint_pattern_query_with_params(
     py: Python<'_>,
     query: &crate::canonical_search::QueryGraph,
     params: &PatternFingerprintParams,
 ) -> PyResult<crate::canonical_values::Fingerprint> {
-    ck::pattern_query_fingerprint_with_params(&query.inner, &params.inner)
+    ck::fingerprint_pattern_query_with_params(&query.inner, &params.inner)
         .map(|inner| crate::canonical_values::Fingerprint { inner })
         .map_err(|e| pattern_pyerr(py, e))
 }
@@ -105,9 +106,9 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
         "PatternFingerprintError",
         module.py().get_type::<PatternFingerprintError>(),
     )?;
-    module.add_function(wrap_pyfunction!(pattern_query_fingerprint, module)?)?;
+    module.add_function(wrap_pyfunction!(fingerprint_pattern_query, module)?)?;
     module.add_function(wrap_pyfunction!(
-        pattern_query_fingerprint_with_params,
+        fingerprint_pattern_query_with_params,
         module
     )?)?;
     Ok(())

@@ -171,7 +171,7 @@ pub fn run(input: &Input) -> crate::Result<Record> {
         &geometry.molblock,
         &SdfReadParams {
             sanitize: true,
-            remove_hydrogens: false,
+            remove_hs: false,
             coordinate_mode: SdfCoordinateMode::Require3D,
             ..Default::default()
         },

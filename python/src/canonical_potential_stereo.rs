@@ -185,10 +185,11 @@ fn enum_value(py: Python<'_>, name: &str, value: &str) -> PyResult<Py<PyAny>> {
         .unbind())
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct PotentialStereoParams {
     pub(crate) inner: ck::PotentialStereoParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl PotentialStereoParams {

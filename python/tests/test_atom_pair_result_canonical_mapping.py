@@ -17,7 +17,7 @@ def collect():
     for method in ('allocate_atom_counts', 'allocate_atom_to_bits',
                    'allocate_bit_info_map', 'allocate_atoms_per_bit'):
         getattr(output, method)()
-    result = ck.Molecule.from_smiles('CCCO').atom_pair_fingerprint_with_params(
+    result = ck.Molecule.from_smiles('CCCO').fingerprint_atom_pair_with_params(
         ck.AtomPairFingerprintParams(), output)
     return result, output
 
@@ -33,7 +33,7 @@ def test_original_fingerprint_getter_independent_owned_value_mapping():
     detached = result.on_bits()
     detached.clear()
     assert result.on_bits() == BITS
-    second = ck.Molecule.from_smiles('CCCO').atom_pair_fingerprint()
+    second = ck.Molecule.from_smiles('CCCO').fingerprint_atom_pair()
     assert second is not result
     assert second.on_bits() == result.on_bits() == BITS
     assert not hasattr(ck, 'AtomPairFingerprintResult')
@@ -48,7 +48,7 @@ def test_original_additional_output_getter_collected_and_absent_mapping():
     snapshot[3][624][0].clear()
     assert fields(output) == ([3, 3, 3, 3], TO_BITS, PAIRS, ATOMS, None)
     absent = None
-    plain = ck.Molecule.from_smiles('CCCO').atom_pair_fingerprint_with_params(
+    plain = ck.Molecule.from_smiles('CCCO').fingerprint_atom_pair_with_params(
         ck.AtomPairFingerprintParams(), absent)
     assert plain.on_bits() == BITS
     assert absent is None
@@ -71,7 +71,7 @@ def test_original_result_snapshot_remains_independent_after_caller_AO_reuse():
     first, output = collect()
     snapshot = fields(output)
     first_bits = first.on_bits()
-    second = ck.Molecule.from_smiles('CCO').atom_pair_fingerprint_with_params(
+    second = ck.Molecule.from_smiles('CCO').fingerprint_atom_pair_with_params(
         ck.AtomPairFingerprintParams(), output)
     assert output.atom_counts() == [2, 2, 2]
     assert len(output.atom_to_bits()) == 3
@@ -84,13 +84,13 @@ def test_caller_output_presence_distinguishes_unallocated_collected_from_absent(
     # Old has_additional_output observed Option presence, independently of
     # which fields were allocated. Preserve both facts using existing values.
     output = ck.FingerprintAdditionalOutput()
-    fingerprint = ck.Molecule.from_smiles('CCCO').atom_pair_fingerprint_with_params(
+    fingerprint = ck.Molecule.from_smiles('CCCO').fingerprint_atom_pair_with_params(
         ck.AtomPairFingerprintParams(), output)
     assert output is not None
     assert fields(output) == (None, None, None, None, None)
     assert fingerprint.on_bits() == BITS
     absent = None
-    second = ck.Molecule.from_smiles('CCCO').atom_pair_fingerprint_with_params(
+    second = ck.Molecule.from_smiles('CCCO').fingerprint_atom_pair_with_params(
         ck.AtomPairFingerprintParams(), absent)
     assert absent is None
     assert second.on_bits() == fingerprint.on_bits()

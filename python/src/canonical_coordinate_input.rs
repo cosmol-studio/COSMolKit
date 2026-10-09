@@ -10,6 +10,7 @@ use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_py
 pyo3::create_exception!(cosmolkit, CoordinateInputError, PyValueError);
 pyo3::create_exception!(cosmolkit, Coordinate3DReadError, PyValueError);
 
+#[cosmolkit_macros::python_enum(existing_methods)]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -37,6 +38,10 @@ impl CoordinateZPolicy {
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl CoordinateZPolicy {
+    #[classattr]
+    fn _enum_string_values() -> Vec<(&'static str, CoordinateZPolicy)> {
+        Self::enum_string_values()
+    }
     #[staticmethod]
     fn from_name(py: Python<'_>, value: &str) -> PyResult<CoordinateZPolicy> {
         ck::CoordinateZPolicy::from_name(value)
@@ -45,10 +50,11 @@ impl CoordinateZPolicy {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct Coordinate2DInputParams {
     pub(crate) inner: ck::Coordinate2DInputParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Coordinate2DInputParams {
@@ -67,10 +73,11 @@ impl Coordinate2DInputParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct Coordinate3DInputParams {
     pub(crate) inner: ck::Coordinate3DInputParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Coordinate3DInputParams {
@@ -87,10 +94,11 @@ impl Coordinate3DInputParams {
     }
 }
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass)]
-#[pyclass(module = "cosmolkit", frozen)]
+#[pyclass(module = "cosmolkit")]
 pub(crate) struct Replace3DCoordinatesParams {
     pub(crate) inner: ck::Replace3DCoordinatesParams,
 }
+#[cosmolkit_macros::python_configuration]
 #[cfg_attr(feature = "stubgen", gen_stub_pymethods)]
 #[pymethods]
 impl Replace3DCoordinatesParams {

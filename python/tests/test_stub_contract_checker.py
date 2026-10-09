@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 from collections.abc import Callable
@@ -17,6 +18,138 @@ assert _spec is not None and _spec.loader is not None
 _checker = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_checker)
 check_contract = cast(Callable[[str, str], list[str]], _checker.check_contract)
+check_runtime = _checker.check_runtime
+
+
+def test_native_scalar_projection_is_explicit_not_a_missing_class_exemption():
+    import types
+    row = _entry("types.BioAtomId", "BioAtomId", "type", "type")
+    row["python_native"] = "builtins.int"
+    document = {"entries": [row], "python_adapters": []}
+    assert check_contract("", json.dumps(document)) == []
+    assert check_runtime(types.SimpleNamespace(), document) == []
+    del row["python_native"]
+    assert len(check_contract("", json.dumps(document))) == 1
+    assert len(check_runtime(types.SimpleNamespace(), document)) == 1
+    row["python_native"] = "object"
+    assert len(check_contract("", json.dumps(document))) == 1
+    assert len(check_runtime(types.SimpleNamespace(), document)) == 1
+
+
+def test_native_union_requires_declared_and_actual_component_classes():
+    import types
+    row = _entry("types.Record", "Record", "type", "type")
+    row["python_native"] = "Molecule | BatchError"
+    entries = [row] + [_entry("types." + name, name, "type", "type") for name in ("Molecule", "BatchError")]
+    document = {"entries": entries, "python_adapters": []}
+    stub = "class Molecule: ...\nclass BatchError: ...\n"
+    assert check_contract(stub, json.dumps(document)) == []
+    module = types.SimpleNamespace(Molecule=type("Molecule", (), {}), BatchError=type("BatchError", (), {}))
+    assert check_runtime(module, document) == []
+    assert check_contract("class Molecule: ...\n", json.dumps(document))
+    del module.BatchError
+    assert check_runtime(module, document)
+
+
+def test_native_list_requires_its_declared_and_real_element_type():
+    import types
+    row = _entry("types.ProteinChainIter", "ProteinChainIter", "type", "type")
+    row["python_native"] = "list[ProteinChainRef]"
+    element = _entry("types.ProteinChainRef", "ProteinChainRef", "type", "type")
+    document = {"entries": [row, element], "python_adapters": []}
+    assert check_contract("class ProteinChainRef: ...\n", json.dumps(document)) == []
+    module = types.SimpleNamespace(ProteinChainRef=type("ProteinChainRef", (), {}))
+    assert check_runtime(module, document) == []
+    assert check_contract("", json.dumps(document))
+    assert check_runtime(types.SimpleNamespace(), document)
+    row["python_native"] = "builtins.list"
+    assert check_contract("class ProteinChainRef: ...\n", json.dumps(document))
+
+
+def test_enum_name_is_checked_as_an_instance_descriptor_without_overriding_it():
+    import enum
+    import types
+    class Kind(enum.IntEnum):
+        AA = 1
+    row = _entry("Kind.name", "name", "type")
+    row["python_property"] = "getter"
+    document = {"entries": [_entry("types.Kind", "Kind", "type", "type"), row], "python_adapters": []}
+    assert check_runtime(types.SimpleNamespace(Kind=Kind), document) == []
+    assert Kind.AA.name == "AA"
+
+
+def test_optional_owned_getter_is_a_valid_optional_sequence_projection():
+    node = lambda text: ast.parse(text, mode="eval").body
+    assert _checker._read_type_matches(node("typing.Optional[list[int]]"), node("typing.Optional[typing.Sequence[int]]"))
+    assert not _checker._read_type_matches(node("typing.Optional[list[int]]"), node("typing.Sequence[int]"))
+    assert not _checker._read_type_matches(node("typing.Optional[list[str]]"), node("typing.Optional[typing.Sequence[int]]"))
+    assert _checker._read_type_matches(node("dict[str, list[int]]"), node("typing.Optional[typing.Mapping[str, typing.Sequence[int]]]"))
+    assert not _checker._read_type_matches(node("dict[int, list[int]]"), node("typing.Mapping[str, typing.Sequence[int]]"))
+    assert not _checker._read_type_matches(node("dict[str, list[str]]"), node("typing.Mapping[str, typing.Sequence[int]]"))
+    assert not _checker._read_type_matches(node("typing.Optional[dict[str, int]]"), node("typing.Mapping[str, int]"))
+
+
+def test_dynamic_stubs_describe_only_real_exception_and_enum_exports():
+    import enum
+    import types
+    class ParseError(ValueError):
+        pass
+    class Selection(str, enum.Enum):
+        FIRST = "first"
+    module = types.SimpleNamespace(ParseError=ParseError, Selection=Selection)
+    entries = [_entry("types." + name, name, "type", "type") for name in ("ParseError", "Selection", "Missing")]
+    text = _checker.dynamic_type_declarations(module, "", {"entries": entries})
+    assert "class ParseError(builtins.ValueError)" in text
+    assert "class Selection(builtins.str, enum.Enum)" in text
+    assert "FIRST = 'first'" in text
+    assert "Missing" not in text
+    assert len(check_contract(text, json.dumps(entries))) == 1
+
+
+def test_intenum_read_projection_requires_real_integer_inheritance():
+    node = lambda text: ast.parse(text, mode="eval").body
+    cls = ast.parse("class Format(enum.IntEnum): pass").body[0]
+    assert _checker._read_type_matches(node("Format"), node("int"), {"Format": cls})
+    assert not _checker._read_type_matches(node("Format"), node("str"), {"Format": cls})
+    assert not _checker._read_type_matches(node("Format"), node("int"), {})
+    cls = ast.parse("class Format(enum.Enum): pass").body[0]
+    assert not _checker._read_type_matches(node("Format"), node("int"), {"Format": cls})
+
+
+def test_enum_string_input_does_not_allow_string_output_or_arbitrary_unions():
+    node = lambda text: ast.parse(text, mode="eval").body
+    cls = ast.parse("class Mode:\n    First: typing.ClassVar[Mode]\n").body[0]
+    classes = {"Mode": cls}
+    assert _checker._read_type_matches(node("Mode"), node("Mode | builtins.str"), classes)
+    assert not _checker._read_type_matches(node("str"), node("Mode | builtins.str"), classes)
+    assert not _checker._read_type_matches(node("Mode"), node("Mode | int"), classes)
+    assert not _checker._read_type_matches(node("Mode"), node("Mode | str"), {})
+
+
+def test_configuration_snapshots_check_nested_values_and_float_bits_not_copy_identity():
+    class Nested:
+        def __init__(self, limit=100):
+            self.limit = limit
+    class Params:
+        def __init__(self, limit=100):
+            self.limit = limit
+            self.zero = -0.0
+        @property
+        def nested(self):
+            return Nested(self.limit)
+    schemas = {
+        Nested: [{"name": "limit"}],
+        Params: [{"name": "nested"}, {"name": "zero"}],
+    }
+    value = Params()
+    before = _checker._configuration_snapshot(value, schemas)
+    assert value.nested != value.nested  # independent owned copies without __eq__
+    assert _checker._configuration_snapshot(value, schemas) == before
+    value.limit = 99
+    assert _checker._configuration_snapshot(value, schemas) != before
+    value.limit = 100
+    value.zero = 0.0
+    assert _checker._configuration_snapshot(value, schemas) != before
 
 
 def _entry(semantic_id: str, name: str, owner: str = "molecule", item: str = "callable"):
@@ -121,3 +254,105 @@ def test_explicit_property_access_requires_descriptor_not_method() -> None:
     assert check_contract(writable, json.dumps([getter, setter])) == []
     assert check_contract("class Params:\n    limit: int\n", json.dumps([getter, setter])) == []
     assert len(check_contract("class Params:\n    def limit(self): ...\n", json.dumps([getter, setter]))) == 2
+
+
+def _configuration_document():
+    parameter = {
+        **_entry("types.SearchParams", "SearchParams", "type", "type"),
+        "rust_path": "crate::SearchParams", "role": "parameter",
+        "constructor": "SearchParams.new",
+        "fields": [{"name": "limit", "type": "usize", "default": "100"}],
+    }
+    plain = {**_entry("Molecule.matches", "matches"), "parameters": []}
+    configured = {
+        **_entry("Molecule.matches_with_params", "matches_with_params"),
+        "parameters": [{"name": "params", "type": "&crate::SearchParams", "default": None}],
+    }
+    return {"entries": [parameter, plain, configured], "python_adapters": []}
+
+
+_CONFIGURATION_STUB = """
+from typing import overload
+class SearchParams:
+    limit: int
+    def __new__(cls, *, limit: int = 100) -> SearchParams: ...
+class Molecule:
+    @overload
+    def matches(self, params: SearchParams, /) -> list[int]: ...
+    @overload
+    def matches(self, *, limit: int = 100) -> list[int]: ...
+    def matches_with_params(self, params: SearchParams) -> list[int]: ...
+"""
+
+
+def test_parameter_contract_requires_writable_fields_not_a_params_suffix():
+    document = _configuration_document()
+    assert check_contract(_CONFIGURATION_STUB, json.dumps(document)) == []
+    assert check_contract(_CONFIGURATION_STUB.replace("SearchParams", "Settings"), json.dumps(document).replace("SearchParams", "Settings")) == []
+    for field in ("limit: Final[int]", "limit: ClassVar[int]", "@property\n    def limit(self) -> int: ..."):
+        stub = _CONFIGURATION_STUB.replace("limit: int\n", field + "\n", 1)
+        assert any("must be readable and writable" in error for error in check_contract(stub, json.dumps(document)))
+
+
+def test_explicit_registry_configuration_schema_needs_no_rust_new_and_checks_types():
+    document = _configuration_document()
+    row = document["entries"][0]
+    row["constructor"] = None
+    row["fields"] = None
+    row["python_fields"] = [{"name": "limit", "type": "builtins.int", "default": "100"}]
+    assert check_contract(_CONFIGURATION_STUB, json.dumps(document)) == []
+    row["python_fields"][0]["type"] = "builtins.str"
+    assert any("constructor type differs from registry" in error for error in check_contract(_CONFIGURATION_STUB, json.dumps(document)))
+    row["python_fields"][0] = {"name": "limit", "type": "builtins.int", "default": "DEFAULT_LIMIT"}
+    assert any("default differs from registry" in error for error in check_contract(_CONFIGURATION_STUB, json.dumps(document)))
+    row["python_fields"] = None
+    assert any("registered configuration constructor schema" in error for error in check_contract(_CONFIGURATION_STUB, json.dumps(document)))
+
+
+def test_configuration_signature_defaults_and_overloads_cannot_drift():
+    document = json.dumps(_configuration_document())
+    for old, new, expected in (
+        ("limit: int = 100) -> SearchParams", "limit: int = 99) -> SearchParams", "default differs from registry"),
+        ("limit: int = 100) -> list[int]", "limit: int = 99) -> list[int]", "type/default differs"),
+        ("params: SearchParams, /", "params: object, /", "missing SearchParams instance"),
+        ("params: SearchParams, /", "params: SearchParams, *, limit: int = 100", "mutually exclusive"),
+        ("*, limit: int = 100) -> list[int]", "limit: int = 100) -> list[int]", "missing keyword-only"),
+        ("@overload", "# not an overload", "explicit overload"),
+    ):
+        errors = check_contract(_CONFIGURATION_STUB.replace(old, new), document)
+        assert any(expected in error for error in errors), errors
+
+
+def test_parameter_schema_and_class_cannot_be_omitted_from_both_projections():
+    document = _configuration_document()
+    document["entries"] = document["entries"][:1]
+    assert check_contract("", json.dumps(document))
+    document["entries"][0]["fields"] = None
+    assert any("registered configuration constructor schema" in error for error in check_contract(_CONFIGURATION_STUB, json.dumps(document)))
+
+
+def test_actual_readonly_extension_style_descriptor_cannot_be_hidden_by_writable_stub():
+    from types import SimpleNamespace
+
+    class SearchParams:
+        def __init__(self, limit=100):
+            self._limit = limit
+
+        @property
+        def limit(self):
+            return self._limit
+
+    document = _configuration_document()
+    document["entries"] = document["entries"][:1]
+    assert any("actual setter missing" in error for error in check_runtime(SimpleNamespace(SearchParams=SearchParams), document))
+    def set_limit(self, value):
+        if not isinstance(value, int):
+            raise TypeError("limit must be an integer")
+        self._limit = value
+    SearchParams.limit = SearchParams.limit.setter(set_limit)
+    assert check_runtime(SimpleNamespace(SearchParams=SearchParams), document) == []
+    def broken_set_limit(self, value):
+        self._limit = 0
+        set_limit(self, value)
+    SearchParams.limit = SearchParams.limit.setter(broken_set_limit)
+    assert any("failed assignment changed" in error for error in check_runtime(SimpleNamespace(SearchParams=SearchParams), document))

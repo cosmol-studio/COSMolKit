@@ -1016,7 +1016,7 @@ fn mmff_optimize_molecule_confs(
     threshold: f64,
     ignore: bool,
 ) -> Result<MmffOptimizeMoleculeConfsResult, OperationError> {
-    mol.with_mmff_optimized_confs_with_params(&MmffConformerOptimizationParams {
+    mol.with_mmff_optimized_conformers_with_params(&MmffConformerOptimizationParams {
         num_threads: threads,
         max_iterations: i32::try_from(max).unwrap(),
         mmff_variant: variant.into(),

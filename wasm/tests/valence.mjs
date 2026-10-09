@@ -34,13 +34,13 @@ test("Valence parameters preserve canonical defaults and reject host coercion", 
 test("All four valence operations retain value semantics and typed failure atomicity", () => {
     for (const explicit of [false, true]) {
         const value = raw("CCO"), params = new b.ValenceParams();
-        assert.throws(() => value.atomPairFingerprint(), missing);
+        assert.throws(() => value.fingerprintAtomPair(), missing);
         const prepared = explicit ? value.withAssignedValenceWithParams(params)
             : value.withAssignedValence();
-        assert.ok(prepared.atomPairFingerprint() instanceof b.Fingerprint);
-        assert.throws(() => value.atomPairFingerprint(), missing);
+        assert.ok(prepared.fingerprintAtomPair() instanceof b.Fingerprint);
+        assert.throws(() => value.fingerprintAtomPair(), missing);
         assert.equal(explicit ? value.assignValenceWithParams(params) : value.assignValence(), undefined);
-        assert.ok(value.atomPairFingerprint() instanceof b.Fingerprint);
+        assert.ok(value.fingerprintAtomPair() instanceof b.Fingerprint);
         value.free();
         assert.equal(prepared.toSmiles(), "CCO");
 
@@ -50,12 +50,12 @@ test("All four valence operations retain value semantics and typed failure atomi
         assert.throws(() => explicit ? invalid.assignValenceWithParams(params)
             : invalid.assignValence(), invalidValence);
         assert.equal(invalid.toSmiles(), before);
-        assert.throws(() => invalid.atomPairFingerprint(), missing);
+        assert.throws(() => invalid.fingerprintAtomPair(), missing);
         const relaxed = new b.ValenceParams(undefined, false);
-        assert.ok(invalid.withAssignedValenceWithParams(relaxed).atomPairFingerprint() instanceof b.Fingerprint);
-        assert.throws(() => invalid.atomPairFingerprint(), missing);
+        assert.ok(invalid.withAssignedValenceWithParams(relaxed).fingerprintAtomPair() instanceof b.Fingerprint);
+        assert.throws(() => invalid.fingerprintAtomPair(), missing);
         invalid.assignValenceWithParams(relaxed);
-        assert.ok(invalid.atomPairFingerprint() instanceof b.Fingerprint);
+        assert.ok(invalid.fingerprintAtomPair() instanceof b.Fingerprint);
     }
     for (const params of [null, undefined, {}, new b.SmilesParseParams()]) {
         assert.throws(() => raw("CC").withAssignedValenceWithParams(params));

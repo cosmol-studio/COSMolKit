@@ -69,6 +69,7 @@ impl FunctionStatus {
     }
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", frozen, eq, eq_int, skip_from_py_object)]
 #[derive(Clone, Copy, PartialEq)]

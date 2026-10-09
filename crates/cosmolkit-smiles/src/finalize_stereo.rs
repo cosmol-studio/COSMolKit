@@ -195,10 +195,10 @@ mod smiles_stereo_ring_matrix_tests {
         }
     }
 
-    fn params(sanitize: bool, remove_hydrogens: bool) -> SmilesParseParams {
+    fn params(sanitize: bool, remove_hs: bool) -> SmilesParseParams {
         SmilesParseParams {
             sanitize,
-            remove_hydrogens,
+            remove_hs,
             ..SmilesParseParams::default()
         }
     }
@@ -241,12 +241,12 @@ mod smiles_stereo_ring_matrix_tests {
         let mut calls = 0usize;
         for (graph_index, build) in graphs {
             for sanitize in [false, true] {
-                for remove_hydrogens in [false, true] {
-                    let active = sanitize || remove_hydrogens;
+                for remove_hs in [false, true] {
+                    let active = sanitize || remove_hs;
                     for marker in [false, true] {
                         for state_index in 0usize..6 {
                             let label = format!(
-                                "G{graph_index}/s{sanitize}/rh{remove_hydrogens}/m{marker}/st{state_index}"
+                                "G{graph_index}/s{sanitize}/rh{remove_hs}/m{marker}/st{state_index}"
                             );
                             let input = build();
                             // Exact fixture prerequisites.
@@ -309,7 +309,7 @@ mod smiles_stereo_ring_matrix_tests {
                             let history_before = probe::history_len();
                             let output = finalize_smiles_stereo(
                                 base,
-                                &params(sanitize, remove_hydrogens),
+                                &params(sanitize, remove_hs),
                                 &mut prepared_valence,
                                 &mut prepared_rings,
                             )
@@ -671,7 +671,7 @@ mod smiles_stereo_ring_errors_tests {
     fn params() -> SmilesParseParams {
         SmilesParseParams {
             sanitize: true,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..SmilesParseParams::default()
         }
     }
@@ -896,10 +896,10 @@ mod smiles_stereo_ring_routes_tests {
     use cosmolkit_model::CoordinateBlock;
     use cosmolkit_types::Element;
 
-    fn profile(sanitize: bool, remove_hydrogens: bool) -> SmilesParseParams {
+    fn profile(sanitize: bool, remove_hs: bool) -> SmilesParseParams {
         SmilesParseParams {
             sanitize,
-            remove_hydrogens,
+            remove_hs,
             ..SmilesParseParams::default()
         }
     }
@@ -909,18 +909,18 @@ mod smiles_stereo_ring_routes_tests {
         let inputs = ["", "CC", "c1ccccc1", "[H]C1CCCCC1"];
         let mut calls = 0usize;
         for input in inputs {
-            for (name, sanitize, remove_hydrogens) in [
+            for (name, sanitize, remove_hs) in [
                 ("bothfalse", false, false),
                 ("remove-only", false, true),
                 ("sanitize-only", true, false),
                 ("bothtrue", true, true),
             ] {
                 let label = format!("{name}/{input:?}");
-                let parse_params = profile(sanitize, remove_hydrogens);
+                let parse_params = profile(sanitize, remove_hs);
                 let parsed = parse_smiles(input, &parse_params).unwrap();
                 // Source-ordered preparation, exactly as the constructor.
                 let (topology, coordinates, properties, mut prepared_valence, mut prepared_rings) =
-                    if remove_hydrogens {
+                    if remove_hs {
                         let remove_params = cosmolkit_core::RemoveHsParams {
                             update_explicit_count: true,
                             sanitize: parse_params.sanitize,
@@ -1104,7 +1104,7 @@ mod smiles_stereo_ring_routes_tests {
                     );
                 }
                 // _StereochemDone disposition.
-                if sanitize || remove_hydrogens {
+                if sanitize || remove_hs {
                     assert_eq!(
                         output.properties.prop("_StereochemDone"),
                         Some(&cosmolkit_model::PropertyValue::Int(1)),
@@ -1117,7 +1117,7 @@ mod smiles_stereo_ring_routes_tests {
                     "CC" => (2, 1),
                     "c1ccccc1" => (6, 6),
                     _ => {
-                        if remove_hydrogens {
+                        if remove_hs {
                             (6, 6)
                         } else {
                             (7, 7)
@@ -1146,7 +1146,7 @@ mod smiles_stereo_ring_routes_tests {
                         }
                     }
                     _ => {
-                        if remove_hydrogens {
+                        if remove_hs {
                             for index in 0..6usize {
                                 assert_eq!(
                                     output.topology.atoms[index].element(),
@@ -1209,7 +1209,7 @@ mod smiles_stereo_ring_routes_tests {
                             }
                         }
                         _ => {
-                            let expected: Vec<usize> = if remove_hydrogens {
+                            let expected: Vec<usize> = if remove_hs {
                                 vec![0, 1, 2, 3, 4, 5]
                             } else {
                                 vec![1, 2, 3, 4, 5, 6]
@@ -1225,20 +1225,16 @@ mod smiles_stereo_ring_routes_tests {
                                 .collect();
                             bonds_row.sort_unstable();
                             assert_eq!(atoms_row, expected, "{label}: cycle atoms");
-                            let expected_bonds: Vec<usize> = if remove_hydrogens {
+                            let expected_bonds: Vec<usize> = if remove_hs {
                                 vec![0, 1, 2, 3, 4, 5]
                             } else {
                                 vec![1, 2, 3, 4, 5, 6]
                             };
                             assert_eq!(bonds_row, expected_bonds, "{label}: cycle bonds");
-                            let upper = if remove_hydrogens { 6 } else { 7 };
+                            let upper = if remove_hs { 6 } else { 7 };
                             for index in 0..upper {
-                                let expected_members: &[usize] = if !remove_hydrogens && index == 0
-                                {
-                                    &[]
-                                } else {
-                                    &[0]
-                                };
+                                let expected_members: &[usize] =
+                                    if !remove_hs && index == 0 { &[] } else { &[0] };
                                 assert_eq!(
                                     rings.atom_members(AtomId::new(index)),
                                     expected_members,
@@ -1347,7 +1343,7 @@ pub(crate) fn finalize_smiles_stereo_with_conformer(
     // carry no runtime cache authority.
     // The optional XY lift below costs O(V); no extra topology clone is needed
     // at this boundary. Errors discard the owned record without live mutation.
-    if !params.sanitize && !params.remove_hydrogens {
+    if !params.sanitize && !params.remove_hs {
         record.topology = clear_single_bond_directions(record.topology, true)?;
         return Ok(record);
     }

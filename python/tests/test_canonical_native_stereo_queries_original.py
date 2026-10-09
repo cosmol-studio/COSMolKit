@@ -31,13 +31,17 @@ def test_original_ordered_ligand_values_and_tuple_protocol(text, expected):
     with pytest.raises(AttributeError): row.center = 0
 
 
-def test_original_chiral_center_filter_defaults_and_exact_tag_labels():
+def test_modern_chiral_center_filter_defaults_and_exact_cip_labels():
     source = ck.Molecule.from_smiles('F[C@H](Cl)Br')
     labels = source.find_chiral_centers()
-    assert labels == [(0, '?'), (1, 'CHI_TETRAHEDRAL_CCW'), (2, '?'), (3, '?')]
-    assert source.find_chiral_centers(include_unassigned=False) == [labels[1]]
+    # Pinned RDKit 2026.03.1 modern FindMolChiralCenters.
+    assert labels == [(1, 'R')]
+    assert source.find_chiral_centers(include_unassigned=False) == labels
     assert ck.Molecule.from_smiles('CCO').find_chiral_centers(False) == []
-    assert ck.Molecule.from_smiles('CCO').find_chiral_centers() == [(0, '?'), (1, '?'), (2, '?')]
+    assert ck.Molecule.from_smiles('CCO').find_chiral_centers() == []
+    potential = ck.Molecule.from_smiles('CC(O)Cl')
+    assert potential.find_chiral_centers() == []
+    assert potential.find_chiral_centers(include_unassigned=True) == [(1, '?')]
 
 
 def test_original_empty_read_and_absent_valence_fallback_are_source_defined():

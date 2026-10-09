@@ -71,10 +71,10 @@ mod tests {
             "C1CC2CCC1C2",
             "C1CC1.C1CCC1",
         ] {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 let parse = ck::SmilesParseParams {
                     sanitize: false,
-                    remove_hydrogens,
+                    remove_hs,
                     ..Default::default()
                 };
                 let owner = ck::Molecule::from_smiles_with_params(text, &parse).unwrap();

@@ -1,10 +1,10 @@
 use cosmolkit::{
     Molecule, PATTERN_FINGERPRINT_VERSION, PatternFingerprintError, PatternFingerprintParams,
-    pattern_query_fingerprint_with_params,
+    fingerprint_pattern_query_with_params,
 };
 
 #[test]
-fn pattern_fingerprint_defaults_version_and_exact_ethane_bits_are_public() {
+fn fingerprint_pattern_defaults_version_and_exact_ethane_bits_are_public() {
     let params = PatternFingerprintParams::default();
     assert_eq!(params.n_bits, 2048);
     assert!(!params.tautomeric);
@@ -12,7 +12,7 @@ fn pattern_fingerprint_defaults_version_and_exact_ethane_bits_are_public() {
 
     let molecule = Molecule::from_smiles("CC").expect("ethane");
     let fingerprint = molecule
-        .pattern_fingerprint_with_params(&params)
+        .fingerprint_pattern_with_params(&params)
         .expect("Pattern fingerprint");
     assert_eq!(fingerprint.n_bits(), 2048);
     assert_eq!(
@@ -22,7 +22,7 @@ fn pattern_fingerprint_defaults_version_and_exact_ethane_bits_are_public() {
 }
 
 #[test]
-fn pattern_fingerprint_free_function_method_and_repeated_calls_are_value_style() {
+fn fingerprint_pattern_free_function_method_and_repeated_calls_are_value_style() {
     let molecule = Molecule::from_smiles("c1ccccc1O").expect("phenol");
     let source_snapshot = molecule.clone();
     let params = PatternFingerprintParams {
@@ -32,12 +32,12 @@ fn pattern_fingerprint_free_function_method_and_repeated_calls_are_value_style()
     let params_snapshot = params;
 
     let from_method = molecule
-        .pattern_fingerprint_with_params(&params)
+        .fingerprint_pattern_with_params(&params)
         .expect("method Pattern fingerprint");
-    let from_function = Molecule::pattern_fingerprint_with_params(&molecule, &params)
+    let from_function = Molecule::fingerprint_pattern_with_params(&molecule, &params)
         .expect("free Pattern fingerprint");
     let repeated = molecule
-        .pattern_fingerprint_with_params(&params)
+        .fingerprint_pattern_with_params(&params)
         .expect("repeated Pattern fingerprint");
 
     assert_eq!(from_method, from_function);
@@ -48,11 +48,11 @@ fn pattern_fingerprint_free_function_method_and_repeated_calls_are_value_style()
 }
 
 #[test]
-fn pattern_fingerprint_supports_boundary_widths_and_rejects_zero() {
+fn fingerprint_pattern_supports_boundary_widths_and_rejects_zero() {
     let molecule = Molecule::from_smiles("CCC").expect("propane");
     for n_bits in [1, 63, 64, 65, 127, 2048, 4093] {
         let fingerprint = molecule
-            .pattern_fingerprint_with_params(&PatternFingerprintParams {
+            .fingerprint_pattern_with_params(&PatternFingerprintParams {
                 n_bits,
                 tautomeric: false,
             })
@@ -67,7 +67,7 @@ fn pattern_fingerprint_supports_boundary_widths_and_rejects_zero() {
     }
 
     assert_eq!(
-        molecule.pattern_fingerprint_with_params(&PatternFingerprintParams {
+        molecule.fingerprint_pattern_with_params(&PatternFingerprintParams {
             n_bits: 0,
             tautomeric: false,
         }),
@@ -76,20 +76,20 @@ fn pattern_fingerprint_supports_boundary_widths_and_rejects_zero() {
 }
 
 #[test]
-fn pattern_fingerprint_empty_and_query_molecules_are_deterministic() {
+fn fingerprint_pattern_empty_and_query_molecules_are_deterministic() {
     let empty = Molecule::new();
     let empty_fingerprint = empty
-        .pattern_fingerprint_with_params(&PatternFingerprintParams::default())
+        .fingerprint_pattern_with_params(&PatternFingerprintParams::default())
         .expect("empty Pattern fingerprint");
     assert!(empty_fingerprint.on_bits().is_empty());
 
     let query =
         cosmolkit::parse_smarts_with_params("C~C", &cosmolkit::SmartsParseParams::default())
             .expect("query molecule");
-    let first = pattern_query_fingerprint_with_params(&query, &PatternFingerprintParams::default())
+    let first = fingerprint_pattern_query_with_params(&query, &PatternFingerprintParams::default())
         .expect("query Pattern fingerprint");
     let second =
-        pattern_query_fingerprint_with_params(&query, &PatternFingerprintParams::default())
+        fingerprint_pattern_query_with_params(&query, &PatternFingerprintParams::default())
             .expect("repeated query Pattern fingerprint");
     assert_eq!(first, second);
 }

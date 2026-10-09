@@ -23,7 +23,7 @@ test("preset exports exactly its selected optional domains", () => {
         }
         }
         for (const [method, enabled] of [
-            ["morganFingerprint", ["full", "core-fingerprints", "core-analysis"].includes(preset)],
+            ["fingerprintMorgan", ["full", "core-fingerprints", "core-analysis"].includes(preset)],
             ["qed", ["full", "core-analysis"].includes(preset)],
             ["with3dConformer", ["full", "core-3d"].includes(preset)],
             ["toBinary", false],

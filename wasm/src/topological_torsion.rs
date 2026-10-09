@@ -2,7 +2,7 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
-    pub fn topological_torsion_fingerprint_with_generator(
+    pub fn fingerprint_topological_torsion_with_generator(
         &self,
         generator: &ck::TopologicalTorsionFingerprintGenerator,
         params: Option<&ck::TopologicalTorsionCallParams>,
@@ -11,9 +11,9 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_fingerprint_with_generator(
         self.inner
             .borrow()
-            .topological_torsion_fingerprint_with_generator(generator, params, output)
+            .fingerprint_topological_torsion_with_generator(generator, params, output)
     }
-    pub fn topological_torsion_count_fingerprint_with_generator(
+    pub fn fingerprint_topological_torsion_count_with_generator(
         &self,
         generator: &ck::TopologicalTorsionFingerprintGenerator,
         params: Option<&ck::TopologicalTorsionCallParams>,
@@ -22,9 +22,9 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint_with_generator(
         self.inner
             .borrow()
-            .topological_torsion_count_fingerprint_with_generator(generator, params, output)
+            .fingerprint_topological_torsion_count_with_generator(generator, params, output)
     }
-    pub fn topological_torsion_sparse_fingerprint_with_generator(
+    pub fn fingerprint_topological_torsion_sparse_with_generator(
         &self,
         generator: &ck::TopologicalTorsionFingerprintGenerator,
         params: Option<&ck::TopologicalTorsionCallParams>,
@@ -33,9 +33,9 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint_with_generator(
         self.inner
             .borrow()
-            .topological_torsion_sparse_fingerprint_with_generator(generator, params, output)
+            .fingerprint_topological_torsion_sparse_with_generator(generator, params, output)
     }
-    pub fn topological_torsion_sparse_count_fingerprint_with_generator(
+    pub fn fingerprint_topological_torsion_sparse_count_with_generator(
         &self,
         generator: &ck::TopologicalTorsionFingerprintGenerator,
         params: Option<&ck::TopologicalTorsionCallParams>,
@@ -44,17 +44,17 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint_with_generator(
         self.inner
             .borrow()
-            .topological_torsion_sparse_count_fingerprint_with_generator(generator, params, output)
+            .fingerprint_topological_torsion_sparse_count_with_generator(generator, params, output)
     }
-    pub fn topological_torsion_sparse_count_fingerprint(
+    pub fn fingerprint_topological_torsion_sparse_count(
         &self,
     ) -> Result<ck::SparseCountFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint(
         self.inner
             .borrow()
-            .topological_torsion_sparse_count_fingerprint()
+            .fingerprint_topological_torsion_sparse_count()
     }
-    pub fn topological_torsion_sparse_count_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_sparse_count_with_params(
         &self,
         params: &ck::TopologicalTorsionFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -62,15 +62,15 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_sparse_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .topological_torsion_sparse_count_fingerprint_with_params(params, output)
+            .fingerprint_topological_torsion_sparse_count_with_params(params, output)
     }
-    pub fn topological_torsion_sparse_fingerprint(
+    pub fn fingerprint_topological_torsion_sparse(
         &self,
     ) -> Result<ck::SparseBitFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint(
-        self.inner.borrow().topological_torsion_sparse_fingerprint()
+        self.inner.borrow().fingerprint_topological_torsion_sparse()
     }
-    pub fn topological_torsion_sparse_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_sparse_with_params(
         &self,
         params: &ck::TopologicalTorsionFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -78,15 +78,15 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_sparse_fingerprint_with_params(
         self.inner
             .borrow()
-            .topological_torsion_sparse_fingerprint_with_params(params, output)
+            .fingerprint_topological_torsion_sparse_with_params(params, output)
     }
-    pub fn topological_torsion_count_fingerprint(
+    pub fn fingerprint_topological_torsion_count(
         &self,
     ) -> Result<ck::SparseCountFingerprint32, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint(
-        self.inner.borrow().topological_torsion_count_fingerprint()
+        self.inner.borrow().fingerprint_topological_torsion_count()
     }
-    pub fn topological_torsion_count_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_count_with_params(
         &self,
         params: &ck::TopologicalTorsionFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -94,15 +94,15 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .topological_torsion_count_fingerprint_with_params(params, output)
+            .fingerprint_topological_torsion_count_with_params(params, output)
     }
-    pub fn topological_torsion_fingerprint(
+    pub fn fingerprint_topological_torsion(
         &self,
     ) -> Result<ck::Fingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_fingerprint(
-        self.inner.borrow().topological_torsion_fingerprint()
+        self.inner.borrow().fingerprint_topological_torsion()
     }
-    pub fn topological_torsion_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_with_params(
         &self,
         params: &ck::TopologicalTorsionFingerprintParams,
         output: Option<&mut ck::FingerprintAdditionalOutput>,
@@ -110,7 +110,7 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_torsion_fingerprint_with_params(
         self.inner
             .borrow()
-            .topological_torsion_fingerprint_with_params(params, output)
+            .fingerprint_topological_torsion_with_params(params, output)
     }
 }
 pub fn topological_torsion_generator_fingerprints(
@@ -179,19 +179,19 @@ mod tests {
             let call = ck::TopologicalTorsionCallParams::default();
             let before = m.to_smiles().unwrap();
             assert_eq!(
-                m.topological_torsion_fingerprint_with_generator(&generator, Some(&call), None)
+                m.fingerprint_topological_torsion_with_generator(&generator, Some(&call), None)
                     .unwrap(),
-                core.topological_torsion_fingerprint_with_generator(&generator, Some(&call), None)
+                core.fingerprint_topological_torsion_with_generator(&generator, Some(&call), None)
                     .unwrap()
             );
             assert_eq!(
-                m.topological_torsion_count_fingerprint_with_generator(
+                m.fingerprint_topological_torsion_count_with_generator(
                     &generator,
                     Some(&call),
                     None
                 )
                 .unwrap(),
-                core.topological_torsion_count_fingerprint_with_generator(
+                core.fingerprint_topological_torsion_count_with_generator(
                     &generator,
                     Some(&call),
                     None
@@ -199,13 +199,13 @@ mod tests {
                 .unwrap()
             );
             assert_eq!(
-                m.topological_torsion_sparse_fingerprint_with_generator(
+                m.fingerprint_topological_torsion_sparse_with_generator(
                     &generator,
                     Some(&call),
                     None
                 )
                 .unwrap(),
-                core.topological_torsion_sparse_fingerprint_with_generator(
+                core.fingerprint_topological_torsion_sparse_with_generator(
                     &generator,
                     Some(&call),
                     None
@@ -213,13 +213,13 @@ mod tests {
                 .unwrap()
             );
             assert_eq!(
-                m.topological_torsion_sparse_count_fingerprint_with_generator(
+                m.fingerprint_topological_torsion_sparse_count_with_generator(
                     &generator,
                     Some(&call),
                     None
                 )
                 .unwrap(),
-                core.topological_torsion_sparse_count_fingerprint_with_generator(
+                core.fingerprint_topological_torsion_sparse_count_with_generator(
                     &generator,
                     Some(&call),
                     None
@@ -227,43 +227,43 @@ mod tests {
                 .unwrap()
             );
             assert_eq!(
-                m.topological_torsion_sparse_count_fingerprint().unwrap(),
-                core.topological_torsion_sparse_count_fingerprint().unwrap()
+                m.fingerprint_topological_torsion_sparse_count().unwrap(),
+                core.fingerprint_topological_torsion_sparse_count().unwrap()
             );
             assert_eq!(
-                m.topological_torsion_sparse_count_fingerprint_with_params(&params, None)
+                m.fingerprint_topological_torsion_sparse_count_with_params(&params, None)
                     .unwrap(),
-                core.topological_torsion_sparse_count_fingerprint_with_params(&params, None)
+                core.fingerprint_topological_torsion_sparse_count_with_params(&params, None)
                     .unwrap()
             );
             assert_eq!(
-                m.topological_torsion_sparse_fingerprint().unwrap(),
-                core.topological_torsion_sparse_fingerprint().unwrap()
+                m.fingerprint_topological_torsion_sparse().unwrap(),
+                core.fingerprint_topological_torsion_sparse().unwrap()
             );
             assert_eq!(
-                m.topological_torsion_sparse_fingerprint_with_params(&params, None)
+                m.fingerprint_topological_torsion_sparse_with_params(&params, None)
                     .unwrap(),
-                core.topological_torsion_sparse_fingerprint_with_params(&params, None)
+                core.fingerprint_topological_torsion_sparse_with_params(&params, None)
                     .unwrap()
             );
             assert_eq!(
-                m.topological_torsion_count_fingerprint().unwrap(),
-                core.topological_torsion_count_fingerprint().unwrap()
+                m.fingerprint_topological_torsion_count().unwrap(),
+                core.fingerprint_topological_torsion_count().unwrap()
             );
             assert_eq!(
-                m.topological_torsion_count_fingerprint_with_params(&params, None)
+                m.fingerprint_topological_torsion_count_with_params(&params, None)
                     .unwrap(),
-                core.topological_torsion_count_fingerprint_with_params(&params, None)
+                core.fingerprint_topological_torsion_count_with_params(&params, None)
                     .unwrap()
             );
             assert_eq!(
-                m.topological_torsion_fingerprint().unwrap(),
-                core.topological_torsion_fingerprint().unwrap()
+                m.fingerprint_topological_torsion().unwrap(),
+                core.fingerprint_topological_torsion().unwrap()
             );
             assert_eq!(
-                m.topological_torsion_fingerprint_with_params(&params, None)
+                m.fingerprint_topological_torsion_with_params(&params, None)
                     .unwrap(),
-                core.topological_torsion_fingerprint_with_params(&params, None)
+                core.fingerprint_topological_torsion_with_params(&params, None)
                     .unwrap()
             );
             let mut a = ck::FingerprintAdditionalOutput::new();
@@ -271,9 +271,9 @@ mod tests {
             a.allocate_atom_counts();
             b.allocate_atom_counts();
             assert_eq!(
-                m.topological_torsion_fingerprint_with_generator(&generator, None, Some(&mut a))
+                m.fingerprint_topological_torsion_with_generator(&generator, None, Some(&mut a))
                     .unwrap(),
-                core.topological_torsion_fingerprint_with_generator(&generator, None, Some(&mut b))
+                core.fingerprint_topological_torsion_with_generator(&generator, None, Some(&mut b))
                     .unwrap()
             );
             assert_eq!(a, b);
@@ -346,67 +346,67 @@ mod tests {
             "CCO",
             &ck::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             },
         )
         .unwrap();
         assert!(matches!(
-            raw.topological_torsion_fingerprint(),
+            raw.fingerprint_topological_torsion(),
             Err(ck::TopologicalTorsionReadError::Preparation(_))
         ));
     }
 }
 
 impl Molecule {
-    pub fn legacy_topological_torsion_sparse_count_fingerprint(
+    pub fn fingerprint_topological_torsion_sparse_count_legacy(
         &self,
     ) -> Result<ck::SparseCountFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .legacy_topological_torsion_sparse_count_fingerprint(
         self.inner
             .borrow()
-            .legacy_topological_torsion_sparse_count_fingerprint()
+            .fingerprint_topological_torsion_sparse_count_legacy()
     }
-    pub fn legacy_topological_torsion_sparse_count_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_sparse_count_legacy_with_params(
         &self,
         params: &ck::LegacyTopologicalTorsionParams,
     ) -> Result<ck::SparseCountFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .legacy_topological_torsion_sparse_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .legacy_topological_torsion_sparse_count_fingerprint_with_params(params)
+            .fingerprint_topological_torsion_sparse_count_legacy_with_params(params)
     }
-    pub fn legacy_topological_torsion_count_fingerprint(
+    pub fn fingerprint_topological_torsion_count_legacy(
         &self,
     ) -> Result<ck::SparseCountFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .legacy_topological_torsion_count_fingerprint(
         self.inner
             .borrow()
-            .legacy_topological_torsion_count_fingerprint()
+            .fingerprint_topological_torsion_count_legacy()
     }
-    pub fn legacy_topological_torsion_count_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_count_legacy_with_params(
         &self,
         params: &ck::LegacyTopologicalTorsionParams,
     ) -> Result<ck::SparseCountFingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .legacy_topological_torsion_count_fingerprint_with_params(
         self.inner
             .borrow()
-            .legacy_topological_torsion_count_fingerprint_with_params(params)
+            .fingerprint_topological_torsion_count_legacy_with_params(params)
     }
-    pub fn legacy_topological_torsion_fingerprint(
+    pub fn fingerprint_topological_torsion_legacy(
         &self,
     ) -> Result<ck::Fingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .legacy_topological_torsion_fingerprint(
-        self.inner.borrow().legacy_topological_torsion_fingerprint()
+        self.inner.borrow().fingerprint_topological_torsion_legacy()
     }
-    pub fn legacy_topological_torsion_fingerprint_with_params(
+    pub fn fingerprint_topological_torsion_legacy_with_params(
         &self,
         params: &ck::LegacyTopologicalTorsionParams,
     ) -> Result<ck::Fingerprint, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .legacy_topological_torsion_fingerprint_with_params(
         self.inner
             .borrow()
-            .legacy_topological_torsion_fingerprint_with_params(params)
+            .fingerprint_topological_torsion_legacy_with_params(params)
     }
     pub fn topological_torsion_ids(&self) -> Result<Vec<u64>, ck::TopologicalTorsionReadError> {
         // COSMolKit❗✔️: .topological_torsion_ids(
@@ -432,8 +432,8 @@ mod legacy_tests {
             let m = Molecule::from_smiles(text).unwrap();
             let core = ck::Molecule::from_smiles(text).unwrap();
             assert_eq!(
-                m.legacy_topological_torsion_fingerprint().unwrap(),
-                core.legacy_topological_torsion_fingerprint().unwrap()
+                m.fingerprint_topological_torsion_legacy().unwrap(),
+                core.fingerprint_topological_torsion_legacy().unwrap()
             );
             for count in [3, 4, 5] {
                 let p = ck::LegacyTopologicalTorsionParams {
@@ -441,15 +441,15 @@ mod legacy_tests {
                     ..Default::default()
                 };
                 assert_eq!(
-                    m.legacy_topological_torsion_fingerprint_with_params(&p)
+                    m.fingerprint_topological_torsion_legacy_with_params(&p)
                         .unwrap(),
-                    core.legacy_topological_torsion_fingerprint_with_params(&p)
+                    core.fingerprint_topological_torsion_legacy_with_params(&p)
                         .unwrap()
                 );
             }
             assert_eq!(
-                m.legacy_topological_torsion_count_fingerprint().unwrap(),
-                core.legacy_topological_torsion_count_fingerprint().unwrap()
+                m.fingerprint_topological_torsion_count_legacy().unwrap(),
+                core.fingerprint_topological_torsion_count_legacy().unwrap()
             );
             for count in [3, 4, 5] {
                 let p = ck::LegacyTopologicalTorsionParams {
@@ -457,16 +457,16 @@ mod legacy_tests {
                     ..Default::default()
                 };
                 assert_eq!(
-                    m.legacy_topological_torsion_count_fingerprint_with_params(&p)
+                    m.fingerprint_topological_torsion_count_legacy_with_params(&p)
                         .unwrap(),
-                    core.legacy_topological_torsion_count_fingerprint_with_params(&p)
+                    core.fingerprint_topological_torsion_count_legacy_with_params(&p)
                         .unwrap()
                 );
             }
             assert_eq!(
-                m.legacy_topological_torsion_sparse_count_fingerprint()
+                m.fingerprint_topological_torsion_sparse_count_legacy()
                     .unwrap(),
-                core.legacy_topological_torsion_sparse_count_fingerprint()
+                core.fingerprint_topological_torsion_sparse_count_legacy()
                     .unwrap()
             );
             for count in [3, 4, 5] {
@@ -475,9 +475,9 @@ mod legacy_tests {
                     ..Default::default()
                 };
                 assert_eq!(
-                    m.legacy_topological_torsion_sparse_count_fingerprint_with_params(&p)
+                    m.fingerprint_topological_torsion_sparse_count_legacy_with_params(&p)
                         .unwrap(),
-                    core.legacy_topological_torsion_sparse_count_fingerprint_with_params(&p)
+                    core.fingerprint_topological_torsion_sparse_count_legacy_with_params(&p)
                         .unwrap()
                 );
             }
@@ -501,27 +501,27 @@ mod legacy_tests {
                     ..Default::default()
                 };
                 assert_eq!(
-                    m.topological_torsion_fingerprint_with_params(&p, None)
+                    m.fingerprint_topological_torsion_with_params(&p, None)
                         .unwrap(),
-                    core.topological_torsion_fingerprint_with_params(&p, None)
+                    core.fingerprint_topological_torsion_with_params(&p, None)
                         .unwrap()
                 );
                 assert_eq!(
-                    m.topological_torsion_count_fingerprint_with_params(&p, None)
+                    m.fingerprint_topological_torsion_count_with_params(&p, None)
                         .unwrap(),
-                    core.topological_torsion_count_fingerprint_with_params(&p, None)
+                    core.fingerprint_topological_torsion_count_with_params(&p, None)
                         .unwrap()
                 );
                 assert_eq!(
-                    m.topological_torsion_sparse_fingerprint_with_params(&p, None)
+                    m.fingerprint_topological_torsion_sparse_with_params(&p, None)
                         .unwrap(),
-                    core.topological_torsion_sparse_fingerprint_with_params(&p, None)
+                    core.fingerprint_topological_torsion_sparse_with_params(&p, None)
                         .unwrap()
                 );
                 assert_eq!(
-                    m.topological_torsion_sparse_count_fingerprint_with_params(&p, None)
+                    m.fingerprint_topological_torsion_sparse_count_with_params(&p, None)
                         .unwrap(),
-                    core.topological_torsion_sparse_count_fingerprint_with_params(&p, None)
+                    core.fingerprint_topological_torsion_sparse_count_with_params(&p, None)
                         .unwrap()
                 );
             }

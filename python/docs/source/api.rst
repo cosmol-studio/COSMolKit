@@ -14,7 +14,7 @@ InChI API
 Molecule conversion uses the existing official InChI v1.07.5 / RDKit
 2026.03.1 source port. Failures raise ``InchiError`` with ``domain``,
 ``operation``, typed ``InchiErrorKind``, and ``detail`` attributes.
-``InchiReadParams`` has writable ``sanitize`` and ``remove_hydrogens``
+``InchiReadParams`` has writable ``sanitize`` and ``remove_hs``
 properties (both default to true). ``InchiWriteParams.options`` is the engine
 option string (empty by default). Calls accept a parameter object or keyword
 options, but not both.
@@ -28,7 +28,7 @@ Typical usage keeps molecule conversion on :class:`cosmolkit.Molecule`:
    molecule = ck.Molecule.from_smiles("CCO")
    inchi = molecule.to_inchi()
    key = molecule.to_inchi_key()
-   assert ck.inchi_to_inchi_key(inchi) == key
+   assert ck.inchi_to_key(inchi) == key
 
    restored = ck.Molecule.from_inchi(inchi)
    assert restored.to_inchi() == inchi
@@ -43,7 +43,7 @@ Typical usage keeps molecule conversion on :class:`cosmolkit.Molecule`:
 .. autoclass:: cosmolkit.InchiErrorKind
    :members:
 
-.. autofunction:: cosmolkit.inchi_to_inchi_key
+.. autofunction:: cosmolkit.inchi_to_key
 
 .. py:method:: cosmolkit.Molecule.to_inchi(options="")
 

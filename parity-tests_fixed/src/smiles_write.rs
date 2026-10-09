@@ -14,8 +14,8 @@ pub enum Root {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Profile {
-    pub do_isomeric_smiles: bool,
-    pub do_kekule: bool,
+    pub isomeric_smiles: bool,
+    pub kekule: bool,
     pub canonical: bool,
     pub clean_stereo: bool,
     pub all_bonds_explicit: bool,
@@ -31,8 +31,8 @@ pub fn profiles() -> Vec<Profile> {
     (0..256)
         .flat_map(|bits| {
             [Root::None, Root::First, Root::Last].map(move |rooted_at_atom| Profile {
-                do_isomeric_smiles: bits & 128 != 0,
-                do_kekule: bits & 64 != 0,
+                isomeric_smiles: bits & 128 != 0,
+                kekule: bits & 64 != 0,
                 canonical: bits & 32 != 0,
                 clean_stereo: bits & 16 != 0,
                 all_bonds_explicit: bits & 8 != 0,
@@ -53,8 +53,8 @@ impl Profile {
             Root::Last => atoms.checked_sub(1).map(AtomId::new),
         };
         SmilesWriteParams {
-            do_isomeric_smiles: self.do_isomeric_smiles,
-            do_kekule: self.do_kekule,
+            isomeric_smiles: self.isomeric_smiles,
+            kekule: self.kekule,
             canonical: self.canonical,
             clean_stereo: self.clean_stereo,
             all_bonds_explicit: self.all_bonds_explicit,
@@ -112,8 +112,8 @@ mod tests {
         for (i, p) in profiles.iter().enumerate() {
             assert!(!profiles[..i].contains(p));
             let values = [
-                p.do_isomeric_smiles,
-                p.do_kekule,
+                p.isomeric_smiles,
+                p.kekule,
                 p.canonical,
                 p.clean_stereo,
                 p.all_bonds_explicit,
@@ -129,8 +129,8 @@ mod tests {
                 [Root::None, Root::First, Root::Last][i % 3]
             );
             let params = p.params(5);
-            assert_eq!(params.do_isomeric_smiles, p.do_isomeric_smiles);
-            assert_eq!(params.do_kekule, p.do_kekule);
+            assert_eq!(params.isomeric_smiles, p.isomeric_smiles);
+            assert_eq!(params.kekule, p.kekule);
             assert_eq!(params.canonical, p.canonical);
             assert_eq!(params.clean_stereo, p.clean_stereo);
             assert_eq!(params.all_bonds_explicit, p.all_bonds_explicit);

@@ -216,8 +216,10 @@ fn residue_code<'py>(py: Python<'py>, name: &str) -> PyResult<Bound<'py, PyAny>>
 #[pyfunction]
 fn expand_one_letter(
     code: &str,
-    #[gen_stub(override_type(type_repr = "ResidueInfoKind"))] kind: i64,
+    #[gen_stub(override_type(type_repr = "ResidueInfoKind | builtins.str | builtins.int"))]
+    kind: &Bound<'_, PyAny>,
 ) -> PyResult<Option<String>> {
+    let kind = crate::canonical_atom_bond::enum_code(kind, "ResidueInfoKind")?;
     let mut chars = code.chars();
     let c = chars
         .next()
@@ -231,8 +233,10 @@ fn expand_one_letter(
 #[pyfunction]
 fn expand_one_letter_sequence(
     seq: &str,
-    #[gen_stub(override_type(type_repr = "ResidueInfoKind"))] kind: i64,
+    #[gen_stub(override_type(type_repr = "ResidueInfoKind | builtins.str | builtins.int"))]
+    kind: &Bound<'_, PyAny>,
 ) -> PyResult<Vec<String>> {
+    let kind = crate::canonical_atom_bond::enum_code(kind, "ResidueInfoKind")?;
     ck::expand_one_letter_sequence(seq, kind_from_code(kind)?)
         .map_err(|e| PyValueError::new_err(e.to_string()))
 }
@@ -284,7 +288,7 @@ pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     let kinds = int_enum.call1(("ResidueInfoKind", members))?;
     kinds.setattr("__module__", "cosmolkit")?;
-    crate::canonical_error_accessors::attach(&kinds, &[("name", "_name_")])?;
+    // Preserve IntEnum.name as a string property, including mapping/pickle use.
     let error = py.get_type::<ResidueCodeParseError>();
     crate::canonical_error_accessors::residue_error(error.as_any())?;
     module.add("ResidueCodeParseError", error)?;

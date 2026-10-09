@@ -200,7 +200,7 @@ mod tests {
             ck::Molecule::from_mol(mol).unwrap()
         );
         for sanitize in [false, true] {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 for strict_parsing in [false, true] {
                     for expand_attachment_points in [false, true] {
                         for process_property_lists in [false, true] {
@@ -211,7 +211,7 @@ mod tests {
                             ] {
                                 let p = ck::SdfReadParams {
                                     sanitize,
-                                    remove_hydrogens,
+                                    remove_hs,
                                     strict_parsing,
                                     expand_attachment_points,
                                     process_property_lists,

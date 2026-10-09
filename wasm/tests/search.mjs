@@ -1,6 +1,25 @@
 import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import test from 'node:test';import {pathToFileURL} from 'node:url';
 const b=await import(pathToFileURL(process.env.COSMOLKIT_WASM_MODULE).href);b.initSync({module:readFileSync(process.env.COSMOLKIT_WASM_BINARY)});
 const maps=rows=>rows.map(row=>row.atomMapping());
+test('Short matching methods accept checked parameter instances and options without changing targets',()=>{
+ const m=b.Molecule.fromSmiles('F[C@](Cl)(Br)I'),q=b.parseSmarts('F[C@@](Cl)(Br)I'),before=m.toSmiles(),params=new b.SubstructMatchParams(undefined,undefined,true);
+ for(const configuration of [params,{useChirality:true}]){
+  assert.equal(m.substructMatch(q,configuration),null);
+  assert.equal(m.hasSubstructMatch(q,configuration),false);
+  assert.deepEqual(m.substructMatches(q,configuration),[]);
+ }
+ assert.equal(m.hasSubstructMatch(q),true);
+ assert.notEqual(m.substructMatch(q),null);
+ const chain=b.Molecule.fromSmiles('CCC'),carbon=b.parseSmarts('C');
+ for(const configuration of [new b.SubstructMatchParams(1),{maxMatches:1}])assert.equal(chain.substructMatches(carbon,configuration).length,1);
+ for(const method of ['substructMatch','substructMatches','hasSubstructMatch']){
+  assert.throws(()=>m[method](q,{unknownOption:true}),TypeError);
+  assert.throws(()=>m[method](q,{useChirality:'true'}),TypeError);
+  assert.throws(()=>m[method](q,{maxMatches:-1}),RangeError);
+  for(const invalid of [null,[],true,'params',new Date()])assert.throws(()=>m[method](q,invalid),TypeError);
+ }
+ assert.equal(m.toSmiles(),before);
+});
 test('All five substructure methods preserve ordered mappings, compiled query lifetime and read-only targets',()=>{
  const m=b.Molecule.fromSmiles('CCOCCO'),before=m.toSmiles(),query=b.parseSmarts('CO'),compiled=b.compileQuery(query),params=new b.SubstructMatchParams();
  const expected=[[1,2],[3,2],[4,5]],rows=m.substructMatches(query);assert.deepEqual(maps(rows),expected);assert.deepEqual(m.substructMatch(query).atomMapping(),expected[0]);assert.equal(m.hasSubstructMatch(query),true);assert.deepEqual(maps(m.substructMatchesWithParams(query,params)),expected);assert.deepEqual(maps(m.substructMatchesCompiled(compiled)),expected);
@@ -22,7 +41,7 @@ test('All sixteen matching options preserve defaults, copied collections, intege
  for(const value of [{},null,undefined,new b.SmartsWriteParams()]){assert.throws(()=>m.substructMatchesWithParams(q,value),TypeError);assert.throws(()=>m.substructMatches(value),TypeError);assert.throws(()=>m.substructMatchesCompiled(value),TypeError);}
 });
 test('SMARTS writers preserve full options and source errors while shared parse errors retain typed fields',()=>{
- const defaults=new b.SmartsWriteParams();assert.deepEqual([defaults.includeAtomMaps,defaults.doIsomericSmiles,defaults.includeDativeBonds,defaults.rootedAtAtom],[true,true,true,null]);
+ const defaults=new b.SmartsWriteParams();assert.deepEqual([defaults.includeAtomMaps,defaults.isomericSmiles,defaults.includeDativeBonds,defaults.rootedAtAtom],[true,true,true,null]);
  const query=b.QueryGraph.fromSmarts('[C:7]O');for(const maps of [false,true])for(const stereo of [false,true])for(const dative of [false,true])for(const root of [null,0,1]){
   const p=new b.SmartsWriteParams(maps,stereo,dative,root),text=b.writeSmarts(query,p);assert.equal(b.parseSmarts(text).numAtoms(),2);assert.equal(text.includes(':7'),maps);assert.equal(b.writeSmarts(query,p),text);assert.equal(b.parseSmarts(b.writeCxSmarts(query,p)).numBonds(),1);
  }

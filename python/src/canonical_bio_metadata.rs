@@ -8,6 +8,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 use std::collections::BTreeMap;
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -30,6 +31,7 @@ impl From<ck::BioConnectionKind> for BioConnectionKind {
     }
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -48,6 +50,7 @@ impl From<ck::BioAsu> for BioAsu {
     }
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -82,6 +85,7 @@ impl From<ck::BioHelixClass> for BioHelixClass {
     }
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -112,6 +116,7 @@ impl From<ck::BioSoftwareClassification> for BioSoftwareClassification {
     }
 }
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1176,6 +1181,79 @@ impl ResidueAddress {
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    // String-valued enums preserve the existing Python string comparisons
+    // while exposing the facade's closed, typed vocabulary.
+    let enum_factory = module.py().import("enum")?.getattr("Enum")?;
+    for (name, variants) in [
+        (
+            "BioCalcFlag",
+            &["NotSet", "NoHydrogen", "Determined", "Calculated", "Dummy"][..],
+        ),
+        (
+            "EntityKind",
+            &["Unknown", "Polymer", "NonPolymer", "Branched", "Water"][..],
+        ),
+        (
+            "PolymerKind",
+            &[
+                "Unknown",
+                "PeptideL",
+                "PeptideD",
+                "Dna",
+                "Rna",
+                "DnaRnaHybrid",
+                "SaccharideD",
+                "SaccharideL",
+                "Pna",
+                "CyclicPseudoPeptide",
+                "Other",
+            ][..],
+        ),
+        (
+            "ResidueKind",
+            &[
+                "AminoAcid",
+                "Dna",
+                "Rna",
+                "Saccharide",
+                "Water",
+                "Buffer",
+                "Ligand",
+                "Unknown",
+            ][..],
+        ),
+        (
+            "ChainKind",
+            &[
+                "Protein",
+                "Dna",
+                "Rna",
+                "ProteinDnaComplex",
+                "ProteinRnaComplex",
+                "LigandOnly",
+                "WaterOnly",
+                "Mixed",
+                "Unknown",
+            ][..],
+        ),
+    ] {
+        let members = pyo3::types::PyDict::new(module.py());
+        for variant in variants {
+            members.set_item(*variant, *variant)?;
+        }
+        let options = pyo3::types::PyDict::new(module.py());
+        options.set_item("type", module.py().get_type::<pyo3::types::PyString>())?;
+        options.set_item("module", "cosmolkit")?;
+        let kind = enum_factory.call((name, members), Some(&options))?;
+        kind.setattr(
+            "__str__",
+            module
+                .py()
+                .get_type::<pyo3::types::PyString>()
+                .getattr("__str__")?,
+        )?;
+        module.add(name, kind)?;
+    }
     module.add_class::<BioConnection>()?;
     module.add_class::<BioCisPep>()?;
     module.add_class::<BioModRes>()?;

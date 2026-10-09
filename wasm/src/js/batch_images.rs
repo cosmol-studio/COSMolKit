@@ -174,21 +174,21 @@ impl BatchExportReport {
 #[cfg(feature = "cap-depict")]
 #[wasm_bindgen]
 impl MoleculeBatch {
-    #[wasm_bindgen(js_name=toImages)]
-    pub fn to_images(&self, directory: &str) -> Result<BatchExportReport, JsValue> {
+    #[wasm_bindgen(js_name=writeImages)]
+    pub fn write_images(&self, directory: &str) -> Result<BatchExportReport, JsValue> {
         self.inner
-            .to_images(directory)
+            .write_images(directory)
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }
-    #[wasm_bindgen(js_name=toImagesWithParams)]
-    pub fn to_images_with_params(
+    #[wasm_bindgen(js_name=writeImagesWithParams)]
+    pub fn write_images_with_params(
         &self,
         directory: &str,
         options: &BatchImageParams,
     ) -> Result<BatchExportReport, JsValue> {
         self.inner
-            .to_images_with_params(directory, &options.inner)
+            .write_images_with_params(directory, &options.inner)
             .map(|inner| BatchExportReport { inner })
             .map_err(|e| batch_validation_error(&e).unwrap_or_else(|e| e))
     }

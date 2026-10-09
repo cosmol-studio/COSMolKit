@@ -9,6 +9,7 @@ use wasm_bindgen::prelude::*;
 pub struct SubstructMatchParams {
     pub(crate) inner: ck::SubstructMatchParams,
 }
+#[cosmolkit_wasm::javascript_options("SubstructMatchOptions")]
 #[wasm_bindgen]
 impl SubstructMatchParams {
     #[wasm_bindgen(constructor)]
@@ -192,7 +193,7 @@ impl SmartsWriteParams {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] include_atom_maps: JsValue,
-        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] do_isomeric_smiles: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "boolean")] isomeric_smiles: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "boolean")] include_dative_bonds: JsValue,
         #[wasm_bindgen(unchecked_optional_param_type = "number | null")] rooted_at_atom: JsValue,
     ) -> Result<Self, JsValue> {
@@ -200,8 +201,8 @@ impl SmartsWriteParams {
         if !include_atom_maps.is_undefined() {
             inner.include_atom_maps = bool_value(&include_atom_maps, "includeAtomMaps")?;
         }
-        if !do_isomeric_smiles.is_undefined() {
-            inner.do_isomeric_smiles = bool_value(&do_isomeric_smiles, "doIsomericSmiles")?;
+        if !isomeric_smiles.is_undefined() {
+            inner.isomeric_smiles = bool_value(&isomeric_smiles, "isomericSmiles")?;
         }
         if !include_dative_bonds.is_undefined() {
             inner.include_dative_bonds = bool_value(&include_dative_bonds, "includeDativeBonds")?;
@@ -215,9 +216,9 @@ impl SmartsWriteParams {
     pub fn include_atom_maps(&self) -> bool {
         self.inner.include_atom_maps
     }
-    #[wasm_bindgen(getter,js_name=doIsomericSmiles)]
-    pub fn do_isomeric_smiles(&self) -> bool {
-        self.inner.do_isomeric_smiles
+    #[wasm_bindgen(getter,js_name=isomericSmiles)]
+    pub fn isomeric_smiles(&self) -> bool {
+        self.inner.isomeric_smiles
     }
     #[wasm_bindgen(getter,js_name=includeDativeBonds)]
     pub fn include_dative_bonds(&self) -> bool {
@@ -370,6 +371,19 @@ extern "C" {
         f: &mut dyn FnMut(&SubstructMatchParams),
     ) -> Result<(), JsValue>;
 }
+impl SubstructMatchParams {
+    fn from_configuration(value: &JsValue) -> Result<Self, JsValue> {
+        let mut inner = None;
+        // The generated visitor checks the actual native parameter class.
+        // Its callback performs only a detached parameter copy, no operation.
+        if visit_substructmatchparams(value, &mut |params: &SubstructMatchParams| {
+            inner = Some(params.inner.clone());
+        }).is_ok() {
+            return inner.map(|inner| Self { inner }).ok_or_else(|| type_error("params"));
+        }
+        Self::from_js_options(value)
+    }
+}
 #[wasm_bindgen(
     inline_js = "export function visitSearchQueryGraph(v,f){try{f(v);}catch(cause){throw new TypeError('invalid QueryGraph',{cause});}}"
 )]
@@ -390,13 +404,17 @@ impl Molecule {
     pub fn substruct_match(
         &self,
         #[wasm_bindgen(unchecked_param_type = "QueryGraph")] query: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions")] params: JsValue,
     ) -> Result<JsValue, JsValue> {
         // COSMolKit❗✔️: self.inner.substruct_match(&q.inner)
         let mut result = None;
+        let configured = (!params.is_undefined()).then(|| SubstructMatchParams::from_configuration(&params)).transpose()?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             result = Some(
-                self.inner
-                    .substruct_match(&q.inner)
+                configured.as_ref().map_or_else(
+                    || self.inner.substruct_match(&q.inner),
+                    |params| self.inner.substruct_match_with_params(&q.inner, &params.inner),
+                )
                     .map(|v| v.map_or(JsValue::NULL, |inner| MatchResult { inner }.into()))
                     .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
             );
@@ -407,13 +425,17 @@ impl Molecule {
     pub fn substruct_matches(
         &self,
         #[wasm_bindgen(unchecked_param_type = "QueryGraph")] query: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions")] params: JsValue,
     ) -> Result<Vec<MatchResult>, JsValue> {
         // COSMolKit❗✔️: self.inner.substruct_matches(&q.inner)
         let mut result = None;
+        let configured = (!params.is_undefined()).then(|| SubstructMatchParams::from_configuration(&params)).transpose()?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             result = Some(
-                self.inner
-                    .substruct_matches(&q.inner)
+                configured.as_ref().map_or_else(
+                    || self.inner.substruct_matches(&q.inner),
+                    |params| self.inner.substruct_matches_with_params(&q.inner, &params.inner),
+                )
                     .map(|v| v.into_iter().map(|inner| MatchResult { inner }).collect())
                     .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
             );
@@ -424,13 +446,17 @@ impl Molecule {
     pub fn has_substruct_match(
         &self,
         #[wasm_bindgen(unchecked_param_type = "QueryGraph")] query: JsValue,
+        #[wasm_bindgen(unchecked_optional_param_type = "SubstructMatchParams | SubstructMatchOptions")] params: JsValue,
     ) -> Result<bool, JsValue> {
         // COSMolKit❗✔️: self.inner.has_substruct_match(&q.inner)
         let mut result = None;
+        let configured = (!params.is_undefined()).then(|| SubstructMatchParams::from_configuration(&params)).transpose()?;
         visit_querygraph(&query, &mut |q: &QueryGraph| {
             result = Some(
-                self.inner
-                    .has_substruct_match(&q.inner)
+                configured.as_ref().map_or_else(
+                    || self.inner.has_substruct_match(&q.inner),
+                    |params| self.inner.has_substruct_match_with_params(&q.inner, &params.inner),
+                )
                     .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
             );
         })?;
@@ -454,6 +480,47 @@ impl Molecule {
                         .map_err(|e| {
                             crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)
                         }),
+                );
+            });
+            result = Some(visited.and_then(|()| inner_result.ok_or_else(|| type_error("params"))?));
+        })?;
+        result.ok_or_else(|| type_error("query"))?
+    }
+    #[wasm_bindgen(js_name=substructMatchWithParams,unchecked_return_type="MatchResult | null")]
+    pub fn substruct_match_with_params(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "QueryGraph")] query: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "SubstructMatchParams")] params: JsValue,
+    ) -> Result<JsValue, JsValue> {
+        let mut result = None;
+        visit_querygraph(&query, &mut |q: &QueryGraph| {
+            let mut inner_result = None;
+            let visited = visit_substructmatchparams(&params, &mut |p: &SubstructMatchParams| {
+                inner_result = Some(
+                    self.inner
+                        .substruct_match_with_params(&q.inner, &p.inner)
+                        .map(|v| v.map_or(JsValue::NULL, |inner| MatchResult { inner }.into()))
+                        .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
+                );
+            });
+            result = Some(visited.and_then(|()| inner_result.ok_or_else(|| type_error("params"))?));
+        })?;
+        result.ok_or_else(|| type_error("query"))?
+    }
+    #[wasm_bindgen(js_name=hasSubstructMatchWithParams)]
+    pub fn has_substruct_match_with_params(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "QueryGraph")] query: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "SubstructMatchParams")] params: JsValue,
+    ) -> Result<bool, JsValue> {
+        let mut result = None;
+        visit_querygraph(&query, &mut |q: &QueryGraph| {
+            let mut inner_result = None;
+            let visited = visit_substructmatchparams(&params, &mut |p: &SubstructMatchParams| {
+                inner_result = Some(
+                    self.inner
+                        .has_substruct_match_with_params(&q.inner, &p.inner)
+                        .map_err(|e| crate::search_errors::substruct_error(&e).unwrap_or_else(|e| e)),
                 );
             });
             result = Some(visited.and_then(|()| inner_result.ok_or_else(|| type_error("params"))?));

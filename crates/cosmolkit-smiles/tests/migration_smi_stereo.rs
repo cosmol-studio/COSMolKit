@@ -46,7 +46,7 @@ fn writer_preserves_existing_ring_basis_for_bridgehead_nitrogen_legality() {
             input,
             &SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             },
         )

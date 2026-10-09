@@ -43,7 +43,7 @@ def test_mmff_original_initial_energy_gradient():
             assert molecule.conformers_3d()[0].coordinates() == embedded["coords"]
             expected = embedded["mmff"]
             if expected["ok"]:
-                actual = molecule.with_mmff_optimized_confs_with_params(ck.MmffConformerOptimizationParams(max_iterations=0, non_bonded_threshold=100.0)).conformer_results()[0]
+                actual = molecule.with_mmff_optimized_conformers_with_params(ck.MmffConformerOptimizationParams(max_iterations=0, non_bonded_threshold=100.0)).conformer_results()[0]
                 assert actual.status_code() == expected["needs_more"]
                 assert abs(actual.energy()-expected["energy"]) <= 1.0e-6
                 counts["energy"] += 1

@@ -30,7 +30,7 @@ ethanol_3d = """ethanol_3d
 M  END
 """
 
-mol = ck.Molecule.read_mol_from_str(ethanol_3d, coordinate_dim="3d")
+mol = ck.Molecule.read_mol_from_str(ethanol_3d, coordinate_mode="require_3d")
 start = mol.coordinates_3d().copy()
 
 if mol.has_uff_params():

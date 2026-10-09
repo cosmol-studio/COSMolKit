@@ -19,7 +19,7 @@ test("image parameters preserve all defaults, copied filenames, frozen nested ex
 
 test("image export preserves the current WASM filesystem error and its complete typed cause",()=>{
     const batch=b.MoleculeBatch.fromSmilesList(["CCO"]);
-    assert.throws(()=>batch.toImages(""),e=>{
+    assert.throws(()=>batch.writeImages(""),e=>{
         assert.equal(e.domain,"batch");assert.equal(e.kind,"Validation");assert.equal(e.errors,1);assert.equal(e.cause.index,0);assert.equal(e.cause.operation,"batch.write_images");
         const image=e.cause.cause;assert.equal(image.name,"BatchImageError");assert.equal(image.kind,"Write");assert.ok(image.detail instanceof b.BatchImageError);
         const write=image.cause;assert.equal(write.name,"DrawingWriteError");assert.equal(write.kind,"Io");assert.equal(write.filename,"mol_0.png");assert.ok(write.detail instanceof b.DrawingWriteError);
@@ -30,17 +30,17 @@ test("image export preserves the current WASM filesystem error and its complete 
 test("KeepErrors retains failed write rows and report writing preserves the native filesystem failure",()=>{
     const keep=new b.BatchParams(b.BatchErrorMode.KeepErrors);
     const batch=b.MoleculeBatch.fromSmilesListWithParams(["CCO","[","O"],new b.SmilesParseParams(),keep);
-    const report=batch.toImagesWithParams("",new b.BatchImageParams("svg",120,100,keep,["ethanol",null,"water.svg"]));
+    const report=batch.writeImagesWithParams("",new b.BatchImageParams("svg",120,100,keep,["ethanol",null,"water.svg"]));
     assert.ok(report instanceof b.BatchExportReport);assert.equal(report.total(),3);assert.equal(report.written,0);assert.equal(report.success(),0);assert.equal(report.skipped,1);assert.equal(report.failed(),2);
     const errors=report.errors();assert.deepEqual(errors.map(row=>row.index()),[0,2]);
     for(const row of errors){assert.equal(row.operation(),"batch.write_images");assert.equal(row.cause().name,"BatchImageError");assert.equal(row.cause().cause.cause.kind,"Unsupported");}
     assert.deepEqual(errors.map(row=>row.cause().cause.filename),["ethanol.svg","water.svg"]);
     assert.throws(()=>report.writeReport("counts.json"),e=>e.domain==="batch"&&e.cause.operation==="write error report"&&e.cause.cause.domain==="io"&&e.cause.cause.kind==="Unsupported");
-    const empty=b.MoleculeBatch.fromSmilesList([]).toImages("");assert.equal(empty.total(),0);assert.equal(empty.success(),0);assert.equal(empty.failed(),0);assert.deepEqual(empty.errors(),[]);
+    const empty=b.MoleculeBatch.fromSmilesList([]).writeImages("");assert.equal(empty.total(),0);assert.equal(empty.success(),0);assert.equal(empty.failed(),0);assert.deepEqual(empty.errors(),[]);
 });
 
 test("invalid jobs and filename lengths fail before any filesystem operation",()=>{
     const batch=b.MoleculeBatch.fromSmilesList(["C"]);
-    assert.throws(()=>batch.toImagesWithParams("",new b.BatchImageParams("png",300,300,new b.BatchParams(b.BatchErrorMode.Strict,0))),e=>e.domain==="batch"&&e.recordErrors[0].operation()==="n_jobs");
-    assert.throws(()=>batch.toImagesWithParams("",new b.BatchImageParams("png",300,300,null,[])),e=>e.domain==="batch"&&e.recordErrors[0].operation()==="filenames");
+    assert.throws(()=>batch.writeImagesWithParams("",new b.BatchImageParams("png",300,300,new b.BatchParams(b.BatchErrorMode.Strict,0))),e=>e.domain==="batch"&&e.recordErrors[0].operation()==="n_jobs");
+    assert.throws(()=>batch.writeImagesWithParams("",new b.BatchImageParams("png",300,300,null,[])),e=>e.domain==="batch"&&e.recordErrors[0].operation()==="filenames");
 });

@@ -68,7 +68,7 @@ def main() -> None:
     print("SDF:", path)
     print("file size bytes:", path.stat().st_size)
 
-    dataset = ck.SdfDataset.open(str(path), coordinate_dim="auto")
+    dataset = ck.SdfDataset.open(str(path), coordinate_mode="preserve")
     print("indexed records:", len(dataset))
 
     first_meta = dataset.metadata(0)
@@ -96,7 +96,7 @@ def main() -> None:
     print("dataset records read:", record_count)
     print("dataset valid records:", valid_count)
 
-    reader_batches = ck.SdfReader.open(str(path), coordinate_dim="auto").batches(
+    reader_batches = ck.SdfReader.open(str(path), coordinate_mode="preserve").batches(
         size=batch_size,
         errors="keep",
     )
@@ -110,7 +110,7 @@ def main() -> None:
             str(path),
             errors="keep",
             progress_bar=args.progress_bar,
-            coordinate_dim="auto",
+            coordinate_mode="preserve",
         )
         print("whole-file batch records:", len(all_records))
         print("whole-file valid records:", sum(all_records.valid_mask()))

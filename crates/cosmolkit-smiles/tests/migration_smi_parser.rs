@@ -11,7 +11,7 @@ fn defaults_match_the_pinned_v2_constructor() {
     assert!(params.allow_cxsmiles);
     assert!(params.strict_cxsmiles);
     assert!(params.parse_name);
-    assert!(params.remove_hydrogens);
+    assert!(params.remove_hs);
     assert!(!params.skip_cleanup);
     assert!(!params.debug_parse);
     assert!(params.replacements.is_empty());
@@ -22,11 +22,11 @@ fn valence_transport_stereo_completion_marker_follows_source_flag_product() {
     use cosmolkit_smiles::finalize_smiles_stereo;
     for input in ["CCO", "[C@H](C)C", ""] {
         for sanitize in [false, true] {
-            for remove_hydrogens in [false, true] {
+            for remove_hs in [false, true] {
                 for initial in [None, Some("0"), Some("1")] {
                     let params = SmilesParseParams {
                         sanitize,
-                        remove_hydrogens,
+                        remove_hs,
                         ..Default::default()
                     };
                     let mut record = parse_smiles(input, &params).unwrap();
@@ -41,7 +41,7 @@ fn valence_transport_stereo_completion_marker_follows_source_flag_product() {
                     let output =
                         finalize_smiles_stereo(record, &params, &mut None, &mut ring_carrier)
                             .unwrap();
-                    if sanitize || remove_hydrogens {
+                    if sanitize || remove_hs {
                         assert_eq!(
                             output.properties.prop("_StereochemDone"),
                             Some(&PropertyValue::Int(1))
@@ -417,7 +417,7 @@ fn cleanup_debug_and_post_parse_chemistry_flags_keep_their_layer_boundaries() {
         "[H]C",
         &SmilesParseParams {
             sanitize: true,
-            remove_hydrogens: true,
+            remove_hs: true,
             ..Default::default()
         },
     )
@@ -426,7 +426,7 @@ fn cleanup_debug_and_post_parse_chemistry_flags_keep_their_layer_boundaries() {
         "[H]C",
         &SmilesParseParams {
             sanitize: false,
-            remove_hydrogens: false,
+            remove_hs: false,
             debug_parse: true,
             ..Default::default()
         },

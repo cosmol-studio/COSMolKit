@@ -1,18 +1,5 @@
-from typing import TypedDict
-
 import cosmolkit
 import pytest
-
-
-class AtomPairKeywordArgs(TypedDict, total=False):
-    n_bits: int
-    min_distance: int
-    max_distance: int
-    include_chirality: bool
-    count_simulation: bool
-    from_atoms: list[int]
-    ignore_atoms: list[int]
-    custom_atom_invariants: list[int]
 
 
 def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
@@ -25,7 +12,7 @@ def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
 
     sparse_count = molecule.fingerprint_atom_pair_sparse_count()
     assert isinstance(sparse_count, cosmolkit.SparseCountFingerprint)
-    assert sparse_count.size() == 1 << 23
+    assert sparse_count.length() == 1 << 23
     assert sparse_count.nonzero_elements() == {
         558113: 1,
         558114: 1,
@@ -38,8 +25,8 @@ def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
     assert sparse_count.value(0) == 0
 
     count = molecule.fingerprint_atom_pair_count()
-    assert isinstance(count, cosmolkit.SparseCountFingerprint)
-    assert count.size() == 2048
+    assert isinstance(count, cosmolkit.SparseCountFingerprint32)
+    assert count.length() == 2048
     assert count.nonzero_elements() == {
         1310: 1,
         1358: 2,
@@ -48,9 +35,9 @@ def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
         1692: 1,
     }
 
-    sparse_bits = molecule.fingerprint_atom_pair_sparse_bits()
+    sparse_bits = molecule.fingerprint_atom_pair_sparse()
     assert isinstance(sparse_bits, cosmolkit.SparseBitFingerprint)
-    assert sparse_bits.size() == 1 << 23
+    assert sparse_bits.n_bits() == 1 << 23
     assert sparse_bits.on_bits() == [
         7918712,
         7918972,
@@ -62,11 +49,16 @@ def test_atom_pair_default_keywords_convert_all_four_exact_result_forms():
 
 
 def test_atom_pair_provenance_matches_exact_count_simulation_projection():
-    result = cosmolkit.Molecule.from_smiles("CCCO").fingerprint_atom_pair_with_output()
-    assert isinstance(result, cosmolkit.AtomPairFingerprintResult)
-    assert result.fingerprint().on_bits() == [624, 1144, 1336, 1337, 1404, 1596]
-
-    output = result.additional_output()
+    output = cosmolkit.FingerprintAdditionalOutput()
+    output.allocate_atom_counts()
+    output.allocate_atom_to_bits()
+    output.allocate_bit_info_map()
+    output.allocate_atoms_per_bit()
+    fingerprint = cosmolkit.Molecule.from_smiles("CCCO").fingerprint_atom_pair_with_params(
+        cosmolkit.AtomPairFingerprintParams(), output
+    )
+    assert isinstance(fingerprint, cosmolkit.Fingerprint)
+    assert fingerprint.on_bits() == [624, 1144, 1336, 1337, 1404, 1596]
     assert isinstance(output, cosmolkit.FingerprintAdditionalOutput)
     assert output.atom_counts() == [3, 3, 3, 3]
     assert output.atom_to_bits() == [
@@ -92,33 +84,34 @@ def test_atom_pair_provenance_matches_exact_count_simulation_projection():
 def test_atom_pair_option_interactions_and_repeated_calls_are_exact_and_immutable():
     molecule = cosmolkit.Molecule.from_smiles("C[C@H](O)F")
     before = molecule.to_smiles()
-    kwargs: AtomPairKeywordArgs = {
-        "n_bits": 64,
-        "min_distance": 1,
-        "max_distance": 2,
-        "include_chirality": True,
-        "count_simulation": False,
-        "from_atoms": [1],
-        "ignore_atoms": [3],
-        "custom_atom_invariants": [11, 22, 33, 44],
-    }
-    first = molecule.fingerprint_atom_pair(**kwargs)
-    second = molecule.fingerprint_atom_pair(**kwargs)
+    params = cosmolkit.AtomPairFingerprintParams(
+        generator=cosmolkit.AtomPairParams(fp_size=64, min_distance=1, max_distance=2, include_chirality=True, count_simulation=False),
+        from_atoms=[1], ignore_atoms=[3], custom_atom_invariants=[11, 22, 33, 44],
+    )
+    first = molecule.fingerprint_atom_pair_with_params(params, None)
+    second = molecule.fingerprint_atom_pair_with_params(params, None)
     assert first.on_bits() == second.on_bits() == [0, 37]
-    assert molecule.fingerprint_atom_pair_sparse_count(
-        **kwargs
+    assert molecule.fingerprint_atom_pair_sparse_count_with_params(
+        params, None
     ).nonzero_elements() == {1442145: 1, 2163393: 1}
     assert molecule.to_smiles() == before
 
 
 def test_atom_pair_binding_returns_typed_value_errors():
     molecule = cosmolkit.Molecule.from_smiles("CCO")
-    with pytest.raises(ValueError, match="n_bits > 0"):
-        molecule.fingerprint_atom_pair(n_bits=0)
-    with pytest.raises(ValueError, match="minDistance"):
-        molecule.fingerprint_atom_pair(min_distance=4, max_distance=3)
+    with pytest.raises(ValueError, match="fingerprint size"):
+        molecule.fingerprint_atom_pair_with_params(
+            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(fp_size=0)), None
+        )
+    # Pinned AtomPairGenerator.cpp's precondition reports "bad distances provided".
+    with pytest.raises(cosmolkit.AtomPairReadError, match="bad distances provided"):
+        molecule.fingerprint_atom_pair_with_params(
+            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(min_distance=4, max_distance=3)), None
+        )
     with pytest.raises(ValueError, match="(?i)conformer"):
-        molecule.fingerprint_atom_pair(use_2d=False)
+        molecule.fingerprint_atom_pair_with_params(
+            cosmolkit.AtomPairFingerprintParams(generator=cosmolkit.AtomPairParams(use_2d=False)), None
+        )
 
 
 def test_atom_pair_python_surface_has_no_rdkit_style_duplicate_names():

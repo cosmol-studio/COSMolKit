@@ -16,7 +16,7 @@ pub use cosmolkit_io::SdfCoordinateMode;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SdfReadParams {
     pub sanitize: bool,
-    pub remove_hydrogens: bool,
+    pub remove_hs: bool,
     pub strict_parsing: bool,
     pub expand_attachment_points: bool,
     pub process_property_lists: bool,
@@ -27,7 +27,7 @@ impl Default for SdfReadParams {
     fn default() -> Self {
         Self {
             sanitize: true,
-            remove_hydrogens: true,
+            remove_hs: true,
             strict_parsing: true,
             expand_attachment_points: false,
             process_property_lists: true,

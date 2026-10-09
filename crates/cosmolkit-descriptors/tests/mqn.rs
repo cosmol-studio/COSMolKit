@@ -136,7 +136,7 @@ fn error(f: &Fixture) -> DescriptorError {
 
 fn real(smiles: &str) -> Fixture {
     let params = cosmolkit_smiles::SmilesParseParams {
-        remove_hydrogens: false,
+        remove_hs: false,
         ..Default::default()
     };
     let record = cosmolkit_smiles::parse_smiles(smiles, &params).unwrap();

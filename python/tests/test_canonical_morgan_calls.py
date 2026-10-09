@@ -8,10 +8,10 @@ import cosmolkit as ck
 @pytest.mark.parametrize(
     "method",
     [
-        "morgan_fingerprint",
-        "morgan_sparse_fingerprint",
-        "morgan_count_fingerprint",
-        "morgan_sparse_count_fingerprint",
+        "fingerprint_morgan",
+        "fingerprint_morgan_sparse",
+        "fingerprint_morgan_count",
+        "fingerprint_morgan_sparse_count",
     ],
 )
 def test_all_forms_fill_the_original_additional_output_and_preserve_input(method):
@@ -43,10 +43,10 @@ def test_optional_empty_roots_are_distinct_and_call_parameters_are_immutable():
     params = ck.MorganFingerprintParams(from_atoms=[])
     assert params.from_atoms == []
     assert params.ignore_atoms is None
-    assert molecule.morgan_fingerprint_with_params(params, None).on_bits() == []
-    assert molecule.morgan_fingerprint_with_params(ck.MorganFingerprintParams(), None).on_bits()
-    with pytest.raises(AttributeError):
-        params.conformer_id = 7
+    assert molecule.fingerprint_morgan_with_params(params, None).on_bits() == []
+    assert molecule.fingerprint_morgan_with_params(ck.MorganFingerprintParams(), None).on_bits()
+    params.conformer_id = 7
+    assert params.conformer_id == 7
     roots = params.from_atoms
     roots.append(0)
     assert params.from_atoms == []
@@ -59,7 +59,7 @@ def test_generator_errors_keep_the_source_cause_and_input():
         generator=ck.MorganParams(count_simulation=True, count_bounds=[])
     )
     with pytest.raises(ck.MorganReadError) as caught:
-        molecule.morgan_fingerprint_with_params(params, None)
+        molecule.fingerprint_morgan_with_params(params, None)
     assert caught.value.domain == "fingerprints"
     assert caught.value.kind == "Generator"
     assert caught.value.__cause__ is not None
@@ -75,7 +75,7 @@ def test_feature_and_custom_invariant_options_reach_the_owner():
         custom_bond_invariants=[7, 8],
         generator=ck.MorganParams(radius=0),
     )
-    assert molecule.morgan_sparse_count_fingerprint_with_params(custom, None).nonzero_elements() == {1: 1}
+    assert molecule.fingerprint_morgan_sparse_count_with_params(custom, None).nonzero_elements() == {1: 1}
     features = ck.MorganFingerprintParams(invariants=ck.MorganInvariants.features())
     connectivity = ck.MorganFingerprintParams(invariants=ck.MorganInvariants.connectivity())
-    assert molecule.morgan_sparse_count_fingerprint_with_params(features, None).nonzero_elements() != molecule.morgan_sparse_count_fingerprint_with_params(connectivity, None).nonzero_elements()
+    assert molecule.fingerprint_morgan_sparse_count_with_params(features, None).nonzero_elements() != molecule.fingerprint_morgan_sparse_count_with_params(connectivity, None).nonzero_elements()

@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use pyo3_stub_gen::derive::{gen_stub_pyclass, gen_stub_pyclass_enum, gen_stub_pymethods};
 use std::collections::BTreeMap;
 
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -74,6 +75,7 @@ impl PropertyValue {
             .map_err(|e| crate::canonical_atom_bond::property_pyerr(py, e))
     }
 }
+#[cosmolkit_macros::python_enum]
 #[cfg_attr(feature = "stubgen", gen_stub_pyclass_enum)]
 #[pyclass(module = "cosmolkit", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -201,32 +203,24 @@ pub(crate) fn property_string_pyerr(py: Python<'_>, source: ck::PropertyStringEr
         &source,
     );
     let value_kind = PropertyValueKind::from(source.kind());
-    let kind = pyo3::types::PyCFunction::new_closure(
-        py,
-        Some(c"kind"),
-        None,
-        move |args: &Bound<'_, pyo3::types::PyTuple>,
-              kwargs: Option<&Bound<'_, pyo3::types::PyDict>>|
-              -> PyResult<PropertyValueKind> {
-            if !args.is_empty() || kwargs.is_some_and(|kwargs| !kwargs.is_empty()) {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "kind() takes no arguments",
-                ));
-            }
-            Ok(value_kind)
-        },
-    );
-    match kind.and_then(|kind| {
+    let payload = || -> PyResult<()> {
         error.value(py).setattr("error_kind", "UnsupportedKind")?;
         error.value(py).setattr("value_kind", value_kind)?;
-        error.value(py).setattr("kind", kind)
-    }) {
+        // Keep the registered class accessor; the generic annotation's string
+        // category is retained separately rather than shadowing kind().
+        error.value(py).delattr("kind")
+    };
+    match payload() {
         Ok(()) => error,
         Err(error) => error,
     }
 }
 
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
+    crate::canonical_error_accessors::attach(
+        module.py().get_type::<PropertyStringError>().as_any(),
+        &[("kind", "value_kind")],
+    )?;
     module.add(
         "PropertyStringError",
         module.py().get_type::<PropertyStringError>(),

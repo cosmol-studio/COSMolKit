@@ -31,18 +31,24 @@ def declared_fields(cls: ast.ClassDef) -> dict[str, str]:
 
 def test_selected_stub_classes_and_methods():
     classes = declarations()
-    assert set(classes) == {"Molecule", "Coordinate2DParams", "DrawingError", "DrawingWriteError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "FingerprintAdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
-    methods = {n.name: n for n in classes["Molecule"].body if isinstance(n, ast.FunctionDef)}
+    expected_classes = {"Molecule", "Coordinate2DParams", "DrawingError", "DrawingWriteError", "OperationError", "SmilesParseParams", "SmilesWriteParams", "SmilesError", "SmilesWriteError", "MorganReadError", "FingerprintError", "Fingerprint", "SparseBitFingerprint", "SparseCountFingerprint", "SparseCountFingerprint32", "MorganParams", "FingerprintAdditionalOutput", "Element", "ElementInfo", "DescriptorReadError", "DescriptorError"}
+    # This focused regression does not forbid other registered domains.
+    # The generator checks the complete enabled registry against the stub.
+    assert expected_classes <= classes.keys()
+    methods = {}
+    for node in classes["Molecule"].body:
+        if isinstance(node, ast.FunctionDef):
+            methods.setdefault(node.name, node)
     expected = {"from_smiles": "Molecule", "num_atoms": "builtins.int", "num_bonds": "builtins.int",
                 "to_smiles": "builtins.str", "coordinates_2d": "typing.Optional[builtins.list[builtins.list[builtins.float]]]",
                 "has_2d_coordinates": "builtins.bool", "compute_2d_coordinates_": "None",
                 "compute_2d_coordinates_with_params_": "None", "with_2d_coordinates": "Molecule", "with_2d_coordinates_with_params": "Molecule",
                 "to_svg": "builtins.str", "to_png": "builtins.bytes", "write_svg": "None", "write_png": "None"}
     expected.update({"new": "Molecule", "from_smiles_with_params": "Molecule", "to_smiles_with_params": "builtins.str",
-        "morgan_fingerprint": "Fingerprint", "morgan_sparse_fingerprint": "SparseBitFingerprint",
-        "morgan_count_fingerprint": "SparseCountFingerprint32", "morgan_sparse_count_fingerprint": "SparseCountFingerprint"})
+        "fingerprint_morgan": "Fingerprint", "fingerprint_morgan_sparse": "SparseBitFingerprint",
+        "fingerprint_morgan_count": "SparseCountFingerprint32", "fingerprint_morgan_sparse_count": "SparseCountFingerprint"})
     expected.update({'hall_kier_alpha': 'builtins.float', 'hall_kier_alpha_with_contributions': 'tuple[builtins.float, builtins.list[builtins.float]]', 'kappa_1': 'builtins.float', 'kappa_2': 'builtins.float', 'kappa_3': 'builtins.float', 'phi': 'builtins.float', 'mqns': 'builtins.list[builtins.int]', 'chi_0_v': 'builtins.float', 'chi_1_v': 'builtins.float', 'chi_2_v': 'builtins.float', 'chi_3_v': 'builtins.float', 'chi_4_v': 'builtins.float', 'chi_n_v': 'builtins.float', 'chi_0_n': 'builtins.float', 'chi_1_n': 'builtins.float', 'chi_2_n': 'builtins.float', 'chi_3_n': 'builtins.float', 'chi_4_n': 'builtins.float', 'chi_n_n': 'builtins.float'})
-    assert set(methods) == set(expected)
+    assert expected.keys() <= methods.keys()
     for name, result in expected.items():
         assert ast.unparse(required_expression(methods[name].returns)) == result
     for name in ("to_svg", "to_png", "write_svg", "write_png"):
@@ -71,7 +77,8 @@ def test_selected_stub_classes_and_methods():
 
 def test_nine_parameter_properties_types_and_defaults():
     cls = declarations()["Coordinate2DParams"]
-    methods = {n.name: n for n in cls.body if isinstance(n, ast.FunctionDef)}
+    methods = {n.name: n for n in cls.body if isinstance(n, ast.FunctionDef)
+               and not any(isinstance(d, ast.Attribute) and d.attr == "setter" for d in n.decorator_list)}
     defaults = {"coordinate_map": None, "canonical_orientation": False, "clear_existing_2d": True,
                 "flips_per_sample": 0, "samples": 0, "sample_seed": 0,
                 "permute_degree_four": False, "force_rdkit": False, "use_ring_templates": False}
@@ -84,6 +91,9 @@ def test_nine_parameter_properties_types_and_defaults():
     assert [a.arg for a in constructor.kwonlyargs] == list(defaults)[1:]
     assert [ast.literal_eval(required_expression(v)) for v in constructor.kw_defaults] == list(defaults.values())[1:]
     for name in defaults:
+        setters = [n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == name
+                   and [ast.unparse(d) for d in n.decorator_list] == [name + ".setter"]]
+        assert len(setters) == 1
         field = methods[name]
         assert [ast.unparse(d) for d in field.decorator_list] == ["property"]
         expected_type = "builtins.dict[builtins.int, builtins.list[builtins.float]]" if name == "coordinate_map" else ("builtins.bool" if type(defaults[name]) is bool else "builtins.int")
@@ -92,10 +102,11 @@ def test_nine_parameter_properties_types_and_defaults():
 
 def test_generated_exception_and_profile_declarations():
     classes = declarations()
-    for name in ("DrawingError", "DrawingWriteError", "OperationError"):
+    for name in ("DrawingError", "OperationError"):
         assert [ast.unparse(base) for base in classes[name].bases] == ["builtins.ValueError"]
         fields = declared_fields(classes[name])
         assert fields["domain"] == fields["kind"] == "builtins.str"
+    assert [ast.unparse(base) for base in classes["DrawingWriteError"].bases] == ["builtins.OSError"]
     fields = set(declared_fields(classes["DrawingError"]))
     assert fields == {"domain", "kind", "width", "height", "field", "actual", "expected", "row", "reason"}
     assert cosmolkit._binding_profile in {"drawing-bindings", "canonical-bootstrap"}

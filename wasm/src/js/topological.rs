@@ -307,75 +307,75 @@ fn error(e: ck::TopologicalFingerprintError) -> JsValue {
 }
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=topologicalFingerprint)]
-    pub fn topological_fingerprint(&self) -> Result<Fingerprint, JsValue> {
+    #[wasm_bindgen(js_name=fingerprintTopological)]
+    pub fn fingerprint_topological(&self) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_fingerprint(
         self.inner
-            .topological_fingerprint()
+            .fingerprint_topological()
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }
 }
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=topologicalFingerprintWithParams)]
-    pub fn topological_fingerprint_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalWithParams)]
+    pub fn fingerprint_topological_with_params(
         &self,
         params: &TopologicalFingerprintParams,
     ) -> Result<Fingerprint, JsValue> {
         // COSMolKit❗✔️: .topological_fingerprint_with_params(
         self.inner
-            .topological_fingerprint_with_params(&params.inner)
+            .fingerprint_topological_with_params(&params.inner)
             .map(|inner| Fingerprint { inner })
             .map_err(error)
     }
 }
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=topologicalFingerprintWithOutput)]
-    pub fn topological_fingerprint_with_output(
+    #[wasm_bindgen(js_name=fingerprintTopologicalWithOutput)]
+    pub fn fingerprint_topological_with_output(
         &self,
     ) -> Result<TopologicalFingerprintResult, JsValue> {
         // COSMolKit❗✔️: .topological_fingerprint_with_output(
         self.inner
-            .topological_fingerprint_with_output()
+            .fingerprint_topological_with_output()
             .map(|inner| TopologicalFingerprintResult { inner })
             .map_err(error)
     }
 }
 #[wasm_bindgen]
 impl Molecule {
-    #[wasm_bindgen(js_name=topologicalFingerprintWithOutputWithParams)]
-    pub fn topological_fingerprint_with_output_with_params(
+    #[wasm_bindgen(js_name=fingerprintTopologicalWithOutputWithParams)]
+    pub fn fingerprint_topological_with_output_with_params(
         &self,
         params: &TopologicalFingerprintParams,
         request: &TopologicalFingerprintOutputRequest,
     ) -> Result<TopologicalFingerprintResult, JsValue> {
         // COSMolKit❗✔️: .topological_fingerprint_with_output_with_params(
         self.inner
-            .topological_fingerprint_with_output_with_params(&params.inner, request.inner)
+            .fingerprint_topological_with_output_with_params(&params.inner, request.inner)
             .map(|inner| TopologicalFingerprintResult { inner })
             .map_err(error)
     }
 }
-#[wasm_bindgen(js_name=topologicalQueryFingerprintWithParams)]
-pub fn topological_query_fingerprint_with_params(
+#[wasm_bindgen(js_name=fingerprintTopologicalQueryWithParams)]
+pub fn fingerprint_topological_query_with_params(
     query: &QueryGraph,
     params: &TopologicalFingerprintParams,
 ) -> Result<Fingerprint, JsValue> {
     // COSMolKit❗✔️: ck::topological_query_fingerprint_with_params(
-    ck::topological_query_fingerprint_with_params(&query.inner, &params.inner)
+    ck::fingerprint_topological_query_with_params(&query.inner, &params.inner)
         .map(|inner| Fingerprint { inner })
         .map_err(error)
 }
-#[wasm_bindgen(js_name=topologicalQueryFingerprintWithOutputWithParams)]
-pub fn topological_query_fingerprint_with_output_with_params(
+#[wasm_bindgen(js_name=fingerprintTopologicalQueryWithOutputWithParams)]
+pub fn fingerprint_topological_query_with_output_with_params(
     query: &QueryGraph,
     params: &TopologicalFingerprintParams,
     request: &TopologicalFingerprintOutputRequest,
 ) -> Result<TopologicalFingerprintResult, JsValue> {
     // COSMolKit❗✔️: ck::topological_query_fingerprint_with_output_with_params(
-    ck::topological_query_fingerprint_with_output_with_params(
+    ck::fingerprint_topological_query_with_output_with_params(
         &query.inner,
         &params.inner,
         request.inner,

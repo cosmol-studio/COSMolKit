@@ -31,6 +31,7 @@ pub use cosmolkit as rust;
 /// the `Molecule` type below provides the ABI-safe projection used by Alef and
 /// wasm-bindgen.
 pub use cosmolkit::*;
+pub use cosmolkit_macros::javascript_options;
 
 /// Returns the COSMolKit version through the binding-facing crate.
 #[must_use]
@@ -152,6 +153,15 @@ impl Molecule {
         cosmolkit::Molecule::from_smiles_with_params(smiles, &params).map(|inner| Self {
             inner: inner.into(),
         })
+    }
+
+    /// Read-only modern tetrahedral-center query with CIP labels.
+    #[cfg(feature = "cap-stereo")]
+    pub fn find_chiral_centers(
+        &self,
+        include_unassigned: bool,
+    ) -> Result<Vec<(usize, String)>, cosmolkit::StereoReadError> {
+        self.inner.borrow().find_chiral_centers(include_unassigned)
     }
 
     /// Number of atoms in the molecular graph.
@@ -367,19 +377,19 @@ mod tests {
                 text,
                 &cosmolkit::SmilesParseParams {
                     sanitize: false,
-                    remove_hydrogens: false,
+                    remove_hs: false,
                     ..Default::default()
                 },
             )
             .unwrap()
         };
         let value = raw("CCO");
-        assert!(value.atom_pair_fingerprint().is_err());
+        assert!(value.fingerprint_atom_pair().is_err());
         let prepared = value.with_assigned_valence().unwrap();
-        assert!(prepared.atom_pair_fingerprint().is_ok());
-        assert!(value.atom_pair_fingerprint().is_err());
+        assert!(prepared.fingerprint_atom_pair().is_ok());
+        assert!(value.fingerprint_atom_pair().is_err());
         value.assign_valence_().unwrap();
-        assert!(value.atom_pair_fingerprint().is_ok());
+        assert!(value.fingerprint_atom_pair().is_ok());
 
         let invalid = raw("C(F)(F)(F)(F)F");
         let before = invalid.to_smiles().unwrap();
@@ -392,16 +402,16 @@ mod tests {
             Err(cosmolkit::OperationError::Valence(_))
         ));
         assert_eq!(invalid.to_smiles().unwrap(), before);
-        assert!(invalid.atom_pair_fingerprint().is_err());
+        assert!(invalid.fingerprint_atom_pair().is_err());
         let params = cosmolkit::ValenceParams {
             strict: false,
             ..Default::default()
         };
         let relaxed = invalid.with_assigned_valence_with_params(&params).unwrap();
-        assert!(relaxed.atom_pair_fingerprint().is_ok());
-        assert!(invalid.atom_pair_fingerprint().is_err());
+        assert!(relaxed.fingerprint_atom_pair().is_ok());
+        assert!(invalid.fingerprint_atom_pair().is_err());
         invalid.assign_valence_with_params_(&params).unwrap();
-        assert!(invalid.atom_pair_fingerprint().is_ok());
+        assert!(invalid.fingerprint_atom_pair().is_ok());
     }
 
     const ETHANOL_SDF: &str = "\

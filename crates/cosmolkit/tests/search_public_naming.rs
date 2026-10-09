@@ -221,7 +221,7 @@ fn concrete_smarts_rooted_tetrahedral_order_follows_source_permutation() {
         );
     }
     let params = cosmolkit::SmartsWriteParams {
-        do_isomeric_smiles: false,
+        isomeric_smiles: false,
         rooted_at_atom: Some(1),
         ..Default::default()
     };

@@ -4,7 +4,7 @@ use cosmolkit_smiles::CxSmilesFields;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReactionWriteParams {
     pub canonical: bool,
-    pub do_isomeric_smiles: bool,
+    pub isomeric_smiles: bool,
     pub rooted_at_atom: Option<usize>,
     pub include_dative_bonds: bool,
     pub include_cx: bool,
@@ -21,7 +21,7 @@ impl Default for ReactionWriteParams {
         // RDKit❗✔️: }
         Self {
             canonical: false,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             rooted_at_atom: None,
             include_dative_bonds: true,
             include_cx: false,

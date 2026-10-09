@@ -58,8 +58,8 @@ fn s33_standard_writer_input(input: &str) -> SmilesRecord {
 
 fn s33_standard_writer_params(isomeric: bool) -> SmilesWriteParams {
     SmilesWriteParams {
-        do_isomeric_smiles: isomeric,
-        do_kekule: false,
+        isomeric_smiles: isomeric,
+        kekule: false,
         canonical: true,
         clean_stereo: true,
         rooted_at_atom: None,
@@ -273,7 +273,7 @@ fn canonical_writer_projects_isomeric_rank_flags_to_pinned_outputs() {
             "FC(Cl)NCOC(F)Cl",
         ),
     ] {
-        params.do_isomeric_smiles = true;
+        params.isomeric_smiles = true;
         assert_eq!(
             write_smiles_with_params(&record(input), &params)
                 .map(fixture_writer_text)
@@ -282,7 +282,7 @@ fn canonical_writer_projects_isomeric_rank_flags_to_pinned_outputs() {
             "isomeric {input}"
         );
 
-        params.do_isomeric_smiles = false;
+        params.isomeric_smiles = false;
         assert_eq!(
             write_smiles_with_params(&record(input), &params)
                 .map(fixture_writer_text)
@@ -371,7 +371,7 @@ fn canonical_stack_orders_branch_children_from_the_rank_map() {
 fn canonical_writer_preserves_pinned_tetrahedral_ring_stereo_permutations() {
     let mut params = SmilesWriteParams::default();
     params.canonical = true;
-    params.do_isomeric_smiles = true;
+    params.isomeric_smiles = true;
     params.clean_stereo = true;
 
     for (input, expected) in [
@@ -461,7 +461,7 @@ fn canonical_writer_does_not_propagate_from_a_broken_relative_stereo_center() {
 
     let mut params = SmilesWriteParams::default();
     params.canonical = false;
-    params.do_isomeric_smiles = true;
+    params.isomeric_smiles = true;
     params.clean_stereo = true;
     params.rooted_at_atom = Some(AtomId::new(1));
 
@@ -517,7 +517,7 @@ fn canonical_writer_maps_ring_relative_references_across_component_order() {
 
         let mut params = SmilesWriteParams::default();
         params.canonical = false;
-        params.do_isomeric_smiles = true;
+        params.isomeric_smiles = true;
         params.clean_stereo = true;
         params.rooted_at_atom = Some(AtomId::new(root));
 

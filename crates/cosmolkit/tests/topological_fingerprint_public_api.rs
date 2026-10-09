@@ -8,7 +8,7 @@ fn bits(smiles: &str, params: TopologicalFingerprintParams) -> Vec<usize> {
     let molecule = Molecule::from_smiles(smiles)
         .unwrap_or_else(|err| panic!("failed to parse {smiles}: {err}"));
     molecule
-        .topological_fingerprint_with_output_with_params(
+        .fingerprint_topological_with_output_with_params(
             &params,
             TopologicalFingerprintOutputRequest::default(),
         )
@@ -173,7 +173,7 @@ fn rdkit_topological_fingerprint_preserves_source_provenance_before_folding() {
     params.fp_size = 64;
     params.num_bits_per_feature = 1;
     let output = molecule
-        .topological_fingerprint_with_output_with_params(
+        .fingerprint_topological_with_output_with_params(
             &params,
             TopologicalFingerprintOutputRequest {
                 atom_bits: true,
@@ -198,7 +198,7 @@ fn rdkit_topological_fingerprint_preserves_source_provenance_before_folding() {
     params.target_density = 0.2;
     params.min_size = 16;
     let folded = molecule
-        .topological_fingerprint_with_output_with_params(
+        .fingerprint_topological_with_output_with_params(
             &params,
             TopologicalFingerprintOutputRequest {
                 atom_bits: true,
@@ -227,7 +227,7 @@ fn rdkit_topological_fingerprint_rejects_source_precondition_ranges() {
             _ => params.num_bits_per_feature = 0,
         }
         let err = molecule
-            .topological_fingerprint_with_output_with_params(&params, Default::default())
+            .fingerprint_topological_with_output_with_params(&params, Default::default())
             .unwrap_err();
         assert!(err.to_string().contains(expected), "{field}: {err}");
     }
@@ -237,10 +237,10 @@ fn rdkit_topological_fingerprint_rejects_source_precondition_ranges() {
 fn source_output_requests_preserve_absence_empty_values_and_detached_getters() {
     let molecule = Molecule::from_smiles("CCO").unwrap();
     let before = molecule.clone();
-    let absent = molecule.topological_fingerprint_with_output().unwrap();
+    let absent = molecule.fingerprint_topological_with_output().unwrap();
     assert_eq!(
         absent.fingerprint(),
-        &molecule.topological_fingerprint().unwrap()
+        &molecule.fingerprint_topological().unwrap()
     );
     for (field, error) in [
         ("atom_bits", absent.atom_bits().unwrap_err()),
@@ -264,7 +264,7 @@ fn source_output_requests_preserve_absence_empty_values_and_detached_getters() {
             ..Default::default()
         };
         let result = molecule
-            .topological_fingerprint_with_output_with_params(
+            .fingerprint_topological_with_output_with_params(
                 &params,
                 TopologicalFingerprintOutputRequest {
                     atom_bits,

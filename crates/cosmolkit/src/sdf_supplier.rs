@@ -13,7 +13,7 @@ pub(crate) fn data_params(params: &SdfReadParams) -> cosmolkit_io::SdfDataReadPa
         coordinate_mode: params.coordinate_mode,
         mol_post: Some(cosmolkit_io::MolPostParams {
             sanitize: params.sanitize,
-            remove_hs: params.remove_hydrogens,
+            remove_hs: params.remove_hs,
             expand_attachment_points: params.expand_attachment_points,
         }),
     }

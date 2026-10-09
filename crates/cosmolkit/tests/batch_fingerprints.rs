@@ -68,7 +68,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .iter()
         .map(|m| {
             Some(
-                m.atom_pair_sparse_count_fingerprint_with_params(&params, None)
+                m.fingerprint_atom_pair_sparse_count_with_params(&params, None)
                     .unwrap(),
             )
         })
@@ -81,7 +81,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .iter()
         .map(|m| {
             Some(
-                m.atom_pair_count_fingerprint_with_params(&params, None)
+                m.fingerprint_atom_pair_count_with_params(&params, None)
                     .unwrap(),
             )
         })
@@ -94,7 +94,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .iter()
         .map(|m| {
             Some(
-                m.atom_pair_sparse_fingerprint_with_params(&params, None)
+                m.fingerprint_atom_pair_sparse_with_params(&params, None)
                     .unwrap(),
             )
         })
@@ -105,7 +105,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .unwrap();
     let expected_fingerprints: Vec<_> = molecules
         .iter()
-        .map(|m| Some(m.atom_pair_fingerprint_with_params(&params, None).unwrap()))
+        .map(|m| Some(m.fingerprint_atom_pair_with_params(&params, None).unwrap()))
         .collect();
     assert_eq!(fingerprints, expected_fingerprints);
     let outputs = batch
@@ -116,7 +116,7 @@ fn every_batch_result_form_matches_ordered_scalar_calls() {
         .map(|m| {
             let mut output = additional_output();
             let fingerprint = m
-                .atom_pair_fingerprint_with_params(&params, Some(&mut output))
+                .fingerprint_atom_pair_with_params(&params, Some(&mut output))
                 .unwrap();
             Some(cosmolkit_fingerprints::batch_fingerprint_output(
                 fingerprint,
@@ -145,14 +145,14 @@ fn unfolded_extra_bits_preserve_source_index_errors_and_batch_positions() {
     };
     assert!(
         molecules[0]
-            .atom_pair_sparse_count_fingerprint_with_params(&params, None)
+            .fingerprint_atom_pair_sparse_count_with_params(&params, None)
             .is_ok(),
         "a graph with no atom-pair environment does not consume an extra bit"
     );
     let expected_indices = [1_795_012_513_u64, 601_524_142, 525_510_353];
     for (molecule, expected_index) in molecules[1..].iter().zip(expected_indices) {
         let error = molecule
-            .atom_pair_sparse_count_fingerprint_with_params(&params, None)
+            .fingerprint_atom_pair_sparse_count_with_params(&params, None)
             .expect_err("RDKit's unfolded extra bit must exceed the chiral result width");
         assert!(
             error.to_string().contains(&expected_index.to_string()),
@@ -172,7 +172,7 @@ fn unfolded_extra_bits_preserve_source_index_errors_and_batch_positions() {
         vec![1, 2, 3]
     );
     for (error, expected_index) in error.record_errors.iter().zip(expected_indices) {
-        assert_eq!(error.operation, "batch.atom_pair_sparse_count_fingerprint");
+        assert_eq!(error.operation, "batch.fingerprint_atom_pair_sparse_count");
         assert!(
             error.message.contains(&expected_index.to_string()),
             "unexpected indexed source-parity error: {}",
@@ -252,7 +252,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
         error
             .record_errors
             .iter()
-            .all(|e| e.operation == "batch.atom_pair_fingerprint")
+            .all(|e| e.operation == "batch.fingerprint_atom_pair")
     );
     let bad_config = AtomPairFingerprintParams {
         generator: AtomPairParams {
@@ -267,7 +267,7 @@ fn invalid_input_records_keep_their_indices_and_operation_errors_are_indexed() {
     assert_eq!(error.record_errors[0].index, 0);
     assert_eq!(
         error.record_errors[0].operation,
-        "batch.atom_pair_fingerprint"
+        "batch.fingerprint_atom_pair"
     );
 }
 #[test]
@@ -337,7 +337,7 @@ fn all_families_return_full_ordered_bits_counts_and_metadata_masks() {
                 if let Some(m) = molecule {
                     let mut ao = collect.then(additional_output);
                     let fp = m
-                        .atom_pair_fingerprint_with_params(&ap, ao.as_mut())
+                        .fingerprint_atom_pair_with_params(&ap, ao.as_mut())
                         .unwrap();
                     assert_eq!(
                         ap_results[index],
@@ -349,7 +349,7 @@ fn all_families_return_full_ordered_bits_counts_and_metadata_masks() {
                     );
                     let mut ao = collect.then(additional_output);
                     let fp = m
-                        .morgan_fingerprint_with_params(&morgan, ao.as_mut())
+                        .fingerprint_morgan_with_params(&morgan, ao.as_mut())
                         .unwrap();
                     assert_eq!(
                         mo_results[index],
@@ -383,24 +383,24 @@ fn all_families_return_full_ordered_bits_counts_and_metadata_masks() {
             .fingerprint_layered_with_output_list_with_params(&layered, &query)
             .unwrap();
         let pattern_bits = batch
-            .pattern_fingerprint_list_with_params(&pattern, &query)
+            .fingerprint_pattern_list_with_params(&pattern, &query)
             .unwrap();
         for (index, molecule) in originals.iter().enumerate() {
             if let Some(m) = molecule {
                 assert_eq!(
                     bits[index],
-                    Some(m.layered_fingerprint_with_params(&layered).unwrap())
+                    Some(m.fingerprint_layered_with_params(&layered).unwrap())
                 );
                 assert_eq!(
                     output[index],
                     Some(
-                        m.layered_fingerprint_with_output_with_params(&layered)
+                        m.fingerprint_layered_with_output_with_params(&layered)
                             .unwrap()
                     )
                 );
                 assert_eq!(
                     pattern_bits[index],
-                    Some(m.pattern_fingerprint_with_params(&pattern).unwrap())
+                    Some(m.fingerprint_pattern_with_params(&pattern).unwrap())
                 );
             } else {
                 assert!(bits[index].is_none());
@@ -440,7 +440,7 @@ fn ap_preflight_runs_on_empty_invalid_rows_before_scheduling_and_morgan_preserve
         );
         assert_eq!(
             error.record_errors[0].operation,
-            "batch.atom_pair_fingerprint"
+            "batch.fingerprint_atom_pair"
         );
         let bad = MorganFingerprintParams {
             generator: MorganParams {
@@ -517,7 +517,7 @@ fn original_morgan_explicit_providers_defaults_and_empty_options_match_scalar_ow
                 if let Some(m) = molecule {
                     let mut ao = additional_output();
                     let fingerprint = m
-                        .morgan_fingerprint_with_generator(&generator, Some(&call), Some(&mut ao))
+                        .fingerprint_morgan_with_generator(&generator, Some(&call), Some(&mut ao))
                         .unwrap();
                     assert_eq!(bits[index], Some(fingerprint.clone()));
                     assert_eq!(
@@ -599,7 +599,7 @@ fn legacy_morgan_batch_zero_size_and_zero_extra_bits_follow_wrapper_order() {
             assert_eq!(
                 *item,
                 Some(
-                    m.morgan_fingerprint_with_generator(&generator, None, None)
+                    m.fingerprint_morgan_with_generator(&generator, None, None)
                         .unwrap()
                 )
             );

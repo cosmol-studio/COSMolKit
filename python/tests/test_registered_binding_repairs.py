@@ -68,6 +68,7 @@ def test_property_text_and_exception_type_are_real_python_values() -> None:
     assert ck.property_value_to_text(value) == "[numArom,_StereochemDone]"
     assert value.kind() == ck.PropertyValueKind.StringVector
     assert issubclass(ck.PropertyStringError, ValueError)
+    assert callable(ck.PropertyStringError.kind)
 
 
 def test_batch_record_projection_keeps_error_records_and_input_values() -> None:
@@ -112,8 +113,8 @@ def test_typed_sdf_factories_exports_and_report(tmp_path: Path) -> None:
     # Fixed RDKit MolToMolBlock(AddHs(MolFromSmiles("CO"))) input. Test
     # read-parameter forwarding independently of CK's hydrogen-addition owner.
     explicit_text = "\n     RDKit          2D\n\n  6  5  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0  0  0  0  0  0  0  0  0  0  0\n    1.5000    0.0000    0.0000 O   0  0  0  0  0  0  0  0  0  0  0  0\n   -1.5000    0.0000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n    0.0000    1.5000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n   -0.0000   -1.5000    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n    2.2500   -1.2990    0.0000 H   0  0  0  0  0  0  0  0  0  0  0  0\n  1  2  1  0\n  1  3  1  0\n  1  4  1  0\n  1  5  1  0\n  2  6  1  0\nM  END\n$$$$\n"
-    retained = ck.MoleculeBatch.from_sdf_records_with_params(explicit_text, ck.SdfReadParams(remove_hydrogens=False), ck.BatchErrorMode.RAISE, 2).get(0)
-    removed = ck.MoleculeBatch.from_sdf_records_with_params(explicit_text, ck.SdfReadParams(remove_hydrogens=True), ck.BatchErrorMode.RAISE, 2).get(0)
+    retained = ck.MoleculeBatch.from_sdf_records_with_params(explicit_text, ck.SdfReadParams(remove_hs=False), ck.BatchErrorMode.RAISE, 2).get(0)
+    removed = ck.MoleculeBatch.from_sdf_records_with_params(explicit_text, ck.SdfReadParams(remove_hs=True), ck.BatchErrorMode.RAISE, 2).get(0)
     assert isinstance(retained, ck.Molecule) and isinstance(removed, ck.Molecule)
     assert retained.num_atoms() == 6
     assert removed.num_atoms() == 2
@@ -121,7 +122,7 @@ def test_typed_sdf_factories_exports_and_report(tmp_path: Path) -> None:
     assert (options.format, cast(object, options.errors), options.n_jobs, options.progress_bar) == ("v3000", ck.BatchErrorMode.RAISE, 2, False)
     output = tmp_path / "output.sdf"
     report_file = tmp_path / "report.json"
-    report = batch.to_sdf_with_params(str(output), options, str(report_file))
+    report = batch.write_sdf_with_params(str(output), options, str(report_file))
     assert (report.total(), report.success(), report.failed()) == (2, 2, 0)
     assert "V3000" in output.read_text()
     copied_report = tmp_path / "copied-report.json"
@@ -129,13 +130,13 @@ def test_typed_sdf_factories_exports_and_report(tmp_path: Path) -> None:
     assert copied_report.read_bytes() == report_file.read_bytes()
     directory = tmp_path / "separate"
     directory.mkdir()
-    files = batch.to_sdf_files_with_params(str(directory), options, ["one.sdf", "two.sdf"], None)
+    files = batch.write_sdf_files_with_params(str(directory), options, ["one.sdf", "two.sdf"], None)
     assert files.success() == 2
     assert sorted(p.name for p in directory.iterdir()) == ["one.sdf", "two.sdf"]
     with pytest.raises(ValueError):
         _ = ck.BatchExportParams(n_jobs=0)
     with pytest.raises(ck.BatchValidationError):
-        _ = batch.to_sdf_with_params(str(tmp_path), options, None)
+        _ = batch.write_sdf_with_params(str(tmp_path), options, None)
     with pytest.raises(ck.BatchValidationError):
         _ = ck.MoleculeBatch.read_sdf_with_params(str(tmp_path / "absent.sdf"), read, ck.BatchErrorMode.RAISE, None, False)
     # Typed entrypoints must preserve the Rust error, not replace it with a
@@ -180,13 +181,13 @@ def test_torsion_batch_thin_bindings_match_scalar_and_propagate_callback_errors(
     before = [m.to_smiles() for m in molecules]
     batch = ck.MoleculeBatch.from_records(molecules, ck.BatchErrorMode.RAISE)
     generator = ck.TopologicalTorsionFingerprintGenerator()
-    expected = [m.topological_torsion_fingerprint_with_generator(generator).on_bits() for m in molecules]
+    expected = [m.fingerprint_topological_torsion_with_generator(generator).on_bits() for m in molecules]
     assert [v.on_bits() for v in batch.fingerprint_topological_torsion_list() if v is not None] == expected
     generator_params = ck.TopologicalTorsionParams(fp_size=256, count_simulation=False)
     options = ck.TopologicalTorsionFingerprintParams(generator=generator_params)
     calls: list[None] = []
     values = batch.fingerprint_topological_torsion_list_with_params(options, ck.BatchQueryParams(n_jobs=2, progress_callback=lambda: calls.append(None)))
-    expected_custom = [m.topological_torsion_fingerprint_with_params(options, None).on_bits() for m in molecules]
+    expected_custom = [m.fingerprint_topological_torsion_with_params(options, None).on_bits() for m in molecules]
     assert [v.on_bits() for v in values if v is not None] == expected_custom
     assert len(values) == 3 and len(calls) == 3
     def fail() -> None:

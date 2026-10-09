@@ -2,28 +2,28 @@
 use crate::Molecule;
 use cosmolkit as ck;
 impl Molecule {
-    pub fn topological_fingerprint(
+    pub fn fingerprint_topological(
         &self,
     ) -> Result<ck::Fingerprint, ck::TopologicalFingerprintError> {
         // COSMolKit❗✔️: .topological_fingerprint(
-        self.inner.borrow().topological_fingerprint()
+        self.inner.borrow().fingerprint_topological()
     }
-    pub fn topological_fingerprint_with_params(
+    pub fn fingerprint_topological_with_params(
         &self,
         params: &ck::TopologicalFingerprintParams,
     ) -> Result<ck::Fingerprint, ck::TopologicalFingerprintError> {
         // COSMolKit❗✔️: .topological_fingerprint_with_params(
         self.inner
             .borrow()
-            .topological_fingerprint_with_params(params)
+            .fingerprint_topological_with_params(params)
     }
-    pub fn topological_fingerprint_with_output(
+    pub fn fingerprint_topological_with_output(
         &self,
     ) -> Result<ck::TopologicalFingerprintResult, ck::TopologicalFingerprintError> {
         // COSMolKit❗✔️: .topological_fingerprint_with_output(
-        self.inner.borrow().topological_fingerprint_with_output()
+        self.inner.borrow().fingerprint_topological_with_output()
     }
-    pub fn topological_fingerprint_with_output_with_params(
+    pub fn fingerprint_topological_with_output_with_params(
         &self,
         params: &ck::TopologicalFingerprintParams,
         request: ck::TopologicalFingerprintOutputRequest,
@@ -31,7 +31,7 @@ impl Molecule {
         // COSMolKit❗✔️: .topological_fingerprint_with_output_with_params(
         self.inner
             .borrow()
-            .topological_fingerprint_with_output_with_params(params, request)
+            .fingerprint_topological_with_output_with_params(params, request)
     }
 }
 #[cfg(test)]
@@ -44,16 +44,16 @@ mod tests {
             let core = ck::Molecule::from_smiles(text).unwrap();
             let params = ck::TopologicalFingerprintParams::default();
             assert_eq!(
-                m.topological_fingerprint().unwrap(),
-                core.topological_fingerprint().unwrap()
+                m.fingerprint_topological().unwrap(),
+                core.fingerprint_topological().unwrap()
             );
             assert_eq!(
-                m.topological_fingerprint_with_params(&params).unwrap(),
-                core.topological_fingerprint_with_params(&params).unwrap()
+                m.fingerprint_topological_with_params(&params).unwrap(),
+                core.fingerprint_topological_with_params(&params).unwrap()
             );
             assert_eq!(
-                m.topological_fingerprint_with_output().unwrap(),
-                core.topological_fingerprint_with_output().unwrap()
+                m.fingerprint_topological_with_output().unwrap(),
+                core.fingerprint_topological_with_output().unwrap()
             );
             for atom_bits in [false, true] {
                 for bit_info in [false, true] {
@@ -62,10 +62,10 @@ mod tests {
                         bit_info,
                     };
                     let a = m
-                        .topological_fingerprint_with_output_with_params(&params, request)
+                        .fingerprint_topological_with_output_with_params(&params, request)
                         .unwrap();
                     let b = core
-                        .topological_fingerprint_with_output_with_params(&params, request)
+                        .fingerprint_topological_with_output_with_params(&params, request)
                         .unwrap();
                     assert_eq!(a, b);
                     assert_eq!(a.atom_bits().is_ok(), atom_bits);

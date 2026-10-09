@@ -2,7 +2,7 @@
 import pytest
 import cosmolkit as ck
 
-METHODS = ["atom_pair_fingerprint", "atom_pair_sparse_fingerprint", "atom_pair_count_fingerprint", "atom_pair_sparse_count_fingerprint"]
+METHODS = ["fingerprint_atom_pair", "fingerprint_atom_pair_sparse", "fingerprint_atom_pair_count", "fingerprint_atom_pair_sparse_count"]
 
 @pytest.mark.parametrize("method", METHODS)
 def test_all_forms_fill_original_output_and_preserve_input(method):
@@ -30,9 +30,10 @@ def test_empty_roots_optional_values_and_frozen_parameters():
     empty = ck.AtomPairFingerprintParams(from_atoms=[])
     assert empty.from_atoms == [] and empty.ignore_atoms is None
     assert empty.conformer_id == -1
-    assert molecule.atom_pair_sparse_count_fingerprint_with_params(empty, None).nonzero_elements() == {}
-    assert molecule.atom_pair_sparse_count_fingerprint().nonzero_elements()
-    with pytest.raises(AttributeError): empty.conformer_id = 4
+    assert molecule.fingerprint_atom_pair_sparse_count_with_params(empty, None).nonzero_elements() == {}
+    assert molecule.fingerprint_atom_pair_sparse_count().nonzero_elements()
+    empty.conformer_id = 4
+    assert empty.conformer_id == 4
     copy = empty.from_atoms; copy.append(0)
     assert empty.from_atoms == []
     assert ck.AtomPairParams(count_bounds=[]).count_bounds == []
@@ -43,7 +44,7 @@ def test_source_generator_precondition_retains_typed_cause_and_input():
     before = molecule.to_smiles()
     bad = ck.AtomPairFingerprintParams(generator=ck.AtomPairParams(min_distance=5, max_distance=4))
     with pytest.raises(ck.AtomPairReadError) as caught:
-        molecule.atom_pair_fingerprint_with_params(bad, None)
+        molecule.fingerprint_atom_pair_with_params(bad, None)
     assert caught.value.domain == "fingerprints"
     assert caught.value.kind == "Generator"
     assert caught.value.__cause__ is not None
@@ -55,11 +56,11 @@ def test_custom_invariants_modulo_and_filters_reach_owner():
     molecule = ck.Molecule.from_smiles("CCO")
     first = ck.AtomPairFingerprintParams(from_atoms=[0], ignore_atoms=[2], custom_atom_invariants=[10,20,30])
     # Original fixed source pair-code regression: 10,20,distance1 => 328001.
-    assert molecule.atom_pair_sparse_count_fingerprint_with_params(first,None).nonzero_elements() == {328001:1}
+    assert molecule.fingerprint_atom_pair_sparse_count_with_params(first,None).nonzero_elements() == {328001:1}
     torsion = ck.AtomPairAtomInvariantsGenerator(topological_torsion_correction=True)
     assert torsion.topological_torsion_correction and not torsion.include_chirality
     custom = ck.AtomPairFingerprintParams(atom_invariants_generator=torsion)
-    assert molecule.atom_pair_sparse_count_fingerprint_with_params(custom,None).nonzero_elements() != molecule.atom_pair_sparse_count_fingerprint().nonzero_elements()
+    assert molecule.fingerprint_atom_pair_sparse_count_with_params(custom,None).nonzero_elements() != molecule.fingerprint_atom_pair_sparse_count().nonzero_elements()
 
 
 @pytest.mark.parametrize("chiral", [False, True])
@@ -83,7 +84,10 @@ def test_invariant_generator_source_metadata_repr_and_frozen_protocol(chiral, co
     # thin formatting projection of the exact source information string.
     assert repr(generator) == f"AtomPairAtomInvariantsGenerator({expected})"
     for name in ("include_chirality", "topological_torsion_correction"):
-        with pytest.raises(AttributeError): setattr(generator, name, not getattr(generator, name))
+        original = getattr(generator, name)
+        setattr(generator, name, not original)
+        assert getattr(generator, name) is not original
+        setattr(generator, name, original)
     for name in ("info_string", "to_json", "__repr__"):
         with pytest.raises(TypeError): getattr(generator, name)(0)
     stub = ast.parse((Path(__file__).resolve().parents[1] / "cosmolkit.pyi").read_text())

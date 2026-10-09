@@ -7,36 +7,36 @@ use crate::{InchiError, InchiErrorKind, Molecule};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InchiReadParams {
     pub sanitize: bool,
-    pub remove_hydrogens: bool,
+    pub remove_hs: bool,
 }
 
 impl Default for InchiReadParams {
     fn default() -> Self {
         Self {
             sanitize: true,
-            remove_hydrogens: true,
+            remove_hs: true,
         }
     }
 }
 
 impl InchiReadParams {
-    pub const fn new(sanitize: bool, remove_hydrogens: bool) -> Self {
+    pub const fn new(sanitize: bool, remove_hs: bool) -> Self {
         Self {
             sanitize,
-            remove_hydrogens,
+            remove_hs,
         }
     }
     pub const fn sanitize(&self) -> bool {
         self.sanitize
     }
-    pub const fn remove_hydrogens(&self) -> bool {
-        self.remove_hydrogens
+    pub const fn remove_hs(&self) -> bool {
+        self.remove_hs
     }
     pub fn set_sanitize(&mut self, value: bool) {
         self.sanitize = value;
     }
-    pub fn set_remove_hydrogens(&mut self, value: bool) {
-        self.remove_hydrogens = value;
+    pub fn set_remove_hs(&mut self, value: bool) {
+        self.remove_hs = value;
     }
 }
 
@@ -74,10 +74,10 @@ fn text(bytes: Vec<u8>, operation: &'static str) -> Result<String, InchiError> {
 }
 
 /// Converts an InChI string to its InChIKey without constructing a molecule.
-pub fn inchi_to_inchi_key(inchi: &str) -> Result<String, InchiError> {
+pub fn inchi_to_key(inchi: &str) -> Result<String, InchiError> {
     text(
         cosmolkit_inchi::inchi_to_inchi_key(inchi.as_bytes())?.key,
-        "inchi_to_inchi_key",
+        "inchi_to_key",
     )
 }
 
@@ -96,7 +96,7 @@ impl Molecule {
             &mut toolkit,
             text.as_bytes(),
             params.sanitize,
-            params.remove_hydrogens,
+            params.remove_hs,
         )?;
         let graph = output.molecule.ok_or_else(|| InchiError {
             operation: "from_inchi",
@@ -181,7 +181,7 @@ mod tests {
             "LFQSCWFLJHTTHZ-UHFFFAOYSA-N"
         );
         assert!(Molecule::from_inchi("not InChI").is_err());
-        assert!(inchi_to_inchi_key("not InChI").is_err());
+        assert!(inchi_to_key("not InChI").is_err());
     }
 
     #[cfg(feature = "cap-smiles")]
@@ -224,7 +224,7 @@ mod tests {
             let before = molecule.to_smiles().unwrap();
             assert_eq!(molecule.to_inchi().unwrap(), expected, "{smiles}");
             assert_eq!(molecule.to_inchi_key().unwrap(), key, "{smiles}");
-            assert_eq!(inchi_to_inchi_key(expected).unwrap(), key);
+            assert_eq!(inchi_to_key(expected).unwrap(), key);
             let parsed = Molecule::from_inchi(expected).unwrap();
             assert_eq!(parsed.to_inchi().unwrap(), expected, "{smiles}");
             assert_eq!(molecule.to_smiles().unwrap(), before);

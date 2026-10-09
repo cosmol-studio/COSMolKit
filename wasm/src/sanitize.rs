@@ -91,7 +91,7 @@ mod tests {
         ] {
             let parse = ck::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 ..Default::default()
             };
             let owner = ck::Molecule::from_smiles_with_params(text, &parse).unwrap();

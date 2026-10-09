@@ -39,7 +39,7 @@ fn torsion_defaults_overrides_order_invalid_rows_and_progress_preserve_inputs() 
         .iter()
         .map(|row| match row {
             BatchRecord::Molecule(m) => Some(
-                m.topological_torsion_fingerprint_with_params(&options, None)
+                m.fingerprint_topological_torsion_with_params(&options, None)
                     .unwrap(),
             ),
             BatchRecord::Error(_) => None,
@@ -103,7 +103,7 @@ fn torsion_collects_every_typed_failure_in_original_order_without_skipping_work(
         [0, 2]
     );
     for record in &error.record_errors {
-        assert_eq!(record.operation, "batch.topological_torsion_fingerprint");
+        assert_eq!(record.operation, "batch.fingerprint_topological_torsion");
         let original = record
             .source()
             .unwrap()

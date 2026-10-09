@@ -20,7 +20,7 @@ pub struct SmartsWriteParams {
     /// Emit atom-map labels stored on query atoms.
     pub include_atom_maps: bool,
     /// Emit atom and bond stereochemistry.
-    pub do_isomeric_smiles: bool,
+    pub isomeric_smiles: bool,
     /// Preserve directional dative bond tokens.
     pub include_dative_bonds: bool,
     /// Start graph traversal at this atom index when present.
@@ -31,7 +31,7 @@ impl Default for SmartsWriteParams {
     fn default() -> Self {
         Self {
             include_atom_maps: true,
-            do_isomeric_smiles: true,
+            isomeric_smiles: true,
             include_dative_bonds: true,
             rooted_at_atom: None,
         }
@@ -3058,7 +3058,7 @@ pub fn query_atom_to_smarts(
     atom: &QueryAtom,
     params: &SmartsWriteParams,
 ) -> Result<PropertyText, SmartsWriteError> {
-    query_atom_to_smarts_with_state(atom, params, &mut false, params.do_isomeric_smiles)
+    query_atom_to_smarts_with_state(atom, params, &mut false, params.isomeric_smiles)
 }
 
 fn query_atom_to_smarts_with_state(
@@ -4078,7 +4078,7 @@ fn get_basic_bond_repr(
     // Cost ✔️: one bounded switch, O(1) and no heap allocation in either
     // Native's short result or this kernel; no scan, clone or dynamic lookup.
     match bond_order {
-        BondOrder::Single | BondOrder::Aromatic if params.do_isomeric_smiles => match direction {
+        BondOrder::Single | BondOrder::Aromatic if params.isomeric_smiles => match direction {
             BondDirection::EndDownRight => "\\",
             BondDirection::EndUpRight => "/",
             _ if bond_order == BondOrder::Single => "-",
@@ -4284,7 +4284,7 @@ where
         params,
         stereo_written,
         write_molecule,
-        params.do_isomeric_smiles,
+        params.isomeric_smiles,
     )
 }
 
@@ -5884,7 +5884,7 @@ mod complete_recursive_structure_smarts_source_tests {
         let q = RecursiveStructureQuery::from_query_graph(graph(), 9);
         let params = SmartsWriteParams {
             include_atom_maps: false,
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             include_dative_bonds: false,
             rooted_at_atom: Some(77),
         };
@@ -6427,7 +6427,7 @@ mod complete_recurse_get_smarts_source_tests {
             rooted_at_atom: Some(8),
             include_atom_maps: false,
             include_dative_bonds: false,
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
         };
         let mut calls = 0;
         let out = recurse_get_smarts(
@@ -6985,7 +6985,7 @@ mod complete_basic_bond_repr_source_tests {
                     let order = BondOrder::from_rdkit_code(code).unwrap();
                     let direction = BondDirection::from_rdkit_code(dir).unwrap();
                     let p = SmartsWriteParams {
-                        do_isomeric_smiles: iso,
+                        isomeric_smiles: iso,
                         ..Default::default()
                     };
                     let ordinary = [
@@ -7015,7 +7015,7 @@ mod complete_basic_bond_repr_source_tests {
                 for iso in [false, true] {
                     let p = SmartsWriteParams {
                         include_dative_bonds: include,
-                        do_isomeric_smiles: iso,
+                        isomeric_smiles: iso,
                         ..Default::default()
                     };
                     for dir in 0..=6 {
@@ -7117,7 +7117,7 @@ mod complete_bond_smarts_simple_source_tests {
                 for dative in [false, true] {
                     let b = bond(BondDirection::from_rdkit_code(code).unwrap());
                     let p = SmartsWriteParams {
-                        do_isomeric_smiles: iso,
+                        isomeric_smiles: iso,
                         include_dative_bonds: dative,
                         ..Default::default()
                     };
@@ -7139,7 +7139,7 @@ mod complete_bond_smarts_simple_source_tests {
             let direction = BondDirection::from_rdkit_code(code).unwrap();
             let q = BondQueryPredicate::Direction(direction);
             let p = SmartsWriteParams {
-                do_isomeric_smiles: false,
+                isomeric_smiles: false,
                 ..Default::default()
             };
             let out =
@@ -7173,7 +7173,7 @@ mod complete_bond_smarts_simple_source_tests {
             );
         }
         let p = SmartsWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             include_dative_bonds: false,
             ..Default::default()
         };
@@ -7454,7 +7454,7 @@ mod complete_recurse_bond_smarts_source_tests {
         );
         let p = SmartsWriteParams {
             include_dative_bonds: false,
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..Default::default()
         };
         assert_eq!(
@@ -7572,7 +7572,7 @@ mod complete_non_query_bond_smarts_source_tests {
                         BondDirection::from_rdkit_code(d).unwrap(),
                     );
                     let p = SmartsWriteParams {
-                        do_isomeric_smiles: iso,
+                        isomeric_smiles: iso,
                         include_dative_bonds: false,
                         ..Default::default()
                     };
@@ -7618,7 +7618,7 @@ mod complete_non_query_bond_smarts_source_tests {
             }
         }
         let p = SmartsWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             ..Default::default()
         };
         assert_eq!(
@@ -7781,7 +7781,7 @@ mod complete_query_bond_smarts_source_tests {
             leaf(BondOrder::Single),
         );
         let p = SmartsWriteParams {
-            do_isomeric_smiles: false,
+            isomeric_smiles: false,
             include_dative_bonds: false,
             ..Default::default()
         };
@@ -8128,7 +8128,7 @@ fn fragment_smarts_construct(
         &mut stack,
         Some(atoms_in_play),
         bonds_in_play,
-        params.do_isomeric_smiles,
+        params.isomeric_smiles,
     )?;
     rings.reset();
     let mut result = PropertyText::new();
@@ -8646,7 +8646,7 @@ mod fragment_smarts_construct_source_tests {
             .unwrap();
         let (mut a, mut b) = (vec![], vec![]);
         let mut params = SmartsWriteParams::default();
-        params.do_isomeric_smiles = false;
+        params.isomeric_smiles = false;
         assert_eq!(
             fragment_smarts_construct(
                 &mut q,
@@ -8768,7 +8768,7 @@ fn mol_to_smarts_source(
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if params.do_isomeric_smiles {
+    if params.isomeric_smiles {
         mol.set_prop("_doIsoSmiles", cosmolkit_model::PropertyValue::Int(1))?;
     }
     let mut result = SmartsWriteResult::default();
@@ -8990,7 +8990,7 @@ mod mol_to_smarts_source_tests {
             .unwrap();
         let before = q.clone();
         let mut p = SmartsWriteParams::default();
-        p.do_isomeric_smiles = false;
+        p.isomeric_smiles = false;
         assert_eq!(write(&q, &p).unwrap().smarts, PropertyText::from("[#6@@]"));
         assert_eq!(q, before);
         q.clear_prop("_doIsoSmiles").unwrap();

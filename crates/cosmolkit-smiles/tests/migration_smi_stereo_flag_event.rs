@@ -47,7 +47,7 @@ fn source_flag_effect_is_cleared_after_successful_direction_processing() {
         record(),
         &SmilesParseParams {
             sanitize: true,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         },
         &mut None,
@@ -81,7 +81,7 @@ fn source_computed_list_cast_failure_is_propagated_by_actual_smiles_finalizer() 
         input,
         &SmilesParseParams {
             sanitize: true,
-            remove_hydrogens: false,
+            remove_hs: false,
             ..Default::default()
         },
         &mut None,

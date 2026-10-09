@@ -361,7 +361,7 @@ fn construct_component(
             allow_cxsmiles: false,
             parse_name: false,
             sanitize: params.sanitize,
-            remove_hydrogens: false,
+            remove_hs: false,
             skip_cleanup: true,
             ..Default::default()
         },
@@ -1002,7 +1002,7 @@ mod complete_construct_component_source_tests {
             "[C:7]O",
             &cosmolkit_smiles::SmilesParseParams {
                 sanitize: false,
-                remove_hydrogens: false,
+                remove_hs: false,
                 skip_cleanup: true,
                 allow_cxsmiles: false,
                 parse_name: false,
